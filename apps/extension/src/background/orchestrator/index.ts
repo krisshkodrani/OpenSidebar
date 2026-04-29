@@ -18,6 +18,7 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
+import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { loadSettings } from "../../utils/settings-storage";
 import { listPromptDescriptors } from "../../prompts";
 import {
@@ -2161,26 +2162,26 @@ export class Orchestrator {
   ): Promise<OrchestratorStartInput | null> {
     const settings = (await loadSettings()) ?? ({} as UserSettings);
     type ProviderMode = NonNullable<UserSettings["providerMode"]>;
-    const keyForMode = (mode: ProviderMode): string | undefined => {
-      if (mode === "fireworks") return settings.fireworksApiKey;
-      if (mode === "moonshot") return settings.kimiApiKey;
-      if (mode === "openai-groq") return settings.openaiApiKey;
-      return settings.openRouterApiKey;
-    };
-    const pickFallbackProvider = ():
-      | { mode: ProviderMode; activeKey: string }
-      | null => {
-      if (settings.openRouterApiKey) {
-        return { mode: "openrouter", activeKey: settings.openRouterApiKey };
-      }
-      if (settings.fireworksApiKey) {
-        return { mode: "fireworks", activeKey: settings.fireworksApiKey };
-      }
-      if (settings.kimiApiKey) {
-        return { mode: "moonshot", activeKey: settings.kimiApiKey };
-      }
-      if (settings.openaiApiKey) {
-        return { mode: "openai-groq", activeKey: settings.openaiApiKey };
+    const pickFallbackProvider = (): {
+      mode: ProviderMode;
+      activeKey: string;
+    } | null => {
+      const candidateModes: ProviderMode[] = [
+        "openrouter",
+        "fireworks-deepseek",
+        "fireworks",
+        "moonshot",
+        "xiaomi",
+        "openai-groq",
+      ];
+      for (const mode of candidateModes) {
+        const status = getProviderKeyStatus({
+          ...settings,
+          providerMode: mode,
+        });
+        if (status.hasRequiredKeys && status.activeKey) {
+          return { mode, activeKey: status.activeKey };
+        }
       }
       return null;
     };
@@ -2188,13 +2189,20 @@ export class Orchestrator {
       settings.providerMode ??
       (settings.openRouterApiKey
         ? "openrouter"
-        : settings.kimiApiKey
-          ? "moonshot"
-          : "fireworks");
-    const configuredKey = keyForMode(configuredMode);
+        : settings.fireworksApiKey && settings.deepseekApiKey
+          ? "fireworks-deepseek"
+          : settings.kimiApiKey
+            ? "moonshot"
+            : settings.xiaomiApiKey
+              ? "xiaomi"
+              : "fireworks");
+    const configuredStatus = getProviderKeyStatus({
+      ...settings,
+      providerMode: configuredMode,
+    });
     const provider =
-      configuredKey != null && configuredKey.length > 0
-        ? { mode: configuredMode, activeKey: configuredKey }
+      configuredStatus.hasRequiredKeys && configuredStatus.activeKey
+        ? { mode: configuredMode, activeKey: configuredStatus.activeKey }
         : pickFallbackProvider();
     if (!provider) {
       logger.warn(
@@ -3308,7 +3316,9 @@ export class Orchestrator {
         perceptionMode: input.settings.perceptionMode,
         useVLExecutor: input.settings.useVLExecutor,
         fireworksApiKey: input.settings.fireworksApiKey,
+        deepseekApiKey: input.settings.deepseekApiKey,
         kimiApiKey: input.settings.kimiApiKey,
+        xiaomiApiKey: input.settings.xiaomiApiKey,
       };
       const planner = this.deps.createPlanner(
         input.openRouterApiKey,
@@ -3521,7 +3531,9 @@ export class Orchestrator {
               groqApiKey: input.settings.groqApiKey,
               temperature: input.settings.temperature,
               fireworksApiKey: input.settings.fireworksApiKey,
+              deepseekApiKey: input.settings.deepseekApiKey,
               kimiApiKey: input.settings.kimiApiKey,
+              xiaomiApiKey: input.settings.xiaomiApiKey,
             },
           );
           const replanResult = await replanPlanner.buildNodes(
@@ -3610,7 +3622,9 @@ export class Orchestrator {
       groqApiKey: input.settings.groqApiKey,
       temperature: input.settings.temperature,
       fireworksApiKey: input.settings.fireworksApiKey,
+      deepseekApiKey: input.settings.deepseekApiKey,
       kimiApiKey: input.settings.kimiApiKey,
+      xiaomiApiKey: input.settings.xiaomiApiKey,
     };
     const verifier = this.deps.createVerifier(
       input.openRouterApiKey,
@@ -4083,7 +4097,9 @@ export class Orchestrator {
           openaiApiKey: input.settings.openaiApiKey,
           groqApiKey: input.settings.groqApiKey,
           fireworksApiKey: input.settings.fireworksApiKey,
+          deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
           useVLExecutor: input.settings.useVLExecutor,

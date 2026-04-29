@@ -273,6 +273,8 @@ function formatProviderName(providerId: string): string {
       return "Fireworks";
     case "moonshot":
       return "Moonshot";
+    case "xiaomi":
+      return "Xiaomi MiMo";
     case "groq":
       return "Groq";
     case "openai":
@@ -294,6 +296,8 @@ function getProviderCreditsUrl(providerId: string): string | null {
       return "https://fireworks.ai";
     case "moonshot":
       return "https://platform.kimi.ai";
+    case "xiaomi":
+      return "https://platform.xiaomimimo.com";
     case "groq":
       return "https://console.groq.com";
     case "openai":
@@ -1717,12 +1721,16 @@ export class AgentLoop {
         | "openrouter-groq"
         | "openai-groq"
         | "fireworks"
-        | "moonshot";
+        | "fireworks-deepseek"
+        | "moonshot"
+        | "xiaomi";
       provider?: "openrouter" | "openai" | "groq"; // legacy compat
       openaiApiKey?: string;
       groqApiKey?: string;
       fireworksApiKey?: string;
+      deepseekApiKey?: string;
       kimiApiKey?: string;
+      xiaomiApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       useVLExecutor?: boolean;
@@ -1774,7 +1782,9 @@ export class AgentLoop {
       openaiApiKey: options?.openaiApiKey,
       groqApiKey: options?.groqApiKey,
       fireworksApiKey: options?.fireworksApiKey,
+      deepseekApiKey: options?.deepseekApiKey,
       kimiApiKey: options?.kimiApiKey,
+      xiaomiApiKey: options?.xiaomiApiKey,
       temperature: options?.temperature,
     };
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);

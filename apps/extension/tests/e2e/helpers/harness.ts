@@ -46,7 +46,9 @@ type ProviderMode =
   | "openrouter-groq"
   | "openai-groq"
   | "fireworks"
-  | "moonshot";
+  | "fireworks-deepseek"
+  | "moonshot"
+  | "xiaomi";
 type E2ELane = "dev" | "validation";
 
 function isDiagnosticModeEnabled(): boolean {
@@ -102,6 +104,14 @@ function loadFireworksApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function loadDeepSeekApiKey(): string | undefined {
+  if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
+  if (!existsSync(REPO_ENV_PATH)) return undefined;
+  const content = readFileSync(REPO_ENV_PATH, "utf-8");
+  const match = content.match(/DEEPSEEK_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 function loadKimiApiKey(): string | undefined {
   if (process.env.KIMI_API_KEY) return process.env.KIMI_API_KEY;
   if (!existsSync(REPO_ENV_PATH)) return undefined;
@@ -110,25 +120,47 @@ function loadKimiApiKey(): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
+function loadXiaomiApiKey(): string | undefined {
+  if (process.env.XIAOMI_API_KEY) return process.env.XIAOMI_API_KEY;
+  if (!existsSync(REPO_ENV_PATH)) return undefined;
+  const content = readFileSync(REPO_ENV_PATH, "utf-8");
+  const match = content.match(/XIAOMI_API_KEY=(.+)/);
+  return match?.[1]?.trim() || undefined;
+}
+
 /** Detect provider mode from E2E_PROVIDER env var (default: fireworks) */
 function detectProviderMode(): ProviderMode {
   const prov = process.env.E2E_PROVIDER?.toLowerCase();
+  if (prov === "deepseek" || prov === "fireworks-deepseek")
+    return "fireworks-deepseek";
   if (prov === "moonshot" || prov === "kimi") return "moonshot";
+  if (prov === "xiaomi" || prov === "mimo") return "xiaomi";
   if (prov === "groq" || prov === "openrouter-groq") return "openrouter-groq";
   if (prov === "openai-groq") return "openai-groq";
   if (prov === "openrouter") return "openrouter";
   return "fireworks";
 }
 
-function loadActiveProviderApiKey(providerMode: ProviderMode): string | undefined {
+function loadActiveProviderApiKey(
+  providerMode: ProviderMode,
+): string | undefined {
+  if (providerMode === "fireworks-deepseek") {
+    const fireworksKey = loadFireworksApiKey();
+    const deepseekKey = loadDeepSeekApiKey();
+    return fireworksKey && deepseekKey ? fireworksKey : undefined;
+  }
   if (providerMode === "fireworks") return loadFireworksApiKey();
   if (providerMode === "moonshot") return loadKimiApiKey();
+  if (providerMode === "xiaomi") return loadXiaomiApiKey();
   if (providerMode === "openai-groq") return loadOpenAiApiKey();
   return loadApiKey();
 }
 
 function deriveLane(providerMode: ProviderMode): E2ELane {
-  return providerMode === "fireworks" || providerMode === "moonshot"
+  return providerMode === "fireworks" ||
+    providerMode === "fireworks-deepseek" ||
+    providerMode === "moonshot" ||
+    providerMode === "xiaomi"
     ? "dev"
     : "validation";
 }
@@ -148,7 +180,10 @@ async function waitForTraceFiles(
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
-  return filterTraceFilesByWorkspace(findAllNewTraceFiles(tracesBefore), workspaceId);
+  return filterTraceFilesByWorkspace(
+    findAllNewTraceFiles(tracesBefore),
+    workspaceId,
+  );
 }
 
 export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
@@ -192,8 +227,9 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
 
       const pages = await ctx.browser.pages();
       page =
-        pages.find((candidate) => !candidate.url().startsWith("chrome-extension://")) ||
-        (await ctx.browser.newPage());
+        pages.find(
+          (candidate) => !candidate.url().startsWith("chrome-extension://"),
+        ) || (await ctx.browser.newPage());
 
       const helper = await openHelperPage(ctx);
       const lane = deriveLane(providerMode);
@@ -201,16 +237,30 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         providerMode === "openrouter-groq" || providerMode === "openai-groq"
           ? loadGroqApiKey()
           : undefined;
-      const openAiKey = providerMode === "openai-groq" ? loadOpenAiApiKey() : undefined;
+      const openAiKey =
+        providerMode === "openai-groq" ? loadOpenAiApiKey() : undefined;
       const openRouterKey =
         providerMode === "openrouter" || providerMode === "openrouter-groq"
           ? loadApiKey()
           : undefined;
-      const fireworksKey = providerMode === "fireworks" ? loadFireworksApiKey() : undefined;
-      const kimiKey = providerMode === "moonshot" ? loadKimiApiKey() : undefined;
+      const fireworksKey =
+        providerMode === "fireworks" || providerMode === "fireworks-deepseek"
+          ? loadFireworksApiKey()
+          : undefined;
+      const deepseekKey =
+        providerMode === "fireworks-deepseek"
+          ? loadDeepSeekApiKey()
+          : undefined;
+      const kimiKey =
+        providerMode === "moonshot" ? loadKimiApiKey() : undefined;
+      const xiaomiKey =
+        providerMode === "xiaomi" ? loadXiaomiApiKey() : undefined;
       const executorModel = process.env.E2E_EXECUTOR_MODEL || undefined;
-      const temperature = process.env.E2E_TEMPERATURE ? parseFloat(process.env.E2E_TEMPERATURE) : undefined;
-      const useVLExecutor = process.env.E2E_USE_VL_EXECUTOR === "true" || undefined;
+      const temperature = process.env.E2E_TEMPERATURE
+        ? parseFloat(process.env.E2E_TEMPERATURE)
+        : undefined;
+      const useVLExecutor =
+        process.env.E2E_USE_VL_EXECUTOR === "true" || undefined;
       suiteReport.setRunMetadata({
         provider: providerMode,
         lane,
@@ -218,13 +268,28 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         diagnosticMode,
       });
       await helper.evaluate(
-        async (openRouterKey: string | null, turns: number, mode: string, gKey: string | null, openAiKey: string | null, fwKey: string | null, kimiKey: string | null, execModel: string | null, temp: number | null, vlExec: boolean | null) => {
+        async (
+          openRouterKey: string | null,
+          turns: number,
+          mode: string,
+          gKey: string | null,
+          openAiKey: string | null,
+          fwKey: string | null,
+          deepseekKey: string | null,
+          kimiKey: string | null,
+          xiaomiKey: string | null,
+          execModel: string | null,
+          temp: number | null,
+          vlExec: boolean | null,
+        ) => {
           const localData: Record<string, string> = {};
           if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
           if (gKey) localData.groqApiKey_local = gKey;
           if (openAiKey) localData.openaiApiKey_local = openAiKey;
           if (fwKey) localData.fireworksApiKey_local = fwKey;
+          if (deepseekKey) localData.deepseekApiKey_local = deepseekKey;
           if (kimiKey) localData.kimiApiKey_local = kimiKey;
+          if (xiaomiKey) localData.xiaomiApiKey_local = xiaomiKey;
           await chrome.storage.local.set(localData);
           const settings: Record<string, unknown> = {
             requireApprovals: false,
@@ -245,7 +310,9 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         groqKey ?? null,
         openAiKey ?? null,
         fireworksKey ?? null,
+        deepseekKey ?? null,
         kimiKey ?? null,
+        xiaomiKey ?? null,
         executorModel ?? null,
         temperature ?? null,
         useVLExecutor ?? null,

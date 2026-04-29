@@ -97,12 +97,21 @@ function mockFetch(
 }
 
 /** Set API keys via storage mock; returns cleanup function. */
-function setKeys(opts: { openRouter?: string }): () => void {
+function setKeys(opts: {
+  openRouter?: string;
+  xiaomi?: string;
+  providerMode?: "openrouter" | "fireworks" | "moonshot" | "xiaomi";
+}): () => void {
   const origSyncGet = chrome.storage.sync.get;
+  const origLocalGet = chrome.storage.local.get;
   const origSessionGet = chrome.storage.session.get;
 
   chrome.storage.sync.get = (async () => ({
-    userSettings: {},
+    userSettings: opts.providerMode ? { providerMode: opts.providerMode } : {},
+  })) as any;
+
+  chrome.storage.local.get = (async () => ({
+    xiaomiApiKey_local: opts.xiaomi ?? "",
   })) as any;
 
   chrome.storage.session.get = (async () => ({
@@ -111,6 +120,7 @@ function setKeys(opts: { openRouter?: string }): () => void {
 
   return () => {
     chrome.storage.sync.get = origSyncGet;
+    chrome.storage.local.get = origLocalGet;
     chrome.storage.session.get = origSessionGet;
   };
 }
@@ -147,7 +157,7 @@ describe("perceive() [legacy]", () => {
       const result = await perceive(makeInput());
       expect(result.cached).toBe(false);
       expect(result.interpretation).toContain("No API key");
-      expect(result.model).toBe("x-ai/grok-4.1-fast");
+      expect(result.model).toBe("accounts/fireworks/routers/kimi-k2p5-turbo");
     } finally {
       cleanup();
     }
@@ -166,6 +176,31 @@ describe("perceive() [legacy]", () => {
       expect(result.providerId).toBe("openrouter");
       expect(result.model).toBe("x-ai/grok-4.1-fast");
       expect(calledUrl).toContain("openrouter.ai");
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("uses Xiaomi MiMo when selected and key is available", async () => {
+    const cleanup = setKeys({
+      providerMode: "xiaomi",
+      xiaomi: "sk-xiaomi-test",
+    });
+    let calledUrl = "";
+    let payload: Record<string, unknown> = {};
+    globalThis.fetch = mockFetch((url, init) => {
+      calledUrl = url;
+      payload = JSON.parse(init!.body as string);
+      return jsonResponse("LAYOUT: Test page.");
+    });
+    try {
+      const result = await perceive(makeInput());
+      expect(result.providerId).toBe("xiaomi");
+      expect(result.model).toBe("mimo-v2-omni");
+      expect(calledUrl).toBe(
+        "https://api.xiaomimimo.com/v1/chat/completions",
+      );
+      expect(payload.model).toBe("mimo-v2-omni");
     } finally {
       cleanup();
     }

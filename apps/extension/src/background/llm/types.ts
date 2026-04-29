@@ -9,7 +9,14 @@ export interface ProviderConfig {
   /** Extra headers (e.g. OpenRouter's HTTP-Referer, X-Title) */
   headers: Record<string, string>;
   /** Provider identifier for logging and metrics */
-  providerId: "openrouter" | "openai" | "groq" | "fireworks" | "moonshot";
+  providerId:
+    | "openrouter"
+    | "openai"
+    | "groq"
+    | "fireworks"
+    | "moonshot"
+    | "deepseek"
+    | "xiaomi";
 }
 
 export type ContentPart =

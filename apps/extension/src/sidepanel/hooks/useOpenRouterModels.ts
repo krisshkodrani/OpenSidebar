@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { isExecutorModelAllowed } from "../../utils/executor-model-policy";
 
 export interface ProviderModelOption {
   id: string;
@@ -6,7 +7,13 @@ export interface ProviderModelOption {
   promptPrice: number;
   completionPrice: number;
   supportsVision: boolean;
-  provider?: "openrouter" | "fireworks" | "groq" | "moonshot";
+  provider?:
+    | "openrouter"
+    | "fireworks"
+    | "groq"
+    | "moonshot"
+    | "deepseek"
+    | "xiaomi";
   source?: "live" | "curated";
   effectiveDate?: string;
 }
@@ -101,6 +108,62 @@ export const MOONSHOT_MODELS: ProviderModelOption[] = [
   },
 ];
 
+export const XIAOMI_MODELS: ProviderModelOption[] = [
+  {
+    id: "mimo-v2-omni",
+    name: "MiMo V2 Omni",
+    promptPrice: 0,
+    completionPrice: 0,
+    supportsVision: true,
+    provider: "xiaomi",
+    source: "curated",
+    effectiveDate: "2026-04-29",
+  },
+  {
+    id: "mimo-v2-pro",
+    name: "MiMo V2 Pro",
+    promptPrice: 0,
+    completionPrice: 0,
+    supportsVision: false,
+    provider: "xiaomi",
+    source: "curated",
+    effectiveDate: "2026-04-29",
+  },
+  {
+    id: "mimo-v2-flash",
+    name: "MiMo V2 Flash",
+    promptPrice: 0,
+    completionPrice: 0,
+    supportsVision: false,
+    provider: "xiaomi",
+    source: "curated",
+    effectiveDate: "2026-04-29",
+  },
+];
+
+export const DEEPSEEK_MODELS: ProviderModelOption[] = [
+  {
+    id: "deepseek-v4-flash",
+    name: "DeepSeek V4 Flash",
+    promptPrice: 0.14 / 1_000_000,
+    completionPrice: 0.28 / 1_000_000,
+    supportsVision: false,
+    provider: "deepseek",
+    source: "curated",
+    effectiveDate: "2026-04-26",
+  },
+  {
+    id: "deepseek-v4-pro",
+    name: "DeepSeek V4 Pro",
+    promptPrice: 0.435 / 1_000_000,
+    completionPrice: 0.87 / 1_000_000,
+    supportsVision: false,
+    provider: "deepseek",
+    source: "curated",
+    effectiveDate: "2026-04-26",
+  },
+];
+
 export const GROQ_MODELS: ProviderModelOption[] = [
   {
     id: "openai/gpt-oss-120b",
@@ -139,7 +202,9 @@ type ProviderMode =
   | "openrouter-groq"
   | "openai-groq"
   | "fireworks"
-  | "moonshot";
+  | "fireworks-deepseek"
+  | "moonshot"
+  | "xiaomi";
 type ModelRole = "executor" | "planner" | "perception";
 
 export function getProviderModelOptions(args: {
@@ -148,13 +213,30 @@ export function getProviderModelOptions(args: {
   openRouterModels: ProviderModelOption[];
 }): ProviderModelOption[] {
   const { providerMode, role, openRouterModels } = args;
-  if (providerMode === "fireworks") return FIREWORKS_MODELS;
-  if (providerMode === "moonshot") return MOONSHOT_MODELS;
-  if (providerMode === "openrouter") return openRouterModels;
-  if (providerMode === "openrouter-groq") {
-    return role === "executor" ? openRouterModels : GROQ_MODELS;
+  const filterExecutorModels = (models: ProviderModelOption[]) =>
+    role === "executor"
+      ? models.filter((model) => isExecutorModelAllowed(model.id, providerMode))
+      : models;
+  if (providerMode === "fireworks")
+    return filterExecutorModels(FIREWORKS_MODELS);
+  if (providerMode === "fireworks-deepseek") {
+    return role === "executor"
+      ? filterExecutorModels(FIREWORKS_MODELS)
+      : DEEPSEEK_MODELS;
   }
-  return role === "executor" ? FIREWORKS_MODELS : GROQ_MODELS;
+  if (providerMode === "moonshot") return filterExecutorModels(MOONSHOT_MODELS);
+  if (providerMode === "xiaomi") return filterExecutorModels(XIAOMI_MODELS);
+  if (providerMode === "openrouter") {
+    return filterExecutorModels(openRouterModels);
+  }
+  if (providerMode === "openrouter-groq") {
+    return role === "executor"
+      ? filterExecutorModels(openRouterModels)
+      : GROQ_MODELS;
+  }
+  return role === "executor"
+    ? filterExecutorModels(FIREWORKS_MODELS)
+    : GROQ_MODELS;
 }
 
 export function getProviderModelCatalogNote(args: {
@@ -164,25 +246,41 @@ export function getProviderModelCatalogNote(args: {
 }): string {
   const { providerMode, role, hasOpenRouterKey } = args;
   if (providerMode === "fireworks") {
-    return "Scoped to Fireworks models with curated pricing.";
+    return role === "executor"
+      ? "Scoped to multimodal Fireworks executor models with curated pricing."
+      : "Scoped to Fireworks models with curated pricing.";
+  }
+  if (providerMode === "fireworks-deepseek") {
+    return role === "executor"
+      ? "Executor models come from multimodal Fireworks models with curated pricing."
+      : "Scoped to DeepSeek planner models with curated pricing.";
   }
   if (providerMode === "moonshot") {
-    return "Scoped to Moonshot models with curated pricing.";
+    return role === "executor"
+      ? "Scoped to multimodal Moonshot executor models with curated pricing."
+      : "Scoped to Moonshot models with curated pricing.";
+  }
+  if (providerMode === "xiaomi") {
+    return role === "executor"
+      ? "Scoped to MiMo V2 Omni for multimodal Xiaomi executor runs. Pricing is unknown until Xiaomi publishes official rates."
+      : "Scoped to curated Xiaomi MiMo planner models. Pricing is unknown until Xiaomi publishes official rates.";
   }
   if (providerMode === "openrouter") {
     return hasOpenRouterKey
-      ? "Live OpenRouter catalog with current provider pricing."
+      ? role === "executor"
+        ? "Live OpenRouter catalog filtered to multimodal executor models."
+        : "Live OpenRouter catalog with current provider pricing."
       : "Add an OpenRouter key to browse the live OpenRouter catalog.";
   }
   if (providerMode === "openrouter-groq") {
     return role === "executor"
       ? hasOpenRouterKey
-        ? "Executor models come from the live OpenRouter catalog."
+        ? "Executor models come from the live OpenRouter catalog, filtered to multimodal models."
         : "Add an OpenRouter key to browse executor models."
       : "Scoped to Groq models with curated pricing.";
   }
   return role === "executor"
-    ? "Executor currently uses the Fireworks-backed endpoint and curated Fireworks pricing."
+    ? "Executor currently uses multimodal Fireworks models through the OpenAI-compatible endpoint."
     : "Scoped to Groq models with curated pricing.";
 }
 

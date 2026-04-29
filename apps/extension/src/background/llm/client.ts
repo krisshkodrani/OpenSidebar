@@ -1,5 +1,12 @@
 import { ToolCall, ToolName } from "../../types";
 import { logger } from "../../utils";
+import {
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER,
+  isVLCapable as isExecutorVLCapable,
+  normalizeExecutorFallbackModel,
+  normalizeExecutorModel,
+  type ProviderMode,
+} from "../../utils/executor-model-policy";
 import { parseSSEStream } from "../streaming";
 import {
   CompletionRequest,
@@ -30,29 +37,48 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /** Executor model tier — used for initial turns (Fireworks Kimi K2.5 Turbo) */
-export const MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const MODEL_EXECUTOR =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter;
 /** Fallback: same model (no :nitro variant on Fireworks) */
-export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter;
 /** Planner model tier — used after escalation (Fireworks Kimi K2.5 Turbo) */
 export const MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 /** OpenAI direct API — redirected to Fireworks */
-const OPENAI_BASE_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
-export const OPENAI_MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
-export const OPENAI_MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
-export const OPENAI_MODEL_PERCEPTION = "accounts/fireworks/routers/kimi-k2p5-turbo";
+const OPENAI_BASE_URL =
+  "https://api.fireworks.ai/inference/v1/chat/completions";
+export const OPENAI_MODEL_EXECUTOR =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"];
+export const OPENAI_MODEL_PLANNER =
+  "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const OPENAI_MODEL_PERCEPTION =
+  "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-export const GROQ_MODEL_EXECUTOR = "openai/gpt-oss-120b";
 export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
-export const GROQ_MODEL_PERCEPTION = "meta-llama/llama-4-scout-17b-16e-instruct";
+export const GROQ_MODEL_PERCEPTION =
+  "meta-llama/llama-4-scout-17b-16e-instruct";
 
 /** Moonshot direct API */
 const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
-export const MOONSHOT_MODEL_EXECUTOR = "kimi-k2.6";
+export const MOONSHOT_MODEL_EXECUTOR =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.moonshot;
 export const MOONSHOT_MODEL_PLANNER = "kimi-k2.6";
 export const MOONSHOT_MODEL_PERCEPTION = "kimi-k2.6";
+
+/** Xiaomi MiMo direct API */
+const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
+export const XIAOMI_MODEL_EXECUTOR =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.xiaomi;
+export const XIAOMI_MODEL_PLANNER = "mimo-v2-pro";
+export const XIAOMI_MODEL_PERCEPTION = "mimo-v2-omni";
+
+/** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
+export const DEEPSEEK_MODEL_PLANNER = "deepseek-v4-flash";
+export const DEEPSEEK_MODEL_PLANNER_PRO = "deepseek-v4-pro";
 
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
@@ -75,26 +101,13 @@ function groqProvider(apiKey: string): ProviderConfig {
 /** Fireworks AI direct API */
 const FIREWORKS_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-export const FIREWORKS_MODEL_EXECUTOR = "accounts/fireworks/routers/kimi-k2p5-turbo";
-export const FIREWORKS_MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
-
-/** Models known to support vision (image_url content) + tool calling simultaneously */
-const VL_CAPABLE_MODELS = new Set([
-  "kimi-k2.6",
-  "kimi-k2.5",
-  "accounts/fireworks/routers/kimi-k2p5-turbo",
-  "openai/gpt-5.4-mini",
-  "openai/gpt-5.4-mini:nitro",
-  "gpt-5.4-mini",
-  "qwen/qwen3-vl-30b-a3b-instruct",
-  "qwen/qwen3-vl-30b-a3b-thinking",
-  "x-ai/grok-4.1-fast",
-]);
+export const FIREWORKS_MODEL_EXECUTOR =
+  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks;
+export const FIREWORKS_MODEL_PLANNER =
+  "accounts/fireworks/routers/kimi-k2p5-turbo";
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
-export function isVLCapable(model: string): boolean {
-  return VL_CAPABLE_MODELS.has(model.replace(/:nitro$/, ""));
-}
+export const isVLCapable = isExecutorVLCapable;
 
 function fireworksProvider(apiKey: string): ProviderConfig {
   return {
@@ -114,6 +127,24 @@ function moonshotProvider(apiKey: string): ProviderConfig {
   };
 }
 
+function xiaomiProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: XIAOMI_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "xiaomi",
+  };
+}
+
+function deepseekProvider(apiKey: string): ProviderConfig {
+  return {
+    baseUrl: DEEPSEEK_BASE_URL,
+    apiKey,
+    headers: {},
+    providerId: "deepseek",
+  };
+}
+
 /** Options for overriding default models in LLMClient */
 export interface LLMClientOptions {
   executorModel?: string;
@@ -127,7 +158,9 @@ export interface LLMClientOptions {
     | "openrouter-groq"
     | "openai-groq"
     | "fireworks"
-    | "moonshot";
+    | "fireworks-deepseek"
+    | "moonshot"
+    | "xiaomi";
   /** @deprecated Use providerMode instead */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
@@ -136,8 +169,12 @@ export interface LLMClientOptions {
   groqApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;
+  /** DeepSeek API key (required for fireworks-deepseek planner/verifier mode) */
+  deepseekApiKey?: string;
   /** Moonshot AI API key (required for moonshot mode) */
   kimiApiKey?: string;
+  /** Xiaomi MiMo API key (required for xiaomi mode) */
+  xiaomiApiKey?: string;
   /** Override default temperature (default: 0.0) */
   temperature?: number;
 }
@@ -160,12 +197,18 @@ function openRouterProvider(apiKey: string): ProviderConfig {
   };
 }
 
-function getProviderDisplayName(providerId: ProviderConfig["providerId"]): string {
+function getProviderDisplayName(
+  providerId: ProviderConfig["providerId"],
+): string {
   switch (providerId) {
     case "fireworks":
       return "Fireworks AI";
     case "moonshot":
       return "Moonshot AI";
+    case "xiaomi":
+      return "Xiaomi MiMo";
+    case "deepseek":
+      return "DeepSeek";
     case "groq":
       return "Groq";
     case "openai":
@@ -185,6 +228,10 @@ function getProviderCreditsUrl(
       return "https://fireworks.ai";
     case "moonshot":
       return "https://platform.kimi.ai";
+    case "xiaomi":
+      return "https://platform.xiaomimimo.com";
+    case "deepseek":
+      return "https://platform.deepseek.com";
     case "groq":
       return "https://console.groq.com";
     case "openai":
@@ -420,7 +467,10 @@ export class ProviderPool {
  * so marking the system message as ephemeral enables provider-side caching.
  * Skipped for non-OpenRouter providers (Groq/OpenAI reject unknown fields).
  */
-function annotateCacheControl(messages: LLMMessage[], providerId: string): LLMMessage[] {
+function annotateCacheControl(
+  messages: LLMMessage[],
+  providerId: string,
+): LLMMessage[] {
   if (providerId !== "openrouter") return messages;
   if (messages.length === 0 || messages[0].role !== "system") return messages;
   const systemMsg: LLMMessage = {
@@ -434,7 +484,10 @@ function annotateCacheControl(messages: LLMMessage[], providerId: string): LLMMe
  * Sanitize messages for strict providers (Groq requires type:"function" on tool_calls).
  * OpenRouter and OpenAI are lenient about missing `type` fields, but Groq rejects them.
  */
-function sanitizeToolCallMessages(messages: LLMMessage[], providerId: string): LLMMessage[] {
+function sanitizeToolCallMessages(
+  messages: LLMMessage[],
+  providerId: string,
+): LLMMessage[] {
   if (providerId !== "groq") return messages;
   return messages.map((msg) => {
     if (msg.role !== "assistant" || !msg.tool_calls) return msg;
@@ -477,17 +530,13 @@ export class LLMClient {
     this.defaultTemperature = options?.temperature ?? 0.0;
 
     // Resolve providerMode (supports legacy `provider` field for backward compat)
-    let mode:
-      | "openrouter"
-      | "openrouter-groq"
-      | "openai-groq"
-      | "fireworks"
-      | "moonshot" =
-      options?.providerMode ?? "openrouter";
+    let mode: ProviderMode = options?.providerMode ?? "openrouter";
     if (!options?.providerMode && options?.provider) {
       // Migrate legacy provider field
-      if (options.provider === "groq" && options.groqApiKey) mode = "openrouter-groq";
-      else if (options.provider === "openai" && options.openaiApiKey) mode = "openai-groq";
+      if (options.provider === "groq" && options.groqApiKey)
+        mode = "openrouter-groq";
+      else if (options.provider === "openai" && options.openaiApiKey)
+        mode = "openai-groq";
     }
 
     const nitro = options?.useNitro;
@@ -495,42 +544,118 @@ export class LLMClient {
     const hasOpenAI = !!options?.openaiApiKey;
     const hasFireworks = !!options?.fireworksApiKey;
     const hasMoonshot = !!options?.kimiApiKey;
+    const hasXiaomi = !!options?.xiaomiApiKey;
 
     // --- Build executor pool ---
-    if (mode === "moonshot" && hasMoonshot) {
+    if (mode === "fireworks-deepseek") {
+      const fwKey = options?.fireworksApiKey ?? "";
+      const fwProv = fireworksProvider(fwKey);
+      const executorModel = normalizeExecutorModel({
+        providerMode: "fireworks-deepseek",
+        executorModel: options?.executorModel,
+      });
+      this.executorPool = new ProviderPool(fwKey, {
+        openRouterModel: executorModel,
+      });
+      this.executorPool.getSlots()[0].provider = fwProv;
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "fireworks-deepseek",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
+    } else if (mode === "moonshot" && hasMoonshot) {
       const kimiKey = options!.kimiApiKey!;
       const kimiProv = moonshotProvider(kimiKey);
-      const executorModel = options?.executorModel || MOONSHOT_MODEL_EXECUTOR;
+      const executorModel = normalizeExecutorModel({
+        providerMode: "moonshot",
+        executorModel: options?.executorModel,
+      });
       this.executorPool = new ProviderPool(kimiKey, {
         openRouterModel: executorModel,
       });
       this.executorPool.getSlots()[0].provider = kimiProv;
-      this.executorFallbackModel =
-        options?.executorFallbackModel || executorModel;
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "moonshot",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
+    } else if (mode === "xiaomi" && hasXiaomi) {
+      const xiaomiKey = options!.xiaomiApiKey!;
+      const xiaomiProv = xiaomiProvider(xiaomiKey);
+      const executorModel = normalizeExecutorModel({
+        providerMode: "xiaomi",
+        executorModel: options?.executorModel,
+      });
+      this.executorPool = new ProviderPool(xiaomiKey, {
+        openRouterModel: executorModel,
+      });
+      this.executorPool.getSlots()[0].provider = xiaomiProv;
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "xiaomi",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
     } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
-      const executorModel = options?.executorModel || FIREWORKS_MODEL_EXECUTOR;
-      this.executorPool = new ProviderPool(fwKey, { openRouterModel: executorModel });
+      const executorModel = normalizeExecutorModel({
+        providerMode: "fireworks",
+        executorModel: options?.executorModel,
+      });
+      this.executorPool = new ProviderPool(fwKey, {
+        openRouterModel: executorModel,
+      });
       this.executorPool.getSlots()[0].provider = fwProv;
-      this.executorFallbackModel = options?.executorFallbackModel || executorModel;
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "fireworks",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
     } else if (mode === "openai-groq" && hasOpenAI) {
       const oaiKey = options!.openaiApiKey!;
       const oaiProv = openAIProvider(oaiKey);
-      const executorModel = options?.executorModel || OPENAI_MODEL_EXECUTOR;
-      this.executorPool = new ProviderPool(oaiKey, { openRouterModel: executorModel });
+      const executorModel = normalizeExecutorModel({
+        providerMode: "openai-groq",
+        executorModel: options?.executorModel,
+      });
+      this.executorPool = new ProviderPool(oaiKey, {
+        openRouterModel: executorModel,
+      });
       this.executorPool.getSlots()[0].provider = oaiProv;
-      this.executorFallbackModel = options?.executorFallbackModel || OPENAI_MODEL_EXECUTOR;
+      this.executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: "openai-groq",
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
     } else {
       // OpenRouter for executor (both "openrouter" and "openrouter-groq" modes)
-      this.executorPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(options?.executorModel || MODEL_EXECUTOR, nitro),
+      const executorProviderMode: ProviderMode =
+        mode === "openrouter-groq" ? "openrouter-groq" : "openrouter";
+      const executorModel = normalizeExecutorModel({
+        providerMode: executorProviderMode,
+        executorModel: options?.executorModel,
       });
-      this.executorFallbackModel = options?.executorFallbackModel || MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK;
+      const executorFallbackModel = normalizeExecutorFallbackModel({
+        providerMode: executorProviderMode,
+        executorModel,
+        executorFallbackModel: options?.executorFallbackModel,
+      });
+      this.executorPool = new ProviderPool(openRouterApiKey, {
+        openRouterModel: applyNitro(executorModel, nitro),
+      });
+      this.executorFallbackModel = applyNitro(executorFallbackModel, nitro);
     }
 
     // --- Build planner pool ---
-    if (mode === "moonshot" && hasMoonshot) {
+    if (mode === "fireworks-deepseek") {
+      const deepseekKey = options?.deepseekApiKey ?? "";
+      const deepseekProv = deepseekProvider(deepseekKey);
+      const plannerModel = options?.plannerModel || DEEPSEEK_MODEL_PLANNER;
+      this.plannerPool = new ProviderPool(deepseekKey, {
+        openRouterModel: plannerModel,
+      });
+      this.plannerPool.getSlots()[0].provider = deepseekProv;
+    } else if (mode === "moonshot" && hasMoonshot) {
       const kimiKey = options!.kimiApiKey!;
       const kimiProv = moonshotProvider(kimiKey);
       const plannerModel = options?.plannerModel || MOONSHOT_MODEL_PLANNER;
@@ -538,29 +663,49 @@ export class LLMClient {
         openRouterModel: plannerModel,
       });
       this.plannerPool.getSlots()[0].provider = kimiProv;
+    } else if (mode === "xiaomi" && hasXiaomi) {
+      const xiaomiKey = options!.xiaomiApiKey!;
+      const xiaomiProv = xiaomiProvider(xiaomiKey);
+      const plannerModel = options?.plannerModel || XIAOMI_MODEL_PLANNER;
+      this.plannerPool = new ProviderPool(xiaomiKey, {
+        openRouterModel: plannerModel,
+      });
+      this.plannerPool.getSlots()[0].provider = xiaomiProv;
     } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(fwKey, { openRouterModel: plannerModel });
+      this.plannerPool = new ProviderPool(fwKey, {
+        openRouterModel: plannerModel,
+      });
       this.plannerPool.getSlots()[0].provider = fwProv;
-    } else if ((mode === "openrouter-groq" || mode === "openai-groq") && hasGroq) {
+    } else if (
+      (mode === "openrouter-groq" || mode === "openai-groq") &&
+      hasGroq
+    ) {
       const groqKey = options!.groqApiKey!;
       const groqProv = groqProvider(groqKey);
       const plannerModel = options?.plannerModel || GROQ_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(groqKey, { openRouterModel: plannerModel });
+      this.plannerPool = new ProviderPool(groqKey, {
+        openRouterModel: plannerModel,
+      });
       this.plannerPool.getSlots()[0].provider = groqProv;
     } else if (mode === "openai-groq" && hasOpenAI) {
       // No Groq key but OpenAI mode — planner uses OpenAI too
       const oaiKey = options!.openaiApiKey!;
       const oaiProv = openAIProvider(oaiKey);
       const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(oaiKey, { openRouterModel: plannerModel });
+      this.plannerPool = new ProviderPool(oaiKey, {
+        openRouterModel: plannerModel,
+      });
       this.plannerPool.getSlots()[0].provider = oaiProv;
     } else {
       // OpenRouter for planner
       this.plannerPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(options?.plannerModel || MODEL_PLANNER, nitro),
+        openRouterModel: applyNitro(
+          options?.plannerModel || MODEL_PLANNER,
+          nitro,
+        ),
       });
     }
 
@@ -581,12 +726,15 @@ export class LLMClient {
   }
 
   /** Get the current provider identifier */
-  public getCurrentProvider(): string {
+  public getCurrentProvider(): ProviderConfig["providerId"] {
     return this.provider.providerId;
   }
 
   /** Get provider info for the currently active executor/planner slot */
-  public getActiveProviderInfo(): { providerId: string; model: string } {
+  public getActiveProviderInfo(): {
+    providerId: ProviderConfig["providerId"];
+    model: string;
+  } {
     const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
     const slot = pool.getActive();
     return {
@@ -702,11 +850,11 @@ export class LLMClient {
     init: RequestInit,
     maxRetries: number,
     signal: AbortSignal | undefined,
-    providerId: string,
+    providerId: ProviderConfig["providerId"],
     model: string,
   ): Promise<{
     response: Response;
-    actualProviderId: string;
+    actualProviderId: ProviderConfig["providerId"];
     actualModel: string;
   }> {
     const RETRYABLE = new Set([429, 502, 503, 504]);
@@ -827,14 +975,21 @@ export class LLMClient {
 
     const payload = shapePayloadForProvider(provider.providerId, {
       model: request.model || activeModel,
-      messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
+      messages: sanitizeToolCallMessages(
+        annotateCacheControl(request.messages, provider.providerId),
+        provider.providerId,
+      ),
       tools: request.tools,
-      tool_choice: request.tools?.length ? (request.tool_choice ?? "auto") : undefined,
+      tool_choice: request.tools?.length
+        ? (request.tool_choice ?? "auto")
+        : undefined,
       temperature: request.temperature ?? this.defaultTemperature, // Agentic needs low temp
       max_tokens: request.max_tokens,
       stop: request.stop,
       response_format: request.response_format,
-      ...(forceStream ? { stream: true, stream_options: { include_usage: true } } : {}),
+      ...(forceStream
+        ? { stream: true, stream_options: { include_usage: true } }
+        : {}),
     });
 
     logger.debug("agent", "LLM Request", {
@@ -873,7 +1028,7 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
-        actualProviderId = fetchResult.actualProviderId as "openrouter";
+        actualProviderId = fetchResult.actualProviderId;
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;
@@ -962,7 +1117,9 @@ export class LLMClient {
           request.signal,
         );
         const rawContent = result.content;
-        const cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+        const cleanContent = rawContent
+          ? stripThinkTags(rawContent) || null
+          : null;
         return {
           role: "assistant",
           content: cleanContent,
@@ -1074,9 +1231,14 @@ export class LLMClient {
 
     const payload = shapePayloadForProvider(provider.providerId, {
       model: request.model || activeModel,
-      messages: sanitizeToolCallMessages(annotateCacheControl(request.messages, provider.providerId), provider.providerId),
+      messages: sanitizeToolCallMessages(
+        annotateCacheControl(request.messages, provider.providerId),
+        provider.providerId,
+      ),
       tools: request.tools,
-      tool_choice: request.tools?.length ? (request.tool_choice ?? "auto") : undefined,
+      tool_choice: request.tools?.length
+        ? (request.tool_choice ?? "auto")
+        : undefined,
       temperature: request.temperature ?? this.defaultTemperature,
       max_tokens: request.max_tokens,
       stop: request.stop,
@@ -1121,7 +1283,7 @@ export class LLMClient {
           activeModel,
         );
         response = fetchResult.response;
-        actualProviderId = fetchResult.actualProviderId as "openrouter";
+        actualProviderId = fetchResult.actualProviderId;
         actualModel = fetchResult.actualModel;
 
         if (response.ok) break;

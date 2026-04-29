@@ -17,8 +17,13 @@ import { TokenUsage } from "../llm/types";
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
+const FIREWORKS_API_URL =
+  "https://api.fireworks.ai/inference/v1/chat/completions";
+const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
 const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
 const MOONSHOT_PERCEPTION_MODEL = "kimi-k2.6";
+const XIAOMI_API_URL = "https://api.xiaomimimo.com/v1/chat/completions";
+const XIAOMI_PERCEPTION_MODEL = "mimo-v2-omni";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -359,6 +364,20 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
 function buildProviders(settings: UserSettings): PerceptionProvider[] {
   const providers: PerceptionProvider[] = [];
 
+  if (
+    (settings.providerMode === "fireworks" ||
+      settings.providerMode === "fireworks-deepseek") &&
+    settings.fireworksApiKey
+  ) {
+    providers.push({
+      baseUrl: FIREWORKS_API_URL,
+      apiKey: settings.fireworksApiKey,
+      headers: {},
+      model: settings.perceptionModel || FIREWORKS_PERCEPTION_MODEL,
+      providerId: "fireworks",
+    });
+  }
+
   if (settings.providerMode === "moonshot" && settings.kimiApiKey) {
     providers.push({
       baseUrl: MOONSHOT_API_URL,
@@ -366,6 +385,16 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
       headers: {},
       model: settings.perceptionModel || MOONSHOT_PERCEPTION_MODEL,
       providerId: "moonshot",
+    });
+  }
+
+  if (settings.providerMode === "xiaomi" && settings.xiaomiApiKey) {
+    providers.push({
+      baseUrl: XIAOMI_API_URL,
+      apiKey: settings.xiaomiApiKey,
+      headers: {},
+      model: settings.perceptionModel || XIAOMI_PERCEPTION_MODEL,
+      providerId: "xiaomi",
     });
   }
 
@@ -412,9 +441,14 @@ export async function perceive(
       interpretation:
         "[No API key — visual perception unavailable. Agent relies on element list only.]",
       model:
-        settings.providerMode === "moonshot"
-          ? MOONSHOT_PERCEPTION_MODEL
-          : OPENROUTER_PERCEPTION_MODEL,
+        settings.providerMode === "fireworks" ||
+        settings.providerMode === "fireworks-deepseek"
+          ? FIREWORKS_PERCEPTION_MODEL
+          : settings.providerMode === "moonshot"
+            ? MOONSHOT_PERCEPTION_MODEL
+            : settings.providerMode === "xiaomi"
+              ? XIAOMI_PERCEPTION_MODEL
+            : OPENROUTER_PERCEPTION_MODEL,
       durationMs: 0,
       cached: false,
       mode: "orientation",
