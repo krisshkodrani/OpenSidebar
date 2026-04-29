@@ -24,19 +24,25 @@ export interface UserSettings {
     | "openrouter-groq"
     | "openai-groq"
     | "fireworks"
-    | "moonshot";
+    | "fireworks-deepseek"
+    | "moonshot"
+    | "xiaomi";
   /** @deprecated Use providerMode instead. Kept for migration. */
   provider?: "openrouter" | "openai" | "groq";
   /** OpenAI API key (required for openai-groq mode) */
   openaiApiKey?: string;
   /** Groq API key (required for hybrid modes) */
   groqApiKey?: string;
-  /** Gemini API key (optional, used for Gemini TTS) */
+  /** Gemini API key (optional, used for Gemini voice input/output) */
   geminiApiKey?: string;
   /** Fireworks AI API key (required for fireworks mode) */
   fireworksApiKey?: string;
+  /** DeepSeek API key (required for fireworks-deepseek planner/verifier mode) */
+  deepseekApiKey?: string;
   /** Moonshot AI API key (required for moonshot mode) */
   kimiApiKey?: string;
+  /** Xiaomi MiMo API key (required for xiaomi mode) */
+  xiaomiApiKey?: string;
   maxTurns: number;
   theme: "light" | "dark" | "system";
   /** Show token usage and cost metrics during and after agent sessions */
@@ -62,11 +68,11 @@ export interface UserSettings {
   allowedNavigationOrigins?: string[];
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
-  /** Override executor model (default: google/gemini-3-flash-preview) */
+  /** Override executor model. Must support screenshots and tool calling. */
   executorModel?: string;
-  /** Override planner model (default: minimax/minimax-m2.5) */
+  /** Override planner model. */
   plannerModel?: string;
-  /** Override perception model (default: x-ai/grok-4.1-fast) */
+  /** Override perception model for the internal structured fallback path. */
   perceptionModel?: string;
   /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
   useNitro?: boolean;
@@ -74,13 +80,13 @@ export interface UserSettings {
   temperature?: number;
   /**
    * Runtime observation path.
-   * - `auto`: unified VL on Fireworks, structured perception elsewhere
+   * - `auto`: unified VL executor
    * - `unified_vl`: screenshot goes directly to the executor
-   * - `structured`: dedicated perception layer produces `Page Interpretation`
+   * - `structured`: internal degraded fallback that produces `Page Interpretation`
    */
   perceptionMode?: PerceptionRuntimeMode;
   /** @deprecated Use `perceptionMode` instead. */
-  /** Use VL model as unified executor+perception — screenshot sent directly to executor (default: false) */
+  /** Legacy unified executor toggle. Ignored during settings migration. */
   useVLExecutor?: boolean;
   /** Enable voice input via microphone (STT) */
   enableVoiceInput?: boolean;

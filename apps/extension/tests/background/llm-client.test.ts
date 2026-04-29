@@ -8,6 +8,10 @@ import {
   MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
   MODEL_PLANNER,
   MOONSHOT_MODEL_EXECUTOR,
+  DEEPSEEK_MODEL_PLANNER,
+  DEEPSEEK_MODEL_PLANNER_PRO,
+  XIAOMI_MODEL_EXECUTOR,
+  XIAOMI_MODEL_PLANNER,
 } from "../../src/background/llm/client";
 import type { CompletionRequest } from "../../src/background/llm/types";
 
@@ -148,8 +152,7 @@ describe("stripThinkTags", () => {
   });
 
   test("preserves content after **Act** header", () => {
-    const input =
-      "**Think** reasoning here\n**Act**: click_element({ id: 5 })";
+    const input = "**Think** reasoning here\n**Act**: click_element({ id: 5 })";
     const result = stripThinkTags(input);
     expect(result).toContain("click_element");
     expect(result).not.toContain("reasoning here");
@@ -306,65 +309,105 @@ describe("LLMClient construction & tier switching", () => {
     expect(plannerInfo.model).toBe(MODEL_PLANNER);
   });
 
-    test("custom model overrides via LLMClientOptions", () => {
-      const client = makeClient({
-        executorModel: "custom/executor",
-        plannerModel: "custom/planner",
-      });
-      expect(client.getCurrentModel()).toBe("custom/executor");
-      client.switchToPlanner();
-      expect(client.getCurrentModel()).toBe("custom/planner");
+  test("xiaomi mode preserves Xiaomi provider and model IDs across tier switching", () => {
+    const client = makeClient({
+      providerMode: "xiaomi",
+      xiaomiApiKey: "sk-xiaomi-test",
     });
 
-    test("activateExecutorFallback switches executor model for runtime anomalies", () => {
-      const client = makeClient();
-      expect(client.activateExecutorFallback("empty_response")).toBe(true);
-      expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
-      expect(client.getActiveProviderInfo().model).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
+    expect(client.getCurrentProvider()).toBe("xiaomi");
+    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_EXECUTOR);
+    expect(client.getActiveProviderInfo()).toEqual({
+      providerId: "xiaomi",
+      model: XIAOMI_MODEL_EXECUTOR,
     });
 
-    test("switchToExecutor clears executor fallback override", () => {
-      const client = makeClient();
-      client.activateExecutorFallback("empty_response");
-      client.switchToExecutor();
-      expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
-      expect(client.getActiveProviderInfo().model).toBe(MODEL_EXECUTOR);
+    client.switchToPlanner();
+    expect(client.getCurrentProvider()).toBe("xiaomi");
+    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_PLANNER);
+    expect(client.getActiveProviderInfo()).toEqual({
+      providerId: "xiaomi",
+      model: XIAOMI_MODEL_PLANNER,
     });
+
+    client.switchToExecutor();
+    expect(client.getCurrentProvider()).toBe("xiaomi");
+    expect(client.getCurrentModel()).toBe(XIAOMI_MODEL_EXECUTOR);
   });
+
+  test("custom model overrides via LLMClientOptions", () => {
+    const client = makeClient({
+      executorModel: "qwen/qwen3-vl-30b-a3b-instruct",
+      plannerModel: "custom/planner",
+    });
+    expect(client.getCurrentModel()).toBe("qwen/qwen3-vl-30b-a3b-instruct");
+    client.switchToPlanner();
+    expect(client.getCurrentModel()).toBe("custom/planner");
+  });
+
+  test("text-only executor overrides fall back to the default multimodal executor", () => {
+    const client = makeClient({
+      executorModel: "openai/gpt-oss-120b",
+      plannerModel: "custom/planner",
+    });
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+    client.switchToPlanner();
+    expect(client.getCurrentModel()).toBe("custom/planner");
+  });
+
+  test("activateExecutorFallback switches executor model for runtime anomalies", () => {
+    const client = makeClient();
+    expect(client.activateExecutorFallback("empty_response")).toBe(true);
+    expect(client.getCurrentModel()).toBe(
+      MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
+    );
+    expect(client.getActiveProviderInfo().model).toBe(
+      MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
+    );
+  });
+
+  test("switchToExecutor clears executor fallback override", () => {
+    const client = makeClient();
+    client.activateExecutorFallback("empty_response");
+    client.switchToExecutor();
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+    expect(client.getActiveProviderInfo().model).toBe(MODEL_EXECUTOR);
+  });
+});
 
 // ========================================================================
 // Group 4: complete() Payload & Response Handling
 // ========================================================================
 
 describe("complete() payload & response", () => {
-    test("sends correct model from active pool", async () => {
-      const client = makeClient();
-      let sentModel = "";
-      mockFetch((_url, init) => {
-        sentModel = JSON.parse(init!.body as string).model;
+  test("sends correct model from active pool", async () => {
+    const client = makeClient();
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
       return jsonApiResponse("OK");
     });
 
     await client.complete(baseRequest());
     expect(sentModel).toBe(MODEL_EXECUTOR);
 
-      client.switchToPlanner();
-      await client.complete(baseRequest());
-      expect(sentModel).toBe(MODEL_PLANNER);
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+    expect(sentModel).toBe(MODEL_PLANNER);
+  });
+
+  test("uses executor fallback model after runtime fallback activation", async () => {
+    const client = makeClient();
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse("OK");
     });
 
-    test("uses executor fallback model after runtime fallback activation", async () => {
-      const client = makeClient();
-      let sentModel = "";
-      mockFetch((_url, init) => {
-        sentModel = JSON.parse(init!.body as string).model;
-        return jsonApiResponse("OK");
-      });
-
-      client.activateExecutorFallback("empty_response");
-      await client.complete(baseRequest());
-      expect(sentModel).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
-    });
+    client.activateExecutorFallback("empty_response");
+    await client.complete(baseRequest());
+    expect(sentModel).toBe(MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK);
+  });
 
   test("sets tool_choice: auto when tools provided", async () => {
     const client = makeClient();
@@ -413,6 +456,96 @@ describe("complete() payload & response", () => {
     expect(payload.tool_choice).toBe("auto");
   });
 
+  test("fireworks-deepseek uses Fireworks executor and DeepSeek planner", async () => {
+    const client = makeClient({
+      providerMode: "fireworks-deepseek",
+      fireworksApiKey: "fw-test",
+      deepseekApiKey: "sk-deepseek-test",
+    });
+    const requests: Array<{ url: string; payload: Record<string, unknown> }> =
+      [];
+    mockFetch((url, init) => {
+      const payload = JSON.parse(init!.body as string);
+      requests.push({ url, payload });
+      return url.includes("fireworks.ai")
+        ? sseResponse(["Executor OK"])
+        : jsonApiResponse("Planner OK");
+    });
+
+    await client.complete(baseRequest());
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+
+    expect(requests[0].url).toBe(
+      "https://api.fireworks.ai/inference/v1/chat/completions",
+    );
+    expect(requests[0].payload.model).toBe(MODEL_EXECUTOR);
+    expect(requests[0].payload.stream).toBe(true);
+    expect(requests[1].url).toBe("https://api.deepseek.com/chat/completions");
+    expect(requests[1].payload.model).toBe(DEEPSEEK_MODEL_PLANNER);
+    expect(requests[1].payload.stream).toBeUndefined();
+  });
+
+  test("fireworks-deepseek planner override accepts DeepSeek V4 Pro", async () => {
+    const client = makeClient({
+      providerMode: "fireworks-deepseek",
+      fireworksApiKey: "fw-test",
+      deepseekApiKey: "sk-deepseek-test",
+      plannerModel: DEEPSEEK_MODEL_PLANNER_PRO,
+    });
+    let url = "";
+    let payload: Record<string, unknown> = {};
+    mockFetch((nextUrl, init) => {
+      url = nextUrl;
+      payload = JSON.parse(init!.body as string);
+      return jsonApiResponse("Planner OK");
+    });
+
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+
+    expect(url).toBe("https://api.deepseek.com/chat/completions");
+    expect(payload.model).toBe("deepseek-v4-pro");
+  });
+
+  test("xiaomi mode sends OpenAI-compatible requests to Xiaomi MiMo endpoint", async () => {
+    const client = makeClient({
+      providerMode: "xiaomi",
+      xiaomiApiKey: "sk-xiaomi-test",
+    });
+    const requests: Array<{
+      url: string;
+      headers: Headers;
+      payload: Record<string, unknown>;
+    }> = [];
+    mockFetch((url, init) => {
+      requests.push({
+        url,
+        headers: new Headers(init!.headers),
+        payload: JSON.parse(init!.body as string),
+      });
+      return jsonApiResponse("OK");
+    });
+
+    await client.complete(baseRequest({ tools: sampleTools }));
+    client.switchToPlanner();
+    await client.complete(baseRequest());
+
+    expect(requests[0].url).toBe(
+      "https://api.xiaomimimo.com/v1/chat/completions",
+    );
+    expect(requests[0].headers.get("Authorization")).toBe(
+      "Bearer sk-xiaomi-test",
+    );
+    expect(requests[0].payload.model).toBe("mimo-v2-omni");
+    expect(requests[0].payload.tool_choice).toBe("auto");
+    expect(requests[0].payload.stream).toBeUndefined();
+    expect(requests[1].url).toBe(
+      "https://api.xiaomimimo.com/v1/chat/completions",
+    );
+    expect(requests[1].payload.model).toBe("mimo-v2-pro");
+  });
+
   test("adds cache_control to system message", async () => {
     const client = makeClient();
     let payload: Record<string, unknown> = {};
@@ -452,9 +585,7 @@ describe("complete() payload & response", () => {
 
   test("strips think tags from response content", async () => {
     const client = makeClient();
-    mockFetch(() =>
-      jsonApiResponse("<think>reasoning</think>Clean response."),
-    );
+    mockFetch(() => jsonApiResponse("<think>reasoning</think>Clean response."));
 
     const result = await client.complete(baseRequest());
     expect(result.content).toBe("Clean response.");
@@ -487,11 +618,12 @@ describe("complete() payload & response", () => {
 
   test("throws on empty choices array", async () => {
     const client = makeClient();
-    mockFetch(() =>
-      new Response(JSON.stringify({ choices: [] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    mockFetch(
+      () =>
+        new Response(JSON.stringify({ choices: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
 
     await expect(client.complete(baseRequest())).rejects.toThrow(
@@ -538,21 +670,15 @@ describe("complete() error handling & retry", () => {
 
   test("402 → throws with credit exhaustion message", async () => {
     const client = makeClient();
-    mockFetch(() =>
-      new Response("Insufficient credits", { status: 402 }),
-    );
+    mockFetch(() => new Response("Insufficient credits", { status: 402 }));
 
-    await expect(client.complete(baseRequest())).rejects.toThrow(
-      /credits/i,
-    );
+    await expect(client.complete(baseRequest())).rejects.toThrow(/credits/i);
   });
 
   test("402 → disables provider for session", async () => {
     const client = makeClient();
     // First call: 402 triggers disableForSession on the single OpenRouter slot
-    mockFetch(() =>
-      new Response("Insufficient credits", { status: 402 }),
-    );
+    mockFetch(() => new Response("Insufficient credits", { status: 402 }));
 
     await expect(client.complete(baseRequest())).rejects.toThrow(/credits/i);
 
@@ -635,7 +761,9 @@ describe("complete() image fallback", () => {
       lastBody = init!.body as string;
       if (callCount === 1) {
         return new Response(
-          JSON.stringify({ error: "image_url is not supported for this model" }),
+          JSON.stringify({
+            error: "image_url is not supported for this model",
+          }),
           { status: 422 },
         );
       }
@@ -678,9 +806,7 @@ describe("complete() image fallback", () => {
 
   test("non-422 error with image content → normal error", async () => {
     const client = makeClient();
-    mockFetch(() =>
-      new Response("Internal server error", { status: 500 }),
-    );
+    mockFetch(() => new Response("Internal server error", { status: 500 }));
 
     // 500 is not in the retryable set for fetchWithRetry, should throw immediately
     await expect(client.complete(imageRequest())).rejects.toThrow(/500/);
@@ -726,11 +852,12 @@ describe("completeStream() specifics", () => {
 
   test("throws on null response body", async () => {
     const client = makeClient();
-    mockFetch(() =>
-      new Response(null, {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
+    mockFetch(
+      () =>
+        new Response(null, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
     );
 
     await expect(
@@ -770,11 +897,12 @@ describe("completeStream() specifics", () => {
       },
     });
 
-    mockFetch(() =>
-      new Response(stream, {
-        status: 200,
-        headers: { "Content-Type": "text/event-stream" },
-      }),
+    mockFetch(
+      () =>
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
     );
 
     const result = await client.completeStream(

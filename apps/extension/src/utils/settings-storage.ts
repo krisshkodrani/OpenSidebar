@@ -6,6 +6,10 @@
  */
 
 import type { UserSettings } from "../types";
+import {
+  isExecutorModelAllowed,
+  type ProviderMode,
+} from "./executor-model-policy";
 
 const SYNC_KEY = "userSettings";
 const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
@@ -14,7 +18,9 @@ const LOCAL_OPENAI_KEY = "openaiApiKey_local";
 const LOCAL_GROQ_KEY = "groqApiKey_local";
 const LOCAL_GEMINI_KEY = "geminiApiKey_local";
 const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
+const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
 const LOCAL_KIMI_KEY = "kimiApiKey_local";
+const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
 
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
@@ -24,14 +30,27 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
   const normalized: UserSettings = {
     ...settings,
     providerMode: settings.providerMode ?? "fireworks",
+    perceptionMode: "unified_vl",
   };
+  if (
+    normalized.executorModel &&
+    !isExecutorModelAllowed(
+      normalized.executorModel,
+      normalized.providerMode as ProviderMode,
+    )
+  ) {
+    delete normalized.executorModel;
+  }
+  delete normalized.useVLExecutor;
   const {
     openRouterApiKey,
     openaiApiKey,
     groqApiKey,
     geminiApiKey,
     fireworksApiKey,
+    deepseekApiKey,
     kimiApiKey,
+    xiaomiApiKey,
     ...rest
   } = normalized;
   await Promise.all([
@@ -41,7 +60,9 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
       [LOCAL_GROQ_KEY]: groqApiKey ?? "",
       [LOCAL_GEMINI_KEY]: geminiApiKey ?? "",
       [LOCAL_FIREWORKS_KEY]: fireworksApiKey ?? "",
+      [LOCAL_DEEPSEEK_KEY]: deepseekApiKey ?? "",
       [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
+      [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
     }),
     chrome.storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -61,7 +82,9 @@ export async function loadSettings(): Promise<UserSettings | null> {
       LOCAL_GROQ_KEY,
       LOCAL_GEMINI_KEY,
       LOCAL_FIREWORKS_KEY,
+      LOCAL_DEEPSEEK_KEY,
       LOCAL_KIMI_KEY,
+      LOCAL_XIAOMI_KEY,
     ]),
     // Check legacy session key for migration
     chrome.storage.session
@@ -80,7 +103,11 @@ export async function loadSettings(): Promise<UserSettings | null> {
     (localResult[LOCAL_GEMINI_KEY] as string | undefined) || "";
   const fireworksApiKey =
     (localResult[LOCAL_FIREWORKS_KEY] as string | undefined) || "";
+  const deepseekApiKey =
+    (localResult[LOCAL_DEEPSEEK_KEY] as string | undefined) || "";
   const kimiApiKey = (localResult[LOCAL_KIMI_KEY] as string | undefined) || "";
+  const xiaomiApiKey =
+    (localResult[LOCAL_XIAOMI_KEY] as string | undefined) || "";
 
   if (
     !syncSettings &&
@@ -89,7 +116,9 @@ export async function loadSettings(): Promise<UserSettings | null> {
     !groqApiKey &&
     !geminiApiKey &&
     !fireworksApiKey &&
-    !kimiApiKey
+    !deepseekApiKey &&
+    !kimiApiKey &&
+    !xiaomiApiKey
   ) {
     return null;
   }
@@ -123,18 +152,24 @@ export async function loadSettings(): Promise<UserSettings | null> {
   if (!raw.providerMode) raw.providerMode = "fireworks";
 
   // Migrate legacy unified-vision toggle to explicit perception mode.
-  if (!("perceptionMode" in raw) && "useVLExecutor" in raw) {
-    raw.perceptionMode =
-      raw.useVLExecutor === true ? "unified_vl" : "structured";
-  }
+  raw.perceptionMode = "unified_vl";
   delete raw.useVLExecutor;
+
+  if (
+    typeof raw.executorModel === "string" &&
+    !isExecutorModelAllowed(raw.executorModel, raw.providerMode as ProviderMode)
+  ) {
+    delete raw.executorModel;
+  }
 
   // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;
   delete raw.groqApiKey;
   delete raw.geminiApiKey;
   delete raw.fireworksApiKey;
+  delete raw.deepseekApiKey;
   delete raw.kimiApiKey;
+  delete raw.xiaomiApiKey;
 
   return {
     ...raw,
@@ -143,7 +178,9 @@ export async function loadSettings(): Promise<UserSettings | null> {
     groqApiKey: groqApiKey,
     geminiApiKey: geminiApiKey,
     fireworksApiKey: fireworksApiKey,
+    deepseekApiKey: deepseekApiKey,
     kimiApiKey: kimiApiKey,
+    xiaomiApiKey: xiaomiApiKey,
   } as UserSettings;
 }
 

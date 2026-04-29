@@ -1,21 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
-import { PerceptionRuntimeMode, UserSettings } from "../../types";
-import { resolvePerceptionRuntimeMode } from "../../utils/perception-mode";
+import { UserSettings } from "../../types";
+import { getDefaultExecutorModel } from "../../utils/executor-model-policy";
+import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { loadSettings, saveSettings } from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
 import {
-  MODEL_EXECUTOR,
   MODEL_PLANNER,
-  OPENAI_MODEL_EXECUTOR,
   GROQ_MODEL_PLANNER,
-  GROQ_MODEL_PERCEPTION,
-  FIREWORKS_MODEL_EXECUTOR,
   FIREWORKS_MODEL_PLANNER,
-  MOONSHOT_MODEL_EXECUTOR,
   MOONSHOT_MODEL_PLANNER,
-  MOONSHOT_MODEL_PERCEPTION,
+  DEEPSEEK_MODEL_PLANNER,
+  XIAOMI_MODEL_PLANNER,
 } from "../../background/llm/client";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
 import {
@@ -24,8 +21,6 @@ import {
   useOpenRouterModels,
 } from "../hooks/useOpenRouterModels";
 import { ModelSelector } from "./ModelSelector";
-
-const PERCEPTION_MODEL_DEFAULT = "x-ai/grok-4.1-fast";
 
 interface Props {
   isOpen: boolean;
@@ -76,33 +71,29 @@ const GEMINI_TTS_STYLE_PRESETS = [
 
 function getProviderOneLiner(mode: UserSettings["providerMode"] = "fireworks") {
   if (mode === "fireworks") return "Executor + Planner via Fireworks AI";
+  if (mode === "fireworks-deepseek")
+    return "Executor via Fireworks AI, Planner via DeepSeek";
   if (mode === "moonshot") return "Executor + Planner via Moonshot AI";
-  if (mode === "openrouter") return "All roles via OpenRouter";
+  if (mode === "xiaomi") return "Executor + Planner via Xiaomi MiMo";
+  if (mode === "openrouter") return "Executor + Planner via OpenRouter";
   if (mode === "openrouter-groq")
-    return "Executor via OpenRouter, Planner + Perception via Groq";
+    return "Executor via OpenRouter, Planner via Groq";
   if (mode === "openai-groq")
-    return "Executor via a Fireworks-backed OpenAI-compatible endpoint, Planner + Perception via Groq";
+    return "Executor via a Fireworks-backed OpenAI-compatible endpoint, Planner via Groq";
   return "";
-}
-
-function getPerceptionModeDescription(
-  selectedMode: PerceptionRuntimeMode,
-  providerMode: UserSettings["providerMode"] = "fireworks",
-): string {
-  if (selectedMode === "auto") {
-    return providerMode === "fireworks" || providerMode === "moonshot"
-      ? "Recommended. This stack uses unified VL as the primary path."
-      : "Recommended. Non-Fireworks/Moonshot stacks use structured perception by default.";
-  }
-  if (selectedMode === "unified_vl") {
-    return "Primary Kimi path. Screenshot goes straight to the executor.";
-  }
-  return "Compatibility path. A dedicated perception model produces Page Interpretation.";
 }
 
 /** Which provider modes use which key */
 function getKeyUsage(
-  key: "openRouter" | "fireworks" | "moonshot" | "openai" | "groq" | "gemini",
+  key:
+    | "openRouter"
+    | "fireworks"
+    | "deepseek"
+    | "moonshot"
+    | "xiaomi"
+    | "openai"
+    | "groq"
+    | "gemini",
   mode: string,
 ): string {
   const uses: string[] = [];
@@ -110,10 +101,17 @@ function getKeyUsage(
     if (mode === "openrouter" || mode === "openrouter-groq") uses.push("agent");
   }
   if (key === "fireworks") {
-    if (mode === "fireworks") uses.push("agent");
+    if (mode === "fireworks" || mode === "fireworks-deepseek")
+      uses.push("agent");
+  }
+  if (key === "deepseek") {
+    if (mode === "fireworks-deepseek") uses.push("agent");
   }
   if (key === "moonshot") {
     if (mode === "moonshot") uses.push("agent");
+  }
+  if (key === "xiaomi") {
+    if (mode === "xiaomi") uses.push("agent");
   }
   if (key === "openai") {
     if (mode === "openai-groq") uses.push("agent");
@@ -125,7 +123,7 @@ function getKeyUsage(
     uses.push("voice (STT/TTS)");
   }
   if (key === "gemini") {
-    uses.push("voice (TTS expressive)");
+    uses.push("voice (STT/TTS expressive)");
   }
   return uses.length
     ? `Used by: ${uses.join(", ")}`
@@ -235,9 +233,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
           (granted) => resolve(Boolean(granted)),
         );
         if (result && typeof result.then === "function") {
-          result.then((granted) => resolve(Boolean(granted))).catch(() => {
-            resolve(false);
-          });
+          result
+            .then((granted) => resolve(Boolean(granted)))
+            .catch(() => {
+              resolve(false);
+            });
         }
       } catch {
         resolve(false);
@@ -286,23 +286,17 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
       // Clear the "add API key" error if the active provider key is now present.
       const savedState = persisted ?? nextState;
-      const mode = savedState.providerMode ?? "fireworks";
-      const activeKey =
-        mode === "fireworks"
-          ? savedState.fireworksApiKey
-          : mode === "moonshot"
-            ? savedState.kimiApiKey
-            : mode === "openai-groq"
-              ? savedState.openaiApiKey
-              : savedState.openRouterApiKey;
-      if (activeKey) {
+      const providerKeyStatus = getProviderKeyStatus(savedState);
+      if (providerKeyStatus.hasRequiredKeys) {
         const { error, setError } = useStore.getState();
         if (error?.includes("API key")) setError(null);
       }
 
       onClose();
     } catch (error: any) {
-      setSaveStatus(`Failed to save settings: ${error?.message ?? String(error)}`);
+      setSaveStatus(
+        `Failed to save settings: ${error?.message ?? String(error)}`,
+      );
     } finally {
       setIsSaving(false);
     }
@@ -349,26 +343,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     role: "planner",
     openRouterModels: models,
   });
-  const perceptionModels = getProviderModelOptions({
-    providerMode,
-    role: "perception",
-    openRouterModels: models,
-  });
   const openRouterCatalogActive =
     providerMode === "openrouter" || providerMode === "openrouter-groq";
-  const selectedPerceptionMode =
-    formState.perceptionMode ??
-    (typeof formState.useVLExecutor === "boolean"
-      ? formState.useVLExecutor
-        ? "unified_vl"
-        : "structured"
-      : "auto");
-  const resolvedPerceptionMode = resolvePerceptionRuntimeMode({
-    perceptionMode: selectedPerceptionMode,
-    useVLExecutor: formState.useVLExecutor,
-    providerMode,
-  });
-  const useUnifiedVision = resolvedPerceptionMode === "unified_vl";
   const hasAnyTTSKey = Boolean(
     formState.groqApiKey || formState.openaiApiKey || formState.geminiApiKey,
   );
@@ -626,7 +602,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       Browser notifications
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Notify when an agent needs attention or finishes while you are away from the workspace.
+                      Notify when an agent needs attention or finishes while you
+                      are away from the workspace.
                     </p>
                     {notificationPermissionError && (
                       <p className="mt-1 text-xs text-red-600 dark:text-red-400">
@@ -650,7 +627,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       Show debug screenshots
                     </label>
                     <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Developer-only screenshot toast when debug captures are emitted
+                      Developer-only screenshot toast when debug captures are
+                      emitted
                     </p>
                   </div>
                   <input
@@ -755,19 +733,53 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium dark:text-warm-300">
+                    DeepSeek
+                  </label>
+                  <input
+                    type="password"
+                    value={formState.deepseekApiKey || ""}
+                    onChange={(e) =>
+                      handleChange("deepseekApiKey", e.target.value)
+                    }
+                    className={inputCls}
+                    placeholder="sk-..."
+                  />
+                  <p className={hintCls}>
+                    {getKeyUsage("deepseek", providerMode)}
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">
                     Moonshot AI
                   </label>
                   <input
                     type="password"
                     value={formState.kimiApiKey || ""}
-                    onChange={(e) =>
-                      handleChange("kimiApiKey", e.target.value)
-                    }
+                    onChange={(e) => handleChange("kimiApiKey", e.target.value)}
                     className={inputCls}
                     placeholder="sk-kimi-..."
                   />
                   <p className={hintCls}>
                     {getKeyUsage("moonshot", providerMode)}
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-sm font-medium dark:text-warm-300">
+                    Xiaomi MiMo
+                  </label>
+                  <input
+                    type="password"
+                    value={formState.xiaomiApiKey || ""}
+                    onChange={(e) =>
+                      handleChange("xiaomiApiKey", e.target.value)
+                    }
+                    className={inputCls}
+                    placeholder="sk-..."
+                  />
+                  <p className={hintCls}>
+                    {getKeyUsage("xiaomi", providerMode)}
                   </p>
                 </div>
 
@@ -834,7 +846,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       "providerMode",
                       e.target.value as
                         | "fireworks"
+                        | "fireworks-deepseek"
                         | "moonshot"
+                        | "xiaomi"
                         | "openrouter"
                         | "openrouter-groq"
                         | "openai-groq",
@@ -843,7 +857,11 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   className={inputCls}
                 >
                   <option value="fireworks">Fireworks AI (Kimi K2.5)</option>
+                  <option value="fireworks-deepseek">
+                    Fireworks + DeepSeek
+                  </option>
                   <option value="moonshot">Moonshot AI (Kimi 2.6)</option>
+                  <option value="xiaomi">Xiaomi MiMo</option>
                   <option value="openrouter">OpenRouter (GPT-5.4-mini)</option>
                   <option value="openrouter-groq">OpenRouter + Groq</option>
                   <option value="openai-groq">OpenAI-Compatible + Groq</option>
@@ -864,7 +882,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     Executor
                   </label>
                   <p className="text-xs text-warm-400 dark:text-warm-500">
-                    Fast model for tool execution and page interaction
+                    Multimodal model for screenshots, tool execution, and page
+                    interaction
                   </p>
                   <p className="text-xs text-warm-500 dark:text-warm-400">
                     {getProviderModelCatalogNote({
@@ -878,15 +897,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     onChange={(v) =>
                       handleChange("executorModel", v || undefined)
                     }
-                    defaultModel={
-                      providerMode === "openai-groq"
-                        ? OPENAI_MODEL_EXECUTOR
-                        : providerMode === "moonshot"
-                          ? MOONSHOT_MODEL_EXECUTOR
-                          : providerMode === "fireworks"
-                          ? FIREWORKS_MODEL_EXECUTOR
-                          : MODEL_EXECUTOR
-                    }
+                    defaultModel={getDefaultExecutorModel(providerMode)}
                     models={executorModels}
                     loading={openRouterCatalogActive ? modelsLoading : false}
                   />
@@ -914,111 +925,37 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     defaultModel={
                       providerMode === "moonshot"
                         ? MOONSHOT_MODEL_PLANNER
-                        : providerMode === "fireworks"
-                          ? FIREWORKS_MODEL_PLANNER
-                          : providerMode !== "openrouter"
-                          ? GROQ_MODEL_PLANNER
-                          : MODEL_PLANNER
+                        : providerMode === "xiaomi"
+                          ? XIAOMI_MODEL_PLANNER
+                        : providerMode === "fireworks-deepseek"
+                          ? DEEPSEEK_MODEL_PLANNER
+                          : providerMode === "fireworks"
+                            ? FIREWORKS_MODEL_PLANNER
+                            : providerMode !== "openrouter"
+                              ? GROQ_MODEL_PLANNER
+                              : MODEL_PLANNER
                     }
                     models={plannerModels}
-                    loading={providerMode === "openrouter" ? modelsLoading : false}
+                    loading={
+                      providerMode === "openrouter" ? modelsLoading : false
+                    }
                   />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-sm font-medium dark:text-warm-300">
-                    Observation Path
+                    Observation
                   </label>
                   <p className="text-xs text-warm-400 dark:text-warm-500">
-                    Keep one runtime path explicit instead of relying on
-                    provider-specific hidden defaults
+                    The executor is the primary perception path: every normal
+                    run sends page screenshots directly to a multimodal tool
+                    calling model.
                   </p>
-                  <select
-                    value={selectedPerceptionMode}
-                    onChange={(e) =>
-                      handleChange(
-                        "perceptionMode",
-                        e.target.value as PerceptionRuntimeMode,
-                      )
-                    }
-                    className={inputCls}
-                  >
-                    <option value="auto">Auto (recommended)</option>
-                    <option value="unified_vl">Unified VL executor</option>
-                    <option value="structured">
-                      Structured perception layer
-                    </option>
-                  </select>
-                  <p className="text-xs text-warm-400 dark:text-warm-500">
-                    {getPerceptionModeDescription(
-                      selectedPerceptionMode,
-                      providerMode,
-                    )}{" "}
-                    Active path:{" "}
-                    {useUnifiedVision ? "unified VL" : "structured perception"}.
+                  <p className="text-xs text-warm-500 dark:text-warm-400">
+                    The older structured perception layer remains as an internal
+                    degraded fallback, not a user-facing model choice.
                   </p>
                 </div>
-
-                {/* Unified Vision toggle */}
-                <div className="hidden">
-                  <div>
-                    <span className="text-sm font-medium dark:text-warm-300">
-                      Unified Vision
-                    </span>
-                    <p className="text-xs text-warm-400 dark:text-warm-500 mt-0.5">
-                      Send screenshot to executor — skip perception model
-                    </p>
-                  </div>
-                  <button
-                    role="switch"
-                    aria-checked={useUnifiedVision}
-                    onClick={() =>
-                      handleChange("useVLExecutor", !useUnifiedVision)
-                    }
-                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${useUnifiedVision ? "bg-primary-600" : "bg-warm-300 dark:bg-warm-600"}`}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useUnifiedVision ? "translate-x-4" : "translate-x-0"}`}
-                    />
-                  </button>
-                </div>
-
-                {/* Perception model — hidden when unified VL is active */}
-                {resolvedPerceptionMode === "structured" && (
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium dark:text-warm-300">
-                      Perception
-                    </label>
-                    <p className="text-xs text-warm-400 dark:text-warm-500">
-                      Vision model for the standalone structured perception path
-                    </p>
-                    <p className="text-xs text-warm-500 dark:text-warm-400">
-                      {getProviderModelCatalogNote({
-                        providerMode,
-                        role: "perception",
-                        hasOpenRouterKey,
-                      })}
-                    </p>
-                    <ModelSelector
-                      value={formState.perceptionModel || ""}
-                      onChange={(v) =>
-                        handleChange("perceptionModel", v || undefined)
-                      }
-                      defaultModel={
-                        providerMode === "moonshot"
-                          ? MOONSHOT_MODEL_PERCEPTION
-                          : providerMode === "fireworks"
-                            ? FIREWORKS_MODEL_EXECUTOR
-                            : providerMode !== "openrouter"
-                            ? GROQ_MODEL_PERCEPTION
-                            : PERCEPTION_MODEL_DEFAULT
-                      }
-                      models={perceptionModels}
-                      loading={providerMode === "openrouter" ? modelsLoading : false}
-                      filterVisionOnly
-                    />
-                  </div>
-                )}
 
                 {/* Nitro toggle — OpenRouter modes only */}
                 {(providerMode === "openrouter" ||
@@ -1078,9 +1015,10 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 </div>
                 {formState.enableVoiceInput &&
                   !formState.groqApiKey &&
-                  !formState.openaiApiKey && (
+                  !formState.openaiApiKey &&
+                  !formState.geminiApiKey && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
-                      Needs a Groq or OpenAI key. Add one in the Models tab.
+                      Needs a Groq, OpenAI, or Gemini key. Add one in the Models tab.
                     </p>
                   )}
               </section>
@@ -1230,8 +1168,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                 )}
                 <p className="text-xs text-warm-400 dark:text-warm-500">
                   Groq TTS requires accepting model terms at console.groq.com.
-                  Gemini expressive TTS is preview-only and currently used only
-                  for voice output.
+                  Gemini expressive TTS is preview-only; Gemini speech-to-text
+                  uses audio understanding and is not real-time transcription.
                 </p>
               </section>
             </>

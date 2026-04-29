@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
-import { estimateCostUsd, findModelPricing } from "../../src/background/llm/pricing";
+import {
+  estimateCostUsd,
+  findModelPricing,
+} from "../../src/background/llm/pricing";
 
 describe("LLM pricing table", () => {
   test("uses refreshed Fireworks Kimi K2.5 Turbo pricing", () => {
@@ -30,6 +33,24 @@ describe("LLM pricing table", () => {
       inputUsdPerMillion: 0.95,
       outputUsdPerMillion: 4.0,
       cachedInputUsdPerMillion: 0.16,
+    });
+  });
+
+  test("includes DeepSeek V4 Flash pricing", () => {
+    const pricing = findModelPricing("deepseek", "deepseek-v4-flash");
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 0.14,
+      outputUsdPerMillion: 0.28,
+      cachedInputUsdPerMillion: 0.0028,
+    });
+  });
+
+  test("includes Xiaomi MiMo placeholder pricing as best effort", () => {
+    const pricing = findModelPricing("xiaomi", "mimo-v2-omni");
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 0,
+      outputUsdPerMillion: 0,
+      confidence: "best_effort",
     });
   });
 

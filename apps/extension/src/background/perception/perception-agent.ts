@@ -48,6 +48,8 @@ const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
 const MOONSHOT_PERCEPTION_MODEL = "kimi-k2.6";
+const XIAOMI_API_URL = "https://api.xiaomimimo.com/v1/chat/completions";
+const XIAOMI_PERCEPTION_MODEL = "mimo-v2-omni";
 const FIREWORKS_API_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
 const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
@@ -130,8 +132,11 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
         ? "openai-groq"
         : "openrouter");
 
-  // Fireworks mode: use Kimi K2.5 Turbo for perception
-  if (mode === "fireworks" && settings.fireworksApiKey) {
+  // Fireworks-backed modes: use Kimi K2.5 Turbo for perception
+  if (
+    (mode === "fireworks" || mode === "fireworks-deepseek") &&
+    settings.fireworksApiKey
+  ) {
     providers.push({
       baseUrl: FIREWORKS_API_URL,
       apiKey: settings.fireworksApiKey,
@@ -148,6 +153,16 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
       headers: {},
       model: settings.perceptionModel || MOONSHOT_PERCEPTION_MODEL,
       providerId: "moonshot",
+    });
+  }
+
+  if (mode === "xiaomi" && settings.xiaomiApiKey) {
+    providers.push({
+      baseUrl: XIAOMI_API_URL,
+      apiKey: settings.xiaomiApiKey,
+      headers: {},
+      model: settings.perceptionModel || XIAOMI_PERCEPTION_MODEL,
+      providerId: "xiaomi",
     });
   }
 
