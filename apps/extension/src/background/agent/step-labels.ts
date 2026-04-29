@@ -177,6 +177,22 @@ export function formatStepLabel(
         ? `Inspect hidden: "${pattern.slice(0, 30)}"`
         : "Inspect hidden elements";
     }
+    case ToolName.INSPECT_CHART: {
+      const pattern = args.pattern as string | undefined;
+      return pattern
+        ? `Inspect chart: "${pattern.slice(0, 30)}"`
+        : "Inspect chart data";
+    }
+    case ToolName.INSPECT_TABLE:
+      return "Inspect table data";
+    case ToolName.INSPECT_FILTER_STATE: {
+      const pattern = args.pattern as string | undefined;
+      return pattern
+        ? `Inspect filter state: "${pattern.slice(0, 30)}"`
+        : "Inspect filter state";
+    }
+    case ToolName.INSPECT_CATALOG_ITEM:
+      return "Inspect catalog item";
     case ToolName.XRAY_PAGE:
       return "Toggle X-ray mode";
     default:

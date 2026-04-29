@@ -18,8 +18,11 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
-import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { loadSettings } from "../../utils/settings-storage";
+import {
+  formatMissingProviderKeys,
+  getProviderKeyStatus,
+} from "../../utils/provider-keys";
 import { listPromptDescriptors } from "../../prompts";
 import {
   appendTaskRunSideEffects,
@@ -555,7 +558,9 @@ export class Orchestrator {
   ): Record<string, unknown> {
     const coordination = task.tabCoordination;
     const ownedTabs = coordination?.ownedTabs ?? [];
-    const activeOwnedTabs = ownedTabs.filter((entry) => entry.releasedAt == null);
+    const activeOwnedTabs = ownedTabs.filter(
+      (entry) => entry.releasedAt == null,
+    );
     return {
       taskId: task.id,
       workspaceId: task.workspaceId,
@@ -1329,7 +1334,9 @@ export class Orchestrator {
     entry: TaskRunProgressInput,
   ): void {
     const current = cloneStructuredProgress(task.structuredProgress) ?? {};
-    current[entry.key] = JSON.parse(JSON.stringify(entry)) as TaskRunProgressInput;
+    current[entry.key] = JSON.parse(
+      JSON.stringify(entry),
+    ) as TaskRunProgressInput;
     task.structuredProgress = current;
     if (!task.runId) return;
     this.queueDurableRunSync(task.runId, async () => {
@@ -1344,8 +1351,7 @@ export class Orchestrator {
     if (task.structuredProgress?.[key]) {
       const next = cloneStructuredProgress(task.structuredProgress) ?? {};
       delete next[key];
-      task.structuredProgress =
-        Object.keys(next).length > 0 ? next : undefined;
+      task.structuredProgress = Object.keys(next).length > 0 ? next : undefined;
     }
     if (!task.runId) return;
     this.queueDurableRunSync(task.runId, async () => {
@@ -1376,7 +1382,10 @@ export class Orchestrator {
     this.deleteStructuredProgressEntry(task, "outstanding-questions");
   }
 
-  private maybeRecordReviewedItem(task: OrchestratorTask, node: TaskNode): void {
+  private maybeRecordReviewedItem(
+    task: OrchestratorTask,
+    node: TaskNode,
+  ): void {
     if (node.selectedSkillId !== LIST_DETAIL_REVIEW_SKILL_ID) return;
     this.setStructuredProgressEntry(task, {
       key: "reviewed-items",
@@ -1408,7 +1417,11 @@ export class Orchestrator {
     resume: DurableTaskRunResumeResponse | null,
   ): resume is DurableTaskRunResumeResponse {
     if (!resume) return false;
-    if (!resume.run || !Array.isArray(resume.nodes) || resume.nodes.length === 0) {
+    if (
+      !resume.run ||
+      !Array.isArray(resume.nodes) ||
+      resume.nodes.length === 0
+    ) {
       return false;
     }
     const nodeIds = new Set<string>();
@@ -1534,8 +1547,9 @@ export class Orchestrator {
       requestedAt: now,
       clarificationId,
       question,
-      suggestions:
-        Array.isArray(suggestions) ? (suggestions as string[]) : undefined,
+      suggestions: Array.isArray(suggestions)
+        ? (suggestions as string[])
+        : undefined,
       timeoutMs: remainingMs,
     };
   }
@@ -1550,8 +1564,8 @@ export class Orchestrator {
 
     const metrics =
       resume.run.sessionMetrics && isRecord(resume.run.sessionMetrics)
-        ? sanitizeSessionMetrics(resume.run.sessionMetrics) ??
-          emptySessionMetrics()
+        ? (sanitizeSessionMetrics(resume.run.sessionMetrics) ??
+          emptySessionMetrics())
         : emptySessionMetrics();
 
     const nodes: TaskNode[] = [];
@@ -1570,7 +1584,9 @@ export class Orchestrator {
         allowedTools,
         dependencies: [...(node.dependencies ?? [])],
         assumptions: [...(node.assumptions ?? [])],
-        handoffArtifacts: [...(node.handoffArtifacts ?? [])] as NodeHandoffArtifact[],
+        handoffArtifacts: [
+          ...(node.handoffArtifacts ?? []),
+        ] as NodeHandoffArtifact[],
         reflexionLog: [...(node.reflexionLog ?? [])] as any,
         handoffDepth: node.handoffDepth ?? 0,
         handoffFromNodeId: node.handoffFromNodeId ?? undefined,
@@ -1585,7 +1601,11 @@ export class Orchestrator {
 
     const pendingInteraction = this.buildPendingInteractionFromDurableRecord(
       resume.pendingInteraction,
-      { runId: resume.run.id, id: resume.run.clientRunId ?? undefined, workspaceId: resume.run.workspaceId },
+      {
+        runId: resume.run.id,
+        id: resume.run.clientRunId ?? undefined,
+        workspaceId: resume.run.workspaceId,
+      },
     );
 
     return {
@@ -1903,7 +1923,8 @@ export class Orchestrator {
     const resumeTabId = resumeSelection.tabId;
 
     const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
-    const resumeInput = task && (await this.buildResumeInput(task, resumeTabId));
+    const resumeInput =
+      task && (await this.buildResumeInput(task, resumeTabId));
     if (!task || !resumeInput) {
       await patchTaskRun(run.id, {
         resumeRequestedAt: null,
@@ -2018,8 +2039,10 @@ export class Orchestrator {
         finishedAt: taskSnapshot.finishedAt ?? null,
         terminationReason: taskSnapshot.terminationReason ?? null,
         checkpointSummary: this.buildDurableCheckpointSummary(taskSnapshot),
-        sessionMetrics:
-          taskSnapshot.sessionMetrics as unknown as Record<string, unknown>,
+        sessionMetrics: taskSnapshot.sessionMetrics as unknown as Record<
+          string,
+          unknown
+        >,
         budget: taskSnapshot.budget as Record<string, unknown>,
         resumeStateVersion: 1,
         resumeRequestedAt: taskSnapshot.durableMeta?.resumeRequestedAt ?? null,
@@ -2035,7 +2058,7 @@ export class Orchestrator {
           taskSnapshot.durableMeta?.lastResumeSafetyCheckedAt ?? null,
         lastKnownResumeReason:
           taskSnapshot.durableMeta?.lastKnownResumeReason ?? null,
-        });
+      });
 
       await updateTaskRunCheckpoint(
         taskSnapshot.runId!,
@@ -2078,7 +2101,8 @@ export class Orchestrator {
               requestedAt: pendingInteraction.requestedAt,
               timeoutAt:
                 pendingInteraction.timeoutMs != null
-                  ? pendingInteraction.requestedAt + pendingInteraction.timeoutMs
+                  ? pendingInteraction.requestedAt +
+                    pendingInteraction.timeoutMs
                   : null,
               status:
                 pendingInteraction.kind === "approval"
@@ -2092,7 +2116,9 @@ export class Orchestrator {
           : null,
       );
 
-      for (const progress of Object.values(taskSnapshot.structuredProgress ?? {})) {
+      for (const progress of Object.values(
+        taskSnapshot.structuredProgress ?? {},
+      )) {
         await upsertTaskRunProgress(taskSnapshot.runId!, progress);
       }
     });
@@ -2211,6 +2237,7 @@ export class Orchestrator {
         {
           workspaceId: task.workspaceId,
           providerMode: configuredMode,
+          missingKeys: formatMissingProviderKeys(configuredStatus),
         },
       );
       return null;
@@ -2414,10 +2441,7 @@ export class Orchestrator {
       return;
     }
 
-    const resumeSelection = await this.resolveResumeTabId(
-      task,
-      task.rootTabId,
-    );
+    const resumeSelection = await this.resolveResumeTabId(task, task.rootTabId);
     if (resumeSelection.status !== "safe") {
       logger.warn(
         "orchestrator",
@@ -2690,7 +2714,9 @@ export class Orchestrator {
     const completedSubtasks = task.nodes.filter(
       (n) => n.status === "completed",
     ).length;
-    const pendingSubtasks = task.nodes.filter((n) => n.status === "pending").length;
+    const pendingSubtasks = task.nodes.filter(
+      (n) => n.status === "pending",
+    ).length;
     this.sendMessage({
       type: "TASK_RECOVERY",
       workspaceId: task.workspaceId,
@@ -3055,7 +3081,8 @@ export class Orchestrator {
     const task = this.tasksByWorkspace.get(workspaceId);
 
     if (!task) {
-      const recovered = await this.recoverWorkspaceFromDurableState(workspaceId);
+      const recovered =
+        await this.recoverWorkspaceFromDurableState(workspaceId);
       if (recovered) return;
 
       // Check for a recent completion that the panel may have missed
@@ -3795,7 +3822,8 @@ export class Orchestrator {
         if (depTabId != null) {
           tabId =
             (await resolveRunnableTabId(depTabId)) ??
-            ((await resolveRunnableTabId(input.tabId)) ?? input.tabId);
+            (await resolveRunnableTabId(input.tabId)) ??
+            input.tabId;
         } else if (input.settings.allowNavigation === false) {
           // allowNavigation disabled: never create new tabs
           tabId = (await resolveRunnableTabId(input.tabId)) ?? input.tabId;
@@ -3861,8 +3889,7 @@ export class Orchestrator {
               nodeId: node.id,
               checkpointTurn: candidateTurnCheckpoint.turnCount,
               pageUrl: candidateTurnCheckpoint.pageUrl,
-              snapshotFingerprint:
-                candidateTurnCheckpoint.snapshotFingerprint,
+              snapshotFingerprint: candidateTurnCheckpoint.snapshotFingerprint,
             },
             "system",
           );
@@ -4242,7 +4269,11 @@ export class Orchestrator {
             nodeId: node.id,
           },
         );
-        if (task.runId && result.sideEffectsLog && result.sideEffectsLog.length > 0) {
+        if (
+          task.runId &&
+          result.sideEffectsLog &&
+          result.sideEffectsLog.length > 0
+        ) {
           void appendTaskRunSideEffects(
             task.runId,
             result.sideEffectsLog.map((entry) => ({
@@ -4506,11 +4537,7 @@ export class Orchestrator {
               node.result = compactResultSummary;
               this.recordCompletedPhase(task, node.description);
               this.maybeRecordReviewedItem(task, node);
-              this.maybeRecordExtractedFacts(
-                task,
-                node,
-                compactResultSummary,
-              );
+              this.maybeRecordExtractedFacts(task, node, compactResultSummary);
             } else if (
               verification.decision === "reroute" &&
               verification.rerouteObjective &&
@@ -4864,7 +4891,10 @@ export class Orchestrator {
           isLaneIsolationError(error, "verifier") ||
           isLaneIsolationError(error, "planner")
         ) {
-          if (isLaneIsolationError(error, "executor") && task.status === "running") {
+          if (
+            isLaneIsolationError(error, "executor") &&
+            task.status === "running"
+          ) {
             const retryDecision = decideRetryPolicy(
               {
                 source: "system",
@@ -5724,7 +5754,11 @@ export class Orchestrator {
       }
       pools?.planner.clear();
       pools?.verifier.clear();
-      this.sendStatus(workspaceId, AgentStatus.ACTING, "Stopping at next safe point...");
+      this.sendStatus(
+        workspaceId,
+        AgentStatus.ACTING,
+        "Stopping at next safe point...",
+      );
       return;
     }
 
@@ -5760,7 +5794,10 @@ export class Orchestrator {
   ): Promise<number> {
     const tab = await chrome.tabs.create({ url, active: false });
     if (!tab.id) throw new Error("Failed to create worker tab");
-    await this.deps.workspaceManager.addTabToWorkspace(tab.id, task.workspaceId);
+    await this.deps.workspaceManager.addTabToWorkspace(
+      tab.id,
+      task.workspaceId,
+    );
     claimTaskTab(task, {
       tabId: tab.id,
       role: "auxiliary",

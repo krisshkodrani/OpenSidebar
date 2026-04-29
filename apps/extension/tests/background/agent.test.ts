@@ -107,7 +107,11 @@ describe("AgentLoop", () => {
     agent: AgentLoop,
     params: {
       subtasks: Array<{ description: string; status: string }>;
-      planSteps: Array<{ successCriteria?: string }>;
+      planSteps: Array<{
+        objective?: string;
+        successCriteria?: string;
+        verifyAfter?: { trigger: string };
+      }>;
       snapshotText: string;
     },
   ) {
@@ -128,6 +132,153 @@ describe("AgentLoop", () => {
       timestamp: Date.now(),
     }));
   }
+
+  test("explicit success detection ignores prior-step page-show history", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery =
+      'Completed prior step: The page shows "Incident New record".\n' +
+      "Objective: Fill Caller field with 'Joe Employee' using autocomplete";
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: "Fill Caller field with 'Joe Employee' using autocomplete",
+          status: "running",
+        },
+      ],
+      planSteps: [
+        {
+          objective: "Fill Caller field with 'Joe Employee' using autocomplete",
+          successCriteria: "Caller field shows 'Joe Employee' as selected value",
+        },
+      ],
+      snapshotText: "Incident New record Caller Short description",
+    });
+
+    const result = (agent as any).detectExplicitSuccessSignalInSnapshot({
+      title: "Create INC0045669 | Incident | ServiceNow",
+      url: "https://example.com/incident.do",
+      pageContent: "Incident New record Caller Short description",
+      visibleContent: "Incident New record",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test("explicit success detection uses the active step scope", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery =
+      'Completed prior step: The page shows "Old signal".';
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: 'Verify the page shows "Profile saved"',
+          status: "running",
+        },
+      ],
+      planSteps: [
+        {
+          objective: 'Verify the page shows "Profile saved"',
+          successCriteria: 'The page shows "Profile saved"',
+        },
+      ],
+      snapshotText: "Profile saved",
+    });
+
+    const result = (agent as any).detectExplicitSuccessSignalInSnapshot({
+      title: "Settings",
+      url: "https://example.com/settings",
+      pageContent: "Profile saved",
+      visibleContent: "Profile saved",
+    });
+
+    expect(result).toBe("Profile saved");
+  });
+
+  test("job-application submit approval ignores workflow boilerplate", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery = [
+      "Selected workflow skill:",
+      "5. Apply the requested delta in place when possible.",
+      "## Current Task",
+      "Objective: Submit the incident form by clicking the Submit button",
+      "Original user request (reference for specific values):",
+      "Create a new incident with Caller Joe Employee and Channel Phone.",
+    ].join("\n");
+    (agent as any).planSubtasks = [
+      {
+        description: "Submit the incident form by clicking the Submit button",
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective: "Submit the incident form by clicking the Submit button",
+        successCriteria: "Incident record is created",
+      },
+    ];
+    (agent as any).lastPlanIndex = 0;
+    (agent as any).elementResolver = () => '"Submit" button';
+
+    expect(
+      (agent as any).requiresJobApplicationSubmitApproval(ToolName.CLICK_ELEMENT, {
+        id: 40,
+      }),
+    ).toBe(false);
+  });
+
+  test("job-application submit approval still applies to job workflows", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    (agent as any).originalQuery = [
+      "## Current Task",
+      "Objective: Submit the software engineer job application",
+      "Original user request:",
+      "Apply for the software engineer job using my resume.",
+    ].join("\n");
+    (agent as any).planSubtasks = [
+      {
+        description: "Submit the software engineer job application",
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective: "Submit the software engineer job application",
+        successCriteria: "Application submitted",
+      },
+    ];
+    (agent as any).lastPlanIndex = 0;
+    (agent as any).elementResolver = () => '"Submit" button';
+
+    expect(
+      (agent as any).requiresJobApplicationSubmitApproval(ToolName.CLICK_ELEMENT, {
+        id: 40,
+      }),
+    ).toBe(true);
+  });
 
   test("blocks typing checkout name into non-text shipping radio input", () => {
     const target: TaggedElement = {
@@ -2838,6 +2989,55 @@ Showing 6-10 of 50`,
 
     const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
       summary: "Updated the spreadsheet so the first-row Q1 Sales cell now shows 999.",
+      currentStepIndex: 0,
+    });
+
+    expect(result).toBe(true);
+  });
+
+  test("bypasses stale plan rejection for grounded orchestrator node completion", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        nodeId: "node-1",
+        taskId: "task-1",
+      },
+    );
+
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: "Click the application navigator menu to access applications and modules",
+          status: "running",
+        },
+        {
+          description: "Search for or locate Configuration in the navigator",
+          status: "pending",
+        },
+        {
+          description: "Click Database Instances and HBase",
+          status: "pending",
+        },
+      ],
+      planSteps: [
+        { successCriteria: "Application navigator menu is open" },
+        { successCriteria: "Configuration appears in the navigator" },
+        { successCriteria: "HBase Instances page is visible" },
+      ],
+      snapshotText:
+        "Configuration Database Instances HBase Instances list showing 0 records. No records to display.",
+    });
+    (agent as any).originalQuery =
+      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary:
+        "Successfully navigated to Configuration > Database Instances > HBase. The HBase Instances page displays no records.",
       currentStepIndex: 0,
     });
 

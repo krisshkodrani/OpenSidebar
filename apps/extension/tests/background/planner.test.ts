@@ -69,8 +69,10 @@ import {
     OrchestratorPlanner,
 } from "../../src/background/orchestrator/planner";
 import {
+    getLoadedSkillContract,
     getSkillToolPolicy,
     getSkillToolSuppressionPolicy,
+    resolveSkillToolProfile,
     selectPrimarySkill,
 } from "../../src/background/orchestrator/skills";
 
@@ -98,6 +100,199 @@ describe("TaskPlanner.decompose", () => {
         expect(result).not.toBeNull();
         expect(result!.subtasks).toHaveLength(4);
         expect(result!.subtasks[0]).toBe("Add to cart");
+    });
+
+    test("compacts over-decomposed field-value form plans instead of truncating submit", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Create a new incident record",
+                        successCriteria: "The new incident form is visible",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Short description field with EMAIL Server Down Again",
+                        successCriteria: "Short description is EMAIL Server Down Again",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Caller field with Joe Employee",
+                        successCriteria: "Caller is Joe Employee",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Set Knowledge field to false",
+                        successCriteria: "Knowledge is false",
+                        dependencies: [2],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Leave Service field empty",
+                        successCriteria: "Service is empty",
+                        dependencies: [3],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Resolution notes field",
+                        successCriteria: "Resolution notes are filled",
+                        dependencies: [4],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Description field",
+                        successCriteria: "Description is filled",
+                        dependencies: [5],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Leave Change Request field empty",
+                        successCriteria: "Change Request is empty",
+                        dependencies: [6],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Set Channel field to Phone",
+                        successCriteria: "Channel is Phone",
+                        dependencies: [7],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Submit the incident form",
+                        successCriteria: "Incident is created",
+                        dependencies: [8],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
+            "Create incident",
+            "https://example.service-now.com/incident.do",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(2);
+        expect(result!.steps![0].toolProfile).toBe("form_fill");
+        expect(result!.steps![0].objective).toContain('Channel="Phone"');
+        expect(result!.steps![1].toolProfile).toBe("submit_form");
+        expect(result!.steps![1].dependencies).toEqual([0]);
+    });
+
+    test("prefers compact field-value form plan even when micro-steps are under the cap", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Open the new incident form",
+                        successCriteria: "The incident form is open",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Short description with EMAIL Server Down Again",
+                        successCriteria: "Short description is EMAIL Server Down Again",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Caller with Joe Employee",
+                        successCriteria: "Caller is Joe Employee",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill Description with Multiple employees have reported that they are unable to send/receive email.",
+                        successCriteria: "Description is filled",
+                        dependencies: [2],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Set Channel to Phone",
+                        successCriteria: "Channel is Phone",
+                        dependencies: [3],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Submit the incident form",
+                        successCriteria: "Incident is created",
+                        dependencies: [4],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", and a value of "Phone" for field "Channel".',
+            "Create incident",
+            "https://example.service-now.com/incident.do",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(2);
+        expect(result!.steps![0].objective).toContain('Caller="Joe Employee"');
+        expect(result!.steps![0].objective).toContain('Channel="Phone"');
+        expect(result!.steps![1].objective).toContain("Submit");
+    });
+
+    test("prefers synthesized field-value form contract over same-length model form plan", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Fill the incident form with all required field values",
+                        successCriteria: "The incident form is ready for submission",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Submit the incident form by clicking the Submit button",
+                        successCriteria: "Incident is created",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
+            "Create incident",
+            "https://example.service-now.com/incident.do",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(2);
+        expect(result!.steps![0].objective).toContain(
+            "Do not submit the form yet",
+        );
+        expect(result!.steps![0].objective).toContain('Caller="Joe Employee"');
+        expect(result!.steps![0].toolProfile).toBe("form_fill");
+        expect(result!.steps![1].toolProfile).toBe("submit_form");
     });
 
     test("preserves sequential multi-step plans even when the planner marks difficulty as simple", async () => {
@@ -1353,6 +1548,68 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].successCriteria).toContain("All pages or visible row ranges");
     });
 
+    test("collapses WorkArena-style list filter plans into one skill-owned workflow node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                steps: [
+                    {
+                        objective: "Open the filter builder on the incident list",
+                        successCriteria: "Filter builder is visible",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Add condition Caller is Margaret Grey",
+                        successCriteria: "Caller condition is set",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Run the filter and verify the incident list updated",
+                        successCriteria: "Applied filter state is visible",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            'Create a filter for the list to extract all entries where "Caller" is "Margaret Grey".',
+            "Incidents | ServiceNow",
+            "https://example.service-now.com/incident_list.do",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe("list-filter-workflow");
+        expect(result.nodes[0].description).toContain("Complete the workflow for the original request");
+        expect(result.nodes[0].successCriteria).toContain("not merely an intermediate");
+        expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_FILTER_STATE);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.APPLY_LIST_FILTER);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
+    });
+
+    test("fallback executor nodes expose workflow inspector tools", () => {
+        const nodes = buildFallbackNodes(
+            "Tell me the value shown in the dashboard chart.",
+            "Dashboard",
+            "https://example.com/dashboard",
+        );
+
+        expect(nodes[0].allowedTools).toContain(ToolName.INSPECT_CHART);
+        expect(nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
+        expect(nodes[0].allowedTools).toContain(ToolName.INSPECT_FILTER_STATE);
+        expect(nodes[0].allowedTools).toContain(ToolName.APPLY_LIST_FILTER);
+        expect(nodes[0].allowedTools).toContain(ToolName.INSPECT_CATALOG_ITEM);
+    });
+
     test("selects continuation-edit for draft revision workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1556,6 +1813,106 @@ describe("selectPrimarySkill", () => {
         ).toBe("list-detail-review-loop");
     });
 
+    test("matches chart value extraction workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Open the dashboard chart and tell me the value for Critical incidents.",
+                objective: "Read the incident chart and extract the Critical value",
+                successCriteria: "Final answer includes the concrete chart value",
+                pageTitle: "Service Dashboard",
+            })?.id,
+        ).toBe("chart-value-extraction");
+    });
+
+    test("matches search answer extraction workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Search the knowledge base and answer what users should do before resetting MFA.",
+                objective: "Use the knowledge search result to answer the user's question",
+                successCriteria: "Final answer contains the requested fact from the article",
+                pageTitle: "Knowledge Base",
+            })?.id,
+        ).toBe("search-answer-extraction");
+    });
+
+    test("matches list filter workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Filter the incident list to show only priority 1 records.",
+                objective: "Apply the requested filter to the incident table",
+                successCriteria: "Filtered list state is visible and verified",
+                pageTitle: "Incidents",
+            })?.id,
+        ).toBe("list-filter-workflow");
+    });
+
+    test("matches list sort workflows", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Sort the incident list by Updated in descending order.",
+                objective: "Sort the incident table by the Updated column descending",
+                successCriteria: "Sort state is visible on the list",
+                pageTitle: "Incidents",
+            })?.id,
+        ).toBe("list-sort-workflow");
+    });
+
+    test("matches catalog order workflows before generic form fill", () => {
+        expect(
+            selectPrimarySkill({
+                query: "Order a standard laptop from the service catalog with quantity 1.",
+                objective: "Configure the standard laptop catalog item and submit the request",
+                successCriteria: "Catalog request confirmation is visible",
+                pageTitle: "Service Catalog",
+            })?.id,
+        ).toBe("catalog-order-workflow");
+    });
+
+    test("exposes inspector tools through new workflow skill policies", () => {
+        expect(getSkillToolPolicy("chart-value-extraction")?.preferredTools).toContain(
+            ToolName.INSPECT_CHART,
+        );
+        expect(
+            resolveSkillToolProfile(
+                "chart-value-extraction",
+                "Read the incident chart and report the value for the empty category",
+                "Final answer includes the requested chart percentage",
+            ),
+        ).toBe("read_only");
+        const chartSkill = getLoadedSkillContract("chart-value-extraction");
+        expect(chartSkill?.procedureMarkdown).toContain("exactly one numeric value");
+        expect(chartSkill?.executionContract?.completionChecks).toContain(
+            "For single-value questions, the final answer contains only one numeric value.",
+        );
+        const listFilterPolicy = getSkillToolPolicy("list-filter-workflow");
+        expect(listFilterPolicy?.preferredTools).toContain(ToolName.APPLY_LIST_FILTER);
+        expect(listFilterPolicy?.discouragedTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(listFilterPolicy?.discouragedTools).toContain(ToolName.FIND_ELEMENT);
+        expect(
+            resolveSkillToolProfile(
+                "list-filter-workflow",
+                'Create a filter where "Caller" is "Margaret Grey"',
+                "Applied query is visible",
+            ),
+        ).toBe("form_fill");
+        expect(getSkillToolPolicy("list-sort-workflow")?.preferredTools).toContain(
+            ToolName.APPLY_LIST_SORT,
+        );
+        expect(getSkillToolPolicy("list-sort-workflow")?.preferredTools).toContain(
+            ToolName.INSPECT_TABLE,
+        );
+        expect(
+            resolveSkillToolProfile(
+                "list-sort-workflow",
+                "Sort by Number descending and Duration descending",
+                "Applied sort query is visible",
+            ),
+        ).toBe("form_fill");
+        expect(getSkillToolPolicy("catalog-order-workflow")?.preferredTools).toContain(
+            ToolName.INSPECT_CATALOG_ITEM,
+        );
+    });
+
     test("matches paginated aggregate table scans", () => {
         expect(
             selectPrimarySkill({
@@ -1623,10 +1980,12 @@ describe("selectPrimarySkill", () => {
         expect(policy?.preferredTools).toContain(ToolName.FIND_ELEMENT);
         expect(policy?.preferredTools).toContain(ToolName.TYPE_TEXT);
         expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(policy?.preferredTools).toContain(ToolName.SCROLL_PAGE);
         expect(policy?.discouragedTools).toContain(ToolName.READ_ELEMENT);
-        expect(policy?.discouragedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(policy?.discouragedTools).toContain(ToolName.PRESS_KEY);
         expect(suppression?.temporarilySuppressedTools).toContain(ToolName.READ_ELEMENT);
-        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.SCROLL_PAGE);
+        expect(suppression?.temporarilySuppressedTools).toContain(ToolName.PRESS_KEY);
+        expect(suppression?.temporarilySuppressedTools).not.toContain(ToolName.SCROLL_PAGE);
         expect(suppression?.temporarilySuppressedTools).toContain(ToolName.CREATE_TAB);
     });
 

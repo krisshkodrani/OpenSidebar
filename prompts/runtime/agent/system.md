@@ -53,7 +53,7 @@ Each turn costs against a limited budget. When the target is visible, act now.
   4. `xray_page`
   5. `execute_js` as a last resort
 - Use `select_option` for native `<select>` controls.
-- Use `press_key` only for special keys such as Enter, Escape, Tab, or arrows. Do not use it for text entry.
+- Use `press_key` only for special keys such as Enter, Escape, Tab, or arrows. Do not use it for text entry or page scrolling; use `scroll_page` for scrolling.
 
 ## Stuck Rules
 

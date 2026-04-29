@@ -198,16 +198,16 @@ const DONE_FAILURE_PATTERNS: RegExp[] = [
   /(?:could|was)\s+not\s+(?:verify|confirm|complete|find|add|remove|submit|load)/i,
   /not\s+(?:visible|confirmed|updated|added|removed|completed|successful|found|present)/i,
   /no\s+(?:change|update|confirmation|evidence|result|response|effect)/i,
-  /unable\s+to/i,
+  /unable\s+to\s+(?:find|locate|complete|access|verify|confirm|submit|continue|proceed|make\s+progress)\b/i,
   /(?:fail|error|issue|problem)\s+(?:with|in|during|while)/i,
 ];
 
 /** Strong success signals that override failure patterns (reduces false positives). */
 const DONE_SUCCESS_OVERRIDES: RegExp[] = [
-  /successfully\s+(added|completed|submitted|applied|removed|updated|placed)/i,
+  /successfully\s+(added|completed|submitted|applied|removed|updated|placed|filled)/i,
   /\b(done|finished|completed)\s+(the|this)\s+step/i,
   /\bis\s+(now|already)\s+(in|on|at|applied|selected|checked|submitted)/i,
-  /\bhas\s+been\s+(added|applied|selected|submitted|completed|updated)/i,
+  /\bhas\s+been\s+(added|applied|selected|submitted|completed|updated|filled)/i,
 ];
 
 /**
@@ -231,6 +231,195 @@ export function assessDoneSummary(summary: string): DoneSentimentResult {
     }
   }
   return { confident: true };
+}
+
+export interface WorkflowDoneGuardInput {
+  query: string;
+  summary: string;
+  selectedSkillId?: string | null;
+  pageUrl?: string;
+  pageTitle?: string;
+}
+
+export interface WorkflowDoneGuardResult {
+  blocked: boolean;
+  reason: string | null;
+}
+
+function normalizeWorkflowGuardText(value: unknown): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function workflowSkillOrQueryMatches(
+  selectedSkillId: string | null | undefined,
+  skillId: string,
+  queryText: string,
+  pattern: RegExp,
+): boolean {
+  return selectedSkillId === skillId || pattern.test(queryText);
+}
+
+/**
+ * Blocks done() summaries that describe an intermediate workflow state for
+ * reusable UI patterns where reaching the surface is not the user's goal.
+ */
+export function assessWorkflowDoneGuard(
+  input: WorkflowDoneGuardInput,
+): WorkflowDoneGuardResult {
+  const queryText = normalizeWorkflowGuardText(
+    `${input.query}\n${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
+  );
+  const summary = normalizeWorkflowGuardText(input.summary);
+  const skillId = input.selectedSkillId ?? null;
+
+  if (!summary) return { blocked: false, reason: null };
+
+  const chartActive = workflowSkillOrQueryMatches(
+    skillId,
+    "chart-value-extraction",
+    queryText,
+    /\b(chart|dashboard|graph|plot|highcharts|visualization)\b/,
+  );
+  if (chartActive) {
+    const chartInterim =
+      /\b(opened|reached|loaded|visible|displayed|showing|viewing)\b[^.]{0,80}\b(chart|dashboard|graph|plot|report)\b/.test(
+        summary,
+      ) ||
+      /\b(chart|dashboard|graph|plot|report)\b[^.]{0,80}\b(open|opened|visible|loaded|displayed|shown|viewing)\b/.test(
+        summary,
+      );
+    const hasConcreteValue =
+      /(?:[$]\s*)?\d[\d,]*(?:\.\d+)?%?/.test(summary) ||
+      /\b(value|count|total|metric|answer)\b[^.]{0,60}\b(is|was|=|:)\b/.test(
+        summary,
+      );
+    if (chartInterim && !hasConcreteValue) {
+      return {
+        blocked: true,
+        reason:
+          "Chart value task requires a concrete extracted value before completion.",
+      };
+    }
+  }
+
+  const searchActive = workflowSkillOrQueryMatches(
+    skillId,
+    "search-answer-extraction",
+    queryText,
+    /\b(knowledge base|kb article|search results?|find answer|look up|answer the question)\b/,
+  );
+  if (searchActive) {
+    const searchInterim =
+      /\b(opened|found|located|loaded|viewing|read)\b[^.]{0,80}\b(search result|result|article|knowledge base|kb article|page)\b/.test(
+        summary,
+      ) ||
+      /\b(search results?|article|knowledge base|kb article)\b[^.]{0,80}\b(visible|shown|displayed|opened|loaded)\b/.test(
+        summary,
+      );
+    const hasAnswer =
+      /\b(answer|answer is|states?|says|according to|the requested|final answer)\b/.test(
+        summary,
+      ) &&
+      !/\b(no answer|without an answer|not answered)\b/.test(summary);
+    if (searchInterim && !hasAnswer) {
+      return {
+        blocked: true,
+        reason:
+          "Search answer task requires the requested answer, not just an opened result.",
+      };
+    }
+  }
+
+  const listFilterActive = workflowSkillOrQueryMatches(
+    skillId,
+    "list-filter-workflow",
+    queryText,
+    /\b(filter|condition builder|filter builder|show records where|query list)\b/,
+  );
+  if (listFilterActive) {
+    const filterFailure =
+      /\b(not|no|without)\b[^.]{0,30}\b(applied|filtered|changed|updated|results?)\b/.test(
+        summary,
+      );
+    const filterInterim =
+      /\b(opened|visible|ready|loaded|displayed|showing)\b[^.]{0,80}\b(filter|condition builder|filter builder|condition panel)\b/.test(
+        summary,
+      ) ||
+      /\b(filter|condition builder|filter builder|condition panel)\b[^.]{0,80}\b(open|opened|visible|ready|loaded|displayed|shown)\b/.test(
+        summary,
+      );
+    const filterComplete =
+      /\b(applied|run|ran|executed|filtered|active filter|query state|sysparm_query|results? updated|rows? filtered|matching records?|condition applied)\b/.test(
+        summary,
+      );
+    if (filterFailure || (filterInterim && !filterComplete)) {
+      return {
+        blocked: true,
+        reason:
+          "List filter task requires the filter to be applied and verified before completion.",
+      };
+    }
+  }
+
+  const listSortActive = workflowSkillOrQueryMatches(
+    skillId,
+    "list-sort-workflow",
+    queryText,
+    /\b(sort|order by|ascending|descending|sort column)\b/,
+  );
+  if (listSortActive) {
+    const sortFailure =
+      /\b(not|no|without)\b[^.]{0,30}\b(sorted|ordered|ascending|descending|changed|updated)\b/.test(
+        summary,
+      );
+    const sortInterim =
+      /\b(opened|visible|ready|loaded|displayed|showing|viewing)\b[^.]{0,80}\b(list|table|records?|rows?)\b/.test(
+        summary,
+      ) ||
+      /\b(list|table|records?|rows?)\b[^.]{0,80}\b(open|opened|visible|ready|loaded|displayed|shown)\b/.test(
+        summary,
+      );
+    const sortComplete =
+      /\b(sorted|sort applied|ordered|order by|ascending|descending|aria-sort|sort state|header indicates)\b/.test(
+        summary,
+      );
+    if (sortFailure || (sortInterim && !sortComplete)) {
+      return {
+        blocked: true,
+        reason:
+          "List sort task requires verified sort state before completion.",
+      };
+    }
+  }
+
+  const catalogActive = workflowSkillOrQueryMatches(
+    skillId,
+    "catalog-order-workflow",
+    queryText,
+    /\b(service catalog|catalog item|request item|standard laptop|add to cart|order now|place order|submit order)\b/,
+  );
+  if (catalogActive) {
+    const catalogInterim =
+      /\b(opened|reached|loaded|visible|displayed|showing|viewing)\b[^.]{0,90}\b(product|catalog item|item detail|detail page|configuration|options|form)\b/.test(
+        summary,
+      ) ||
+      /\b(product|catalog item|item detail|detail page|configuration|options|form)\b[^.]{0,90}\b(open|opened|visible|ready|loaded|displayed|shown)\b/.test(
+        summary,
+      );
+    const catalogComplete =
+      /\b(ordered|order submitted|order placed|order confirmed|request submitted|request placed|request confirmed|request number|cart|checkout|submitted|confirmation|thank you|req\d+|ritm\d+)\b/.test(
+        summary,
+      );
+    if (catalogInterim && !catalogComplete) {
+      return {
+        blocked: true,
+        reason:
+          "Catalog order task requires submitted request, cart, or confirmation evidence before completion.",
+      };
+    }
+  }
+
+  return { blocked: false, reason: null };
 }
 
 /**

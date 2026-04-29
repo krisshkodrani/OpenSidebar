@@ -34,6 +34,7 @@ import {
   extractAttributes,
   truncateText,
   isDisabled,
+  getCheckboxOrRadioControl,
 } from "./utils";
 
 // Re-export all submodules for barrel compatibility
@@ -124,6 +125,12 @@ export function tagElements(): TaggedElement[] {
   // 4. Phase 2: cursor:pointer elements not already captured
   const clickableExtras = detectClickableElements();
 
+  // 4b. Visible labels for hidden checkbox/radio controls are actionable even
+  // when the underlying input has no visible box of its own.
+  const labelledControlExtras = querySelectorAllDeep(document, "label").filter(
+    (el) => getCheckboxOrRadioControl(el) !== null,
+  );
+
   // 5. Deduplicate
   const seen = new Set<Element>();
   const rawCandidates: Element[] = [];
@@ -134,6 +141,12 @@ export function tagElements(): TaggedElement[] {
     }
   }
   for (const el of clickableExtras) {
+    if (!seen.has(el)) {
+      seen.add(el);
+      rawCandidates.push(el);
+    }
+  }
+  for (const el of labelledControlExtras) {
     if (!seen.has(el)) {
       seen.add(el);
       rawCandidates.push(el);

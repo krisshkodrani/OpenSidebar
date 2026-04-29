@@ -47,6 +47,12 @@ import {
   DELETE_COOKIE_DEF,
   SEARCH_HISTORY_DEF,
   INSPECT_HIDDEN_DEF,
+  INSPECT_CHART_DEF,
+  INSPECT_TABLE_DEF,
+  INSPECT_FILTER_STATE_DEF,
+  APPLY_LIST_FILTER_DEF,
+  APPLY_LIST_SORT_DEF,
+  INSPECT_CATALOG_ITEM_DEF,
   XRAY_PAGE_DEF,
   UPDATE_NOTES_DEF,
   GET_PROFILE_FIELDS_DEF,
@@ -125,6 +131,28 @@ async function waitForTabUrlChange(
   return fallbackUrl;
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function tryInPageHistoryBack(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -135,10 +163,898 @@ async function tryInPageHistoryBack(tabId: number): Promise<void> {
   });
 }
 
+async function getFrameIdsForMainWorldBridge(tabId: number): Promise<number[]> {
+  try {
+    if (!chrome.webNavigation?.getAllFrames) return [0];
+    const frames = await new Promise<any[]>((resolve) => {
+      chrome.webNavigation.getAllFrames({ tabId }, (details) => {
+        if (chrome.runtime.lastError) {
+          resolve([]);
+          return;
+        }
+        resolve(Array.isArray(details) ? details : []);
+      });
+    });
+    const frameIds = frames
+      .map((frame) => frame?.frameId)
+      .filter((frameId): frameId is number => Number.isInteger(frameId));
+    return [...new Set([0, ...frameIds])];
+  } catch {
+    return [0];
+  }
+}
+
+const SERVICENOW_REFERENCE_CANDIDATE_PREFIX =
+  "servicenow_reference_candidate:";
+
+type ServiceNowReferenceCandidate = {
+  fieldPath: string;
+  fieldName: string;
+  referenceTable: string;
+};
+
+function parseServiceNowReferenceCandidate(
+  status: string | undefined,
+): ServiceNowReferenceCandidate | null {
+  if (!status?.startsWith(SERVICENOW_REFERENCE_CANDIDATE_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(
+      status.slice(SERVICENOW_REFERENCE_CANDIDATE_PREFIX.length),
+    ) as Partial<ServiceNowReferenceCandidate>;
+    if (
+      typeof parsed.fieldPath === "string" &&
+      typeof parsed.fieldName === "string" &&
+      typeof parsed.referenceTable === "string" &&
+      parsed.fieldPath &&
+      parsed.fieldName &&
+      parsed.referenceTable
+    ) {
+      return {
+        fieldPath: parsed.fieldPath,
+        fieldName: parsed.fieldName,
+        referenceTable: parsed.referenceTable,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function unwrapServiceNowFieldValue(fieldValue: unknown): string {
+  if (typeof fieldValue === "string") return fieldValue;
+  if (fieldValue && typeof fieldValue === "object") {
+    const obj = fieldValue as Record<string, unknown>;
+    if (typeof obj.value === "string") return obj.value;
+    if (typeof obj.display_value === "string") return obj.display_value;
+  }
+  return "";
+}
+
+function normalizeServiceNowReferenceKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function inferServiceNowListTableFromUrl(rawUrl: string | undefined): string {
+  if (!rawUrl) return "";
+  const candidates = [rawUrl];
+  for (let i = 0; i < 2; i += 1) {
+    const latest = candidates[candidates.length - 1];
+    try {
+      const decoded = decodeURIComponent(latest);
+      if (decoded === latest) break;
+      candidates.push(decoded);
+    } catch {
+      break;
+    }
+  }
+  for (const candidate of candidates) {
+    const match = /(?:\/|target\/)([$a-z0-9_]+)_list\.do\b/i.exec(candidate);
+    if (match?.[1]) return match[1];
+  }
+  return "";
+}
+
+function commonServiceNowReferenceTableForField(fieldName: string): string | null {
+  const key = normalizeServiceNowReferenceKey(fieldName);
+  const compactKey = key.replace(/_/g, "");
+  const commonReferences: Record<string, string> = {
+    assigned_to: "sys_user",
+    assignedto: "sys_user",
+    caller: "sys_user",
+    caller_id: "sys_user",
+    callerid: "sys_user",
+    closed_by: "sys_user",
+    closedby: "sys_user",
+    manager: "sys_user",
+    opened_by: "sys_user",
+    openedby: "sys_user",
+    requested_for: "sys_user",
+    requestedfor: "sys_user",
+    resolved_by: "sys_user",
+    resolvedby: "sys_user",
+    user: "sys_user",
+    assignment_group: "sys_user_group",
+    assignmentgroup: "sys_user_group",
+    group: "sys_user_group",
+    company: "core_company",
+    department: "cmn_department",
+    location: "cmn_location",
+  };
+  return commonReferences[key] ?? commonReferences[compactKey] ?? null;
+}
+
+async function resolveServiceNowReferenceFromBackground(
+  tabId: number,
+  referenceTable: string,
+  displayValue: string,
+): Promise<{ ok: true; sysId: string } | { ok: false; reason: string }> {
+  const trimmedValue = displayValue.trim();
+  if (!trimmedValue) return { ok: false, reason: "empty_display_value" };
+
+  let origin: string;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    origin = new URL(tab.url || "").origin;
+  } catch {
+    return { ok: false, reason: "missing_tab_origin" };
+  }
+
+  const safeValue = trimmedValue.replace(/\^/g, "");
+  const queryFields = [
+    "name",
+    "display_name",
+    "number",
+    "user_name",
+    "email",
+    "first_name",
+    "last_name",
+  ];
+  const exactQuery = ["name", "display_name", "number", "user_name", "email"]
+    .map((field) => `${field}=${safeValue}`)
+    .join("^OR");
+  const referencePath = `${origin}/api/now/table/${encodeURIComponent(referenceTable)}`;
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const fetchReferenceRecords = async (
+      query: string,
+    ): Promise<Record<string, unknown>[]> => {
+      const params = new URLSearchParams({
+        sysparm_query: query,
+        sysparm_fields:
+          "sys_id,name,display_name,number,user_name,email,first_name,last_name",
+        sysparm_limit: "5",
+        sysparm_display_value: "all",
+      });
+      const url = `${referencePath}?${params.toString()}`;
+      const response = await fetch(url, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`lookup_http_${response.status}`);
+      }
+      const payload = await response.json();
+      return Array.isArray(payload?.result) ? payload.result : [];
+    };
+
+    const recordsPromise = (async () => {
+      let records = await fetchReferenceRecords(exactQuery);
+      if (records.length === 0 && referenceTable === "sys_user") {
+        const parts = safeValue.split(/\s+/).filter(Boolean);
+        const firstName = parts[0] || "";
+        const lastName = parts.slice(1).join(" ");
+        if (firstName && lastName) {
+          records = await fetchReferenceRecords(
+            `first_name=${firstName}^last_name=${lastName}`,
+          );
+        }
+      }
+      if (records.length === 0) {
+        records = await fetchReferenceRecords(
+          ["name", "display_name", "user_name", "email"]
+            .map((field) => `${field}LIKE${safeValue}`)
+            .join("^OR"),
+        );
+      }
+      return records;
+    })();
+
+    const timeoutPromise = new Promise<Record<string, unknown>[]>((_, reject) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        reject(new Error("lookup_timeout"));
+      }, 4_000);
+    });
+    const records = await Promise.race([recordsPromise, timeoutPromise]);
+    if (records.length === 0) {
+      return { ok: false, reason: "no_matching_record" };
+    }
+
+    const normalize = (candidate: string): string =>
+      candidate.trim().toLowerCase();
+    const selected =
+      records.find((record: Record<string, unknown>) =>
+        queryFields.some((field) => {
+          return (
+            normalize(unwrapServiceNowFieldValue(record[field])) ===
+            normalize(trimmedValue)
+          );
+        }) ||
+        normalize(
+          `${unwrapServiceNowFieldValue(record.first_name)} ${unwrapServiceNowFieldValue(record.last_name)}`,
+        ) === normalize(trimmedValue),
+      ) ?? records[0];
+    const sysId = unwrapServiceNowFieldValue(selected.sys_id);
+    return sysId
+      ? { ok: true, sysId }
+      : { ok: false, reason: "no_sys_id" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "lookup_failed";
+    return {
+      ok: false,
+      reason:
+        message === "lookup_timeout" || message.startsWith("lookup_http_")
+          ? message
+          : "lookup_failed",
+    };
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function resolveServiceNowReferenceFromPage(
+  tabId: number,
+  args: Record<string, unknown>,
+  candidate: ServiceNowReferenceCandidate,
+  displayValue: string,
+): Promise<{ ok: true; sysId: string } | { ok: false; reason: string }> {
+  const id = args.id;
+  if (typeof id !== "number" && typeof id !== "string") {
+    return { ok: false, reason: "missing_element_id" };
+  }
+
+  try {
+    const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+    const inject = (frameId: number) =>
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world: "MAIN" as any,
+        func: async (
+          tagId: string,
+          fieldPath: string,
+          referenceTable: string,
+          rawDisplayValue: string,
+        ) => {
+          const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+          const input =
+            document.querySelector(selector) ??
+            document.getElementById(`sys_display.${fieldPath}`) ??
+            Array.from(
+              document.getElementsByName(`sys_display.${fieldPath}`),
+            )[0] ??
+            null;
+          if (!(input instanceof HTMLInputElement)) {
+            return { ok: false, reason: "field_not_found" };
+          }
+
+          const displayValue = rawDisplayValue.trim();
+          if (!displayValue) return { ok: false, reason: "empty_display_value" };
+
+          const unwrap = (fieldValue: unknown): string => {
+            if (typeof fieldValue === "string") return fieldValue;
+            if (fieldValue && typeof fieldValue === "object") {
+              const obj = fieldValue as Record<string, unknown>;
+              if (typeof obj.value === "string") return obj.value;
+              if (typeof obj.display_value === "string") {
+                return obj.display_value;
+              }
+            }
+            return "";
+          };
+          const queryFields = [
+            "name",
+            "display_name",
+            "number",
+            "user_name",
+            "email",
+          ];
+          const query = queryFields
+            .map((field) => `${field}=${displayValue.replace(/\^/g, "")}`)
+            .join("^OR");
+          const params = new URLSearchParams({
+            sysparm_query: query,
+            sysparm_fields: "sys_id,name,display_name,number,user_name,email",
+            sysparm_limit: "5",
+            sysparm_display_value: "all",
+          });
+          const lookup = fetch(
+            `/api/now/table/${encodeURIComponent(referenceTable)}?${params.toString()}`,
+            { credentials: "same-origin" },
+          )
+            .then(async (response) => {
+              if (!response.ok) {
+                return { ok: false, reason: `lookup_http_${response.status}` };
+              }
+              const payload = await response.json();
+              const records = Array.isArray(payload?.result)
+                ? payload.result
+                : [];
+              if (records.length === 0) {
+                return { ok: false, reason: "no_matching_record" };
+              }
+              const normalize = (candidate: string): string =>
+                candidate.trim().toLowerCase();
+              const selected =
+                records.find((record: Record<string, unknown>) =>
+                  queryFields.some(
+                    (field) =>
+                      normalize(unwrap(record[field])) ===
+                      normalize(displayValue),
+                  ),
+                ) ?? records[0];
+              const sysId = unwrap(selected.sys_id);
+              return sysId
+                ? { ok: true, sysId }
+                : { ok: false, reason: "no_sys_id" };
+            })
+            .catch(() => ({ ok: false, reason: "lookup_failed" }));
+
+          return Promise.race([
+            lookup,
+            new Promise((resolve) =>
+              setTimeout(
+                () => resolve({ ok: false, reason: "lookup_timeout" }),
+                4_000,
+              ),
+            ),
+          ]);
+        },
+        args: [
+          String(id),
+          candidate.fieldPath,
+          candidate.referenceTable,
+          displayValue,
+        ],
+      });
+
+    let lastReason = "field_not_found";
+    for (const frameId of frameIds) {
+      const results = await Promise.race([
+        inject(frameId),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("ServiceNow reference lookup timed out")),
+            4_500,
+          ),
+        ),
+      ]).catch(() => null);
+      for (const result of results ?? []) {
+        const value = result.result as
+          | { ok: true; sysId: string }
+          | { ok: false; reason: string }
+          | undefined;
+        if (!value) continue;
+        if (value.ok && value.sysId) return value;
+        if (!value.ok && typeof value.reason === "string") {
+          lastReason = value.reason;
+        }
+      }
+    }
+    return { ok: false, reason: lastReason };
+  } catch {
+    return { ok: false, reason: "lookup_failed" };
+  }
+}
+
+async function commitServiceNowReferenceInMainWorld(
+  tabId: number,
+  args: Record<string, unknown>,
+  candidate: ServiceNowReferenceCandidate,
+  sysId: string,
+  displayValue: string,
+): Promise<boolean> {
+  const id = args.id;
+  if (typeof id !== "number" && typeof id !== "string") return false;
+
+  try {
+    const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+    const inject = (frameId: number) =>
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world: "MAIN" as any,
+        func: (
+          tagId: string,
+          fieldPath: string,
+          fieldName: string,
+          resolvedSysId: string,
+          resolvedDisplayValue: string,
+        ) => {
+          const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+          const input =
+            document.querySelector(selector) ??
+            document.getElementById(`sys_display.${fieldPath}`) ??
+            Array.from(
+              document.getElementsByName(`sys_display.${fieldPath}`),
+            )[0] ??
+            null;
+          if (!(input instanceof HTMLInputElement)) return false;
+
+          const hiddenControl =
+            document.getElementById(fieldPath) ??
+            Array.from(document.getElementsByName(fieldPath))[0] ??
+            null;
+          let committed = false;
+          const gForm = (window as any).g_form;
+          if (typeof gForm?.setValue === "function") {
+            try {
+              gForm.setValue(fieldName, resolvedSysId, resolvedDisplayValue);
+              committed = true;
+            } catch {
+              // Hidden field fallback below covers frames without usable g_form.
+            }
+          }
+          if (hiddenControl instanceof HTMLInputElement) {
+            hiddenControl.value = resolvedSysId;
+            hiddenControl.dispatchEvent(
+              new Event("input", { bubbles: true, composed: true }),
+            );
+            hiddenControl.dispatchEvent(
+              new Event("change", { bubbles: true, composed: true }),
+            );
+            committed = true;
+          }
+
+          const setter = Object.getOwnPropertyDescriptor(
+            HTMLInputElement.prototype,
+            "value",
+          )?.set;
+          if (setter) {
+            setter.call(input, resolvedDisplayValue);
+          } else {
+            input.value = resolvedDisplayValue;
+          }
+          input.setAttribute("value", resolvedDisplayValue);
+          input.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              data: resolvedDisplayValue,
+              inputType: "insertText",
+            }),
+          );
+          input.dispatchEvent(
+            new Event("change", { bubbles: true, composed: true }),
+          );
+          input.dispatchEvent(
+            new Event("blur", { bubbles: true, composed: true }),
+          );
+          return committed;
+        },
+        args: [
+          String(id),
+          candidate.fieldPath,
+          candidate.fieldName,
+          sysId,
+          displayValue,
+        ],
+      });
+
+    for (const frameId of frameIds) {
+      const results = await Promise.race([
+        inject(frameId),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("ServiceNow reference commit timed out")),
+            2_000,
+          ),
+        ),
+      ]).catch(() => null);
+      if (results?.some((result) => result.result === true)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+async function selectServiceNowReferenceAutocompleteInMainWorld(
+  tabId: number,
+  args: Record<string, unknown>,
+  candidate: ServiceNowReferenceCandidate,
+  displayValue: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const id = args.id;
+  if (typeof id !== "number" && typeof id !== "string") {
+    return { ok: false, reason: "missing_element_id" };
+  }
+
+  try {
+    const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+    const inject = (frameId: number) =>
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world: "MAIN" as any,
+        func: async (
+          tagId: string,
+          fieldPath: string,
+          fieldName: string,
+          rawDisplayValue: string,
+        ) => {
+          const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+          const input =
+            document.querySelector(selector) ??
+            document.getElementById(`sys_display.${fieldPath}`) ??
+            Array.from(
+              document.getElementsByName(`sys_display.${fieldPath}`),
+            )[0] ??
+            null;
+          if (!(input instanceof HTMLInputElement)) {
+            return { ok: false, reason: "field_not_found" };
+          }
+
+          const displayValue = rawDisplayValue.trim();
+          if (!displayValue) return { ok: false, reason: "empty_display_value" };
+
+          const delay = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+          const normalize = (value: string): string =>
+            value.replace(/\s+/g, " ").trim().toLowerCase();
+          const normalizedDisplay = normalize(displayValue);
+          const hiddenControl = () =>
+            document.getElementById(fieldPath) ??
+            Array.from(document.getElementsByName(fieldPath))[0] ??
+            null;
+          const getCommittedValue = (): string => {
+            const gForm = (window as any).g_form;
+            try {
+              if (typeof gForm?.getValue === "function") {
+                const value = gForm.getValue(fieldName);
+                if (typeof value === "string" && value.trim()) {
+                  return value.trim();
+                }
+              }
+            } catch {
+              // Fall through to hidden control lookup.
+            }
+
+            const hidden = hiddenControl();
+            if (hidden instanceof HTMLInputElement && hidden.value.trim()) {
+              return hidden.value.trim();
+            }
+            return "";
+          };
+          const isCommittedValue = (value: string): boolean =>
+            !!value && normalize(value) !== normalizedDisplay;
+
+          if (isCommittedValue(getCommittedValue())) return { ok: true };
+
+          const view = input.ownerDocument?.defaultView ?? window;
+          const setter = Object.getOwnPropertyDescriptor(
+            view.HTMLInputElement.prototype,
+            "value",
+          )?.set;
+          const setInputValue = (nextValue: string) => {
+            if (setter) {
+              setter.call(input, nextValue);
+            } else {
+              input.value = nextValue;
+            }
+          };
+          const dispatchKeyboard = (
+            type: string,
+            key: string,
+            init: KeyboardEventInit = {},
+          ) => {
+            const keyCode =
+              key === "Enter"
+                ? 13
+                : key === "Backspace"
+                  ? 8
+                : key.length === 1
+                  ? key.toUpperCase().charCodeAt(0)
+                  : undefined;
+            input.dispatchEvent(
+              new view.KeyboardEvent(type, {
+                key,
+                code: key === "Enter" ? "Enter" : undefined,
+                keyCode,
+                which: keyCode,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                ...init,
+              }),
+            );
+          };
+          const dispatchInput = (
+            data: string | null,
+            inputType: string,
+          ) => {
+            input.dispatchEvent(
+              new view.InputEvent("input", {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                data,
+                inputType,
+              }),
+            );
+          };
+          const emitAutocompleteSearch = async (searchValue: string) => {
+            input.focus();
+            try {
+              input.setSelectionRange(0, input.value.length);
+            } catch {
+              // Some specialized inputs do not support selection ranges.
+            }
+            dispatchKeyboard("keydown", "a", { ctrlKey: true });
+            dispatchKeyboard("keyup", "a", { ctrlKey: true });
+            dispatchKeyboard("keydown", "Backspace");
+            setInputValue("");
+            dispatchInput(null, "deleteContentBackward");
+            dispatchKeyboard("keyup", "Backspace");
+            for (const char of searchValue) {
+              dispatchKeyboard("keydown", char);
+              setInputValue(input.value + char);
+              dispatchInput(char, "insertText");
+              dispatchKeyboard("keyup", char);
+              await delay(15);
+            }
+            input.dispatchEvent(
+              new view.Event("change", { bubbles: true, composed: true }),
+            );
+            dispatchKeyboard("keydown", searchValue.slice(-1) || " ");
+            dispatchKeyboard("keyup", searchValue.slice(-1) || " ");
+          };
+          const isVisible = (node: Element): boolean => {
+            if (!node.isConnected) return false;
+            const style = view.getComputedStyle(node);
+            if (
+              style.display === "none" ||
+              style.visibility === "hidden" ||
+              style.opacity === "0"
+            ) {
+              return false;
+            }
+            const rect = node.getBoundingClientRect();
+            return rect.width > 0 || rect.height > 0 || !!node.textContent?.trim();
+          };
+          const optionSelectors = [
+            '[role="option"]',
+            "tr[role='option']",
+            ".ac_results tr",
+            ".ac_results li",
+            ".autocomplete tr",
+            ".autocomplete li",
+            ".typeahead tr",
+            ".typeahead li",
+            ".select2-results__option",
+            ".ui-menu-item",
+            "li.ui-menu-item",
+            "[id^='AC.'] tr",
+            "[id^='AC.'] li",
+            "[aria-selected]",
+          ];
+          const optionMatches = (node: Element): boolean => {
+            const text = normalize(node.textContent ?? "");
+            if (!text) return false;
+            if (text.includes(normalizedDisplay)) return true;
+            const tokens = normalizedDisplay.split(" ").filter(Boolean);
+            return tokens.length > 0 && tokens.every((token) => text.includes(token));
+          };
+          const findMatchingOption = (): HTMLElement | null => {
+            const seen = new Set<Element>();
+            for (const optionSelector of optionSelectors) {
+              for (const node of Array.from(
+                document.querySelectorAll(optionSelector),
+              )) {
+                if (seen.has(node)) continue;
+                seen.add(node);
+                if (
+                  node instanceof HTMLElement &&
+                  isVisible(node) &&
+                  optionMatches(node)
+                ) {
+                  return node;
+                }
+              }
+            }
+            return null;
+          };
+          const extractSysId = (node: Element): string => {
+            const attrs = [
+              "sys_id",
+              "sys-id",
+              "data-sys-id",
+              "data-sysid",
+              "data-value",
+              "data-id",
+              "value",
+            ];
+            for (const attr of attrs) {
+              const value = node.getAttribute(attr);
+              if (value && /^[0-9a-f]{32}$/i.test(value)) return value;
+            }
+            const htmlMatch = node.outerHTML.match(/[0-9a-f]{32}/i);
+            return htmlMatch?.[0] ?? "";
+          };
+          const forceCommit = (sysId: string): boolean => {
+            if (!sysId) return false;
+            let committed = false;
+            const gForm = (window as any).g_form;
+            try {
+              if (typeof gForm?.setValue === "function") {
+                gForm.setValue(fieldName, sysId, displayValue);
+                committed = true;
+              }
+            } catch {
+              // Hidden field fallback below covers frames without usable g_form.
+            }
+            const hidden = hiddenControl();
+            if (hidden instanceof HTMLInputElement) {
+              hidden.value = sysId;
+              hidden.dispatchEvent(
+                new view.Event("input", { bubbles: true, composed: true }),
+              );
+              hidden.dispatchEvent(
+                new view.Event("change", { bubbles: true, composed: true }),
+              );
+              committed = true;
+            }
+            setInputValue(displayValue);
+            input.setAttribute("value", displayValue);
+            input.dispatchEvent(
+              new view.Event("change", { bubbles: true, composed: true }),
+            );
+            return committed;
+          };
+          const clickOption = (option: HTMLElement) => {
+            option.scrollIntoView?.({ block: "center", inline: "center" });
+            const rect = option.getBoundingClientRect();
+            const clientX = rect.left + rect.width / 2;
+            const clientY = rect.top + rect.height / 2;
+            const mouseInit: MouseEventInit = {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              view,
+              clientX,
+              clientY,
+              button: 0,
+            };
+            const pointerInit: PointerEventInit = {
+              ...mouseInit,
+              pointerId: 1,
+              pointerType: "mouse",
+              isPrimary: true,
+            };
+            try {
+              option.dispatchEvent(
+                new view.PointerEvent("pointerdown", {
+                  ...pointerInit,
+                  buttons: 1,
+                }),
+              );
+            } catch {
+              // PointerEvent may be unavailable in older page contexts.
+            }
+            option.dispatchEvent(
+              new view.MouseEvent("mousedown", { ...mouseInit, buttons: 1 }),
+            );
+            try {
+              option.dispatchEvent(
+                new view.PointerEvent("pointerup", {
+                  ...pointerInit,
+                  buttons: 0,
+                }),
+              );
+            } catch {
+              // PointerEvent may be unavailable in older page contexts.
+            }
+            option.dispatchEvent(new view.MouseEvent("mouseup", mouseInit));
+            option.click();
+          };
+
+          const rawTokens = displayValue.split(/\s+/).filter(Boolean);
+          const searchValues = [
+            displayValue,
+            rawTokens[0],
+            rawTokens[0]?.length > 3 ? rawTokens[0].slice(0, 3) : null,
+          ].filter(
+            (value, index, values): value is string =>
+              typeof value === "string" &&
+              value.trim().length > 0 &&
+              values.indexOf(value) === index,
+          );
+
+          for (const searchValue of searchValues) {
+            for (let attempt = 0; attempt < 14; attempt++) {
+              if (attempt === 0 || attempt === 5) {
+                await emitAutocompleteSearch(searchValue);
+              }
+
+              const option = findMatchingOption();
+              if (option) {
+                const sysId = extractSysId(option);
+                if (forceCommit(sysId)) {
+                  await delay(100);
+                  if (isCommittedValue(getCommittedValue())) return { ok: true };
+                }
+
+                clickOption(option);
+                for (let verify = 0; verify < 12; verify++) {
+                  await delay(100);
+                  if (isCommittedValue(getCommittedValue())) return { ok: true };
+                }
+                return { ok: false, reason: "selection_unverified" };
+              }
+
+              await delay(100);
+            }
+          }
+
+          dispatchKeyboard("keydown", "Enter");
+          dispatchKeyboard("keyup", "Enter");
+          for (let verify = 0; verify < 8; verify++) {
+            await delay(100);
+            if (isCommittedValue(getCommittedValue())) return { ok: true };
+          }
+          setInputValue(displayValue);
+          input.dispatchEvent(
+            new view.Event("change", { bubbles: true, composed: true }),
+          );
+          return { ok: false, reason: "no_matching_option" };
+        },
+        args: [
+          String(id),
+          candidate.fieldPath,
+          candidate.fieldName,
+          displayValue,
+        ],
+      });
+
+    let lastReason = "field_not_found";
+    for (const frameId of frameIds) {
+      const results = await Promise.race([
+        inject(frameId),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("ServiceNow autocomplete select timed out")),
+            5_000,
+          ),
+        ),
+      ]).catch(() => null);
+      for (const result of results ?? []) {
+        const value = result.result as
+          | { ok: true }
+          | { ok: false; reason: string }
+          | undefined;
+        if (!value) continue;
+        if (value.ok) return value;
+        if (!value.ok && typeof value.reason === "string") {
+          lastReason = value.reason;
+        }
+      }
+    }
+    return { ok: false, reason: lastReason };
+  } catch {
+    return { ok: false, reason: "autocomplete_failed" };
+  }
+}
+
 async function mirrorTextInputInMainWorld(
   tabId: number,
   args: Record<string, unknown>,
-): Promise<void> {
+): Promise<string | undefined> {
   const id = args.id;
   const text = args.text;
   if (
@@ -149,10 +1065,12 @@ async function mirrorTextInputInMainWorld(
   }
 
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN" as any,
-      func: (tagId: string, value: string) => {
+    const frameIds = await getFrameIdsForMainWorldBridge(tabId);
+    const inject = (frameId: number) =>
+      chrome.scripting.executeScript({
+        target: { tabId, frameIds: [frameId] },
+        world: "MAIN" as any,
+        func: (tagId: string, value: string) => {
         const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
         const el = document.querySelector(selector);
         if (!el) return;
@@ -161,6 +1079,137 @@ async function mirrorTextInputInMainWorld(
           el instanceof HTMLInputElement ||
           el instanceof HTMLTextAreaElement
         ) {
+          const isAutocompleteLikeTextInput = (
+            input: HTMLInputElement,
+          ): boolean => {
+            const role = input.getAttribute("role")?.toLowerCase() ?? "";
+            const blob = [
+              input.id,
+              input.name,
+              input.className,
+              input.getAttribute("autocomplete"),
+              input.getAttribute("aria-label"),
+              input.getAttribute("aria-controls"),
+              input.getAttribute("aria-haspopup"),
+              input.getAttribute("aria-autocomplete"),
+              input.getAttribute("placeholder"),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
+
+            return (
+              role === "combobox" ||
+              input.hasAttribute("list") ||
+              input.hasAttribute("aria-autocomplete") ||
+              /\b(combo|autocomplete|typeahead|suggest|lookup|reference)\b/.test(
+                blob,
+              ) ||
+              /\bsys_display\./.test(blob)
+            );
+          };
+
+          const detectServiceNowReference = (
+            input: HTMLInputElement,
+          ): string | undefined => {
+            const displayValue = value.trim();
+            const displayName = input.name || input.id;
+            if (!displayName.startsWith("sys_display.")) {
+              return undefined;
+            }
+            if (!displayValue) {
+              return "servicenow_reference_failed:empty_display_value";
+            }
+
+            const fieldPath = displayName.slice("sys_display.".length);
+            const fieldName = fieldPath.includes(".")
+              ? fieldPath.slice(fieldPath.indexOf(".") + 1)
+              : fieldPath;
+            const hiddenControl =
+              document.getElementById(fieldPath) ??
+              Array.from(document.getElementsByName(fieldPath))[0] ??
+              null;
+
+            const getReferenceAttr = (
+              node: Element | null | undefined,
+            ): string | null => {
+              if (!node) return null;
+              for (const attr of [
+                "data-ref",
+                "data-reference",
+                "data-ref-table",
+                "data-reference-table",
+                "reference",
+                "ref",
+              ]) {
+                const attrValue = node.getAttribute(attr);
+                if (attrValue) return attrValue;
+              }
+              return null;
+            };
+
+            const inferReferenceTable = (): string | null => {
+              const attrRef =
+                getReferenceAttr(input) ?? getReferenceAttr(hiddenControl);
+              if (attrRef) return attrRef;
+
+              const gForm = (window as any).g_form;
+              try {
+                const uiElement =
+                  gForm?.getGlideUIElement?.(fieldName) ??
+                  gForm?.getControl?.(fieldName) ??
+                  null;
+                for (const prop of [
+                  "reference",
+                  "referenceTable",
+                  "refTable",
+                  "refName",
+                  "tableName",
+                ]) {
+                  const propValue = uiElement?.[prop];
+                  if (typeof propValue === "string" && propValue) {
+                    return propValue;
+                  }
+                }
+              } catch {
+                // Fall through to common ServiceNow reference field names.
+              }
+
+              const commonRefs: Record<string, string> = {
+                assigned_to: "sys_user",
+                caller_id: "sys_user",
+                opened_by: "sys_user",
+                resolved_by: "sys_user",
+                assignment_group: "sys_user_group",
+                rfc: "change_request",
+                problem_id: "problem",
+                parent_incident: "incident",
+                business_service: "cmdb_ci_service",
+                service_offering: "service_offering",
+                cmdb_ci: "cmdb_ci",
+              };
+              return commonRefs[fieldName] ?? null;
+            };
+
+            const referenceTable = inferReferenceTable();
+            if (!referenceTable) {
+              return "servicenow_reference_failed:no_reference_table";
+            }
+
+            return `servicenow_reference_candidate:${JSON.stringify({
+              fieldPath,
+              fieldName,
+              referenceTable,
+            })}`;
+          };
+
+          if (
+            el instanceof HTMLInputElement &&
+            isAutocompleteLikeTextInput(el)
+          ) {
+            return detectServiceNowReference(el);
+          }
+
           const dispatchInput = (
             data: string | null,
             inputType: string,
@@ -229,11 +1278,29 @@ async function mirrorTextInputInMainWorld(
             new Event("change", { bubbles: true, composed: true }),
           );
         }
-      },
-      args: [String(id), text],
-    });
+        },
+        args: [String(id), text],
+      });
+
+    for (const frameId of frameIds) {
+      const results = await Promise.race([
+        inject(frameId),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Main-world text bridge timed out")),
+            5_000,
+          ),
+        ),
+      ]).catch(() => null);
+      const value = results?.find(
+        (result) => typeof result.result === "string",
+      )?.result;
+      if (typeof value === "string") return value;
+    }
+    return undefined;
   } catch {
     // Best-effort: the content-script action already updated the visible DOM.
+    return undefined;
   }
 }
 
@@ -245,9 +1312,9 @@ async function clickElementInMainWorld(
   if (typeof id !== "number" && typeof id !== "string") return false;
 
   try {
-    const [result] = await Promise.race([
+    const results = await Promise.race([
       chrome.scripting.executeScript({
-        target: { tabId },
+        target: { tabId, allFrames: true },
         world: "MAIN" as any,
         func: async (tagId: string) => {
           const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
@@ -309,10 +1376,36 @@ async function clickElementInMainWorld(
         ),
       ),
     ]);
-    return result?.result === true;
+    return results?.some((result) => result.result === true) ?? false;
   } catch {
     // Best-effort: the content-script click already ran.
     return false;
+  }
+}
+
+async function runReadOnlyPageInspector(
+  tabId: number,
+  func: (...args: any[]) => string,
+  args: unknown[],
+  emptyMessage: string,
+): Promise<string> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN" as any,
+      func,
+      args,
+    });
+    const frames = (results || [])
+      .map((result, index) =>
+        typeof result.result === "string" && result.result.trim()
+          ? `Frame ${index + 1}:\n${result.result.trim()}`
+          : "",
+      )
+      .filter(Boolean);
+    return frames.length > 0 ? frames.join("\n\n") : emptyMessage;
+  } catch (e: any) {
+    return `Error inspecting page: ${e.message}`;
   }
 }
 
@@ -340,7 +1433,66 @@ export function registerTools() {
     // final value and input/change events in MAIN so framework state matches the
     // visible DOM before later clicks submit the value.
     if (!String(result).startsWith("Error:")) {
-      await mirrorTextInputInMainWorld(tabId, args);
+      const bridgeStatus = await mirrorTextInputInMainWorld(tabId, args);
+      const serviceNowCandidate =
+        parseServiceNowReferenceCandidate(bridgeStatus);
+      if (serviceNowCandidate && typeof args.text === "string") {
+        let resolved = await resolveServiceNowReferenceFromBackground(
+          tabId,
+          serviceNowCandidate.referenceTable,
+          args.text,
+        );
+        let autocompleteReason: string | null = null;
+        if (
+          !resolved.ok &&
+          (resolved.reason === "lookup_http_401" ||
+            resolved.reason === "lookup_failed" ||
+            resolved.reason === "lookup_timeout")
+        ) {
+          const selected =
+            await selectServiceNowReferenceAutocompleteInMainWorld(
+              tabId,
+              args,
+              serviceNowCandidate,
+              args.text,
+            );
+          if (selected.ok) {
+            return `${String(result)} (ServiceNow reference value committed)`;
+          }
+          autocompleteReason = selected.reason;
+        }
+        if (!resolved.ok && resolved.reason === "lookup_http_401") {
+          const pageResolved = await resolveServiceNowReferenceFromPage(
+            tabId,
+            args,
+            serviceNowCandidate,
+            args.text,
+          );
+          resolved = pageResolved;
+        }
+        if (resolved.ok) {
+          const committed = await commitServiceNowReferenceInMainWorld(
+            tabId,
+            args,
+            serviceNowCandidate,
+            resolved.sysId,
+            args.text,
+          );
+          return committed
+            ? `${String(result)} (ServiceNow reference value committed)`
+            : `${String(result)} (ServiceNow reference commit failed: no_commit_target)`;
+        }
+        const suffix = autocompleteReason
+          ? `${resolved.reason}; autocomplete_${autocompleteReason}`
+          : resolved.reason;
+        return `${String(result)} (ServiceNow reference commit failed: ${suffix})`;
+      }
+      if (bridgeStatus === "servicenow_reference_committed") {
+        return `${String(result)} (ServiceNow reference value committed)`;
+      }
+      if (bridgeStatus?.startsWith("servicenow_reference_failed:")) {
+        return `${String(result)} (ServiceNow reference commit failed: ${bridgeStatus.slice("servicenow_reference_failed:".length)})`;
+      }
     }
     return result;
   });
@@ -1143,6 +2295,1413 @@ export function registerTools() {
       } catch (e: any) {
         return `Error scanning hidden elements: ${e.message}`;
       }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.INSPECT_CHART,
+    INSPECT_CHART_DEF,
+    async (args, tabId) => {
+      const pattern = (args.pattern as string) || "";
+      const maxResults = Math.min(
+        Math.max((args.maxResults as number) || 30, 1),
+        100,
+      );
+      return runReadOnlyPageInspector(
+        tabId,
+        (pat: string, max: number) => {
+          const norm = (value: unknown) =>
+            String(value ?? "").replace(/\s+/g, " ").trim();
+          const include = (value: string) =>
+            !pat || value.toLowerCase().includes(pat.toLowerCase());
+          const lines: string[] = [
+            `URL: ${location.href}`,
+            `Title: ${document.title}`,
+          ];
+          const sections: string[] = [];
+          const seen = new Set<string>();
+          const push = (label: string, value: unknown) => {
+            const text = norm(value);
+            if (!text || !include(text) || seen.has(`${label}:${text}`)) return;
+            seen.add(`${label}:${text}`);
+            sections.push(`- ${label}: ${text.slice(0, 240)}`);
+          };
+          const formatNumber = (value: unknown) => {
+            if (typeof value === "number" && Number.isFinite(value)) {
+              return String(value);
+            }
+            return norm(value);
+          };
+          const toNumber = (value: unknown): number | null => {
+            if (typeof value === "number" && Number.isFinite(value)) {
+              return value;
+            }
+            const text = norm(value).replace(/,/g, "");
+            if (!text) return null;
+            const parsed = Number(text);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+          const firstText = (values: unknown[]) => {
+            for (const value of values) {
+              const text = norm(value);
+              if (text) return text;
+            }
+            return "";
+          };
+
+          const highcharts = (window as any).Highcharts;
+          if (highcharts?.charts) {
+            highcharts.charts
+              .filter(Boolean)
+              .slice(0, 8)
+              .forEach((chart: any, chartIndex: number) => {
+                push(
+                  `Highcharts ${chartIndex + 1} title`,
+                  chart.title?.textStr || chart.options?.title?.text,
+                );
+                push(
+                  `Highcharts ${chartIndex + 1} type`,
+                  chart.options?.chart?.type || chart.type,
+                );
+                const categories = chart.xAxis?.[0]?.categories;
+                const dataRows =
+                  typeof chart.getDataRows === "function"
+                    ? chart.getDataRows()
+                    : null;
+                if (Array.isArray(dataRows)) {
+                  dataRows.slice(0, max + 1).forEach((row: unknown, rowIndex: number) => {
+                    const text = Array.isArray(row)
+                      ? row.map(formatNumber).join(" | ")
+                      : norm(row);
+                    push(rowIndex === 0 ? "Data row header" : "Data row", text);
+                  });
+                }
+                const points: string[] = [];
+                for (const series of chart.series || []) {
+                  const seriesName = norm(series?.name) || "series";
+                  if (series?.name) push(`Series`, series.name);
+                  const seriesPoints =
+                    Array.isArray(series?.points) && series.points.length > 0
+                      ? series.points
+                      : Array.isArray(series?.data)
+                        ? series.data
+                        : [];
+                  const total =
+                    toNumber(series?.total) ??
+                    seriesPoints.reduce((sum: number, point: any) => {
+                      return sum + (toNumber(point?.y ?? point?.value) ?? 0);
+                    }, 0);
+                  for (const point of seriesPoints.slice(0, max)) {
+                    const label = firstText([
+                      point?.origXValue,
+                      point?.category,
+                      point?.name,
+                      Array.isArray(categories) ? categories[point?.x] : undefined,
+                      point?.x,
+                    ]);
+                    const rawValue = point?.y ?? point?.value;
+                    const count = toNumber(rawValue);
+                    const percent =
+                      toNumber(point?.percent ?? point?.percentage) ??
+                      (count !== null && total > 0
+                        ? Math.round((count / total) * 100000000) / 1000000
+                        : null);
+                    const fields = [
+                      `count=${formatNumber(rawValue)}`,
+                      percent !== null ? `percent=${formatNumber(percent)}` : "",
+                      total > 0 ? `series_total=${formatNumber(total)}` : "",
+                    ].filter(Boolean);
+                    points.push(
+                      `${seriesName} ${label || points.length + 1}: ${fields.join("; ")}`,
+                    );
+                    if (points.length >= max) break;
+                  }
+                  if (points.length >= max) break;
+                }
+                for (const point of points) push("Point", point);
+              });
+          }
+
+          const chartLike = [
+            ...document.querySelectorAll(
+              "svg, canvas, [role='img'], [aria-label*='chart' i], [class*='chart' i], [class*='highcharts' i]",
+            ),
+          ].slice(0, 12);
+          chartLike.forEach((el, index) => {
+            const label = norm(
+              [
+                el.getAttribute("aria-label"),
+                el.getAttribute("title"),
+                el.getAttribute("data-highcharts-chart"),
+              ]
+                .filter(Boolean)
+                .join(" "),
+            );
+            push(`Chart element ${index + 1}`, label);
+            const svgText = [...el.querySelectorAll("title, text, tspan")]
+              .map((node) => norm(node.textContent))
+              .filter(Boolean)
+              .slice(0, max)
+              .join(" | ");
+            push(`Chart text ${index + 1}`, svgText);
+          });
+
+          if (sections.length === 0) {
+            lines.push(`No chart data found${pat ? ` matching "${pat}"` : ""}.`);
+          } else {
+            lines.push(`Chart evidence${pat ? ` matching "${pat}"` : ""}:`);
+            lines.push(...sections.slice(0, max + 20));
+          }
+          return lines.join("\n");
+        },
+        [pattern, maxResults],
+        "No chart data found.",
+      );
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.INSPECT_TABLE,
+    INSPECT_TABLE_DEF,
+    async (args, tabId) => {
+      const maxRows = Math.min(Math.max((args.maxRows as number) || 10, 1), 50);
+      return runReadOnlyPageInspector(
+        tabId,
+        (max: number) => {
+          const norm = (value: unknown) =>
+            String(value ?? "").replace(/\s+/g, " ").trim();
+          const lines: string[] = [
+            `URL: ${location.href}`,
+            `Title: ${document.title}`,
+          ];
+          const params = new URLSearchParams(location.search);
+          const interestingParams = [
+            "sysparm_query",
+            "sysparm_fixed_query",
+            "sysparm_first_row",
+            "sysparm_order",
+            "sysparm_orderby",
+            "sysparm_sort",
+            "sysparm_view",
+          ]
+            .map((key) => [key, params.get(key)] as const)
+            .filter(([, value]) => value);
+          if (interestingParams.length > 0) {
+            lines.push(
+              `URL state: ${interestingParams.map(([k, v]) => `${k}=${v}`).join("; ")}`,
+            );
+          }
+
+          const tables = [...document.querySelectorAll("table, [role='grid'], [role='table']")].slice(0, 8);
+          if (tables.length === 0) {
+            const rows = [...document.querySelectorAll("[role='row'], tr, li, [class*='row' i]")].slice(0, max);
+            if (rows.length === 0) return `${lines.join("\n")}\nNo table or row-like data surface found.`;
+            lines.push(`Row-like surface (${rows.length} sampled rows):`);
+            rows.forEach((row, index) => lines.push(`${index + 1}. ${norm(row.textContent).slice(0, 240)}`));
+            return lines.join("\n");
+          }
+
+          tables.forEach((table, tableIndex) => {
+            const headers = [...table.querySelectorAll("th, [role='columnheader']")]
+              .map((header) => {
+                const text = norm(header.textContent);
+                const sort =
+                  header.getAttribute("aria-sort") ||
+                  header.getAttribute("data-sort") ||
+                  header.getAttribute("sort");
+                return sort ? `${text} (${sort})` : text;
+              })
+              .filter(Boolean);
+            lines.push(`Table ${tableIndex + 1}:`);
+            if (headers.length > 0) lines.push(`Columns: ${headers.join(" | ")}`);
+            const rows = [...table.querySelectorAll("tbody tr, [role='row']")]
+              .filter((row) => norm(row.textContent))
+              .slice(0, max);
+            rows.forEach((row, rowIndex) => {
+              const cells = [...row.querySelectorAll("td, th, [role='cell'], [role='gridcell']")]
+                .map((cell) => norm(cell.textContent))
+                .filter(Boolean);
+              lines.push(
+                `${rowIndex + 1}. ${(cells.length > 0 ? cells.join(" | ") : norm(row.textContent)).slice(0, 320)}`,
+              );
+            });
+          });
+          return lines.join("\n");
+        },
+        [maxRows],
+        "No table data found.",
+      );
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.INSPECT_FILTER_STATE,
+    INSPECT_FILTER_STATE_DEF,
+    async (args, tabId) => {
+      const pattern = (args.pattern as string) || "";
+      const maxResults = Math.min(
+        Math.max((args.maxResults as number) || 30, 1),
+        80,
+      );
+      return runReadOnlyPageInspector(
+        tabId,
+        (pat: string, max: number) => {
+          const norm = (value: unknown) =>
+            String(value ?? "").replace(/\s+/g, " ").trim();
+          const include = (text: string) =>
+            !pat || text.toLowerCase().includes(pat.toLowerCase());
+          const lines: string[] = [
+            `URL: ${location.href}`,
+            `Title: ${document.title}`,
+          ];
+          const params = new URLSearchParams(location.search);
+          const queryParams = ["sysparm_query", "sysparm_fixed_query", "sysparm_filter", "filter", "q"]
+            .map((key) => [key, params.get(key)] as const)
+            .filter(([, value]) => value);
+          if (queryParams.length > 0) {
+            lines.push(`Query state: ${queryParams.map(([k, v]) => `${k}=${v}`).join("; ")}`);
+          }
+
+          const candidates = [
+            ...document.querySelectorAll(
+              "button, input, select, textarea, [role='button'], [role='combobox'], [class*='filter' i], [id*='filter' i], [aria-label*='filter' i], [title*='filter' i]",
+            ),
+          ];
+          const seen = new Set<string>();
+          const items: string[] = [];
+          for (const el of candidates) {
+            const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            const text = norm(
+              [
+                el.getAttribute("aria-label"),
+                el.getAttribute("title"),
+                el.getAttribute("name"),
+                el.getAttribute("id"),
+                control.value,
+                el.textContent,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            );
+            if (!text || !include(text)) continue;
+            const key = `${el.tagName}:${text}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            items.push(`- <${el.tagName.toLowerCase()}> ${text.slice(0, 220)}`);
+            if (items.length >= max) break;
+          }
+          if (items.length === 0) {
+            lines.push(`No filter controls or state found${pat ? ` matching "${pat}"` : ""}.`);
+          } else {
+            lines.push(`Filter controls/state${pat ? ` matching "${pat}"` : ""}:`);
+            lines.push(...items);
+          }
+          return lines.join("\n");
+        },
+        [pattern, maxResults],
+        "No filter state found.",
+      );
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.APPLY_LIST_FILTER,
+    APPLY_LIST_FILTER_DEF,
+    async (args, tabId) => {
+      const rawConditions = Array.isArray(args.conditions)
+        ? args.conditions
+        : [];
+      const conditions = rawConditions
+        .map((condition) => {
+          const obj =
+            condition && typeof condition === "object"
+              ? (condition as Record<string, unknown>)
+              : {};
+          const field =
+            typeof obj.field === "string" ? obj.field.trim() : "";
+          const operator =
+            typeof obj.operator === "string" ? obj.operator.trim() : "is";
+          const value =
+            typeof obj.value === "string"
+              ? obj.value
+              : obj.value == null
+                ? ""
+                : String(obj.value);
+          return field ? { field, operator, value } : null;
+        })
+        .filter(
+          (
+            condition,
+          ): condition is { field: string; operator: string; value: string } =>
+            Boolean(condition),
+        );
+
+      if (conditions.length === 0) {
+        return "Error: apply_list_filter requires at least one condition with a field.";
+      }
+
+      const join =
+        typeof args.join === "string" && args.join.toUpperCase() === "AND"
+          ? "AND"
+          : "OR";
+      const table = typeof args.table === "string" ? args.table.trim() : "";
+      const shouldRun = args.run !== false;
+
+      try {
+        let currentTabUrl = "";
+        try {
+          currentTabUrl = (await chrome.tabs.get(tabId)).url || "";
+        } catch {
+          currentTabUrl = "";
+        }
+        const currentHost = (() => {
+          try {
+            return new URL(currentTabUrl).hostname.toLowerCase();
+          } catch {
+            return "";
+          }
+        })();
+        const inferredTable = inferServiceNowListTableFromUrl(currentTabUrl);
+        const effectiveTable = table || inferredTable;
+        const referenceValueOverrides: Array<{
+          index: number;
+          field: string;
+          referenceTable: string;
+          displayValue: string;
+          sysId: string;
+        }> = [];
+        if (currentHost.endsWith(".service-now.com") || currentHost === "service-now.com") {
+          for (let index = 0; index < conditions.length; index += 1) {
+            const condition = conditions[index];
+            const displayValue = condition.value.trim();
+            const operator = condition.operator.trim().toLowerCase();
+            if (!displayValue || operator.includes("empty")) continue;
+            const referenceTable =
+              commonServiceNowReferenceTableForField(condition.field) ||
+              commonServiceNowReferenceTableForField(
+                normalizeServiceNowReferenceKey(condition.field),
+              );
+            if (!referenceTable) continue;
+            const resolved = await resolveServiceNowReferenceFromBackground(
+              tabId,
+              referenceTable,
+              displayValue,
+            );
+            if (resolved.ok) {
+              referenceValueOverrides.push({
+                index,
+                field: condition.field,
+                referenceTable,
+                displayValue,
+                sysId: resolved.sysId,
+              });
+            }
+          }
+        }
+
+        const results = await withTimeout(
+          chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: "MAIN" as any,
+            func: async (payload: {
+              conditions: { field: string; operator: string; value: string }[];
+              join: "AND" | "OR";
+              table: string;
+              referenceValueOverrides: {
+                index: number;
+                field: string;
+                referenceTable: string;
+                displayValue: string;
+                sysId: string;
+              }[];
+            }) => {
+            type FieldMeta = {
+              name: string;
+              label: string;
+              type: string;
+              reference: string;
+            };
+            type AppliedCondition = {
+              field: string;
+              label: string;
+              operator: string;
+              displayValue: string;
+              encodedValue: string;
+              predicate: string;
+              type: string;
+            };
+
+            const normalize = (value: unknown): string =>
+              String(value ?? "")
+                .replace(/\s+/g, " ")
+                .trim()
+                .toLowerCase();
+            const keyFor = (value: unknown): string =>
+              normalize(value).replace(/[^a-z0-9]+/g, "");
+            const unwrap = (value: unknown): string => {
+              if (typeof value === "string") return value;
+              if (value && typeof value === "object") {
+                const obj = value as Record<string, unknown>;
+                if (typeof obj.value === "string") return obj.value;
+                if (typeof obj.display_value === "string") {
+                  return obj.display_value;
+                }
+              }
+              return "";
+            };
+            const cleanQueryValue = (value: string): string =>
+              value.replace(/\^/g, "").trim();
+            const serviceNowListMatch =
+              /\/([^/?#]+)_list\.do\b/i.exec(location.pathname);
+            const listApi = (() => {
+              const win = window as any;
+              const glide = win.GlideList2;
+              if (!glide || typeof glide.get !== "function") return null;
+              const candidates = [
+                ...(document.querySelectorAll("[data-list_id]") as any),
+              ]
+                .map((element: Element) =>
+                  element.getAttribute("data-list_id"),
+                )
+                .filter(Boolean);
+              for (const id of candidates) {
+                try {
+                  const list = glide.get(id);
+                  if (list) return list;
+                } catch {
+                  // Try the next list candidate.
+                }
+              }
+              try {
+                if (win.g_list) return win.g_list;
+              } catch {
+                return null;
+              }
+              return null;
+            })();
+
+            const tableFromList =
+              listApi && typeof listApi.getTableName === "function"
+                ? String(listApi.getTableName() || "")
+                : "";
+            const tableFromUrl = serviceNowListMatch?.[1] || "";
+            const tableName = tableFromList || tableFromUrl;
+            if (!tableName || !serviceNowListMatch) {
+              return {
+                ok: false,
+                reason: "not_servicenow_list_frame",
+                url: location.href,
+                title: document.title,
+              };
+            }
+            const hasListSurface =
+              Boolean(listApi) ||
+              Boolean(
+                document.querySelector(
+                  "table.data_list_table, [data-list_id], th[name], [id$='_table']",
+                ),
+              );
+            if (!hasListSurface) {
+              return {
+                ok: false,
+                reason: "no_list_surface_in_frame",
+                table: tableName,
+                url: location.href,
+                title: document.title,
+              };
+            }
+
+            if (payload.table) {
+              const requested = keyFor(payload.table);
+              const title = keyFor(document.title);
+              if (
+                requested &&
+                requested !== keyFor(tableName) &&
+                !title.includes(requested)
+              ) {
+                return {
+                  ok: false,
+                  reason: "table_mismatch",
+                  table: tableName,
+                  url: location.href,
+                  title: document.title,
+                };
+              }
+            }
+
+            const fetchJson = async (
+              path: string,
+              params: Record<string, string>,
+            ): Promise<Record<string, unknown>[]> => {
+              const search = new URLSearchParams(params);
+              const controller = new AbortController();
+              const timer = window.setTimeout(() => controller.abort(), 3000);
+              try {
+                const headers: Record<string, string> = {
+                  Accept: "application/json",
+                };
+                const token = String((window as any).g_ck || "");
+                if (token) headers["X-UserToken"] = token;
+                const response = await fetch(`${path}?${search.toString()}`, {
+                  credentials: "same-origin",
+                  headers,
+                  signal: controller.signal,
+                });
+                if (!response.ok) return [];
+                const payload = await response.json().catch(() => null);
+                return Array.isArray(payload?.result) ? payload.result : [];
+              } catch {
+                return [];
+              } finally {
+                window.clearTimeout(timer);
+              }
+            };
+
+            const fields = new Map<string, FieldMeta>();
+            const addField = (name: string, label = name, type = "", reference = "") => {
+              const fieldName = name.trim();
+              if (!fieldName) return;
+              const existing = fields.get(fieldName);
+              fields.set(fieldName, {
+                name: fieldName,
+                label: label.trim() || existing?.label || fieldName,
+                type: type || existing?.type || "",
+                reference: reference || existing?.reference || "",
+              });
+            };
+
+            for (const th of [
+              ...document.querySelectorAll(
+                `[id^="hdr_"] th[name], table.data_list_table th[name], th[name]`,
+              ),
+            ]) {
+              const name = th.getAttribute("name") || "";
+              const label =
+                th.getAttribute("glide_label") ||
+                th.getAttribute("aria-label") ||
+                th.querySelector("a")?.textContent ||
+                th.textContent ||
+                name;
+              addField(name, label);
+            }
+
+            if (tableName === "incident") {
+              addField("caller_id", "Caller", "reference", "sys_user");
+              addField("category", "Category", "choice", "");
+              addField("state", "State", "choice", "");
+              addField("assigned_to", "Assigned to", "reference", "sys_user");
+            }
+
+            const hasKnownField = (requestedField: string): boolean => {
+              const normalized = keyFor(requestedField);
+              const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+              if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
+              for (const field of fields.values()) {
+                if (
+                  keyFor(field.name) === normalized ||
+                  keyFor(field.label) === normalized ||
+                  keyFor(field.label).includes(normalized) ||
+                  normalized.includes(keyFor(field.label))
+                ) {
+                  return true;
+                }
+              }
+              return false;
+            };
+
+            if (!payload.conditions.every((condition) => hasKnownField(condition.field))) {
+              const dictRecords = await fetchJson("/api/now/table/sys_dictionary", {
+                sysparm_query: `name=${tableName}^internal_type!=collection`,
+                sysparm_fields: "element,column_label,internal_type,reference",
+                sysparm_limit: "1000",
+                sysparm_display_value: "all",
+              });
+              for (const record of dictRecords) {
+                const name = unwrap(record.element);
+                addField(
+                  name,
+                  unwrap(record.column_label) || name,
+                  unwrap(record.internal_type),
+                  unwrap(record.reference),
+                );
+              }
+            }
+
+            const byKey = new Map<string, FieldMeta>();
+            for (const field of fields.values()) {
+              byKey.set(keyFor(field.name), field);
+              byKey.set(keyFor(field.label), field);
+            }
+
+            const resolveField = (requestedField: string): FieldMeta | null => {
+              const normalized = keyFor(requestedField);
+              const direct = byKey.get(normalized);
+              if (direct) return direct;
+              const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+              if (fields.has(snake)) return fields.get(snake) || null;
+              if (fields.has(`${snake}_id`)) return fields.get(`${snake}_id`) || null;
+              for (const field of fields.values()) {
+                if (
+                  keyFor(field.label).includes(normalized) ||
+                  normalized.includes(keyFor(field.label))
+                ) {
+                  return field;
+                }
+              }
+              return null;
+            };
+
+            const resolveChoiceValue = async (
+              field: FieldMeta,
+              displayValue: string,
+            ): Promise<string> => {
+              const incidentChoiceFallbacks: Record<string, Record<string, string>> = {
+                category: {
+                  inquiryhelp: "inquiry",
+                  inquiry: "inquiry",
+                  software: "software",
+                  hardware: "hardware",
+                  network: "network",
+                  database: "database",
+                },
+                state: {
+                  new: "1",
+                  inprogress: "2",
+                  onhold: "3",
+                  resolved: "6",
+                  closed: "7",
+                  canceled: "8",
+                },
+              };
+              const fallback =
+                tableName === "incident"
+                  ? incidentChoiceFallbacks[field.name]?.[keyFor(displayValue)]
+                  : undefined;
+              if (fallback) return fallback;
+
+              const choices = await fetchJson("/api/now/table/sys_choice", {
+                sysparm_query: `name=${tableName}^element=${field.name}`,
+                sysparm_fields: "value,label",
+                sysparm_limit: "500",
+                sysparm_display_value: "all",
+              });
+              const wanted = keyFor(displayValue);
+              const choice = choices.find((record) => {
+                const value = unwrap(record.value);
+                const label = unwrap(record.label);
+                return keyFor(value) === wanted || keyFor(label) === wanted;
+              });
+              return choice ? unwrap(choice.value) : displayValue;
+            };
+
+            const resolveReferenceValue = async (
+              field: FieldMeta,
+              displayValue: string,
+              conditionIndex: number,
+            ): Promise<string> => {
+              if (!field.reference || !displayValue.trim()) return displayValue;
+              const override = payload.referenceValueOverrides.find(
+                (candidate) =>
+                  candidate.index === conditionIndex &&
+                  candidate.referenceTable === field.reference &&
+                  normalize(candidate.displayValue) === normalize(displayValue),
+              );
+              if (override?.sysId) return override.sysId;
+              const safe = cleanQueryValue(displayValue);
+              const queryFields = [
+                "name",
+                "display_name",
+                "number",
+                "user_name",
+                "email",
+                "first_name",
+                "last_name",
+              ];
+              const referencePath = `/api/now/table/${encodeURIComponent(field.reference)}`;
+              const fetchReferenceRecords = (query: string) =>
+                fetchJson(referencePath, {
+                  sysparm_query: query,
+                  sysparm_fields:
+                    "sys_id,name,display_name,number,user_name,email,first_name,last_name",
+                  sysparm_limit: "5",
+                  sysparm_display_value: "all",
+                });
+              const exactQuery = ["name", "display_name", "number", "user_name", "email"]
+                .map((queryField) => `${queryField}=${safe}`)
+                .join("^OR");
+              let records = await fetchReferenceRecords(exactQuery);
+              if (records.length === 0 && field.reference === "sys_user") {
+                const parts = safe.split(/\s+/).filter(Boolean);
+                const firstName = parts[0] || "";
+                const lastName = parts.slice(1).join(" ");
+                if (firstName && lastName) {
+                  records = await fetchReferenceRecords(
+                    `first_name=${firstName}^last_name=${lastName}`,
+                  );
+                }
+              }
+              if (records.length === 0) {
+                records = await fetchReferenceRecords(
+                  ["name", "display_name", "user_name", "email"]
+                    .map((queryField) => `${queryField}LIKE${safe}`)
+                    .join("^OR"),
+                );
+              }
+              const wanted = normalize(displayValue);
+              const selected =
+                records.find((record) =>
+                  queryFields.some(
+                    (queryField) => normalize(unwrap(record[queryField])) === wanted,
+                  ) ||
+                    normalize(
+                      `${unwrap(record.first_name)} ${unwrap(record.last_name)}`,
+                    ) === wanted,
+                ) || records[0];
+              return selected ? unwrap(selected.sys_id) || displayValue : displayValue;
+            };
+
+            const resolveEncodedValue = async (
+              field: FieldMeta,
+              displayValue: string,
+              conditionIndex: number,
+            ): Promise<string> => {
+              const rawType = normalize(field.type);
+              if (rawType.includes("choice") || rawType === "boolean" || rawType === "integer") {
+                return cleanQueryValue(await resolveChoiceValue(field, displayValue));
+              }
+              if (rawType.includes("reference") || field.reference) {
+                return cleanQueryValue(
+                  await resolveReferenceValue(field, displayValue, conditionIndex),
+                );
+              }
+              return cleanQueryValue(displayValue);
+            };
+
+            const buildPredicate = async (
+              condition: { field: string; operator: string; value: string },
+              conditionIndex: number,
+            ): Promise<AppliedCondition> => {
+              const field = resolveField(condition.field);
+              if (!field) {
+                throw new Error(`unknown_field:${condition.field}`);
+              }
+              const operator = normalize(condition.operator || "is");
+              const displayValue = condition.value ?? "";
+              if (
+                operator.includes("empty") ||
+                displayValue.trim().length === 0
+              ) {
+                return {
+                  field: field.name,
+                  label: field.label,
+                  operator: "is empty",
+                  displayValue,
+                  encodedValue: "",
+                  predicate: `${field.name}ISEMPTY`,
+                  type: field.type,
+                };
+              }
+              const encodedValue = await resolveEncodedValue(
+                field,
+                displayValue,
+                conditionIndex,
+              );
+              const encodedOperator =
+                operator.includes("not") && !operator.includes("empty")
+                  ? "!="
+                  : operator.includes("start")
+                    ? "STARTSWITH"
+                    : "=";
+              return {
+                field: field.name,
+                label: field.label,
+                operator: condition.operator || "is",
+                displayValue,
+                encodedValue,
+                predicate:
+                  encodedOperator === "=" || encodedOperator === "!="
+                    ? `${field.name}${encodedOperator}${encodedValue}`
+                    : `${field.name}${encodedOperator}${encodedValue}`,
+                type: field.type,
+              };
+            };
+
+            try {
+              const applied: AppliedCondition[] = [];
+              for (let index = 0; index < payload.conditions.length; index += 1) {
+                applied.push(await buildPredicate(payload.conditions[index], index));
+              }
+              const separator = payload.join === "AND" ? "^" : "^OR";
+              const query = applied.map((condition) => condition.predicate).join(separator);
+              const target = `${tableName}_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+              return {
+                ok: true,
+                platform: "servicenow",
+                table: tableName,
+                query,
+                targetUrl: `${location.origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
+                frameUrl: location.href,
+                currentQuery:
+                  listApi && typeof listApi.getQuery === "function"
+                    ? String(listApi.getQuery() || "")
+                    : "",
+                conditions: applied,
+              };
+            } catch (error) {
+              return {
+                ok: false,
+                reason: error instanceof Error ? error.message : "filter_build_failed",
+                table: tableName,
+                availableFields: [...fields.values()]
+                  .slice(0, 80)
+                  .map((field) => `${field.label} (${field.name})`),
+                url: location.href,
+              };
+            }
+            },
+            args: [
+              {
+                conditions,
+                join,
+                table: effectiveTable,
+                referenceValueOverrides,
+              },
+            ],
+          }),
+          12_000,
+          "apply_list_filter planning",
+        );
+
+        const plans = (results || [])
+          .map((result) => result.result as Record<string, unknown> | undefined)
+          .filter(Boolean);
+        const applied = plans.find(
+          (plan) => plan?.ok === true && typeof plan.targetUrl === "string",
+        );
+        if (!applied) {
+          const reason =
+            plans.find((plan) => typeof plan?.reason === "string")?.reason ||
+            "no_supported_list_surface";
+          const fields = plans.find((plan) => Array.isArray(plan?.availableFields))
+            ?.availableFields as string[] | undefined;
+          return [
+            `Error: Could not apply a structured list filter (${String(reason)}).`,
+            fields?.length
+              ? `Available fields included: ${fields.slice(0, 20).join(", ")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+
+        const targetUrl = String(applied.targetUrl);
+        const query = String(applied.query || "");
+        const tableName = String(applied.table || "list");
+        const conditionLines = Array.isArray(applied.conditions)
+          ? (applied.conditions as Record<string, unknown>[])
+              .map(
+                (condition) =>
+                  `- ${String(condition.label || condition.field)} ${String(condition.operator || "is")} "${String(condition.displayValue ?? "")}" -> ${String(condition.predicate || "")}`,
+              )
+              .join("\n")
+          : "";
+
+        if (shouldRun) {
+          const currentTab = await chrome.tabs.get(tabId);
+          const currentOrigin = normalizeOrigin(currentTab.url || "");
+          const targetOrigin = normalizeOrigin(targetUrl);
+          if (currentOrigin && targetOrigin && currentOrigin !== targetOrigin) {
+            return navigationBoundaryError(targetUrl, [currentOrigin]);
+          }
+          await chrome.tabs.update(tabId, { url: targetUrl });
+          await waitForNavigation(tabId, 10_000);
+        }
+
+        return [
+          `${shouldRun ? "Applied" : "Built"} ${tableName} list filter.`,
+          `Query state: sysparm_query=${query}`,
+          conditionLines ? `Conditions:\n${conditionLines}` : "",
+          shouldRun ? `Navigated to filtered list: ${targetUrl}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      } catch (e: any) {
+        return `Error applying list filter: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.APPLY_LIST_SORT,
+    APPLY_LIST_SORT_DEF,
+    async (args, tabId) => {
+      const rawSorts = Array.isArray(args.sorts) ? args.sorts : [];
+      const sorts = rawSorts
+        .map((sort) => {
+          const obj =
+            sort && typeof sort === "object"
+              ? (sort as Record<string, unknown>)
+              : {};
+          const field = typeof obj.field === "string" ? obj.field.trim() : "";
+          const direction =
+            typeof obj.direction === "string" ? obj.direction.trim() : "ascending";
+          return field ? { field, direction } : null;
+        })
+        .filter(
+          (
+            sort,
+          ): sort is { field: string; direction: string } =>
+            Boolean(sort),
+        );
+
+      if (sorts.length === 0) {
+        return "Error: apply_list_sort requires at least one sort clause with a field.";
+      }
+
+      const table = typeof args.table === "string" ? args.table.trim() : "";
+      const shouldRun = args.run !== false;
+
+      try {
+        let currentTabUrl = "";
+        try {
+          currentTabUrl = (await chrome.tabs.get(tabId)).url || "";
+        } catch {
+          currentTabUrl = "";
+        }
+        const effectiveTable = table || inferServiceNowListTableFromUrl(currentTabUrl);
+
+        const results = await withTimeout(
+          chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: "MAIN" as any,
+            func: async (payload: {
+              sorts: { field: string; direction: string }[];
+              table: string;
+            }) => {
+              type FieldMeta = {
+                name: string;
+                label: string;
+                type: string;
+                reference: string;
+              };
+              type AppliedSort = {
+                field: string;
+                label: string;
+                direction: "asc" | "desc";
+                predicate: string;
+              };
+
+              const normalize = (value: unknown): string =>
+                String(value ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .toLowerCase();
+              const keyFor = (value: unknown): string =>
+                normalize(value).replace(/[^a-z0-9]+/g, "");
+              const unwrap = (value: unknown): string => {
+                if (typeof value === "string") return value;
+                if (value && typeof value === "object") {
+                  const obj = value as Record<string, unknown>;
+                  if (typeof obj.value === "string") return obj.value;
+                  if (typeof obj.display_value === "string") {
+                    return obj.display_value;
+                  }
+                }
+                return "";
+              };
+              const serviceNowListMatch =
+                /\/([^/?#]+)_list\.do\b/i.exec(location.pathname);
+              const listApi = (() => {
+                const win = window as any;
+                const glide = win.GlideList2;
+                if (!glide || typeof glide.get !== "function") return null;
+                const candidates = [
+                  ...(document.querySelectorAll("[data-list_id]") as any),
+                ]
+                  .map((element: Element) =>
+                    element.getAttribute("data-list_id"),
+                  )
+                  .filter(Boolean);
+                for (const id of candidates) {
+                  try {
+                    const list = glide.get(id);
+                    if (list) return list;
+                  } catch {
+                    // Try the next list candidate.
+                  }
+                }
+                try {
+                  if (win.g_list) return win.g_list;
+                } catch {
+                  return null;
+                }
+                return null;
+              })();
+
+              const tableFromList =
+                listApi && typeof listApi.getTableName === "function"
+                  ? String(listApi.getTableName() || "")
+                  : "";
+              const tableFromUrl = serviceNowListMatch?.[1] || "";
+              const tableName = tableFromList || tableFromUrl;
+              if (!tableName || !serviceNowListMatch) {
+                return {
+                  ok: false,
+                  reason: "not_servicenow_list_frame",
+                  url: location.href,
+                  title: document.title,
+                };
+              }
+              const hasListSurface =
+                Boolean(listApi) ||
+                Boolean(
+                  document.querySelector(
+                    "table.data_list_table, [data-list_id], th[name], [id$='_table']",
+                  ),
+                );
+              if (!hasListSurface) {
+                return {
+                  ok: false,
+                  reason: "no_list_surface_in_frame",
+                  table: tableName,
+                  url: location.href,
+                  title: document.title,
+                };
+              }
+
+              if (payload.table) {
+                const requested = keyFor(payload.table);
+                const title = keyFor(document.title);
+                if (
+                  requested &&
+                  requested !== keyFor(tableName) &&
+                  !title.includes(requested)
+                ) {
+                  return {
+                    ok: false,
+                    reason: "table_mismatch",
+                    table: tableName,
+                    url: location.href,
+                    title: document.title,
+                  };
+                }
+              }
+
+              const fetchJson = async (
+                path: string,
+                params: Record<string, string>,
+              ): Promise<Record<string, unknown>[]> => {
+                const search = new URLSearchParams(params);
+                const controller = new AbortController();
+                const timer = window.setTimeout(() => controller.abort(), 3000);
+                try {
+                  const headers: Record<string, string> = {
+                    Accept: "application/json",
+                  };
+                  const token = String((window as any).g_ck || "");
+                  if (token) headers["X-UserToken"] = token;
+                  const response = await fetch(`${path}?${search.toString()}`, {
+                    credentials: "same-origin",
+                    headers,
+                    signal: controller.signal,
+                  });
+                  if (!response.ok) return [];
+                  const payload = await response.json().catch(() => null);
+                  return Array.isArray(payload?.result) ? payload.result : [];
+                } catch {
+                  return [];
+                } finally {
+                  window.clearTimeout(timer);
+                }
+              };
+
+              const fields = new Map<string, FieldMeta>();
+              const addField = (
+                name: string,
+                label = name,
+                type = "",
+                reference = "",
+              ) => {
+                const fieldName = name.trim();
+                if (!fieldName) return;
+                const existing = fields.get(fieldName);
+                fields.set(fieldName, {
+                  name: fieldName,
+                  label: label.trim() || existing?.label || fieldName,
+                  type: type || existing?.type || "",
+                  reference: reference || existing?.reference || "",
+                });
+              };
+
+              for (const th of [
+                ...document.querySelectorAll(
+                  `[id^="hdr_"] th[name], table.data_list_table th[name], th[name]`,
+                ),
+              ]) {
+                const name = th.getAttribute("name") || "";
+                const label =
+                  th.getAttribute("glide_label") ||
+                  th.getAttribute("aria-label") ||
+                  th.querySelector("a")?.textContent ||
+                  th.textContent ||
+                  name;
+                addField(name, label);
+              }
+
+              if (tableName === "incident") {
+                addField("number", "Number");
+                addField("task_effective_number", "Effective number");
+                addField("calendar_duration", "Duration");
+                addField("business_duration", "Business duration");
+                addField("business_stc", "Business resolve time");
+                addField("activity_due", "Activity due");
+                addField("assigned_to", "Assigned to", "reference", "sys_user");
+                addField("assignment_group", "Assignment group", "reference", "sys_user_group");
+                addField("closed_by", "Closed by", "reference", "sys_user");
+                addField("caller_id", "Caller", "reference", "sys_user");
+              }
+
+              const hasKnownField = (requestedField: string): boolean => {
+                const normalized = keyFor(requestedField);
+                const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+                if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
+                for (const field of fields.values()) {
+                  if (
+                    keyFor(field.name) === normalized ||
+                    keyFor(field.label) === normalized
+                  ) {
+                    return true;
+                  }
+                }
+                return false;
+              };
+
+              if (!payload.sorts.every((sort) => hasKnownField(sort.field))) {
+                const dictRecords = await fetchJson("/api/now/table/sys_dictionary", {
+                  sysparm_query: `name=${tableName}^internal_type!=collection`,
+                  sysparm_fields: "element,column_label,internal_type,reference",
+                  sysparm_limit: "1000",
+                  sysparm_display_value: "all",
+                });
+                for (const record of dictRecords) {
+                  const name = unwrap(record.element);
+                  addField(
+                    name,
+                    unwrap(record.column_label) || name,
+                    unwrap(record.internal_type),
+                    unwrap(record.reference),
+                  );
+                }
+              }
+
+              const byKey = new Map<string, FieldMeta>();
+              for (const field of fields.values()) {
+                byKey.set(keyFor(field.name), field);
+                byKey.set(keyFor(field.label), field);
+              }
+
+              const resolveField = (requestedField: string): FieldMeta | null => {
+                const normalized = keyFor(requestedField);
+                const direct = byKey.get(normalized);
+                if (direct) return direct;
+                const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+                if (fields.has(snake)) return fields.get(snake) || null;
+                if (fields.has(`${snake}_id`)) return fields.get(`${snake}_id`) || null;
+                const partial = [...fields.values()]
+                  .filter((field) => {
+                    const labelKey = keyFor(field.label);
+                    return (
+                      labelKey.includes(normalized) ||
+                      normalized.includes(labelKey)
+                    );
+                  })
+                  .sort(
+                    (a, b) => keyFor(a.label).length - keyFor(b.label).length,
+                  );
+                return partial[0] || null;
+              };
+
+              const normalizeDirection = (direction: string): "asc" | "desc" =>
+                normalize(direction).startsWith("desc") ? "desc" : "asc";
+
+              try {
+                const applied: AppliedSort[] = payload.sorts.map((sort) => {
+                  const field = resolveField(sort.field);
+                  if (!field) throw new Error(`unknown_field:${sort.field}`);
+                  const direction = normalizeDirection(sort.direction);
+                  const predicate = `ORDERBY${direction === "desc" ? "DESC" : ""}${field.name}`;
+                  return {
+                    field: field.name,
+                    label: field.label,
+                    direction,
+                    predicate,
+                  };
+                });
+                const currentQuery =
+                  listApi && typeof listApi.getQuery === "function"
+                    ? String(listApi.getQuery() || "")
+                    : new URLSearchParams(location.search).get("sysparm_query") || "";
+                const baseQuery = currentQuery
+                  .split("^")
+                  .map((part) => part.trim())
+                  .filter((part) => part && !/^ORDERBY/i.test(part))
+                  .join("^");
+                const query = [baseQuery, ...applied.map((sort) => sort.predicate)]
+                  .filter(Boolean)
+                  .join("^");
+                const target = `${tableName}_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+                return {
+                  ok: true,
+                  platform: "servicenow",
+                  table: tableName,
+                  query,
+                  targetUrl: `${location.origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
+                  frameUrl: location.href,
+                  sorts: applied,
+                };
+              } catch (error) {
+                return {
+                  ok: false,
+                  reason: error instanceof Error ? error.message : "sort_build_failed",
+                  table: tableName,
+                  availableFields: [...fields.values()]
+                    .slice(0, 80)
+                    .map((field) => `${field.label} (${field.name})`),
+                  url: location.href,
+                };
+              }
+            },
+            args: [
+              {
+                sorts,
+                table: effectiveTable,
+              },
+            ],
+          }),
+          12_000,
+          "apply_list_sort planning",
+        );
+
+        const plans = (results || [])
+          .map((result) => result.result as Record<string, unknown> | undefined)
+          .filter(Boolean);
+        const applied = plans.find(
+          (plan) => plan?.ok === true && typeof plan.targetUrl === "string",
+        );
+        if (!applied) {
+          const reason =
+            plans.find((plan) => typeof plan?.reason === "string")?.reason ||
+            "no_supported_list_surface";
+          const fields = plans.find((plan) => Array.isArray(plan?.availableFields))
+            ?.availableFields as string[] | undefined;
+          return [
+            `Error: Could not apply structured list sorting (${String(reason)}).`,
+            fields?.length
+              ? `Available fields included: ${fields.slice(0, 20).join(", ")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+
+        const targetUrl = String(applied.targetUrl);
+        const query = String(applied.query || "");
+        const tableName = String(applied.table || "list");
+        const sortLines = Array.isArray(applied.sorts)
+          ? (applied.sorts as Record<string, unknown>[])
+              .map(
+                (sort) =>
+                  `- ${String(sort.label || sort.field)} ${String(sort.direction || "asc")} -> ${String(sort.predicate || "")}`,
+              )
+              .join("\n")
+          : "";
+
+        if (shouldRun) {
+          const currentTab = await chrome.tabs.get(tabId);
+          const currentOrigin = normalizeOrigin(currentTab.url || "");
+          const targetOrigin = normalizeOrigin(targetUrl);
+          if (currentOrigin && targetOrigin && currentOrigin !== targetOrigin) {
+            return navigationBoundaryError(targetUrl, [currentOrigin]);
+          }
+          await chrome.tabs.update(tabId, { url: targetUrl });
+          await waitForNavigation(tabId, 10_000);
+        }
+
+        return [
+          `${shouldRun ? "Applied" : "Built"} ${tableName} list sorting.`,
+          `Query state: sysparm_query=${query}`,
+          sortLines ? `Sorts:\n${sortLines}` : "",
+          shouldRun ? `Navigated to sorted list: ${targetUrl}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      } catch (e: any) {
+        return `Error applying list sort: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
+    ToolName.INSPECT_CATALOG_ITEM,
+    INSPECT_CATALOG_ITEM_DEF,
+    async (args, tabId) => {
+      const maxControls = Math.min(
+        Math.max((args.maxControls as number) || 40, 1),
+        80,
+      );
+      return runReadOnlyPageInspector(
+        tabId,
+        (max: number) => {
+          const norm = (value: unknown) =>
+            String(value ?? "").replace(/\s+/g, " ").trim();
+          const lines: string[] = [
+            `URL: ${location.href}`,
+            `Title: ${document.title}`,
+          ];
+          const priceText = norm(document.body?.innerText || "")
+            .match(/(?:[$€£]\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP)|annually|monthly|total|price)/gi)
+            ?.slice(0, 20)
+            .join(" | ");
+          if (priceText) lines.push(`Price/summary cues: ${priceText}`);
+
+          const controls = [
+            ...document.querySelectorAll("input, select, textarea, button, [role='button'], [role='checkbox'], [role='spinbutton']"),
+          ].slice(0, max * 2);
+          const rows: string[] = [];
+          for (const el of controls) {
+            const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            const type = el.getAttribute("type") || el.getAttribute("role") || el.tagName.toLowerCase();
+            const label = norm(
+              [
+                el.getAttribute("aria-label"),
+                el.getAttribute("title"),
+                el.getAttribute("name"),
+                el.getAttribute("id"),
+                el.closest("label")?.textContent,
+                control.value,
+                el.textContent,
+              ]
+                .filter(Boolean)
+                .join(" "),
+            );
+            if (!label) continue;
+            const checked =
+              "checked" in control && typeof control.checked === "boolean"
+                ? ` checked=${control.checked}`
+                : "";
+            rows.push(`- ${type}${checked}: ${label.slice(0, 220)}`);
+            if (rows.length >= max) break;
+          }
+          if (rows.length === 0) lines.push("No catalog controls found.");
+          else {
+            lines.push("Catalog controls:");
+            lines.push(...rows);
+          }
+          return lines.join("\n");
+        },
+        [maxControls],
+        "No catalog item state found.",
+      );
     },
   );
 

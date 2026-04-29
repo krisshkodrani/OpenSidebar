@@ -62,8 +62,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.CLARIFY)).toBe(true);
     });
 
-    test("has exactly 15 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(15);
+    test("has exactly 17 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(17);
     });
   });
 
@@ -134,6 +134,10 @@ describe("Tool Metadata", () => {
     test("contains expected DOM-cacheable tools", () => {
       expect(CACHEABLE_TOOLS.get(ToolName.READ_ELEMENT)).toBe("dom");
       expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_HIDDEN)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_CHART)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_TABLE)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_FILTER_STATE)).toBe("dom");
+      expect(CACHEABLE_TOOLS.get(ToolName.INSPECT_CATALOG_ITEM)).toBe("dom");
     });
 
     test("contains expected static-cacheable tools", () => {
@@ -163,8 +167,8 @@ describe("Tool Metadata", () => {
       expect(CACHEABLE_TOOLS.has(ToolName.ESCALATE)).toBe(false);
     });
 
-    test("has exactly 7 entries", () => {
-      expect(CACHEABLE_TOOLS.size).toBe(7);
+    test("has exactly 11 entries", () => {
+      expect(CACHEABLE_TOOLS.size).toBe(11);
     });
   });
 
@@ -183,6 +187,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.CLICK_ELEMENT);
       expect(tools).toContain(ToolName.TYPE_TEXT);
       expect(tools).toContain(ToolName.SELECT_OPTION);
+      expect(tools).toContain(ToolName.APPLY_LIST_FILTER);
       expect(tools).toContain(ToolName.GET_PROFILE_FIELDS);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).not.toContain(ToolName.CREATE_TAB);

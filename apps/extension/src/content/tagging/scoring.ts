@@ -2,7 +2,7 @@
  * Element scoring and collapse - prioritize task-relevant elements, deduplicate near-identical
  */
 
-import { isRandomHash } from "./utils";
+import { getCheckboxOrRadioControl, isRandomHash } from "./utils";
 
 /**
  * Collapse near-identical elements to free tag slots for diverse ones.
@@ -60,6 +60,7 @@ export function collapseNearIdentical(elements: Element[]): {
 
   /** Elements that should never be collapsed */
   function isProtected(el: Element): boolean {
+    if (getCheckboxOrRadioControl(el)) return true;
     if (el.getAttribute("draggable") === "true") return true;
     if (el.hasAttribute("dropzone")) return true;
     if ((el as HTMLElement).dataset?.droptarget) return true;
@@ -139,6 +140,7 @@ export function scoreElement(el: Element): number {
     score += 10;
   if (tag === "textarea") score += 10;
   if (tag === "select") score += 10;
+  if (getCheckboxOrRadioControl(el)) score += 10;
 
   // Submit/file/action elements
   if (type === "submit" || type === "file") score += 8;

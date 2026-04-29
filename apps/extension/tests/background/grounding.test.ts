@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  detectFormSubmissionResetSuccess,
   detectPendingAsyncChange,
   detectStructuralStepAdvance,
   extractStepIndicator,
@@ -465,6 +466,193 @@ describe("detectStructuralStepAdvance", () => {
         currentCount: 10,
       },
       toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(signal).toBeNull();
+  });
+});
+
+describe("detectFormSubmissionResetSuccess", () => {
+  it("detects a populated create-record form resetting to the next blank record after submit", () => {
+    const preSubmit = makeSnapshot({
+      title: "Create INC0034274 | Incident | ServiceNow",
+      pageContent: "Incident New record Submit",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0034274",
+          attributes: { id: "incident.number", value: "INC0034274" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 21,
+          tagName: "input",
+          role: "combobox",
+          text: "Joe Employee",
+          attributes: { id: "sys_display.incident.caller_id" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 34,
+          tagName: "input",
+          role: "text",
+          text: "EMAIL Server Down Again",
+          attributes: { id: "incident.short_description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 27,
+          tagName: "select",
+          role: "combobox",
+          text: "-- None --ChatEmailPhone",
+          attributes: { id: "incident.contact_type", selected: "Phone" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const afterSubmit = makeSnapshot({
+      title: "Create INC0034275 | Incident | ServiceNow",
+      pageContent: "Incident New record Submit Number Caller Short description",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0034275",
+          attributes: { id: "incident.number", value: "INC0034275" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 21,
+          tagName: "input",
+          role: "combobox",
+          text: "",
+          attributes: { id: "sys_display.incident.caller_id" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 34,
+          tagName: "input",
+          role: "text",
+          text: "",
+          attributes: { id: "incident.short_description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const signal = detectFormSubmissionResetSuccess({
+      currentStepDescription:
+        "Submit the form and verify the created record or confirmation is visible.",
+      currentStepSuccessCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      preActionSnapshot: preSubmit,
+      currentSnapshot: afterSubmit,
+      actionEffect: {
+        deltaPercent: 0.7,
+        urlChanged: true,
+        currentUrl: "https://example.service-now.com/incident.do",
+        elementsAdded: 5,
+        elementsRemoved: 3,
+        prevCount: 5,
+        currentCount: 4,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+      toolArgs: { id: 40 },
+    });
+
+    expect(signal).toMatchObject({
+      previousRecordId: "INC0034274",
+      currentRecordId: "INC0034275",
+      filledFieldsBeforeSubmit: 3,
+    });
+  });
+
+  it("does not treat a blank or validation-error form as a successful reset", () => {
+    const preSubmit = makeSnapshot({
+      title: "Create INC0034274 | Incident | ServiceNow",
+      pageContent: "Incident New record Submit",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0034274",
+          attributes: { id: "incident.number", value: "INC0034274" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const afterSubmit = makeSnapshot({
+      title: "Create INC0034275 | Incident | ServiceNow",
+      pageContent:
+        "Incident New record Error Message The following mandatory fields are not filled in: Short description, Caller",
+      elements: [],
+    });
+
+    const signal = detectFormSubmissionResetSuccess({
+      currentStepDescription: "Submit the form",
+      preActionSnapshot: preSubmit,
+      currentSnapshot: afterSubmit,
+      actionEffect: {
+        deltaPercent: 0.7,
+        urlChanged: true,
+        currentUrl: "https://example.service-now.com/incident.do",
+        elementsAdded: 3,
+        elementsRemoved: 2,
+        prevCount: 2,
+        currentCount: 3,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+      toolArgs: { id: 40 },
     });
 
     expect(signal).toBeNull();

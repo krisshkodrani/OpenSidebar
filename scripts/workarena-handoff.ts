@@ -40,6 +40,7 @@ import {
 import { validateWorkArenaReport } from "./workarena-report-schema.js";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
+import type { Page } from "puppeteer";
 
 const SESSION_BRIDGE_PATH = resolve(PROJECT_ROOT, "scripts", "workarena-session-bridge.py");
 
@@ -68,6 +69,7 @@ type TraceMetrics = {
   traceIds: string[];
   traceFiles: string[];
   finalAnswer: string | null;
+  submittedRecordNumber: string | null;
   turns: number;
   perceptions: number;
   toolCalls: number;
@@ -78,6 +80,20 @@ type TraceMetrics = {
     total: number;
   };
   costUsd: number;
+};
+
+type StorageEntry = {
+  name: string;
+  value: string;
+};
+
+type ExportedStorageState = {
+  cookies: JsonRecord[];
+  origins: Array<{
+    origin: string;
+    localStorage: StorageEntry[];
+    sessionStorage: StorageEntry[];
+  }>;
 };
 
 function statusSummary(record: JsonRecord | null): JsonRecord | null {
@@ -137,6 +153,80 @@ function numberValue(record: JsonRecord, key: string): number | null {
 
 function arrayValue<T = unknown>(record: JsonRecord, key: string): T[] {
   return Array.isArray(record[key]) ? (record[key] as T[]) : [];
+}
+
+function sanitizeCookieForPlaywright(cookie: JsonRecord): JsonRecord | null {
+  const name = stringValue(cookie, "name");
+  const value = stringValue(cookie, "value");
+  if (!name || value === null) return null;
+
+  const converted: JsonRecord = { name, value };
+  for (const key of ["domain", "path", "sameSite"]) {
+    const fieldValue = stringValue(cookie, key);
+    if (fieldValue !== null) converted[key] = fieldValue;
+  }
+  for (const key of ["httpOnly", "secure"]) {
+    if (typeof cookie[key] === "boolean") converted[key] = cookie[key];
+  }
+  const expires = numberValue(cookie, "expires");
+  if (expires !== null && expires >= 0) converted.expires = expires;
+  return converted;
+}
+
+async function exportCurrentPageStorageState(
+  page: Page,
+  activeUrl: string,
+): Promise<{ storageState: ExportedStorageState; summary: JsonRecord }> {
+  const origin = new URL(activeUrl).origin;
+  const rawCookies = (await page.cookies(activeUrl)) as unknown[];
+  const cookies = rawCookies
+    .filter(isRecord)
+    .map(sanitizeCookieForPlaywright)
+    .filter((cookie): cookie is JsonRecord => cookie !== null);
+  const storage = await page.evaluate(`(() => {
+    const readEntries = (store) => {
+      const entries = [];
+      for (let index = 0; index < store.length; index += 1) {
+        const name = store.key(index) || "";
+        if (name) entries.push({ name, value: store.getItem(name) || "" });
+      }
+      return entries;
+    };
+    return {
+      localStorage: readEntries(window.localStorage),
+      sessionStorage: readEntries(window.sessionStorage),
+    };
+  })()`);
+  const localStorage = Array.isArray(storage?.localStorage)
+    ? storage.localStorage.filter(
+        (entry): entry is StorageEntry =>
+          isRecord(entry) &&
+          typeof entry.name === "string" &&
+          typeof entry.value === "string",
+      )
+    : [];
+  const sessionStorage = Array.isArray(storage?.sessionStorage)
+    ? storage.sessionStorage.filter(
+        (entry): entry is StorageEntry =>
+          isRecord(entry) &&
+          typeof entry.name === "string" &&
+          typeof entry.value === "string",
+      )
+    : [];
+  const storageState: ExportedStorageState = {
+    cookies,
+    origins: [{ origin, localStorage, sessionStorage }],
+  };
+
+  return {
+    storageState,
+    summary: {
+      cookies: cookies.length,
+      localStorage: localStorage.length,
+      sessionStorage: sessionStorage.length,
+      origins: [origin],
+    },
+  };
 }
 
 function nestedRecord(record: JsonRecord, key: string): JsonRecord {
@@ -398,6 +488,36 @@ function validationFromBridge(
   };
 }
 
+function normalizeRecordNumber(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toUpperCase();
+  return /^[A-Z]{2,}\d+$/.test(trimmed) ? trimmed : null;
+}
+
+function extractSubmittedRecordNumberFromText(value: unknown): string | null {
+  if (typeof value !== "string" || !value) return null;
+  const direct = value.match(
+    /\bSubmit advanced from populated record\s+([A-Z]{2,}\d+)\s+to\s+fresh record form\b/i,
+  );
+  if (direct) return normalizeRecordNumber(direct[1]);
+
+  const fallback = value.match(/\bpreviousRecordId["'\s:]+([A-Z]{2,}\d+)\b/i);
+  return fallback ? normalizeRecordNumber(fallback[1]) : null;
+}
+
+function submittedRecordNumberFromEvents(events: unknown): string | null {
+  if (!Array.isArray(events)) return null;
+  for (const event of events) {
+    if (!isRecord(event) || event.type !== "submit_form_reset_success") continue;
+    const data = nestedRecord(event, "data");
+    const direct = normalizeRecordNumber(data.previousRecordId);
+    if (direct) return direct;
+    const reason = extractSubmittedRecordNumberFromText(data.reason);
+    if (reason) return reason;
+  }
+  return null;
+}
+
 function readTraceMetrics(traceFiles: string[]): TraceMetrics {
   let input = 0;
   let output = 0;
@@ -406,6 +526,7 @@ function readTraceMetrics(traceFiles: string[]): TraceMetrics {
   let toolCalls = 0;
   let toolExecutions = 0;
   let perceptions = 0;
+  let submittedRecordNumber: string | null = null;
   const traceIds = new Set<string>();
 
   for (const filePath of traceFiles) {
@@ -415,6 +536,8 @@ function readTraceMetrics(traceFiles: string[]): TraceMetrics {
       try {
         const entry = JSON.parse(line) as any;
         if (typeof entry.runId === "string") traceIds.add(entry.runId);
+        submittedRecordNumber =
+          submittedRecordNumber ?? submittedRecordNumberFromEvents(entry.events);
         const usage = entry.llmResponse?.usage;
         input += Number(usage?.prompt_tokens ?? 0);
         output += Number(usage?.completion_tokens ?? 0);
@@ -447,6 +570,7 @@ function readTraceMetrics(traceFiles: string[]): TraceMetrics {
     traceIds: [...traceIds].sort(),
     traceFiles,
     finalAnswer: extractDoneSummary(traceFiles) || null,
+    submittedRecordNumber,
     turns: traceFiles.flatMap((filePath) => readTrace(filePath)).length,
     perceptions,
     toolCalls,
@@ -664,6 +788,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
   let resetAttempts: JsonRecord[] = [];
   let exportSession: JsonRecord | null = null;
   let validation: JsonRecord | null = null;
+  let validationStorageExport: JsonRecord | null = null;
   let harnessStarted = false;
   const harness = createE2EHarness({
     maxTurns: args.maxTurns,
@@ -728,7 +853,9 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     await updateUserSettings(harness.ctx, { allowNavigation: true });
     const storageImport: StorageStateImportResult =
       await importPlaywrightStorageState(harness.page, exportSession.storageState);
-    await navigateAndWait(harness.page, targetUrl);
+    await navigateAndWait(harness.page, targetUrl, {
+      timeoutMs: Math.min(Math.max(args.timeoutMs, 30_000), 120_000),
+    });
     await harness.page.bringToFront();
     const importedPageUrl = harness.page.url();
     await updateUserSettings(harness.ctx, {
@@ -755,6 +882,11 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     );
     const agentMs = Date.now() - agentStart;
     const finalOpenSidebarUrl = harness.page.url();
+    const validationStorage = await exportCurrentPageStorageState(
+      harness.page,
+      finalOpenSidebarUrl,
+    );
+    validationStorageExport = validationStorage.summary;
 
     const traceSummary = await harness.printTraceSummary(workspaceId);
     const traceFiles = filterTraceFilesByWorkspace(
@@ -762,11 +894,19 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       workspaceId,
     );
     const metrics = readTraceMetrics(traceFiles.length > 0 ? traceFiles : traceSummary.traceFiles);
+    const agentTerminalSummary = summarizeAgentTerminal(terminal);
+    const submittedRecordNumber =
+      metrics.submittedRecordNumber ??
+      extractSubmittedRecordNumberFromText(metrics.finalAnswer) ??
+      extractSubmittedRecordNumberFromText(JSON.stringify(agentTerminalSummary));
 
     const validationStart = Date.now();
     validation = await bridge.request({
       command: "validate",
       activeUrl: finalOpenSidebarUrl,
+      storageState: validationStorage.storageState,
+      submittedRecordNumber,
+      finalAnswer: metrics.finalAnswer,
     });
     const validationMs = Date.now() - validationStart;
     const validationResult = validationFromBridge(validation);
@@ -809,7 +949,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
           ...validationResult.details,
           agentTerminalReason: terminal.reason,
           agentEventCount: terminal.events.length,
-          agentTerminal: summarizeAgentTerminal(terminal),
+          agentTerminal: agentTerminalSummary,
           bridgeStatuses: {
             description: statusSummary(bridgeDescription),
             reset: statusSummary(reset),
@@ -818,6 +958,8 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
           },
           resetAttempts,
           storageImport,
+          validationStorageExport,
+          submittedRecordNumber,
           importedPageUrl,
           finalOpenSidebarUrl,
         },

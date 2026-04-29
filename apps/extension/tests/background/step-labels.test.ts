@@ -113,6 +113,13 @@ describe("formatStepLabel", () => {
         expect(formatStepLabel(ToolName.INSPECT_HIDDEN, {})).toBe("Inspect hidden elements");
     });
 
+    test("workflow inspectors use readable labels", () => {
+        expect(formatStepLabel(ToolName.INSPECT_CHART, { pattern: "Critical" })).toBe('Inspect chart: "Critical"');
+        expect(formatStepLabel(ToolName.INSPECT_TABLE, {})).toBe("Inspect table data");
+        expect(formatStepLabel(ToolName.INSPECT_FILTER_STATE, {})).toBe("Inspect filter state");
+        expect(formatStepLabel(ToolName.INSPECT_CATALOG_ITEM, {})).toBe("Inspect catalog item");
+    });
+
     test("xray_page", () => {
         expect(formatStepLabel(ToolName.XRAY_PAGE, {})).toBe("Toggle X-ray mode");
     });

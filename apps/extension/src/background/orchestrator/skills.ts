@@ -279,6 +279,186 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
+    id: "chart-value-extraction",
+    name: "Chart Value Extraction",
+    description:
+      "Extract requested values from dashboards or charts using structured chart evidence before pointer exploration.",
+    tags: ["workflow", "chart", "dashboard", "data-extraction"],
+    triggers: [
+      "chart value",
+      "dashboard metric",
+      "read the chart",
+      "bar chart",
+      "line chart",
+      "pie chart",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "inspect_chart",
+      "read_page",
+      "read_element",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "click_element",
+      "navigate",
+      "type_text",
+      "select_option",
+      "click_coordinates",
+      "done",
+    ],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Prefer structured chart and SVG evidence before any pointer exploration.",
+      "Treat chart/dashboard extraction as read-only; do not click Run, Refresh, report edit, drilldown, export, filter, or navigation controls unless the user explicitly asks to change the chart.",
+      "When the user asks for one chart value, answer with exactly one numeric value and the requested unit; keep supporting counts, totals, timestamps, and axis ranges out of the final answer.",
+      "Completion requires a concrete requested chart value, not just reaching the chart page.",
+    ],
+  },
+  {
+    id: "search-answer-extraction",
+    name: "Search Answer Extraction",
+    description:
+      "Search, open or read the best result, extract the requested fact, then answer explicitly.",
+    tags: ["workflow", "search", "knowledge", "answer-extraction"],
+    triggers: [
+      "search knowledge",
+      "knowledge base",
+      "search results",
+      "find the answer",
+      "look up and answer",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "find_element",
+      "type_text",
+      "click_element",
+      "read_element",
+      "update_notes",
+    ],
+    discouragedTools: ["scroll_page", "click_coordinates"],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Opening a result is intermediate.",
+      "Prefer exact-question terms over broad paraphrases when searching.",
+      "Compare result snippets or titles before opening; do not assume the first result is the answer.",
+      "Completion requires a final answer that contains the requested fact.",
+    ],
+  },
+  {
+    id: "list-filter-workflow",
+    name: "List Filter Workflow",
+    description:
+      "Apply list or table filters by setting a condition, running it, and verifying filtered state.",
+    tags: ["workflow", "list", "table", "filter"],
+    triggers: [
+      "filter list",
+      "apply filter",
+      "filter builder",
+      "condition builder",
+      "show records where",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "apply_list_filter",
+      "inspect_table",
+      "inspect_filter_state",
+      "read_page",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "find_element",
+      "click_element",
+      "select_option",
+      "type_text",
+      "inspect_hidden",
+      "xray_page",
+      "scroll_page",
+      "click_coordinates",
+      "done",
+    ],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "When the request gives explicit field/operator/value conditions, use apply_list_filter before manual filter-builder clicks.",
+      "Do not open the filter builder for explicit structured conditions unless apply_list_filter reports it cannot apply the request.",
+      "Opening the filter builder is not completion.",
+      "Verify an applied condition through query state, filter chips, or changed rows.",
+    ],
+  },
+  {
+    id: "list-sort-workflow",
+    name: "List Sort Workflow",
+    description:
+      "Sort a list or table by the requested column and verify resulting sort state.",
+    tags: ["workflow", "list", "table", "sort"],
+    triggers: [
+      "sort list",
+      "sort table",
+      "order by",
+      "ascending",
+      "descending",
+      "sort column",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "apply_list_sort",
+      "inspect_table",
+      "read_page",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "find_element",
+      "click_element",
+      "scroll_page",
+      "type_text",
+      "click_coordinates",
+      "done",
+    ],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "When the request gives explicit sort fields and directions, use apply_list_sort before manual column-header or list-menu clicks.",
+      "Do not open personalization/list configuration for sorting unless the structured sort helper reports unsupported fields.",
+      "Completion requires URL, header, or row-order evidence that sorting changed.",
+    ],
+  },
+  {
+    id: "catalog-order-workflow",
+    name: "Catalog Order Workflow",
+    description:
+      "Configure a catalog item with requested quantity/options and continue through cart/order confirmation.",
+    tags: ["workflow", "catalog", "order", "configuration"],
+    triggers: [
+      "order catalog item",
+      "service catalog",
+      "standard laptop",
+      "configure item",
+      "request item",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "inspect_catalog_item",
+      "set_checkbox",
+      "type_text",
+      "select_option",
+      "click_element",
+      "read_page",
+      "update_notes",
+    ],
+    discouragedTools: ["scroll_page", "click_coordinates", "done"],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Product detail page reached is intermediate.",
+      "After reaching the item page, configure requested quantity/options and submit in the same workflow rather than reporting that the page is ready.",
+      "Completion requires configured requested options and request/order confirmation.",
+    ],
+  },
+  {
     id: "structured-form-fill",
     name: "Structured Form Fill",
     description:
@@ -534,11 +714,13 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "find_element",
       "type_text",
       "click_element",
+      "scroll_page",
+      "wait",
       "update_notes",
     ],
     discouragedTools: [
       "read_element",
-      "scroll_page",
+      "press_key",
       "inspect_hidden",
       "xray_page",
       "execute_js",
@@ -551,7 +733,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     verifierMode: "hybrid",
     notes: [
       "Use visible search or filter controls before manual pagination when the target is specific.",
-      "When no search/filter exists, advance sequentially with Next while tracking searched pages or ranges in notes.",
+      "When no search/filter exists, advance sequentially with Next or scroll_page for lazy-loaded feeds while tracking searched pages or ranges in notes.",
       "Do not answer from a near match; verify the target row identity before extracting the requested field.",
     ],
   },
@@ -591,6 +773,182 @@ const SKILL_CATALOG: SkillDescriptor[] = [
 ];
 
 const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescriptor>> = {
+  "chart-value-extraction": {
+    procedureMarkdown: [
+      "1. Identify the requested metric, category, series, or chart segment before interacting.",
+      "2. Call inspect_chart to extract chart titles, series, labels, counts, percentages, data rows, and point values from structured chart state or SVG text.",
+      "3. If inspect_chart returns the requested label and value, answer from that evidence without clicking or refreshing the chart.",
+      "4. Keep the workflow read-only: do not click Run, Refresh, report edit, drilldown, export, filter, or navigation controls just to reveal data.",
+      "5. If inspect_chart lacks the requested value, read_page and read_element only to locate accessible chart text or labels.",
+      "6. Store the extracted value and its evidence in notes when the workflow has more than one step.",
+      "7. For single-value questions, call done with exactly one numeric value and the requested unit; do not include supporting counts, totals, axis ranges, dates, or chart timestamps in the final answer.",
+      "8. Call done only when the final answer contains the requested value and names the chart/category it came from while the report/dashboard remains in a stable view state.",
+    ].join("\n"),
+    requiredEvidence: [
+      "The requested chart metric or category",
+      "Structured chart/SVG/label evidence containing the requested count, percentage, or point value",
+      "A concrete value in the final answer",
+    ],
+    commonFailures: [
+      {
+        signal: "scrolling or hovering repeatedly without reading chart structure",
+        recovery: "call inspect_chart and target only the missing series or category",
+      },
+      {
+        signal: "clicking chart/report controls changes the report URL or opens editor/drilldown state",
+        recovery: "return to the stable report/dashboard view and extract from read-only chart/page evidence",
+      },
+      {
+        signal: "ending after reaching the chart page without a value",
+        recovery: "extract a concrete value before done()",
+      },
+      {
+        signal: "final answer includes supporting numbers such as count, total, axis range, or timestamp for a single-value question",
+        recovery: "answer again with only the requested numeric chart value and unit",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Inspect chart data first, then use page reads only for missing labels or accessible chart text.",
+      ],
+      toolDiscipline: [
+        "Prefer inspect_chart before any other chart investigation.",
+        "Avoid click_element, navigate, hover_element, and click_coordinates for read-only chart value tasks unless recovery is required.",
+      ],
+      completionChecks: [
+        "Final answer includes the requested chart value and source label, and the current page is still the report/dashboard view.",
+        "For single-value questions, the final answer contains only one numeric value.",
+      ],
+    },
+  },
+  "search-answer-extraction": {
+    procedureMarkdown: [
+      "1. Clarify the exact fact requested by the user before searching.",
+      "2. Search with the most distinctive terms from the exact question before using broad paraphrases.",
+      "3. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
+      "4. Read the selected result content or snippet that contains the requested fact.",
+      "5. Store the fact in notes if another navigation step is needed.",
+      "6. If the opened result does not contain the requested fact, return to results and try the next grounded candidate.",
+      "7. Call done only with the actual answer, not with a statement that a result was opened.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Search query or visible result used",
+      "Result content containing the requested fact",
+      "Final answer containing the requested fact",
+    ],
+    commonFailures: [
+      {
+        signal: "opening or reading a result without answering",
+        recovery: "extract the requested fact and call done with the answer",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Search, read the result, extract the fact, then answer.",
+      ],
+      completionChecks: [
+        "The final answer contains the requested fact or states that it was not found after grounded search.",
+      ],
+    },
+  },
+  "list-filter-workflow": {
+    procedureMarkdown: [
+      "1. If the request contains explicit field/operator/value conditions, call apply_list_filter with the structured conditions and the requested AND/OR join as the first mutation.",
+      "2. Use inspect_table and inspect_filter_state to identify current list columns, active filters, and filter controls before or after applying the structured filter.",
+      "3. Open and manipulate the filter builder only when apply_list_filter is unavailable or reports unsupported fields.",
+      "4. Run or apply the filter, then re-inspect table/filter state.",
+      "5. Call done only when the applied condition or filtered URL/rows prove the filter ran.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Requested field/operator/value",
+      "Applied filter condition or query state",
+      "List refreshed or rows filtered after applying",
+    ],
+    commonFailures: [
+      {
+        signal: "filter builder is open but no condition exists",
+        recovery: "set a field, operator, and value, then run the filter",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Inspect current state, set condition, run filter, verify applied state.",
+      ],
+      toolDiscipline: [
+        "Use apply_list_filter before filter-builder clicks for structured filter requests.",
+        "Prefer inspect_filter_state over repeated find_element for filter internals.",
+      ],
+      completionChecks: [
+        "A filter condition is applied and the list has refreshed.",
+      ],
+    },
+  },
+  "list-sort-workflow": {
+    procedureMarkdown: [
+      "1. If the request contains explicit sort fields and directions, call apply_list_sort with the ordered clauses as the first mutation.",
+      "2. Use inspect_table to identify columns, sort indicators, and URL query state before or after applying the structured sort.",
+      "3. Use manual column-header or list-menu sorting only when apply_list_sort is unavailable or reports unsupported fields.",
+      "4. Re-run inspect_table and verify a sort indicator, URL parameter, or changed row order.",
+      "5. Call done only when the requested sort is evidenced.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Requested sort column and direction",
+      "Sort indicator, URL state, or row-order evidence",
+    ],
+    commonFailures: [
+      {
+        signal: "scrolling the list without changing sort state",
+        recovery: "use apply_list_sort with the requested fields and directions before trying manual headers",
+      },
+      {
+        signal: "opening personalization or column configuration while trying to sort",
+        recovery: "close the configuration surface and apply the sort as query/list state",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Inspect table, apply sort, verify sort state.",
+      ],
+      toolDiscipline: [
+        "Use apply_list_sort before column-header, personalization, or list-menu clicks for explicit sort requests.",
+      ],
+      completionChecks: [
+        "The requested column and direction are visible in sort evidence.",
+      ],
+    },
+  },
+  "catalog-order-workflow": {
+    procedureMarkdown: [
+      "1. Use inspect_catalog_item to read product name, quantity controls, options, price/summary, and order controls.",
+      "2. Configure every requested quantity, option, checkbox, and free-text requirement.",
+      "3. If a requested option is visible and unset, set it immediately; do not stop at 'ready to configure'.",
+      "4. Re-inspect catalog state to verify the configuration before submitting.",
+      "5. Click the appropriate order, cart, checkout, or request control.",
+      "6. Continue until a request/order/cart confirmation is visible, then call done with the confirmation evidence.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Requested item and configuration",
+      "Configured quantity/options before submission",
+      "Request/order confirmation after submission",
+    ],
+    commonFailures: [
+      {
+        signal: "ending on the product detail page",
+        recovery: "configure the requested options and submit/order the item",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Inspect item, configure requested options, verify configuration, submit, verify confirmation.",
+      ],
+      toolDiscipline: [
+        "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
+      ],
+      completionChecks: [
+        "A request/order/cart confirmation exists after submission.",
+      ],
+    },
+  },
   "hover-reveal-navigation": {
     procedureMarkdown: [
       "1. Read the current page and identify the reveal trigger plus the expected revealed content.",
@@ -1311,7 +1669,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       "1. Read the current data surface and identify the target record identity plus the requested field or fact.",
       "2. Prefer a visible search, filter, or table search input for named records, IDs, post numbers, tickets, or employee names.",
       "3. If search/filter is available, enter the exact target text and re-read the results before opening or extracting anything.",
-      "4. If no search/filter exists, paginate sequentially with the visible Next control and update notes with searched page numbers, ranges, or result counts.",
+      "4. If no search/filter exists, use the visible Next control for explicit pagination or scroll_page for scroll-loaded feeds, then update notes with searched page numbers, ranges, or result counts.",
       "5. Stop only when the exact target row/item is visible, then extract the requested field from that same row or its detail view.",
       "6. If the target is not found after all visible pages/ranges are covered, report that directly instead of using a near match.",
       "7. Do not switch to aggregate scanning unless the user asks for highest, lowest, largest, smallest, or another all-row aggregate.",
@@ -1344,7 +1702,8 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       toolDiscipline: [
         "Prefer read_page for result state and find_element/type_text for visible search controls.",
         "Prefer click_element on the visible Next control when manual pagination is required.",
-        "Avoid read_element, scroll_page, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and early done during normal lookup.",
+        "Prefer scroll_page over press_key for lazy-loaded feeds or long result lists without a visible Next control.",
+        "Avoid read_element, press_key, inspect_hidden, xray_page, execute_js, click_coordinates, tab tools, and early done during normal lookup.",
       ],
       completionChecks: [
         "The target identity is visible and exact before the answer is produced.",
@@ -1352,7 +1711,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
         "If not found, searched ranges or result state explain why.",
       ],
       failureRecovery: [
-        "If pagination does not advance, re-read once, then use the next available forward control or report uncertainty after coverage is exhausted.",
+        "If pagination or scrolling does not advance, re-read once, then use the next available forward control or scroll_page direction before reporting uncertainty.",
         "If search results are empty, clear or adjust only the target text once before falling back to sequential pagination.",
       ],
     },
@@ -1443,6 +1802,18 @@ const threadMessagePattern =
   /\b(?:reply|respond|post|send|compose)\b[\s\S]{0,120}\b(?:thread|chat|channel|conversation|team thread|team chat|message thread|direct message|dm|comment)\b|\b(?:thread|chat|channel|conversation|messaging|message thread|team thread|project-updates)\b[\s\S]{0,120}\b(?:reply|respond|post|send|compose)\b/i;
 const crmTicketPattern =
   /\b(?:crm|support\s+ticket|ticket|case|incident)\b[\s\S]{0,140}\b(?:status|priority|assignee|category|tag|triage|escalat\w*|internal note|comment|customer impact|account context|next step|update)\b|\b(?:set|update|triage|escalat\w*|add)\b[\s\S]{0,140}\b(?:support\s+ticket|ticket|case|incident|internal note)\b/i;
+const chartValuePattern =
+  /\b(chart|dashboard|graph|plot|bar chart|line chart|pie chart|highcharts|visualization|report widget)\b/i;
+const chartValueIntentPattern =
+  /\b(value|number|count|total|metric|data point|series|category|legend|axis|bar|slice|point|how many|amount)\b/i;
+const searchAnswerPattern =
+  /\b(knowledge base|kb article|search results?|search knowledge|find (?:the )?answer|look up|answer the question|article)\b/i;
+const listFilterPattern =
+  /\b(filter|condition builder|filter builder|show records where|query list|apply [^.\n]{0,80}filter|add [^.\n]{0,80}condition)\b/i;
+const listSortPattern =
+  /\b(sort|order by|ascending|descending|sort column|sort [^.\n]{0,80}list|sort [^.\n]{0,80}table)\b/i;
+const catalogOrderPattern =
+  /\b(service catalog|catalog item|request item|standard laptop|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog)\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
 const configuratorPattern =
@@ -1585,6 +1956,18 @@ export function resolveSkillToolProfile(
     return "form_fill";
   }
 
+  if (descriptor.id === "list-filter-workflow") {
+    return "form_fill";
+  }
+
+  if (descriptor.id === "list-sort-workflow") {
+    return "form_fill";
+  }
+
+  if (descriptor.id === "chart-value-extraction") {
+    return "read_only";
+  }
+
   return currentProfile;
 }
 
@@ -1688,7 +2071,7 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.NAVIGATE,
       ToolName.GO_BACK,
       ToolName.READ_ELEMENT,
-      ToolName.SCROLL_PAGE,
+      ToolName.PRESS_KEY,
       ToolName.INSPECT_HIDDEN,
       ToolName.XRAY_PAGE,
       ToolName.EXECUTE_JS,
@@ -1796,6 +2179,69 @@ export function selectPrimarySkill(input: {
     configuratorPattern.test(stepCorpus);
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
+
+  if (
+    chartValuePattern.test(corpus) &&
+    chartValueIntentPattern.test(corpus)
+  ) {
+    return {
+      id: "chart-value-extraction",
+      reason:
+        "Task asks for a concrete value from a chart or dashboard and should use structured chart evidence before answering.",
+    };
+  }
+
+  if (
+    listFilterPattern.test(corpus) &&
+    /\b(list|table|records?|rows?|incidents?|tickets?|results?|filter)\b/i.test(
+      corpus,
+    )
+  ) {
+    return {
+      id: "list-filter-workflow",
+      reason:
+        "Task requires applying a list or table filter and verifying the applied filtered state.",
+    };
+  }
+
+  if (
+    listSortPattern.test(corpus) &&
+    /\b(list|table|records?|rows?|incidents?|tickets?|results?|column|order by)\b/i.test(
+      corpus,
+    )
+  ) {
+    return {
+      id: "list-sort-workflow",
+      reason:
+        "Task requires sorting a list or table and verifying the resulting sort state.",
+    };
+  }
+
+  if (
+    catalogOrderPattern.test(corpus) &&
+    /\b(order|request|catalog|quantity|configure|cart|laptop|software|item)\b/i.test(
+      corpus,
+    )
+  ) {
+    return {
+      id: "catalog-order-workflow",
+      reason:
+        "Task requires configuring and ordering a catalog item through request or order confirmation.",
+    };
+  }
+
+  if (
+    searchAnswerPattern.test(corpus) &&
+    /\b(answer|article|knowledge|result|search|find|look up|question)\b/i.test(
+      corpus,
+    )
+  ) {
+    return {
+      id: "search-answer-extraction",
+      reason:
+        "Task requires searching or reading a knowledge source and returning the requested answer, not just opening a result.",
+    };
+  }
 
   if (
     paginatedDataSurfacePattern.test(corpus) &&

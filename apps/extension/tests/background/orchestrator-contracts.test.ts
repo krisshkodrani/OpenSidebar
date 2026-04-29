@@ -262,6 +262,7 @@ describe("Orchestrator role contracts", () => {
         ToolName.CLICK_ELEMENT,
         ToolName.READ_ELEMENT,
         ToolName.SCROLL_PAGE,
+        ToolName.PRESS_KEY,
         ToolName.INSPECT_HIDDEN,
         ToolName.XRAY_PAGE,
         ToolName.CLICK_COORDINATES,
@@ -275,7 +276,7 @@ describe("Orchestrator role contracts", () => {
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
     expect(contract.allowedTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-    expect(contract.allowedTools.includes(ToolName.SCROLL_PAGE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.PRESS_KEY)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.XRAY_PAGE)).toBe(false);
     expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
@@ -284,6 +285,7 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.FIND_ELEMENT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.SCROLL_PAGE)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
   });

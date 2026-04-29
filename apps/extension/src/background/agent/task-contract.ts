@@ -1,5 +1,13 @@
 import type { ToolProfile } from "../tools/metadata";
 
+type SynthesizedPlanStep = {
+  objective: string;
+  successCriteria: string;
+  dependencies: number[];
+  assumptions: string[];
+  toolProfile?: ToolProfile;
+};
+
 export interface TaskContract {
   requiresRoundTrip: boolean;
   requiredEntities: string[];
@@ -45,11 +53,101 @@ const CONVERSATIONAL_FILLERS = new Set([
 ]);
 
 function extractQuotedPhrases(text: string): string[] {
+  const phrases: string[] = [];
+  for (const match of text.matchAll(/"([^"]{0,120})"/g)) {
+    phrases.push(normalize(match[1] || ""));
+  }
+  for (const match of text.matchAll(/(^|[^\w])'([^']{0,120})'(?!\w)/g)) {
+    phrases.push(normalize(match[2] || ""));
+  }
+
   return unique(
-    [...text.matchAll(/["']([^"']{2,120})["']/g)].map((match) =>
-      normalize(match[1] || ""),
-    ),
+    phrases
+      .filter((value) => value.length >= 2)
+      .filter((value) => !looksLikeQuotedAnswerPrompt(value)),
   ).filter((value) => !CONVERSATIONAL_FILLERS.has(value));
+}
+
+function looksLikeQuotedAnswerPrompt(value: string): boolean {
+  return (
+    /\?/.test(value) &&
+    /\b(?:answer|your answer|what|when|where|who|which|why|how many|how much|does|is|are|should)\b/i.test(
+      value,
+    )
+  );
+}
+
+function extractFieldValuePairs(text: string): Array<{
+  field: string;
+  value: string;
+}> {
+  const pairs: Array<{ field: string; value: string }> = [];
+  const patterns = [
+    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([\s\S]*?)\3/gi,
+    /\bfield\s+(["'])([\s\S]*?)\1\s+(?:to|with|as|=)\s+(["'])([\s\S]*?)\3/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const first = match[2] ?? "";
+      const second = match[4] ?? "";
+      const field = pattern.source.startsWith("\\bfield") ? first : second;
+      const value = pattern.source.startsWith("\\bfield") ? second : first;
+      const trimmedField = field.trim();
+      if (!trimmedField) continue;
+      pairs.push({
+        field: trimmedField,
+        value,
+      });
+    }
+  }
+
+  return unique(
+    pairs.map((pair) => `${pair.field}\u0000${pair.value}`),
+  ).map((serialized) => {
+    const [field, value = ""] = serialized.split("\u0000");
+    return { field, value };
+  });
+}
+
+function isRecordFormCreationPrompt(text: string): boolean {
+  return (
+    /\b(create|add|open|start|submit)\b[^.\n]{0,80}\b(new\s+)?(record|incident|case|ticket|request|entry|form|item)\b/i.test(
+      text,
+    ) ||
+    /\bcreate\s+a\s+new\b/i.test(text)
+  );
+}
+
+function formatFieldValue(pair: { field: string; value: string }): string {
+  return pair.value.length > 0
+    ? `${pair.field}="${pair.value}"`
+    : `${pair.field}=empty`;
+}
+
+function synthesizeFieldValueFormPlan(query: string): SynthesizedPlanStep[] | null {
+  const pairs = extractFieldValuePairs(query);
+  if (pairs.length < 3 || !isRecordFormCreationPrompt(query)) return null;
+
+  const fieldList = pairs.map(formatFieldValue).join("; ");
+  return [
+    {
+      objective: `Fill the form with the requested field values: ${fieldList}. Do not submit the form yet.`,
+      successCriteria: `Each requested field has the specified value: ${fieldList}; the final submit action has not been clicked yet.`,
+      dependencies: [],
+      assumptions: [],
+      toolProfile: "form_fill",
+    },
+    {
+      objective:
+        "Submit the form and verify the created record or confirmation is visible.",
+      successCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      dependencies: [0],
+      assumptions: [],
+      toolProfile: "submit_form",
+    },
+  ];
 }
 
 function extractLargeNumbers(text: string): string[] {
@@ -577,13 +675,12 @@ export function repairPlanCoverage(params: {
   return steps;
 }
 
-export function synthesizePlanFromTaskContract(query: string): Array<{
-  objective: string;
-  successCriteria: string;
-  dependencies: number[];
-  assumptions: string[];
-  toolProfile?: ToolProfile;
-}> | null {
+export function synthesizePlanFromTaskContract(
+  query: string,
+): SynthesizedPlanStep[] | null {
+  const fieldValueFormPlan = synthesizeFieldValueFormPlan(query);
+  if (fieldValueFormPlan) return fieldValueFormPlan;
+
   const contract = buildTaskContract(query);
   const reportTargets = unique(
     contract.reportTargets.length >= 2
@@ -600,13 +697,7 @@ export function synthesizePlanFromTaskContract(query: string): Array<{
     return null;
   }
 
-  const steps: Array<{
-    objective: string;
-    successCriteria: string;
-    dependencies: number[];
-    assumptions: string[];
-    toolProfile?: ToolProfile;
-  }> = [];
+  const steps: SynthesizedPlanStep[] = [];
 
   const returnTarget = contract.returnTargets[0] || null;
   const forwardTargets = reportTargets.filter(

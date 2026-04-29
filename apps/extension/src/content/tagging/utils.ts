@@ -1,3 +1,9 @@
+import {
+  isInputElement,
+  isSelectElement,
+  isTextAreaElement,
+} from "../dom-guards";
+
 /**
  * Tagging utilities - visibility, role inference, text extraction, attribute parsing
  */
@@ -53,6 +59,9 @@ export function dismissElement(el: HTMLElement): void {
 }
 
 export function inferRole(el: Element): string {
+  const checkboxOrRadio = getCheckboxOrRadioControl(el);
+  if (checkboxOrRadio) return checkboxOrRadio.type;
+
   const tag = el.tagName.toLowerCase();
   if (tag === "a") return "link";
   if (tag === "button" || tag === "summary") return "button";
@@ -62,6 +71,40 @@ export function inferRole(el: Element): string {
   return tag;
 }
 
+export function getLabelControl(el: Element | null): Element | null {
+  if (!el || el.tagName.toLowerCase() !== "label") return null;
+
+  const label = el as HTMLLabelElement;
+  const explicitFor = label.htmlFor || el.getAttribute("for");
+  if (explicitFor) {
+    return el.ownerDocument.getElementById(explicitFor);
+  }
+
+  if (label.control) {
+    return label.control;
+  }
+
+  return el.querySelector("input, textarea, select, button");
+}
+
+export function getCheckboxOrRadioControl(
+  el: Element | null,
+): HTMLInputElement | null {
+  if (isInputElement(el) && (el.type === "checkbox" || el.type === "radio")) {
+    return el;
+  }
+
+  const control = getLabelControl(el);
+  if (
+    isInputElement(control) &&
+    (control.type === "checkbox" || control.type === "radio")
+  ) {
+    return control;
+  }
+
+  return null;
+}
+
 export function getVisibleText(el: Element): string {
   const ariaLabel = el.getAttribute("aria-label");
   if (ariaLabel) return ariaLabel;
@@ -69,7 +112,7 @@ export function getVisibleText(el: Element): string {
   const text = el.textContent?.trim();
   if (text) return text;
 
-  if (el instanceof HTMLInputElement) {
+  if (isInputElement(el)) {
     return el.value || el.placeholder || "";
   }
 
@@ -88,8 +131,20 @@ export function extractAttributes(el: Element): Record<string, string> {
     attrs[name] = val.slice(0, ATTR_TRUNCATION);
   }
 
+  const checkboxOrRadio = getCheckboxOrRadioControl(el);
+  if (checkboxOrRadio) {
+    attrs["type"] = checkboxOrRadio.type;
+    attrs["checked"] = String(checkboxOrRadio.checked);
+    if (checkboxOrRadio.id && !isRandomHash(checkboxOrRadio.id)) {
+      attrs["control"] = checkboxOrRadio.id;
+    }
+    if (checkboxOrRadio.name && !isRandomHash(checkboxOrRadio.name)) {
+      attrs["name"] = checkboxOrRadio.name.slice(0, ATTR_TRUNCATION);
+    }
+  }
+
   // Select element: surface available options so LLM doesn't guess blind
-  if (el instanceof HTMLSelectElement) {
+  if (isSelectElement(el)) {
     const opts = Array.from(el.options)
       .map((o) => o.textContent?.trim() || o.value)
       .filter(Boolean);
@@ -106,9 +161,9 @@ export function extractAttributes(el: Element): Record<string, string> {
 
   // Form-specific label association
   if (
-    el instanceof HTMLInputElement ||
-    el instanceof HTMLTextAreaElement ||
-    el instanceof HTMLSelectElement
+    isInputElement(el) ||
+    isTextAreaElement(el) ||
+    isSelectElement(el)
   ) {
     const elId = el.getAttribute("id");
     if (elId) {
@@ -263,6 +318,11 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 export function isDisabled(el: Element): boolean {
+  const checkboxOrRadio = getCheckboxOrRadioControl(el);
+  if (checkboxOrRadio) {
+    return checkboxOrRadio.disabled;
+  }
+
   return (
     el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true"
   );

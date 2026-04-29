@@ -71,6 +71,11 @@ export const SCROLL_PAGE_DEF: ToolDefinition = {
           enum: ["up", "down", "top", "bottom"],
           description: "Direction for relative scrolling.",
         },
+        amount: {
+          type: "integer",
+          description:
+            "Pixels for relative scrolling. Use larger values such as 1200-2000 for long pages or lazy-loaded feeds.",
+        },
         id: {
           type: "integer",
           description: "Container tag ID. Omit for window.",
@@ -726,6 +731,186 @@ export const INSPECT_HIDDEN_DEF: ToolDefinition = {
         maxResults: {
           type: "integer",
           description: "Max results (default: 25, max: 50).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const INSPECT_CHART_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_CHART,
+    description:
+      "Read chart/dashboard data from visible chart containers, SVG text, accessibility labels, and common chart libraries. Returns structured point counts and percentages when available. Use before hovering randomly on charts.",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "Case-insensitive text filter for chart labels or series.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Max labels, rows, or points to return (default: 30, max: 100).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const INSPECT_TABLE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_TABLE,
+    description:
+      "Summarize visible tables, data grids, list rows, columns, row samples, sort indicators, and URL query state.",
+    parameters: {
+      type: "object",
+      properties: {
+        maxRows: {
+          type: "integer",
+          description: "Max visible rows to summarize per table/list (default: 10, max: 50).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const INSPECT_FILTER_STATE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_FILTER_STATE,
+    description:
+      "Inspect active filters, filter-builder condition rows, field/operator/value controls, run/apply buttons, and query URL state.",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "Case-insensitive field or filter text to focus on.",
+        },
+        maxResults: {
+          type: "integer",
+          description: "Max controls or condition rows to return (default: 30, max: 80).",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const APPLY_LIST_FILTER_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.APPLY_LIST_FILTER,
+    description:
+      "Apply a structured list/table filter from field/operator/value conditions, then verify the applied query state. For tasks like 'show records where Field is Value' or 'create a filter where A or B', call this as the first mutation instead of manually clicking complex filter-builder widgets.",
+    parameters: {
+      type: "object",
+      properties: {
+        conditions: {
+          type: "array",
+          description:
+            "Filter conditions to apply. Use visible field labels or system field names and display values from the user request.",
+          items: {
+            type: "object",
+            description: "One field/operator/value condition.",
+            properties: {
+              field: {
+                type: "string",
+                description: 'Visible field label or system field name, e.g. "Caller" or "caller_id".',
+              },
+              operator: {
+                type: "string",
+                description: 'Operator text such as "is", "is empty", "is not", or "starts with". Defaults to "is".',
+              },
+              value: {
+                type: "string",
+                description: "Display value to filter by. Use an empty string for empty-value filters.",
+              },
+            },
+            required: ["field"],
+          },
+        },
+        join: {
+          type: "string",
+          enum: ["AND", "OR"],
+          description: "How to join multiple conditions. Use OR when the request says conditions are alternatives.",
+        },
+        table: {
+          type: "string",
+          description: "Optional visible list title or system table name when several lists are present.",
+        },
+        run: {
+          type: "boolean",
+          description: "Whether to run/navigate the filter after building it. Defaults to true.",
+        },
+      },
+      required: ["conditions"],
+    },
+  },
+};
+
+export const APPLY_LIST_SORT_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.APPLY_LIST_SORT,
+    description:
+      "Apply structured list/table sorting from ordered field/direction clauses, then verify the resulting query state. For tasks like 'sort by Number descending then Duration ascending', call this as the first mutation instead of manually clicking list headers or personalization menus.",
+    parameters: {
+      type: "object",
+      properties: {
+        sorts: {
+          type: "array",
+          description:
+            "Ordered sort clauses, primary sort first. Use visible field labels or system field names from the user request.",
+          items: {
+            type: "object",
+            description: "One field/direction sort clause.",
+            properties: {
+              field: {
+                type: "string",
+                description: 'Visible field label or system field name, e.g. "Number" or "calendar_duration".',
+              },
+              direction: {
+                type: "string",
+                enum: ["ascending", "descending", "asc", "desc"],
+                description: "Sort direction. Defaults to ascending.",
+              },
+            },
+            required: ["field"],
+          },
+        },
+        table: {
+          type: "string",
+          description: "Optional visible list title or system table name when several lists are present.",
+        },
+        run: {
+          type: "boolean",
+          description: "Whether to run/navigate the sort after building it. Defaults to true.",
+        },
+      },
+      required: ["sorts"],
+    },
+  },
+};
+
+export const INSPECT_CATALOG_ITEM_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_CATALOG_ITEM,
+    description:
+      "Summarize product/catalog configuration state: quantity, options, checkboxes, text fields, price/summary text, cart/order controls, and confirmation cues.",
+    parameters: {
+      type: "object",
+      properties: {
+        maxControls: {
+          type: "integer",
+          description: "Max configurable controls to return (default: 40, max: 80).",
         },
       },
       required: [],
