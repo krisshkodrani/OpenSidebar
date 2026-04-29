@@ -40,6 +40,100 @@ export async function fetchTraceModels(): Promise<ModelBucket[]> {
   return fetchJson("/api/traces/models");
 }
 
+export interface TraceInsightsQuery {
+  outcome?: string;
+  day?: string;
+  from?: string;
+  to?: string;
+  domain?: string;
+  model?: string;
+  skill?: string;
+  runId?: string;
+  sessionId?: string;
+  tool?: string;
+  toolStatus?: string;
+  failure?: string;
+  eventType?: string;
+  q?: string;
+}
+
+export interface TraceInsightsMetricRow {
+  id: string;
+  label: string;
+  sessions: number;
+  runs: number;
+  calls?: number;
+  successes?: number;
+  failures?: number;
+  failureRate?: number;
+  averageDurationMs?: number;
+  totalTurns?: number;
+  totalCost?: number;
+  sampleSessionId?: string;
+  sampleRunId?: string;
+  sampleError?: string;
+}
+
+export interface TraceInsightsRunRow {
+  runId: string;
+  query: string;
+  outcome: string;
+  sessions: number;
+  failedSessions: number;
+  totalTurns: number;
+  totalCost: number;
+  durationMs: number;
+  topTools: string[];
+  topSkills: string[];
+  sampleSessionId: string;
+}
+
+export interface TraceInsightsResponse {
+  summary: {
+    totalSessions: number;
+    totalRuns: number;
+    completedSessions: number;
+    failedSessions: number;
+    successRate: number;
+    failureRate: number;
+    totalTurns: number;
+    averageTurns: number;
+    totalCost: number;
+    averageDurationMs: number;
+    toolCalls: number;
+    toolFailures: number;
+    toolFailureRate: number;
+  };
+  facets: {
+    runs: string[];
+    sessions: string[];
+    domains: string[];
+    models: string[];
+    skills: string[];
+    tools: string[];
+    failures: string[];
+    eventTypes: string[];
+  };
+  tools: TraceInsightsMetricRow[];
+  skills: TraceInsightsMetricRow[];
+  models: TraceInsightsMetricRow[];
+  failures: TraceInsightsMetricRow[];
+  events: TraceInsightsMetricRow[];
+  runs: TraceInsightsRunRow[];
+}
+
+export async function fetchTraceInsights(
+  filters: TraceInsightsQuery,
+): Promise<TraceInsightsResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (!value || value === "all") continue;
+    params.set(key, value);
+  }
+  const query = params.toString();
+  return fetchJson(`/api/trace-insights${query ? `?${query}` : ""}`);
+}
+
 export async function fetchTraceEntries(
   sessionId: string,
 ): Promise<TraceEntry[]> {

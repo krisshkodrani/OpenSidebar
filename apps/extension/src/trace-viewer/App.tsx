@@ -11,7 +11,6 @@ import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
-import FleetInsights from "./components/traces/FleetInsights";
 import FilterBar from "./components/traces/FilterBar";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -27,14 +26,17 @@ import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
 import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
+import RunsTableView from "./components/traces/RunsTableView";
+import InsightsTab from "./components/traces/InsightsTab";
 import SkillDetail from "./components/traces/SkillDetail";
-import type { Subview } from "./store/types";
+import type { Subview, TopLevelView } from "./store/types";
 
 // URL hash helpers
 
 function parseHash(): {
   session?: string;
   view?: string;
+  top?: string;
   turn?: number;
   skill?: string;
 } {
@@ -45,6 +47,7 @@ function parseHash(): {
   return {
     session: params.get("session") || undefined,
     view: params.get("view") || undefined,
+    top: params.get("top") || undefined,
     turn: turnStr ? parseInt(turnStr, 10) : undefined,
     skill: params.get("skill") || undefined,
   };
@@ -60,13 +63,17 @@ const VALID_SUBVIEWS = new Set([
   "logs",
 ]);
 
+const VALID_TOP_LEVEL_VIEWS = new Set(["sessions", "runs", "insights"]);
+
 // App
 
 export default function App() {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const activeSubview = useStore((s) => s.activeSubview);
+  const activeTopLevelView = useStore((s) => s.activeTopLevelView);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const scrollPositions = useStore((s) => s.scrollPositions);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
@@ -74,10 +81,13 @@ export default function App() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const { session, view, turn, skill } = parseHash();
+    const { session, view, top, turn, skill } = parseHash();
     if (skill) setCurrentSkillId(skill);
     if (session) setCurrentSessionId(session);
     if (view && VALID_SUBVIEWS.has(view)) setActiveSubview(view as Subview);
+    if (top && VALID_TOP_LEVEL_VIEWS.has(top)) {
+      setActiveTopLevelView(top as TopLevelView);
+    }
     if (turn && !isNaN(turn)) {
       requestAnimationFrame(() => navigateToTurn(turn));
     }
@@ -99,7 +109,8 @@ export default function App() {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      if (activeSubview && activeSubview !== "overview")
+      else if (activeTopLevelView !== "sessions") parts.push(`top=${activeTopLevelView}`);
+      if (currentSessionId && activeSubview && activeSubview !== "overview")
         parts.push(`view=${activeSubview}`);
     }
     const newHash = parts.length > 0 ? `#${parts.join("&")}` : "";
@@ -110,7 +121,7 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [currentSessionId, activeSubview, currentSkillId]);
+  }, [currentSessionId, activeSubview, activeTopLevelView, currentSkillId]);
 
   const navigateToSkill = useCallback((skillId: string) => {
     setCurrentSkillId(skillId);
@@ -157,12 +168,15 @@ function ViewerBody({
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
   const activeSubview = useStore((s) => s.activeSubview);
+  const activeTopLevelView = useStore((s) => s.activeTopLevelView);
   const tracesError = useStore((s) => s.tracesError);
   const logsWarning = useStore((s) => s.logsWarning);
   const setCurrentSessionId = useStore((s) => s.setCurrentSessionId);
   const setCurrentEntries = useStore((s) => s.setCurrentEntries);
   const setSearchQuery = useStore((s) => s.setSearchQuery);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
+  const setFilter = useStore((s) => s.setFilter);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
   const { sessions, refreshSessions } = useTraceData();
 
@@ -190,6 +204,23 @@ function ViewerBody({
     setCurrentEntries([]);
     setSearchQuery("");
   }, [setCurrentSessionId, setCurrentEntries, setSearchQuery]);
+
+  const focusRun = useCallback(
+    (runId: string) => {
+      setFilter("runId", runId);
+      setActiveTopLevelView("runs");
+      setCurrentSessionId(null);
+      setCurrentEntries([]);
+      setSearchQuery("");
+    },
+    [
+      setActiveTopLevelView,
+      setCurrentEntries,
+      setCurrentSessionId,
+      setFilter,
+      setSearchQuery,
+    ],
+  );
 
   const currentIdx = useMemo(
     () => sessions.findIndex((s) => s.sessionId === currentSessionId),
@@ -387,9 +418,14 @@ function ViewerBody({
   // No session: filter bar + unified sessions table
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <TopLevelTabs
+        active={activeTopLevelView}
+        onChange={setActiveTopLevelView}
+      />
       <FilterBar onFiltersChanged={refreshSessions} />
-      <FleetOverview onFiltersChanged={refreshSessions} />
-      <FleetInsights onSelectSession={selectSession} />
+      {activeTopLevelView !== "insights" && (
+        <FleetOverview onFiltersChanged={refreshSessions} />
+      )}
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -398,12 +434,57 @@ function ViewerBody({
             onRetry={refreshSessions}
           />
         </div>
+      ) : activeTopLevelView === "runs" ? (
+        <RunsTableView onSelectSession={selectSession} />
+      ) : activeTopLevelView === "insights" ? (
+        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
       ) : (
         <UnifiedSessionsTableView
           onSelect={selectSession}
           navigateToSkill={navigateToSkill}
+          onSelectRun={focusRun}
         />
       )}
+    </div>
+  );
+}
+
+function TopLevelTabs({
+  active,
+  onChange,
+}: {
+  active: TopLevelView;
+  onChange: (view: TopLevelView) => void;
+}) {
+  const sessions = useStore((s) => s.sessions);
+  const runGroups = useStore((s) => s.runGroups);
+  const tabs: Array<{ id: TopLevelView; label: string; count: number }> = [
+    { id: "sessions", label: "Sessions", count: sessions.length },
+    { id: "runs", label: "Runs", count: runGroups.length },
+    { id: "insights", label: "Insights", count: sessions.length },
+  ];
+
+  return (
+    <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border bg-trace-panel/80 shrink-0">
+      <span className="text-[10px] uppercase tracking-[0.22em] text-trace-muted">
+        Trace Viewer
+      </span>
+      <div className="inline-flex rounded border border-trace-border overflow-hidden">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+              active === tab.id
+                ? "bg-trace-accent/15 text-trace-accent-light"
+                : "bg-transparent text-trace-muted hover:text-trace-text"
+            }`}
+          >
+            {tab.label} ({tab.count})
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -55,6 +55,7 @@ const skillFilter: FilterFn<TraceSession> = (row, _columnId, filterValue) => {
 
 function createColumns(
   navigateToSkillProp?: (skillId: string) => void,
+  onSelectRun?: (runId: string) => void,
 ): ColumnDef<TraceSession>[] {
   return [
     {
@@ -221,9 +222,17 @@ function createColumns(
                 : "Standalone session (not part of a run)"
             }
           >
-            <span className="text-trace-accent-light text-[10px] font-mono truncate cursor-help">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                if (runId && onSelectRun) onSelectRun(runId);
+              }}
+              disabled={!runId || !onSelectRun}
+              className="text-trace-accent-light text-[10px] font-mono truncate cursor-help disabled:text-trace-muted disabled:cursor-help"
+            >
               {runId ? runId.slice(0, 8) : "—"}
-            </span>
+            </button>
           </Tooltip>
         );
       },
@@ -236,11 +245,13 @@ function createColumns(
 interface UnifiedSessionsTableViewProps {
   onSelect: (sessionId: string) => void;
   navigateToSkill?: (skillId: string) => void;
+  onSelectRun?: (runId: string) => void;
 }
 
 export default function UnifiedSessionsTableView({
   onSelect,
   navigateToSkill,
+  onSelectRun,
 }: UnifiedSessionsTableViewProps) {
   const sessions = useStore((s) => s.sessions);
   const tracesLoading = useStore((s) => s.tracesLoading);
@@ -260,8 +271,8 @@ export default function UnifiedSessionsTableView({
   }, [sorting, setTableSort]);
 
   const columns = useMemo(
-    () => createColumns(navigateToSkill),
-    [navigateToSkill],
+    () => createColumns(navigateToSkill, onSelectRun),
+    [navigateToSkill, onSelectRun],
   );
 
   const table = useReactTable({
