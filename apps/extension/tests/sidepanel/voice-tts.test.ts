@@ -217,6 +217,17 @@ describe("provider fallback", () => {
     expect(prompts).toHaveLength(2);
     expect(prompts[0]).toContain("[excitedly, upbeat, energetic]");
     expect(prompts[1]).not.toContain("[excitedly, upbeat, energetic]");
+
+    await speakText(
+      "Hello",
+      { geminiApiKey: "AIza-test" },
+      "Kore",
+      "gemini",
+      "excited",
+    );
+
+    expect(prompts).toHaveLength(3);
+    expect(prompts[2]).toContain("[excitedly, upbeat, energetic]");
   });
 });
 
@@ -247,6 +258,24 @@ describe("concurrent TTS (generation counter)", () => {
     // Only the last call (Third) should have created an Audio instance
     expect(mockAudioInstances.length).toBe(1);
     expect(mockPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not play audio if stopped while synthesis is in flight", async () => {
+    let resolveFetch!: (v: Response) => void;
+    globalThis.fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    ) as any;
+
+    const pending = speakText("Delayed", { openaiApiKey: "sk-test" }, "nova");
+    stopCurrentTTS();
+    resolveFetch(new Response(new Blob(["audio"]), { status: 200 }));
+    await pending;
+
+    expect(mockAudioInstances.length).toBe(0);
+    expect(mockPlay).not.toHaveBeenCalled();
   });
 });
 

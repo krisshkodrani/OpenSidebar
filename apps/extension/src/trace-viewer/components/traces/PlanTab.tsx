@@ -1,8 +1,10 @@
 import React from "react";
 import type { TraceSession, TraceEntry } from "../../../types/traces";
+import type { RunTraceEvent } from "../../../utils/run-trace";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import { useStore } from "../../store";
+import { formatDuration } from "../../utils";
 
 interface PlanTabProps {
   session: TraceSession;
@@ -21,9 +23,14 @@ interface PlanStepWithStatus {
 
 export default function PlanTab({ session }: PlanTabProps) {
   const currentEntries = useStore((s) => s.currentEntries);
+  const currentRunEvents = useStore((s) => s.currentRunEvents);
   const plan = session.planDecomposition;
 
   if (!plan || !plan.steps || plan.steps.length === 0) {
+    if (currentRunEvents.length > 0) {
+      return <RunPlannerActivity runEvents={currentRunEvents} />;
+    }
+
     return (
       <div className="text-sm text-trace-muted p-4">
         No plan decomposition available for this session.
@@ -116,8 +123,362 @@ export default function PlanTab({ session }: PlanTabProps) {
           </div>
         </div>
       )}
+
+      {currentRunEvents.length > 0 && (
+        <RunEventTimeline runEvents={currentRunEvents} compact />
+      )}
     </div>
   );
+}
+
+function RunPlannerActivity({
+  runEvents,
+}: {
+  runEvents: RunTraceEvent[];
+}) {
+  const planEvent = [...runEvents]
+    .reverse()
+    .find((event) => event.type === "plan_decomposed");
+  const planData = asRecord(planEvent?.data);
+  const nodeCount = numberValue(planData?.nodeCount);
+  const difficulty = stringValue(planData?.difficulty);
+  const structured = booleanValue(planData?.structured);
+  const fallback = booleanValue(planData?.fallback);
+  const skills = Array.isArray(planData?.skills) ? planData.skills : [];
+  const plannerEvents = runEvents.filter(
+    (event) => event.role === "planner" || event.type === "plan_decomposed",
+  );
+  const executorEvents = runEvents.filter(
+    (event) => event.role === "executor" || event.type.startsWith("node_"),
+  );
+  const verifierEvents = runEvents.filter(
+    (event) =>
+      event.role === "verifier" ||
+      event.type.includes("verified") ||
+      event.type.includes("advisory"),
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
+          <span className="text-[11px] text-trace-muted uppercase tracking-wide">
+            Run Planner Activity
+          </span>
+          <Badge variant="tier-planner">run trace</Badge>
+          {difficulty && (
+            <Badge variant={`difficulty-${difficulty.toLowerCase()}`}>
+              {difficulty}
+            </Badge>
+          )}
+          {structured != null && (
+            <Badge variant="type">
+              {structured ? "structured" : "fallback"}
+            </Badge>
+          )}
+          {fallback && <Badge variant="max_turns">fallback</Badge>}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+          <RunMetricCard
+            label="Planner Events"
+            value={plannerEvents.length}
+            hint={planEvent ? formatEventTime(planEvent) : "none recorded"}
+          />
+          <RunMetricCard
+            label="Plan Nodes"
+            value={nodeCount ?? "-"}
+            hint="decomposed graph"
+          />
+          <RunMetricCard
+            label="Executor Events"
+            value={executorEvents.length}
+            hint="node lifecycle"
+          />
+          <RunMetricCard
+            label="Verifier Events"
+            value={verifierEvents.length}
+            hint={`${skills.length} skill pick${skills.length === 1 ? "" : "s"}`}
+          />
+        </div>
+        {!planEvent && (
+          <div className="mt-3 text-[12px] text-trace-muted">
+            No plan_decomposed event was found in this run trace.
+          </div>
+        )}
+      </div>
+
+      {skills.length > 0 && (
+        <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
+            Planner Skill Picks
+          </div>
+          <div className="space-y-2">
+            {skills.map((skill, index) => {
+              const record = asRecord(skill);
+              const skillId = stringValue(record?.skillId) ?? "unknown";
+              const reason = stringValue(record?.reason);
+              const nodeId = stringValue(record?.nodeId);
+              return (
+                <div
+                  key={`${skillId}-${nodeId ?? index}`}
+                  className="rounded border border-trace-border/70 bg-trace-bg px-3 py-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Badge variant="category">{skillId}</Badge>
+                    {nodeId && (
+                      <span className="font-mono text-[10px] text-trace-muted">
+                        {nodeId.slice(0, 8)}
+                      </span>
+                    )}
+                  </div>
+                  {reason && (
+                    <div className="mt-1 text-[11px] text-trace-muted leading-relaxed">
+                      {reason}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <RunEventTimeline runEvents={runEvents} />
+    </div>
+  );
+}
+
+function RunMetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  hint: string;
+}) {
+  return (
+    <div className="rounded border border-trace-border/70 bg-trace-bg px-2.5 py-2">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-trace-muted">
+        {label}
+      </div>
+      <div className="mt-1 text-sm font-semibold text-trace-text">{value}</div>
+      <div className="mt-1 text-[10px] text-trace-muted">{hint}</div>
+    </div>
+  );
+}
+
+function RunEventTimeline({
+  runEvents,
+  compact = false,
+}: {
+  runEvents: RunTraceEvent[];
+  compact?: boolean;
+}) {
+  const events = compact ? runEvents.slice(0, 12) : runEvents;
+
+  if (events.length === 0) return null;
+
+  return (
+    <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] text-trace-muted uppercase tracking-wide">
+          Run Event Timeline
+        </span>
+        <Badge variant="type">{runEvents.length} events</Badge>
+      </div>
+      <div className="space-y-2">
+        {events.map((event, index) => (
+          <RunEventRow key={`${event.type}-${event.ts}-${index}`} event={event} />
+        ))}
+      </div>
+      {compact && runEvents.length > events.length && (
+        <div className="mt-2 text-[11px] text-trace-muted">
+          Showing first {events.length} of {runEvents.length} run events.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunEventRow({ event }: { event: RunTraceEvent }) {
+  const role = event.role ?? "system";
+
+  return (
+    <div className="rounded border border-trace-border/70 bg-trace-bg px-3 py-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="font-mono text-[10px] text-trace-muted shrink-0">
+          {formatEventTime(event)}
+        </span>
+        <Badge variant={role === "planner" ? "tier-planner" : `role-${role}`}>
+          {role}
+        </Badge>
+        <span className="font-mono text-[11px] text-trace-accent-light truncate">
+          {event.type}
+        </span>
+      </div>
+      <div className="mt-1 text-[11px] text-trace-muted leading-relaxed">
+        {summarizeRunEvent(event)}
+      </div>
+    </div>
+  );
+}
+
+function summarizeRunEvent(event: RunTraceEvent): string {
+  const data = asRecord(event.data);
+  if (!data) return "No event data.";
+
+  if (event.type === "plan_decomposed") {
+    const nodeCount = numberValue(data.nodeCount);
+    const difficulty = stringValue(data.difficulty);
+    const structured = booleanValue(data.structured);
+    const skills = Array.isArray(data.skills) ? data.skills.length : 0;
+    return [
+      structured == null
+        ? "Planner emitted a decomposition."
+        : structured
+          ? "Planner emitted a structured decomposition."
+          : "Planner emitted a fallback decomposition.",
+      nodeCount == null ? null : `${nodeCount} node${nodeCount === 1 ? "" : "s"}.`,
+      difficulty ? `Difficulty: ${difficulty}.` : null,
+      `${skills} skill pick${skills === 1 ? "" : "s"}.`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "node_started") {
+    const nodeId = stringValue(data.nodeId);
+    const retries = numberValue(data.retries);
+    const deps = numberValue(data.dependencyCount);
+    return [
+      `Node ${shortId(nodeId)} started.`,
+      retries && retries > 0 ? `Retry ${retries}.` : null,
+      deps != null ? `${deps} dependencies.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "node_completed") {
+    const nodeId = stringValue(data.nodeId);
+    const outcome = stringValue(data.outcome) ?? "completed";
+    const duration = numberValue(data.durationMs);
+    const summary = stringValue(data.summary);
+    return [
+      `Node ${shortId(nodeId)} ${outcome}.`,
+      duration != null ? `Duration ${formatDuration(duration)}.` : null,
+      summary ? clip(summary, 180) : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "node_verified") {
+    const nodeId = stringValue(data.nodeId);
+    const decision = stringValue(data.decision) ?? "checked";
+    const confidence = numberValue(data.confidence);
+    const reason = stringValue(data.reason);
+    return [
+      `Verifier ${decision} node ${shortId(nodeId)}.`,
+      confidence != null ? `${Math.round(confidence * 100)}% confidence.` : null,
+      reason ? clip(reason, 180) : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "advisory_issued") {
+    const nodeId = stringValue(data.nodeId);
+    const retries = numberValue(data.retries);
+    return [
+      `Verifier issued advisory for node ${shortId(nodeId)}.`,
+      retries != null ? `Retries: ${retries}.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (
+    event.type === "node_failure_attribution" ||
+    event.type === "scheduler_dependency_failed"
+  ) {
+    const nodeId = stringValue(data.nodeId);
+    const reason = stringValue(data.reason) ?? "dependency failed";
+    const failedDeps = arraySummary(data.failedDeps);
+    return [
+      `Node ${shortId(nodeId)} blocked: ${reason}.`,
+      failedDeps ? `Failed dependencies: ${failedDeps}.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "task_completed") {
+    const status = stringValue(data.completionStatus) ?? "unknown";
+    const completed = numberValue(data.completed);
+    const failed = numberValue(data.failed);
+    const total = numberValue(data.total);
+    const duration = numberValue(data.totalDurationMs);
+    return [
+      `Task completed with status ${status}.`,
+      completed != null && failed != null && total != null
+        ? `${completed} completed, ${failed} failed, ${total} total.`
+        : null,
+      duration != null ? `Duration ${formatDuration(duration)}.` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return clip(JSON.stringify(data), 220);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function shortId(value: string | null): string {
+  return value ? value.slice(0, 8) : "unknown";
+}
+
+function clip(value: string, maxLength: number): string {
+  return value.length > maxLength
+    ? `${value.slice(0, Math.max(0, maxLength - 3))}...`
+    : value;
+}
+
+function arraySummary(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  return value
+    .map((item) => (typeof item === "string" ? item.slice(0, 8) : String(item)))
+    .join(", ");
+}
+
+function formatEventTime(event: RunTraceEvent): string {
+  const raw = event.ts || event.recordedAt;
+  if (!raw) return "--:--:--";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function PlanStepCard({ step }: { step: PlanStepWithStatus }) {

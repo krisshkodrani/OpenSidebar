@@ -215,6 +215,62 @@ describe("transcribeAudio", () => {
     expect(result.provider).toBe("openai");
   });
 
+  it("uses Gemini directly when only Gemini key is present", async () => {
+    const wavBlob = new Blob([Uint8Array.from([1, 2, 3, 4])], { type: "audio/wav" });
+    globalThis.fetch = vi.fn(async (url, init) => {
+      expect(url).toContain("generativelanguage.googleapis.com");
+      expect((init?.headers as Record<string, string>)["x-goog-api-key"]).toBe("AIza-test");
+      const body = JSON.parse(init?.body as string);
+      expect(body.contents[0].parts[0].text).toContain("Generate a transcript");
+      expect(body.contents[0].parts[1].inlineData.mimeType).toBe("audio/wav");
+      expect(body.contents[0].parts[1].inlineData.data).toBe("AQIDBA==");
+      return mockFetchResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: "  from gemini  " }],
+            },
+          },
+        ],
+      });
+    }) as any;
+
+    const result = await transcribeAudio(wavBlob, { geminiApiKey: "AIza-test" }, "en");
+    expect(result.provider).toBe("gemini");
+    expect(result.text).toBe("from gemini");
+  });
+
+  it("falls back to Gemini when earlier STT providers fail", async () => {
+    const wavBlob = new Blob([Uint8Array.from([1, 2])], { type: "audio/wav" });
+    const urls: string[] = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      urls.push(url as string);
+      if ((url as string).includes("openai.com")) {
+        return new Response("error", { status: 500 });
+      }
+      return mockFetchResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: "fallback transcript" }],
+            },
+          },
+        ],
+      });
+    }) as any;
+
+    const result = await transcribeAudio(wavBlob, {
+      openaiApiKey: "sk-test",
+      geminiApiKey: "AIza-test",
+    });
+
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain("openai.com");
+    expect(urls[1]).toContain("generativelanguage.googleapis.com");
+    expect(result.provider).toBe("gemini");
+    expect(result.text).toBe("fallback transcript");
+  });
+
   it("throws when no keys are provided", async () => {
     await expect(transcribeAudio(audioBlob, {})).rejects.toThrow("No API key");
   });

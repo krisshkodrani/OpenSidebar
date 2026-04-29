@@ -30,6 +30,14 @@ function ttsCacheKey(provider: string, voice: string, text: string): string {
   return `${provider}:${voice}:${text}`;
 }
 
+function rememberTTSBlob(key: string, blob: Blob): void {
+  if (!ttsCache.has(key) && ttsCache.size >= TTS_CACHE_MAX) {
+    const oldest = ttsCache.keys().next().value!;
+    ttsCache.delete(oldest);
+  }
+  ttsCache.set(key, blob);
+}
+
 /** Clear the in-memory TTS audio cache. Called on history/data clear. */
 export function clearTTSCache(): void {
   ttsCache.clear();
@@ -41,6 +49,7 @@ function notifyListeners() {
 
 /** Stop any currently playing TTS audio. Safe to call from anywhere. */
 export function stopCurrentTTS() {
+  speakGeneration++;
   if (globalAudio) {
     globalAudio.pause();
     globalAudio.currentTime = 0;
@@ -124,6 +133,7 @@ export async function speakText(
   const styleKey = resolved.provider === "gemini" ? stylePreset : "neutral";
   const cacheKey = ttsCacheKey(resolved.provider, `${resolvedVoice}:${styleKey}`, truncated);
   let blob = ttsCache.get(cacheKey);
+  let cacheKeyToStore = cacheKey;
 
   if (!blob) {
     try {
@@ -139,32 +149,35 @@ export async function speakText(
       if (resolved.provider === "groq" && keys.openaiApiKey) {
         console.warn("[TTS] Groq failed, falling back to OpenAI:", err.message);
         const fallbackVoice = OPENAI_VOICES.has(voice) ? voice : "nova";
-        blob = await synthesizeSpeech({
-          text: clean.slice(0, 4096),
-          provider: "openai",
-          apiKey: keys.openaiApiKey,
-          voice: fallbackVoice,
-        });
+        cacheKeyToStore = ttsCacheKey("openai", `${fallbackVoice}:neutral`, truncated);
+        blob = ttsCache.get(cacheKeyToStore);
+        if (!blob) {
+          blob = await synthesizeSpeech({
+            text: truncated,
+            provider: "openai",
+            apiKey: keys.openaiApiKey,
+            voice: fallbackVoice,
+          });
+        }
       } else if (resolved.provider === "gemini" && stylePreset !== "neutral") {
         console.warn("[TTS] Gemini expressive TTS failed, retrying with plain speech:", err.message);
-        blob = await synthesizeSpeech({
-          text: truncated,
-          provider: "gemini",
-          apiKey: resolved.apiKey,
-          voice: resolvedVoice,
-          stylePreset: "neutral",
-        });
+        cacheKeyToStore = ttsCacheKey("gemini", `${resolvedVoice}:neutral`, truncated);
+        blob = ttsCache.get(cacheKeyToStore);
+        if (!blob) {
+          blob = await synthesizeSpeech({
+            text: truncated,
+            provider: "gemini",
+            apiKey: resolved.apiKey,
+            voice: resolvedVoice,
+            stylePreset: "neutral",
+          });
+        }
       } else {
         throw err;
       }
     }
 
-    // Store in cache, evict oldest if full
-    if (ttsCache.size >= TTS_CACHE_MAX) {
-      const oldest = ttsCache.keys().next().value!;
-      ttsCache.delete(oldest);
-    }
-    ttsCache.set(cacheKey, blob);
+    rememberTTSBlob(cacheKeyToStore, blob);
   }
 
   // Another speakText call arrived while we were fetching — discard this result

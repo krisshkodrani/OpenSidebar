@@ -11,7 +11,10 @@
       "{workspaceRoot}/vite.config.ts",
       "{workspaceRoot}/vitest.config.ts"
     ],
-    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
     "production": [
       "default",
       "!{projectRoot}/**/*.test.ts",
@@ -25,31 +28,54 @@
   "targetDefaults": {
     "build": {
       "cache": true,
-      "inputs": ["production", "^production"]
+      "inputs": [
+        "production",
+        "^production"
+      ]
     },
     "check": {
       "cache": true,
-      "inputs": ["default", "^production"]
+      "inputs": [
+        "default",
+        "^production"
+      ]
     },
     "lint": {
       "cache": true,
-      "inputs": ["default", "^default"],
+      "inputs": [
+        "default",
+        "^default"
+      ],
       "outputs": []
     },
     "test": {
       "cache": true,
-      "inputs": ["default", "^production"],
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"]
+      "inputs": [
+        "default",
+        "^production"
+      ],
+      "outputs": [
+        "{workspaceRoot}/coverage/{projectRoot}"
+      ]
     },
     "typecheck": {
       "cache": true,
-      "inputs": ["production", "^production"],
-      "outputs": ["{workspaceRoot}/.tsbuild/{projectRoot}"]
+      "inputs": [
+        "production",
+        "^production"
+      ],
+      "outputs": [
+        "{workspaceRoot}/.tsbuild/{projectRoot}"
+      ]
     },
     "validate": {
       "cache": true,
-      "inputs": ["default", "^production"],
+      "inputs": [
+        "default",
+        "^production"
+      ],
       "outputs": []
     }
-  }
+  },
+  "analytics": false
 }

@@ -52,6 +52,7 @@ export function InputArea({
   const stt = useSpeechToText({
     groqApiKey: settings?.groqApiKey,
     openaiApiKey: settings?.openaiApiKey,
+    geminiApiKey: settings?.geminiApiKey,
   });
   const {
     transcript,
