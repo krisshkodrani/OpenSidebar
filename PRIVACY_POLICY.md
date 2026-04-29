@@ -1,13 +1,13 @@
 # Privacy Policy
 
 **OpenSidebar** — Chrome Browser Extension
-Last updated: 2026-03-15
+Last updated: 2026-04-28
 
 ---
 
 ## Summary
 
-OpenSidebar is an open-source browser extension that runs AI-powered tasks in your browser. It follows a **bring-your-own-key (BYOK)** model: you provide your own OpenRouter API key, and all processing happens through that account.
+OpenSidebar is an open-source browser extension that runs AI-powered tasks in your browser. It follows a **bring-your-own-key (BYOK)** model: you provide your own model-provider API key, and AI processing happens through the provider account you configure.
 
 - We do **not** collect, store, or transmit your personal data to our servers.
 - We do **not** run analytics, telemetry, or tracking of any kind.
@@ -36,7 +36,7 @@ All extension data is stored in your browser using Chrome's built-in storage API
 
 | Data | Storage | Purpose |
 |------|---------|---------|
-| OpenRouter API key | `chrome.storage.local` | Authenticating with OpenRouter's API |
+| Provider API keys | `chrome.storage.local` | Authenticating with configured model-provider APIs |
 | User settings | `chrome.storage.sync` | Preferences (max turns, theme, model choices) |
 | Agent session state | `chrome.storage.session` | Temporary state during active tasks (cleared on browser restart) |
 | Workspace data | `chrome.storage.local` | Tab group organization |
@@ -51,21 +51,21 @@ All stored data is permanently deleted when you uninstall the extension.
 
 ## What Data Is Sent Externally
 
-### OpenRouter API
+### Model Provider APIs
 
-When performing a task, the extension sends requests to the [OpenRouter](https://openrouter.ai) API. These requests contain:
+When performing a task, the extension sends requests to the configured model provider API. Depending on your settings, this may include providers such as Fireworks or OpenRouter. These requests contain:
 
 - A system prompt describing the agent's capabilities
 - The current page context (URL, page title, element list, visible text)
-- A screenshot of the visible browser area (JPEG, sent to the perception model)
+- A screenshot of the visible browser area when visual grounding is enabled
 - Your conversation messages and the agent's prior responses
-- Your OpenRouter API key (as an authentication header)
+- Your configured provider API key as an authentication header
 
-Requests are sent over HTTPS to `https://openrouter.ai/api/v1/chat/completions`.
+Requests are sent over HTTPS to the selected provider endpoint.
 
-**OpenRouter routes your request to the AI model you selected.** OpenRouter's own privacy policy governs how they handle API traffic. We encourage you to review it at [openrouter.ai/privacy](https://openrouter.ai/privacy).
+The selected provider's own privacy policy governs how they handle API traffic. Review the policy for whichever provider you configure.
 
-The extension does **not** send data to any other external service. There are no first-party servers, no analytics endpoints, and no crash reporters.
+The extension does **not** send data to any first-party OpenSidebar service. There are no OpenSidebar servers, analytics endpoints, or crash reporters.
 
 ### Optional: Local Log Server
 
@@ -100,9 +100,9 @@ If you run the development log server (`npm run logs`), the extension drains dia
 
 ## Third-Party Services
 
-The only third-party service the extension communicates with is **OpenRouter** (`openrouter.ai`), and only using your own API key. OpenRouter in turn routes requests to the AI model provider (e.g., OpenAI, Google, MiniMax) depending on your model selection.
+The extension communicates with the model provider endpoints you configure, and only using your own API keys.
 
-We have no affiliation with OpenRouter beyond using their public API. Your relationship with OpenRouter is governed by their terms of service and privacy policy.
+We have no affiliation with those providers beyond using their public APIs. Your relationship with each provider is governed by that provider's terms of service and privacy policy.
 
 ---
 

@@ -62,9 +62,10 @@ When a candidate session is selected, use the raw viewer detail first.
 Read in this order:
 
 1. `TraceDetailHeader`
-2. `Turns`
-3. `Perception`
-4. `Logs`
+2. `Plan`
+3. `Turns`
+4. `Perception`
+5. `Logs`
 
 Use the raw trace surface to answer:
 
@@ -79,8 +80,11 @@ The viewer is the source of truth for:
 - screenshots
 - perception payloads
 - turn-by-turn execution
+- run-level planner and orchestrator events from `traces/runs`
 - logs
 - exact replay context
+
+For orchestrated WorkArena runs, executor session traces may not contain an embedded `planDecomposition`. In that case, use the `Plan` tab's run planner activity to inspect `plan_decomposed`, node lifecycle, verifier, and task-completion events from the matching run trace.
 
 ## 4. Compare Before Guessing
 

@@ -28,7 +28,7 @@ This task is preferred for the first run because it is navigation/menu-oriented 
 Install or refresh the local WorkArena Python environment:
 
 ```powershell
-npm run benchmark:workarena:setup
+npx tsx scripts/workarena-setup.ts
 ```
 
 Build the extension:
@@ -47,7 +47,7 @@ Pass criteria:
 Run the doctor without pending-access allowances:
 
 ```powershell
-npm run benchmark:workarena:doctor
+npx tsx scripts/workarena-doctor.ts
 ```
 
 Pass criteria:
@@ -71,7 +71,7 @@ Stop if:
 Confirm the first-run candidate:
 
 ```powershell
-npm run benchmark:workarena:first-task -- --seed 0
+npx tsx scripts/workarena-first-task.ts --seed 0
 ```
 
 Pass criteria:
@@ -86,7 +86,7 @@ Pass criteria:
 Run a real BrowserGym reset and teardown without starting OpenSidebar:
 
 ```powershell
-npm run benchmark:workarena:dry -- --task workarena.servicenow.all-menu --seed 0 --show-browser
+npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu --seed 0 --show-browser
 ```
 
 Pass criteria:
@@ -111,7 +111,7 @@ Stop if:
 Exercise the held-session bridge reset, export, validation, and teardown path:
 
 ```powershell
-npm run benchmark:workarena:held-session -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser
+npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser
 ```
 
 Pass criteria:
@@ -135,7 +135,7 @@ Stop if:
 Run the first live OpenSidebar agent handoff with conservative limits:
 
 ```powershell
-npm run benchmark:workarena:handoff -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser --max-turns 12 --timeout-ms 300000
+npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser --max-turns 12 --timeout-ms 300000
 ```
 
 Pass criteria:
@@ -164,7 +164,7 @@ Stop if:
 Validate generated WorkArena reports:
 
 ```powershell
-npm run benchmark:workarena:validate-reports
+npx tsx scripts/workarena-validate-reports.ts
 ```
 
 Pass criteria:
@@ -178,14 +178,14 @@ Pass criteria:
 
 The smoke test is successful when all of the following are true:
 
-- [ ] `benchmark:workarena:doctor` reports ready.
+- [ ] `scripts/workarena-doctor.ts` reports ready.
 - [ ] Dry run captures a real goal and active URL.
 - [ ] Held-session reset/export/validate/teardown path works.
 - [ ] Handoff imports the session into the extension browser.
 - [ ] OpenSidebar performs at least one real agent run against the WorkArena goal.
 - [ ] WorkArena validation is executed.
 - [ ] JSON reports are written under `.artifacts/e2e/`.
-- [ ] `benchmark:workarena:validate-reports` passes.
+- [ ] `scripts/workarena-validate-reports.ts` passes.
 
 ## Evidence To Keep
 

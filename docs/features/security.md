@@ -91,7 +91,7 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Key Usage
 
-- **Direct to providers** - Keys sent directly to OpenRouter
+- **Direct to providers** - Keys are sent directly to the configured model providers
 - **No intermediaries** - No proxy servers or data collection
 - **HTTPS only** - All API calls encrypted in transit
 
@@ -209,7 +209,7 @@ OpenSidebar operates without confirmation gates:
 
 ### Secure Usage
 
-1. **Protect API keys** - Never share your OpenRouter API key
+1. **Protect API keys** - Never share your provider API keys
 2. **Review actions** - Watch what the AI does on your behalf
 3. **Use HTTPS** - Prefer secure websites when possible
 4. **Regular cleanup** - Clear conversation history periodically

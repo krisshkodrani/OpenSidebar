@@ -279,7 +279,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 | ------------------------- | --------- | -------------------------------------------- |
 | DOM snapshot request      | 5,000 ms  | Return error to agent: "Page not responding" |
 | Tool execution            | 10,000 ms | Return error to agent: "Action timed out"    |
-| LLM API call (OpenRouter) | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel   |
+| LLM provider API call     | 30,000 ms | Set `AgentStatus.ERROR`, notify side panel   |
 | Navigation bridge wait    | 30,000 ms | Abort navigation, set `AgentStatus.ERROR`    |
 
 ---

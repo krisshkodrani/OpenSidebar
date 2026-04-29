@@ -19,7 +19,7 @@ OpenSidebar streams model output into the side panel in real time.
 ## Technical Flow
 
 ```text
-OpenRouter stream -> service worker SSE parser -> side panel store -> React UI
+provider stream -> service worker stream parser -> side panel store -> React UI
 ```
 
 The service worker accumulates text deltas and tool calls, then emits structured updates to the side panel.

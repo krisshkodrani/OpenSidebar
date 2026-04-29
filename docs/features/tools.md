@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **38 tools** organized into categories such as DOM interaction, navigation, browser management, page analysis, and control flow.
+OpenSidebar provides **42 tools** organized into categories such as DOM interaction, navigation, browser management, page analysis, and control flow.
 
 ---
 
@@ -523,6 +523,56 @@ Scan the page for hidden DOM elements.
 
 ---
 
+### inspect_chart
+
+Extract read-only chart and dashboard evidence from DOM, SVG, canvas, and common chart-library state.
+
+| Parameter  | Type    | Required | Description                                      |
+| ---------- | ------- | -------- | ------------------------------------------------ |
+| pattern    | string  | No       | Case-insensitive chart label or series filter    |
+| maxResults | integer | No       | Max labels or points (default: 30, max: 100)     |
+
+**Use for:** chart value extraction, dashboard metrics, graph labels, and visible data points.
+
+---
+
+### inspect_table
+
+Summarize visible table/list structure, headers, sampled rows, sort indicators, and useful URL query state.
+
+| Parameter | Type    | Required | Description                                      |
+| --------- | ------- | -------- | ------------------------------------------------ |
+| maxRows   | integer | No       | Max visible rows per table/list (default: 10)    |
+
+**Use for:** list filtering, list sorting, row verification, and table state checks.
+
+---
+
+### inspect_filter_state
+
+Summarize filter/query controls and applied filter state without mutating the page.
+
+| Parameter  | Type    | Required | Description                                  |
+| ---------- | ------- | -------- | -------------------------------------------- |
+| pattern    | string  | No       | Case-insensitive field/filter text filter    |
+| maxResults | integer | No       | Max controls or conditions (default: 30)     |
+
+**Use for:** condition builders, list filters, filter chips, and URL-backed query state.
+
+---
+
+### inspect_catalog_item
+
+Summarize catalog item controls, selected options, checked state, quantity-like inputs, and price/summary cues.
+
+| Parameter   | Type    | Required | Description                                      |
+| ----------- | ------- | -------- | ------------------------------------------------ |
+| maxControls | integer | No       | Max configurable controls (default: 40, max: 80) |
+
+**Use for:** service catalog configuration, quantity/options checks, cart/request confirmation prep.
+
+---
+
 ### xray_page
 
 Toggle X-ray mode: forces all hidden elements visible.
@@ -602,7 +652,7 @@ Transcribe speech from an `<audio>` or `<video>` element.
 | **DOM Interaction**    | click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element, read_element, right_click, set_checkbox, click_coordinates, upload_file, execute_js |
 | **Navigation**         | navigate, create_tab, close_tab, switch_tab, go_back, go_forward, list_tabs, create_window                                                                                                                                             |
 | **Browser Management** | wait, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                                            |
-| **Page Analysis**      | inspect_hidden, xray_page, fast_forward, read_pdf                                                                                                                                                                                      |
+| **Page Analysis**      | inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item, xray_page, fast_forward, read_pdf                                                                                                             |
 | **Control Flow**       | escalate                                                                                                                                                                                                                               |
 | **Audio/Video**        | transcribe_audio                                                                                                                                                                                                                       |
 | **Utilities**          |                                                                                                                                                                                                                                        |
@@ -615,7 +665,7 @@ Tools are classified by risk level:
 
 | Level      | Description                     | Tools                                                                                        |
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| **LOW**    | Read-only operations            | read_page, scroll_page, list_tabs, get_cookies, search_history, get_bookmarks |
+| **LOW**    | Read-only operations            | read_page, scroll_page, list_tabs, get_cookies, search_history, get_bookmarks, inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item |
 | **MEDIUM** | Mutates state but reversible    | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard      |
 | **HIGH**   | Navigation, tabs, external data | navigate, close_tab, create_tab, escalate, download_file                                     |
 
@@ -629,6 +679,6 @@ OpenSidebar uses separate runtime tiers for execution, planning, and visual perc
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
 | **Executor** | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Executor, everyday tasks (default) |
 | **Planner**  | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Complex reasoning, escalated tasks |
-| **Perception** | `x-ai/grok-4.1-fast`            | OpenRouter  | Vision-based page understanding    |
+| **Perception** | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Vision-based page understanding |
 
 The `escalate` tool switches execution onto the planner tier when needed.

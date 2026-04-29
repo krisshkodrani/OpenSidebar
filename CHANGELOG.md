@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Perception layer replacing raw DOM text and take_screenshot tool
 - Vision-based page understanding via Groq Llama 4 Scout → GPT-4o-mini fallback
 - Fingerprint-based caching for perception calls
-- Structured 6-section perception output (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL)
+- Structured perception output for page location, changes, blockers, visual-only evidence, and affordances
 
 ### Removed
 

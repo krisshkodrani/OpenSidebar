@@ -22,13 +22,13 @@ This contract is shared between production and the corrected perception eval har
 ## Current Runtime Decision
 
 - settings field: `perceptionMode`
-- `auto` resolves to `unified_vl` on Fireworks and `structured` elsewhere
+- `auto` resolves to `unified_vl`
 - legacy `useVLExecutor` is migration-only and should not be used for new code
 
 ## Structured Path Model
 
-- default structured-perception model: `x-ai/grok-4.1-fast`
-- provider: OpenRouter
+- default structured-perception model: provider-specific, with Fireworks using `accounts/fireworks/routers/kimi-k2p5-turbo`
+- OpenRouter structured fallback: `x-ai/grok-4.1-fast`
 - prompt source: `prompts/runtime/perception/interpret_page.md`
 
 The perception layer used to rely on older Gemini-based prompt variants. Those older layouts are now legacy-only and should not be used for judging current behavior.
