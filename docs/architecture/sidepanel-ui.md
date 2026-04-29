@@ -337,7 +337,7 @@ Displays chat messages with:
 
 ### SettingsDrawer
 
-- OpenRouter API key input
+- Provider API key inputs
 - Max turns slider (cap: 500)
 - Context window selector (8k/32k/128k)
 - Workspace enabled toggle

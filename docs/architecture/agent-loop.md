@@ -399,7 +399,7 @@ Snapshot fingerprinting hashes `url + element count + sorted element signatures 
 
 ## Perception Layer
 
-The `perception.ts` module provides `perceive()` which sends a screenshot + element summary to a vision model for structured page interpretation. Uses OpenRouter Grok 4.1 Fast. Output is a 6-section format (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens vs ~4K raw DOM text. Fingerprint-based caching avoids redundant calls.
+The default perception mode is `unified_vl`, where the screenshot is sent directly to the executor. The structured perception path remains available for targeted debugging and fallback use; it sends a screenshot plus element summary to a provider-specific vision model and returns the current five-section contract: `LOCATION`, `CHANGES`, `BLOCKERS`, `VISUAL-ONLY`, and `AFFORDANCES`. Fingerprint-based caching avoids redundant structured perception calls.
 
 ## Pause / Resume
 

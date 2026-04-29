@@ -41,10 +41,10 @@ If the release changes are concentrated in a different area, run the relevant pu
 | ----------- | ------------------- |
 | Page actions, navigation, overlays, forms, shopping | `npm run test:e2e:interactions` |
 | Planner, continuation, recovery, backend durability | `npm run test:e2e:runtime` |
-| Workflow-benchmark behavior or WorkArena-gap changes | `npm run test:e2e:workarena` |
-| Release confidence on long workflow stability | `npm run test:e2e:workarena:variance` |
+| WorkArena setup, reporting, or ServiceNow handoff changes | `npx tsx scripts/workarena-doctor.ts` and `npx tsx scripts/workarena-validate-reports.ts` |
+| Real WorkArena confidence after intentional ServiceNow reset approval | `npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build` |
 
-`npm run test:e2e:nightly` covers low-priority legacy primitives and is not required for every release candidate.
+Real WorkArena handoff commands may mutate a remote ServiceNow benchmark instance and spend LLM tokens. Run them deliberately, and keep generated reports under `.artifacts/e2e/`.
 
 When you run the E2E suite or prepare the summary, write the dated report to:
 

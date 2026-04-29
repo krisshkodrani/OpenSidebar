@@ -38,11 +38,14 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Repo Structure](./repo-structure.md)
 - [Release Checklist](./release-checklist.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
+- [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
 - [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
 
 ## Evaluations
 
 - [WorkArena Setup](./evals/workarena.md)
+- [WorkArena Roadmap](./evals/workarena-roadmap.md)
+- [WorkArena First Smoke Test Checklist](./evals/workarena-smoke-test-checklist.md)
 
 ## Other
 

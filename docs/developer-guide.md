@@ -73,10 +73,8 @@ Routine E2E is divided by purpose rather than difficulty:
 | Smoke              | `npm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
 | Interactions       | `npm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
 | Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, and durable state regressions                                  |
-| WorkArena gap      | `npm run test:e2e:workarena`             | Local CRM, ticket, document, chat, email, and workflow tasks modeled after WorkArena categories  |
-| WorkArena variance | `npm run test:e2e:workarena:variance`    | Repeated WorkArena-gap run for pass-rate variance; expensive by design                           |
-| WorkArena copy     | `npm run test:e2e:workarena:copy`        | No-token local rehearsal for adapter reports, held sessions, session import, and optional agent E2E |
-| Nightly legacy     | `npm run test:e2e:nightly`               | Saturated legacy primitives kept out of routine staged runs                                      |
+| WorkArena setup    | `npx tsx scripts/workarena-doctor.ts`    | Local WorkArena readiness and gated dataset access checks                                       |
+| WorkArena handoff  | `npx tsx scripts/workarena-handoff.ts`   | Manual real ServiceNow handoff run; requires explicit reset flag                                |
 
 ### Inspect traces and logs
 
@@ -107,7 +105,7 @@ Viewer:
 | Executor              | `accounts/fireworks/routers/kimi-k2p5-turbo` |
 | Executor fallback     | `accounts/fireworks/routers/kimi-k2p5-turbo` |
 | Planner               | `accounts/fireworks/routers/kimi-k2p5-turbo` |
-| Structured perception | `x-ai/grok-4.1-fast`                         |
+| Perception            | `unified_vl` by default; structured fallback is provider-specific |
 
 Settings overrides live in `apps/extension/src/types/settings.ts` and are exposed in the settings drawer.
 Xiaomi MiMo is available as `providerMode: "xiaomi"` for agent executor/planner traffic. It uses `XIAOMI_API_KEY`, `mimo-v2-omni` for the multimodal executor, and `mimo-v2-pro` as the default planner.
@@ -115,7 +113,7 @@ Xiaomi MiMo is available as `providerMode: "xiaomi"` for agent executor/planner 
 ## Observation Path
 
 - source of truth setting: `perceptionMode`
-- `auto`: unified VL on Fireworks, structured perception elsewhere
+- `auto`: unified VL
 - `unified_vl`: screenshot goes directly to the executor and no separate `Page Interpretation` model runs
 - `structured`: dedicated perception model produces the v6 `LOCATION/CHANGES/BLOCKERS/VISUAL-ONLY/AFFORDANCES` contract
 
@@ -224,15 +222,15 @@ Structured perception uses the unified v6 contract:
 | `npm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
 | `npm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
 | `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
-| `npm run test:e2e:workarena` | you need WorkArena-gap workflow coverage  | expensive; run deliberately                    |
-| `npm run test:e2e:workarena:copy` | you need local WorkArena rehearsal before real WorkArena | no-token by default; includes session import check; add `-- --agent` for local agent E2E |
-| `npm run benchmark:workarena:first-task` | you need a safe first real WorkArena candidate | metadata-only; no reset or LLM calls |
-| `npm run benchmark:workarena:category-coverage` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
-| `npm run benchmark:workarena:handoff` | you need a manual real WorkArena handoff run | requires `-- --allow-servicenow-reset`; token-spending |
-| `npm run test:e2e:all`       | you need every raw browser E2E file       | includes retired legacy files                  |
+| `npx tsx scripts/workarena-first-task.ts` | you need a safe first real WorkArena candidate | metadata-only; no reset or LLM calls |
+| `npx tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
+| `npx tsx scripts/workarena-handoff.ts` | you need a manual real WorkArena handoff run | requires `--allow-servicenow-reset`; token-spending |
+| `npx tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
 | `npm run ci:local`           | you want the GitHub CI gate locally       | lint + typecheck + tests + build + dist check  |
 | `npm run release:verify`     | you want the release gate                 | aliases `npm run ci:local`                     |
 | `npx vitest run <file>`      | you want one focused test file            | useful during iteration                        |
+
+For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).
 
 ### Observability
 

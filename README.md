@@ -95,9 +95,7 @@ npm run fmt        # Prettier
   - `npm run test:e2e:interactions` for page interaction and navigation regressions
   - `npm run test:e2e:runtime` for orchestration, continuation, recovery, and memory regressions
 - Use `npm run test:e2e` or `npm run test:e2e:staged` for the normal budgeted sequence: smoke, interactions, then runtime.
-- Use `npm run test:e2e:workarena` for the local WorkArena-gap task pack, and `npm run test:e2e:workarena:variance` only when you intentionally want repeated expensive runs.
-- Use `npm run test:e2e:nightly` for low-priority legacy primitives that are kept out of routine staged runs.
-- Use `npm run test:e2e:all` only when you intentionally want every raw browser E2E file in one pass, including retired legacy files.
+- Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `npx tsx scripts/workarena-doctor.ts` and `npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
 ## Repo Layout
@@ -133,6 +131,8 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Agent Loop](./docs/architecture/agent-loop.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)
 - [Tools Reference](./docs/features/tools.md)
+- [WorkArena Roadmap](./docs/evals/workarena-roadmap.md)
+- [WorkArena Setup](./docs/evals/workarena.md)
 - [Personal Profile](./docs/personal-profile.md)
 - [Release Checklist](./docs/release-checklist.md)
 

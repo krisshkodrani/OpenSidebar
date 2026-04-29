@@ -374,9 +374,9 @@ Instead of a manual `take_screenshot` tool, OpenSidebar uses an automatic **perc
 
 1. Captures the visible tab as a screenshot via `chrome.tabs.captureVisibleTab`
 2. Sends the screenshot + element summary to a vision model for structured interpretation
-3. Returns a compact 6-section interpretation (LAYOUT, STATE, CONTENT, VISUAL-ONLY, BLOCKERS, SPATIAL) at ~150 tokens — replacing ~4K of raw visible text
+3. Returns the compact five-section interpretation: `LOCATION`, `CHANGES`, `BLOCKERS`, `VISUAL-ONLY`, and `AFFORDANCES`
 
-The perception layer uses OpenRouter with `x-ai/grok-4.1-fast` for vision-based page understanding. 429/4xx errors trigger retry with exponential backoff.
+The default runtime uses `unified_vl`, sending screenshots directly to the executor. The structured perception path remains available for targeted debugging and fallback use with provider-specific vision models.
 
 Response parameters: `max_tokens: 600`, `temperature: 0.1`, timeout 20s. Up to 2 retries with 800ms base delay and exponential backoff plus jitter. Fingerprint-based caching (via `computeSnapshotFingerprint()`) avoids redundant calls when the page hasn't changed.
 
@@ -389,7 +389,7 @@ Perception usage is tracked via `recordVisionUsage()` directly in the agent loop
 Every LLM call (agent turns, planner decomposition, planner validation, vision) reports token usage back to `AgentLoop.recordUsage()`. The accumulated `SessionMetrics` include:
 
 - Total prompt/completion/combined tokens
-- Total cost (from OpenRouter's inline `usage.cost` field — no extra API calls)
+- Total cost from provider usage metadata or local pricing estimates
 - Total LLM wall-clock time
 - Total session wall-clock time
 - LLM call count

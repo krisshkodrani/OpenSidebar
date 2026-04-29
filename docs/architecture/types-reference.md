@@ -532,7 +532,7 @@ export interface SessionMetrics {
   totalCompletionTokens: number;
   /** Total tokens (prompt + completion) */
   totalTokens: number;
-  /** Cumulative cost in USD from OpenRouter */
+  /** Cumulative cost in USD from provider usage metadata or local pricing estimates */
   totalCost: number;
   /** Total LLM call time in ms (wall clock, not including tool execution) */
   totalLlmTimeMs: number;
@@ -589,7 +589,7 @@ export interface AgentLoopState {
 
 ### `ChatMessage`
 
-OpenAI-compatible chat message format (used by OpenRouter).
+OpenAI-compatible chat message format used by OpenRouter-compatible provider clients.
 
 ```typescript
 /** A single message in the conversation history */
