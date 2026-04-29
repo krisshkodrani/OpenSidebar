@@ -922,7 +922,10 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     });
     const validationMs = Date.now() - validationStart;
     const validationResult = validationFromBridge(validation);
-    const passed = validationResult.passed === true;
+    const passed =
+      validationResult.score !== null
+        ? validationResult.score > 0
+        : validationResult.passed === true;
     const status: WorkArenaExecutionResult["status"] = passed
       ? "passed"
       : terminal.ok

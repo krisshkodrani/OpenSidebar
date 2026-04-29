@@ -442,6 +442,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     maturity: "candidate",
     preferredTools: [
       "inspect_catalog_item",
+      "configure_catalog_item",
       "set_checkbox",
       "type_text",
       "select_option",
@@ -920,10 +921,10 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
   "catalog-order-workflow": {
     procedureMarkdown: [
       "1. Use inspect_catalog_item to read product name, quantity controls, options, price/summary, and order controls.",
-      "2. Configure every requested quantity, option, checkbox, and free-text requirement.",
-      "3. If a requested option is visible and unset, set it immediately; do not stop at 'ready to configure'.",
-      "4. Re-inspect catalog state to verify the configuration before submitting.",
-      "5. Click the appropriate order, cart, checkout, or request control.",
+      "2. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, checkbox states, and text requirements in one verified action.",
+      "3. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
+      "4. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
+      "5. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
       "6. Continue until a request/order/cart confirmation is visible, then call done with the confirmation evidence.",
     ].join("\n"),
     requiredEvidence: [
@@ -943,6 +944,7 @@ const SKILL_BODIES: Record<string, Omit<LoadedSkillContract, keyof SkillDescript
       ],
       toolDiscipline: [
         "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
+        "Prefer configure_catalog_item over separate select_option, set_checkbox, type_text, and submit clicks when the requested configuration is explicit.",
       ],
       completionChecks: [
         "A request/order/cart confirmation exists after submission.",
@@ -1939,6 +1941,10 @@ export function resolveSkillToolProfile(
   if (!descriptor) return currentProfile;
 
   const text = `${objective}\n${successCriteria}`;
+
+  if (descriptor.id === "catalog-order-workflow") {
+    return "full";
+  }
 
   if (
     (hasCapability(descriptor, "compose_response") ||

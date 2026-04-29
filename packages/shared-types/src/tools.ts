@@ -330,6 +330,36 @@ export interface InspectCatalogItemArgs {
   maxControls?: number;
 }
 
+/** One text field to configure on a catalog item page */
+export interface ConfigureCatalogTextField {
+  /** Visible label, aria label, name, or id of the text field */
+  field: string;
+  /** Value to enter */
+  value: string;
+}
+
+/** One checkbox to configure on a catalog item page */
+export interface ConfigureCatalogCheckbox {
+  /** Visible label, aria label, name, or id of the checkbox */
+  label: string;
+  /** Desired checked state */
+  checked: boolean;
+}
+
+/** Arguments for configure_catalog_item */
+export interface ConfigureCatalogItemArgs {
+  /** Quantity to set when a quantity control exists */
+  quantity?: number | string;
+  /** Text inputs or textareas to fill by label */
+  textFields?: ConfigureCatalogTextField[];
+  /** Checkboxes to set by label */
+  checkboxes?: ConfigureCatalogCheckbox[];
+  /** Click an order/request/add-to-cart control after verifying requested values */
+  submit?: boolean;
+  /** Optional visible submit button label, e.g. "Order Now" */
+  submitButton?: string;
+}
+
 /** Arguments for xray_page — no arguments, simple toggle */
 export type XrayPageArgs = Record<string, never>;
 
@@ -395,6 +425,7 @@ export type ToolArgsMap = {
   [ToolName.APPLY_LIST_FILTER]: ApplyListFilterArgs;
   [ToolName.APPLY_LIST_SORT]: ApplyListSortArgs;
   [ToolName.INSPECT_CATALOG_ITEM]: InspectCatalogItemArgs;
+  [ToolName.CONFIGURE_CATALOG_ITEM]: ConfigureCatalogItemArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.CLARIFY]: ClarifyArgs;

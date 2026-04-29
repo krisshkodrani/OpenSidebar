@@ -918,6 +918,72 @@ export const INSPECT_CATALOG_ITEM_DEF: ToolDefinition = {
   },
 };
 
+export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CONFIGURE_CATALOG_ITEM,
+    description:
+      "Configure a visible ServiceNow/service catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button. Use this on catalog item detail pages instead of separate select_option, set_checkbox, type_text, and submit clicks.",
+    parameters: {
+      type: "object",
+      properties: {
+        quantity: {
+          type: "string",
+          description: "Quantity to set when a quantity control exists.",
+        },
+        textFields: {
+          type: "array",
+          description: "Text inputs or textareas to fill by visible label, aria-label, name, or id.",
+          items: {
+            type: "object",
+            description: "One text field/value pair to fill.",
+            properties: {
+              field: {
+                type: "string",
+                description: 'Field label, e.g. "Additional software requirements".',
+              },
+              value: {
+                type: "string",
+                description: "Value to enter.",
+              },
+            },
+            required: ["field", "value"],
+          },
+        },
+        checkboxes: {
+          type: "array",
+          description: "Checkboxes to set by visible label, aria-label, name, or id.",
+          items: {
+            type: "object",
+            description: "One checkbox state to apply.",
+            properties: {
+              label: {
+                type: "string",
+                description: 'Checkbox label, e.g. "Adobe Acrobat".',
+              },
+              checked: {
+                type: "boolean",
+                description: "Desired checked state.",
+              },
+            },
+            required: ["label", "checked"],
+          },
+        },
+        submit: {
+          type: "boolean",
+          description:
+            "Click an order/request/add-to-cart control after requested values are verified. Defaults to false.",
+        },
+        submitButton: {
+          type: "string",
+          description: 'Optional visible submit button label, e.g. "Order Now".',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const XRAY_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {

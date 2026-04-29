@@ -338,6 +338,87 @@ describe("Tool Registration", () => {
         expect(result).toContain("ORDERBYDESCcalendar_duration");
     });
 
+    test("configure_catalog_item fills catalog controls and clicks submit", async () => {
+        document.title = "Standard Laptop | ServiceNow";
+        document.body.innerHTML = `
+            <label for="quantity">Quantity</label>
+            <select id="quantity">
+                <option value="1">1</option>
+                <option value="10">10</option>
+            </select>
+            <label for="acrobat">Adobe Acrobat</label>
+            <input id="acrobat" type="checkbox" />
+            <label for="photoshop">Adobe Photoshop</label>
+            <input id="photoshop" type="checkbox" checked />
+            <label for="software">Additional software requirements</label>
+            <textarea id="software"></textarea>
+            <button id="order">Order Now</button>
+        `;
+        const rectSpy = vi
+            .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+            .mockReturnValue({
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 20,
+                top: 0,
+                right: 100,
+                bottom: 20,
+                left: 0,
+                toJSON: () => ({}),
+            } as DOMRect);
+        const orderButton = document.getElementById("order")!;
+        orderButton.addEventListener("click", () => {
+            orderButton.setAttribute("data-clicked", "true");
+        });
+        (chrome.tabs as any).get = vi.fn(async () => ({
+            id: 123,
+            url: "https://workarenapublic18.service-now.com/order_status.do?sys_id=req123",
+            title: "Order Status | ServiceNow",
+            groupId: -1,
+        }));
+        (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+            { result: details.func(...details.args), frameId: 0 },
+        ]);
+
+        const result = await toolRegistry.execute(
+            {
+                id: "configure-catalog",
+                type: "function",
+                function: {
+                    name: ToolName.CONFIGURE_CATALOG_ITEM,
+                    arguments: JSON.stringify({
+                        quantity: "10",
+                        textFields: [
+                            {
+                                field: "Additional software requirements",
+                                value: "Trello, Salesforce",
+                            },
+                        ],
+                        checkboxes: [
+                            { label: "Adobe Acrobat", checked: true },
+                            { label: "Adobe Photoshop", checked: false },
+                        ],
+                        submit: true,
+                        submitButton: "Order Now",
+                    }),
+                },
+            },
+            123,
+        );
+
+        expect((document.getElementById("quantity") as HTMLSelectElement).value).toBe("10");
+        expect((document.getElementById("acrobat") as HTMLInputElement).checked).toBe(true);
+        expect((document.getElementById("photoshop") as HTMLInputElement).checked).toBe(false);
+        expect((document.getElementById("software") as HTMLTextAreaElement).value).toBe(
+            "Trello, Salesforce",
+        );
+        expect(orderButton.getAttribute("data-clicked")).toBe("true");
+        expect(result).toContain("Configured catalog item.");
+        expect(result).toContain("Clicked submit control");
+        rectSpy.mockRestore();
+    });
+
     test("inspect_chart reports Highcharts point counts and percentages", async () => {
         const originalHighcharts = (window as any).Highcharts;
         (window as any).Highcharts = {

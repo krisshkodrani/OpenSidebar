@@ -193,6 +193,8 @@ export function formatStepLabel(
     }
     case ToolName.INSPECT_CATALOG_ITEM:
       return "Inspect catalog item";
+    case ToolName.CONFIGURE_CATALOG_ITEM:
+      return "Configure catalog item";
     case ToolName.XRAY_PAGE:
       return "Toggle X-ray mode";
     default:

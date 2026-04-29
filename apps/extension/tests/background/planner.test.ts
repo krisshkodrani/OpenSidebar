@@ -1911,6 +1911,17 @@ describe("selectPrimarySkill", () => {
         expect(getSkillToolPolicy("catalog-order-workflow")?.preferredTools).toContain(
             ToolName.INSPECT_CATALOG_ITEM,
         );
+        expect(getSkillToolPolicy("catalog-order-workflow")?.preferredTools).toContain(
+            ToolName.CONFIGURE_CATALOG_ITEM,
+        );
+        expect(
+            resolveSkillToolProfile(
+                "catalog-order-workflow",
+                "Order a standard laptop from the service catalog",
+                "Request confirmation is visible",
+                "form_fill",
+            ),
+        ).toBe("full");
     });
 
     test("matches paginated aggregate table scans", () => {
