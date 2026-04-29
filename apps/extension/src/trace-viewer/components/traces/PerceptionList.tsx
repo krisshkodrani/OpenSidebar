@@ -36,8 +36,8 @@ export default function PerceptionList() {
       <div className="py-10 px-4 text-center text-trace-muted text-[13px]">
         No perception data in this session.
         <br />
-        Perception data is recorded when the vision model interprets page
-        screenshots.
+        Perception observations are recorded when page evidence is interpreted
+        from screenshots, DOM distillation, or fallback state.
       </div>
     );
   }

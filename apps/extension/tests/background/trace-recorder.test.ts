@@ -76,4 +76,108 @@ describe("TraceRecorder skill tool metrics", () => {
       discouragedSelectionRate: 0.5,
     });
   });
+
+  test("turn traces include canonical page state while preserving legacy perception fields", async () => {
+    const recorder = new TraceRecorder("session-page-state");
+    recorder.startTurn(
+      1,
+      {
+        url: "https://example.com/start",
+        title: "Start",
+        elementCount: 1,
+        visibleContentLength: 50,
+        pageContentLength: 75,
+        scrollY: 0,
+      },
+      [
+        {
+          tag: 1,
+          tagName: "button",
+          text: "Continue",
+          attributes: {},
+          isVisible: true,
+          isInteractive: true,
+          rect: { x: 0, y: 0, width: 20, height: 20 },
+        } as any,
+      ],
+      2,
+      1,
+      "openai/gpt-5.4",
+      "none",
+    );
+    recorder.recordPostToolSnapshot({
+      url: "https://example.com/next",
+      title: "Next",
+      elementCount: 1,
+      visibleContentLength: 80,
+      pageContentLength: 120,
+      scrollY: 10,
+      elements: [
+        {
+          tag: 2,
+          tagName: "h1",
+          text: "Next page",
+          attributes: {},
+          isVisible: true,
+          isInteractive: false,
+          rect: { x: 0, y: 0, width: 80, height: 20 },
+        } as any,
+      ],
+    });
+    await recorder.recordPerception(
+      {
+        interpretation: "The next page is visible.",
+        model: "vision-model",
+        durationMs: 25,
+        cached: false,
+        mode: "structured",
+        source: "fresh",
+        freshnessReason: "new_fingerprint",
+        screenshotStatus: "captured",
+      },
+      "data:image/jpeg;base64,abc",
+      "[2] h1 \"Next page\"",
+      [{ dataUrl: "data:image/jpeg;base64,pan", scrollY: 300, label: "bottom" }],
+    );
+    await recorder.endTurn();
+
+    const fetchMock = globalThis.fetch as any;
+    const turnCall = fetchMock.mock.calls.find(
+      ([url]: [string]) => String(url).endsWith("/traces"),
+    );
+    expect(turnCall).toBeTruthy();
+
+    const payload = JSON.parse(turnCall[1].body);
+    expect(payload.pageState.preDecision).toMatchObject({
+      url: "https://example.com/start",
+      title: "Start",
+      elementCount: 1,
+      domSnapshot: expect.any(Array),
+    });
+    expect(payload.pageState.postTool).toMatchObject({
+      url: "https://example.com/next",
+      title: "Next",
+      scrollY: 10,
+      domDistillation: "[2] h1 \"Next page\"",
+    });
+    expect(payload.pageState.postTool.screenshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "viewport",
+          dataUrl: "data:image/jpeg;base64,abc",
+          status: "captured",
+        }),
+        expect.objectContaining({
+          kind: "panorama",
+          dataUrl: "data:image/jpeg;base64,pan",
+          label: "bottom",
+        }),
+      ]),
+    );
+    expect(payload.perception).toMatchObject({
+      screenshotDataUrl: "data:image/jpeg;base64,abc",
+      elementSummary: "[2] h1 \"Next page\"",
+      pageStateRef: "postTool",
+    });
+  });
 });

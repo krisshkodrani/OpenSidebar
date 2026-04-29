@@ -155,6 +155,12 @@ export class TraceRecorder {
       timestamp: Date.now(),
       snapshot,
       elements,
+      pageState: {
+        preDecision: {
+          ...snapshot,
+          domSnapshot: elements,
+        },
+      },
       llmRequest: {
         model,
         ...(modelTier ? { modelTier } : {}),
@@ -323,6 +329,9 @@ export class TraceRecorder {
     if (!this.currentTurn) return;
     const sessionId = this.currentTurn.sessionId;
     const turnNumber = this.currentTurn.turnNumber;
+    const pageStateRef = this.currentTurn.postToolSnapshot
+      ? "postTool"
+      : "preDecision";
     const enrichedPanoramicShots =
       sessionId && typeof turnNumber === "number" && panoramicShots?.length
         ? panoramicShots.map((shot, index) => ({
@@ -332,6 +341,46 @@ export class TraceRecorder {
             ...shot,
           }))
         : panoramicShots;
+    const pageState = this.currentTurn.pageState;
+    const capture = pageState?.[pageStateRef];
+    if (capture) {
+      if (elementSummary) {
+        capture.domDistillation = elementSummary;
+      }
+      const screenshots = [...(capture.screenshots ?? [])];
+      if (screenshotDataUrl) {
+        screenshots.push({
+          screenshotId:
+            sessionId && typeof turnNumber === "number"
+              ? `${sessionId}:turn:${turnNumber}:${pageStateRef}:viewport`
+              : undefined,
+          sessionId,
+          turnNumber,
+          kind: "viewport",
+          dataUrl: screenshotDataUrl,
+          scrollY: capture.scrollY,
+          label: "viewport",
+          status: perception.screenshotStatus,
+          source: perception.source,
+        });
+      }
+      for (const shot of enrichedPanoramicShots ?? []) {
+        screenshots.push({
+          screenshotId: shot.screenshotId,
+          sessionId: shot.sessionId,
+          turnNumber: shot.turnNumber,
+          kind: "panorama",
+          dataUrl: shot.dataUrl,
+          scrollY: shot.scrollY,
+          label: shot.label,
+          status: perception.screenshotStatus,
+          source: perception.source,
+        });
+      }
+      if (screenshots.length > 0) {
+        capture.screenshots = screenshots;
+      }
+    }
     this.currentTurn.perception = {
       interpretation: perception.interpretation,
       model: perception.model,
@@ -354,6 +403,7 @@ export class TraceRecorder {
       ...(enrichedPanoramicShots?.length
         ? { panoramicShots: enrichedPanoramicShots }
         : {}),
+      pageStateRef,
     };
   }
 
@@ -362,10 +412,25 @@ export class TraceRecorder {
     url: string;
     title: string;
     elementCount: number;
+    visibleContentLength?: number;
+    pageContentLength?: number;
     scrollY: number;
+    elements?: TaggedElement[];
   }): void {
     if (!this.currentTurn) return;
-    this.currentTurn.postToolSnapshot = snapshot;
+    const { elements, ...snapshotMeta } = snapshot;
+    this.currentTurn.postToolSnapshot = snapshotMeta;
+    this.currentTurn.pageState = {
+      preDecision:
+        this.currentTurn.pageState?.preDecision ?? {
+          ...this.currentTurn.snapshot!,
+          domSnapshot: this.currentTurn.elements,
+        },
+      postTool: {
+        ...snapshotMeta,
+        ...(elements ? { domSnapshot: elements } : {}),
+      },
+    };
   }
 
   /** Record progress tracker state */
@@ -413,6 +478,9 @@ export class TraceRecorder {
         ? { postToolSnapshot: this.currentTurn.postToolSnapshot }
         : {}),
       elements: this.currentTurn.elements!,
+      ...(this.currentTurn.pageState
+        ? { pageState: this.currentTurn.pageState }
+        : {}),
       llmRequest: this.currentTurn.llmRequest!,
       llmResponse: this.currentTurn.llmResponse ?? {
         content: null,

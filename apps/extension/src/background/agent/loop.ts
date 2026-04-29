@@ -10641,7 +10641,10 @@ export class AgentLoop {
                 url: snap.url,
                 title: snap.title || "",
                 elementCount: snap.elements.length,
+                visibleContentLength: snap.visibleContent?.length || 0,
+                pageContentLength: snap.pageContent?.length || 0,
                 scrollY: snap.scroll?.y || 0,
+                elements: snap.elements,
               });
 
               // Invalidate DOM cache entries after snapshot refresh
