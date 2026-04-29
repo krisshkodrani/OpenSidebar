@@ -4,7 +4,7 @@ import type { RunTraceEvent } from "../../../utils/run-trace";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import { useStore } from "../../store";
-import { formatDuration } from "../../utils";
+import { formatCost, formatDuration, formatTokens } from "../../utils";
 
 interface PlanTabProps {
   session: TraceSession;
@@ -148,6 +148,9 @@ function RunPlannerActivity({
   const plannerEvents = runEvents.filter(
     (event) => event.role === "planner" || event.type === "plan_decomposed",
   );
+  const plannerLlmEvents = runEvents.filter(
+    (event) => event.type === "planner_llm_call",
+  );
   const executorEvents = runEvents.filter(
     (event) => event.role === "executor" || event.type.startsWith("node_"),
   );
@@ -178,11 +181,16 @@ function RunPlannerActivity({
           )}
           {fallback && <Badge variant="max_turns">fallback</Badge>}
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
           <RunMetricCard
             label="Planner Events"
             value={plannerEvents.length}
             hint={planEvent ? formatEventTime(planEvent) : "none recorded"}
+          />
+          <RunMetricCard
+            label="Planner LLM"
+            value={plannerLlmEvents.length}
+            hint={plannerLlmEvents.length > 0 ? "model calls" : "none recorded"}
           />
           <RunMetricCard
             label="Plan Nodes"
@@ -206,6 +214,10 @@ function RunPlannerActivity({
           </div>
         )}
       </div>
+
+      {plannerLlmEvents.length > 0 && (
+        <PlannerLlmCalls runEvents={plannerLlmEvents} />
+      )}
 
       {skills.length > 0 && (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
@@ -244,6 +256,53 @@ function RunPlannerActivity({
       )}
 
       <RunEventTimeline runEvents={runEvents} />
+    </div>
+  );
+}
+
+function PlannerLlmCalls({ runEvents }: { runEvents: RunTraceEvent[] }) {
+  return (
+    <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] text-trace-muted uppercase tracking-wide">
+          Planner LLM Calls
+        </span>
+        <Badge variant="tier-planner">{runEvents.length} calls</Badge>
+      </div>
+      <div className="space-y-2">
+        {runEvents.map((event, index) => {
+          const data = asRecord(event.data);
+          const usage = asRecord(data?.usage);
+          const phase = stringValue(data?.phase) ?? "planner";
+          const model = stringValue(data?.model) ?? "unknown";
+          const duration = numberValue(data?.durationMs);
+          const totalTokens = numberValue(usage?.total_tokens);
+          const cost = numberValue(usage?.cost);
+          return (
+            <div
+              key={`${event.ts}-${index}`}
+              className="rounded border border-trace-border/70 bg-trace-bg px-3 py-2"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-[10px] text-trace-muted shrink-0">
+                  {formatEventTime(event)}
+                </span>
+                <Badge variant="tier-planner">{phase}</Badge>
+                <span className="font-mono text-[11px] text-trace-accent-light truncate">
+                  {model}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-trace-muted">
+                {duration != null && <span>{formatDuration(duration)}</span>}
+                {totalTokens != null && (
+                  <span>{formatTokens(totalTokens)} tokens</span>
+                )}
+                {cost != null && <span>{formatCost(cost)}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -342,6 +401,24 @@ function summarizeRunEvent(event: RunTraceEvent): string {
       nodeCount == null ? null : `${nodeCount} node${nodeCount === 1 ? "" : "s"}.`,
       difficulty ? `Difficulty: ${difficulty}.` : null,
       `${skills} skill pick${skills === 1 ? "" : "s"}.`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (event.type === "planner_llm_call") {
+    const phase = stringValue(data.phase) ?? "planner";
+    const model = stringValue(data.model) ?? "unknown model";
+    const duration = numberValue(data.durationMs);
+    const usage = asRecord(data.usage);
+    const totalTokens = numberValue(usage?.total_tokens);
+    const cost = numberValue(usage?.cost);
+    return [
+      `Planner LLM call for ${phase}.`,
+      `Model: ${model}.`,
+      duration != null ? `Duration ${formatDuration(duration)}.` : null,
+      totalTokens != null ? `${formatTokens(totalTokens)} tokens.` : null,
+      cost != null ? `${formatCost(cost)}.` : null,
     ]
       .filter(Boolean)
       .join(" ");

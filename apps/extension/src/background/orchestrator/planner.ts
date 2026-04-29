@@ -1,5 +1,6 @@
 import { TaskPlanner } from "../agent/planner";
 import type { LLMClientOptions } from "../llm";
+import type { TokenUsage } from "../llm/types";
 import type { Difficulty } from "../agent/constants";
 import type { ToolProfile } from "../tools/metadata";
 import { ToolName } from "../../types";
@@ -662,6 +663,12 @@ export class OrchestratorPlanner {
 
   constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
     this.planner = new TaskPlanner(openRouterApiKey, modelOverrides);
+  }
+
+  setUsageCallback(
+    cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+  ): void {
+    this.planner.setUsageCallback(cb);
   }
 
   async buildNodes(
