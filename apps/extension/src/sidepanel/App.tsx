@@ -15,7 +15,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { X, Sparkles, ClipboardList } from "lucide-react";
+import { X, ClipboardList } from "lucide-react";
 import { logger } from "../utils";
 import { speakText } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
@@ -37,11 +37,15 @@ import {
 } from "./interaction-mode";
 import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
+import {
+  formatMissingProviderKeys,
+  getProviderKeyStatus,
+} from "../utils/provider-keys";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
-  "Fill out this form",
-  "Find pricing info",
+  "Compare the options here",
+  "Help me complete this task",
 ];
 
 export default function App() {
@@ -126,6 +130,16 @@ export default function App() {
   const [blockedSiteWarning, setBlockedSiteWarning] = useState<string | null>(
     null,
   );
+  const splashLogoUrl = useMemo(() => {
+    if (
+      typeof chrome !== "undefined" &&
+      typeof chrome.runtime?.getURL === "function"
+    ) {
+      return chrome.runtime.getURL("public/icons/icon-128.png");
+    }
+
+    return "public/icons/icon-128.png";
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -463,26 +477,15 @@ export default function App() {
       if (!trimmedText || store.isAgentRunning) return;
 
       // Check for the active provider's API key before sending.
-      const mode = store.settings.providerMode ?? "fireworks";
-      const activeKey =
-        mode === "fireworks"
-          ? store.settings.fireworksApiKey
-          : mode === "moonshot"
-            ? store.settings.kimiApiKey
-            : mode === "openai-groq"
-              ? store.settings.openaiApiKey
-              : store.settings.openRouterApiKey;
-      const activeKeyName =
-        mode === "fireworks"
-          ? "Fireworks AI"
-          : mode === "moonshot"
-            ? "Moonshot AI"
-            : mode === "openai-groq"
-              ? "OpenAI"
-              : "OpenRouter";
-      if (!activeKey) {
+      const providerKeyStatus = getProviderKeyStatus(store.settings);
+      if (!providerKeyStatus.hasRequiredKeys) {
+        const missingKeys = formatMissingProviderKeys(providerKeyStatus);
+        const keyNoun =
+          providerKeyStatus.missingKeyNames.length === 1
+            ? "API key"
+            : "API keys";
         setError(
-          `Please add your ${activeKeyName} API key in Settings to get started.`,
+          `Please add your ${missingKeys} ${keyNoun} in Settings to get started.`,
           { persistent: true },
         );
         return;
@@ -597,10 +600,12 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-warm-gradient">
         <div className="animate-pulse flex flex-col items-center gap-3">
-          <div className="px-4 py-3 bg-primary-600 rounded-2xl flex items-center justify-center shadow-lg shadow-primary-600/20">
-            <span className="text-white font-bold text-lg tracking-tight">
-              OpenSidebar
-            </span>
+          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center shadow-lg shadow-primary-600/20">
+            <img
+              src={splashLogoUrl}
+              alt="OpenSidebar logo"
+              className="w-16 h-16 object-contain"
+            />
           </div>
           <span className="text-xs text-warm-500 dark:text-warm-400">
             Loading...
@@ -683,12 +688,18 @@ export default function App() {
             {messages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-8">
                 <div className="max-w-[260px]">
-                  <div className="w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-5 flex items-center justify-center mx-auto">
-                    <Sparkles size={24} className="text-primary-500" />
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden mb-5 flex items-center justify-center mx-auto shadow-sm shadow-primary-600/15">
+                    <img
+                      src={splashLogoUrl}
+                      alt="OpenSidebar logo"
+                      className="w-14 h-14 object-contain"
+                    />
                   </div>
                   {!(
                     settings.fireworksApiKey ||
+                    settings.deepseekApiKey ||
                     settings.kimiApiKey ||
+                    settings.xiaomiApiKey ||
                     settings.openaiApiKey ||
                     settings.openRouterApiKey
                   ) ? (

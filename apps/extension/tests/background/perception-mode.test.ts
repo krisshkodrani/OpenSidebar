@@ -20,13 +20,22 @@ describe("perception mode resolution", () => {
     ).toBe("unified_vl");
   });
 
-  test("defaults non-Fireworks stacks to structured perception", () => {
+  test("defaults Fireworks + DeepSeek hybrid to unified VL", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "auto",
+        providerMode: "fireworks-deepseek",
+      }),
+    ).toBe("unified_vl");
+  });
+
+  test("defaults non-Fireworks stacks to unified VL", () => {
     expect(
       resolvePerceptionRuntimeMode({
         perceptionMode: "auto",
         providerMode: "openrouter",
       }),
-    ).toBe("structured");
+    ).toBe("unified_vl");
   });
 
   test("respects explicit structured override", () => {
@@ -38,7 +47,7 @@ describe("perception mode resolution", () => {
     ).toBe("structured");
   });
 
-  test("supports legacy useVLExecutor fallback", () => {
+  test("ignores legacy useVLExecutor false in favor of unified VL", () => {
     expect(
       resolvePerceptionRuntimeMode({
         useVLExecutor: true,
@@ -50,6 +59,6 @@ describe("perception mode resolution", () => {
         useVLExecutor: false,
         providerMode: "fireworks",
       }),
-    ).toBe("structured");
+    ).toBe("unified_vl");
   });
 });

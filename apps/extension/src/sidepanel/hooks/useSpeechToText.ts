@@ -4,14 +4,32 @@
  * Flow:
  * 1. Check mic permission → if denied, open request-mic.html in a new tab
  * 2. Record via MediaRecorder (webm/opus)
- * 3. On stop, send blob to Groq or OpenAI Whisper
+ * 3. On stop, send blob to Groq, OpenAI, or Gemini
  * 4. Return transcribed text
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { transcribeAudio } from "../../background/llm/audio";
 
-const MAX_RECORDING_MS = 120_000; // 2 minutes — prevents oversized blobs
+const MAX_RECORDING_MS = 120_000; // 2 minutes - prevents oversized blobs
+const RECORDING_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+  "audio/ogg",
+];
+
+function getRecordingMimeType(): string | undefined {
+  if (
+    typeof MediaRecorder === "undefined" ||
+    typeof MediaRecorder.isTypeSupported !== "function"
+  ) {
+    return "audio/webm;codecs=opus";
+  }
+  return RECORDING_MIME_TYPES.find((mimeType) =>
+    MediaRecorder.isTypeSupported(mimeType),
+  );
+}
 
 export interface SpeechToTextState {
   isRecording: boolean;
@@ -27,7 +45,7 @@ export interface SpeechToTextActions {
 }
 
 export function useSpeechToText(
-  keys: { groqApiKey?: string; openaiApiKey?: string },
+  keys: { groqApiKey?: string; openaiApiKey?: string; geminiApiKey?: string },
 ): SpeechToTextState & SpeechToTextActions {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -82,14 +100,21 @@ export function useSpeechToText(
     setError(null);
     setTranscript(null);
 
+    if (!keys.groqApiKey && !keys.openaiApiKey && !keys.geminiApiKey) {
+      setError("Groq, OpenAI, or Gemini API key required for speech-to-text.");
+      return;
+    }
+
     const hasPermission = await ensureMicPermission();
     if (!hasPermission) return;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
+      const recordingMimeType = getRecordingMimeType();
+      const mediaRecorder = new MediaRecorder(
+        stream,
+        recordingMimeType ? { mimeType: recordingMimeType } : undefined,
+      );
 
       chunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => {
@@ -100,7 +125,9 @@ export function useSpeechToText(
         // Stop all tracks to release mic
         stream.getTracks().forEach((t) => t.stop());
 
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, {
+          type: mediaRecorder.mimeType || recordingMimeType || "audio/webm",
+        });
         if (blob.size < 100) {
           setError("Recording too short.");
           return;

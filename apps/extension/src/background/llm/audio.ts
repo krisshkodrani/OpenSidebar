@@ -1,12 +1,14 @@
 /**
- * Audio transcription client — calls Groq or OpenAI Whisper API.
- * Both use identical OpenAI-compatible multipart form endpoints.
+ * Audio transcription and speech client.
+ * STT uses Groq/OpenAI Whisper first, then Gemini audio understanding.
  */
 
 import type { TTSStylePreset } from "../../types";
 
 const GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const OPENAI_STT_URL = "https://api.openai.com/v1/audio/transcriptions";
+const GEMINI_STT_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 const GROQ_STT_MODEL = "whisper-large-v3-turbo";
 const OPENAI_STT_MODEL = "whisper-1";
 
@@ -19,31 +21,44 @@ const GROQ_TTS_MODEL = "canopylabs/orpheus-v1-english";
 const GEMINI_TTS_SAMPLE_RATE = 24000;
 
 export type TTSProvider = "openai" | "groq" | "gemini";
+type STTProvider = "groq" | "openai" | "gemini";
 
 export interface TranscriptionResult {
   text: string;
-  provider: "groq" | "openai";
+  provider: STTProvider;
   durationMs: number;
 }
 
+type OpenAICompatibleSTTProvider = {
+  kind: "openai-compatible";
+  url: string;
+  apiKey: string;
+  model: string;
+  provider: "groq" | "openai";
+};
+
+type GeminiSTTProvider = {
+  kind: "gemini";
+  apiKey: string;
+  provider: "gemini";
+};
+
+type STTProviderConfig = OpenAICompatibleSTTProvider | GeminiSTTProvider;
+
 /**
  * Transcribe an audio blob using the best available provider.
- * Priority: Groq Whisper (cheaper, faster) → OpenAI Whisper (fallback).
+ * Priority: Groq Whisper (cheaper, faster) -> OpenAI Whisper -> Gemini.
  */
 export async function transcribeAudio(
   audioBlob: Blob,
-  keys: { groqApiKey?: string; openaiApiKey?: string },
+  keys: { groqApiKey?: string; openaiApiKey?: string; geminiApiKey?: string },
   language?: string,
 ): Promise<TranscriptionResult> {
-  const providers: Array<{
-    url: string;
-    apiKey: string;
-    model: string;
-    provider: "groq" | "openai";
-  }> = [];
+  const providers: STTProviderConfig[] = [];
 
   if (keys.groqApiKey) {
     providers.push({
+      kind: "openai-compatible",
       url: GROQ_STT_URL,
       apiKey: keys.groqApiKey,
       model: GROQ_STT_MODEL,
@@ -52,15 +67,23 @@ export async function transcribeAudio(
   }
   if (keys.openaiApiKey) {
     providers.push({
+      kind: "openai-compatible",
       url: OPENAI_STT_URL,
       apiKey: keys.openaiApiKey,
       model: OPENAI_STT_MODEL,
       provider: "openai",
     });
   }
+  if (keys.geminiApiKey) {
+    providers.push({
+      kind: "gemini",
+      apiKey: keys.geminiApiKey,
+      provider: "gemini",
+    });
+  }
 
   if (providers.length === 0) {
-    throw new Error("No API key available for speech-to-text (need Groq or OpenAI key)");
+    throw new Error("No API key available for speech-to-text (need Groq, OpenAI, or Gemini key)");
   }
 
   let lastError: Error | null = null;
@@ -68,8 +91,17 @@ export async function transcribeAudio(
   for (const p of providers) {
     const start = Date.now();
     try {
+      if (p.kind === "gemini") {
+        const text = await transcribeGeminiAudio(audioBlob, p.apiKey, language);
+        return {
+          text: text.trim(),
+          provider: p.provider,
+          durationMs: Date.now() - start,
+        };
+      }
+
       const formData = new FormData();
-      formData.append("file", audioBlob, "recording.webm");
+      formData.append("file", audioBlob, getAudioFilename(audioBlob));
       formData.append("model", p.model);
       if (language) formData.append("language", language);
       formData.append("response_format", "json");
@@ -124,6 +156,15 @@ interface GeminiGenerateContentResponse {
   }>;
 }
 
+const GEMINI_SUPPORTED_AUDIO_MIME_TYPES = new Set([
+  "audio/wav",
+  "audio/mp3",
+  "audio/aiff",
+  "audio/aac",
+  "audio/ogg",
+  "audio/flac",
+]);
+
 const GEMINI_STYLE_TAGS: Record<TTSStylePreset, string | null> = {
   neutral: null,
   friendly: "[friendly, warm]",
@@ -155,6 +196,20 @@ function decodeBase64(base64: string): Uint8Array {
     return bytes;
   }
   throw new Error("No base64 decoder available for Gemini TTS audio.");
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (typeof btoa !== "function") {
+    throw new Error("No base64 encoder available for Gemini audio.");
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
 }
 
 function createWavHeader(
@@ -189,6 +244,139 @@ function createWavHeader(
   view.setUint32(40, dataLength, true);
 
   return header;
+}
+
+function normalizeAudioMimeType(mimeType: string): string {
+  const base = mimeType.split(";")[0]?.trim().toLowerCase();
+  if (base === "audio/mpeg" || base === "audio/x-mp3") return "audio/mp3";
+  if (base === "audio/x-wav" || base === "audio/wave") return "audio/wav";
+  return base || "application/octet-stream";
+}
+
+function getAudioFilename(audioBlob: Blob): string {
+  const mimeType = normalizeAudioMimeType(audioBlob.type);
+  if (mimeType === "audio/wav") return "recording.wav";
+  if (mimeType === "audio/mp3") return "recording.mp3";
+  if (mimeType === "audio/aiff") return "recording.aiff";
+  if (mimeType === "audio/aac") return "recording.aac";
+  if (mimeType === "audio/ogg") return "recording.ogg";
+  if (mimeType === "audio/flac") return "recording.flac";
+  return "recording.webm";
+}
+
+function createMonoWavFromAudioBuffer(audioBuffer: AudioBuffer): Blob {
+  const { length, numberOfChannels, sampleRate } = audioBuffer;
+  const dataLength = length * 2;
+  const header = createWavHeader(dataLength, sampleRate, 1, 16);
+  const pcm = new ArrayBuffer(dataLength);
+  const view = new DataView(pcm);
+  const channels = Array.from({ length: numberOfChannels }, (_, index) =>
+    audioBuffer.getChannelData(index),
+  );
+
+  for (let i = 0; i < length; i++) {
+    let sample = 0;
+    for (const channel of channels) {
+      sample += channel[i] ?? 0;
+    }
+    sample = Math.max(-1, Math.min(1, sample / Math.max(1, numberOfChannels)));
+    view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+
+  return new Blob([header, pcm], { type: "audio/wav" });
+}
+
+async function convertAudioBlobToWav(audioBlob: Blob): Promise<Blob> {
+  const AudioContextCtor =
+    globalThis.AudioContext ??
+    (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error(
+      "Gemini STT needs WAV/MP3/AIFF/AAC/OGG/FLAC audio or browser audio decoding support.",
+    );
+  }
+
+  const audioContext = new AudioContextCtor();
+  try {
+    const decoded = await audioContext.decodeAudioData(await audioBlob.arrayBuffer());
+    return createMonoWavFromAudioBuffer(decoded);
+  } finally {
+    await audioContext.close().catch(() => {});
+  }
+}
+
+async function toGeminiInlineAudio(audioBlob: Blob): Promise<{ data: string; mimeType: string }> {
+  const originalMimeType = normalizeAudioMimeType(audioBlob.type);
+  const blobForGemini = GEMINI_SUPPORTED_AUDIO_MIME_TYPES.has(originalMimeType)
+    ? audioBlob
+    : await convertAudioBlobToWav(audioBlob);
+  const mimeType = normalizeAudioMimeType(blobForGemini.type);
+  const bytes = new Uint8Array(await blobForGemini.arrayBuffer());
+  return { data: encodeBase64(bytes), mimeType };
+}
+
+function buildGeminiSttPrompt(language?: string): string {
+  return [
+    "Generate a transcript of the speech in this audio.",
+    language
+      ? `The spoken language hint is ${language}.`
+      : "Detect the spoken language automatically.",
+    "Return only the words spoken, with no commentary, labels, timestamps, or markdown.",
+    "If there is no intelligible speech, return an empty string.",
+  ].join("\n");
+}
+
+function extractGeminiText(data: GeminiGenerateContentResponse): string {
+  const parts =
+    data.candidates?.flatMap((candidate) => candidate.content?.parts ?? []) ?? [];
+  if (parts.length === 0) {
+    throw new Error("Gemini STT returned no transcript.");
+  }
+  const text = parts
+    .map((part) => part.text ?? "")
+    .join("")
+    .trim();
+  return text;
+}
+
+async function transcribeGeminiAudio(
+  audioBlob: Blob,
+  apiKey: string,
+  language?: string,
+): Promise<string> {
+  const audio = await toGeminiInlineAudio(audioBlob);
+  const response = await fetch(GEMINI_STT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: buildGeminiSttPrompt(language) },
+            {
+              inlineData: {
+                mimeType: audio.mimeType,
+                data: audio.data,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Gemini STT error ${response.status}: ${errText.slice(0, 200)}`);
+  }
+
+  return extractGeminiText((await response.json()) as GeminiGenerateContentResponse);
 }
 
 function extractGeminiSampleRate(mimeType?: string): number {
