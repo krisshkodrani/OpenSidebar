@@ -177,11 +177,12 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
         </CollapsibleSection>
 
         <CollapsibleSection
-          label={<span className="text-[11px]">👁 Perception & Snapshot</span>}
+          label={<span className="text-[11px]">Page Evidence</span>}
           className="mb-2.5"
         >
           <TurnSnapshotSection
             snapshot={snapshot}
+            pageState={entry.pageState}
             perception={entry.perception}
             sessionId={sessionId}
             turnNumber={turnNum}

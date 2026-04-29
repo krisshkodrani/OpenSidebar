@@ -237,12 +237,20 @@ describe("trace redaction", () => {
       {
         content: "Contact dev@example.com",
         screenshotDataUrl: "data:image/jpeg;base64,abc",
+        pageState: {
+          preDecision: {
+            screenshots: [{ kind: "viewport", dataUrl: "data:image/jpeg;base64,def" }],
+          },
+        },
       },
       { mode: "export" },
     );
 
     expect(redacted.content).toBe("Contact [REDACTED_EMAIL]");
     expect(redacted.screenshotDataUrl).toBe("[REDACTED_IMAGE_DATA_URL]");
+    expect(redacted.pageState.preDecision.screenshots[0].dataUrl).toBe(
+      "[REDACTED_IMAGE_DATA_URL]",
+    );
   });
 });
 

@@ -74,6 +74,36 @@ export type TracePerceptionScreenshotStatus =
   | "capture_failed"
   | "not_requested";
 
+export interface TraceScreenshotArtifact {
+  /** Stable screenshot ID for correlation with extracted screenshot artifacts */
+  screenshotId?: string;
+  sessionId?: string;
+  turnNumber?: number;
+  kind: "viewport" | "panorama";
+  /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
+  dataUrl?: string;
+  screenshotPath?: string;
+  scrollY?: number;
+  label?: string;
+  status?: TracePerceptionScreenshotStatus;
+  source?: TracePerceptionSource;
+}
+
+export interface TracePageStateCapture {
+  url: string;
+  title: string;
+  elementCount: number;
+  visibleContentLength?: number;
+  pageContentLength?: number;
+  scrollY: number;
+  /** Full DOM snapshot for eval replay and prompt reconstruction */
+  domSnapshot?: TaggedElement[];
+  /** Condensed DOM text sent to a model or used as fallback page evidence */
+  domDistillation?: string;
+  /** Screenshot evidence captured for this page state */
+  screenshots?: TraceScreenshotArtifact[];
+}
+
 /** A single turn's full-fidelity recording for offline eval replay */
 export interface TraceEntry {
   /** Trace schema version (optional for backward compatibility with older traces) */
@@ -115,6 +145,11 @@ export interface TraceEntry {
   };
   /** Full elements array (for eval replay — reconstruct system prompt) */
   elements: TaggedElement[];
+  /** Canonical page evidence for this turn. Legacy aliases: snapshot, elements, postToolSnapshot, perception screenshot fields. */
+  pageState?: {
+    preDecision: TracePageStateCapture;
+    postTool?: TracePageStateCapture;
+  };
   /** LLM call metadata */
   llmRequest: {
     model: string;
@@ -173,6 +208,8 @@ export interface TraceEntry {
     elementSummary?: string;
     /** Additional viewport screenshots from panoramic capture (first turn only) */
     panoramicShots?: TracePanoramicShot[];
+    /** Page-state capture this observation interprets */
+    pageStateRef?: "preDecision" | "postTool";
   };
   /** Mid-session runtime limit reassessment (only on reassessment turns) */
   limitReassessment?: {

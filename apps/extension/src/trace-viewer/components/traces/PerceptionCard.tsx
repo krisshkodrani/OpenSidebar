@@ -1,14 +1,46 @@
 import React, { useState } from "react";
-import type { TraceEntry } from "../../../types/traces";
+import type {
+  TraceEntry,
+  TracePageStateCapture,
+  TracePanoramicShot,
+} from "../../../types/traces";
 import Badge from "../Badge";
 import { screenshotUrl } from "../../api";
 import { truncate } from "../../utils";
 import { useStore } from "../../store";
+import CollapsibleSection from "../CollapsibleSection";
 import PanoramicThumbnails from "./PanoramicThumbnails";
 
 interface PerceptionCardProps {
   entry: TraceEntry;
   sessionId: string;
+}
+
+function selectPageStateCapture(entry: TraceEntry): TracePageStateCapture | null {
+  const pageState = entry.pageState;
+  if (!pageState) return null;
+  if (entry.perception?.pageStateRef === "postTool" && pageState.postTool) {
+    return pageState.postTool;
+  }
+  if (entry.perception?.pageStateRef === "preDecision") {
+    return pageState.preDecision;
+  }
+  return pageState.postTool ?? pageState.preDecision;
+}
+
+function panoramicFromCapture(
+  capture: TracePageStateCapture | null,
+): TracePanoramicShot[] {
+  return (capture?.screenshots ?? [])
+    .filter((shot) => shot.kind === "panorama" && shot.dataUrl)
+    .map((shot) => ({
+      screenshotId: shot.screenshotId,
+      sessionId: shot.sessionId,
+      turnNumber: shot.turnNumber,
+      dataUrl: shot.dataUrl!,
+      scrollY: shot.scrollY ?? 0,
+      label: shot.label ?? "panorama",
+    }));
 }
 
 export default function PerceptionCard({
@@ -20,15 +52,25 @@ export default function PerceptionCard({
   const p = entry.perception!;
   const turnNum = entry.turnNumber ?? 0;
   const elements = entry.elements || [];
+  const capture = selectPageStateCapture(entry);
+  const pageStateScreenshot = capture?.screenshots?.find(
+    (shot) => shot.kind === "viewport" && shot.dataUrl,
+  );
+  const panoramicShots = panoramicFromCapture(capture);
+  const legacyPanoramicShots = p.panoramicShots ?? [];
 
-  const screenshotSrc = p.screenshotDataUrl
+  const screenshotSrc = pageStateScreenshot?.dataUrl
+    ? pageStateScreenshot.dataUrl
+    : p.screenshotDataUrl
     ? p.screenshotDataUrl
     : screenshotUrl(sessionId, turnNum);
 
   // Prefer the stored element summary (exactly what the model saw),
   // fall back to reconstructing from raw elements for older traces
-  const elementText = p.elementSummary
-    ? p.elementSummary
+  const elementText = capture?.domDistillation
+    ? capture.domDistillation
+    : p.elementSummary
+      ? p.elementSummary
     : elements
         .map((el) => {
           let line = `[${el.tag}] ${el.tagName || ""}`;
@@ -51,10 +93,13 @@ export default function PerceptionCard({
           Turn {turnNum} &rarr;
         </a>
         <Badge variant="model">{p.model || "unknown"}</Badge>
+        <Badge variant="type">observation</Badge>
         {p.mode && <Badge variant="type">{p.mode}</Badge>}
         {p.source && <Badge variant="category">{p.source}</Badge>}
         {p.cached && <Badge variant="stopped">cached</Badge>}
-        {p.elementSummary && <Badge variant="type">exact input</Badge>}
+        {(capture?.domDistillation || p.elementSummary) && (
+          <Badge variant="type">DOM distillation</Badge>
+        )}
         {p.fallbackReason && <Badge variant="error">{p.fallbackReason}</Badge>}
       </div>
 
@@ -75,9 +120,11 @@ export default function PerceptionCard({
               Screenshot not available
             </div>
           )}
-          {p.panoramicShots && p.panoramicShots.length > 0 && (
-            <PanoramicThumbnails shots={p.panoramicShots} />
-          )}
+          {panoramicShots.length > 0 ? (
+            <PanoramicThumbnails shots={panoramicShots} />
+          ) : legacyPanoramicShots.length > 0 ? (
+            <PanoramicThumbnails shots={legacyPanoramicShots} />
+          ) : null}
         </div>
 
         {/* Right: interpretation + metadata (or DOM distillation in VL mode) */}
@@ -91,6 +138,17 @@ export default function PerceptionCard({
               <div className="text-xs text-trace-subtle leading-relaxed whitespace-pre-wrap break-words">
                 {p.interpretation}
               </div>
+              {(capture?.domDistillation || p.elementSummary) && (
+                <CollapsibleSection
+                  label="DOM distillation"
+                  preview={` ${truncate(elementText, 80)}`}
+                  maxHeightClass="sm"
+                >
+                  <pre className="mt-1 p-2 bg-trace-panel-muted border border-trace-accent/[0.08] rounded text-[11px] text-trace-muted font-mono leading-normal whitespace-pre-wrap break-all overflow-auto">
+                    {elementText}
+                  </pre>
+                </CollapsibleSection>
+              )}
               <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-trace-accent/[0.12]">
                 <span>Model: {p.model || "?"}</span>
                 {p.providerId && <span>Provider: {p.providerId}</span>}
@@ -104,6 +162,7 @@ export default function PerceptionCard({
                 {p.screenshotStatus && (
                   <span>Screenshot: {p.screenshotStatus}</span>
                 )}
+                {p.pageStateRef && <span>Page state: {p.pageStateRef}</span>}
               </div>
             </>
           )}
