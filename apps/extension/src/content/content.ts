@@ -902,6 +902,11 @@ const RECORDING_HUD_ID = "opensidebar-recording-hud";
 const RECORDING_BORDER_ID = "opensidebar-recording-border";
 const RECORDING_STYLE_ID = "opensidebar-recording-style";
 const RECORDING_FEEDBACK_CLASS = "opensidebar-recording-feedback";
+const RECORDING_BORDER_EDGE_GLOW = [
+  "linear-gradient(to bottom, rgba(220,38,38,0.16), rgba(245,158,11,0.10) 42px, transparent 92px)",
+  "linear-gradient(to right, rgba(220,38,38,0.14), rgba(245,158,11,0.08) 42px, transparent 86px)",
+  "linear-gradient(to left, rgba(220,38,38,0.14), rgba(245,158,11,0.08) 42px, transparent 86px)",
+].join(", ");
 
 let skillRecordingActive = false;
 let skillRecordingAbort: AbortController | null = null;
@@ -1166,6 +1171,18 @@ function ensureSkillRecordingStyles() {
         inset 0 0 0 7px rgba(245, 158, 11, 0.28);
     }
 
+    #${RECORDING_BORDER_ID}::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: ${RECORDING_BORDER_EDGE_GLOW};
+      background-repeat: no-repeat;
+      background-size: 100% 100px, 100px 100%, 100px 100%;
+      background-position: top, left, right;
+      opacity: 0.82;
+    }
+
     #${RECORDING_HUD_ID} {
       position: fixed;
       left: 50%;
@@ -1339,6 +1356,12 @@ const AGENT_BORDER_SETTLE_SHADOW = [
   "inset 0 0 72px rgba(37,99,235,0.04)",
 ].join(", ");
 
+const AGENT_BORDER_EDGE_GLOW = [
+  "linear-gradient(to bottom, rgba(37,99,235,0.18), transparent 86px)",
+  "linear-gradient(to right, rgba(37,99,235,0.16), transparent 82px)",
+  "linear-gradient(to left, rgba(37,99,235,0.16), transparent 82px)",
+].join(", ");
+
 function clearAgentCueTimer() {
   if (agentCueTimer) {
     clearTimeout(agentCueTimer);
@@ -1385,6 +1408,22 @@ function ensureAgentBorderStyles() {
       box-shadow: ${AGENT_BORDER_SETTLE_SHADOW};
       opacity: 0.92;
       animation: none;
+    }
+
+    #${BORDER_ID}::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: ${AGENT_BORDER_EDGE_GLOW};
+      background-repeat: no-repeat;
+      background-size: 100% 96px, 96px 100%, 96px 100%;
+      background-position: top, left, right;
+      opacity: 0.78;
+    }
+
+    #${BORDER_ID}[data-state="settle"]::before {
+      opacity: 0.44;
     }
   `;
   document.documentElement.appendChild(style);
