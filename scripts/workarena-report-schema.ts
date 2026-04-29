@@ -42,6 +42,7 @@ const HELD_SESSION_STATUSES = [
   "reset_succeeded",
   "reset_failed",
 ] as const;
+const SUITE_STATUSES = ["planned", "passed", "failed", "partial", "error"] as const;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -582,7 +583,10 @@ function validateHeldSession(value: JsonRecord, path: string, errors: Validation
     requireString(protocol, "script", `${path}.protocol`, errors);
     const sequence = requireArray(protocol.plannedSequence, `${path}.protocol.plannedSequence`, errors);
     sequence?.forEach((item, index) => {
-      if (typeof item !== "string" || !HELD_SESSION_COMMANDS.includes(item)) {
+      if (
+        typeof item !== "string" ||
+        !HELD_SESSION_COMMANDS.includes(item as (typeof HELD_SESSION_COMMANDS)[number])
+      ) {
         push(
           errors,
           `${path}.protocol.plannedSequence[${index}]`,
@@ -647,6 +651,128 @@ function validateFirstTask(value: JsonRecord, path: string, errors: ValidationEr
   requireStringArray(value, "notes", path, errors);
 }
 
+function validateGradeAttempt(value: unknown, path: string, errors: ValidationError[]): void {
+  const attempt = requireRecord(value, path, errors);
+  if (!attempt) return;
+  requireString(attempt, "key", path, errors);
+  requireString(attempt, "taskId", path, errors);
+  requireString(attempt, "category", path, errors);
+  requireNumber(attempt, "seed", path, errors);
+  requireNumber(attempt, "attempt", path, errors);
+  requireOneOf(attempt, "status", EXECUTION_STATUSES, path, errors);
+  requireBoolean(attempt, "passed", path, errors);
+  requireNumber(attempt, "score", path, errors);
+  requireNullableNumber(attempt, "rawScore", path, errors);
+  if (attempt.failureStage !== null) {
+    requireOneOf(attempt, "failureStage", FAILURE_STAGES, path, errors);
+  }
+  requireNumber(attempt, "turns", path, errors);
+  requireNumber(attempt, "perceptions", path, errors);
+  requireNumber(attempt, "toolCalls", path, errors);
+  requireNumber(attempt, "toolExecutions", path, errors);
+  requireNumber(attempt, "tokens", path, errors);
+  requireNumber(attempt, "costUsd", path, errors);
+  requireNumber(attempt, "traces", path, errors);
+  requireStringArray(attempt, "traceIds", path, errors);
+  requireStringArray(attempt, "traceFiles", path, errors);
+  requireString(attempt, "prompt", path, errors);
+  requireNullableString(attempt, "validationMessage", path, errors);
+  requireString(attempt, "reportPath", path, errors);
+  requireStringArray(attempt, "warnings", path, errors);
+}
+
+function validateGradeSummary(value: JsonRecord, path: string, errors: ValidationError[]): void {
+  requireOneOf(value, "benchmark", ["workarena"], path, errors);
+  requireOneOf(value, "mode", ["grade"], path, errors);
+  requireString(value, "generatedAt", path, errors);
+  requireStringArray(value, "sourceReports", path, errors);
+  requireNumber(value, "targetCount", path, errors);
+  requireNumber(value, "runCount", path, errors);
+  requireNumber(value, "passAt1", path, errors);
+  requireNullableNumber(value, "passAt2", path, errors);
+  requireNumber(value, "categoryBalancedPassAt1", path, errors);
+  requireNumber(value, "meanScore", path, errors);
+  requireRecord(value.totals, `${path}.totals`, errors);
+  requireRecord(value.turns, `${path}.turns`, errors);
+
+  const categories = requireArray(value.categories, `${path}.categories`, errors);
+  categories?.forEach((item, index) => {
+    const category = requireRecord(item, `${path}.categories[${index}]`, errors);
+    if (!category) return;
+    requireString(category, "category", `${path}.categories[${index}]`, errors);
+    requireNumber(category, "total", `${path}.categories[${index}]`, errors);
+    requireNumber(category, "passed", `${path}.categories[${index}]`, errors);
+    requireNumber(category, "passAt1", `${path}.categories[${index}]`, errors);
+    requireNullableNumber(category, "medianTurns", `${path}.categories[${index}]`, errors);
+    requireNullableNumber(category, "p95Turns", `${path}.categories[${index}]`, errors);
+  });
+
+  const attempts = requireArray(value.attempts, `${path}.attempts`, errors);
+  attempts?.forEach((attempt, index) => {
+    validateGradeAttempt(attempt, `${path}.attempts[${index}]`, errors);
+  });
+
+  const warnings = requireArray(value.warnings, `${path}.warnings`, errors);
+  warnings?.forEach((item, index) => {
+    const warning = requireRecord(item, `${path}.warnings[${index}]`, errors);
+    if (!warning) return;
+    requireString(warning, "taskId", `${path}.warnings[${index}]`, errors);
+    requireNumber(warning, "seed", `${path}.warnings[${index}]`, errors);
+    requireNumber(warning, "attempt", `${path}.warnings[${index}]`, errors);
+    requireString(warning, "message", `${path}.warnings[${index}]`, errors);
+  });
+  requireRecord(value.reports, `${path}.reports`, errors);
+}
+
+function validateSuiteRun(value: unknown, path: string, errors: ValidationError[]): void {
+  const run = requireRecord(value, path, errors);
+  if (!run) return;
+  requireString(run, "taskId", path, errors);
+  requireNullableString(run, "category", path, errors);
+  requireNumber(run, "seed", path, errors);
+  requireNumber(run, "attempt", path, errors);
+  requireOneOf(run, "status", [...EXECUTION_STATUSES, "skipped"], path, errors);
+  requireBoolean(run, "passed", path, errors);
+  requireNullableNumber(run, "score", path, errors);
+  requireNullableString(run, "reportPath", path, errors);
+  requireNullableNumber(run, "turns", path, errors);
+  requireNumber(run, "traces", path, errors);
+  requireNullableString(run, "failureStage", path, errors);
+  requireNullableString(run, "validationMessage", path, errors);
+  requireNullableString(run, "prompt", path, errors);
+  requireStringArray(run, "warnings", path, errors);
+}
+
+function validateSuite(value: JsonRecord, path: string, errors: ValidationError[]): void {
+  requireOneOf(value, "benchmark", ["workarena"], path, errors);
+  requireOneOf(value, "mode", ["suite"], path, errors);
+  requireString(value, "generatedAt", path, errors);
+  requireOneOf(value, "suite", SUITES, path, errors);
+  requireStringArray(value, "categories", path, errors);
+  const seeds = requireArray(value.seeds, `${path}.seeds`, errors);
+  seeds?.forEach((seed, index) => {
+    if (typeof seed !== "number" || !Number.isFinite(seed)) {
+      push(errors, `${path}.seeds[${index}]`, "expected finite number");
+    }
+  });
+  requireNumber(value, "maxTurns", path, errors);
+  requireNumber(value, "timeoutMs", path, errors);
+  requireNumber(value, "retries", path, errors);
+  requireNullableString(value, "provider", path, errors);
+  requireBoolean(value, "allowServiceNowReset", path, errors);
+  requireOneOf(value, "status", SUITE_STATUSES, path, errors);
+  requireNumber(value, "planned", path, errors);
+  requireNumber(value, "completed", path, errors);
+  requireNumber(value, "skipped", path, errors);
+  const runs = requireArray(value.runs, `${path}.runs`, errors);
+  runs?.forEach((run, index) => {
+    validateSuiteRun(run, `${path}.runs[${index}]`, errors);
+  });
+  const grade = requireRecord(value.grade, `${path}.grade`, errors);
+  if (grade) validateGradeSummary(grade, `${path}.grade`, errors);
+  requireRecord(value.reports, `${path}.reports`, errors);
+}
+
 export function validateWorkArenaReport(value: unknown): ValidationError[] {
   const errors: ValidationError[] = [];
   const root = requireRecord(value, "$", errors);
@@ -671,6 +797,10 @@ export function validateWorkArenaReport(value: unknown): ValidationError[] {
     validateHeldSession(root, "$", errors);
   } else if (root.mode === "first-task") {
     validateFirstTask(root, "$", errors);
+  } else if (root.mode === "grade") {
+    validateGradeSummary(root, "$", errors);
+  } else if (root.mode === "suite") {
+    validateSuite(root, "$", errors);
   } else if (root.mode === undefined && Array.isArray(root.checks)) {
     validateDoctor(root, "$", errors);
   } else if (root.mode === undefined && Array.isArray(root.tasks)) {
@@ -679,7 +809,7 @@ export function validateWorkArenaReport(value: unknown): ValidationError[] {
     push(
       errors,
       "$.mode",
-      "expected dry, adapter-plan, guarded-reset, agent-execution, browser-strategy, held-session, first-task, doctor, or list report",
+      "expected dry, adapter-plan, guarded-reset, agent-execution, browser-strategy, held-session, first-task, grade, suite, doctor, or list report",
     );
   }
 

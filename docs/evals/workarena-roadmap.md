@@ -20,6 +20,8 @@ Recently resolved:
 
 - A passed WorkArena validation previously recorded internal `agentTerminalReason=task_failed`. The stale-plan guard fix was confirmed by a live rerun: `validation.passed=true`, `score=1`, and `agentTerminalReason=task_completed`. [GitHub issue #16](https://github.com/krisshkodrani/OpenSidebar/issues/16) is closed.
 - Initial reusable workflow skills and read-only inspectors now cover chart value extraction, knowledge/search answer extraction, list filtering, list sorting, and service catalog ordering. The first layer is generic runtime behavior, not WorkArena-specific fixture logic.
+- A thin suite runner and standalone grader are available. They reuse `workarena-handoff`, write reports under `.artifacts/e2e/`, and compute score-first pass@1 plus category-balanced pass@1.
+- The latest dated 7-case ServiceNow sample grades at 7/7 pass@1, with remaining efficiency warnings on form and catalog workflows.
 
 ## Evaluation Contract
 
@@ -61,8 +63,8 @@ Report warnings must not flip benchmark success, but they must be visible:
 | --- | --- | --- | --- |
 | 0. Readiness | Done | Verify local WorkArena setup and guarded ServiceNow access. | Doctor, task list, dry run, held session, report validation all work. |
 | 1. Trace credibility | In progress | Make every real run inspectable and gradeable. | Planner activity visible in Trace Viewer; terminal-state mismatch classified or fixed. |
-| 2. Suite runner | Planned | Run controlled batches without duplicating handoff logic. | A thin wrapper can run selected suites, categories, seeds, retries, and resume from reports. |
-| 3. Grader | Planned | Aggregate JSON reports into stable scorecards. | Markdown and JSON summaries include pass rates, scores, costs, traces, and failure classes. |
+| 2. Suite runner | Done | Run controlled batches without duplicating handoff logic. | A thin wrapper can run selected suites, categories, seeds, retries, and resume from reports. |
+| 3. Grader | Done | Aggregate JSON reports into stable scorecards. | Markdown and JSON summaries include pass rates, scores, costs, traces, and warning classes. |
 | 4. Calibrated sample | Planned | Run enough tasks to identify dominant failure modes. | All atomic categories run across a small seed set with no retries. |
 | 5. Runtime fixes | In progress | Improve broad ServiceNow behavior from trace evidence. | Category failures are fixed in runtime policy, tools, controllers, or reusable skills. |
 | 6. Full graded run | Planned | Produce a category-balanced WorkArena grade. | All target tasks/seeds run with pass@1, optional pass@2, and validated reports. |
@@ -72,12 +74,13 @@ Report warnings must not flip benchmark success, but they must be visible:
 
 The full runner should wrap the existing handoff runner instead of reimplementing WorkArena reset, session transfer, validation, or teardown.
 
-Target capabilities for the future suite runner:
+Current suite runner examples:
 
 ```bash
 npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20
 npx tsx scripts/workarena-suite.ts --category menu --seeds 0..4 --no-build
 npx tsx scripts/workarena-suite.ts --resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD.json
+npx tsx scripts/workarena-grade.ts
 ```
 
 Required options:
@@ -94,6 +97,7 @@ Required options:
 - `--allow-servicenow-reset`
 - `--resume-from-report <path>`
 - `--stop-on-first-failure`
+- `--dry-run` for no-reset target preview
 
 Runner constraints:
 
@@ -233,8 +237,8 @@ Do not commit dated E2E result reports under `docs/`.
 
 ## Immediate Next Steps
 
-1. Fix ServiceNow custom control handling for reference fields, custom dropdowns, quantity selectors, and list widgets.
-2. Expand and tune reusable ServiceNow workflow skills, starting from the generic chart, knowledge, list-filter, list-sort, and catalog-order workflows now in runtime.
-3. Add the suite runner as a thin wrapper over `workarena-handoff`.
-4. Add the grader/aggregator for category-balanced pass@1.
-5. Run the atomic category sample across seeds `0,1,2`.
+1. Run the atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
+2. Use the generated grade report to rank failures and high-turn passes by category.
+3. Fix ServiceNow form efficiency first if `create-incident` remains high-turn or warning-heavy.
+4. Improve ServiceNow menu/catalog navigation efficiency if service-catalog runs remain high-turn.
+5. Add `pass@2` only after the no-retry baseline is captured.

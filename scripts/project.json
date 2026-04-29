@@ -215,6 +215,22 @@
         "command": "tsx scripts/workarena-handoff.ts"
       }
     },
+    "workarena-suite": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-suite.ts"
+      }
+    },
+    "workarena-grade": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-grade.ts"
+      }
+    },
     "workarena-trace-learning": {
       "executor": "nx:run-commands",
       "cache": false,

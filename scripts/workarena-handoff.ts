@@ -53,6 +53,7 @@ type HandoffArgs = {
   maxTurns: number;
   timeoutMs: number;
   resetRetries: number;
+  reportSuffix: string | null;
   json: boolean;
   noReport: boolean;
   noBuild: boolean;
@@ -120,6 +121,7 @@ function parseArgs(): HandoffArgs {
   const maxTurnsArg = Number.parseInt(argValue("--max-turns") ?? "", 10);
   const timeoutArg = Number.parseInt(argValue("--timeout-ms") ?? "", 10);
   const resetRetriesArg = Number.parseInt(argValue("--reset-retries") ?? "", 10);
+  const reportSuffixArg = argValue("--report-suffix");
   return {
     taskId: taskArg && !taskArg.startsWith("--") ? taskArg : null,
     seed: Number.isFinite(seedArg) ? seedArg : 42,
@@ -129,6 +131,8 @@ function parseArgs(): HandoffArgs {
       Number.isFinite(resetRetriesArg) && resetRetriesArg >= 0
         ? Math.min(resetRetriesArg, 5)
         : 2,
+    reportSuffix:
+      reportSuffixArg && !reportSuffixArg.startsWith("--") ? reportSuffixArg : null,
     json: args.includes("--json"),
     noReport: args.includes("--no-report"),
     noBuild: args.includes("--no-build"),
@@ -1084,10 +1088,11 @@ function buildErroredExecution(
   };
 }
 
-function writeReport(result: WorkArenaExecutionResult): string {
+function writeReport(result: WorkArenaExecutionResult, suffix: string | null): string {
+  const suffixPart = suffix ? `-${safeFilePart(suffix)}` : "";
   return writeJsonReport(
     result,
-    `workarena-handoff-${today()}-${safeFilePart(result.task.taskId)}.json`,
+    `workarena-handoff-${today()}-${safeFilePart(result.task.taskId)}${suffixPart}.json`,
   );
 }
 
@@ -1140,7 +1145,7 @@ async function main(): Promise<void> {
   }
 
   if (!args.noReport) {
-    result.reports.executionReportPath = writeReport(result);
+    result.reports.executionReportPath = writeReport(result, args.reportSuffix);
   }
 
   if (args.json) {
