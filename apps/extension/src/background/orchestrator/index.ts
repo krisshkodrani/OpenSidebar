@@ -52,6 +52,7 @@ import {
 import { waitForContentScriptReady } from "../tab-ready";
 import { buildFallbackNodes, OrchestratorPlanner } from "./planner";
 import { inferToolProfileForStep } from "../agent/planner";
+import type { TokenUsage } from "../llm/types";
 import type { ToolProfile } from "../tools/metadata";
 import {
   assessTaskContractCoverage,
@@ -531,6 +532,41 @@ export class Orchestrator {
           data,
         });
       });
+  }
+
+  private attachPlannerUsageTrace(
+    planner: unknown,
+    task:
+      | { runId?: string; id?: string; workspaceId?: string }
+      | null
+      | undefined,
+    phase: () => string,
+  ): void {
+    const maybePlanner = planner as {
+      setUsageCallback?: (
+        cb: ((usage: TokenUsage, llmMs: number, model: string) => void) | null,
+      ) => void;
+    };
+    if (typeof maybePlanner.setUsageCallback !== "function") return;
+
+    maybePlanner.setUsageCallback((usage, llmMs, model) => {
+      this.emitTraceEvent(
+        task,
+        "planner_llm_call",
+        {
+          phase: phase(),
+          model,
+          durationMs: llmMs,
+          usage: {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            cost: usage.cost,
+          },
+        },
+        "planner",
+      );
+    });
   }
 
   private emitNodeFailureAttribution(
@@ -3351,6 +3387,11 @@ export class Orchestrator {
         input.openRouterApiKey,
         modelOverrides,
       );
+      this.attachPlannerUsageTrace(
+        planner,
+        task,
+        () => "plan_decomposition",
+      );
       const tab = await chrome.tabs.get(input.tabId);
       const buildResult = await this.runInLane(task, "planner", async () =>
         planner.buildNodes(
@@ -3563,6 +3604,11 @@ export class Orchestrator {
               xiaomiApiKey: input.settings.xiaomiApiKey,
             },
           );
+          this.attachPlannerUsageTrace(
+            replanPlanner,
+            task,
+            () => "plan_feedback_replan",
+          );
           const replanResult = await replanPlanner.buildNodes(
             revisedQuery,
             tab.title || "Untitled",
@@ -3661,6 +3707,8 @@ export class Orchestrator {
       input.openRouterApiKey,
       loopModelOverrides,
     );
+    let plannerUsagePhase = "planner_replan";
+    this.attachPlannerUsageTrace(replanner, task, () => plannerUsagePhase);
     const nodeTabMap = new Map<string, number>();
     let initialTabUrl = "about:blank";
     try {
@@ -5275,12 +5323,14 @@ export class Orchestrator {
 
       const pendingNodes = task.nodes.filter((n) => n.status === "pending");
       if (pendingNodes.length === 0) {
+        plannerUsagePhase = "horizon_expansion";
         const expanded = await this.tryHorizonExpansion(
           task,
           input,
           replanner as OrchestratorPlanner,
           getBudgetExhaustionReason,
         );
+        plannerUsagePhase = "planner_replan";
         if (expanded) continue;
         break;
       }

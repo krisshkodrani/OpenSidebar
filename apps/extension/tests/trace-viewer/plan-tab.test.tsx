@@ -34,6 +34,23 @@ describe("PlanTab", () => {
         {
           runId: "run-1",
           ts: "2026-04-28T11:35:10.488Z",
+          type: "planner_llm_call",
+          role: "planner",
+          data: {
+            phase: "plan_decomposition",
+            model: "accounts/fireworks/routers/kimi-k2p5-turbo",
+            durationMs: 1200,
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 50,
+              total_tokens: 150,
+              cost: 0.001,
+            },
+          },
+        },
+        {
+          runId: "run-1",
+          ts: "2026-04-28T11:35:10.488Z",
           type: "plan_decomposed",
           role: "planner",
           data: {
@@ -97,8 +114,12 @@ describe("PlanTab", () => {
     expect(container.textContent).toContain("moderate");
     expect(container.textContent).toContain("Plan Nodes");
     expect(container.textContent).toContain("4");
+    expect(container.textContent).toContain("Planner LLM Calls");
+    expect(container.textContent).toContain("plan_decomposition");
+    expect(container.textContent).toContain("kimi-k2p5-turbo");
     expect(container.textContent).toContain("paginated-record-lookup");
     expect(container.textContent).toContain("Run Event Timeline");
+    expect(container.textContent).toContain("planner_llm_call");
     expect(container.textContent).toContain("plan_decomposed");
     expect(container.textContent).toContain("node_verified");
   });
