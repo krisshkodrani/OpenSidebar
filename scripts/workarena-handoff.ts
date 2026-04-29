@@ -38,6 +38,7 @@ import {
   writeJsonReport,
 } from "./workarena-adapter-lib.js";
 import { validateWorkArenaReport } from "./workarena-report-schema.js";
+import { selectValidationUrl } from "./workarena-validation-url.js";
 import { resolve } from "path";
 import { existsSync, readFileSync } from "fs";
 import type { Page } from "puppeteer";
@@ -882,9 +883,20 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     );
     const agentMs = Date.now() - agentStart;
     const finalOpenSidebarUrl = harness.page.url();
+    const finalFrameUrls = harness.page
+      .frames()
+      .map((frame) => frame.url())
+      .filter((url): url is string => typeof url === "string" && url.length > 0);
+    const validationUrl = selectValidationUrl({
+      startUrl: browser.startUrl,
+      browserActiveUrl: browser.activeUrl,
+      importedPageUrl,
+      finalOpenSidebarUrl,
+      frameUrls: finalFrameUrls,
+    });
     const validationStorage = await exportCurrentPageStorageState(
       harness.page,
-      finalOpenSidebarUrl,
+      validationUrl.url,
     );
     validationStorageExport = validationStorage.summary;
 
@@ -903,7 +915,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     const validationStart = Date.now();
     validation = await bridge.request({
       command: "validate",
-      activeUrl: finalOpenSidebarUrl,
+      activeUrl: validationUrl.url,
       storageState: validationStorage.storageState,
       submittedRecordNumber,
       finalAnswer: metrics.finalAnswer,
@@ -962,6 +974,10 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
           submittedRecordNumber,
           importedPageUrl,
           finalOpenSidebarUrl,
+          validationUrl: validationUrl.url,
+          validationUrlSource: validationUrl.source,
+          validationUrlCandidates: validationUrl.candidates,
+          finalFrameUrls,
         },
       },
       timings: {
