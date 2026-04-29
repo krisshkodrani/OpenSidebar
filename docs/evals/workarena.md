@@ -22,6 +22,8 @@ npx tsx scripts/workarena-first-task.ts
 npx tsx scripts/workarena-category-coverage.ts
 npx tsx scripts/workarena-trace-learning.ts
 npx tsx scripts/workarena-validate-reports.ts
+npx tsx scripts/workarena-grade.ts
+npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
 npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu
 npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
@@ -338,6 +340,59 @@ The validator covers:
 - the `agent-execution` report shape
 
 The execution result schema reserves stable fields for task id, seed, real WorkArena or local fixture prompt, start URL, trace ids/files, final answer, turns, perceptions, tool counts, tokens, cost, validation result, timings, and failure stage. Failure stages are fixed to `setup`, `reset`, `extension_launch`, `agent_run`, `validation`, and `teardown`.
+
+## Grade Reports
+
+Aggregate latest dated WorkArena execution reports without contacting ServiceNow:
+
+```bash
+npx tsx scripts/workarena-grade.ts
+```
+
+By default, the grader uses the latest dated `agent-execution` reports under `.artifacts/e2e/`. Pass explicit files to grade a chosen batch, or use `--all` to include all historical execution reports:
+
+```bash
+npx tsx scripts/workarena-grade.ts --file .artifacts/e2e/workarena-handoff-YYYY-MM-DD-workarena.servicenow.all-menu.json
+npx tsx scripts/workarena-grade.ts --all
+```
+
+The grader writes:
+
+```text
+.artifacts/e2e/workarena-grade-YYYY-MM-DD.json
+.artifacts/e2e/workarena-grade-YYYY-MM-DD.md
+```
+
+Primary success uses WorkArena score when present. This avoids treating a BrowserGym episode that ended with score `0` as a benchmark pass.
+
+## Suite Runner
+
+Run controlled batches through the existing handoff runner:
+
+```bash
+npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
+```
+
+Useful non-mutating preview:
+
+```bash
+npx tsx scripts/workarena-suite.ts --suite atomic --category menu --seeds 0 --dry-run --no-report
+```
+
+Useful targeted rerun:
+
+```bash
+npx tsx scripts/workarena-suite.ts --task workarena.servicenow.create-incident --seeds 0 --max-turns 20 --retries 0 --allow-servicenow-reset --no-build
+```
+
+The suite runner builds the extension once, then calls `workarena-handoff` with `--no-build` for each target. It writes:
+
+```text
+.artifacts/e2e/workarena-suite-YYYY-MM-DD.json
+.artifacts/e2e/workarena-suite-YYYY-MM-DD.md
+```
+
+Use `--resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD.json` to skip targets already completed in a prior suite report.
 
 ## Trace Learning Report
 
