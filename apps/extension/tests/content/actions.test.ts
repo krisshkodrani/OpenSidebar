@@ -2,252 +2,277 @@ import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { ToolName } from "../../src/types";
 import { executeAction, isLikelyOverlay } from "../../src/content/actions";
-import { tagElements, getTagMap, addDynamicTag, resetStableIds } from "../../src/content/tagging";
+import {
+  tagElements,
+  getTagMap,
+  addDynamicTag,
+  resetStableIds,
+} from "../../src/content/tagging";
 
-function shadowGlobalConstructor(name: string, replacement: unknown): () => void {
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-    Object.defineProperty(globalThis, name, {
-        configurable: true,
-        writable: true,
-        value: replacement,
-    });
-    return () => {
-        if (descriptor) {
-            Object.defineProperty(globalThis, name, descriptor);
-        }
-    };
+function shadowGlobalConstructor(
+  name: string,
+  replacement: unknown,
+): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    writable: true,
+    value: replacement,
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(globalThis, name, descriptor);
+    }
+  };
 }
 
 function createEmbeddedDocument(): Document {
-    const iframe = document.createElement("iframe");
-    document.body.appendChild(iframe);
-    const frameDoc = iframe.contentDocument ?? document.implementation.createHTMLDocument("embedded");
-    const view = frameDoc.defaultView;
-    if (view) {
-        if (!view.HTMLElement.prototype.scrollIntoView) {
-            view.HTMLElement.prototype.scrollIntoView = () => { };
-        }
-        view.Element.prototype.getBoundingClientRect = Element.prototype.getBoundingClientRect;
+  const iframe = document.createElement("iframe");
+  document.body.appendChild(iframe);
+  const frameDoc =
+    iframe.contentDocument ??
+    document.implementation.createHTMLDocument("embedded");
+  const view = frameDoc.defaultView;
+  if (view) {
+    if (!view.HTMLElement.prototype.scrollIntoView) {
+      view.HTMLElement.prototype.scrollIntoView = () => {};
     }
-    return frameDoc;
+    view.Element.prototype.getBoundingClientRect =
+      Element.prototype.getBoundingClientRect;
+  }
+  return frameDoc;
 }
 
 describe("Content Actions", () => {
-    beforeEach(() => {
-        document.body.innerHTML = "";
-        resetStableIds();
-        tagElements();
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+    tagElements();
+  });
+
+  describe("executeFindElement", () => {
+    test("returns not-found when text doesn't exist", async () => {
+      document.body.innerHTML = "<p>Hello world</p>";
+      resetStableIds();
+      tagElements();
+
+      const origFind = (window as any).find;
+      (window as any).find = () => false;
+
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "nonexistent",
+        });
+        expect(result.success).toBe(false);
+        expect(result.result).toContain("not found");
+        expect(result.navigated).toBe(false);
+      } finally {
+        (window as any).find = origFind;
+      }
     });
 
-    describe("executeFindElement", () => {
-        test("returns not-found when text doesn't exist", async () => {
-            document.body.innerHTML = "<p>Hello world</p>";
-            resetStableIds();
-            tagElements();
-
-            const origFind = (window as any).find;
-            (window as any).find = () => false;
-
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "nonexistent" });
-                expect(result.success).toBe(false);
-                expect(result.result).toContain("not found");
-                expect(result.navigated).toBe(false);
-            } finally {
-                (window as any).find = origFind;
-            }
-        });
-
-        test("returns tag ID when text is found inside a semantic element", async () => {
-            document.body.innerHTML = `
+    test("returns tag ID when text is found inside a semantic element", async () => {
+      document.body.innerHTML = `
                 <div>
                     <p id="target">The answer to the riddle is 42</p>
                     <button>Submit</button>
                 </div>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                const p = document.getElementById("target")!;
-                const textNode = p.firstChild!;
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        const p = document.getElementById("target")!;
+        const textNode = p.firstChild!;
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "The answer" });
-                expect(result.success).toBe(true);
-                expect(result.result).toContain("Found");
-                expect(result.result).toContain("Use tag");
-                expect(result.result).toMatch(/\[\d+\]/);
-                expect(result.result).toContain("<p>");
-                expect(result.navigated).toBe(false);
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "The answer",
         });
+        expect(result.success).toBe(true);
+        expect(result.result).toContain("Found");
+        expect(result.result).toContain("Use tag");
+        expect(result.result).toMatch(/\[\d+\]/);
+        expect(result.result).toContain("<p>");
+        expect(result.navigated).toBe(false);
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
 
-        test("walks up to nearest interactive element when text is inside one", async () => {
-            document.body.innerHTML = `
+    test("walks up to nearest interactive element when text is inside one", async () => {
+      document.body.innerHTML = `
                 <div>
                     <a href="/link" id="link-el"><span id="inner">Click me</span></a>
                 </div>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                const span = document.getElementById("inner")!;
-                const textNode = span.firstChild!;
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        const span = document.getElementById("inner")!;
+        const textNode = span.firstChild!;
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Click me" });
-                expect(result.success).toBe(true);
-                expect(result.result).toContain("<a>");
-                expect(result.result).toMatch(/\[\d+\]/);
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "Click me",
         });
+        expect(result.success).toBe(true);
+        expect(result.result).toContain("<a>");
+        expect(result.result).toMatch(/\[\d+\]/);
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
 
-        test("drills down from container to interactive child containing text", async () => {
-            document.body.innerHTML = `
+    test("drills down from container to interactive child containing text", async () => {
+      document.body.innerHTML = `
                 <p id="container">Click <a href="/action" id="inner-link">here</a> to continue</p>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                // Simulate finding "here" inside the <p> text (lands on text node in <p>)
-                const container = document.getElementById("container")!;
-                const textNode = container.firstChild!; // "Click " text node
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        // Simulate finding "here" inside the <p> text (lands on text node in <p>)
+        const container = document.getElementById("container")!;
+        const textNode = container.firstChild!; // "Click " text node
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "here" });
-                expect(result.success).toBe(true);
-                // Should drill down from <p> to the <a> child since it's interactive
-                // and contains the search text
-                expect(result.result).toContain("<a>");
-                expect(result.result).toMatch(/\[\d+\]/);
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "here",
         });
+        expect(result.success).toBe(true);
+        // Should drill down from <p> to the <a> child since it's interactive
+        // and contains the search text
+        expect(result.result).toContain("<a>");
+        expect(result.result).toMatch(/\[\d+\]/);
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
 
-        test("clears selection after tagging", async () => {
-            document.body.innerHTML = "<p>Some text here</p>";
-            resetStableIds();
-            tagElements();
+    test("clears selection after tagging", async () => {
+      document.body.innerHTML = "<p>Some text here</p>";
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                const p = document.querySelector("p")!;
-                const textNode = p.firstChild!;
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        const p = document.querySelector("p")!;
+        const textNode = p.firstChild!;
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
 
-            try {
-                await executeAction(ToolName.FIND_ELEMENT, { text: "Some text" });
-                const sel = window.getSelection();
-                expect(sel?.rangeCount ?? 0).toBe(0);
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        await executeAction(ToolName.FIND_ELEMENT, { text: "Some text" });
+        const sel = window.getSelection();
+        expect(sel?.rangeCount ?? 0).toBe(0);
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
+
+    test("dynamic tag persists in tagMap for interaction", async () => {
+      document.body.innerHTML = "<p>Target paragraph</p>";
+      resetStableIds();
+      tagElements();
+
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        const p = document.querySelector("p")!;
+        const textNode = p.firstChild!;
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
+
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "Target",
         });
+        const match = result.result.match(/\[(\d+)\]/);
+        expect(match).not.toBeNull();
+        const tagId = parseInt(match![1]);
 
-        test("dynamic tag persists in tagMap for interaction", async () => {
-            document.body.innerHTML = "<p>Target paragraph</p>";
-            resetStableIds();
-            tagElements();
+        const tagMap = getTagMap();
+        expect(tagMap.has(tagId)).toBe(true);
+        expect(tagMap.get(tagId)?.tagName.toLowerCase()).toBe("p");
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                const p = document.querySelector("p")!;
-                const textNode = p.firstChild!;
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+    test("finds deeply nested shadow input by placeholder when window.find misses", async () => {
+      const host = document.createElement("macroponent-test-shell");
+      document.body.appendChild(host);
+      const shadow = host.attachShadow({ mode: "open" });
+      const inner = document.createElement("sn-navigator-panel");
+      shadow.appendChild(inner);
+      const innerShadow = inner.attachShadow({ mode: "open" });
+      innerShadow.innerHTML = `<input id="navigator-filter" type="search" placeholder="Filter" />`;
+      resetStableIds();
+      tagElements();
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Target" });
-                const match = result.result.match(/\[(\d+)\]/);
-                expect(match).not.toBeNull();
-                const tagId = parseInt(match![1]);
+      const origFind = (window as any).find;
+      (window as any).find = () => false;
 
-                const tagMap = getTagMap();
-                expect(tagMap.has(tagId)).toBe(true);
-                expect(tagMap.get(tagId)?.tagName.toLowerCase()).toBe("p");
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "Filter",
         });
+        expect(result.success).toBe(true);
+        expect(result.result).toContain("<input>");
+        expect(result.result).toContain("Use tag");
+        const match = result.result.match(/\[(\d+)\]/);
+        expect(match).not.toBeNull();
+        const tagId = Number(match![1]);
+        expect((getTagMap().get(tagId) as HTMLElement).id).toBe(
+          "navigator-filter",
+        );
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
 
-        test("finds deeply nested shadow input by placeholder when window.find misses", async () => {
-            const host = document.createElement("macroponent-test-shell");
-            document.body.appendChild(host);
-            const shadow = host.attachShadow({ mode: "open" });
-            const inner = document.createElement("sn-navigator-panel");
-            shadow.appendChild(inner);
-            const innerShadow = inner.attachShadow({ mode: "open" });
-            innerShadow.innerHTML = `<input id="navigator-filter" type="search" placeholder="Filter" />`;
-            resetStableIds();
-            tagElements();
-
-            const origFind = (window as any).find;
-            (window as any).find = () => false;
-
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Filter" });
-                expect(result.success).toBe(true);
-                expect(result.result).toContain("<input>");
-                expect(result.result).toContain("Use tag");
-                const match = result.result.match(/\[(\d+)\]/);
-                expect(match).not.toBeNull();
-                const tagId = Number(match![1]);
-                expect((getTagMap().get(tagId) as HTMLElement).id).toBe("navigator-filter");
-            } finally {
-                (window as any).find = origFind;
-            }
-        });
-
-        test("tags deep visible text matches inside suggestion-like rows when window.find misses", async () => {
-            document.body.innerHTML = `
+    test("tags deep visible text matches inside suggestion-like rows when window.find misses", async () => {
+      document.body.innerHTML = `
                 <div role="listbox">
                     <div id="joe-row" role="option">
                         <span>Joe Employee</span>
@@ -255,883 +280,1148 @@ describe("Content Actions", () => {
                     </div>
                 </div>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = () => false;
+      const origFind = (window as any).find;
+      (window as any).find = () => false;
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Joe Employee" });
-
-                expect(result.success).toBe(true);
-                expect(result.result).toContain("Use tag");
-                const match = result.result.match(/\[(\d+)\]/);
-                expect(match).not.toBeNull();
-                const tagId = Number(match![1]);
-                expect((getTagMap().get(tagId) as HTMLElement).id).toBe("joe-row");
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "Joe Employee",
         });
 
-        test("does not return body as actionable when window.find lands in non-actionable text", async () => {
-            document.body.innerHTML = `
+        expect(result.success).toBe(true);
+        expect(result.result).toContain("Use tag");
+        const match = result.result.match(/\[(\d+)\]/);
+        expect(match).not.toBeNull();
+        const tagId = Number(match![1]);
+        expect((getTagMap().get(tagId) as HTMLElement).id).toBe("joe-row");
+      } finally {
+        (window as any).find = origFind;
+      }
+    });
+
+    test("does not return body as actionable when window.find lands in non-actionable text", async () => {
+      document.body.innerHTML = `
                 <style>.search-label::before { content: "Search"; }</style>
                 <button id="other">Other action</button>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const origFind = (window as any).find;
-            (window as any).find = (text: string) => {
-                const style = document.querySelector("style")!;
-                const textNode = style.firstChild!;
-                const sel = window.getSelection()!;
-                sel.removeAllRanges();
-                const range = document.createRange();
-                range.setStart(textNode, 0);
-                range.setEnd(textNode, text.length);
-                sel.addRange(range);
-                return true;
-            };
+      const origFind = (window as any).find;
+      (window as any).find = (text: string) => {
+        const style = document.querySelector("style")!;
+        const textNode = style.firstChild!;
+        const sel = window.getSelection()!;
+        sel.removeAllRanges();
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, text.length);
+        sel.addRange(range);
+        return true;
+      };
 
-            try {
-                const result = await executeAction(ToolName.FIND_ELEMENT, { text: "Search" });
-                expect(result.result).not.toContain("<body>");
-                expect(result.result).not.toContain("Use tag");
-            } finally {
-                (window as any).find = origFind;
-            }
+      try {
+        const result = await executeAction(ToolName.FIND_ELEMENT, {
+          text: "Search",
         });
+        expect(result.result).not.toContain("<body>");
+        expect(result.result).not.toContain("Use tag");
+      } finally {
+        (window as any).find = origFind;
+      }
     });
+  });
 
-    describe("executeRead (read_page)", () => {
-        test("returns page info with elements", async () => {
-            document.body.innerHTML = `
+  describe("executeRead (read_page)", () => {
+    test("returns page info with elements", async () => {
+      document.body.innerHTML = `
                 <button id="btn1">Submit</button>
                 <input type="text" placeholder="Name" />
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const result = await executeAction(ToolName.READ_PAGE, {});
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Interactive elements:");
-            expect(result.navigated).toBe(false);
-        });
+      const result = await executeAction(ToolName.READ_PAGE, {});
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("Interactive elements:");
+      expect(result.navigated).toBe(false);
+    });
+  });
+
+  describe("tag ID normalization", () => {
+    test("click_element accepts string tag IDs", async () => {
+      document.body.innerHTML = `<button id="btn1">Submit</button>`;
+      resetStableIds();
+      tagElements();
+
+      const buttonId = Number(
+        document.getElementById("btn1")?.getAttribute("data-os-tag"),
+      );
+      const result = await executeAction(ToolName.CLICK_ELEMENT, {
+        id: String(buttonId),
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toContain(`Clicked [${buttonId}] button "Submit"`);
     });
 
-    describe("tag ID normalization", () => {
-        test("click_element accepts string tag IDs", async () => {
-            document.body.innerHTML = `<button id="btn1">Submit</button>`;
-            resetStableIds();
-            tagElements();
-
-            const buttonId = Number(document.getElementById("btn1")?.getAttribute("data-os-tag"));
-            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: String(buttonId) });
-
-            expect(result.success).toBe(true);
-            expect(result.result).toContain(`Clicked [${buttonId}] button "Submit"`);
-        });
-
-        test("click_element treats ServiceNow macroponent shell as pass-through", async () => {
-            (window as any).happyDOM.setURL("https://workarenapublic18.service-now.com/now/nav/ui/home");
-            document.body.innerHTML = `
+    test("click_element treats ServiceNow macroponent shell as pass-through", async () => {
+      (window as any).happyDOM.setURL(
+        "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      );
+      document.body.innerHTML = `
                 <button id="all" role="button" aria-label="All">All</button>
                 <macroponent-f51912f4c700201072b211d4d8c26010 id="shell"></macroponent-f51912f4c700201072b211d4d8c26010>
             `;
-            resetStableIds();
-            tagElements();
+      resetStableIds();
+      tagElements();
 
-            const button = document.getElementById("all") as HTMLButtonElement;
-            const shell = document.getElementById("shell") as HTMLElement;
-            const buttonId = Number(button.getAttribute("data-os-tag"));
-            const clickHandler = vi.fn();
-            button.addEventListener("click", clickHandler);
-            const elementFromPoint = vi
-                .spyOn(document, "elementFromPoint")
-                .mockReturnValue(shell);
+      const button = document.getElementById("all") as HTMLButtonElement;
+      const shell = document.getElementById("shell") as HTMLElement;
+      const buttonId = Number(button.getAttribute("data-os-tag"));
+      const clickHandler = vi.fn();
+      button.addEventListener("click", clickHandler);
+      const elementFromPoint = vi
+        .spyOn(document, "elementFromPoint")
+        .mockReturnValue(shell);
 
-            try {
-                const result = await executeAction(ToolName.CLICK_ELEMENT, { id: buttonId });
-
-                expect(result.success).toBe(true);
-                expect(result.result).toContain(`Clicked [${buttonId}] button "All"`);
-                expect(clickHandler).toHaveBeenCalledTimes(1);
-            } finally {
-                elementFromPoint.mockRestore();
-            }
+      try {
+        const result = await executeAction(ToolName.CLICK_ELEMENT, {
+          id: buttonId,
         });
 
-        test("type_text accepts string tag IDs", async () => {
-            document.body.innerHTML = `<input id="email" type="email" />`;
-            resetStableIds();
-            tagElements();
-
-            const input = document.getElementById("email") as HTMLInputElement;
-            const inputId = Number(input.getAttribute("data-os-tag"));
-            const result = await executeAction(ToolName.TYPE_TEXT, {
-                id: String(inputId),
-                text: "test@example.com",
-                pressEnter: false,
-            });
-
-            expect(result.success).toBe(true);
-            expect(input.value).toBe("test@example.com");
-            expect(result.result).toContain(`[${inputId}] <input>`);
-        });
+        expect(result.success).toBe(true);
+        expect(result.result).toContain(`Clicked [${buttonId}] button "All"`);
+        expect(clickHandler).toHaveBeenCalledTimes(1);
+      } finally {
+        elementFromPoint.mockRestore();
+      }
     });
 
-    describe("isLikelyOverlay", () => {
-        test("returns true for fixed + high z-index element", () => {
-            document.body.innerHTML = '<div id="test" style="position: fixed; z-index: 200;">Overlay</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
+    test("type_text accepts string tag IDs", async () => {
+      document.body.innerHTML = `<input id="email" type="email" />`;
+      resetStableIds();
+      tagElements();
 
-        test("returns true for absolute + high z-index element", () => {
-            document.body.innerHTML = '<div id="test" style="position: absolute; z-index: 999;">Overlay</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
+      const input = document.getElementById("email") as HTMLInputElement;
+      const inputId = Number(input.getAttribute("data-os-tag"));
+      const result = await executeAction(ToolName.TYPE_TEXT, {
+        id: String(inputId),
+        text: "test@example.com",
+        pressEnter: false,
+      });
 
-        test("returns true for role=dialog element", () => {
-            document.body.innerHTML = '<div id="test" role="dialog">Modal</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
+      expect(result.success).toBe(true);
+      expect(input.value).toBe("test@example.com");
+      expect(result.result).toContain(`[${inputId}] <input>`);
+    });
+  });
 
-        test("returns true for role=alertdialog element", () => {
-            document.body.innerHTML = '<div id="test" role="alertdialog">Alert</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
-
-        test("returns true for .modal class", () => {
-            document.body.innerHTML = '<div id="test" class="modal">Modal</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
-
-        test("returns true for .cookie class", () => {
-            document.body.innerHTML = '<div id="test" class="cookie">Cookie banner</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
-
-        test("returns true for .consent class", () => {
-            document.body.innerHTML = '<div id="test" class="consent">Consent banner</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
-
-        test("returns false for normal paragraph", () => {
-            document.body.innerHTML = '<p id="test">Just a paragraph</p>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(false);
-        });
-
-        test("returns false for normal button", () => {
-            document.body.innerHTML = '<button id="test">Submit</button>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(false);
-        });
-
-        test("returns false for normal input", () => {
-            document.body.innerHTML = '<input id="test" type="text" />';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(false);
-        });
-
-        test("returns false for static div with no overlay characteristics", () => {
-            document.body.innerHTML = '<div id="test" style="position: static;">Normal content</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(false);
-        });
-
-        test("returns false for fixed element with low z-index", () => {
-            document.body.innerHTML = '<div id="test" style="position: fixed; z-index: 5;">Sticky nav</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(false);
-        });
+  describe("isLikelyOverlay", () => {
+    test("returns true for fixed + high z-index element", () => {
+      document.body.innerHTML =
+        '<div id="test" style="position: fixed; z-index: 200;">Overlay</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
     });
 
-    describe("executeHideElement", () => {
-        test("hides an overlay element (role=dialog)", async () => {
-            document.body.innerHTML = '<div role="dialog" id="overlay"><button>Close</button></div>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let overlayTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "overlay") { overlayTag = tag; break; }
-            }
-            // If the dialog itself isn't tagged, add it dynamically
-            if (overlayTag < 0) {
-                const el = document.getElementById("overlay")!;
-                overlayTag = addDynamicTag(el);
-            }
-            expect(overlayTag).toBeGreaterThan(0);
+    test("returns true for absolute + high z-index element", () => {
+      document.body.innerHTML =
+        '<div id="test" style="position: absolute; z-index: 999;">Overlay</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: overlayTag });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Hidden");
+    test("returns true for role=dialog element", () => {
+      document.body.innerHTML = '<div id="test" role="dialog">Modal</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-            const overlay = document.getElementById("overlay")!;
-            expect(overlay.getAttribute("data-osb-dismissed")).toBe("true");
-        });
+    test("returns true for role=alertdialog element", () => {
+      document.body.innerHTML = '<div id="test" role="alertdialog">Alert</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-        test("hides a fixed + high z-index overlay", async () => {
-            document.body.innerHTML = '<div id="popup" style="position: fixed; z-index: 9999;">Popup</div>';
-            resetStableIds();
-            tagElements();
-            const el = document.getElementById("popup")!;
-            const tag = addDynamicTag(el);
+    test("returns true for .modal class", () => {
+      document.body.innerHTML = '<div id="test" class="modal">Modal</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Hidden");
-            expect(el.getAttribute("data-osb-dismissed")).toBe("true");
-        });
+    test("returns true for .cookie class", () => {
+      document.body.innerHTML =
+        '<div id="test" class="cookie">Cookie banner</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-        test("rejects non-overlay element", async () => {
-            document.body.innerHTML = '<p id="content">Important content</p>';
-            resetStableIds();
-            tagElements();
-            const el = document.getElementById("content")!;
-            const tag = addDynamicTag(el);
+    test("returns true for .consent class", () => {
+      document.body.innerHTML =
+        '<div id="test" class="consent">Consent banner</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
-            expect(result.success).toBe(false);
-            expect(result.result).toContain("not an overlay");
-            expect(result.result).toContain("press_key");
-            expect(el.style.display).not.toBe("none");
-        });
+    test("returns false for normal paragraph", () => {
+      document.body.innerHTML = '<p id="test">Just a paragraph</p>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(false);
+    });
 
-        test("rejects normal button element", async () => {
-            document.body.innerHTML = '<button id="btn">Submit</button>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "btn") { btnTag = tag; break; }
-            }
-            expect(btnTag).toBeGreaterThan(0);
+    test("returns false for normal button", () => {
+      document.body.innerHTML = '<button id="test">Submit</button>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(false);
+    });
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(false);
-            expect(result.result).toContain("not an overlay");
-        });
+    test("returns false for normal input", () => {
+      document.body.innerHTML = '<input id="test" type="text" />';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(false);
+    });
 
-        test("rejects normal input element", async () => {
-            document.body.innerHTML = '<input id="inp" type="text" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let inpTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "inp") { inpTag = tag; break; }
-            }
-            expect(inpTag).toBeGreaterThan(0);
+    test("returns false for static div with no overlay characteristics", () => {
+      document.body.innerHTML =
+        '<div id="test" style="position: static;">Normal content</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(false);
+    });
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: inpTag });
-            expect(result.success).toBe(false);
-            expect(result.result).toContain("not an overlay");
-        });
+    test("returns false for fixed element with low z-index", () => {
+      document.body.innerHTML =
+        '<div id="test" style="position: fixed; z-index: 5;">Sticky nav</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(false);
+    });
+  });
 
-        test("walks up to overlay ancestor when targeting a child button (WI-2)", async () => {
-            document.body.innerHTML = `
+  describe("executeHideElement", () => {
+    test("hides an overlay element (role=dialog)", async () => {
+      document.body.innerHTML =
+        '<div role="dialog" id="overlay"><button>Close</button></div>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let overlayTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "overlay") {
+          overlayTag = tag;
+          break;
+        }
+      }
+      // If the dialog itself isn't tagged, add it dynamically
+      if (overlayTag < 0) {
+        const el = document.getElementById("overlay")!;
+        overlayTag = addDynamicTag(el);
+      }
+      expect(overlayTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.HIDE_ELEMENT, {
+        id: overlayTag,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("Hidden");
+
+      const overlay = document.getElementById("overlay")!;
+      expect(overlay.getAttribute("data-osb-dismissed")).toBe("true");
+    });
+
+    test("hides a fixed + high z-index overlay", async () => {
+      document.body.innerHTML =
+        '<div id="popup" style="position: fixed; z-index: 9999;">Popup</div>';
+      resetStableIds();
+      tagElements();
+      const el = document.getElementById("popup")!;
+      const tag = addDynamicTag(el);
+
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("Hidden");
+      expect(el.getAttribute("data-osb-dismissed")).toBe("true");
+    });
+
+    test("rejects non-overlay element", async () => {
+      document.body.innerHTML = '<p id="content">Important content</p>';
+      resetStableIds();
+      tagElements();
+      const el = document.getElementById("content")!;
+      const tag = addDynamicTag(el);
+
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: tag });
+      expect(result.success).toBe(false);
+      expect(result.result).toContain("not an overlay");
+      expect(result.result).toContain("press_key");
+      expect(el.style.display).not.toBe("none");
+    });
+
+    test("rejects normal button element", async () => {
+      document.body.innerHTML = '<button id="btn">Submit</button>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "btn") {
+          btnTag = tag;
+          break;
+        }
+      }
+      expect(btnTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
+      expect(result.success).toBe(false);
+      expect(result.result).toContain("not an overlay");
+    });
+
+    test("rejects normal input element", async () => {
+      document.body.innerHTML = '<input id="inp" type="text" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let inpTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "inp") {
+          inpTag = tag;
+          break;
+        }
+      }
+      expect(inpTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: inpTag });
+      expect(result.success).toBe(false);
+      expect(result.result).toContain("not an overlay");
+    });
+
+    test("walks up to overlay ancestor when targeting a child button (WI-2)", async () => {
+      document.body.innerHTML = `
                 <div id="modal" role="dialog" style="position: fixed; z-index: 9999;">
                     <h3>Modal Title</h3>
                     <button id="close-btn">Close</button>
                 </div>
             `;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "close-btn") { btnTag = tag; break; }
-            }
-            expect(btnTag).toBeGreaterThan(0);
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "close-btn") {
+          btnTag = tag;
+          break;
+        }
+      }
+      expect(btnTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("overlay ancestor");
-            expect(result.result).toContain("parent of");
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("overlay ancestor");
+      expect(result.result).toContain("parent of");
 
-            // The modal ancestor should be hidden, not just the button
-            const modal = document.getElementById("modal")!;
-            expect(modal.getAttribute("data-osb-dismissed")).toBe("true");
-        });
+      // The modal ancestor should be hidden, not just the button
+      const modal = document.getElementById("modal")!;
+      expect(modal.getAttribute("data-osb-dismissed")).toBe("true");
+    });
 
-        test("returns failure with helpful message for non-overlay child (WI-2)", async () => {
-            document.body.innerHTML = `
+    test("returns failure with helpful message for non-overlay child (WI-2)", async () => {
+      document.body.innerHTML = `
                 <div id="content">
                     <button id="btn">Click</button>
                 </div>
             `;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "btn") { btnTag = tag; break; }
-            }
-            expect(btnTag).toBeGreaterThan(0);
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "btn") {
+          btnTag = tag;
+          break;
+        }
+      }
+      expect(btnTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(false);
-            expect(result.result).toContain("not an overlay");
-            expect(result.result).toContain("no overlay ancestor");
-            expect(result.result).toContain("press_key");
-        });
-
-        test("sticky banner passes isLikelyOverlay (WI-2)", () => {
-            document.body.innerHTML = '<div id="banner" style="position: sticky; z-index: 200;">Banner</div>';
-            const el = document.getElementById("banner") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
-
-        test("class*=modal selector matches (WI-2)", () => {
-            document.body.innerHTML = '<div id="test" class="my-modal-wrapper">Modal</div>';
-            const el = document.getElementById("test") as HTMLElement;
-            expect(isLikelyOverlay(el)).toBe(true);
-        });
+      const result = await executeAction(ToolName.HIDE_ELEMENT, { id: btnTag });
+      expect(result.success).toBe(false);
+      expect(result.result).toContain("not an overlay");
+      expect(result.result).toContain("no overlay ancestor");
+      expect(result.result).toContain("press_key");
     });
 
-    describe("executeClick with count (multi-click)", () => {
-        test("dispatches multiple click sequences when count > 1", async () => {
-            document.body.innerHTML = '<button id="btn">Click me 3 times</button>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "btn") { btnTag = tag; break; }
-            }
-            expect(btnTag).toBeGreaterThan(0);
-
-            const clickEvents: string[] = [];
-            const btn = document.getElementById("btn")!;
-            btn.addEventListener("click", () => clickEvents.push("click"));
-
-            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 3 });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("(3 times)");
-            // Each iteration dispatches el.click() = 1 per iteration
-            expect(clickEvents.length).toBe(3);
-        });
-
-        test("defaults to 1 click when count is omitted", async () => {
-            document.body.innerHTML = '<button id="btn">Click me</button>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "btn") { btnTag = tag; break; }
-            }
-
-            const clickEvents: string[] = [];
-            const btn = document.getElementById("btn")!;
-            btn.addEventListener("click", () => clickEvents.push("click"));
-
-            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(true);
-            expect(result.result).not.toContain("times");
-            expect(clickEvents.length).toBe(1); // el.click() only
-        });
-
-        test("clamps count to max 10", async () => {
-            document.body.innerHTML = '<button id="btn">Click</button>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "btn") { btnTag = tag; break; }
-            }
-
-            const clickEvents: string[] = [];
-            const btn = document.getElementById("btn")!;
-            btn.addEventListener("click", () => clickEvents.push("click"));
-
-            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: btnTag, count: 50 });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("(10 times)");
-            expect(clickEvents.length).toBe(10); // 10 * 1
-        });
+    test("sticky banner passes isLikelyOverlay (WI-2)", () => {
+      document.body.innerHTML =
+        '<div id="banner" style="position: sticky; z-index: 200;">Banner</div>';
+      const el = document.getElementById("banner") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
     });
 
-    describe("executeType (type_text) — WI-5 SPA robustness", () => {
-        test("fires InputEvent with data and inputType properties", async () => {
-            document.body.innerHTML = '<input id="inp" type="text" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let inpTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "inp") { inpTag = tag; break; }
-            }
-            expect(inpTag).toBeGreaterThan(0);
+    test("class*=modal selector matches (WI-2)", () => {
+      document.body.innerHTML =
+        '<div id="test" class="my-modal-wrapper">Modal</div>';
+      const el = document.getElementById("test") as HTMLElement;
+      expect(isLikelyOverlay(el)).toBe(true);
+    });
+  });
 
-            const events: { type: string; data?: string | null; inputType?: string }[] = [];
-            const inp = document.getElementById("inp")!;
-            inp.addEventListener("input", (e: Event) => {
-                const ie = e as InputEvent;
-                events.push({ type: "input", data: ie.data, inputType: ie.inputType });
-            });
+  describe("executeClick with count (multi-click)", () => {
+    test("dispatches multiple click sequences when count > 1", async () => {
+      document.body.innerHTML = '<button id="btn">Click me 3 times</button>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "btn") {
+          btnTag = tag;
+          break;
+        }
+      }
+      expect(btnTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "ab" });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain('Typed "ab"');
+      const clickEvents: string[] = [];
+      const btn = document.getElementById("btn")!;
+      btn.addEventListener("click", () => clickEvents.push("click"));
 
-            // First event is the clear (deleteContentBackward), then 2 chars
-            expect(events.length).toBe(3);
-            expect(events[0].inputType).toBe("deleteContentBackward");
-            expect(events[1].data).toBe("a");
-            expect(events[1].inputType).toBe("insertText");
-            expect(events[2].data).toBe("b");
-            expect(events[2].inputType).toBe("insertText");
-        });
-
-        test("final value is correct after typing", async () => {
-            document.body.innerHTML = '<input id="inp" type="text" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let inpTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "inp") { inpTag = tag; break; }
-            }
-
-            await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "hello" });
-            expect((document.getElementById("inp") as HTMLInputElement).value).toBe("hello");
-        });
-
-        test("type_text accepts controls when the global input constructor does not match", async () => {
-            document.body.innerHTML = '<input id="inp" type="text" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let inpTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "inp") { inpTag = tag; break; }
-            }
-            const restore = shadowGlobalConstructor("HTMLInputElement", class OtherInputElement {});
-
-            try {
-                const result = await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "hello" });
-
-                expect(result.success).toBe(true);
-                expect((document.getElementById("inp") as HTMLInputElement).value).toBe("hello");
-            } finally {
-                restore();
-            }
-        });
-
-        test("contenteditable uses textContent approach", async () => {
-            document.body.innerHTML = '<div id="editable" contenteditable="true"></div>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let editTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.id === "editable") { editTag = tag; break; }
-            }
-            expect(editTag).toBeGreaterThan(0);
-
-            const result = await executeAction(ToolName.TYPE_TEXT, { id: editTag, text: "hi" });
-            expect(result.success).toBe(true);
-            expect(document.getElementById("editable")!.textContent).toBe("hi");
-        });
+      const result = await executeAction(ToolName.CLICK_ELEMENT, {
+        id: btnTag,
+        count: 3,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("(3 times)");
+      // Each iteration dispatches el.click() = 1 per iteration
+      expect(clickEvents.length).toBe(3);
     });
 
-    describe("executeReadElement", () => {
-        test("read_element value returns live textarea value, not only the HTML attribute", async () => {
-            document.body.innerHTML = '<textarea id="notes"></textarea>';
-            resetStableIds();
-            tagElements();
-            const textarea = document.getElementById("notes") as HTMLTextAreaElement;
-            textarea.value = "Closed before close notes were made mandatory";
-            const tag = Number(textarea.getAttribute("data-os-tag"));
+    test("defaults to 1 click when count is omitted", async () => {
+      document.body.innerHTML = '<button id="btn">Click me</button>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "btn") {
+          btnTag = tag;
+          break;
+        }
+      }
 
-            const result = await executeAction(ToolName.READ_ELEMENT, {
-                id: tag,
-                attribute: "value",
-            });
+      const clickEvents: string[] = [];
+      const btn = document.getElementById("btn")!;
+      btn.addEventListener("click", () => clickEvents.push("click"));
 
-            expect(result.success).toBe(true);
-            expect(result.result).toContain('value="Closed before close notes were made mandatory"');
-        });
-
-        test("read_element default output returns live input value", async () => {
-            document.body.innerHTML = '<input id="caller" type="text" />';
-            resetStableIds();
-            tagElements();
-            const input = document.getElementById("caller") as HTMLInputElement;
-            input.value = "Joe Employee";
-            const tag = Number(input.getAttribute("data-os-tag"));
-
-            const result = await executeAction(ToolName.READ_ELEMENT, { id: tag });
-
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Joe Employee");
-        });
+      const result = await executeAction(ToolName.CLICK_ELEMENT, {
+        id: btnTag,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).not.toContain("times");
+      expect(clickEvents.length).toBe(1); // el.click() only
     });
 
-    describe("enriched tool results", () => {
-        test("type_text result includes element description", async () => {
-            document.body.innerHTML = '<input id="email" type="email" aria-label="Email address" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let inputTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "email") { inputTag = tag; break; }
-            }
-            expect(inputTag).toBeGreaterThan(0);
+    test("clamps count to max 10", async () => {
+      document.body.innerHTML = '<button id="btn">Click</button>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "btn") {
+          btnTag = tag;
+          break;
+        }
+      }
 
-            const result = await executeAction(ToolName.TYPE_TEXT, { id: inputTag, text: "user@test.com" });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("<input>");
-            expect(result.result).toContain('"Email address"');
+      const clickEvents: string[] = [];
+      const btn = document.getElementById("btn")!;
+      btn.addEventListener("click", () => clickEvents.push("click"));
+
+      const result = await executeAction(ToolName.CLICK_ELEMENT, {
+        id: btnTag,
+        count: 50,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("(10 times)");
+      expect(clickEvents.length).toBe(10); // 10 * 1
+    });
+  });
+
+  describe("executeType (type_text) — WI-5 SPA robustness", () => {
+    test("fires InputEvent with data and inputType properties", async () => {
+      document.body.innerHTML = '<input id="inp" type="text" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let inpTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "inp") {
+          inpTag = tag;
+          break;
+        }
+      }
+      expect(inpTag).toBeGreaterThan(0);
+
+      const events: {
+        type: string;
+        data?: string | null;
+        inputType?: string;
+      }[] = [];
+      const inp = document.getElementById("inp")!;
+      inp.addEventListener("input", (e: Event) => {
+        const ie = e as InputEvent;
+        events.push({ type: "input", data: ie.data, inputType: ie.inputType });
+      });
+
+      const result = await executeAction(ToolName.TYPE_TEXT, {
+        id: inpTag,
+        text: "ab",
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain('Typed "ab"');
+
+      // First event is the clear (deleteContentBackward), then 2 chars
+      expect(events.length).toBe(3);
+      expect(events[0].inputType).toBe("deleteContentBackward");
+      expect(events[1].data).toBe("a");
+      expect(events[1].inputType).toBe("insertText");
+      expect(events[2].data).toBe("b");
+      expect(events[2].inputType).toBe("insertText");
+    });
+
+    test("final value is correct after typing", async () => {
+      document.body.innerHTML = '<input id="inp" type="text" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let inpTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "inp") {
+          inpTag = tag;
+          break;
+        }
+      }
+
+      await executeAction(ToolName.TYPE_TEXT, { id: inpTag, text: "hello" });
+      expect((document.getElementById("inp") as HTMLInputElement).value).toBe(
+        "hello",
+      );
+    });
+
+    test("type_text accepts controls when the global input constructor does not match", async () => {
+      document.body.innerHTML = '<input id="inp" type="text" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let inpTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "inp") {
+          inpTag = tag;
+          break;
+        }
+      }
+      const restore = shadowGlobalConstructor(
+        "HTMLInputElement",
+        class OtherInputElement {},
+      );
+
+      try {
+        const result = await executeAction(ToolName.TYPE_TEXT, {
+          id: inpTag,
+          text: "hello",
         });
 
-        test("hover result includes element description", async () => {
-            document.body.innerHTML = '<button id="submit-btn">Submit</button>';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let btnTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "submit-btn") { btnTag = tag; break; }
-            }
-            expect(btnTag).toBeGreaterThan(0);
+        expect(result.success).toBe(true);
+        expect((document.getElementById("inp") as HTMLInputElement).value).toBe(
+          "hello",
+        );
+      } finally {
+        restore();
+      }
+    });
 
-            const result = await executeAction(ToolName.HOVER_ELEMENT, { id: btnTag });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("<button>");
-            expect(result.result).toContain('"Submit"');
-        });
+    test("contenteditable uses textContent approach", async () => {
+      document.body.innerHTML =
+        '<div id="editable" contenteditable="true"></div>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let editTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (el.id === "editable") {
+          editTag = tag;
+          break;
+        }
+      }
+      expect(editTag).toBeGreaterThan(0);
 
-        test("select_option result includes element description", async () => {
-            document.body.innerHTML = `
+      const result = await executeAction(ToolName.TYPE_TEXT, {
+        id: editTag,
+        text: "hi",
+      });
+      expect(result.success).toBe(true);
+      expect(document.getElementById("editable")!.textContent).toBe("hi");
+    });
+  });
+
+  describe("executeReadElement", () => {
+    test("read_page includes live textarea values for verification", async () => {
+      document.body.innerHTML =
+        '<textarea id="implementation_plan"></textarea>';
+      resetStableIds();
+      tagElements();
+      const textarea = document.getElementById(
+        "implementation_plan",
+      ) as HTMLTextAreaElement;
+      textarea.value = "interface {type slot/port | port-channel number}";
+
+      const result = await executeAction(ToolName.READ_PAGE, {});
+
+      expect(result.success).toBe(true);
+      expect(result.result).toContain(
+        "interface {type slot/port | port-channel number}",
+      );
+    });
+
+    test("read_element value returns live textarea value, not only the HTML attribute", async () => {
+      document.body.innerHTML = '<textarea id="notes"></textarea>';
+      resetStableIds();
+      tagElements();
+      const textarea = document.getElementById("notes") as HTMLTextAreaElement;
+      textarea.value = "Closed before close notes were made mandatory";
+      const tag = Number(textarea.getAttribute("data-os-tag"));
+
+      const result = await executeAction(ToolName.READ_ELEMENT, {
+        id: tag,
+        attribute: "value",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toContain(
+        'value="Closed before close notes were made mandatory"',
+      );
+    });
+
+    test("read_element default output returns live input value", async () => {
+      document.body.innerHTML = '<input id="caller" type="text" />';
+      resetStableIds();
+      tagElements();
+      const input = document.getElementById("caller") as HTMLInputElement;
+      input.value = "Joe Employee";
+      const tag = Number(input.getAttribute("data-os-tag"));
+
+      const result = await executeAction(ToolName.READ_ELEMENT, { id: tag });
+
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("Joe Employee");
+    });
+  });
+
+  describe("enriched tool results", () => {
+    test("type_text result includes element description", async () => {
+      document.body.innerHTML =
+        '<input id="email" type="email" aria-label="Email address" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let inputTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "email") {
+          inputTag = tag;
+          break;
+        }
+      }
+      expect(inputTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.TYPE_TEXT, {
+        id: inputTag,
+        text: "user@test.com",
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("<input>");
+      expect(result.result).toContain('"Email address"');
+    });
+
+    test("hover result includes element description", async () => {
+      document.body.innerHTML = '<button id="submit-btn">Submit</button>';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let btnTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "submit-btn") {
+          btnTag = tag;
+          break;
+        }
+      }
+      expect(btnTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.HOVER_ELEMENT, {
+        id: btnTag,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("<button>");
+      expect(result.result).toContain('"Submit"');
+    });
+
+    test("select_option result includes element description", async () => {
+      document.body.innerHTML = `
                 <select id="shipping" name="shipping">
                     <option value="standard">Standard</option>
                     <option value="express">Express</option>
                 </select>`;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let selectTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "shipping") { selectTag = tag; break; }
-            }
-            expect(selectTag).toBeGreaterThan(0);
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let selectTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "shipping") {
+          selectTag = tag;
+          break;
+        }
+      }
+      expect(selectTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.SELECT_OPTION, { id: selectTag, value: "Express" });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("<select>");
-            expect(result.result).toContain('"shipping"');
-        });
+      const result = await executeAction(ToolName.SELECT_OPTION, {
+        id: selectTag,
+        value: "Express",
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("<select>");
+      expect(result.result).toContain('"shipping"');
+    });
 
-        test("select_option accepts controls when the global select constructor does not match", async () => {
-            document.body.innerHTML = `
+    test("select_option accepts controls when the global select constructor does not match", async () => {
+      document.body.innerHTML = `
                 <select id="quantity">
                     <option value="1">1</option>
                     <option value="10">10</option>
                 </select>`;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let selectTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "quantity") { selectTag = tag; break; }
-            }
-            const restore = shadowGlobalConstructor("HTMLSelectElement", class OtherSelectElement {});
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let selectTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "quantity") {
+          selectTag = tag;
+          break;
+        }
+      }
+      const restore = shadowGlobalConstructor(
+        "HTMLSelectElement",
+        class OtherSelectElement {},
+      );
 
-            try {
-                const result = await executeAction(ToolName.SELECT_OPTION, { id: selectTag, value: "10" });
-
-                expect(result.success).toBe(true);
-                expect((document.getElementById("quantity") as HTMLSelectElement).value).toBe("10");
-            } finally {
-                restore();
-            }
+      try {
+        const result = await executeAction(ToolName.SELECT_OPTION, {
+          id: selectTag,
+          value: "10",
         });
 
-        test("set_checkbox result includes element description", async () => {
-            document.body.innerHTML = '<input type="checkbox" id="remember" aria-label="Remember me" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let cbTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "remember") { cbTag = tag; break; }
-            }
-            expect(cbTag).toBeGreaterThan(0);
+        expect(result.success).toBe(true);
+        expect(
+          (document.getElementById("quantity") as HTMLSelectElement).value,
+        ).toBe("10");
+      } finally {
+        restore();
+      }
+    });
 
-            const result = await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("<input>");
-            expect(result.result).toContain('"Remember me"');
-            expect(result.result).toContain("checked=true");
+    test("set_checkbox result includes element description", async () => {
+      document.body.innerHTML =
+        '<input type="checkbox" id="remember" aria-label="Remember me" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let cbTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "remember") {
+          cbTag = tag;
+          break;
+        }
+      }
+      expect(cbTag).toBeGreaterThan(0);
+
+      const result = await executeAction(ToolName.SET_CHECKBOX, {
+        id: cbTag,
+        checked: true,
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("<input>");
+      expect(result.result).toContain('"Remember me"');
+      expect(result.result).toContain("checked=true");
+    });
+
+    test("set_checkbox accepts controls when the global input constructor does not match", async () => {
+      document.body.innerHTML = '<input type="checkbox" id="remember" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let cbTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "remember") {
+          cbTag = tag;
+          break;
+        }
+      }
+      const restore = shadowGlobalConstructor(
+        "HTMLInputElement",
+        class OtherInputElement {},
+      );
+
+      try {
+        const result = await executeAction(ToolName.SET_CHECKBOX, {
+          id: cbTag,
+          checked: true,
         });
 
-        test("set_checkbox accepts controls when the global input constructor does not match", async () => {
-            document.body.innerHTML = '<input type="checkbox" id="remember" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let cbTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "remember") { cbTag = tag; break; }
-            }
-            const restore = shadowGlobalConstructor("HTMLInputElement", class OtherInputElement {});
+        expect(result.success).toBe(true);
+        expect(
+          (document.getElementById("remember") as HTMLInputElement).checked,
+        ).toBe(true);
+      } finally {
+        restore();
+      }
+    });
 
-            try {
-                const result = await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
-
-                expect(result.success).toBe(true);
-                expect((document.getElementById("remember") as HTMLInputElement).checked).toBe(true);
-            } finally {
-                restore();
-            }
-        });
-
-        test("set_checkbox accepts a visible label for a hidden checkbox control", async () => {
-            document.body.innerHTML = `
+    test("set_checkbox accepts a visible label for a hidden checkbox control", async () => {
+      document.body.innerHTML = `
                 <input id="knowledge" name="incident.knowledge" type="checkbox" checked style="display: none" />
                 <label for="knowledge">Knowledge</label>
             `;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let labelTag = -1;
-            for (const [tag, el] of tagMap) {
-                if (el.tagName.toLowerCase() === "label" && el.textContent?.trim() === "Knowledge") {
-                    labelTag = tag;
-                    break;
-                }
-            }
-            expect(labelTag).toBeGreaterThan(0);
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let labelTag = -1;
+      for (const [tag, el] of tagMap) {
+        if (
+          el.tagName.toLowerCase() === "label" &&
+          el.textContent?.trim() === "Knowledge"
+        ) {
+          labelTag = tag;
+          break;
+        }
+      }
+      expect(labelTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.SET_CHECKBOX, {
-                id: labelTag,
-                checked: false,
-            });
+      const result = await executeAction(ToolName.SET_CHECKBOX, {
+        id: labelTag,
+        checked: false,
+      });
 
-            expect(result.success).toBe(true);
-            expect((document.getElementById("knowledge") as HTMLInputElement).checked).toBe(false);
-        });
+      expect(result.success).toBe(true);
+      expect(
+        (document.getElementById("knowledge") as HTMLInputElement).checked,
+      ).toBe(false);
+    });
+  });
+
+  describe("auto-scroll on input tools", () => {
+    test("type_text calls scrollIntoView on the element", async () => {
+      document.body.innerHTML = '<input id="field" type="text" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let fieldTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "field") {
+          fieldTag = tag;
+          break;
+        }
+      }
+      expect(fieldTag).toBeGreaterThan(0);
+
+      const el = tagMap.get(fieldTag) as HTMLElement;
+      const spy = vi.spyOn(el, "scrollIntoView");
+
+      await executeAction(ToolName.TYPE_TEXT, { id: fieldTag, text: "test" });
+      expect(spy).toHaveBeenCalledWith({
+        behavior: "instant",
+        block: "center",
+      });
     });
 
-    describe("auto-scroll on input tools", () => {
-        test("type_text calls scrollIntoView on the element", async () => {
-            document.body.innerHTML = '<input id="field" type="text" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let fieldTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "field") { fieldTag = tag; break; }
-            }
-            expect(fieldTag).toBeGreaterThan(0);
-
-            const el = tagMap.get(fieldTag) as HTMLElement;
-            const spy = vi.spyOn(el, "scrollIntoView");
-
-            await executeAction(ToolName.TYPE_TEXT, { id: fieldTag, text: "test" });
-            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
-        });
-
-        test("select_option calls scrollIntoView on the element", async () => {
-            document.body.innerHTML = `
+    test("select_option calls scrollIntoView on the element", async () => {
+      document.body.innerHTML = `
                 <select id="sel">
                     <option value="a">A</option>
                     <option value="b">B</option>
                 </select>`;
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let selTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "sel") { selTag = tag; break; }
-            }
-            expect(selTag).toBeGreaterThan(0);
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let selTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "sel") {
+          selTag = tag;
+          break;
+        }
+      }
+      expect(selTag).toBeGreaterThan(0);
 
-            const el = tagMap.get(selTag) as HTMLElement;
-            const spy = vi.spyOn(el, "scrollIntoView");
+      const el = tagMap.get(selTag) as HTMLElement;
+      const spy = vi.spyOn(el, "scrollIntoView");
 
-            await executeAction(ToolName.SELECT_OPTION, { id: selTag, value: "B" });
-            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
-        });
-
-        test("set_checkbox calls scrollIntoView on the element", async () => {
-            document.body.innerHTML = '<input type="checkbox" id="cb" />';
-            resetStableIds();
-            tagElements();
-            const tagMap = getTagMap();
-            let cbTag = -1;
-            for (const [tag, el] of tagMap) {
-                if ((el as HTMLElement).id === "cb") { cbTag = tag; break; }
-            }
-            expect(cbTag).toBeGreaterThan(0);
-
-            const el = tagMap.get(cbTag) as HTMLElement;
-            const spy = vi.spyOn(el, "scrollIntoView");
-
-            await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
-            expect(spy).toHaveBeenCalledWith({ behavior: "instant", block: "center" });
-        });
+      await executeAction(ToolName.SELECT_OPTION, { id: selTag, value: "B" });
+      expect(spy).toHaveBeenCalledWith({
+        behavior: "instant",
+        block: "center",
+      });
     });
 
-    describe("executeScroll with y param", () => {
-        test("scroll_page with y scrolls window to absolute position", async () => {
-            const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-            const result = await executeAction(ToolName.SCROLL_PAGE, { y: 3000 });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("y=3000");
-            expect(scrollToSpy).toHaveBeenCalledWith({ top: 3000, behavior: "instant" });
-            scrollToSpy.mockRestore();
-        });
+    test("set_checkbox calls scrollIntoView on the element", async () => {
+      document.body.innerHTML = '<input type="checkbox" id="cb" />';
+      resetStableIds();
+      tagElements();
+      const tagMap = getTagMap();
+      let cbTag = -1;
+      for (const [tag, el] of tagMap) {
+        if ((el as HTMLElement).id === "cb") {
+          cbTag = tag;
+          break;
+        }
+      }
+      expect(cbTag).toBeGreaterThan(0);
 
-        test("scroll_page with neither y nor direction returns error", async () => {
-            const result = await executeAction(ToolName.SCROLL_PAGE, {});
-            expect(result.success).toBe(false);
-            expect(result.result).toContain("requires either");
-        });
+      const el = tagMap.get(cbTag) as HTMLElement;
+      const spy = vi.spyOn(el, "scrollIntoView");
 
-        test("scroll_page with direction still works (backward compat)", async () => {
-            const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
-            const result = await executeAction(ToolName.SCROLL_PAGE, { direction: "top" });
-            expect(result.success).toBe(true);
-            expect(result.result).toContain("Scrolled to top");
-            scrollToSpy.mockRestore();
-        });
+      await executeAction(ToolName.SET_CHECKBOX, { id: cbTag, checked: true });
+      expect(spy).toHaveBeenCalledWith({
+        behavior: "instant",
+        block: "center",
+      });
+    });
+  });
+
+  describe("executeScroll with y param", () => {
+    test("scroll_page with y scrolls window to absolute position", async () => {
+      const scrollToSpy = vi
+        .spyOn(window, "scrollTo")
+        .mockImplementation(() => {});
+      const result = await executeAction(ToolName.SCROLL_PAGE, { y: 3000 });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("y=3000");
+      expect(scrollToSpy).toHaveBeenCalledWith({
+        top: 3000,
+        behavior: "instant",
+      });
+      scrollToSpy.mockRestore();
     });
 
-    describe("right-click and keyboard realism", () => {
-        test("right_click dispatches context menu with coordinates", async () => {
-            document.body.innerHTML = '<div id="doc">Q3 Report.pdf</div>';
-            resetStableIds();
-            tagElements();
-            const docTag = addDynamicTag(document.getElementById("doc")!);
-            expect(docTag).toBeGreaterThan(0);
+    test("scroll_page with neither y nor direction returns error", async () => {
+      const result = await executeAction(ToolName.SCROLL_PAGE, {});
+      expect(result.success).toBe(false);
+      expect(result.result).toContain("requires either");
+    });
 
-            let captured: MouseEvent | null = null;
-            document.getElementById("doc")!.addEventListener("contextmenu", (event) => {
-                captured = event as MouseEvent;
-            });
+    test("scroll_page with direction still works (backward compat)", async () => {
+      const scrollToSpy = vi
+        .spyOn(window, "scrollTo")
+        .mockImplementation(() => {});
+      const result = await executeAction(ToolName.SCROLL_PAGE, {
+        direction: "top",
+      });
+      expect(result.success).toBe(true);
+      expect(result.result).toContain("Scrolled to top");
+      scrollToSpy.mockRestore();
+    });
 
-            const result = await executeAction(ToolName.RIGHT_CLICK, { id: docTag });
-            expect(result.success).toBe(true);
-            expect(captured).not.toBeNull();
-            expect(captured!.clientX).toBeGreaterThan(0);
-            expect(captured!.clientY).toBeGreaterThan(0);
-            expect(captured!.button).toBe(2);
+    test("scroll_page falls back to nested scroll containers when window cannot scroll", async () => {
+      document.body.innerHTML = `
+                <div id="pane" style="overflow-y: auto; height: 200px;">
+                    <div style="height: 1200px;">Nested dashboard content</div>
+                </div>
+            `;
+      const pane = document.getElementById("pane") as HTMLElement;
+      const docScrollHeight = Object.getOwnPropertyDescriptor(
+        document.documentElement,
+        "scrollHeight",
+      );
+      const windowInnerHeight = Object.getOwnPropertyDescriptor(
+        window,
+        "innerHeight",
+      );
+      Object.defineProperty(document.documentElement, "scrollHeight", {
+        configurable: true,
+        value: 600,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: 600,
+      });
+      Object.defineProperty(pane, "scrollHeight", {
+        configurable: true,
+        value: 1200,
+      });
+      Object.defineProperty(pane, "clientHeight", {
+        configurable: true,
+        value: 200,
+      });
+      pane.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 400,
+          bottom: 200,
+          width: 400,
+          height: 200,
+          toJSON: () => ({}),
+        }) as DOMRect;
+
+      try {
+        const result = await executeAction(ToolName.SCROLL_PAGE, {
+          direction: "down",
+          amount: 300,
         });
 
-        test("click_element dispatches mouse activation in the target owner document", async () => {
-            const frameDoc = createEmbeddedDocument();
-            frameDoc.body.innerHTML = '<button id="pick">Pick Joe Employee</button>';
-            const frameView = frameDoc.defaultView!;
-            class OwnerMouseEvent extends MouseEvent {
-                ownerConstructed = true;
-            }
-            Object.defineProperty(frameView, "MouseEvent", {
-                configurable: true,
-                value: OwnerMouseEvent,
-            });
+        expect(result.success).toBe(true);
+        expect(result.result).toContain("nested container");
+        expect(pane.scrollTop).toBe(300);
+      } finally {
+        if (docScrollHeight) {
+          Object.defineProperty(
+            document.documentElement,
+            "scrollHeight",
+            docScrollHeight,
+          );
+        } else {
+          delete (document.documentElement as any).scrollHeight;
+        }
+        if (windowInnerHeight) {
+          Object.defineProperty(window, "innerHeight", windowInnerHeight);
+        } else {
+          delete (window as any).innerHeight;
+        }
+      }
+    });
+  });
 
-            const button = frameDoc.getElementById("pick")!;
-            const tag = addDynamicTag(button);
-            let ownerConstructed = false;
-            button.addEventListener("mousedown", (event) => {
-                ownerConstructed = (event as MouseEvent & { ownerConstructed?: boolean }).ownerConstructed === true;
-            });
+  describe("right-click and keyboard realism", () => {
+    test("right_click dispatches context menu with coordinates", async () => {
+      document.body.innerHTML = '<div id="doc">Q3 Report.pdf</div>';
+      resetStableIds();
+      tagElements();
+      const docTag = addDynamicTag(document.getElementById("doc")!);
+      expect(docTag).toBeGreaterThan(0);
 
-            const result = await executeAction(ToolName.CLICK_ELEMENT, { id: tag });
-
-            expect(result.success).toBe(true);
-            expect(ownerConstructed).toBe(true);
+      let captured: MouseEvent | null = null;
+      document
+        .getElementById("doc")!
+        .addEventListener("contextmenu", (event) => {
+          captured = event as MouseEvent;
         });
 
-        test("press_key enter submits the focused form", async () => {
-            document.body.innerHTML = `
+      const result = await executeAction(ToolName.RIGHT_CLICK, { id: docTag });
+      expect(result.success).toBe(true);
+      expect(captured).not.toBeNull();
+      expect(captured!.clientX).toBeGreaterThan(0);
+      expect(captured!.clientY).toBeGreaterThan(0);
+      expect(captured!.button).toBe(2);
+    });
+
+    test("click_element dispatches mouse activation in the target owner document", async () => {
+      const frameDoc = createEmbeddedDocument();
+      frameDoc.body.innerHTML = '<button id="pick">Pick Joe Employee</button>';
+      const frameView = frameDoc.defaultView!;
+      class OwnerMouseEvent extends MouseEvent {
+        ownerConstructed = true;
+      }
+      Object.defineProperty(frameView, "MouseEvent", {
+        configurable: true,
+        value: OwnerMouseEvent,
+      });
+
+      const button = frameDoc.getElementById("pick")!;
+      const tag = addDynamicTag(button);
+      let ownerConstructed = false;
+      button.addEventListener("mousedown", (event) => {
+        ownerConstructed =
+          (event as MouseEvent & { ownerConstructed?: boolean })
+            .ownerConstructed === true;
+      });
+
+      const result = await executeAction(ToolName.CLICK_ELEMENT, { id: tag });
+
+      expect(result.success).toBe(true);
+      expect(ownerConstructed).toBe(true);
+    });
+
+    test("press_key enter submits the focused form", async () => {
+      document.body.innerHTML = `
                 <form id="rename-form">
                     <input id="rename-input" type="text" value="Q3 Report.pdf" />
                 </form>
             `;
-            const input = document.getElementById("rename-input") as HTMLInputElement;
-            input.focus();
+      const input = document.getElementById("rename-input") as HTMLInputElement;
+      input.focus();
 
-            let submitted = false;
-            const form = document.getElementById("rename-form") as HTMLFormElement;
-            form.addEventListener("submit", (event) => {
-                event.preventDefault();
-                submitted = true;
-            });
+      let submitted = false;
+      const form = document.getElementById("rename-form") as HTMLFormElement;
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitted = true;
+      });
 
-            const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
-            expect(result.success).toBe(true);
-            expect(submitted).toBe(true);
-        });
+      const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
+      expect(result.success).toBe(true);
+      expect(submitted).toBe(true);
+    });
 
-        test("press_key targets the last typed control in its owner document", async () => {
-            const frameDoc = createEmbeddedDocument();
-            frameDoc.body.innerHTML = `
+    test("press_key targets the last typed control in its owner document", async () => {
+      const frameDoc = createEmbeddedDocument();
+      frameDoc.body.innerHTML = `
                 <input id="caller" name="sys_display.incident.caller_id" type="text" />
             `;
-            const input = frameDoc.getElementById("caller") as HTMLInputElement;
-            const inputTag = addDynamicTag(input);
-            const keydowns: string[] = [];
-            input.addEventListener("keydown", (event) => {
-                keydowns.push((event as KeyboardEvent).key);
-            });
+      const input = frameDoc.getElementById("caller") as HTMLInputElement;
+      const inputTag = addDynamicTag(input);
+      const keydowns: string[] = [];
+      input.addEventListener("keydown", (event) => {
+        keydowns.push((event as KeyboardEvent).key);
+      });
 
-            const typeResult = await executeAction(ToolName.TYPE_TEXT, {
-                id: inputTag,
-                text: "Joe Employee",
-            });
-            expect(typeResult.success).toBe(true);
-            expect(input.value).toBe("Joe Employee");
+      const typeResult = await executeAction(ToolName.TYPE_TEXT, {
+        id: inputTag,
+        text: "Joe Employee",
+      });
+      expect(typeResult.success).toBe(true);
+      expect(input.value).toBe("Joe Employee");
 
-            const keyResult = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
-            expect(keyResult.success).toBe(true);
-            expect(keydowns).toContain("Enter");
-        });
+      const keyResult = await executeAction(ToolName.PRESS_KEY, {
+        key: "Enter",
+      });
+      expect(keyResult.success).toBe(true);
+      expect(keydowns).toContain("Enter");
+    });
 
-        test("press_key enter does not auto-submit autocomplete reference inputs", async () => {
-            document.body.innerHTML = `
+    test("press_key enter does not auto-submit autocomplete reference inputs", async () => {
+      document.body.innerHTML = `
                 <form id="incident-form">
                     <input id="caller" name="sys_display.incident.caller_id" role="combobox" type="text" />
                 </form>
             `;
-            resetStableIds();
-            tagElements();
-            const input = document.getElementById("caller") as HTMLInputElement;
-            const inputTag = Number(input.getAttribute("data-os-tag"));
+      resetStableIds();
+      tagElements();
+      const input = document.getElementById("caller") as HTMLInputElement;
+      const inputTag = Number(input.getAttribute("data-os-tag"));
 
-            let submitted = false;
-            const form = document.getElementById("incident-form") as HTMLFormElement;
-            form.addEventListener("submit", (event) => {
-                event.preventDefault();
-                submitted = true;
-            });
+      let submitted = false;
+      const form = document.getElementById("incident-form") as HTMLFormElement;
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        submitted = true;
+      });
 
-            await executeAction(ToolName.TYPE_TEXT, {
-                id: inputTag,
-                text: "Joe Employee",
-            });
+      await executeAction(ToolName.TYPE_TEXT, {
+        id: inputTag,
+        text: "Joe Employee",
+      });
 
-            const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
-            expect(result.success).toBe(true);
-            expect(submitted).toBe(false);
-        });
+      const result = await executeAction(ToolName.PRESS_KEY, { key: "Enter" });
+      expect(result.success).toBe(true);
+      expect(submitted).toBe(false);
     });
+  });
 });

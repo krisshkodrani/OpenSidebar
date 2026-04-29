@@ -492,8 +492,9 @@ class WorkArenaSession:
                 instance=instance,
                 table=table_name,
                 params={
-                    "sysparm_query": f"number={record_number}",
-                    "sysparm_fields": "sys_id,number",
+                    "sysparm_query": f"number={record_number}^ORDERBYDESCsys_created_on",
+                    "sysparm_fields": "sys_id,number,sys_created_on,sys_updated_on",
+                    "sysparm_limit": "5",
                 },
                 wait_for_record=True,
                 max_retries=20,
@@ -534,6 +535,9 @@ class WorkArenaSession:
                 "sessionKey": session_key,
                 "table": table_name,
                 "sysId": sys_id,
+                "candidateCount": len(records),
+                "sysCreatedOn": first_record.get("sys_created_on"),
+                "sysUpdatedOn": first_record.get("sys_updated_on"),
                 "existing": False,
             }
         except Exception as exc:  # noqa: BLE001 - preserve validation diagnostics.

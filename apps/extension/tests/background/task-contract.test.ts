@@ -44,13 +44,16 @@ describe("task contract helpers", () => {
 
     expect(repaired.length).toBeGreaterThanOrEqual(2);
     expect(
-      repaired.some((step) => /return to warehouse alpha/i.test(step.objective)),
+      repaired.some((step) =>
+        /return to warehouse alpha/i.test(step.objective),
+      ),
     ).toBe(true);
     expect(
       repaired.some(
         (step) =>
           /warehouse alpha/i.test(step.objective) &&
-          (/verify/i.test(step.objective) || /requested result/i.test(step.objective)),
+          (/verify/i.test(step.objective) ||
+            /requested result/i.test(step.objective)),
       ),
     ).toBe(true);
   });
@@ -192,7 +195,9 @@ describe("task contract helpers", () => {
     expect(synthesized).not.toBeNull();
     expect(synthesized!.length).toBeGreaterThanOrEqual(2);
     expect(synthesized![0].objective).toMatch(/\bgamma\b/i);
-    expect(synthesized!.some((step) => /\balpha\b/i.test(step.objective))).toBe(true);
+    expect(synthesized!.some((step) => /\balpha\b/i.test(step.objective))).toBe(
+      true,
+    );
     expect(synthesized![synthesized!.length - 1].objective).toMatch(/report/i);
   });
 
@@ -239,6 +244,32 @@ describe("task contract helpers", () => {
     expect(coverage.satisfied).toBe(true);
   });
 
+  test("does not misread long quoted form values as fake quote pairs", () => {
+    const prompt =
+      'Create a new change request with a value of "" for field "Service offering", a value of "" for field "Configuration item", a value of "--Logon to the switch using SSH--Type the following commandsswitch# configure terminalswitch(config)# interface {type slot/port | port-channel number}switch(config-if)# switchport access vlan vlan-idFor exampleswitch# configure terminalswitch(config)# interface Gi1/1switch(config-if)# switchport access vlan 101--Save the switch config file" for field "Implementation plan", a value of "CHG0000021" for field "Number", a value of "Moderate" for field "Risk", and a value of "Successful" for field "Close code".';
+    const contract = buildTaskContract(prompt);
+
+    expect(contract.requiredEntities).not.toContain("for field");
+    expect(contract.requiredEntities).not.toContain(", a value of");
+    expect(contract.requiredEntities).not.toContain(", and a value of");
+    expect(contract.requiredNumbers).not.toContain("101");
+
+    const coverage = assessTaskContractCoverage({
+      contract,
+      text: [
+        "Service offering: empty",
+        "Configuration item: empty",
+        "Implementation plan: filled with the requested SSH switch configuration commands",
+        "Number: CHG0000021",
+        "Risk: Moderate",
+        "Close code: Successful",
+        "Submit advanced from populated record CHG0041055 to fresh record form CHG0041056.",
+      ].join("\n"),
+    });
+
+    expect(coverage.satisfied).toBe(true);
+  });
+
   test("does not treat quoted knowledge-base questions as literal summary obligations", () => {
     const prompt =
       'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."';
@@ -261,10 +292,7 @@ describe("task contract helpers", () => {
       "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",
     );
 
-    expect(contract.requiredActionTargets).toEqual([
-      "api docs",
-      "ci pipeline",
-    ]);
+    expect(contract.requiredActionTargets).toEqual(["api docs", "ci pipeline"]);
     expect(contract.requiredEntities).toContain("api docs");
     expect(contract.requiredEntities).toContain("ci pipeline");
 
@@ -283,7 +311,8 @@ describe("task contract helpers", () => {
         "The release needs documentation and CI work started. Move the API docs card and the CI pipeline card into In Progress.",
       steps: [
         {
-          objective: "Move the API docs card from its current column to the In Progress column.",
+          objective:
+            "Move the API docs card from its current column to the In Progress column.",
           successCriteria: "Page confirms API docs is in In Progress.",
           dependencies: [],
           assumptions: [],
@@ -363,7 +392,8 @@ describe("task contract helpers", () => {
 
   test("repairPlanCoverage appends final synthesis step for exhaustive review tasks", () => {
     const repaired = repairPlanCoverage({
-      query: "Review all 10 job listings on this page, then tell me which ones are the best matches for my profile and why.",
+      query:
+        "Review all 10 job listings on this page, then tell me which ones are the best matches for my profile and why.",
       steps: [
         {
           objective: "Read and record details of Job Listing #1.",
@@ -399,11 +429,7 @@ describe("task contract helpers", () => {
     expect(synthesized).not.toBeNull();
     expect(synthesized!.length).toBe(11);
     expect(
-      synthesized!.some((step) =>
-        /job listing #1\b/i.test(
-          step.objective,
-        ),
-      ),
+      synthesized!.some((step) => /job listing #1\b/i.test(step.objective)),
     ).toBe(true);
     expect(
       synthesized!

@@ -115,6 +115,9 @@ export function getVisibleText(el: Element): string {
   if (isInputElement(el)) {
     return el.value || el.placeholder || "";
   }
+  if (isTextAreaElement(el)) {
+    return el.value || el.placeholder || "";
+  }
 
   return "";
 }
@@ -160,11 +163,7 @@ export function extractAttributes(el: Element): Record<string, string> {
   }
 
   // Form-specific label association
-  if (
-    isInputElement(el) ||
-    isTextAreaElement(el) ||
-    isSelectElement(el)
-  ) {
+  if (isInputElement(el) || isTextAreaElement(el) || isSelectElement(el)) {
     const elId = el.getAttribute("id");
     if (elId) {
       const labelEl = document.querySelector(

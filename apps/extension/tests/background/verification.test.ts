@@ -131,7 +131,9 @@ describe("checkVerificationGate", () => {
 describe("assessDoneSummary", () => {
   // --- Layer 1: should BLOCK (confident: false) ---
   test("detects 'didn't update' as failure", () => {
-    const r = assessDoneSummary("Attempted to add to cart but cart count didn't update");
+    const r = assessDoneSummary(
+      "Attempted to add to cart but cart count didn't update",
+    );
     expect(r.confident).toBe(false);
   });
 
@@ -172,12 +174,16 @@ describe("assessDoneSummary", () => {
 
   // --- Should PASS (confident: true) ---
   test("passes clean success summary", () => {
-    const r = assessDoneSummary("Added both items to cart and applied the coupon code");
+    const r = assessDoneSummary(
+      "Added both items to cart and applied the coupon code",
+    );
     expect(r.confident).toBe(true);
   });
 
   test("passes neutral summary", () => {
-    const r = assessDoneSummary("Completed checkout with express shipping selected");
+    const r = assessDoneSummary(
+      "Completed checkout with express shipping selected",
+    );
     expect(r.confident).toBe(true);
   });
 
@@ -231,7 +237,9 @@ describe("assessDoneSummary", () => {
 
   // --- Pure failure without success override stays blocked ---
   test("failure without override: 'cart count didn't update' stays blocked", () => {
-    const r = assessDoneSummary("The cart count didn't update after clicking add");
+    const r = assessDoneSummary(
+      "The cart count didn't update after clicking add",
+    );
     expect(r.confident).toBe(false);
   });
 });
@@ -256,9 +264,53 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("rejects single chart answers with supporting numeric details", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the value of "IBM" in the "Configuration Item by Manufacturer" chart (in percent)?',
+      summary:
+        'The percentage value for "IBM" is 2.76% based on 54 items out of 1,953 total.',
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("one numeric answer");
+  });
+
+  test("allows chart max answers with a label and one count", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the maximum value in the "Unanswered Questions by Assigned User" chart? Give me both the label and the count. If there are many, pick one.',
+      summary: "Alva Pennigton: 21",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects chart max answers that include tie and axis numbers", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the maximum value in the "Unanswered Questions by Assigned User" chart? Give me both the label and the count. If there are many, pick one.',
+      summary:
+        "Alva Pennigton has 21, tied with Bess Marso at 21; the chart shows 8 users and an axis range of 0-22.",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(true);
+  });
+
+  test("allows dashboard answers that explicitly request multiple numbers", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        "Get the Open Tickets number from the support dashboard and the Active Campaigns number from the marketing dashboard, then tell me both numbers.",
+      summary: "Open Tickets: 12. Active Campaigns: 8.",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects opened knowledge articles without the requested answer", () => {
     const result = assessWorkflowDoneGuard({
-      query: "Search the knowledge base and answer the password reset question.",
+      query:
+        "Search the knowledge base and answer the password reset question.",
       summary: "Opened the relevant KB article.",
       selectedSkillId: "search-answer-extraction",
     });
@@ -268,8 +320,10 @@ describe("assessWorkflowDoneGuard", () => {
 
   test("allows knowledge summaries that provide the answer", () => {
     const result = assessWorkflowDoneGuard({
-      query: "Search the knowledge base and answer the password reset question.",
-      summary: "The article says users should reset the password from Account Settings.",
+      query:
+        "Search the knowledge base and answer the password reset question.",
+      summary:
+        "The article says users should reset the password from Account Settings.",
       selectedSkillId: "search-answer-extraction",
     });
     expect(result.blocked).toBe(false);
@@ -316,7 +370,8 @@ describe("assessWorkflowDoneGuard", () => {
   test("rejects catalog detail pages without request confirmation", () => {
     const result = assessWorkflowDoneGuard({
       query: "Order a standard laptop from the service catalog.",
-      summary: "The catalog item detail page is open with configuration options visible.",
+      summary:
+        "The catalog item detail page is open with configuration options visible.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(true);
@@ -326,7 +381,8 @@ describe("assessWorkflowDoneGuard", () => {
   test("allows catalog request confirmations", () => {
     const result = assessWorkflowDoneGuard({
       query: "Order a standard laptop from the service catalog.",
-      summary: "The standard laptop request was submitted and confirmation REQ0012345 is visible.",
+      summary:
+        "The standard laptop request was submitted and confirmation REQ0012345 is visible.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(false);

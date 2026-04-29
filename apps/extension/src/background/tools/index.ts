@@ -185,8 +185,7 @@ async function getFrameIdsForMainWorldBridge(tabId: number): Promise<number[]> {
   }
 }
 
-const SERVICENOW_REFERENCE_CANDIDATE_PREFIX =
-  "servicenow_reference_candidate:";
+const SERVICENOW_REFERENCE_CANDIDATE_PREFIX = "servicenow_reference_candidate:";
 
 type ServiceNowReferenceCandidate = {
   fieldPath: string;
@@ -260,7 +259,9 @@ function inferServiceNowListTableFromUrl(rawUrl: string | undefined): string {
   return "";
 }
 
-function commonServiceNowReferenceTableForField(fieldName: string): string | null {
+function commonServiceNowReferenceTableForField(
+  fieldName: string,
+): string | null {
   const key = normalizeServiceNowReferenceKey(fieldName);
   const compactKey = key.replace(/_/g, "");
   const commonReferences: Record<string, string> = {
@@ -368,12 +369,14 @@ async function resolveServiceNowReferenceFromBackground(
       return records;
     })();
 
-    const timeoutPromise = new Promise<Record<string, unknown>[]>((_, reject) => {
-      timeout = setTimeout(() => {
-        controller.abort();
-        reject(new Error("lookup_timeout"));
-      }, 4_000);
-    });
+    const timeoutPromise = new Promise<Record<string, unknown>[]>(
+      (_, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new Error("lookup_timeout"));
+        }, 4_000);
+      },
+    );
     const records = await Promise.race([recordsPromise, timeoutPromise]);
     if (records.length === 0) {
       return { ok: false, reason: "no_matching_record" };
@@ -382,21 +385,20 @@ async function resolveServiceNowReferenceFromBackground(
     const normalize = (candidate: string): string =>
       candidate.trim().toLowerCase();
     const selected =
-      records.find((record: Record<string, unknown>) =>
-        queryFields.some((field) => {
-          return (
-            normalize(unwrapServiceNowFieldValue(record[field])) ===
-            normalize(trimmedValue)
-          );
-        }) ||
-        normalize(
-          `${unwrapServiceNowFieldValue(record.first_name)} ${unwrapServiceNowFieldValue(record.last_name)}`,
-        ) === normalize(trimmedValue),
+      records.find(
+        (record: Record<string, unknown>) =>
+          queryFields.some((field) => {
+            return (
+              normalize(unwrapServiceNowFieldValue(record[field])) ===
+              normalize(trimmedValue)
+            );
+          }) ||
+          normalize(
+            `${unwrapServiceNowFieldValue(record.first_name)} ${unwrapServiceNowFieldValue(record.last_name)}`,
+          ) === normalize(trimmedValue),
       ) ?? records[0];
     const sysId = unwrapServiceNowFieldValue(selected.sys_id);
-    return sysId
-      ? { ok: true, sysId }
-      : { ok: false, reason: "no_sys_id" };
+    return sysId ? { ok: true, sysId } : { ok: false, reason: "no_sys_id" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "lookup_failed";
     return {
@@ -447,7 +449,8 @@ async function resolveServiceNowReferenceFromPage(
           }
 
           const displayValue = rawDisplayValue.trim();
-          if (!displayValue) return { ok: false, reason: "empty_display_value" };
+          if (!displayValue)
+            return { ok: false, reason: "empty_display_value" };
 
           const unwrap = (fieldValue: unknown): string => {
             if (typeof fieldValue === "string") return fieldValue;
@@ -703,7 +706,8 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
           }
 
           const displayValue = rawDisplayValue.trim();
-          if (!displayValue) return { ok: false, reason: "empty_display_value" };
+          if (!displayValue)
+            return { ok: false, reason: "empty_display_value" };
 
           const delay = (ms: number) =>
             new Promise((resolve) => setTimeout(resolve, ms));
@@ -760,9 +764,9 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
                 ? 13
                 : key === "Backspace"
                   ? 8
-                : key.length === 1
-                  ? key.toUpperCase().charCodeAt(0)
-                  : undefined;
+                  : key.length === 1
+                    ? key.toUpperCase().charCodeAt(0)
+                    : undefined;
             input.dispatchEvent(
               new view.KeyboardEvent(type, {
                 key,
@@ -776,10 +780,7 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
               }),
             );
           };
-          const dispatchInput = (
-            data: string | null,
-            inputType: string,
-          ) => {
+          const dispatchInput = (data: string | null, inputType: string) => {
             input.dispatchEvent(
               new view.InputEvent("input", {
                 bubbles: true,
@@ -827,7 +828,9 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
               return false;
             }
             const rect = node.getBoundingClientRect();
-            return rect.width > 0 || rect.height > 0 || !!node.textContent?.trim();
+            return (
+              rect.width > 0 || rect.height > 0 || !!node.textContent?.trim()
+            );
           };
           const optionSelectors = [
             '[role="option"]',
@@ -850,7 +853,9 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
             if (!text) return false;
             if (text.includes(normalizedDisplay)) return true;
             const tokens = normalizedDisplay.split(" ").filter(Boolean);
-            return tokens.length > 0 && tokens.every((token) => text.includes(token));
+            return (
+              tokens.length > 0 && tokens.every((token) => text.includes(token))
+            );
           };
           const findMatchingOption = (): HTMLElement | null => {
             const seen = new Set<Element>();
@@ -988,13 +993,15 @@ async function selectServiceNowReferenceAutocompleteInMainWorld(
                 const sysId = extractSysId(option);
                 if (forceCommit(sysId)) {
                   await delay(100);
-                  if (isCommittedValue(getCommittedValue())) return { ok: true };
+                  if (isCommittedValue(getCommittedValue()))
+                    return { ok: true };
                 }
 
                 clickOption(option);
                 for (let verify = 0; verify < 12; verify++) {
                   await delay(100);
-                  if (isCommittedValue(getCommittedValue())) return { ok: true };
+                  if (isCommittedValue(getCommittedValue()))
+                    return { ok: true };
                 }
                 return { ok: false, reason: "selection_unverified" };
               }
@@ -1072,213 +1079,274 @@ async function mirrorTextInputInMainWorld(
         target: { tabId, frameIds: [frameId] },
         world: "MAIN" as any,
         func: (tagId: string, value: string) => {
-        const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
-        const el = document.querySelector(selector);
-        if (!el) return;
-
-        if (
-          el instanceof HTMLInputElement ||
-          el instanceof HTMLTextAreaElement
-        ) {
-          const isAutocompleteLikeTextInput = (
-            input: HTMLInputElement,
-          ): boolean => {
-            const role = input.getAttribute("role")?.toLowerCase() ?? "";
-            const blob = [
-              input.id,
-              input.name,
-              input.className,
-              input.getAttribute("autocomplete"),
-              input.getAttribute("aria-label"),
-              input.getAttribute("aria-controls"),
-              input.getAttribute("aria-haspopup"),
-              input.getAttribute("aria-autocomplete"),
-              input.getAttribute("placeholder"),
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase();
-
-            return (
-              role === "combobox" ||
-              input.hasAttribute("list") ||
-              input.hasAttribute("aria-autocomplete") ||
-              /\b(combo|autocomplete|typeahead|suggest|lookup|reference)\b/.test(
-                blob,
-              ) ||
-              /\bsys_display\./.test(blob)
-            );
-          };
-
-          const detectServiceNowReference = (
-            input: HTMLInputElement,
-          ): string | undefined => {
-            const displayValue = value.trim();
-            const displayName = input.name || input.id;
-            if (!displayName.startsWith("sys_display.")) {
-              return undefined;
-            }
-            if (!displayValue) {
-              return "servicenow_reference_failed:empty_display_value";
-            }
-
-            const fieldPath = displayName.slice("sys_display.".length);
-            const fieldName = fieldPath.includes(".")
-              ? fieldPath.slice(fieldPath.indexOf(".") + 1)
-              : fieldPath;
-            const hiddenControl =
-              document.getElementById(fieldPath) ??
-              Array.from(document.getElementsByName(fieldPath))[0] ??
-              null;
-
-            const getReferenceAttr = (
-              node: Element | null | undefined,
-            ): string | null => {
-              if (!node) return null;
-              for (const attr of [
-                "data-ref",
-                "data-reference",
-                "data-ref-table",
-                "data-reference-table",
-                "reference",
-                "ref",
-              ]) {
-                const attrValue = node.getAttribute(attr);
-                if (attrValue) return attrValue;
-              }
-              return null;
-            };
-
-            const inferReferenceTable = (): string | null => {
-              const attrRef =
-                getReferenceAttr(input) ?? getReferenceAttr(hiddenControl);
-              if (attrRef) return attrRef;
-
-              const gForm = (window as any).g_form;
-              try {
-                const uiElement =
-                  gForm?.getGlideUIElement?.(fieldName) ??
-                  gForm?.getControl?.(fieldName) ??
-                  null;
-                for (const prop of [
-                  "reference",
-                  "referenceTable",
-                  "refTable",
-                  "refName",
-                  "tableName",
-                ]) {
-                  const propValue = uiElement?.[prop];
-                  if (typeof propValue === "string" && propValue) {
-                    return propValue;
-                  }
-                }
-              } catch {
-                // Fall through to common ServiceNow reference field names.
-              }
-
-              const commonRefs: Record<string, string> = {
-                assigned_to: "sys_user",
-                caller_id: "sys_user",
-                opened_by: "sys_user",
-                resolved_by: "sys_user",
-                assignment_group: "sys_user_group",
-                rfc: "change_request",
-                problem_id: "problem",
-                parent_incident: "incident",
-                business_service: "cmdb_ci_service",
-                service_offering: "service_offering",
-                cmdb_ci: "cmdb_ci",
-              };
-              return commonRefs[fieldName] ?? null;
-            };
-
-            const referenceTable = inferReferenceTable();
-            if (!referenceTable) {
-              return "servicenow_reference_failed:no_reference_table";
-            }
-
-            return `servicenow_reference_candidate:${JSON.stringify({
-              fieldPath,
-              fieldName,
-              referenceTable,
-            })}`;
-          };
+          const selector = `[data-os-tag="${tagId.replace(/"/g, '\\"')}"]`;
+          const el = document.querySelector(selector);
+          if (!el) return;
 
           if (
-            el instanceof HTMLInputElement &&
-            isAutocompleteLikeTextInput(el)
+            el instanceof HTMLInputElement ||
+            el instanceof HTMLTextAreaElement
           ) {
-            return detectServiceNowReference(el);
+            const isAutocompleteLikeTextInput = (
+              input: HTMLInputElement,
+            ): boolean => {
+              const role = input.getAttribute("role")?.toLowerCase() ?? "";
+              const blob = [
+                input.id,
+                input.name,
+                input.className,
+                input.getAttribute("autocomplete"),
+                input.getAttribute("aria-label"),
+                input.getAttribute("aria-controls"),
+                input.getAttribute("aria-haspopup"),
+                input.getAttribute("aria-autocomplete"),
+                input.getAttribute("placeholder"),
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+
+              return (
+                role === "combobox" ||
+                input.hasAttribute("list") ||
+                input.hasAttribute("aria-autocomplete") ||
+                /\b(combo|autocomplete|typeahead|suggest|lookup|reference)\b/.test(
+                  blob,
+                ) ||
+                /\bsys_display\./.test(blob)
+              );
+            };
+
+            const detectServiceNowReference = (
+              input: HTMLInputElement,
+            ): string | undefined => {
+              const displayValue = value.trim();
+              const displayName = input.name || input.id;
+              if (!displayName.startsWith("sys_display.")) {
+                return undefined;
+              }
+              if (!displayValue) {
+                return "servicenow_reference_failed:empty_display_value";
+              }
+
+              const fieldPath = displayName.slice("sys_display.".length);
+              const fieldName = fieldPath.includes(".")
+                ? fieldPath.slice(fieldPath.indexOf(".") + 1)
+                : fieldPath;
+              const hiddenControl =
+                document.getElementById(fieldPath) ??
+                Array.from(document.getElementsByName(fieldPath))[0] ??
+                null;
+
+              const getReferenceAttr = (
+                node: Element | null | undefined,
+              ): string | null => {
+                if (!node) return null;
+                for (const attr of [
+                  "data-ref",
+                  "data-reference",
+                  "data-ref-table",
+                  "data-reference-table",
+                  "reference",
+                  "ref",
+                ]) {
+                  const attrValue = node.getAttribute(attr);
+                  if (attrValue) return attrValue;
+                }
+                return null;
+              };
+
+              const inferReferenceTable = (): string | null => {
+                const attrRef =
+                  getReferenceAttr(input) ?? getReferenceAttr(hiddenControl);
+                if (attrRef) return attrRef;
+
+                const gForm = (window as any).g_form;
+                try {
+                  const uiElement =
+                    gForm?.getGlideUIElement?.(fieldName) ??
+                    gForm?.getControl?.(fieldName) ??
+                    null;
+                  for (const prop of [
+                    "reference",
+                    "referenceTable",
+                    "refTable",
+                    "refName",
+                    "tableName",
+                  ]) {
+                    const propValue = uiElement?.[prop];
+                    if (typeof propValue === "string" && propValue) {
+                      return propValue;
+                    }
+                  }
+                } catch {
+                  // Fall through to common ServiceNow reference field names.
+                }
+
+                const commonRefs: Record<string, string> = {
+                  assigned_to: "sys_user",
+                  caller_id: "sys_user",
+                  opened_by: "sys_user",
+                  resolved_by: "sys_user",
+                  assignment_group: "sys_user_group",
+                  rfc: "change_request",
+                  problem_id: "problem",
+                  parent_incident: "incident",
+                  business_service: "cmdb_ci_service",
+                  service_offering: "service_offering",
+                  cmdb_ci: "cmdb_ci",
+                };
+                return commonRefs[fieldName] ?? null;
+              };
+
+              const referenceTable = inferReferenceTable();
+              if (!referenceTable) {
+                return "servicenow_reference_failed:no_reference_table";
+              }
+
+              return `servicenow_reference_candidate:${JSON.stringify({
+                fieldPath,
+                fieldName,
+                referenceTable,
+              })}`;
+            };
+
+            if (
+              el instanceof HTMLInputElement &&
+              isAutocompleteLikeTextInput(el)
+            ) {
+              return detectServiceNowReference(el);
+            }
+
+            const commitServiceNowField = (): string | undefined => {
+              const host = location.hostname.toLowerCase();
+              if (
+                !host.endsWith(".service-now.com") &&
+                !host.endsWith(".servicenow.com")
+              ) {
+                return undefined;
+              }
+              const rawName = [
+                (el as HTMLInputElement | HTMLTextAreaElement).name,
+                (el as HTMLInputElement | HTMLTextAreaElement).id,
+              ].find(
+                (candidate) => candidate && !/^sys_original\./i.test(candidate),
+              );
+              if (!rawName) return undefined;
+              if (/\b(?:search|typeahead|filter|query)\b/i.test(rawName)) {
+                return undefined;
+              }
+              if (
+                el instanceof HTMLInputElement &&
+                [
+                  "button",
+                  "submit",
+                  "reset",
+                  "hidden",
+                  "checkbox",
+                  "radio",
+                  "file",
+                ].includes(el.type.toLowerCase())
+              ) {
+                return undefined;
+              }
+              const fieldName = rawName.includes(".")
+                ? rawName.slice(rawName.lastIndexOf(".") + 1)
+                : rawName;
+              if (
+                !fieldName ||
+                (fieldName === rawName && !/^[a-z][a-z0-9_]*$/i.test(fieldName))
+              ) {
+                return undefined;
+              }
+
+              const gForm = (window as any).g_form;
+              if (typeof gForm?.setValue !== "function") return undefined;
+              try {
+                gForm.setValue(fieldName, value);
+                const committed =
+                  typeof gForm?.getValue === "function"
+                    ? String(gForm.getValue(fieldName) ?? "")
+                    : value;
+                return committed === value
+                  ? "servicenow_field_committed"
+                  : "servicenow_field_commit_attempted";
+              } catch {
+                return undefined;
+              }
+            };
+
+            const dispatchInput = (
+              data: string | null,
+              inputType: string,
+              previousValue: string,
+            ) => {
+              const tracker = (el as any)._valueTracker;
+              if (tracker && typeof tracker.setValue === "function") {
+                tracker.setValue(previousValue);
+              }
+              el.dispatchEvent(
+                new InputEvent("input", {
+                  bubbles: true,
+                  cancelable: true,
+                  composed: true,
+                  data,
+                  inputType,
+                }),
+              );
+            };
+            const proto =
+              el instanceof HTMLTextAreaElement
+                ? HTMLTextAreaElement.prototype
+                : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+            const setValue = (nextValue: string) => {
+              if (setter) {
+                setter.call(el, nextValue);
+              } else {
+                el.value = nextValue;
+              }
+            };
+            const setAndNotify = (
+              nextValue: string,
+              inputType: string,
+              data: string | null,
+            ) => {
+              const previousValue = el.value;
+              setValue(nextValue);
+              dispatchInput(data, inputType, previousValue);
+            };
+
+            // React's value tracker may already match the visible DOM value after
+            // the isolated-world action. Force a real MAIN-world value transition
+            // so framework onChange handlers update state before submit clicks.
+            el.focus();
+            setAndNotify("", "deleteContentBackward", null);
+            setAndNotify(value, "insertText", value);
+            if (el instanceof HTMLInputElement) {
+              el.setAttribute("value", value);
+            }
+            el.dispatchEvent(
+              new Event("change", { bubbles: true, composed: true }),
+            );
+            return commitServiceNowField();
           }
 
-          const dispatchInput = (
-            data: string | null,
-            inputType: string,
-            previousValue: string,
-          ) => {
-            const tracker = (el as any)._valueTracker;
-            if (tracker && typeof tracker.setValue === "function") {
-              tracker.setValue(previousValue);
-            }
+          if ((el as HTMLElement).isContentEditable) {
+            (el as HTMLElement).textContent = value;
             el.dispatchEvent(
               new InputEvent("input", {
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                data,
-                inputType,
+                data: value,
+                inputType: "insertText",
               }),
             );
-          };
-          const proto =
-            el instanceof HTMLTextAreaElement
-              ? HTMLTextAreaElement.prototype
-              : HTMLInputElement.prototype;
-          const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-          const setValue = (nextValue: string) => {
-            if (setter) {
-              setter.call(el, nextValue);
-            } else {
-              el.value = nextValue;
-            }
-          };
-          const setAndNotify = (
-            nextValue: string,
-            inputType: string,
-            data: string | null,
-          ) => {
-            const previousValue = el.value;
-            setValue(nextValue);
-            dispatchInput(data, inputType, previousValue);
-          };
-
-          // React's value tracker may already match the visible DOM value after
-          // the isolated-world action. Force a real MAIN-world value transition
-          // so framework onChange handlers update state before submit clicks.
-          el.focus();
-          setAndNotify("", "deleteContentBackward", null);
-          setAndNotify(value, "insertText", value);
-          el.dispatchEvent(
-            new Event("change", { bubbles: true, composed: true }),
-          );
-          return;
-        }
-
-        if ((el as HTMLElement).isContentEditable) {
-          (el as HTMLElement).textContent = value;
-          el.dispatchEvent(
-            new InputEvent("input", {
-              bubbles: true,
-              cancelable: true,
-              composed: true,
-              data: value,
-              inputType: "insertText",
-            }),
-          );
-          el.dispatchEvent(
-            new Event("change", { bubbles: true, composed: true }),
-          );
-        }
+            el.dispatchEvent(
+              new Event("change", { bubbles: true, composed: true }),
+            );
+          }
         },
         args: [String(id), text],
       });
@@ -1413,90 +1481,108 @@ async function runReadOnlyPageInspector(
 // --- Registration ---
 
 export function registerTools() {
-  toolRegistry.register(ToolName.CLICK_ELEMENT, CLICK_DEF, async (args, tabId) => {
-    const result = await executeContentTool(ToolName.CLICK_ELEMENT, args, tabId);
-    // Main-world click bridge is a fallback only. A successful content-script
-    // click already activates React/Vue handlers on normal pages; mirroring it
-    // here would double-submit buttons and double-advance pagination.
-    const resultText = String(result);
-    if (resultText.startsWith("Click intercepted!")) {
-      const bridged = await clickElementInMainWorld(tabId, args);
-      if (bridged) {
-        return `Clicked [${String(args.id)}] via main-world event bridge after content-script interception.`;
+  toolRegistry.register(
+    ToolName.CLICK_ELEMENT,
+    CLICK_DEF,
+    async (args, tabId) => {
+      const result = await executeContentTool(
+        ToolName.CLICK_ELEMENT,
+        args,
+        tabId,
+      );
+      // Main-world click bridge is a fallback only. A successful content-script
+      // click already activates React/Vue handlers on normal pages; mirroring it
+      // here would double-submit buttons and double-advance pagination.
+      const resultText = String(result);
+      if (resultText.startsWith("Click intercepted!")) {
+        const bridged = await clickElementInMainWorld(tabId, args);
+        if (bridged) {
+          return `Clicked [${String(args.id)}] via main-world event bridge after content-script interception.`;
+        }
       }
-    }
-    return result;
-  });
-  toolRegistry.register(ToolName.TYPE_TEXT, TYPE_TEXT_DEF, async (args, tabId) => {
-    const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId);
-    // Main-world text bridge: controlled inputs in frameworks such as React can
-    // ignore input events created in the extension's isolated world. Mirror the
-    // final value and input/change events in MAIN so framework state matches the
-    // visible DOM before later clicks submit the value.
-    if (!String(result).startsWith("Error:")) {
-      const bridgeStatus = await mirrorTextInputInMainWorld(tabId, args);
-      const serviceNowCandidate =
-        parseServiceNowReferenceCandidate(bridgeStatus);
-      if (serviceNowCandidate && typeof args.text === "string") {
-        let resolved = await resolveServiceNowReferenceFromBackground(
-          tabId,
-          serviceNowCandidate.referenceTable,
-          args.text,
-        );
-        let autocompleteReason: string | null = null;
-        if (
-          !resolved.ok &&
-          (resolved.reason === "lookup_http_401" ||
-            resolved.reason === "lookup_failed" ||
-            resolved.reason === "lookup_timeout")
-        ) {
-          const selected =
-            await selectServiceNowReferenceAutocompleteInMainWorld(
+      return result;
+    },
+  );
+  toolRegistry.register(
+    ToolName.TYPE_TEXT,
+    TYPE_TEXT_DEF,
+    async (args, tabId) => {
+      const result = await executeContentTool(ToolName.TYPE_TEXT, args, tabId);
+      // Main-world text bridge: controlled inputs in frameworks such as React can
+      // ignore input events created in the extension's isolated world. Mirror the
+      // final value and input/change events in MAIN so framework state matches the
+      // visible DOM before later clicks submit the value.
+      if (!String(result).startsWith("Error:")) {
+        const bridgeStatus = await mirrorTextInputInMainWorld(tabId, args);
+        const serviceNowCandidate =
+          parseServiceNowReferenceCandidate(bridgeStatus);
+        if (serviceNowCandidate && typeof args.text === "string") {
+          let resolved = await resolveServiceNowReferenceFromBackground(
+            tabId,
+            serviceNowCandidate.referenceTable,
+            args.text,
+          );
+          let autocompleteReason: string | null = null;
+          if (
+            !resolved.ok &&
+            (resolved.reason === "lookup_http_401" ||
+              resolved.reason === "lookup_failed" ||
+              resolved.reason === "lookup_timeout")
+          ) {
+            const selected =
+              await selectServiceNowReferenceAutocompleteInMainWorld(
+                tabId,
+                args,
+                serviceNowCandidate,
+                args.text,
+              );
+            if (selected.ok) {
+              return `${String(result)} (ServiceNow reference value committed)`;
+            }
+            autocompleteReason = selected.reason;
+          }
+          if (!resolved.ok && resolved.reason === "lookup_http_401") {
+            const pageResolved = await resolveServiceNowReferenceFromPage(
               tabId,
               args,
               serviceNowCandidate,
               args.text,
             );
-          if (selected.ok) {
-            return `${String(result)} (ServiceNow reference value committed)`;
+            resolved = pageResolved;
           }
-          autocompleteReason = selected.reason;
+          if (resolved.ok) {
+            const committed = await commitServiceNowReferenceInMainWorld(
+              tabId,
+              args,
+              serviceNowCandidate,
+              resolved.sysId,
+              args.text,
+            );
+            return committed
+              ? `${String(result)} (ServiceNow reference value committed)`
+              : `${String(result)} (ServiceNow reference commit failed: no_commit_target)`;
+          }
+          const suffix = autocompleteReason
+            ? `${resolved.reason}; autocomplete_${autocompleteReason}`
+            : resolved.reason;
+          return `${String(result)} (ServiceNow reference commit failed: ${suffix})`;
         }
-        if (!resolved.ok && resolved.reason === "lookup_http_401") {
-          const pageResolved = await resolveServiceNowReferenceFromPage(
-            tabId,
-            args,
-            serviceNowCandidate,
-            args.text,
-          );
-          resolved = pageResolved;
+        if (bridgeStatus === "servicenow_reference_committed") {
+          return `${String(result)} (ServiceNow reference value committed)`;
         }
-        if (resolved.ok) {
-          const committed = await commitServiceNowReferenceInMainWorld(
-            tabId,
-            args,
-            serviceNowCandidate,
-            resolved.sysId,
-            args.text,
-          );
-          return committed
-            ? `${String(result)} (ServiceNow reference value committed)`
-            : `${String(result)} (ServiceNow reference commit failed: no_commit_target)`;
+        if (bridgeStatus === "servicenow_field_committed") {
+          return `${String(result)} (ServiceNow field value committed)`;
         }
-        const suffix = autocompleteReason
-          ? `${resolved.reason}; autocomplete_${autocompleteReason}`
-          : resolved.reason;
-        return `${String(result)} (ServiceNow reference commit failed: ${suffix})`;
+        if (bridgeStatus === "servicenow_field_commit_attempted") {
+          return `${String(result)} (ServiceNow field value commit attempted)`;
+        }
+        if (bridgeStatus?.startsWith("servicenow_reference_failed:")) {
+          return `${String(result)} (ServiceNow reference commit failed: ${bridgeStatus.slice("servicenow_reference_failed:".length)})`;
+        }
       }
-      if (bridgeStatus === "servicenow_reference_committed") {
-        return `${String(result)} (ServiceNow reference value committed)`;
-      }
-      if (bridgeStatus?.startsWith("servicenow_reference_failed:")) {
-        return `${String(result)} (ServiceNow reference commit failed: ${bridgeStatus.slice("servicenow_reference_failed:".length)})`;
-      }
-    }
-    return result;
-  });
+      return result;
+    },
+  );
   toolRegistry.register(ToolName.SCROLL_PAGE, SCROLL_PAGE_DEF, (args, tabId) =>
     executeContentTool(ToolName.SCROLL_PAGE, args, tabId),
   );
@@ -1868,10 +1954,14 @@ export function registerTools() {
 
       // Attempt 2: window.history.back() via scripting (in-page history)
       if (!currentUrl || currentUrl === "about:blank") {
-        logger.warn("tools", "tabs.goBack did not change URL, trying in-page history.back()", {
-          tabId,
-          previousUrl,
-        });
+        logger.warn(
+          "tools",
+          "tabs.goBack did not change URL, trying in-page history.back()",
+          {
+            tabId,
+            previousUrl,
+          },
+        );
         try {
           clearTabReady(tabId);
           await tryInPageHistoryBack(tabId);
@@ -1891,10 +1981,14 @@ export function registerTools() {
       if (ready) {
         await waitForDomReady(tabId, { timeoutMs: 300, waitForElements: true });
       } else {
-        logger.warn("tools", "go_back completed before content script recovered", {
-          tabId,
-          currentUrl,
-        });
+        logger.warn(
+          "tools",
+          "go_back completed before content script recovered",
+          {
+            tabId,
+            currentUrl,
+          },
+        );
       }
       return `Navigated back to ${currentUrl}. Fresh page snapshot is available.`;
     } catch (e: any) {
@@ -2312,7 +2406,9 @@ export function registerTools() {
         tabId,
         (pat: string, max: number) => {
           const norm = (value: unknown) =>
-            String(value ?? "").replace(/\s+/g, " ").trim();
+            String(value ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
           const include = (value: string) =>
             !pat || value.toLowerCase().includes(pat.toLowerCase());
           const lines: string[] = [
@@ -2321,9 +2417,14 @@ export function registerTools() {
           ];
           const sections: string[] = [];
           const seen = new Set<string>();
-          const push = (label: string, value: unknown) => {
+          const push = (label: string, value: unknown, force = false) => {
             const text = norm(value);
-            if (!text || !include(text) || seen.has(`${label}:${text}`)) return;
+            if (
+              !text ||
+              (!force && !include(text)) ||
+              seen.has(`${label}:${text}`)
+            )
+              return;
             seen.add(`${label}:${text}`);
             sections.push(`- ${label}: ${text.slice(0, 240)}`);
           };
@@ -2356,13 +2457,23 @@ export function registerTools() {
               .filter(Boolean)
               .slice(0, 8)
               .forEach((chart: any, chartIndex: number) => {
+                const chartTitle =
+                  chart.title?.textStr || chart.options?.title?.text;
+                const chartType = chart.options?.chart?.type || chart.type;
+                const chartMatches =
+                  !pat ||
+                  include(chartTitle || "") ||
+                  include(chart.options?.subtitle?.text || "") ||
+                  include(chart.renderTo?.textContent || "");
                 push(
                   `Highcharts ${chartIndex + 1} title`,
-                  chart.title?.textStr || chart.options?.title?.text,
+                  chartTitle,
+                  chartMatches,
                 );
                 push(
                   `Highcharts ${chartIndex + 1} type`,
-                  chart.options?.chart?.type || chart.type,
+                  chartType,
+                  chartMatches,
                 );
                 const categories = chart.xAxis?.[0]?.categories;
                 const dataRows =
@@ -2370,17 +2481,24 @@ export function registerTools() {
                     ? chart.getDataRows()
                     : null;
                 if (Array.isArray(dataRows)) {
-                  dataRows.slice(0, max + 1).forEach((row: unknown, rowIndex: number) => {
-                    const text = Array.isArray(row)
-                      ? row.map(formatNumber).join(" | ")
-                      : norm(row);
-                    push(rowIndex === 0 ? "Data row header" : "Data row", text);
-                  });
+                  dataRows
+                    .slice(0, max + 1)
+                    .forEach((row: unknown, rowIndex: number) => {
+                      const text = Array.isArray(row)
+                        ? row.map(formatNumber).join(" | ")
+                        : norm(row);
+                      push(
+                        rowIndex === 0 ? "Data row header" : "Data row",
+                        text,
+                        chartMatches,
+                      );
+                    });
                 }
                 const points: string[] = [];
                 for (const series of chart.series || []) {
                   const seriesName = norm(series?.name) || "series";
-                  if (series?.name) push(`Series`, series.name);
+                  const seriesMatches = chartMatches || include(seriesName);
+                  if (series?.name) push(`Series`, series.name, chartMatches);
                   const seriesPoints =
                     Array.isArray(series?.points) && series.points.length > 0
                       ? series.points
@@ -2397,7 +2515,9 @@ export function registerTools() {
                       point?.origXValue,
                       point?.category,
                       point?.name,
-                      Array.isArray(categories) ? categories[point?.x] : undefined,
+                      Array.isArray(categories)
+                        ? categories[point?.x]
+                        : undefined,
                       point?.x,
                     ]);
                     const rawValue = point?.y ?? point?.value;
@@ -2409,17 +2529,23 @@ export function registerTools() {
                         : null);
                     const fields = [
                       `count=${formatNumber(rawValue)}`,
-                      percent !== null ? `percent=${formatNumber(percent)}` : "",
+                      percent !== null
+                        ? `percent=${formatNumber(percent)}`
+                        : "",
                       total > 0 ? `series_total=${formatNumber(total)}` : "",
                     ].filter(Boolean);
-                    points.push(
-                      `${seriesName} ${label || points.length + 1}: ${fields.join("; ")}`,
-                    );
+                    const pointText = `${seriesName} ${label || points.length + 1}: ${fields.join("; ")}`;
+                    if (seriesMatches || include(pointText)) {
+                      points.push(pointText);
+                    }
                     if (points.length >= max) break;
                   }
                   if (points.length >= max) break;
                 }
-                for (const point of points) push("Point", point);
+                if (points.length > 0) {
+                  push(`Highcharts ${chartIndex + 1} title`, chartTitle, true);
+                }
+                for (const point of points) push("Point", point, true);
               });
           }
 
@@ -2447,8 +2573,27 @@ export function registerTools() {
             push(`Chart text ${index + 1}`, svgText);
           });
 
+          if (pat) {
+            const scripts = [
+              ...document.querySelectorAll<HTMLScriptElement>(
+                "script[type='application/json'], script:not([src])",
+              ),
+            ].slice(0, 20);
+            for (const script of scripts) {
+              const text = norm(script.textContent);
+              if (!text || !include(text)) continue;
+              const lower = text.toLowerCase();
+              const index = lower.indexOf(pat.toLowerCase());
+              const start = Math.max(0, index - 160);
+              const end = Math.min(text.length, index + pat.length + 240);
+              push("Chart metadata snippet", text.slice(start, end), true);
+            }
+          }
+
           if (sections.length === 0) {
-            lines.push(`No chart data found${pat ? ` matching "${pat}"` : ""}.`);
+            lines.push(
+              `No chart data found${pat ? ` matching "${pat}"` : ""}.`,
+            );
           } else {
             lines.push(`Chart evidence${pat ? ` matching "${pat}"` : ""}:`);
             lines.push(...sections.slice(0, max + 20));
@@ -2470,7 +2615,9 @@ export function registerTools() {
         tabId,
         (max: number) => {
           const norm = (value: unknown) =>
-            String(value ?? "").replace(/\s+/g, " ").trim();
+            String(value ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
           const lines: string[] = [
             `URL: ${location.href}`,
             `Title: ${document.title}`,
@@ -2493,17 +2640,32 @@ export function registerTools() {
             );
           }
 
-          const tables = [...document.querySelectorAll("table, [role='grid'], [role='table']")].slice(0, 8);
+          const tables = [
+            ...document.querySelectorAll(
+              "table, [role='grid'], [role='table']",
+            ),
+          ].slice(0, 8);
           if (tables.length === 0) {
-            const rows = [...document.querySelectorAll("[role='row'], tr, li, [class*='row' i]")].slice(0, max);
-            if (rows.length === 0) return `${lines.join("\n")}\nNo table or row-like data surface found.`;
+            const rows = [
+              ...document.querySelectorAll(
+                "[role='row'], tr, li, [class*='row' i]",
+              ),
+            ].slice(0, max);
+            if (rows.length === 0)
+              return `${lines.join("\n")}\nNo table or row-like data surface found.`;
             lines.push(`Row-like surface (${rows.length} sampled rows):`);
-            rows.forEach((row, index) => lines.push(`${index + 1}. ${norm(row.textContent).slice(0, 240)}`));
+            rows.forEach((row, index) =>
+              lines.push(
+                `${index + 1}. ${norm(row.textContent).slice(0, 240)}`,
+              ),
+            );
             return lines.join("\n");
           }
 
           tables.forEach((table, tableIndex) => {
-            const headers = [...table.querySelectorAll("th, [role='columnheader']")]
+            const headers = [
+              ...table.querySelectorAll("th, [role='columnheader']"),
+            ]
               .map((header) => {
                 const text = norm(header.textContent);
                 const sort =
@@ -2514,12 +2676,17 @@ export function registerTools() {
               })
               .filter(Boolean);
             lines.push(`Table ${tableIndex + 1}:`);
-            if (headers.length > 0) lines.push(`Columns: ${headers.join(" | ")}`);
+            if (headers.length > 0)
+              lines.push(`Columns: ${headers.join(" | ")}`);
             const rows = [...table.querySelectorAll("tbody tr, [role='row']")]
               .filter((row) => norm(row.textContent))
               .slice(0, max);
             rows.forEach((row, rowIndex) => {
-              const cells = [...row.querySelectorAll("td, th, [role='cell'], [role='gridcell']")]
+              const cells = [
+                ...row.querySelectorAll(
+                  "td, th, [role='cell'], [role='gridcell']",
+                ),
+              ]
                 .map((cell) => norm(cell.textContent))
                 .filter(Boolean);
               lines.push(
@@ -2548,7 +2715,9 @@ export function registerTools() {
         tabId,
         (pat: string, max: number) => {
           const norm = (value: unknown) =>
-            String(value ?? "").replace(/\s+/g, " ").trim();
+            String(value ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
           const include = (text: string) =>
             !pat || text.toLowerCase().includes(pat.toLowerCase());
           const lines: string[] = [
@@ -2556,11 +2725,19 @@ export function registerTools() {
             `Title: ${document.title}`,
           ];
           const params = new URLSearchParams(location.search);
-          const queryParams = ["sysparm_query", "sysparm_fixed_query", "sysparm_filter", "filter", "q"]
+          const queryParams = [
+            "sysparm_query",
+            "sysparm_fixed_query",
+            "sysparm_filter",
+            "filter",
+            "q",
+          ]
             .map((key) => [key, params.get(key)] as const)
             .filter(([, value]) => value);
           if (queryParams.length > 0) {
-            lines.push(`Query state: ${queryParams.map(([k, v]) => `${k}=${v}`).join("; ")}`);
+            lines.push(
+              `Query state: ${queryParams.map(([k, v]) => `${k}=${v}`).join("; ")}`,
+            );
           }
 
           const candidates = [
@@ -2571,7 +2748,10 @@ export function registerTools() {
           const seen = new Set<string>();
           const items: string[] = [];
           for (const el of candidates) {
-            const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            const control = el as
+              | HTMLInputElement
+              | HTMLSelectElement
+              | HTMLTextAreaElement;
             const text = norm(
               [
                 el.getAttribute("aria-label"),
@@ -2592,9 +2772,13 @@ export function registerTools() {
             if (items.length >= max) break;
           }
           if (items.length === 0) {
-            lines.push(`No filter controls or state found${pat ? ` matching "${pat}"` : ""}.`);
+            lines.push(
+              `No filter controls or state found${pat ? ` matching "${pat}"` : ""}.`,
+            );
           } else {
-            lines.push(`Filter controls/state${pat ? ` matching "${pat}"` : ""}:`);
+            lines.push(
+              `Filter controls/state${pat ? ` matching "${pat}"` : ""}:`,
+            );
             lines.push(...items);
           }
           return lines.join("\n");
@@ -2618,8 +2802,7 @@ export function registerTools() {
             condition && typeof condition === "object"
               ? (condition as Record<string, unknown>)
               : {};
-          const field =
-            typeof obj.field === "string" ? obj.field.trim() : "";
+          const field = typeof obj.field === "string" ? obj.field.trim() : "";
           const operator =
             typeof obj.operator === "string" ? obj.operator.trim() : "is";
           const value =
@@ -2671,7 +2854,10 @@ export function registerTools() {
           displayValue: string;
           sysId: string;
         }> = [];
-        if (currentHost.endsWith(".service-now.com") || currentHost === "service-now.com") {
+        if (
+          currentHost.endsWith(".service-now.com") ||
+          currentHost === "service-now.com"
+        ) {
           for (let index = 0; index < conditions.length; index += 1) {
             const condition = conditions[index];
             const displayValue = condition.value.trim();
@@ -2716,449 +2902,510 @@ export function registerTools() {
                 sysId: string;
               }[];
             }) => {
-            type FieldMeta = {
-              name: string;
-              label: string;
-              type: string;
-              reference: string;
-            };
-            type AppliedCondition = {
-              field: string;
-              label: string;
-              operator: string;
-              displayValue: string;
-              encodedValue: string;
-              predicate: string;
-              type: string;
-            };
-
-            const normalize = (value: unknown): string =>
-              String(value ?? "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .toLowerCase();
-            const keyFor = (value: unknown): string =>
-              normalize(value).replace(/[^a-z0-9]+/g, "");
-            const unwrap = (value: unknown): string => {
-              if (typeof value === "string") return value;
-              if (value && typeof value === "object") {
-                const obj = value as Record<string, unknown>;
-                if (typeof obj.value === "string") return obj.value;
-                if (typeof obj.display_value === "string") {
-                  return obj.display_value;
-                }
-              }
-              return "";
-            };
-            const cleanQueryValue = (value: string): string =>
-              value.replace(/\^/g, "").trim();
-            const serviceNowListMatch =
-              /\/([^/?#]+)_list\.do\b/i.exec(location.pathname);
-            const listApi = (() => {
-              const win = window as any;
-              const glide = win.GlideList2;
-              if (!glide || typeof glide.get !== "function") return null;
-              const candidates = [
-                ...(document.querySelectorAll("[data-list_id]") as any),
-              ]
-                .map((element: Element) =>
-                  element.getAttribute("data-list_id"),
-                )
-                .filter(Boolean);
-              for (const id of candidates) {
-                try {
-                  const list = glide.get(id);
-                  if (list) return list;
-                } catch {
-                  // Try the next list candidate.
-                }
-              }
-              try {
-                if (win.g_list) return win.g_list;
-              } catch {
-                return null;
-              }
-              return null;
-            })();
-
-            const tableFromList =
-              listApi && typeof listApi.getTableName === "function"
-                ? String(listApi.getTableName() || "")
-                : "";
-            const tableFromUrl = serviceNowListMatch?.[1] || "";
-            const tableName = tableFromList || tableFromUrl;
-            if (!tableName || !serviceNowListMatch) {
-              return {
-                ok: false,
-                reason: "not_servicenow_list_frame",
-                url: location.href,
-                title: document.title,
+              type FieldMeta = {
+                name: string;
+                label: string;
+                type: string;
+                reference: string;
               };
-            }
-            const hasListSurface =
-              Boolean(listApi) ||
-              Boolean(
-                document.querySelector(
-                  "table.data_list_table, [data-list_id], th[name], [id$='_table']",
-                ),
+              type AppliedCondition = {
+                field: string;
+                label: string;
+                operator: string;
+                displayValue: string;
+                encodedValue: string;
+                predicate: string;
+                type: string;
+              };
+
+              const normalize = (value: unknown): string =>
+                String(value ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .toLowerCase();
+              const keyFor = (value: unknown): string =>
+                normalize(value).replace(/[^a-z0-9]+/g, "");
+              const unwrap = (value: unknown): string => {
+                if (typeof value === "string") return value;
+                if (value && typeof value === "object") {
+                  const obj = value as Record<string, unknown>;
+                  if (typeof obj.value === "string") return obj.value;
+                  if (typeof obj.display_value === "string") {
+                    return obj.display_value;
+                  }
+                }
+                return "";
+              };
+              const cleanQueryValue = (value: string): string =>
+                value.replace(/\^/g, "").trim();
+              const serviceNowListMatch = /\/([^/?#]+)_list\.do\b/i.exec(
+                location.pathname,
               );
-            if (!hasListSurface) {
-              return {
-                ok: false,
-                reason: "no_list_surface_in_frame",
-                table: tableName,
-                url: location.href,
-                title: document.title,
-              };
-            }
+              const listApi = (() => {
+                const win = window as any;
+                const glide = win.GlideList2;
+                if (!glide || typeof glide.get !== "function") return null;
+                const candidates = [
+                  ...(document.querySelectorAll("[data-list_id]") as any),
+                ]
+                  .map((element: Element) =>
+                    element.getAttribute("data-list_id"),
+                  )
+                  .filter(Boolean);
+                for (const id of candidates) {
+                  try {
+                    const list = glide.get(id);
+                    if (list) return list;
+                  } catch {
+                    // Try the next list candidate.
+                  }
+                }
+                try {
+                  if (win.g_list) return win.g_list;
+                } catch {
+                  return null;
+                }
+                return null;
+              })();
 
-            if (payload.table) {
-              const requested = keyFor(payload.table);
-              const title = keyFor(document.title);
-              if (
-                requested &&
-                requested !== keyFor(tableName) &&
-                !title.includes(requested)
-              ) {
+              const tableFromList =
+                listApi && typeof listApi.getTableName === "function"
+                  ? String(listApi.getTableName() || "")
+                  : "";
+              const tableFromUrl = serviceNowListMatch?.[1] || "";
+              const tableName = tableFromList || tableFromUrl;
+              if (!tableName || !serviceNowListMatch) {
                 return {
                   ok: false,
-                  reason: "table_mismatch",
+                  reason: "not_servicenow_list_frame",
+                  url: location.href,
+                  title: document.title,
+                };
+              }
+              const hasListSurface =
+                Boolean(listApi) ||
+                Boolean(
+                  document.querySelector(
+                    "table.data_list_table, [data-list_id], th[name], [id$='_table']",
+                  ),
+                );
+              if (!hasListSurface) {
+                return {
+                  ok: false,
+                  reason: "no_list_surface_in_frame",
                   table: tableName,
                   url: location.href,
                   title: document.title,
                 };
               }
-            }
 
-            const fetchJson = async (
-              path: string,
-              params: Record<string, string>,
-            ): Promise<Record<string, unknown>[]> => {
-              const search = new URLSearchParams(params);
-              const controller = new AbortController();
-              const timer = window.setTimeout(() => controller.abort(), 3000);
-              try {
-                const headers: Record<string, string> = {
-                  Accept: "application/json",
-                };
-                const token = String((window as any).g_ck || "");
-                if (token) headers["X-UserToken"] = token;
-                const response = await fetch(`${path}?${search.toString()}`, {
-                  credentials: "same-origin",
-                  headers,
-                  signal: controller.signal,
-                });
-                if (!response.ok) return [];
-                const payload = await response.json().catch(() => null);
-                return Array.isArray(payload?.result) ? payload.result : [];
-              } catch {
-                return [];
-              } finally {
-                window.clearTimeout(timer);
-              }
-            };
-
-            const fields = new Map<string, FieldMeta>();
-            const addField = (name: string, label = name, type = "", reference = "") => {
-              const fieldName = name.trim();
-              if (!fieldName) return;
-              const existing = fields.get(fieldName);
-              fields.set(fieldName, {
-                name: fieldName,
-                label: label.trim() || existing?.label || fieldName,
-                type: type || existing?.type || "",
-                reference: reference || existing?.reference || "",
-              });
-            };
-
-            for (const th of [
-              ...document.querySelectorAll(
-                `[id^="hdr_"] th[name], table.data_list_table th[name], th[name]`,
-              ),
-            ]) {
-              const name = th.getAttribute("name") || "";
-              const label =
-                th.getAttribute("glide_label") ||
-                th.getAttribute("aria-label") ||
-                th.querySelector("a")?.textContent ||
-                th.textContent ||
-                name;
-              addField(name, label);
-            }
-
-            if (tableName === "incident") {
-              addField("caller_id", "Caller", "reference", "sys_user");
-              addField("category", "Category", "choice", "");
-              addField("state", "State", "choice", "");
-              addField("assigned_to", "Assigned to", "reference", "sys_user");
-            }
-
-            const hasKnownField = (requestedField: string): boolean => {
-              const normalized = keyFor(requestedField);
-              const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
-              if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
-              for (const field of fields.values()) {
+              if (payload.table) {
+                const requested = keyFor(payload.table);
+                const title = keyFor(document.title);
                 if (
-                  keyFor(field.name) === normalized ||
-                  keyFor(field.label) === normalized ||
-                  keyFor(field.label).includes(normalized) ||
-                  normalized.includes(keyFor(field.label))
+                  requested &&
+                  requested !== keyFor(tableName) &&
+                  !title.includes(requested)
                 ) {
-                  return true;
+                  return {
+                    ok: false,
+                    reason: "table_mismatch",
+                    table: tableName,
+                    url: location.href,
+                    title: document.title,
+                  };
                 }
               }
-              return false;
-            };
 
-            if (!payload.conditions.every((condition) => hasKnownField(condition.field))) {
-              const dictRecords = await fetchJson("/api/now/table/sys_dictionary", {
-                sysparm_query: `name=${tableName}^internal_type!=collection`,
-                sysparm_fields: "element,column_label,internal_type,reference",
-                sysparm_limit: "1000",
-                sysparm_display_value: "all",
-              });
-              for (const record of dictRecords) {
-                const name = unwrap(record.element);
-                addField(
-                  name,
-                  unwrap(record.column_label) || name,
-                  unwrap(record.internal_type),
-                  unwrap(record.reference),
-                );
-              }
-            }
-
-            const byKey = new Map<string, FieldMeta>();
-            for (const field of fields.values()) {
-              byKey.set(keyFor(field.name), field);
-              byKey.set(keyFor(field.label), field);
-            }
-
-            const resolveField = (requestedField: string): FieldMeta | null => {
-              const normalized = keyFor(requestedField);
-              const direct = byKey.get(normalized);
-              if (direct) return direct;
-              const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
-              if (fields.has(snake)) return fields.get(snake) || null;
-              if (fields.has(`${snake}_id`)) return fields.get(`${snake}_id`) || null;
-              for (const field of fields.values()) {
-                if (
-                  keyFor(field.label).includes(normalized) ||
-                  normalized.includes(keyFor(field.label))
-                ) {
-                  return field;
+              const fetchJson = async (
+                path: string,
+                params: Record<string, string>,
+              ): Promise<Record<string, unknown>[]> => {
+                const search = new URLSearchParams(params);
+                const controller = new AbortController();
+                const timer = window.setTimeout(() => controller.abort(), 3000);
+                try {
+                  const headers: Record<string, string> = {
+                    Accept: "application/json",
+                  };
+                  const token = String((window as any).g_ck || "");
+                  if (token) headers["X-UserToken"] = token;
+                  const response = await fetch(`${path}?${search.toString()}`, {
+                    credentials: "same-origin",
+                    headers,
+                    signal: controller.signal,
+                  });
+                  if (!response.ok) return [];
+                  const payload = await response.json().catch(() => null);
+                  return Array.isArray(payload?.result) ? payload.result : [];
+                } catch {
+                  return [];
+                } finally {
+                  window.clearTimeout(timer);
                 }
-              }
-              return null;
-            };
-
-            const resolveChoiceValue = async (
-              field: FieldMeta,
-              displayValue: string,
-            ): Promise<string> => {
-              const incidentChoiceFallbacks: Record<string, Record<string, string>> = {
-                category: {
-                  inquiryhelp: "inquiry",
-                  inquiry: "inquiry",
-                  software: "software",
-                  hardware: "hardware",
-                  network: "network",
-                  database: "database",
-                },
-                state: {
-                  new: "1",
-                  inprogress: "2",
-                  onhold: "3",
-                  resolved: "6",
-                  closed: "7",
-                  canceled: "8",
-                },
               };
-              const fallback =
-                tableName === "incident"
-                  ? incidentChoiceFallbacks[field.name]?.[keyFor(displayValue)]
-                  : undefined;
-              if (fallback) return fallback;
 
-              const choices = await fetchJson("/api/now/table/sys_choice", {
-                sysparm_query: `name=${tableName}^element=${field.name}`,
-                sysparm_fields: "value,label",
-                sysparm_limit: "500",
-                sysparm_display_value: "all",
-              });
-              const wanted = keyFor(displayValue);
-              const choice = choices.find((record) => {
-                const value = unwrap(record.value);
-                const label = unwrap(record.label);
-                return keyFor(value) === wanted || keyFor(label) === wanted;
-              });
-              return choice ? unwrap(choice.value) : displayValue;
-            };
-
-            const resolveReferenceValue = async (
-              field: FieldMeta,
-              displayValue: string,
-              conditionIndex: number,
-            ): Promise<string> => {
-              if (!field.reference || !displayValue.trim()) return displayValue;
-              const override = payload.referenceValueOverrides.find(
-                (candidate) =>
-                  candidate.index === conditionIndex &&
-                  candidate.referenceTable === field.reference &&
-                  normalize(candidate.displayValue) === normalize(displayValue),
-              );
-              if (override?.sysId) return override.sysId;
-              const safe = cleanQueryValue(displayValue);
-              const queryFields = [
-                "name",
-                "display_name",
-                "number",
-                "user_name",
-                "email",
-                "first_name",
-                "last_name",
-              ];
-              const referencePath = `/api/now/table/${encodeURIComponent(field.reference)}`;
-              const fetchReferenceRecords = (query: string) =>
-                fetchJson(referencePath, {
-                  sysparm_query: query,
-                  sysparm_fields:
-                    "sys_id,name,display_name,number,user_name,email,first_name,last_name",
-                  sysparm_limit: "5",
-                  sysparm_display_value: "all",
+              const fields = new Map<string, FieldMeta>();
+              const addField = (
+                name: string,
+                label = name,
+                type = "",
+                reference = "",
+              ) => {
+                const fieldName = name.trim();
+                if (!fieldName) return;
+                const existing = fields.get(fieldName);
+                fields.set(fieldName, {
+                  name: fieldName,
+                  label: label.trim() || existing?.label || fieldName,
+                  type: type || existing?.type || "",
+                  reference: reference || existing?.reference || "",
                 });
-              const exactQuery = ["name", "display_name", "number", "user_name", "email"]
-                .map((queryField) => `${queryField}=${safe}`)
-                .join("^OR");
-              let records = await fetchReferenceRecords(exactQuery);
-              if (records.length === 0 && field.reference === "sys_user") {
-                const parts = safe.split(/\s+/).filter(Boolean);
-                const firstName = parts[0] || "";
-                const lastName = parts.slice(1).join(" ");
-                if (firstName && lastName) {
-                  records = await fetchReferenceRecords(
-                    `first_name=${firstName}^last_name=${lastName}`,
+              };
+
+              for (const th of [
+                ...document.querySelectorAll(
+                  `[id^="hdr_"] th[name], table.data_list_table th[name], th[name]`,
+                ),
+              ]) {
+                const name = th.getAttribute("name") || "";
+                const label =
+                  th.getAttribute("glide_label") ||
+                  th.getAttribute("aria-label") ||
+                  th.querySelector("a")?.textContent ||
+                  th.textContent ||
+                  name;
+                addField(name, label);
+              }
+
+              if (tableName === "incident") {
+                addField("caller_id", "Caller", "reference", "sys_user");
+                addField("category", "Category", "choice", "");
+                addField("state", "State", "choice", "");
+                addField("assigned_to", "Assigned to", "reference", "sys_user");
+              }
+
+              const hasKnownField = (requestedField: string): boolean => {
+                const normalized = keyFor(requestedField);
+                const snake = normalize(requestedField).replace(
+                  /[^a-z0-9]+/g,
+                  "_",
+                );
+                if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
+                for (const field of fields.values()) {
+                  if (
+                    keyFor(field.name) === normalized ||
+                    keyFor(field.label) === normalized ||
+                    keyFor(field.label).includes(normalized) ||
+                    normalized.includes(keyFor(field.label))
+                  ) {
+                    return true;
+                  }
+                }
+                return false;
+              };
+
+              if (
+                !payload.conditions.every((condition) =>
+                  hasKnownField(condition.field),
+                )
+              ) {
+                const dictRecords = await fetchJson(
+                  "/api/now/table/sys_dictionary",
+                  {
+                    sysparm_query: `name=${tableName}^internal_type!=collection`,
+                    sysparm_fields:
+                      "element,column_label,internal_type,reference",
+                    sysparm_limit: "1000",
+                    sysparm_display_value: "all",
+                  },
+                );
+                for (const record of dictRecords) {
+                  const name = unwrap(record.element);
+                  addField(
+                    name,
+                    unwrap(record.column_label) || name,
+                    unwrap(record.internal_type),
+                    unwrap(record.reference),
                   );
                 }
               }
-              if (records.length === 0) {
-                records = await fetchReferenceRecords(
-                  ["name", "display_name", "user_name", "email"]
-                    .map((queryField) => `${queryField}LIKE${safe}`)
-                    .join("^OR"),
-                );
-              }
-              const wanted = normalize(displayValue);
-              const selected =
-                records.find((record) =>
-                  queryFields.some(
-                    (queryField) => normalize(unwrap(record[queryField])) === wanted,
-                  ) ||
-                    normalize(
-                      `${unwrap(record.first_name)} ${unwrap(record.last_name)}`,
-                    ) === wanted,
-                ) || records[0];
-              return selected ? unwrap(selected.sys_id) || displayValue : displayValue;
-            };
 
-            const resolveEncodedValue = async (
-              field: FieldMeta,
-              displayValue: string,
-              conditionIndex: number,
-            ): Promise<string> => {
-              const rawType = normalize(field.type);
-              if (rawType.includes("choice") || rawType === "boolean" || rawType === "integer") {
-                return cleanQueryValue(await resolveChoiceValue(field, displayValue));
+              const byKey = new Map<string, FieldMeta>();
+              for (const field of fields.values()) {
+                byKey.set(keyFor(field.name), field);
+                byKey.set(keyFor(field.label), field);
               }
-              if (rawType.includes("reference") || field.reference) {
-                return cleanQueryValue(
-                  await resolveReferenceValue(field, displayValue, conditionIndex),
-                );
-              }
-              return cleanQueryValue(displayValue);
-            };
 
-            const buildPredicate = async (
-              condition: { field: string; operator: string; value: string },
-              conditionIndex: number,
-            ): Promise<AppliedCondition> => {
-              const field = resolveField(condition.field);
-              if (!field) {
-                throw new Error(`unknown_field:${condition.field}`);
-              }
-              const operator = normalize(condition.operator || "is");
-              const displayValue = condition.value ?? "";
-              if (
-                operator.includes("empty") ||
-                displayValue.trim().length === 0
-              ) {
+              const resolveField = (
+                requestedField: string,
+              ): FieldMeta | null => {
+                const normalized = keyFor(requestedField);
+                const direct = byKey.get(normalized);
+                if (direct) return direct;
+                const snake = normalize(requestedField).replace(
+                  /[^a-z0-9]+/g,
+                  "_",
+                );
+                if (fields.has(snake)) return fields.get(snake) || null;
+                if (fields.has(`${snake}_id`))
+                  return fields.get(`${snake}_id`) || null;
+                for (const field of fields.values()) {
+                  if (
+                    keyFor(field.label).includes(normalized) ||
+                    normalized.includes(keyFor(field.label))
+                  ) {
+                    return field;
+                  }
+                }
+                return null;
+              };
+
+              const resolveChoiceValue = async (
+                field: FieldMeta,
+                displayValue: string,
+              ): Promise<string> => {
+                const incidentChoiceFallbacks: Record<
+                  string,
+                  Record<string, string>
+                > = {
+                  category: {
+                    inquiryhelp: "inquiry",
+                    inquiry: "inquiry",
+                    software: "software",
+                    hardware: "hardware",
+                    network: "network",
+                    database: "database",
+                  },
+                  state: {
+                    new: "1",
+                    inprogress: "2",
+                    onhold: "3",
+                    resolved: "6",
+                    closed: "7",
+                    canceled: "8",
+                  },
+                };
+                const fallback =
+                  tableName === "incident"
+                    ? incidentChoiceFallbacks[field.name]?.[
+                        keyFor(displayValue)
+                      ]
+                    : undefined;
+                if (fallback) return fallback;
+
+                const choices = await fetchJson("/api/now/table/sys_choice", {
+                  sysparm_query: `name=${tableName}^element=${field.name}`,
+                  sysparm_fields: "value,label",
+                  sysparm_limit: "500",
+                  sysparm_display_value: "all",
+                });
+                const wanted = keyFor(displayValue);
+                const choice = choices.find((record) => {
+                  const value = unwrap(record.value);
+                  const label = unwrap(record.label);
+                  return keyFor(value) === wanted || keyFor(label) === wanted;
+                });
+                return choice ? unwrap(choice.value) : displayValue;
+              };
+
+              const resolveReferenceValue = async (
+                field: FieldMeta,
+                displayValue: string,
+                conditionIndex: number,
+              ): Promise<string> => {
+                if (!field.reference || !displayValue.trim())
+                  return displayValue;
+                const override = payload.referenceValueOverrides.find(
+                  (candidate) =>
+                    candidate.index === conditionIndex &&
+                    candidate.referenceTable === field.reference &&
+                    normalize(candidate.displayValue) ===
+                      normalize(displayValue),
+                );
+                if (override?.sysId) return override.sysId;
+                const safe = cleanQueryValue(displayValue);
+                const queryFields = [
+                  "name",
+                  "display_name",
+                  "number",
+                  "user_name",
+                  "email",
+                  "first_name",
+                  "last_name",
+                ];
+                const referencePath = `/api/now/table/${encodeURIComponent(field.reference)}`;
+                const fetchReferenceRecords = (query: string) =>
+                  fetchJson(referencePath, {
+                    sysparm_query: query,
+                    sysparm_fields:
+                      "sys_id,name,display_name,number,user_name,email,first_name,last_name",
+                    sysparm_limit: "5",
+                    sysparm_display_value: "all",
+                  });
+                const exactQuery = [
+                  "name",
+                  "display_name",
+                  "number",
+                  "user_name",
+                  "email",
+                ]
+                  .map((queryField) => `${queryField}=${safe}`)
+                  .join("^OR");
+                let records = await fetchReferenceRecords(exactQuery);
+                if (records.length === 0 && field.reference === "sys_user") {
+                  const parts = safe.split(/\s+/).filter(Boolean);
+                  const firstName = parts[0] || "";
+                  const lastName = parts.slice(1).join(" ");
+                  if (firstName && lastName) {
+                    records = await fetchReferenceRecords(
+                      `first_name=${firstName}^last_name=${lastName}`,
+                    );
+                  }
+                }
+                if (records.length === 0) {
+                  records = await fetchReferenceRecords(
+                    ["name", "display_name", "user_name", "email"]
+                      .map((queryField) => `${queryField}LIKE${safe}`)
+                      .join("^OR"),
+                  );
+                }
+                const wanted = normalize(displayValue);
+                const selected =
+                  records.find(
+                    (record) =>
+                      queryFields.some(
+                        (queryField) =>
+                          normalize(unwrap(record[queryField])) === wanted,
+                      ) ||
+                      normalize(
+                        `${unwrap(record.first_name)} ${unwrap(record.last_name)}`,
+                      ) === wanted,
+                  ) || records[0];
+                return selected
+                  ? unwrap(selected.sys_id) || displayValue
+                  : displayValue;
+              };
+
+              const resolveEncodedValue = async (
+                field: FieldMeta,
+                displayValue: string,
+                conditionIndex: number,
+              ): Promise<string> => {
+                const rawType = normalize(field.type);
+                if (
+                  rawType.includes("choice") ||
+                  rawType === "boolean" ||
+                  rawType === "integer"
+                ) {
+                  return cleanQueryValue(
+                    await resolveChoiceValue(field, displayValue),
+                  );
+                }
+                if (rawType.includes("reference") || field.reference) {
+                  return cleanQueryValue(
+                    await resolveReferenceValue(
+                      field,
+                      displayValue,
+                      conditionIndex,
+                    ),
+                  );
+                }
+                return cleanQueryValue(displayValue);
+              };
+
+              const buildPredicate = async (
+                condition: { field: string; operator: string; value: string },
+                conditionIndex: number,
+              ): Promise<AppliedCondition> => {
+                const field = resolveField(condition.field);
+                if (!field) {
+                  throw new Error(`unknown_field:${condition.field}`);
+                }
+                const operator = normalize(condition.operator || "is");
+                const displayValue = condition.value ?? "";
+                if (
+                  operator.includes("empty") ||
+                  displayValue.trim().length === 0
+                ) {
+                  return {
+                    field: field.name,
+                    label: field.label,
+                    operator: "is empty",
+                    displayValue,
+                    encodedValue: "",
+                    predicate: `${field.name}ISEMPTY`,
+                    type: field.type,
+                  };
+                }
+                const encodedValue = await resolveEncodedValue(
+                  field,
+                  displayValue,
+                  conditionIndex,
+                );
+                const encodedOperator =
+                  operator.includes("not") && !operator.includes("empty")
+                    ? "!="
+                    : operator.includes("start")
+                      ? "STARTSWITH"
+                      : "=";
                 return {
                   field: field.name,
                   label: field.label,
-                  operator: "is empty",
+                  operator: condition.operator || "is",
                   displayValue,
-                  encodedValue: "",
-                  predicate: `${field.name}ISEMPTY`,
+                  encodedValue,
+                  predicate:
+                    encodedOperator === "=" || encodedOperator === "!="
+                      ? `${field.name}${encodedOperator}${encodedValue}`
+                      : `${field.name}${encodedOperator}${encodedValue}`,
                   type: field.type,
                 };
-              }
-              const encodedValue = await resolveEncodedValue(
-                field,
-                displayValue,
-                conditionIndex,
-              );
-              const encodedOperator =
-                operator.includes("not") && !operator.includes("empty")
-                  ? "!="
-                  : operator.includes("start")
-                    ? "STARTSWITH"
-                    : "=";
-              return {
-                field: field.name,
-                label: field.label,
-                operator: condition.operator || "is",
-                displayValue,
-                encodedValue,
-                predicate:
-                  encodedOperator === "=" || encodedOperator === "!="
-                    ? `${field.name}${encodedOperator}${encodedValue}`
-                    : `${field.name}${encodedOperator}${encodedValue}`,
-                type: field.type,
               };
-            };
 
-            try {
-              const applied: AppliedCondition[] = [];
-              for (let index = 0; index < payload.conditions.length; index += 1) {
-                applied.push(await buildPredicate(payload.conditions[index], index));
+              try {
+                const applied: AppliedCondition[] = [];
+                for (
+                  let index = 0;
+                  index < payload.conditions.length;
+                  index += 1
+                ) {
+                  applied.push(
+                    await buildPredicate(payload.conditions[index], index),
+                  );
+                }
+                const separator = payload.join === "AND" ? "^" : "^OR";
+                const query = applied
+                  .map((condition) => condition.predicate)
+                  .join(separator);
+                const target = `${tableName}_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+                return {
+                  ok: true,
+                  platform: "servicenow",
+                  table: tableName,
+                  query,
+                  targetUrl: `${location.origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
+                  frameUrl: location.href,
+                  currentQuery:
+                    listApi && typeof listApi.getQuery === "function"
+                      ? String(listApi.getQuery() || "")
+                      : "",
+                  conditions: applied,
+                };
+              } catch (error) {
+                return {
+                  ok: false,
+                  reason:
+                    error instanceof Error
+                      ? error.message
+                      : "filter_build_failed",
+                  table: tableName,
+                  availableFields: [...fields.values()]
+                    .slice(0, 80)
+                    .map((field) => `${field.label} (${field.name})`),
+                  url: location.href,
+                };
               }
-              const separator = payload.join === "AND" ? "^" : "^OR";
-              const query = applied.map((condition) => condition.predicate).join(separator);
-              const target = `${tableName}_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
-              return {
-                ok: true,
-                platform: "servicenow",
-                table: tableName,
-                query,
-                targetUrl: `${location.origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
-                frameUrl: location.href,
-                currentQuery:
-                  listApi && typeof listApi.getQuery === "function"
-                    ? String(listApi.getQuery() || "")
-                    : "",
-                conditions: applied,
-              };
-            } catch (error) {
-              return {
-                ok: false,
-                reason: error instanceof Error ? error.message : "filter_build_failed",
-                table: tableName,
-                availableFields: [...fields.values()]
-                  .slice(0, 80)
-                  .map((field) => `${field.label} (${field.name})`),
-                url: location.href,
-              };
-            }
             },
             args: [
               {
@@ -3183,8 +3430,9 @@ export function registerTools() {
           const reason =
             plans.find((plan) => typeof plan?.reason === "string")?.reason ||
             "no_supported_list_surface";
-          const fields = plans.find((plan) => Array.isArray(plan?.availableFields))
-            ?.availableFields as string[] | undefined;
+          const fields = plans.find((plan) =>
+            Array.isArray(plan?.availableFields),
+          )?.availableFields as string[] | undefined;
           return [
             `Error: Could not apply a structured list filter (${String(reason)}).`,
             fields?.length
@@ -3245,14 +3493,13 @@ export function registerTools() {
               : {};
           const field = typeof obj.field === "string" ? obj.field.trim() : "";
           const direction =
-            typeof obj.direction === "string" ? obj.direction.trim() : "ascending";
+            typeof obj.direction === "string"
+              ? obj.direction.trim()
+              : "ascending";
           return field ? { field, direction } : null;
         })
-        .filter(
-          (
-            sort,
-          ): sort is { field: string; direction: string } =>
-            Boolean(sort),
+        .filter((sort): sort is { field: string; direction: string } =>
+          Boolean(sort),
         );
 
       if (sorts.length === 0) {
@@ -3269,7 +3516,8 @@ export function registerTools() {
         } catch {
           currentTabUrl = "";
         }
-        const effectiveTable = table || inferServiceNowListTableFromUrl(currentTabUrl);
+        const effectiveTable =
+          table || inferServiceNowListTableFromUrl(currentTabUrl);
 
         const results = await withTimeout(
           chrome.scripting.executeScript({
@@ -3310,8 +3558,9 @@ export function registerTools() {
                 }
                 return "";
               };
-              const serviceNowListMatch =
-                /\/([^/?#]+)_list\.do\b/i.exec(location.pathname);
+              const serviceNowListMatch = /\/([^/?#]+)_list\.do\b/i.exec(
+                location.pathname,
+              );
               const listApi = (() => {
                 const win = window as any;
                 const glide = win.GlideList2;
@@ -3457,14 +3706,22 @@ export function registerTools() {
                 addField("business_stc", "Business resolve time");
                 addField("activity_due", "Activity due");
                 addField("assigned_to", "Assigned to", "reference", "sys_user");
-                addField("assignment_group", "Assignment group", "reference", "sys_user_group");
+                addField(
+                  "assignment_group",
+                  "Assignment group",
+                  "reference",
+                  "sys_user_group",
+                );
                 addField("closed_by", "Closed by", "reference", "sys_user");
                 addField("caller_id", "Caller", "reference", "sys_user");
               }
 
               const hasKnownField = (requestedField: string): boolean => {
                 const normalized = keyFor(requestedField);
-                const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+                const snake = normalize(requestedField).replace(
+                  /[^a-z0-9]+/g,
+                  "_",
+                );
                 if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
                 for (const field of fields.values()) {
                   if (
@@ -3478,12 +3735,16 @@ export function registerTools() {
               };
 
               if (!payload.sorts.every((sort) => hasKnownField(sort.field))) {
-                const dictRecords = await fetchJson("/api/now/table/sys_dictionary", {
-                  sysparm_query: `name=${tableName}^internal_type!=collection`,
-                  sysparm_fields: "element,column_label,internal_type,reference",
-                  sysparm_limit: "1000",
-                  sysparm_display_value: "all",
-                });
+                const dictRecords = await fetchJson(
+                  "/api/now/table/sys_dictionary",
+                  {
+                    sysparm_query: `name=${tableName}^internal_type!=collection`,
+                    sysparm_fields:
+                      "element,column_label,internal_type,reference",
+                    sysparm_limit: "1000",
+                    sysparm_display_value: "all",
+                  },
+                );
                 for (const record of dictRecords) {
                   const name = unwrap(record.element);
                   addField(
@@ -3501,13 +3762,19 @@ export function registerTools() {
                 byKey.set(keyFor(field.label), field);
               }
 
-              const resolveField = (requestedField: string): FieldMeta | null => {
+              const resolveField = (
+                requestedField: string,
+              ): FieldMeta | null => {
                 const normalized = keyFor(requestedField);
                 const direct = byKey.get(normalized);
                 if (direct) return direct;
-                const snake = normalize(requestedField).replace(/[^a-z0-9]+/g, "_");
+                const snake = normalize(requestedField).replace(
+                  /[^a-z0-9]+/g,
+                  "_",
+                );
                 if (fields.has(snake)) return fields.get(snake) || null;
-                if (fields.has(`${snake}_id`)) return fields.get(`${snake}_id`) || null;
+                if (fields.has(`${snake}_id`))
+                  return fields.get(`${snake}_id`) || null;
                 const partial = [...fields.values()]
                   .filter((field) => {
                     const labelKey = keyFor(field.label);
@@ -3541,13 +3808,18 @@ export function registerTools() {
                 const currentQuery =
                   listApi && typeof listApi.getQuery === "function"
                     ? String(listApi.getQuery() || "")
-                    : new URLSearchParams(location.search).get("sysparm_query") || "";
+                    : new URLSearchParams(location.search).get(
+                        "sysparm_query",
+                      ) || "";
                 const baseQuery = currentQuery
                   .split("^")
                   .map((part) => part.trim())
                   .filter((part) => part && !/^ORDERBY/i.test(part))
                   .join("^");
-                const query = [baseQuery, ...applied.map((sort) => sort.predicate)]
+                const query = [
+                  baseQuery,
+                  ...applied.map((sort) => sort.predicate),
+                ]
                   .filter(Boolean)
                   .join("^");
                 const target = `${tableName}_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
@@ -3563,7 +3835,10 @@ export function registerTools() {
               } catch (error) {
                 return {
                   ok: false,
-                  reason: error instanceof Error ? error.message : "sort_build_failed",
+                  reason:
+                    error instanceof Error
+                      ? error.message
+                      : "sort_build_failed",
                   table: tableName,
                   availableFields: [...fields.values()]
                     .slice(0, 80)
@@ -3593,8 +3868,9 @@ export function registerTools() {
           const reason =
             plans.find((plan) => typeof plan?.reason === "string")?.reason ||
             "no_supported_list_surface";
-          const fields = plans.find((plan) => Array.isArray(plan?.availableFields))
-            ?.availableFields as string[] | undefined;
+          const fields = plans.find((plan) =>
+            Array.isArray(plan?.availableFields),
+          )?.availableFields as string[] | undefined;
           return [
             `Error: Could not apply structured list sorting (${String(reason)}).`,
             fields?.length
@@ -3654,24 +3930,36 @@ export function registerTools() {
         tabId,
         (max: number) => {
           const norm = (value: unknown) =>
-            String(value ?? "").replace(/\s+/g, " ").trim();
+            String(value ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
           const lines: string[] = [
             `URL: ${location.href}`,
             `Title: ${document.title}`,
           ];
           const priceText = norm(document.body?.innerText || "")
-            .match(/(?:[$€£]\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP)|annually|monthly|total|price)/gi)
+            .match(
+              /(?:[$€£]\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP)|annually|monthly|total|price)/gi,
+            )
             ?.slice(0, 20)
             .join(" | ");
           if (priceText) lines.push(`Price/summary cues: ${priceText}`);
 
           const controls = [
-            ...document.querySelectorAll("input, select, textarea, button, [role='button'], [role='checkbox'], [role='spinbutton']"),
+            ...document.querySelectorAll(
+              "input, select, textarea, button, [role='button'], [role='checkbox'], [role='spinbutton']",
+            ),
           ].slice(0, max * 2);
           const rows: string[] = [];
           for (const el of controls) {
-            const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-            const type = el.getAttribute("type") || el.getAttribute("role") || el.tagName.toLowerCase();
+            const control = el as
+              | HTMLInputElement
+              | HTMLSelectElement
+              | HTMLTextAreaElement;
+            const type =
+              el.getAttribute("type") ||
+              el.getAttribute("role") ||
+              el.tagName.toLowerCase();
             const label = norm(
               [
                 el.getAttribute("aria-label"),
@@ -3763,7 +4051,9 @@ export function registerTools() {
                 .trim()
                 .toLowerCase();
             const display = (value: unknown) =>
-              String(value ?? "").replace(/\s+/g, " ").trim();
+              String(value ?? "")
+                .replace(/\s+/g, " ")
+                .trim();
             const visible = (el: Element | null) => {
               if (!el || !(el instanceof HTMLElement)) return false;
               const style = window.getComputedStyle(el);
@@ -3781,7 +4071,10 @@ export function registerTools() {
                 ? window.CSS.escape(value)
                 : value.replace(/["\\]/g, "\\$&");
             const labelsFor = (el: Element): string[] => {
-              const control = el as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+              const control = el as
+                | HTMLInputElement
+                | HTMLSelectElement
+                | HTMLTextAreaElement;
               const labels = [
                 el.getAttribute("aria-label"),
                 el.getAttribute("title"),
@@ -3818,17 +4111,29 @@ export function registerTools() {
               const prototype = Object.getPrototypeOf(el);
               const descriptor =
                 Object.getOwnPropertyDescriptor(prototype, "value") ||
-                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+                Object.getOwnPropertyDescriptor(
+                  HTMLInputElement.prototype,
+                  "value",
+                );
               if (descriptor?.set) descriptor.set.call(el, value);
               el.value = value;
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
               el.dispatchEvent(new Event("blur", { bubbles: true }));
             };
-            const setNativeChecked = (el: HTMLInputElement, checked: boolean) => {
+            const setNativeChecked = (
+              el: HTMLInputElement,
+              checked: boolean,
+            ) => {
               const descriptor =
-                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked") ||
-                Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "checked");
+                Object.getOwnPropertyDescriptor(
+                  HTMLInputElement.prototype,
+                  "checked",
+                ) ||
+                Object.getOwnPropertyDescriptor(
+                  Object.getPrototypeOf(el),
+                  "checked",
+                );
               if (descriptor?.set) descriptor.set.call(el, checked);
               el.checked = checked;
               el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -3845,7 +4150,10 @@ export function registerTools() {
               const controlled = controlId
                 ? document.getElementById(controlId)
                 : null;
-              if (controlled instanceof HTMLInputElement && controlled.type === "checkbox") {
+              if (
+                controlled instanceof HTMLInputElement &&
+                controlled.type === "checkbox"
+              ) {
                 return controlled.checked;
               }
               const checked =
@@ -3862,7 +4170,9 @@ export function registerTools() {
               ] as Array<HTMLInputElement | HTMLSelectElement>;
               return (
                 controls.find((el) => matches(labelsFor(el), "quantity")) ||
-                controls.find((el) => /quantity|qty/i.test(`${el.id} ${el.name}`))
+                controls.find((el) =>
+                  /quantity|qty/i.test(`${el.id} ${el.name}`),
+                )
               );
             };
             const findTextControl = (field: string) => {
@@ -3912,7 +4222,9 @@ export function registerTools() {
             if (input.quantity !== null) {
               const quantity = findQuantity();
               if (!quantity) {
-                mismatches.push(`Quantity control not found for ${input.quantity}.`);
+                mismatches.push(
+                  `Quantity control not found for ${input.quantity}.`,
+                );
               } else if (quantity instanceof HTMLSelectElement) {
                 const option = [...quantity.options].find(
                   (candidate) =>
@@ -3920,10 +4232,14 @@ export function registerTools() {
                     norm(candidate.textContent) === norm(input.quantity),
                 );
                 if (!option) {
-                  mismatches.push(`Quantity option not found for ${input.quantity}.`);
+                  mismatches.push(
+                    `Quantity option not found for ${input.quantity}.`,
+                  );
                 } else {
                   setNativeValue(quantity, option.value);
-                  configured.push(`Quantity=${option.textContent?.trim() || option.value}`);
+                  configured.push(
+                    `Quantity=${option.textContent?.trim() || option.value}`,
+                  );
                 }
               } else {
                 setNativeValue(quantity, input.quantity);
@@ -3948,15 +4264,24 @@ export function registerTools() {
                 continue;
               }
               const before = checkboxState(control);
-              if (before !== checkbox.checked && control instanceof HTMLElement && visible(control)) {
+              if (
+                before !== checkbox.checked &&
+                control instanceof HTMLElement &&
+                visible(control)
+              ) {
                 control.click();
               }
               const controlId =
                 control.getAttribute("for") ||
                 control.getAttribute("control") ||
                 control.getAttribute("aria-controls");
-              const inputEl = controlId ? document.getElementById(controlId) : control;
-              if (inputEl instanceof HTMLInputElement && inputEl.type === "checkbox") {
+              const inputEl = controlId
+                ? document.getElementById(controlId)
+                : control;
+              if (
+                inputEl instanceof HTMLInputElement &&
+                inputEl.type === "checkbox"
+              ) {
                 setNativeChecked(inputEl, checkbox.checked);
               }
               const after = checkboxState(control);
@@ -3965,26 +4290,36 @@ export function registerTools() {
                   `Checkbox ${checkbox.label} is ${after ? "checked" : "unchecked"}.`,
                 );
               } else {
-                configured.push(`${checkbox.label}=${checkbox.checked ? "checked" : "unchecked"}`);
+                configured.push(
+                  `${checkbox.label}=${checkbox.checked ? "checked" : "unchecked"}`,
+                );
               }
             }
 
             const submitControl =
-              mismatches.length === 0 && input.submit ? findSubmitControl() : null;
+              mismatches.length === 0 && input.submit
+                ? findSubmitControl()
+                : null;
             let submitClicked = false;
             let submitLabel: string | null = null;
             if (input.submit && mismatches.length === 0) {
               if (!submitControl) {
                 mismatches.push("Submit/order control not found.");
               } else {
-                submitLabel = labelsFor(submitControl)[0] || submitControl.textContent || "submit";
+                submitLabel =
+                  labelsFor(submitControl)[0] ||
+                  submitControl.textContent ||
+                  "submit";
                 submitControl.click();
                 submitClicked = true;
               }
             }
 
             return {
-              matched: pageLooksCatalog || configured.length > 0 || mismatches.length > 0,
+              matched:
+                pageLooksCatalog ||
+                configured.length > 0 ||
+                mismatches.length > 0,
               ok: mismatches.length === 0 && (!input.submit || submitClicked),
               url: location.href,
               title: document.title,
@@ -4007,7 +4342,9 @@ export function registerTools() {
 
         const plans = (results || [])
           .map((result) => result.result as Record<string, unknown> | undefined)
-          .filter((result): result is Record<string, unknown> => Boolean(result));
+          .filter((result): result is Record<string, unknown> =>
+            Boolean(result),
+          );
         const selected =
           plans.find((plan) => plan.ok === true) ||
           plans.find((plan) => plan.matched === true);
@@ -4018,7 +4355,10 @@ export function registerTools() {
 
         if (selected.submitClicked === true) {
           await waitForNavigation(tabId, 12_000);
-          await waitForDomReady(tabId, { timeoutMs: 2_000, waitForElements: true });
+          await waitForDomReady(tabId, {
+            timeoutMs: 2_000,
+            waitForElements: true,
+          });
         }
 
         const tab = await chrome.tabs.get(tabId);
@@ -4029,7 +4369,9 @@ export function registerTools() {
           ? selected.mismatches.map(String)
           : [];
         const lines = [
-          selected.ok ? "Configured catalog item." : "Catalog item configuration incomplete.",
+          selected.ok
+            ? "Configured catalog item."
+            : "Catalog item configuration incomplete.",
           configured.length ? `Configured:\n- ${configured.join("\n- ")}` : "",
           mismatches.length ? `Mismatches:\n- ${mismatches.join("\n- ")}` : "",
           selected.submitClicked
