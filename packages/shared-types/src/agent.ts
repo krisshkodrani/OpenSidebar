@@ -154,6 +154,50 @@ export interface SavedPrompt {
   updatedAt: number;
 }
 
+// --- User-recorded Website Skills ---
+
+export type SkillRecordingEventKind =
+  | "click"
+  | "input"
+  | "select"
+  | "checkbox"
+  | "navigation"
+  | "page";
+
+export interface SkillRecordingEvent {
+  id: string;
+  kind: SkillRecordingEventKind;
+  timestamp: number;
+  url: string;
+  path: string;
+  label: string;
+  tagName?: string;
+  inputType?: string;
+  valueKind?: "redacted" | "email" | "phone" | "number" | "date" | "text";
+  selectedLabel?: string;
+  checked?: boolean;
+  sensitive?: boolean;
+  timelineText: string;
+}
+
+export interface UserWebsiteSkillDraft {
+  id: string;
+  name: string;
+  origin: string;
+  pathPattern: string;
+  triggerPhrase: string;
+  workflowSteps: string[];
+  requiredEvidence: string[];
+  privacySummary: string;
+  capturedEventCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UserWebsiteSkill extends UserWebsiteSkillDraft {
+  enabled: boolean;
+}
+
 // --- Side Panel UI Types ---
 
 /** A single entry in the chat history UI */

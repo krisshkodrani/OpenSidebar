@@ -222,6 +222,20 @@ export function initializeBridge(
         state.setLaneTelemetry(message.payload.laneTelemetry ?? null);
         break;
 
+      case "SKILL_RECORDING_STATUS":
+        state.setSkillRecordingStatus(message.payload);
+        break;
+
+      case "USER_SKILL_LIST":
+        if (message.payload.skills) {
+          useStore.setState({ userWebsiteSkills: message.payload.skills });
+        }
+        break;
+
+      case "USER_SKILL_USAGE_STATUS":
+        state.setActiveUserWebsiteSkill(message.payload.skill);
+        break;
+
       // Background-sourced messages not relevant to the side panel (sent to content script, etc.)
       case "TOOL_EXECUTE":
       case "DOM_SNAPSHOT_REQUEST":
@@ -230,6 +244,10 @@ export function initializeBridge(
       case "DOM_READY_PROBE":
       case "SCROLL_TO_POSITION":
       case "DATA_CONTROL_RESULT":
+      case "SKILL_RECORDING_START":
+      case "SKILL_RECORDING_STOP":
+      case "SKILL_RECORDING_CANCEL":
+      case "SKILL_RECORDING_EVENT":
         break;
 
       default:

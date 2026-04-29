@@ -5,6 +5,7 @@ import {
   MessageSource,
   AgentStatus,
   UserSettings,
+  SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
 import {
@@ -33,6 +34,16 @@ import {
   isE2ESeedPendingInteractionMessage,
   isE2ETestApiEnabled,
 } from "./e2e-test-api";
+import {
+  RECORD_SKILL_INTRO_DISMISSED_KEY,
+  WEBSITE_SKILLS_STORAGE_KEY,
+  deleteUserWebsiteSkill,
+  findMatchingUserWebsiteSkill,
+  formatUserWebsiteSkillGuidance,
+  generateWebsiteSkillDraft,
+  loadUserWebsiteSkills,
+  saveUserWebsiteSkill,
+} from "../utils/website-skills";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -90,6 +101,15 @@ chrome.sidePanel.setPanelBehavior({
 const pendingSidePanelOpens = new Set<number>();
 const pendingUserChat = new Set<string>(); // per-workspace guard against concurrent USER_CHAT
 const queuedUserChat = new Map<string, { text: string; tabId: number }>(); // latest follow-up per workspace
+const skillRecordingSessions = new Map<
+  number,
+  {
+    tabId: number;
+    startedAt: number;
+    url: string;
+    events: SkillRecordingEvent[];
+  }
+>();
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(
@@ -382,7 +402,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.runtime.onMessage.addListener(
-  (message: RuntimeMessage, _sender, sendResponse) => {
+  (message: RuntimeMessage, sender, sendResponse) => {
     if (isE2ESeedPendingInteractionMessage(message)) {
       const payload = message.payload;
       (async () => {
@@ -403,6 +423,99 @@ chrome.runtime.onMessage.addListener(
           });
         }
       })();
+      return true;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "SKILL_RECORDING_START"
+    ) {
+      void handleSkillRecordingStart(message.payload.tabId)
+        .then((result) => sendResponse(result))
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
+      return true;
+    }
+
+    if (
+      (message.source === MessageSource.SIDEPANEL ||
+        message.source === MessageSource.CONTENT) &&
+      message.type === "SKILL_RECORDING_STOP"
+    ) {
+      const tabId = message.payload.tabId ?? sender.tab?.id;
+      void handleSkillRecordingStop(tabId)
+        .then((result) => sendResponse(result))
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
+      return true;
+    }
+
+    if (
+      (message.source === MessageSource.SIDEPANEL ||
+        message.source === MessageSource.CONTENT) &&
+      message.type === "SKILL_RECORDING_CANCEL"
+    ) {
+      const tabId = message.payload.tabId ?? sender.tab?.id;
+      void handleSkillRecordingCancel(tabId)
+        .then((result) => sendResponse(result))
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
+      return true;
+    }
+
+    if (
+      message.source === MessageSource.CONTENT &&
+      message.type === "SKILL_RECORDING_EVENT"
+    ) {
+      const tabId = sender.tab?.id;
+      if (tabId != null) recordSkillEvent(tabId, message.payload.event);
+      sendResponse({ ok: true });
+      return true;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "USER_SKILL_SAVE"
+    ) {
+      void saveUserWebsiteSkill(message.payload.draft, message.payload.enabled)
+        .then(async (skill) => {
+          const skills = await loadUserWebsiteSkills();
+          broadcastUserSkillList(skills);
+          sendResponse({ ok: true, skill, skills });
+        })
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
+      return true;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "USER_SKILL_LIST"
+    ) {
+      void loadUserWebsiteSkills()
+        .then((skills) => sendResponse({ ok: true, skills }))
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
+      return true;
+    }
+
+    if (
+      message.source === MessageSource.SIDEPANEL &&
+      message.type === "USER_SKILL_DELETE"
+    ) {
+      void deleteUserWebsiteSkill(message.payload.id)
+        .then((skills) => {
+          broadcastUserSkillList(skills);
+          sendResponse({ ok: true, skills });
+        })
+        .catch((error: any) =>
+          sendResponse({ ok: false, detail: error?.message ?? String(error) }),
+        );
       return true;
     }
 
@@ -617,6 +730,8 @@ chrome.runtime.onMessage.addListener(
               "opensidebar:savedPrompts",
               "opensidebar:savedPromptsSeeded",
               "opensidebar:savedPromptsVersion",
+              WEBSITE_SKILLS_STORAGE_KEY,
+              RECORD_SKILL_INTRO_DISMISSED_KEY,
               "opensidebar_logs",
               "opensidebar:workspaces",
               "opensidebar:nextWorkspaceNum",
@@ -643,6 +758,134 @@ chrome.runtime.onMessage.addListener(
   },
 );
 
+async function handleSkillRecordingStart(tabId: number) {
+  if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) {
+    return { ok: false, detail: "No active tab available for recording." };
+  }
+
+  const tab = await chrome.tabs.get(tabId);
+  const url = tab.url ?? "";
+  skillRecordingSessions.set(tabId, {
+    tabId,
+    startedAt: Date.now(),
+    url,
+    events: [],
+  });
+
+  try {
+    await chrome.tabs.sendMessage(tabId, {
+      type: "SKILL_RECORDING_START",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { tabId },
+    });
+    broadcastSkillRecordingStatus({
+      status: "recording",
+      timeline: [],
+      detail: "Recording site skill",
+    });
+    return { ok: true };
+  } catch {
+    broadcastSkillRecordingStatus({
+      status: "paused",
+      timeline: [],
+      detail: "Recording paused on restricted page. Resume when you return to the original site.",
+    });
+    return {
+      ok: false,
+      detail:
+        "Recording paused on restricted page. Resume when you return to the original site.",
+    };
+  }
+}
+
+async function handleSkillRecordingStop(tabId?: number) {
+  if (tabId == null) {
+    return { ok: false, detail: "No recording tab found." };
+  }
+  const session = skillRecordingSessions.get(tabId);
+  if (!session) return { ok: false, detail: "No active recording found." };
+
+  await chrome.tabs
+    .sendMessage(tabId, {
+      type: "SKILL_RECORDING_STOP",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { tabId },
+    })
+    .catch(() => {});
+
+  const draft = generateWebsiteSkillDraft(session.events, session.url);
+  skillRecordingSessions.delete(tabId);
+  broadcastSkillRecordingStatus({
+    status: "review",
+    timeline: session.events.map((event) => event.timelineText),
+    draft,
+    detail: "Review the generated skill before saving.",
+  });
+  return { ok: true, draft };
+}
+
+async function handleSkillRecordingCancel(tabId?: number) {
+  if (tabId != null) {
+    skillRecordingSessions.delete(tabId);
+    await chrome.tabs
+      .sendMessage(tabId, {
+        type: "SKILL_RECORDING_CANCEL",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        payload: { tabId },
+      })
+      .catch(() => {});
+  }
+  broadcastSkillRecordingStatus({
+    status: "idle",
+    timeline: [],
+    detail: "Recording canceled.",
+  });
+  return { ok: true };
+}
+
+function recordSkillEvent(tabId: number, event: SkillRecordingEvent) {
+  const session = skillRecordingSessions.get(tabId);
+  if (!session) return;
+  session.events.push(event);
+  broadcastSkillRecordingStatus({
+    status: "recording",
+    timeline: session.events.map((item) => item.timelineText),
+    detail: "Recording site skill",
+  });
+}
+
+function broadcastSkillRecordingStatus(
+  payload: Extract<
+    RuntimeMessage,
+    { type: "SKILL_RECORDING_STATUS" }
+  >["payload"],
+) {
+  chrome.runtime
+    .sendMessage({
+      type: "SKILL_RECORDING_STATUS",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload,
+    })
+    .catch(() => {});
+}
+
+function broadcastUserSkillList(
+  skills: Extract<RuntimeMessage, { type: "USER_SKILL_LIST" }>["payload"]["skills"],
+) {
+  chrome.runtime
+    .sendMessage({
+      type: "USER_SKILL_LIST",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { skills },
+    })
+    .catch(() => {});
+}
+
 async function handleUserChat(
   payload: { text: string; tabId: number },
   workspaceId: string,
@@ -662,6 +905,7 @@ async function handleUserChat(
     let currentPayload: { text: string; tabId: number } | undefined = payload;
     while (currentPayload) {
       const text = sanitizeUserInput(currentPayload.text);
+      let agentQuery = text;
 
       // Validate tabId — side panel's chrome.tabs.query can race with workspace creation
       const tabId = await resolveValidTabId(
@@ -711,10 +955,11 @@ async function handleUserChat(
         return;
       }
 
+      let currentTabUrl = "";
       try {
         const tab = await chrome.tabs.get(tabId);
-        const tabUrl = tab.url ?? "";
-        const blocked = getBlockedRuleForUrl(tabUrl, settings);
+        currentTabUrl = tab.url ?? "";
+        const blocked = getBlockedRuleForUrl(currentTabUrl, settings);
         if (blocked) {
           chrome.runtime.sendMessage({
             type: "AGENT_STATUS",
@@ -732,13 +977,33 @@ async function handleUserChat(
         // Ignore tab lookup failures and proceed with normal flow.
       }
 
+      const savedSkill = findMatchingUserWebsiteSkill(
+        await loadUserWebsiteSkills(),
+        {
+          url: currentTabUrl,
+          task: text,
+        },
+      );
+      chrome.runtime
+        .sendMessage({
+          type: "USER_SKILL_USAGE_STATUS",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.BACKGROUND,
+          workspaceId,
+          payload: { skill: savedSkill },
+        })
+        .catch(() => {});
+      if (savedSkill) {
+        agentQuery = `${text}\n\nSaved website skill guidance:\n${formatUserWebsiteSkillGuidance(savedSkill)}`;
+      }
+
       // Notify content script that agent is active
       sendAgentActivity(tabId, true);
 
       await startKeepalive();
       try {
         await orchestrator.startTask({
-          query: text,
+          query: agentQuery,
           tabId,
           workspaceId,
           settings,

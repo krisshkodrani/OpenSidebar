@@ -17,6 +17,8 @@ import type {
   TaskProgressMessage,
   TaskRecoveryState,
   TurnProgress,
+  UserWebsiteSkill,
+  UserWebsiteSkillDraft,
   UserSettings,
 } from "../../types";
 
@@ -114,6 +116,45 @@ export interface SavedPromptsSlice {
   deleteSavedPrompt: (id: string) => Promise<void>;
 }
 
+export interface WebsiteSkillsSlice {
+  userWebsiteSkills: UserWebsiteSkill[];
+  recordSkillIntroDismissed: boolean;
+  skillRecordingStatus: "idle" | "recording" | "review" | "paused";
+  skillRecordingTimeline: string[];
+  skillRecordingDraft: UserWebsiteSkillDraft | null;
+  activeUserWebsiteSkill: UserWebsiteSkill | null;
+  loadUserWebsiteSkills: () => Promise<void>;
+  startSkillRecording: (tabId: number) => Promise<void>;
+  stopSkillRecording: (tabId?: number) => Promise<void>;
+  cancelSkillRecording: (tabId?: number) => Promise<void>;
+  saveUserWebsiteSkill: (draft: UserWebsiteSkillDraft) => Promise<void>;
+  updateUserWebsiteSkillLocal: (
+    id: string,
+    updates: Partial<
+      Pick<
+        UserWebsiteSkill,
+        | "name"
+        | "origin"
+        | "pathPattern"
+        | "triggerPhrase"
+        | "workflowSteps"
+        | "requiredEvidence"
+        | "privacySummary"
+        | "enabled"
+      >
+    >,
+  ) => Promise<void>;
+  deleteUserWebsiteSkill: (id: string) => Promise<void>;
+  setRecordSkillIntroDismissed: (dismissed: boolean) => Promise<void>;
+  setSkillRecordingStatus: (payload: {
+    status: "idle" | "recording" | "review" | "paused";
+    timeline: string[];
+    draft?: UserWebsiteSkillDraft;
+  }) => void;
+  clearSkillRecordingDraft: () => void;
+  setActiveUserWebsiteSkill: (skill: UserWebsiteSkill | null) => void;
+}
+
 export interface UiSlice {
   ready: boolean;
   error: string | null;
@@ -131,6 +172,7 @@ export type Store = ChatSlice &
   AgentSlice &
   SettingsSlice &
   SavedPromptsSlice &
+  WebsiteSkillsSlice &
   UiSlice;
 
 /** Utility type for creating a slice with immer middleware */
