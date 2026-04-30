@@ -682,6 +682,7 @@ async function prepareServiceNowNavigatorCandidate(
 ): Promise<ServiceNowNavigatorCandidateResult> {
   const leaf = path[path.length - 1] || "";
   const searchValues = [
+    application,
     leaf,
     path.join(" "),
     application ? `${application} ${leaf}` : "",
@@ -5181,13 +5182,28 @@ export function registerTools() {
             `URL: ${location.href}`,
             `Title: ${document.title}`,
           ];
-          const priceText = norm(document.body?.innerText || "")
+          const bodyText = document.body?.innerText || "";
+          const priceText = norm(bodyText)
             .match(
               /(?:[$€£]\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP)|annually|monthly|total|price)/gi,
             )
             ?.slice(0, 20)
             .join(" | ");
           if (priceText) lines.push(`Price/summary cues: ${priceText}`);
+          const cartLines = bodyText
+            .split(/\r?\n/)
+            .map(norm)
+            .filter(Boolean)
+            .filter((line) =>
+              /\b(shopping cart|cart|checkout|order status|request number|thank you|submitted|line items?|quantity|total|delivery date|req\d+|ritm\d+)\b/i.test(
+                line,
+              ),
+            )
+            .slice(0, 30);
+          if (cartLines.length) {
+            lines.push("Cart/order cues:");
+            lines.push(...cartLines.map((line) => `- ${line.slice(0, 220)}`));
+          }
 
           const controls = [
             ...document.querySelectorAll(
@@ -5435,29 +5451,53 @@ export function registerTools() {
               ];
               return controls.find((el) => matches(labelsFor(el), label));
             };
+            const currentBodyText = () => display(document.body?.innerText || "");
+            const cartCheckoutVisible = () => {
+              const text = currentBodyText();
+              return (
+                /\bcart\b/i.test(text) &&
+                /\b(proceed to checkout|checkout)\b/i.test(text)
+              );
+            };
             const findSubmitControl = () => {
               const controls = [
                 ...document.querySelectorAll(
                   "button, input[type='button'], input[type='submit'], a, [role='button']",
                 ),
               ].filter(visible);
+              const findByPattern = (pattern: RegExp) =>
+                controls.find((el) =>
+                  labelsFor(el).some((label) => pattern.test(label)),
+                ) as HTMLElement | undefined;
               if (input.submitButton) {
                 const exact = controls.find((el) =>
                   matches(labelsFor(el), input.submitButton as string),
                 );
                 if (exact) return exact as HTMLElement;
               }
-              return controls.find((el) =>
-                labelsFor(el).some((label) =>
-                  /\b(order now|place order|submit order|request|checkout|add to cart|order)\b/i.test(
-                    label,
-                  ),
-                ),
-              ) as HTMLElement | undefined;
+              const patterns = cartCheckoutVisible()
+                ? [
+                    /\b(proceed to checkout|checkout)\b/i,
+                    /\b(order now|place order|submit order|request)\b/i,
+                    /\badd to cart\b/i,
+                    /\border\b/i,
+                  ]
+                : [
+                    /\b(order now|place order|submit order|request)\b/i,
+                    /\badd to cart\b/i,
+                    /\b(proceed to checkout|checkout)\b/i,
+                    /\border\b/i,
+                  ];
+              for (const pattern of patterns) {
+                const control = findByPattern(pattern);
+                if (control) return control;
+              }
+              return undefined;
             };
 
             const configured: string[] = [];
             const mismatches: string[] = [];
+            const cartReady = cartCheckoutVisible();
             const pageLooksCatalog =
               /catalog|cat_item|service catalog|order now|request/i.test(
                 `${location.href} ${document.title} ${document.body?.innerText || ""}`,
@@ -5540,7 +5580,7 @@ export function registerTools() {
               }
             }
 
-            const submitControl =
+            let submitControl =
               mismatches.length === 0 && input.submit
                 ? findSubmitControl()
                 : null;
@@ -5554,8 +5594,15 @@ export function registerTools() {
                   labelsFor(submitControl)[0] ||
                   submitControl.textContent ||
                   "submit";
-                submitControl.click();
-                submitClicked = true;
+                if (cartReady && /\badd to cart\b/i.test(submitLabel)) {
+                  mismatches.push(
+                    "Cart already has checkout controls; refusing duplicate Add to Cart.",
+                  );
+                  submitControl = null;
+                } else {
+                  submitControl.click();
+                  submitClicked = true;
+                }
               }
             }
 
@@ -5569,6 +5616,7 @@ export function registerTools() {
               title: document.title,
               configured,
               mismatches,
+              cartReady,
               submitClicked,
               submitLabel,
             };
@@ -5618,6 +5666,9 @@ export function registerTools() {
             : "Catalog item configuration incomplete.",
           configured.length ? `Configured:\n- ${configured.join("\n- ")}` : "",
           mismatches.length ? `Mismatches:\n- ${mismatches.join("\n- ")}` : "",
+          selected.cartReady === true
+            ? "Cart/order controls are already visible. Do not add the same item again; inspect cart state and proceed only if line count and quantity match the request."
+            : "",
           selected.submitClicked
             ? `Clicked submit control: ${String(selected.submitLabel || "submit")}`
             : "",

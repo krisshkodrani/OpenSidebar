@@ -546,6 +546,61 @@ describe("Tool Registration", () => {
     expect(result).toContain("Metadata: pending");
   });
 
+  test("open_servicenow_module tries the application name as a navigator filter", async () => {
+    const target =
+      "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    document.body.innerHTML = `
+      <button aria-label="All" aria-expanded="true">All</button>
+      <input aria-label="Filter" placeholder="Filter" />
+      <nav id="navigator"></nav>
+    `;
+    const filter = document.querySelector("input") as HTMLInputElement;
+    const navigator = document.querySelector("#navigator") as HTMLElement;
+    filter.addEventListener("input", () => {
+      if (filter.value === "Configuration" && navigator.childElementCount === 0) {
+        navigator.innerHTML = `
+          <section>Configuration Database Instances
+            <a href="${target}">HBase</a>
+          </section>
+        `;
+      }
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+      if (details.args?.[0] === "sys_app_module") {
+        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+      }
+      return [{ frameId: 0, result: await details.func(...details.args) }];
+    });
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-app-query",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Configuration",
+            path: ["Database Instances", "HBase"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Navigator query: Configuration");
+    expect(result).toContain("Winning path: navigator_href");
+  });
+
   test("open_servicenow_module commits metadata when it resolves before navigator", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
@@ -948,6 +1003,74 @@ describe("Tool Registration", () => {
     ).toBe("Trello, Salesforce");
     expect(orderButton.getAttribute("data-clicked")).toBe("true");
     expect(result).toContain("Configured catalog item.");
+    expect(result).toContain("Clicked submit control");
+    rectSpy.mockRestore();
+  });
+
+  test("configure_catalog_item prefers checkout over duplicate add-to-cart when cart is ready", async () => {
+    document.title = "Standard Laptop | ServiceNow";
+    document.body.innerHTML = `
+            <label for="quantity">Quantity</label>
+            <select id="quantity">
+                <option value="1">1</option>
+                <option value="10" selected>10</option>
+            </select>
+            <button id="add">Add to Cart</button>
+            <button id="checkout">Proceed to Checkout</button>
+        `;
+    Object.defineProperty(document.body, "innerText", {
+      configurable: true,
+      value: "Shopping Cart\nProceed to Checkout\nStandard Laptop\nQuantity 10",
+    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    const addButton = document.getElementById("add")!;
+    const checkoutButton = document.getElementById("checkout")!;
+    addButton.addEventListener("click", () => {
+      addButton.setAttribute("data-clicked", "true");
+    });
+    checkoutButton.addEventListener("click", () => {
+      checkoutButton.setAttribute("data-clicked", "true");
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/checkout",
+      title: "Checkout | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            quantity: "10",
+            submit: true,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(addButton.getAttribute("data-clicked")).toBe(null);
+    expect(checkoutButton.getAttribute("data-clicked")).toBe("true");
+    expect(result).toContain("Cart/order controls are already visible");
     expect(result).toContain("Clicked submit control");
     rectSpy.mockRestore();
   });
