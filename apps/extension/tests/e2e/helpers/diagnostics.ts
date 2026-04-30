@@ -213,24 +213,104 @@ export interface RunCompletionSummary {
   summary: string;
 }
 
+function isRejectedDoneTurn(entry: any): boolean {
+  const events = Array.isArray(entry?.events) ? entry.events : [];
+  return events.some((event: any) => {
+    const type = String(event?.type ?? "");
+    return (
+      type.startsWith("done_rejected") ||
+      type.startsWith("done_blocked") ||
+      type === "auto_advance_blocked"
+    );
+  });
+}
+
 export function extractDoneSummary(traceFiles: string[]): string {
-  for (const filePath of traceFiles) {
-    const turns = readTrace(filePath);
-    for (const turn of turns) {
-      for (const toolCall of turn.toolCalls) {
-        if (toolCall.name !== "done") continue;
-        const summary = toolCall.args?.summary;
-        if (typeof summary === "string" && summary.trim().length > 0) {
-          return summary;
+  let latestAccepted: {
+    summary: string;
+    timestamp: string;
+    fileIndex: number;
+    lineIndex: number;
+  } | null = null;
+  let latestRejected: {
+    summary: string;
+    timestamp: string;
+    fileIndex: number;
+    lineIndex: number;
+  } | null = null;
+
+  for (let fileIndex = 0; fileIndex < traceFiles.length; fileIndex += 1) {
+    const filePath = traceFiles[fileIndex];
+    if (!existsSync(filePath)) continue;
+    try {
+      const raw = readFileSync(filePath, "utf-8");
+      const lines = raw.trim().split("\n").filter(Boolean);
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const entry = JSON.parse(lines[lineIndex]);
+        const toolCalls = entry?.llmResponse?.toolCalls ?? [];
+        if (!Array.isArray(toolCalls)) continue;
+
+        const rejected = isRejectedDoneTurn(entry);
+        const timestamp = String(
+          entry?.recordedAt ?? entry?.timestamp ?? entry?.turnNumber ?? "",
+        );
+        for (const toolCall of toolCalls) {
+          const name = toolCall?.function?.name ?? toolCall?.name;
+          if (name !== "done") continue;
+          const args = toolCall?.function?.arguments
+            ? safeParseArgs(toolCall.function.arguments)
+            : toolCall?.args ?? {};
+          const value =
+            typeof args?.summary === "string" && args.summary.trim()
+              ? args.summary
+              : typeof args?.message === "string" && args.message.trim()
+                ? args.message
+                : "";
+          const summary = value.trim();
+          if (!summary) continue;
+          const candidate = { summary, timestamp, fileIndex, lineIndex };
+          if (rejected) {
+            if (
+              !latestRejected ||
+              candidate.timestamp >= latestRejected.timestamp ||
+              (candidate.timestamp === latestRejected.timestamp &&
+                (candidate.fileIndex > latestRejected.fileIndex ||
+                  candidate.lineIndex > latestRejected.lineIndex))
+            ) {
+              latestRejected = candidate;
+            }
+            continue;
+          }
+          if (
+            !latestAccepted ||
+            candidate.timestamp >= latestAccepted.timestamp ||
+            (candidate.timestamp === latestAccepted.timestamp &&
+              (candidate.fileIndex > latestAccepted.fileIndex ||
+                candidate.lineIndex > latestAccepted.lineIndex))
+          ) {
+            latestAccepted = candidate;
+          }
         }
-        const message = toolCall.args?.message;
-        if (typeof message === "string" && message.trim().length > 0) {
-          return message;
+      }
+    } catch {
+      const turns = readTrace(filePath);
+      for (const turn of turns) {
+        for (const toolCall of turn.toolCalls) {
+          if (toolCall.name !== "done") continue;
+          const summary = toolCall.args?.summary;
+          if (typeof summary === "string" && summary.trim().length > 0) {
+            return summary;
+          }
+          const message = toolCall.args?.message;
+          if (typeof message === "string" && message.trim().length > 0) {
+            return message;
+          }
         }
       }
     }
   }
-  return "";
+
+  return latestAccepted?.summary ?? latestRejected?.summary ?? "";
 }
 
 export function extractLatestReadPageText(traceFiles: string[]): string {

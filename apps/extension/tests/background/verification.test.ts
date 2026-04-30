@@ -367,6 +367,33 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("rejects ServiceNow list sort summaries without durable sort evidence", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
+      pageUrl:
+        "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do",
+      summary:
+        'Clicked the Number column header. The table is sorted by Number descending.',
+      selectedSkillId: "list-sort-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("duration");
+  });
+
+  test("allows ServiceNow list sort summaries with query-state evidence for all requested fields", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
+      pageUrl:
+        "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do%3Fsysparm_query%3DORDERBYDESCnumber%5EORDERBYDESCcalendar_duration",
+      summary:
+        "Applied sort state with sysparm_query=ORDERBYDESCnumber^ORDERBYDESCcalendar_duration for Number and Duration.",
+      selectedSkillId: "list-sort-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects catalog detail pages without request confirmation", () => {
     const result = assessWorkflowDoneGuard({
       query: "Order a standard laptop from the service catalog.",
@@ -386,6 +413,58 @@ describe("assessWorkflowDoneGuard", () => {
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(false);
+  });
+
+  test("allows catalog order-status confirmations when the task text mentions requested-item checks", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        "Order a standard laptop from the service catalog. Completion checks: The current page remains the request/order confirmation page, not a requested-item detail page.",
+      pageTitle: "Order Status: REQ0024260 | ServiceNow",
+      pageUrl:
+        "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3D830ae7",
+      summary:
+        "Order Status: REQ0024260. The Standard Laptop request was submitted with Quantity 10.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects catalog confirmations that over-order requested quantity", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+      summary:
+        "Request Number: REQ0024250. Items Ordered: 2 line items of Lenovo - Carbon x1, each line item Quantity 10. Total Order: 20 Standard Laptops.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("expected 10");
+  });
+
+  test("allows catalog confirmations with matching requested quantity", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+      summary:
+        "Request Number: REQ0024251. The Standard Laptop request was submitted with Quantity 10.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
+  test("rejects catalog completion from requested-item detail pages", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+      pageTitle: "RITM0043966 | Requested Item | ServiceNow",
+      pageUrl:
+        "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/sc_req_item.do%3Fsys_id%3D80b7",
+      summary:
+        "Request Number: REQ0023006. The Standard Laptop request was submitted with Quantity 10.",
+      selectedSkillId: "catalog-order-workflow",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("request/order confirmation page");
   });
 });
 

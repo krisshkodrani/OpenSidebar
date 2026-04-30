@@ -416,6 +416,65 @@ class WorkArenaSession:
             "skippedOrigins": skipped_origins,
         }
 
+    def _reload_after_storage_sync(
+        self, active_url: str | None,
+        storage_sync: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not storage_sync.get("attempted"):
+            return {
+                "attempted": False,
+                "reason": "storage_sync_not_attempted",
+            }
+
+        browser_env = self.env.unwrapped
+        context = getattr(browser_env, "context", None)
+        page = getattr(browser_env, "page", None)
+        if page is None and context is not None:
+            pages = getattr(context, "pages", [])
+            page = pages[0] if pages else None
+        if page is None:
+            return {
+                "attempted": True,
+                "ok": False,
+                "error": "No BrowserGym page is available for post-storage reload.",
+            }
+
+        target_url = active_url or (self.obs.get("url") if self.obs else None)
+        if not target_url:
+            return {
+                "attempted": False,
+                "reason": "no_active_url",
+            }
+        if not self._same_service_now_origin(target_url, getattr(page, "url", None)):
+            return {
+                "attempted": True,
+                "ok": False,
+                "requestedUrl": target_url,
+                "activeUrl": getattr(page, "url", None),
+                "error": "Post-storage reload requires the same origin as the reset ServiceNow page.",
+            }
+
+        page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+
+        synced_url = getattr(page, "url", target_url)
+        title = page.title()
+        if self.obs is not None:
+            self.obs["url"] = synced_url
+            self.obs["open_pages_urls"] = [synced_url]
+            self.obs["open_pages_titles"] = [title]
+
+        return {
+            "attempted": True,
+            "ok": True,
+            "requestedUrl": target_url,
+            "activeUrl": synced_url,
+            "title": title,
+        }
+
     def _sync_submitted_record_id(self, submitted_record_number: Any) -> dict[str, Any]:
         if not isinstance(submitted_record_number, str) or not submitted_record_number:
             return {
@@ -590,6 +649,19 @@ class WorkArenaSession:
                     "storageSync": storage_sync,
                 }
 
+            reload_sync = self._reload_after_storage_sync(active_url, storage_sync)
+            if reload_sync.get("ok") is False:
+                return {
+                    "ok": False,
+                    "status": "blocked_storage_reload_failed",
+                    "durationMs": int((time.time() - start) * 1000),
+                    "state": self.state_summary(),
+                    "error": reload_sync.get("error"),
+                    "urlSync": url_sync,
+                    "storageSync": storage_sync,
+                    "reloadSync": reload_sync,
+                }
+
             record_sync = self._sync_submitted_record_id(submitted_record_number)
             answer_sync = self._sync_assistant_answer(final_answer)
             reward, done, user_message, info = self.env.unwrapped._task_validate()
@@ -598,6 +670,7 @@ class WorkArenaSession:
                 **validation_details,
                 "urlSync": url_sync,
                 "storageSync": storage_sync,
+                "reloadSync": reload_sync,
                 "recordSync": record_sync,
                 "answerSync": answer_sync,
             }
