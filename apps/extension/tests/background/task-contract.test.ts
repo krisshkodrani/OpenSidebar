@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
+  isNavigationOnlyTask,
   repairPlanCoverage,
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
@@ -22,6 +23,14 @@ describe("task contract helpers", () => {
     expect(contract.returnTargets).toContain("warehouse alpha");
     expect(contract.reportTargets).toContain("gamma");
     expect(contract.reportTargets).toContain("alpha");
+  });
+
+  test("does not synthesize report steps for quoted navigation-only module targets", () => {
+    const query =
+      'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.';
+
+    expect(isNavigationOnlyTask(query)).toBe(true);
+    expect(synthesizePlanFromTaskContract(query)).toBeNull();
   });
 
   test("repairs plan coverage by appending missing return and report steps", () => {

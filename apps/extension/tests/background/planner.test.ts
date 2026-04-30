@@ -1835,6 +1835,21 @@ describe("selectPrimarySkill", () => {
         ).toBe("search-answer-extraction");
     });
 
+    test("keeps ServiceNow knowledge answers out of module navigation", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."',
+                objective:
+                    "Search the knowledge base for information about annual new hire numbers",
+                successCriteria: "Final answer contains the requested number from a knowledge article",
+                pageTitle: "Knowledge Home - Knowledge Portal | ServiceNow",
+                pageUrl:
+                    "https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/kb?id=kb_home",
+            })?.id,
+        ).toBe("search-answer-extraction");
+    });
+
     test("matches list filter workflows", () => {
         expect(
             selectPrimarySkill({
@@ -1960,6 +1975,68 @@ describe("selectPrimarySkill", () => {
                 pageUrl: "https://example.com/data-table",
             })?.id,
         ).toBe("paginated-table-scan");
+    });
+
+    test("keeps ServiceNow module navigation fallback navigation-only", () => {
+        const nodes = buildFallbackNodes(
+            'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+            "planned",
+            "Home | ServiceNow",
+            "https://workarenapublic17.service-now.com/now/nav/ui/home",
+        );
+
+        expect(nodes).toHaveLength(1);
+        expect(nodes[0].selectedSkillId).toBe("servicenow-module-navigation");
+        expect(nodes[0].description).toContain("Navigate to the");
+        expect(nodes[0].description).not.toMatch(/read the requested result/i);
+        expect(nodes[0].successCriteria).toContain("navigation destination is open");
+        expect(nodes[0].successCriteria).not.toMatch(/requested result/i);
+    });
+
+    test("collapses planner-expanded ServiceNow navigation without report obligations", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective:
+                            "Navigate to breakdowns > elements filters and performance analytics and breakdowns and elements filters and read the requested result there.",
+                        successCriteria:
+                            "Page shows breakdowns > elements filters and performance analytics and breakdowns and elements filters and the requested result value.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective:
+                            "Report the requested results for breakdowns > elements filters and performance analytics and breakdowns and elements filters.",
+                        successCriteria:
+                            "Final answer mentions breakdowns > elements filters and performance analytics and breakdowns and elements filters and the requested result values.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+        const planner = new OrchestratorPlanner("test-key");
+
+        const result = await planner.buildNodes(
+            'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+            "Home | ServiceNow",
+            "https://workarenapublic17.service-now.com/now/nav/ui/home",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("servicenow-module-navigation");
+        expect(result.nodes[0].description).toContain("Navigate according to");
+        expect(result.nodes[0].description).not.toMatch(/read the requested result/i);
+        expect(result.nodes[0].successCriteria).toContain(
+            "navigation destination is open",
+        );
+        expect(result.nodes[0].successCriteria).not.toMatch(/requested result/i);
     });
 
     test("matches targeted paginated record lookups without using aggregate scans", () => {
