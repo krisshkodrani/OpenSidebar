@@ -860,11 +860,13 @@ const SKILL_BODIES: Record<
     procedureMarkdown: [
       "1. Clarify the exact fact requested by the user before searching.",
       "2. Search with the most distinctive terms from the exact question before using broad paraphrases.",
-      "3. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
-      "4. Read the selected result content or snippet that contains the requested fact.",
-      "5. Store the fact in notes if another navigation step is needed.",
-      "6. If the opened result does not contain the requested fact, return to results and try the next grounded candidate.",
-      "7. Call done only with the actual answer, not with a statement that a result was opened.",
+      "3. For ServiceNow knowledge tasks, prefer the Knowledge Portal search/results surface over filtered classic admin lists unless the user explicitly asks to edit records.",
+      "4. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
+      "5. For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number or a strong count cue; if the opened result has no answer, return to grounded results and try the next candidate.",
+      "6. Read the selected result content or snippet that contains the requested fact.",
+      "7. Store the fact in notes if another navigation step is needed.",
+      "8. If the opened result does not contain the requested fact, return to results and try the next grounded candidate.",
+      "9. Call done only with the actual answer, not with a statement that a result was opened.",
     ].join("\n"),
     requiredEvidence: [
       "Search query or visible result used",
@@ -957,8 +959,10 @@ const SKILL_BODIES: Record<
       "2. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, checkbox states, and text requirements in one verified action.",
       "3. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
       "4. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
-      "5. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
-      "6. Continue until a request/order/cart confirmation is visible, then call done with the confirmation evidence.",
+      "5. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
+      "6. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
+      "7. Continue until a request/order/cart confirmation is visible, then verify the confirmed line count and quantity match the request before calling done.",
+      "8. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
     ].join("\n"),
     requiredEvidence: [
       "Requested item and configuration",
@@ -970,6 +974,11 @@ const SKILL_BODIES: Record<
         signal: "ending on the product detail page",
         recovery: "configure the requested options and submit/order the item",
       },
+      {
+        signal: "cart or confirmation shows duplicate line items or a quantity different from the request",
+        recovery:
+          "do not call done; edit the cart if possible or escalate with the mismatch evidence",
+      },
     ],
     executionContract: {
       sequencing: [
@@ -978,9 +987,12 @@ const SKILL_BODIES: Record<
       toolDiscipline: [
         "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
         "Prefer configure_catalog_item over separate select_option, set_checkbox, type_text, and submit clicks when the requested configuration is explicit.",
+        "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
       ],
       completionChecks: [
         "A request/order/cart confirmation exists after submission.",
+        "The confirmed item line count and quantity match the user's request.",
+        "The current page remains the request/order confirmation page, not a requested-item detail page.",
       ],
     },
   },
@@ -1959,7 +1971,7 @@ const listSortPattern =
 const catalogOrderPattern =
   /\b(service catalog|catalog item|request item|standard laptop|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog)\b/i;
 const serviceNowModuleNavigationPattern =
-  /\b(service\s*now|servicenow|application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module)\b/i;
+  /\b(application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module|(?:service\s*now|servicenow)[^.\n]{0,80}\bmodule\b|\bmodule\b[^.\n]{0,80}\b(?:service\s*now|servicenow))\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
 const configuratorPattern =
@@ -2378,17 +2390,6 @@ export function selectPrimarySkill(input: {
   }
 
   if (
-    serviceNowModuleNavigationPattern.test(corpus) &&
-    /\b(module|application navigator|service\s*now|servicenow)\b/i.test(corpus)
-  ) {
-    return {
-      id: "servicenow-module-navigation",
-      reason:
-        "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
-    };
-  }
-
-  if (
     searchAnswerPattern.test(corpus) &&
     /\b(answer|article|knowledge|result|search|find|look up|question)\b/i.test(
       corpus,
@@ -2398,6 +2399,17 @@ export function selectPrimarySkill(input: {
       id: "search-answer-extraction",
       reason:
         "Task requires searching or reading a knowledge source and returning the requested answer, not just opening a result.",
+    };
+  }
+
+  if (
+    serviceNowModuleNavigationPattern.test(corpus) &&
+    /\b(module|application navigator)\b/i.test(corpus)
+  ) {
+    return {
+      id: "servicenow-module-navigation",
+      reason:
+        "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
     };
   }
 
