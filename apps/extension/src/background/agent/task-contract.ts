@@ -76,6 +76,23 @@ function stripQuotedSpans(text: string): string {
     .replace(/(^|[^\w])'([^']*)'(?!\w)/g, "$1 ");
 }
 
+export function isNavigationOnlyTask(query: string): boolean {
+  const text = normalize(query);
+  if (
+    !/\b(?:navigate|go to|open|visit|take me to)\b/.test(text) ||
+    !/\b(?:page|module|application|app|screen|view|url|site|dashboard|list|record|form)\b/.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+
+  const unquoted = normalize(stripQuotedSpans(query));
+  return !/\b(?:tell me|report|summari[sz]e|extract|read|compare|find out|what is|what are|how many|how much|create|add|update|set|change|fill|submit|order|delete|remove|move|apply|select|choose|sort by|filter by)\b/.test(
+    unquoted,
+  );
+}
+
 function looksLikeQuotedAnswerPrompt(value: string): boolean {
   return (
     /\?/.test(value) &&
@@ -691,6 +708,8 @@ export function repairPlanCoverage(params: {
 export function synthesizePlanFromTaskContract(
   query: string,
 ): SynthesizedPlanStep[] | null {
+  if (isNavigationOnlyTask(query)) return null;
+
   const fieldValueFormPlan = synthesizeFieldValueFormPlan(query);
   if (fieldValueFormPlan) return fieldValueFormPlan;
 

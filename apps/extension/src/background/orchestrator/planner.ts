@@ -7,6 +7,7 @@ import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import {
   buildTaskContract,
+  isNavigationOnlyTask,
   repairPlanCoverage,
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
@@ -140,6 +141,7 @@ const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "chart-value-extraction",
   "search-answer-extraction",
+  "servicenow-module-navigation",
   "list-filter-workflow",
   "list-sort-workflow",
   "catalog-order-workflow",
@@ -425,23 +427,28 @@ function collapseSkillOwnedWorkflowNodes(
   if (!selection || !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) return nodes;
 
   const firstNode = nodes[0];
+  const navigationOnly = isNavigationOnlyTask(query);
   return [
     {
       ...firstNode,
       selectedSkillId: selection.id,
       selectedSkillReason: selection.reason,
-      description: compactText(
-        [
-          `Complete the workflow for the original request: ${query}`,
-          ...nodes.map((node) => node.description),
-        ].join(" "),
-      ),
-      successCriteria: compactText(
-        [
-          "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
-          ...nodes.map((node) => node.successCriteria),
-        ].join(" "),
-      ),
+      description: navigationOnly
+        ? compactText(`Navigate according to the original request: ${query}`)
+        : compactText(
+            [
+              `Complete the workflow for the original request: ${query}`,
+              ...nodes.map((node) => node.description),
+            ].join(" "),
+          ),
+      successCriteria: navigationOnly
+        ? navigationOnlySuccessCriteria()
+        : compactText(
+            [
+              "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
+              ...nodes.map((node) => node.successCriteria),
+            ].join(" "),
+          ),
       allowedTools: unionTools(nodes),
       dependencies: [...firstNode.dependencies],
       assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
@@ -461,6 +468,13 @@ function collapseSkillOwnedWorkflowNodes(
 
 function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function navigationOnlySuccessCriteria(): string {
+  return (
+    "The current page, URL, title, heading, or tool output shows the requested " +
+    "navigation destination is open; no extra data extraction or report is required."
+  );
 }
 
 function extractFallbackNamedTargets(query: string): string[] {
@@ -521,10 +535,14 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
     : "Follow the user's exact request on the current page and report the result clearly.";
 
   const successCriteria = targetSummary
-    ? `Page or tool output shows ${targetSummary} or the requested result needed for the final answer.`
+    ? isNavigationOnlyTask(query)
+      ? navigationOnlySuccessCriteria()
+      : `Page or tool output shows ${targetSummary} or the requested result needed for the final answer.`
     : exhaustiveSummary
       ? `Page or tool output shows the needed findings from the relevant ${exhaustiveSummary}.`
-      : "Page or tool output shows the result needed to answer the user request.";
+      : isNavigationOnlyTask(query)
+        ? navigationOnlySuccessCriteria()
+        : "Page or tool output shows the result needed to answer the user request.";
 
   return {
     objective,

@@ -690,6 +690,193 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(false);
   });
 
+  test("skips remaining planner micro-steps after a navigation-only goal is already satisfied", async () => {
+    const first = makeNode(
+      "n1",
+      "Open the Performance Analytics application navigator module",
+    );
+    first.successCriteria =
+      "The Breakdowns > Elements Filters module is open in Performance Analytics.";
+    const second = makeNode(
+      "n2",
+      "Search for and open the Performance Analytics application",
+      ["n1"],
+    );
+    second.successCriteria = "Performance Analytics application is selected.";
+    const third = makeNode(
+      "n3",
+      "Click Elements Filters under Breakdowns",
+      ["n2"],
+    );
+    third.successCriteria = "Elements Filters is open.";
+    plannerBuildNodesImpl = async () => [first, second, third];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary:
+        'Successfully navigated to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+    });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Elements Filters | ServiceNow",
+          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          visibleContent:
+            "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
+          pageContent:
+            "Performance Analytics Breakdowns Elements Filters list with Title, Breakdown source, and Filter columns.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(["n1"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(completion?.payload?.status).toBe("completed");
+    expect(
+      completion?.payload?.subtaskResults
+        ?.slice(1)
+        .every((item: any) => item.status === "skipped"),
+    ).toBe(true);
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "navigation_goal_gate" &&
+          entry.body.data?.skippedNodes === 2,
+      ),
+    ).toBe(true);
+  });
+
+  test("does not skip navigation steps when the target is only visible in a menu", async () => {
+    const first = makeNode(
+      "n1",
+      "Search for and open the Performance Analytics application in the navigator",
+    );
+    first.successCriteria =
+      "Performance Analytics application is expanded or selected, showing its modules.";
+    const second = makeNode(
+      "n2",
+      "Click Elements Filters under Breakdowns",
+      ["n1"],
+    );
+    second.successCriteria = "Elements Filters page is open.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => ({
+      outcome: "completed",
+      summary:
+        nodeId === "n1"
+          ? "Performance Analytics is expanded in the navigator and shows Breakdowns with Elements Filters."
+          : 'Successfully navigated to the "Breakdowns > Elements Filters" module.',
+    });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Shared admin dashboard | ServiceNow",
+          url: "https://workarenapublic16.service-now.com/now/nav/ui/home",
+          visibleContent:
+            "Performance Analytics Breakdowns Elements Filters menu item is visible.",
+          pageContent:
+            "Performance Analytics Breakdowns Elements Filters menu item is visible.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "navigation_goal_gate",
+      ),
+    ).toBe(false);
+  });
+
+  test("does not use global-goal shortcut for pending confirm/clicking mutation steps", async () => {
+    const first = makeNode(
+      "n1",
+      "Search for and select Ezekiel Mildon from the impersonation dialog",
+    );
+    first.successCriteria =
+      "Ezekiel Mildon is selected in the impersonation dialog.";
+    const second = makeNode(
+      "n2",
+      "Confirm impersonation by clicking the Impersonate user button",
+    );
+    second.successCriteria =
+      "Ezekiel Mildon is selected and the Impersonate user button is ready.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Shared admin dashboard | ServiceNow",
+          url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+          visibleContent:
+            "Ezekiel Mildon is selected. The Impersonate user button is enabled and ready.",
+          pageContent:
+            "Ezekiel Mildon is selected. The Impersonate user button is enabled and ready.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Impersonate the user Ezekiel Mildon."));
+
+    expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion).toBeDefined();
+    expect(
+      completion?.payload?.subtaskResults?.some(
+        (item: any) =>
+          String(item.result || "").includes("Skipped: global goal already achieved"),
+      ),
+    ).toBe(false);
+  });
+
   test("creates and executes reroute handoff node", async () => {
     let verifyCalls = 0;
     plannerBuildNodesImpl = async () => [makeNode("n1", "primary route")];
