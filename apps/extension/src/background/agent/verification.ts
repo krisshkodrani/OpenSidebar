@@ -297,6 +297,85 @@ function chartQueryExpectsSingleNumericAnswer(queryText: string): boolean {
   );
 }
 
+function parseWorkflowGuardInteger(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value.replace(/,/g, ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extractCatalogRequestedQuantity(queryText: string): number | null {
+  const patterns = [
+    /\b(?:order|request|buy|purchase)\s+(\d[\d,]*)\b/,
+    /\bquantity\s*(?:=|:|to|of)?\s*(\d[\d,]*)\b/,
+    /\bqty\s*(?:=|:|to|of)?\s*(\d[\d,]*)\b/,
+    /\b(\d[\d,]*)\s+(?:standard\s+)?(?:laptops?|items?|catalog items?|requests?)\b/,
+  ];
+  for (const pattern of patterns) {
+    const quantity = parseWorkflowGuardInteger(pattern.exec(queryText)?.[1]);
+    if (quantity !== null) return quantity;
+  }
+  return null;
+}
+
+function detectCatalogQuantityConflict(
+  summary: string,
+  expectedQuantity: number | null,
+): string | null {
+  if (expectedQuantity === null) return null;
+
+  const mismatchAgainstExpected = new RegExp(
+    `\\b(?:not|instead of|rather than)\\s+${expectedQuantity}\\b`,
+    "i",
+  );
+  if (mismatchAgainstExpected.test(summary)) {
+    return `Catalog confirmation conflicts with requested quantity ${expectedQuantity}.`;
+  }
+
+  const observedItemQuantityPatterns = [
+    /\btotal(?:\s+order|\s+quantity|\s+items?)?\s*[:=-]?\s*(\d[\d,]*)\s+(?:standard\s+)?(?:laptops?|items?|catalog items?|requests?)\b/i,
+    /\b(\d[\d,]*)\s+(?:standard\s+)?(?:laptops?|items?|catalog items?)\b[^.]{0,80}\b(?:ordered|requested|submitted|total)\b/i,
+    /\b(?:ordered|requested|submitted|total(?:\s+order)?)\s+(\d[\d,]*)\s+(?:standard\s+)?(?:laptops?|items?|catalog items?)\b/i,
+  ];
+  for (const pattern of observedItemQuantityPatterns) {
+    const observed = parseWorkflowGuardInteger(pattern.exec(summary)?.[1]);
+    if (observed !== null && observed !== expectedQuantity) {
+      return `Catalog confirmation shows quantity ${observed}, but the request expected ${expectedQuantity}.`;
+    }
+  }
+
+  const lineItemCount = parseWorkflowGuardInteger(
+    /\b(\d[\d,]*)\s+line\s+items?\b/i.exec(summary)?.[1],
+  );
+  const eachLineQuantity = parseWorkflowGuardInteger(
+    /\beach(?:\s+line\s+item)?[^.]{0,80}\bquantity\s*[:=-]?\s*(\d[\d,]*)\b/i.exec(
+      summary,
+    )?.[1],
+  );
+  if (
+    lineItemCount !== null &&
+    lineItemCount > 1 &&
+    eachLineQuantity !== null &&
+    eachLineQuantity >= expectedQuantity
+  ) {
+    return `Catalog confirmation shows ${lineItemCount} line items at quantity ${eachLineQuantity}, which exceeds the requested quantity ${expectedQuantity}.`;
+  }
+
+  return null;
+}
+
+function extractRequestedSortLabels(queryText: string): string[] {
+  const labels = new Set<string>();
+  const parenthesizedDirection =
+    /(?:^|[-:\s])"?([a-z][a-z0-9 /_-]{1,50})"?\s*\((?:ascending|descending|asc|desc)\)/gi;
+  for (const match of queryText.matchAll(parenthesizedDirection)) {
+    const label = (match[1] || "").replace(/\s+/g, " ").trim();
+    if (label && !/^(?:sort|fields?|following fields?)$/i.test(label)) {
+      labels.add(label.toLowerCase());
+    }
+  }
+  return Array.from(labels);
+}
+
 /**
  * Blocks done() summaries that describe an intermediate workflow state for
  * reusable UI patterns where reaching the surface is not the user's goal.
@@ -306,6 +385,9 @@ export function assessWorkflowDoneGuard(
 ): WorkflowDoneGuardResult {
   const queryText = normalizeWorkflowGuardText(
     `${input.query}\n${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
+  );
+  const currentPageText = normalizeWorkflowGuardText(
+    `${input.pageTitle ?? ""}\n${input.pageUrl ?? ""}`,
   );
   const summary = normalizeWorkflowGuardText(input.summary);
   const skillId = input.selectedSkillId ?? null;
@@ -431,6 +513,29 @@ export function assessWorkflowDoneGuard(
       /\b(sorted|sort applied|ordered|order by|ascending|descending|aria-sort|sort state|header indicates)\b/.test(
         summary,
       );
+    const requestedSortLabels = extractRequestedSortLabels(queryText);
+    const missingSortLabels = requestedSortLabels.filter(
+      (label) => !summary.includes(label),
+    );
+    if (missingSortLabels.length > 0) {
+      return {
+        blocked: true,
+        reason: `List sort task still needs evidence for requested sort field(s): ${missingSortLabels.join(", ")}.`,
+      };
+    }
+    const serviceNowListSort =
+      /service-now\.com|servicenow|incident_list\.do|_list\.do/.test(
+        queryText,
+      );
+    const durableServiceNowSortEvidence =
+      /\b(sysparm_query|orderby|aria-sort|sort state)\b/.test(summary);
+    if (serviceNowListSort && sortComplete && !durableServiceNowSortEvidence) {
+      return {
+        blocked: true,
+        reason:
+          "ServiceNow list sort completion needs durable sort evidence such as sysparm_query, ORDERBY, aria-sort, or explicit sort state.",
+      };
+    }
     if (sortFailure || (sortInterim && !sortComplete)) {
       return {
         blocked: true,
@@ -458,6 +563,26 @@ export function assessWorkflowDoneGuard(
       /\b(ordered|order submitted|order placed|order confirmed|request submitted|request placed|request confirmed|request number|cart|checkout|submitted|confirmation|thank you|req\d+|ritm\d+)\b/.test(
         summary,
       );
+    const onRequestedItemDetail =
+      /\brequested item\b/.test(currentPageText) ||
+      /\bsc_req_item\.do\b/.test(currentPageText);
+    if (catalogComplete && onRequestedItemDetail) {
+      return {
+        blocked: true,
+        reason:
+          "Catalog order completion should remain on the request/order confirmation page, not a requested-item detail page.",
+      };
+    }
+    const quantityConflict = detectCatalogQuantityConflict(
+      summary,
+      extractCatalogRequestedQuantity(queryText),
+    );
+    if (quantityConflict) {
+      return {
+        blocked: true,
+        reason: quantityConflict,
+      };
+    }
     if (catalogInterim && !catalogComplete) {
       return {
         blocked: true,

@@ -95,8 +95,10 @@ export function summarizeHistory(
       if (["wait"].includes(toolName)) continue;
 
       let argSnippet = "";
+      let parsedArgs: Record<string, unknown> = {};
       try {
         const args = JSON.parse(tc.function.arguments);
+        parsedArgs = args && typeof args === "object" ? args : {};
         const parts: string[] = [];
         if (args.id != null) parts.push(`[${args.id}]`);
         if (args.text) parts.push(`"${String(args.text).slice(0, 30)}"`);
@@ -110,6 +112,41 @@ export function summarizeHistory(
         /* */
       }
 
+      const summarizeToolResult = (
+        toolName: string,
+        content: string,
+        isFailure: boolean,
+      ): string => {
+        if (toolName === "inspect_chart" && !isFailure) {
+          const lines = content
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const chartTitle = lines.find((line) =>
+            /^- Highcharts \d+ title:/i.test(line),
+          );
+          const pointLines = lines.filter((line) =>
+            /^- Point:/i.test(line),
+          );
+          const pattern =
+            typeof parsedArgs.pattern === "string"
+              ? parsedArgs.pattern.trim().toLowerCase()
+              : "";
+          const relevantPointLines = pattern
+            ? pointLines.filter((line) => line.toLowerCase().includes(pattern))
+            : pointLines;
+          const evidencePointLines =
+            relevantPointLines.length > 0 ? relevantPointLines : pointLines;
+          const selected = [
+            ...(chartTitle ? [chartTitle] : []),
+            ...evidencePointLines.slice(0, 3),
+          ];
+          if (selected.length > 0) return selected.join("; ").slice(0, 240);
+        }
+
+        return content.split("\n")[0].slice(0, isFailure ? 160 : 80);
+      };
+
       // Find the corresponding tool result
       let outcome = "no result";
       let isFailure = false;
@@ -122,7 +159,7 @@ export function summarizeHistory(
             content.includes("Click intercepted") ||
             content.includes("No element with tag") ||
             content.includes("does not appear to be");
-          outcome = content.split("\n")[0].slice(0, isFailure ? 160 : 80);
+          outcome = summarizeToolResult(toolName, content, isFailure);
           break;
         }
       }

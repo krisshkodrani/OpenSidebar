@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { __testOnly as e2eUtilsTestOnly } from "../e2e/helpers/utils";
-import { filterTraceFilesByWorkspace } from "../e2e/helpers/diagnostics";
+import {
+  extractDoneSummary,
+  filterTraceFilesByWorkspace,
+} from "../e2e/helpers/diagnostics";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -66,6 +69,54 @@ describe("e2e helper semantics", () => {
 
       expect(filterTraceFilesByWorkspace([match, miss], "ws-1")).toEqual([match]);
       expect(filterTraceFilesByWorkspace([match, miss], null)).toEqual([match, miss]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts the latest accepted done summary after a rejected done attempt", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-e2e-"));
+    try {
+      const trace = join(dir, "trace.jsonl");
+      writeFileSync(
+        trace,
+        [
+          JSON.stringify({
+            recordedAt: "2026-04-30T07:43:02.000Z",
+            llmResponse: {
+              toolCalls: [
+                {
+                  function: {
+                    name: "done",
+                    arguments: JSON.stringify({
+                      summary:
+                        "The answer is 0, with supporting counts 0 and 4499.91.",
+                    }),
+                  },
+                },
+              ],
+            },
+            events: [{ type: "done_rejected_workflow_contract" }],
+          }),
+          JSON.stringify({
+            recordedAt: "2026-04-30T07:43:03.000Z",
+            llmResponse: {
+              toolCalls: [
+                {
+                  function: {
+                    name: "done",
+                    arguments: JSON.stringify({ summary: "0" }),
+                  },
+                },
+              ],
+            },
+            events: [],
+          }),
+        ].join("\n") + "\n",
+        "utf-8",
+      );
+
+      expect(extractDoneSummary([trace])).toBe("0");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
