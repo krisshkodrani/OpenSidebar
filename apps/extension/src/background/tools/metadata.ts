@@ -234,6 +234,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
+  [ToolName.CONFIGURE_SERVICENOW_FORM]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: true,
+    mutationSensitive: true,
+  },
   [ToolName.XRAY_PAGE]: {
     risk: RiskLevel.LOW,
     domModifying: true,
@@ -358,6 +364,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.APPLY_LIST_FILTER,
     ToolName.APPLY_LIST_SORT,
     ToolName.INSPECT_CATALOG_ITEM,
+    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,
     ToolName.SCROLL_PAGE,
     // Interact (form-relevant)
@@ -418,6 +425,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.CLICK_ELEMENT,
     ToolName.TYPE_TEXT,
     ToolName.PRESS_KEY,
+    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.SCROLL_PAGE,
     ToolName.DONE,
     ToolName.ESCALATE,
@@ -445,6 +453,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.INSPECT_TABLE,
     ToolName.INSPECT_FILTER_STATE,
     ToolName.INSPECT_CATALOG_ITEM,
+    ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,
     ToolName.EXECUTE_JS,
     ToolName.SCROLL_PAGE,
@@ -537,6 +546,7 @@ export function buildDomAwareProfile(
     ToolName.CLARIFY,
     ToolName.UPDATE_NOTES,
     ToolName.GET_PROFILE_FIELDS,
+    ToolName.CONFIGURE_SERVICENOW_FORM,
     // Inspection — low-risk, help recovery
     ToolName.INSPECT_HIDDEN,
     ToolName.INSPECT_CHART,

@@ -602,8 +602,18 @@ export function formatEvidenceChain(evidence: StructuredEvidence[]): string {
   if (evidence.length === 0) return "";
   return evidence
     .map((e) => {
+      if (e.event) {
+        const parts = [
+          `- [${e.event.source}] ${e.event.type} (confidence=${e.event.confidence})`,
+        ];
+        const detail = e.event.detail
+          ? JSON.stringify(e.event.detail).slice(0, 240)
+          : "";
+        if (detail) parts.push(`  detail: ${detail}`);
+        return parts.join("\n");
+      }
       const parts = [
-        `- [${e.basis}] ${normalizeNote(e.claim)} (confidence=${e.confidence.toFixed(2)})`,
+        `- [${e.basis ?? "tool_output"}] ${normalizeNote(e.claim ?? "")} (confidence=${(e.confidence ?? 0).toFixed(2)})`,
       ];
       if (e.sourceToolCall) parts.push(`  source: ${e.sourceToolCall}`);
       return parts.join("\n");

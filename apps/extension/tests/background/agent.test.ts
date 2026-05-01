@@ -1128,6 +1128,206 @@ describe("AgentLoop", () => {
     ]);
   });
 
+  test("planless ServiceNow record submit completes without an outer task id", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+
+    (agent as any).originalQuery =
+      "Create a new change request with Number CHG0000021.";
+
+    const completion = (agent as any).maybeCompleteTrustedFormSubmitStep({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { fields: [], submit: true, submitButton: "Submit" },
+      toolResult:
+        "Configured ServiceNow form.\n" +
+        "Clicked submit control: Submit\n" +
+        "Submit method: gsftSubmit (sysverb_insert)\n" +
+        "Submitted ServiceNow form record: CHG0000021\n" +
+        "Current title: Create CHG0041407 | Change Request | ServiceNow",
+      mode: "sequential",
+    });
+
+    expect(completion).not.toBeNull();
+    expect(completion.finalSummary).toContain("CHG0000021");
+  });
+
+  test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    const params = {
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: {
+        fields: [
+          { field: "Number", value: "CHG0000021" },
+          { field: "Risk", value: "Moderate" },
+        ],
+        submit: false,
+      },
+      toolResult:
+        "Configured ServiceNow form.\n" +
+        "Configured:\n" +
+        "- Number (number) = CHG0000021\n" +
+        "- Risk (risk) = Moderate",
+    };
+
+    (agent as any).originalQuery =
+      "Objective: Complete the workflow for the original request: Create a new change request. " +
+      "Fill the form with requested field values. Do not submit the form yet. " +
+      "Submit the form and verify the created record or confirmation is visible.";
+    expect((agent as any).shouldAutoSubmitTrustedServiceNowForm(params)).toBe(
+      true,
+    );
+
+    (agent as any).originalQuery =
+      "Objective: Fill the form with the requested field values. Do not submit the form yet.";
+    expect((agent as any).shouldAutoSubmitTrustedServiceNowForm(params)).toBe(
+      false,
+    );
+  });
+
+  test("ServiceNow record controller configures and submits explicit task-level workflows", async () => {
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: onStatus,
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel". Submit the form and verify the created record.';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Short description (short_description) = EMAIL Server Down Again\n" +
+          "- Caller (caller_id) = Joe Employee\n" +
+          "- Channel (contact_type) = Phone",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: INC0036109\n" +
+          "Current title: Create INC0036110 | Incident | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain("INC0036109");
+    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
+    expect(onMessage).toHaveBeenCalledWith(
+      "Trusted ServiceNow form helper submitted record INC0036109.",
+      [],
+    );
+
+    const firstArgs = JSON.parse(
+      executeToolCall.mock.calls[0][0].function.arguments,
+    );
+    expect(firstArgs).toEqual({
+      fields: [
+        { field: "Short description", value: "EMAIL Server Down Again" },
+        { field: "Caller", value: "Joe Employee" },
+        { field: "Channel", value: "Phone" },
+      ],
+      submit: false,
+    });
+    const secondArgs = JSON.parse(
+      executeToolCall.mock.calls[1][0].function.arguments,
+    );
+    expect(secondArgs).toEqual({ submit: true, submitButton: "Submit" });
+  });
+
+  test("ServiceNow record controller retries submit after same-create-form evidence", async () => {
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel". Submit the form and verify the created record.';
+
+    const configured =
+      "Configured ServiceNow form.\n" +
+      "Configured:\n" +
+      "- Short description (short_description) = EMAIL Server Down Again\n" +
+      "- Caller (caller_id) = Joe Employee\n" +
+      "- Channel (contact_type) = Phone";
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(configured)
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "submit did not leave the create form for INC0036113",
+      )
+      .mockResolvedValueOnce(configured)
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: INC0036114\n" +
+          "Current title: INC0036114 | Incident | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain("INC0036114");
+    expect(onMessage).toHaveBeenCalledWith(
+      "Trusted ServiceNow form helper submitted record INC0036114.",
+      [],
+    );
+    expect(executeToolCall).toHaveBeenCalledTimes(4);
+
+    const thirdArgs = JSON.parse(
+      executeToolCall.mock.calls[2][0].function.arguments,
+    );
+    expect(thirdArgs).toMatchObject({ submit: false });
+    const fourthArgs = JSON.parse(
+      executeToolCall.mock.calls[3][0].function.arguments,
+    );
+    expect(fourthArgs).toEqual({ submit: true, submitButton: "Submit" });
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",

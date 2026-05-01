@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
+  extractFieldValuePairs,
   isNavigationOnlyTask,
   repairPlanCoverage,
   synthesizeBatchedExhaustivePlan,
@@ -224,6 +225,35 @@ describe("task contract helpers", () => {
     expect(synthesized![0].objective).toContain('Channel="Phone"');
     expect(synthesized![1].toolProfile).toBe("submit_form");
     expect(synthesized![1].dependencies).toEqual([0]);
+  });
+
+  test("extracts WorkArena field values once from wrapped executor prompts", () => {
+    const prompt = [
+      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel". Fill the form with the requested field values: Short description="EMAIL Server Down Again"; Caller="Joe Employee"; Knowledge="false"; Service=empty; Resolution notes="Closed before close notes were made mandatory"; Description="Multiple employees have reported that they are unable to send/receive email."; Change Request=empty; Channel="Phone". Do not submit the form yet.',
+      "Execution policy:",
+      "- Execute only the current step objective.",
+      "- Treat all later steps as out of scope until this step is verified complete.",
+      "- Submit by calling configure_servicenow_form with submit=true after all requested fields are verified.",
+      'Original user request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description".',
+    ].join("\n");
+
+    expect(extractFieldValuePairs(prompt)).toEqual([
+      { field: "Short description", value: "EMAIL Server Down Again" },
+      { field: "Caller", value: "Joe Employee" },
+      { field: "Knowledge", value: "false" },
+      { field: "Service", value: "" },
+      {
+        field: "Resolution notes",
+        value: "Closed before close notes were made mandatory",
+      },
+      {
+        field: "Description",
+        value:
+          "Multiple employees have reported that they are unable to send/receive email.",
+      },
+      { field: "Change Request", value: "" },
+      { field: "Channel", value: "Phone" },
+    ]);
   });
 
   test("does not turn empty WorkArena field values into fake quoted obligations", () => {

@@ -3,6 +3,7 @@ import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
 import { tokenizeStepText } from "../agent/loop-helpers";
+import { EvidenceEvent, EvidenceEventType, isTrustedEvidence } from "../../types";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -12,6 +13,7 @@ export interface NodeVerificationInput {
   handoffContext?: string;
   executorOutcome?: string;
   evidence?: StructuredEvidence[];
+  requiredEvidenceTypes?: EvidenceEventType[];
   previousUrl?: string;
   currentUrl?: string;
   previousTitle?: string;
@@ -38,6 +40,7 @@ export interface ProgrammaticVerificationInput {
   objective?: string;
   successCriteria: string;
   evidence?: StructuredEvidence[];
+  requiredEvidenceTypes?: EvidenceEventType[];
   previousUrl?: string;
   currentUrl?: string;
   previousTitle?: string;
@@ -150,7 +153,10 @@ function hasGoalTokenSupport(
   successCriteria: string,
   evidence?: StructuredEvidence[],
 ): boolean {
-  const corpus = [text, ...(evidence ?? []).map((item) => item.claim || "")]
+  const corpus = [
+    text,
+    ...(evidence ?? []).map((item) => item.claim || item.event?.type || ""),
+  ]
     .join(" ")
     .trim();
   const outputTokens = new Set(tokenizeStepText(corpus));
@@ -200,6 +206,50 @@ function hasExplicitCompletionEvidence(text: string): boolean {
   return EXPLICIT_COMPLETION_MARKERS.some((pattern) => pattern.test(text));
 }
 
+function evidenceConfidenceRank(value: EvidenceEvent["confidence"]): number {
+  if (value === "high") return 3;
+  if (value === "medium") return 2;
+  return 1;
+}
+
+export function validateEvidenceSufficiency(
+  requiredTypes: EvidenceEventType[] | undefined,
+  evidence: StructuredEvidence[] | undefined,
+): {
+  sufficient: boolean;
+  missing: EvidenceEventType[];
+  conflicts: EvidenceEvent[];
+} {
+  const required = [...new Set(requiredTypes ?? [])];
+  if (required.length === 0) {
+    return { sufficient: false, missing: [], conflicts: [] };
+  }
+
+  const trusted = (evidence ?? [])
+    .map((item) => item.event)
+    .filter((event): event is EvidenceEvent => Boolean(event))
+    .filter(isTrustedEvidence);
+  const conflicts = trusted.filter(
+    (event) => event.type === "uncertainty_detected",
+  );
+  const missing = required.filter(
+    (type) =>
+      !trusted.some(
+        (event) =>
+          event.type === type &&
+          event.supportsTaskGoal &&
+          evidenceConfidenceRank(event.confidence) >=
+            evidenceConfidenceRank("medium"),
+      ),
+  );
+
+  return {
+    sufficient: missing.length === 0 && conflicts.length === 0,
+    missing,
+    conflicts,
+  };
+}
+
 /**
  * Programmatic DOM-state verification that short-circuits the LLM verifier
  * for clear-cut cases. Returns null when the case is ambiguous and needs
@@ -210,6 +260,18 @@ export function programmaticVerify(
 ): NodeVerificationResult | null {
   const text = input.output.trim().toLowerCase();
   if (!text) return null;
+
+  const evidenceSufficiency = validateEvidenceSufficiency(
+    input.requiredEvidenceTypes,
+    input.evidence,
+  );
+  if (evidenceSufficiency.sufficient) {
+    return {
+      decision: "accept",
+      reason: `Required typed evidence is present: ${input.requiredEvidenceTypes?.join(", ")}.`,
+      confidence: 0.95,
+    };
+  }
 
   // Blocked markers → reroute (skip when executor completed — markers may be page content)
   if (
@@ -249,7 +311,9 @@ export function programmaticVerify(
   const hasStructuredEvidence =
     Array.isArray(input.evidence) &&
     input.evidence.some(
-      (e) => e.basis === "tool_output" && e.confidence >= 0.8,
+      (e) =>
+        (e.basis === "tool_output" && (e.confidence ?? 0) >= 0.8) ||
+        (e.event && isTrustedEvidence(e.event) && e.event.confidence !== "low"),
     );
 
   // Error keywords + no evidence of DOM change → retry. When the executor
@@ -382,6 +446,7 @@ export function deriveVerifierFallbackDecision(
     objective: input.objective,
     successCriteria: input.successCriteria,
     evidence: input.evidence,
+    requiredEvidenceTypes: input.requiredEvidenceTypes,
     previousUrl: input.previousUrl,
     currentUrl: input.currentUrl,
     previousTitle: input.previousTitle,

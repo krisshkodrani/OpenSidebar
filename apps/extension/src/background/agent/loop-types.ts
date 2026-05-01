@@ -2,7 +2,12 @@
  * Agent loop types — result interface and type aliases
  */
 
-import { SessionMetrics, ToolName, TraceFailureInfo } from "../../types";
+import {
+  EvidenceEvent,
+  SessionMetrics,
+  ToolName,
+  TraceFailureInfo,
+} from "../../types";
 import type { SideEffectEntry } from "./checkpoint-types";
 
 export interface PendingApprovalInteraction {
@@ -55,4 +60,6 @@ export interface LoopResult {
   pendingInteraction?: PendingUserInteraction;
   /** Durable side-effect log captured by the loop for failure reporting. */
   sideEffectsLog?: SideEffectEntry[];
+  /** Trusted typed evidence emitted by tools during the run. */
+  evidence?: EvidenceEvent[];
 }

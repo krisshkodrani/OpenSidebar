@@ -13,7 +13,7 @@ import {
   synthesizePlanFromTaskContract,
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
-import { selectPrimarySkill } from "./skills";
+import { getSkillDescriptor, selectPrimarySkill } from "./skills";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_ELEMENT,
@@ -46,6 +46,7 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.APPLY_LIST_SORT,
   ToolName.INSPECT_CATALOG_ITEM,
   ToolName.CONFIGURE_CATALOG_ITEM,
+  ToolName.CONFIGURE_SERVICENOW_FORM,
   ToolName.XRAY_PAGE,
   ToolName.GET_PROFILE_FIELDS,
   ToolName.DISMISS_OVERLAYS,
@@ -142,6 +143,7 @@ const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "chart-value-extraction",
   "search-answer-extraction",
   "servicenow-module-navigation",
+  "servicenow-record-form",
   "list-filter-workflow",
   "list-sort-workflow",
   "catalog-order-workflow",
@@ -424,7 +426,11 @@ function collapseSkillOwnedWorkflowNodes(
     pageTitle,
     pageUrl,
   });
-  if (!selection || !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) return nodes;
+  if (!selection) return nodes;
+  const selectedDescriptor = getSkillDescriptor(selection.id);
+  if (!selectedDescriptor?.atomic && !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) {
+    return nodes;
+  }
 
   const firstNode = nodes[0];
   const navigationOnly = isNavigationOnlyTask(query);
@@ -817,7 +823,8 @@ export class OrchestratorPlanner {
     const isSkillOwnedSingleNode = Boolean(
       nodes.length === 1 &&
         nodes[0]?.selectedSkillId &&
-        SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId),
+        (SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId) ||
+          getSkillDescriptor(nodes[0].selectedSkillId)?.atomic),
     );
     const isSingleNode =
       nodes.length === 1 &&
@@ -837,7 +844,8 @@ export class OrchestratorPlanner {
   ): Promise<TaskNode[] | null> {
     if (
       node.selectedSkillId &&
-      SKILL_OWNED_WORKFLOW_IDS.has(node.selectedSkillId)
+      (SKILL_OWNED_WORKFLOW_IDS.has(node.selectedSkillId) ||
+        getSkillDescriptor(node.selectedSkillId)?.atomic)
     ) {
       logger.info(
         "orchestrator",

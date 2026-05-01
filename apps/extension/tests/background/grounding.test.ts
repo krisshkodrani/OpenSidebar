@@ -3,6 +3,8 @@ import {
   detectFormSubmissionResetSuccess,
   detectPendingAsyncChange,
   detectStructuralStepAdvance,
+  detectTrustedFormFillStepCompletion,
+  detectTrustedFormSubmitCompletion,
   extractStepIndicator,
   detectInstructionContradiction,
   GROUNDING_OBSERVATION_TOOLS,
@@ -604,6 +606,104 @@ describe("detectFormSubmissionResetSuccess", () => {
     });
   });
 
+  it("prefers the ServiceNow create-form title over stale number fields", () => {
+    const preSubmit = makeSnapshot({
+      title: "Create INC0034429 | Incident | ServiceNow",
+      pageContent: "Incident New record Submit Number INC0028329",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0028329",
+          attributes: { id: "incident.number", value: "INC0028329" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 34,
+          tagName: "input",
+          role: "text",
+          text: "EMAIL Server Down Again",
+          attributes: { id: "incident.short_description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 35,
+          tagName: "textarea",
+          role: "textbox",
+          text: "Multiple employees have reported that they are unable to send/receive email.",
+          attributes: { id: "incident.description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const afterSubmit = makeSnapshot({
+      title: "Create INC0034430 | Incident | ServiceNow",
+      pageContent: "Incident New record Submit Number Caller Short description",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0034430",
+          attributes: { id: "incident.number", value: "INC0034430" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 34,
+          tagName: "input",
+          role: "text",
+          text: "",
+          attributes: { id: "incident.short_description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const signal = detectFormSubmissionResetSuccess({
+      currentStepDescription:
+        "Submit the form and verify the created record or confirmation is visible.",
+      currentStepSuccessCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      preActionSnapshot: preSubmit,
+      currentSnapshot: afterSubmit,
+      actionEffect: {
+        deltaPercent: 0.7,
+        urlChanged: true,
+        currentUrl: "https://example.service-now.com/incident.do",
+        elementsAdded: 5,
+        elementsRemoved: 3,
+        prevCount: 5,
+        currentCount: 4,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+      toolArgs: { id: 40 },
+    });
+
+    expect(signal?.previousRecordId).toBe("INC0034429");
+    expect(signal?.currentRecordId).toBe("INC0034430");
+  });
+
   it("does not treat a blank or validation-error form as a successful reset", () => {
     const preSubmit = makeSnapshot({
       title: "Create INC0034274 | Incident | ServiceNow",
@@ -653,6 +753,159 @@ describe("detectFormSubmissionResetSuccess", () => {
       },
       toolName: ToolName.CLICK_ELEMENT,
       toolArgs: { id: 40 },
+    });
+
+    expect(signal).toBeNull();
+  });
+
+  it("does not treat an existing record update that returns to search as a create-form reset", () => {
+    const preUpdate = makeSnapshot({
+      title: "ServiceNow",
+      pageContent: "Incident Number INC0034429 Update Short description EMAIL Server Down Again",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "INC0034429",
+          attributes: { id: "incident.number", value: "INC0034429" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 34,
+          tagName: "input",
+          role: "text",
+          text: "EMAIL Server Down Again",
+          attributes: { id: "incident.short_description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 35,
+          tagName: "textarea",
+          role: "textbox",
+          text: "Multiple employees have reported that they are unable to send/receive email.",
+          attributes: { id: "incident.description" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Update",
+          attributes: { id: "sysverb_update", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const afterUpdate = makeSnapshot({
+      title: "Search Results | EMAIL Server Down Again | ServiceNow",
+      pageContent:
+        "Search Results EMAIL Server Down Again Number: INC0034429 Create new incident INC0000032",
+      elements: [],
+    });
+
+    const signal = detectFormSubmissionResetSuccess({
+      currentStepDescription:
+        "Submit the form and verify the created record or confirmation is visible.",
+      currentStepSuccessCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      preActionSnapshot: preUpdate,
+      currentSnapshot: afterUpdate,
+      actionEffect: {
+        deltaPercent: 1,
+        urlChanged: true,
+        currentUrl: "https://example.service-now.com/now/nav/ui/search/results",
+        elementsAdded: 10,
+        elementsRemoved: 20,
+        prevCount: 40,
+        currentCount: 10,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+      toolArgs: { id: 40 },
+    });
+
+    expect(signal).toBeNull();
+  });
+});
+
+describe("detectTrustedFormFillStepCompletion", () => {
+  it("accepts a complete ServiceNow form helper result without mismatches", () => {
+    const signal = detectTrustedFormFillStepCompletion({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: {
+        fields: [
+          { field: "Short description", value: "EMAIL Server Down Again" },
+          { field: "Caller", value: "Joe Employee" },
+        ],
+        submit: false,
+      },
+      toolResult:
+        "Configured ServiceNow form.\n" +
+        "Configured:\n" +
+        "- Short description (short_description) = EMAIL Server Down Again\n" +
+        "- Caller (caller_id) = Joe Employee\n" +
+        "ServiceNow form fields discovered: 79",
+    });
+
+    expect(signal).not.toBeNull();
+    expect(signal!.reason).toContain("2 requested fields");
+  });
+
+  it("does not accept incomplete helper results", () => {
+    const signal = detectTrustedFormFillStepCompletion({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: {
+        fields: [
+          { field: "Short description", value: "EMAIL Server Down Again" },
+          { field: "Caller", value: "Joe Employee" },
+        ],
+        submit: false,
+      },
+      toolResult:
+        "ServiceNow form configuration incomplete.\n" +
+        "Configured:\n" +
+        "- Short description (short_description) = EMAIL Server Down Again\n" +
+        "Mismatches:\n" +
+        "- Caller (caller_id) = (empty); expected Joe Employee",
+    });
+
+    expect(signal).toBeNull();
+  });
+});
+
+describe("detectTrustedFormSubmitCompletion", () => {
+  it("accepts a verified ServiceNow submit helper result", () => {
+    const signal = detectTrustedFormSubmitCompletion({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { fields: [], submit: true, submitButton: "Submit" },
+      toolResult:
+        "Configured ServiceNow form.\n" +
+        "Clicked submit control: Submit\n" +
+        "Submit method: gsftSubmit (sysverb_insert)\n" +
+        "Submitted ServiceNow form record: CHG0000021\n" +
+        "Current title: Create CHG0041407 | Change Request | ServiceNow",
+    });
+
+    expect(signal).not.toBeNull();
+    expect(signal!.submittedRecord).toBe("CHG0000021");
+  });
+
+  it("does not accept submit helper results with mismatches", () => {
+    const signal = detectTrustedFormSubmitCompletion({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { fields: [], submit: true, submitButton: "Submit" },
+      toolResult:
+        "ServiceNow form configuration incomplete.\n" +
+        "Mismatches:\n" +
+        "- submit did not leave the create form for CHG0041407",
     });
 
     expect(signal).toBeNull();

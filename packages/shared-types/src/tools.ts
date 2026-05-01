@@ -6,6 +6,47 @@ import { ScrollDirection, ToolName } from "./enums";
 
 // --- Tool System Types ---
 
+export type EvidenceEventType =
+  | "navigation_reached"
+  | "field_value_observed"
+  | "fill_attempted"
+  | "submit_attempted"
+  | "submit_succeeded"
+  | "record_identity_observed"
+  | "goal_state_verified"
+  | "answer_extracted"
+  | "uncertainty_detected";
+
+export type EvidenceConfidence = "high" | "medium" | "low";
+
+export interface EvidenceEvent {
+  type: EvidenceEventType;
+  source: ToolName;
+  confidence: EvidenceConfidence;
+  observedAt: string;
+  supportsTaskGoal: boolean;
+  detail?: Record<string, unknown>;
+}
+
+export interface ToolExecutionResult {
+  result: string;
+  evidence?: EvidenceEvent[];
+}
+
+export function isTrustedEvidence(event: unknown): event is EvidenceEvent {
+  if (!event || typeof event !== "object") return false;
+  const candidate = event as Partial<EvidenceEvent>;
+  return (
+    typeof candidate.type === "string" &&
+    Object.values(ToolName).includes(candidate.source as ToolName) &&
+    (candidate.confidence === "high" ||
+      candidate.confidence === "medium" ||
+      candidate.confidence === "low") &&
+    typeof candidate.observedAt === "string" &&
+    typeof candidate.supportsTaskGoal === "boolean"
+  );
+}
+
 /** A tool definition in OpenAI function calling format */
 export interface ToolDefinition {
   type: "function";
@@ -370,6 +411,24 @@ export interface ConfigureCatalogItemArgs {
   submitButton?: string;
 }
 
+/** One field to configure on a ServiceNow record form */
+export interface ConfigureServiceNowFormField {
+  /** Visible label or ServiceNow system field name */
+  field: string;
+  /** Value to set; empty string clears optional fields */
+  value: string;
+}
+
+/** Arguments for configure_servicenow_form */
+export interface ConfigureServiceNowFormArgs {
+  /** Fields to set by visible label or system name */
+  fields?: ConfigureServiceNowFormField[];
+  /** Click Submit/Save/Update after verifying requested fields */
+  submit?: boolean;
+  /** Optional visible submit button label */
+  submitButton?: string;
+}
+
 /** Arguments for xray_page — no arguments, simple toggle */
 export type XrayPageArgs = Record<string, never>;
 
@@ -392,7 +451,7 @@ export interface GetProfileFieldsArgs {
 
 /** Maps tool names to their execution handlers */
 export type ToolRouter = {
-  [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string>;
+  [K in ToolName]: (args: ToolArgsMap[K]) => Promise<string | ToolExecutionResult>;
 };
 
 /** Maps each tool name to its argument type */
@@ -437,6 +496,7 @@ export type ToolArgsMap = {
   [ToolName.APPLY_LIST_SORT]: ApplyListSortArgs;
   [ToolName.INSPECT_CATALOG_ITEM]: InspectCatalogItemArgs;
   [ToolName.CONFIGURE_CATALOG_ITEM]: ConfigureCatalogItemArgs;
+  [ToolName.CONFIGURE_SERVICENOW_FORM]: ConfigureServiceNowFormArgs;
   [ToolName.XRAY_PAGE]: XrayPageArgs;
   [ToolName.DISMISS_OVERLAYS]: DismissOverlaysArgs;
   [ToolName.CLARIFY]: ClarifyArgs;

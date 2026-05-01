@@ -70,6 +70,7 @@ export enum ToolName {
   APPLY_LIST_SORT = "apply_list_sort",
   INSPECT_CATALOG_ITEM = "inspect_catalog_item",
   CONFIGURE_CATALOG_ITEM = "configure_catalog_item",
+  CONFIGURE_SERVICENOW_FORM = "configure_servicenow_form",
   XRAY_PAGE = "xray_page",
   DISMISS_OVERLAYS = "dismiss_overlays",
   CLARIFY = "clarify",

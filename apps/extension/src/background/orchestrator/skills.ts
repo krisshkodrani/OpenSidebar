@@ -1,4 +1,5 @@
 import { ToolName } from "../../types";
+import type { EvidenceEventType } from "../../types";
 import type { ToolProfile } from "../tools/metadata";
 
 export type SkillCapability =
@@ -22,6 +23,8 @@ export interface SkillDescriptor {
   capabilityNeeds?: SkillCapability[];
   contextScope?: "turn" | "workspace";
   verifierMode: "deterministic" | "hybrid" | "llm";
+  atomic?: boolean;
+  requiredEvidenceTypes?: EvidenceEventType[];
   notes?: string[];
 }
 
@@ -488,6 +491,13 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     contextScope: "turn",
     verifierMode: "deterministic",
+    atomic: true,
+    requiredEvidenceTypes: [
+      "field_value_observed",
+      "fill_attempted",
+      "submit_succeeded",
+      "record_identity_observed",
+    ],
     notes: [
       "Use ServiceNow module metadata before manual application navigator clicks.",
       "Do not call navigate with a search query inside ServiceNow.",
@@ -519,6 +529,40 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Map values to fields before typing.",
       "For configurators, verify any derived total, price, or summary after changing options before finishing.",
+    ],
+  },
+  {
+    id: "servicenow-record-form",
+    name: "ServiceNow Record Form",
+    description:
+      "Fill, verify, and submit ServiceNow record forms by field label/name with form-state readback.",
+    tags: ["workflow", "forms", "servicenow", "record"],
+    triggers: [
+      "servicenow record form",
+      "create a new incident",
+      "create a new change request",
+      "value for field",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "configure_servicenow_form",
+      "read_page",
+      "open_servicenow_module",
+      "done",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "click_element",
+      "type_text",
+      "select_option",
+      "press_key",
+      "click_coordinates",
+    ],
+    contextScope: "turn",
+    verifierMode: "deterministic",
+    notes: [
+      "Use the ServiceNow form helper for both field configuration and final submit.",
+      "Verify field readback before submit and record evidence after submit.",
     ],
   },
   {
@@ -1461,6 +1505,59 @@ const SKILL_BODIES: Record<
       ],
     },
   },
+  "servicenow-record-form": {
+    procedureMarkdown: [
+      "1. Parse the requested ServiceNow field/value pairs exactly, preserving quoted literals and empty values.",
+      "2. Use configure_servicenow_form with the full requested field set before manual input tools.",
+      "3. Treat the helper's configured/readback rows as the source of truth for form-fill completion.",
+      "4. Do not submit while any requested field reports a mismatch or missing field.",
+      "5. Submit by calling configure_servicenow_form with submit=true after all requested fields are verified; then verify a record detail, reset-to-next-record signal, or confirmation.",
+      "6. If the helper reports missing fields, re-ground the form/module and retry once with corrected labels before falling back manually.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Requested field/value mapping",
+      "ServiceNow form helper readback for every requested field",
+      "Submit click evidence",
+      "Created/updated record, confirmation, or reset-to-next-record evidence",
+    ],
+    commonFailures: [
+      {
+        signal: "broad continuation skill selected for a field/value form",
+        recovery:
+          "reroute to servicenow-record-form and configure fields through the ServiceNow form helper",
+      },
+      {
+        signal: "form reset advances to the next blank record",
+        recovery:
+          "use the submitted record number from the pre-submit form state as validation evidence",
+      },
+      {
+        signal: "field lives in a hidden tab or section",
+        recovery:
+          "set and verify it through g_form/readback instead of searching visible controls",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Map fields, configure and read back all requested values, submit, then verify the submitted record state.",
+      ],
+      toolDiscipline: [
+        "Prefer configure_servicenow_form over separate type_text, select_option, and tab clicks for ServiceNow record forms.",
+        "For ServiceNow submit steps, use configure_servicenow_form with submit=true instead of raw button clicks.",
+        "Use manual controls only for fields the helper reports as missing or mismatched.",
+        "Do not use press_key as a submit shortcut.",
+      ],
+      completionChecks: [
+        "Every requested field has helper readback evidence matching the requested value.",
+        "The submit action happened after successful readback.",
+        "The current page or trace evidence identifies the created/updated ServiceNow record or confirmation.",
+      ],
+      failureRecovery: [
+        "If reference lookup fails, re-read the helper mismatch and retry with the visible display value from the prompt.",
+        "If validation errors appear after submit, repair the named fields and submit once more.",
+      ],
+    },
+  },
   "inline-edit-surface": {
     procedureMarkdown: [
       "1. Identify the exact editable surface that must change: the target grid cell, table row, filename, or inline field.",
@@ -1974,6 +2071,10 @@ const serviceNowModuleNavigationPattern =
   /\b(application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module|(?:service\s*now|servicenow)[^.\n]{0,80}\bmodule\b|\bmodule\b[^.\n]{0,80}\b(?:service\s*now|servicenow))\b/i;
 const formPattern =
   /\b(form|fill|input|field|dropdown|checkbox|select|budget|category|submit)\b/i;
+const fieldValueRecordFormPattern =
+  /\bvalue\s+of\s+(["'])[\s\S]*?\1\s+for\s+field\s+(["'])[\s\S]*?\2/i;
+const serviceNowRecordFormPattern =
+  /\b(?:service[-\s]*now|servicenow|incident|change request|problem|hardware asset|asset|user record|record)\b/i;
 const configuratorPattern =
   /\b(configure|configurator|pick|choose|select|enable|disable)\b[\s\S]{0,120}\b(size|option|engraving|color|variant|total price|total|price|summary)\b/i;
 const profileFieldPattern =
@@ -2083,6 +2184,28 @@ function hasRecordMutationIntent(text: string): boolean {
   );
 }
 
+function hasServiceNowRecordSubmitIntent(text: string): boolean {
+  if (
+    /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+
+  return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
+    text,
+  );
+}
+
 export function resolveSkillToolProfile(
   id: string | null | undefined,
   objective: string,
@@ -2100,6 +2223,10 @@ export function resolveSkillToolProfile(
 
   if (descriptor.id === "servicenow-module-navigation") {
     return "navigate";
+  }
+
+  if (descriptor.id === "servicenow-record-form") {
+    return hasServiceNowRecordSubmitIntent(text) ? "submit_form" : "form_fill";
   }
 
   if (
@@ -2144,6 +2271,20 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.ESCALATE,
       ToolName.CLARIFY,
       ToolName.UPDATE_NOTES,
+    ],
+  },
+  "servicenow-record-form": {
+    temporarilySuppressedTools: [
+      ToolName.CLICK_ELEMENT,
+      ToolName.PRESS_KEY,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+      ToolName.CONFIGURE_SERVICENOW_FORM,
     ],
   },
   "inline-edit-surface": {
@@ -2288,6 +2429,13 @@ export function summarizeSkillForVerifier(
     );
   }
 
+  if (contract.requiredEvidenceTypes?.length) {
+    lines.push(
+      "Required typed evidence:",
+      ...contract.requiredEvidenceTypes.map((item) => `- ${item}`),
+    );
+  }
+
   if (contract.executionContract?.completionChecks?.length) {
     lines.push(
       "Completion checks:",
@@ -2341,6 +2489,20 @@ export function selectPrimarySkill(input: {
     configuratorPattern.test(stepCorpus);
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
+
+  if (
+    fieldValueRecordFormPattern.test(corpus) &&
+    serviceNowRecordFormPattern.test(corpus) &&
+    !listFilterPattern.test(corpus) &&
+    !listSortPattern.test(corpus) &&
+    !catalogOrderPattern.test(corpus)
+  ) {
+    return {
+      id: "servicenow-record-form",
+      reason:
+        "Task contains explicit ServiceNow record field/value pairs and should use deterministic form configuration and submit evidence.",
+    };
+  }
 
   if (chartValuePattern.test(corpus) && chartValueIntentPattern.test(corpus)) {
     return {

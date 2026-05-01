@@ -1018,6 +1018,53 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
   },
 };
 
+export const CONFIGURE_SERVICENOW_FORM_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.CONFIGURE_SERVICENOW_FORM,
+    description:
+      "Fill and verify a ServiceNow record form by field label/name using g_form when available, including hidden/tabbed fields, choices, checkboxes, empty values, and references. Use this on ServiceNow record forms before manual type/click sequences. Set submit=true only after requested values are verified.",
+    parameters: {
+      type: "object",
+      properties: {
+        fields: {
+          type: "array",
+          description:
+            "Requested field/value pairs to set. Use visible labels or ServiceNow field names from the user request.",
+          items: {
+            type: "object",
+            description: "One ServiceNow form field/value pair.",
+            properties: {
+              field: {
+                type: "string",
+                description:
+                  'Visible field label or system field name, e.g. "Short description" or "caller_id".',
+              },
+              value: {
+                type: "string",
+                description:
+                  'Value to set. Use an empty string to clear an optional field.',
+              },
+            },
+            required: ["field", "value"],
+          },
+        },
+        submit: {
+          type: "boolean",
+          description:
+            "Click the ServiceNow Submit/Save/Update control after verifying requested values. Defaults to false.",
+        },
+        submitButton: {
+          type: "string",
+          description:
+            'Optional submit control label, e.g. "Submit", "Save", or "Update".',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const XRAY_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {

@@ -3,7 +3,9 @@ import "../setup";
 import {
   deriveVerifierFallbackDecision,
   programmaticVerify,
+  validateEvidenceSufficiency,
 } from "../../src/background/orchestrator/verifier";
+import { ToolName } from "../../src/types";
 
 describe("Orchestrator verifier fallback", () => {
   test("returns accept for clearly successful output", () => {
@@ -108,6 +110,69 @@ describe("Orchestrator verifier fallback", () => {
 });
 
 describe("programmaticVerify", () => {
+  test("accepts when required typed evidence is sufficient", () => {
+    const result = programmaticVerify({
+      output: "Configured and submitted.",
+      objective: "Create a ServiceNow incident",
+      successCriteria: "Record submitted",
+      requiredEvidenceTypes: ["submit_succeeded", "record_identity_observed"],
+      evidence: [
+        {
+          event: {
+            type: "submit_succeeded",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: true,
+          },
+        },
+        {
+          event: {
+            type: "record_identity_observed",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: true,
+            detail: { recordNumber: "INC0010001" },
+          },
+        },
+      ],
+    });
+
+    expect(result?.decision).toBe("accept");
+    expect(result?.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  test("validateEvidenceSufficiency reports missing and conflict events", () => {
+    const result = validateEvidenceSufficiency(
+      ["submit_succeeded", "record_identity_observed"],
+      [
+        {
+          event: {
+            type: "submit_succeeded",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: true,
+          },
+        },
+        {
+          event: {
+            type: "uncertainty_detected",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: false,
+          },
+        },
+      ],
+    );
+
+    expect(result.sufficient).toBe(false);
+    expect(result.missing).toEqual(["record_identity_observed"]);
+    expect(result.conflicts).toHaveLength(1);
+  });
+
   test("returns reroute for blocked markers", () => {
     const result = programmaticVerify({
       output: "Page shows captcha verification required",
@@ -218,6 +283,50 @@ describe("programmaticVerify", () => {
     expect(result).not.toBeNull();
     expect(result!.decision).toBe("accept");
     expect(result!.reason).toContain("explicit completion evidence");
+  });
+
+  test("returns accept for trusted ServiceNow form submit evidence", () => {
+    const result = programmaticVerify({
+      output: "Trusted ServiceNow form helper submitted record CHG0000021.",
+      objective:
+        "Create a new change request and submit the form after setting the requested fields.",
+      successCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      requiredEvidenceTypes: ["submit_succeeded", "record_identity_observed"],
+      evidence: [
+        {
+          event: {
+            type: "submit_succeeded",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: true,
+            detail: { recordNumber: "CHG0000021" },
+          },
+        },
+        {
+          event: {
+            type: "record_identity_observed",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt: "2026-05-01T00:00:00.000Z",
+            supportsTaskGoal: true,
+            detail: { recordNumber: "CHG0000021" },
+          },
+        },
+      ],
+      previousUrl:
+        "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/change_request.do",
+      currentUrl:
+        "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/change_request.do",
+      previousTitle: "Create CHG0041411 | Change Request | ServiceNow",
+      currentTitle: "Create CHG0041412 | Change Request | ServiceNow",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.confidence).toBeGreaterThanOrEqual(0.9);
   });
 
   test("returns null for ambiguous output", () => {

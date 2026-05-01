@@ -1596,6 +1596,56 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
     });
 
+    test("collapses ServiceNow record form plans into one skill-owned workflow node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                steps: [
+                    {
+                        objective:
+                            'Fill the form with the requested field values: Short description="EMAIL Server Down Again"; Caller="Joe Employee". Do not submit the form yet.',
+                        successCriteria:
+                            "Each requested field has the specified value; the final submit action has not been clicked yet.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective:
+                            "Submit the form and verify the created record or confirmation is visible.",
+                        successCriteria:
+                            "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", and a value of "Joe Employee" for field "Caller".',
+            "Create INC0034429 | Incident | ServiceNow",
+            "https://workarenapublic16.service-now.com/incident.do",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe("servicenow-record-form");
+        expect(result.nodes[0].description).toContain(
+            "Complete the workflow for the original request",
+        );
+        expect(result.nodes[0].successCriteria).toContain(
+            "not merely an intermediate",
+        );
+        expect(result.nodes[0].allowedTools).toContain(
+            ToolName.CONFIGURE_SERVICENOW_FORM,
+        );
+    });
+
     test("fallback executor nodes expose workflow inspector tools", () => {
         const nodes = buildFallbackNodes(
             "Tell me the value shown in the dashboard chart.",
@@ -1881,6 +1931,44 @@ describe("selectPrimarySkill", () => {
                 pageTitle: "Service Catalog",
             })?.id,
         ).toBe("catalog-order-workflow");
+    });
+
+    test("routes ServiceNow field-value record forms to the ServiceNow form skill", () => {
+        const selection = selectPrimarySkill({
+            query:
+                'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".',
+            objective:
+                'Fill the form with the requested field values: Short description="EMAIL Server Down Again"; Caller="Joe Employee"; Knowledge="false"; Service=empty; Resolution notes="Closed before close notes were made mandatory"; Description="Multiple employees have reported that they are unable to send/receive email."; Change Request=empty; Channel="Phone". Do not submit the form yet.',
+            successCriteria:
+                "Each requested field has the specified value and the form is ready to submit.",
+            pageTitle: "Create INC0034429 | Incident | ServiceNow",
+            pageUrl: "https://workarenapublic16.service-now.com/incident.do",
+        });
+
+        expect(selection?.id).toBe("servicenow-record-form");
+        expect(getSkillToolPolicy("servicenow-record-form")?.preferredTools).toContain(
+            ToolName.CONFIGURE_SERVICENOW_FORM,
+        );
+        expect(getSkillToolPolicy("servicenow-record-form")?.discouragedTools).toContain(
+            ToolName.CLICK_ELEMENT,
+        );
+        expect(
+            getSkillToolSuppressionPolicy("servicenow-record-form")?.temporarilySuppressedTools,
+        ).toContain(ToolName.CLICK_ELEMENT);
+        expect(
+            resolveSkillToolProfile(
+                "servicenow-record-form",
+                "Fill the ServiceNow record fields",
+                "Every requested field has matching readback evidence",
+            ),
+        ).toBe("form_fill");
+        expect(
+            resolveSkillToolProfile(
+                "servicenow-record-form",
+                'Complete the workflow for the original request: Create a new change request with a value of "CHG0000021" for field "Number". Submit the form and verify the created record.',
+                "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+            ),
+        ).toBe("submit_form");
     });
 
     test("exposes inspector tools through new workflow skill policies", () => {

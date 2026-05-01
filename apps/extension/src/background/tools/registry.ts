@@ -1,4 +1,10 @@
-import { ToolName, ToolCall, ToolDefinition, UserSettings } from "../../types";
+import {
+  ToolName,
+  ToolCall,
+  ToolDefinition,
+  ToolExecutionResult,
+  UserSettings,
+} from "../../types";
 import { logger } from "../../utils";
 import { getBlockedRuleForUrl } from "../../utils/site-access";
 
@@ -6,7 +12,11 @@ type ToolExecutor = (
   args: Record<string, unknown>,
   tabId: number,
   signal?: AbortSignal,
-) => Promise<string>;
+) => Promise<string | ToolExecutionResult>;
+
+function normalizeToolResult(result: string | ToolExecutionResult): ToolExecutionResult {
+  return typeof result === "string" ? { result } : result;
+}
 
 export class ToolRegistry {
   private tools: Map<ToolName, ToolExecutor> = new Map();
@@ -36,12 +46,20 @@ export class ToolRegistry {
     tabId: number,
     signal?: AbortSignal,
   ): Promise<string> {
+    return (await this.executeDetailed(toolCall, tabId, signal)).result;
+  }
+
+  async executeDetailed(
+    toolCall: ToolCall,
+    tabId: number,
+    signal?: AbortSignal,
+  ): Promise<ToolExecutionResult> {
     const name = toolCall.function.name as ToolName;
     const executor = this.tools.get(name);
 
     if (!executor) {
       logger.error("tools", `Tool not found: ${name}`);
-      return `Error: Tool ${name} not found.`;
+      return { result: `Error: Tool ${name} not found.` };
     }
 
     let args: Record<string, unknown> = {};
@@ -53,7 +71,7 @@ export class ToolRegistry {
         logger.error("tools", `Failed to parse arguments for ${name}`, {
           error: e,
         });
-        return `Error: Invalid JSON arguments for ${name}.`;
+        return { result: `Error: Invalid JSON arguments for ${name}.` };
       }
     }
 
@@ -66,16 +84,18 @@ export class ToolRegistry {
         const settings = (stored.userSettings ?? {}) as UserSettings;
         const blocked = getBlockedRuleForUrl(tab.url ?? "", settings);
         if (blocked) {
-          return `Error: Tool execution blocked on ${blocked.host} by site access rule "${blocked.rule}".`;
+          return {
+            result: `Error: Tool execution blocked on ${blocked.host} by site access rule "${blocked.rule}".`,
+          };
         }
       } catch {
         // Non-fatal: if checks fail, continue and let tool execute.
       }
       const result = await executor(args, tabId, signal);
-      return result;
+      return normalizeToolResult(result);
     } catch (error: any) {
       if (error.name === "AbortError") throw error;
-      return `Error executing ${name}: ${error.message}`;
+      return { result: `Error executing ${name}: ${error.message}` };
     }
   }
 }

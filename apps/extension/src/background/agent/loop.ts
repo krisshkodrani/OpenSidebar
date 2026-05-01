@@ -76,6 +76,7 @@ import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { AgentMiddleware } from "./middleware";
+import { EvidenceAccumulator } from "./evidence";
 import {
   TURN_CHECKPOINT_VERSION,
   turnCheckpointKey,
@@ -120,6 +121,7 @@ import type {
 import {
   getSkillToolPolicy,
   getSkillToolSuppressionPolicy,
+  getLoadedSkillContract,
   resolveSkillToolProfile,
   type SkillToolPolicy,
 } from "../orchestrator/skills";
@@ -137,6 +139,8 @@ import {
   detectFormSubmissionResetSuccess,
   detectPendingAsyncChange,
   detectStructuralStepAdvance,
+  detectTrustedFormFillStepCompletion,
+  detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
   evaluateDoneTaskContractGuard,
   findPriorFailure,
@@ -162,7 +166,11 @@ import {
   validateElementIds,
   extractDiscoveredTagIds,
 } from "./loop-helpers";
-import { assessTaskContractCoverage, buildTaskContract } from "./task-contract";
+import {
+  assessTaskContractCoverage,
+  buildTaskContract,
+  extractFieldValuePairs,
+} from "./task-contract";
 import {
   DEESCALATION_REFLECTION,
   ESCALATION_RECOVERY,
@@ -1489,6 +1497,7 @@ export class AgentLoop {
     stepIndex: number;
     reason: string;
   } | null = null;
+  private evidenceAccumulator = new EvidenceAccumulator();
 
   /** Collected source citations (deduplicated by URL) */
   private citations: Citation[] = [];
@@ -2451,6 +2460,7 @@ export class AgentLoop {
       | "text_admission_criteria_advance"
       | "multi_return_step_advanced"
       | "submit_form_reset_success"
+      | "trusted_form_submit_success"
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
@@ -3523,7 +3533,9 @@ export class AgentLoop {
       metrics: undefined,
     };
     try {
-      result = await this.loop(tabId);
+      const controllerResult =
+        await this.maybeRunAtomicSkillController(tabId);
+      result = controllerResult ?? (await this.loop(tabId));
     } catch (error: any) {
       if (error instanceof PendingInteractionYield) {
         const awaitingSummary =
@@ -3589,6 +3601,7 @@ export class AgentLoop {
       }
     } finally {
       result.sideEffectsLog = [...this.sideEffectsLog];
+      result.evidence = this.evidenceAccumulator.toArray();
 
       if (
         result.outcome !== "awaiting_approval" &&
@@ -5150,6 +5163,26 @@ export class AgentLoop {
     return false;
   }
 
+  private getMissingRequiredEvidenceTypes(): string[] {
+    const required =
+      getLoadedSkillContract(this.selectedSkillId ?? undefined)
+        ?.requiredEvidenceTypes ?? [];
+    if (required.length === 0) return [];
+    const evidence = this.evidenceAccumulator.toArray();
+    if (evidence.some((event) => event.type === "uncertainty_detected")) {
+      return [...required, "no_uncertainty_detected"];
+    }
+    return required.filter(
+      (type) =>
+        !evidence.some(
+          (event) =>
+            event.type === type &&
+            event.supportsTaskGoal &&
+            event.confidence !== "low",
+        ),
+    );
+  }
+
   private trackListDetailToolSuccess(
     toolName: ToolName,
     args: Record<string, unknown>,
@@ -5375,11 +5408,21 @@ export class AgentLoop {
     toolCall: ToolCall,
     tabId: number,
   ): Promise<string> {
-    return await toolRegistry.execute(
+    const execution = await toolRegistry.executeDetailed(
       toolCall,
       tabId,
       this.abortController!.signal,
     );
+    const added = this.evidenceAccumulator.addMany(execution.evidence);
+    if (added > 0) {
+      this.traceRecorder?.recordEvent("tool_evidence_accumulated", {
+        toolCallId: toolCall.id,
+        toolName: toolCall.function.name,
+        added,
+        total: this.evidenceAccumulator.toArray().length,
+      });
+    }
+    return execution.result;
   }
 
   /** Stream a message to side panel and break the loop (for circuit breaker exits) */
@@ -5480,6 +5523,687 @@ export class AgentLoop {
     }
 
     return resolvedIndex;
+  }
+
+  private maybeAdvanceTrustedFormFillStep(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    mode: "parallel" | "sequential";
+  }): boolean {
+    const plan = this.context.getPlanStatusRaw();
+    if (
+      !this.taskId ||
+      !plan ||
+      plan.currentIndex < 0 ||
+      plan.currentIndex >= plan.subtasks.length
+    ) {
+      return false;
+    }
+
+    const currentSubtask = plan.subtasks[plan.currentIndex];
+    const nextSubtask = plan.subtasks[plan.currentIndex + 1];
+    if (!currentSubtask || !nextSubtask) return false;
+    if (this.getActiveToolProfileForStep(plan.currentIndex) !== "form_fill") {
+      return false;
+    }
+
+    const signal = detectTrustedFormFillStepCompletion({
+      toolName: params.toolName,
+      toolArgs: params.toolArgs,
+      toolResult: params.toolResult,
+    });
+    if (!signal) return false;
+
+    this.consecutiveAutoAdvances = 0;
+    const fromStep = plan.currentIndex;
+    const newIdx = this.completeSingleSubtask(fromStep);
+    this.syncPlanStatus(newIdx, "structural_step_advance", {
+      reason: signal.reason,
+      matchedTokens: signal.matchedTokens,
+      advancedTo: newIdx,
+      mode: params.mode,
+      trustedTool: params.toolName,
+    });
+    const nextStepDesc =
+      this.planSubtasks[newIdx]?.description || "Finish the remaining plan";
+    this.context.addMessage({
+      role: "user",
+      content:
+        `STEP COMPLETED: ${signal.reason}. ` +
+        `Continue with the next step: ${nextStepDesc}. ` +
+        `Do NOT re-verify the completed form-fill step unless the page reports an error.`,
+    });
+    this.broadcast({
+      type: "TASK_PROGRESS",
+      payload: {
+        taskId: this.taskId,
+        subtasks: this.planSubtasks,
+        currentIndex: newIdx,
+        totalTurnsUsed: this.turnCount,
+      },
+    });
+    this.log.info("agent", "trusted form helper advanced step", {
+      turn: this.turnCount,
+      fromStep,
+      toStep: newIdx,
+      mode: params.mode,
+      matchedTokens: signal.matchedTokens,
+    });
+    this.traceRecorder?.recordEvent("structural_step_advance", {
+      fromStep,
+      toStep: newIdx,
+      matchedTokens: signal.matchedTokens,
+      reason: signal.reason,
+      trustedTool: params.toolName,
+      mode: params.mode,
+      completedAllSteps: newIdx >= this.planSubtasks.length,
+    });
+    return true;
+  }
+
+  private hasTrustedServiceNowSubmitIntent(): boolean {
+    const text = `${this.originalQuery}\n${this.planSteps
+      .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
+      .join("\n")}`;
+    if (
+      /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
+        text,
+      )
+    ) {
+      return true;
+    }
+    if (
+      /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
+        text,
+      )
+    ) {
+      return false;
+    }
+    return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
+      text,
+    );
+  }
+
+  private isTaskLevelServiceNowRecordWorkflow(): boolean {
+    return (
+      this.selectedSkillId === "servicenow-record-form" &&
+      /\bObjective:\s*Complete the workflow for the original request\b/i.test(
+        this.originalQuery,
+      )
+    );
+  }
+
+  private async maybeRunAtomicSkillController(
+    tabId: number,
+  ): Promise<LoopResult | null> {
+    const contract = getLoadedSkillContract(this.selectedSkillId ?? undefined);
+    if (!contract?.atomic) return null;
+    if (this.getMissingRequiredEvidenceTypes().length === 0) return null;
+
+    const preferredTool = contract.preferredTools
+      ?.map((tool) => tool as ToolName)
+      .find((tool) => tool !== ToolName.DONE && tool !== ToolName.READ_PAGE);
+    if (!preferredTool) return null;
+
+    const fields = extractFieldValuePairs(this.originalQuery);
+    if (
+      preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM &&
+      fields.length === 0
+    ) {
+      return null;
+    }
+
+    const args: Record<string, unknown> =
+      preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM
+        ? { fields, submit: this.hasTrustedServiceNowSubmitIntent(), submitButton: "Submit" }
+        : {};
+
+    this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
+    this.turnCount++;
+    this.startServiceNowRecordControllerTraceTurn(fields.length);
+    const toolCall: ToolCall = {
+      id: `atomic_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: preferredTool,
+        arguments: JSON.stringify(args),
+      },
+    } as ToolCall;
+
+    const startedAt = Date.now();
+    this.traceRecorder?.recordEvent("atomic_skill_controller_started", {
+      turn: this.turnCount,
+      selectedSkillId: contract.id,
+      preferredTool,
+    });
+    const result = await this.executeToolCall(toolCall, tabId);
+    const durationMs = Date.now() - startedAt;
+    this.traceRecorder?.recordToolExecution(
+      toolCall.id,
+      preferredTool,
+      args,
+      result,
+      !result.startsWith("Error:"),
+      durationMs,
+      RiskLevel.MEDIUM,
+      result.startsWith("Error:") ? result : undefined,
+    );
+    this.context.addMessage({
+      role: "tool",
+      content: result,
+      tool_call_id: toolCall.id,
+    });
+
+    const missing = this.getMissingRequiredEvidenceTypes();
+    if (missing.length > 0) {
+      this.traceRecorder?.recordEvent("atomic_skill_controller_deferred", {
+        turn: this.turnCount,
+        selectedSkillId: contract.id,
+        missing,
+      });
+      this.context.addMessage({
+        role: "user",
+        content:
+          `The atomic ${contract.name} controller did not collect all required evidence yet. ` +
+          `Missing: ${missing.join(", ")}. Continue manually with the selected workflow tool.`,
+      });
+      await this.traceRecorder?.endTurn();
+      return null;
+    }
+
+    const summary =
+      this.evidenceAccumulator
+        .getByType("record_identity_observed")
+        .at(-1)?.detail?.recordNumber?.toString() ||
+      result.split("\n").find((line) => /submitted|configured/i.test(line)) ||
+      `${contract.name} completed with required evidence.`;
+    const finalSummary = /completed|submitted|configured/i.test(summary)
+      ? summary
+      : `${contract.name} completed: ${summary}`;
+    this.completedResult = { outcome: "completed", summary: finalSummary };
+    this.statusHandler(AgentStatus.IDLE, "Done");
+    this.messageHandler(finalSummary, []);
+    this.saveTurnCheckpoint().catch(() => {});
+    this.traceRecorder?.recordEvent("atomic_skill_controller_completed", {
+      turn: this.turnCount,
+      selectedSkillId: contract.id,
+      evidenceCount: this.evidenceAccumulator.toArray().length,
+    });
+    await this.traceRecorder?.endTurn();
+    return {
+      outcome: "completed",
+      turnCount: this.turnCount,
+      summary: finalSummary,
+      failure: { category: "none", code: "none" },
+      metrics: this.getMetrics(),
+      evidence: this.evidenceAccumulator.toArray(),
+    };
+  }
+
+  private async executeServiceNowRecordControllerTool(params: {
+    tabId: number;
+    args: Record<string, unknown>;
+    label: string;
+    eventName: string;
+  }): Promise<{ toolCall: ToolCall; result: string; ok: boolean }> {
+    const traceArgs = JSON.parse(JSON.stringify(params.args)) as Record<
+      string,
+      unknown
+    >;
+    const toolCall: ToolCall = {
+      id: `controller_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: ToolName.CONFIGURE_SERVICENOW_FORM,
+        arguments: JSON.stringify(traceArgs),
+      },
+    } as ToolCall;
+    const toolStep: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "tool",
+      label: params.label,
+      detail: JSON.stringify(traceArgs),
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      status: "running",
+      timestamp: Date.now(),
+    };
+
+    this.stepHandler(toolStep, false);
+    this.traceRecorder?.recordEvent(params.eventName, {
+      turn: this.turnCount,
+      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
+      fieldCount: Array.isArray(traceArgs.fields)
+        ? traceArgs.fields.length
+        : 0,
+      submit: traceArgs.submit === true,
+    });
+
+    const startedAt = Date.now();
+    let result = "";
+    let ok = false;
+    try {
+      result = await this.executeToolCall(toolCall, params.tabId);
+      ok = !result.startsWith("Error:");
+    } catch (error) {
+      result = `Error: ${error instanceof Error ? error.message : String(error)}`;
+      ok = false;
+    }
+    const durationMs = Date.now() - startedAt;
+
+    this.stepHandler(
+      {
+        ...toolStep,
+        status: ok ? "done" : "error",
+        durationMs,
+        ...(ok ? {} : { errorMessage: result }),
+      },
+      true,
+    );
+    this.traceRecorder?.recordToolExecution(
+      toolCall.id,
+      ToolName.CONFIGURE_SERVICENOW_FORM,
+      traceArgs,
+      result,
+      ok,
+      durationMs,
+      RiskLevel.MEDIUM,
+      ok ? undefined : result,
+    );
+    this.context.addMessage({
+      role: "tool",
+      content: result,
+      tool_call_id: toolCall.id,
+    });
+
+    return { toolCall, result, ok };
+  }
+
+  private startServiceNowRecordControllerTraceTurn(fieldCount: number): void {
+    if (!this.traceRecorder) return;
+
+    const messages = this.context.getPrompt();
+    const metrics = this.context.getPromptMetricsFrom(messages);
+    const snap = this.context.getSnapshot();
+    const systemContent =
+      messages.length > 0 && messages[0].role === "system"
+        ? typeof messages[0].content === "string"
+          ? messages[0].content
+          : ""
+        : "";
+    const cachedPrefixLength = systemContent.indexOf("## Page Context");
+    const droppedMessageCount = Math.max(
+      0,
+      this.context.getHistoryLength() - (messages.length - 1),
+    );
+
+    this.traceRecorder.startTurn(
+      this.turnCount,
+      {
+        url: snap?.url || "",
+        title: snap?.title || "",
+        elementCount: metrics.elementCount,
+        visibleContentLength: snap?.visibleContent?.length || 0,
+        pageContentLength: snap?.pageContent?.length || 0,
+        scrollY: snap?.scroll?.y || 0,
+      },
+      snap?.elements || [],
+      metrics.systemTokens + metrics.historyTokens,
+      1,
+      this.llm.getCurrentModel(),
+      metrics.compressionLevel,
+      TraceRecorder.toTraceMessages(messages),
+      {
+        systemTokens: metrics.systemTokens,
+        historyTokens: metrics.historyTokens,
+        totalTokens: metrics.totalTokens,
+        maxTokens: metrics.maxTokens,
+        utilization: metrics.utilization,
+        droppedMessageCount,
+        compressionLevel: metrics.compressionLevel,
+        cachedPrefixLength: cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
+      },
+      this.llm.isPlannerTier() ? "planner" : "executor",
+    );
+    this.traceRecorder.recordEvent("servicenow_record_controller_started", {
+      turn: this.turnCount,
+      fieldCount,
+      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
+    });
+  }
+
+  private async maybeRunServiceNowRecordFormController(
+    tabId: number,
+  ): Promise<LoopResult | null> {
+    if (!this.isTaskLevelServiceNowRecordWorkflow()) return null;
+    if (!this.hasTrustedServiceNowSubmitIntent()) return null;
+
+    const fields = extractFieldValuePairs(this.originalQuery);
+    if (fields.length === 0) return null;
+
+    this.statusHandler(AgentStatus.ACTING, "Configuring ServiceNow form...");
+    this.log.info("agent", "ServiceNow record form controller started", {
+      turn: this.turnCount,
+      fieldCount: fields.length,
+    });
+
+    this.turnCount++;
+    this.startServiceNowRecordControllerTraceTurn(fields.length);
+    try {
+      const fillArgs = { fields, submit: false };
+      const fill = await this.executeServiceNowRecordControllerTool({
+        tabId,
+        args: fillArgs,
+        label: "Configure ServiceNow form",
+        eventName: "servicenow_record_controller_fill_started",
+      });
+      const fillSignal = detectTrustedFormFillStepCompletion({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: fillArgs,
+        toolResult: fill.result,
+      });
+      if (!fill.ok || !fillSignal) {
+        this.traceRecorder?.recordEvent("servicenow_record_controller_deferred", {
+          turn: this.turnCount,
+          phase: "fill",
+          reason: fill.ok ? "untrusted_fill_result" : "tool_error",
+        });
+        this.context.addMessage({
+          role: "user",
+          content:
+            "The ServiceNow record form controller could not verify every requested field. Continue manually, using configure_servicenow_form again after correcting missing or mismatched fields.",
+        });
+        return null;
+      }
+
+      this.maybeAdvanceTrustedFormFillStep({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: fillArgs,
+        toolResult: fill.result,
+        mode: "sequential",
+      });
+
+      const submitArgs = { submit: true, submitButton: "Submit" };
+      const submit = await this.executeServiceNowRecordControllerTool({
+        tabId,
+        args: submitArgs,
+        label: "Submit ServiceNow form",
+        eventName: "servicenow_record_controller_submit_started",
+      });
+      let completion = this.maybeCompleteTrustedFormSubmitStep({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: submitArgs,
+        toolResult: submit.result,
+        mode: "sequential",
+      });
+
+      if (submit.ok && !completion) {
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_submit_retry_queued",
+          {
+            turn: this.turnCount,
+            reason: "untrusted_submit_result",
+          },
+        );
+        await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
+
+        const refill = await this.executeServiceNowRecordControllerTool({
+          tabId,
+          args: fillArgs,
+          label: "Recheck ServiceNow form",
+          eventName: "servicenow_record_controller_refill_started",
+        });
+        const refillSignal = detectTrustedFormFillStepCompletion({
+          toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+          toolArgs: fillArgs,
+          toolResult: refill.result,
+        });
+        if (refill.ok && refillSignal) {
+          this.traceRecorder?.recordEvent(
+            "servicenow_record_controller_submit_retry_ready",
+            {
+              turn: this.turnCount,
+              fieldCount: fields.length,
+            },
+          );
+          const retrySubmit = await this.executeServiceNowRecordControllerTool({
+            tabId,
+            args: submitArgs,
+            label: "Retry ServiceNow submit",
+            eventName: "servicenow_record_controller_submit_retry_started",
+          });
+          completion = this.maybeCompleteTrustedFormSubmitStep({
+            toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+            toolArgs: submitArgs,
+            toolResult: retrySubmit.result,
+            mode: "sequential",
+          });
+        } else {
+          this.traceRecorder?.recordEvent(
+            "servicenow_record_controller_submit_retry_abandoned",
+            {
+              turn: this.turnCount,
+              reason: refill.ok ? "untrusted_refill_result" : "refill_tool_error",
+            },
+          );
+        }
+      }
+      if (!submit.ok || !completion) {
+        this.traceRecorder?.recordEvent("servicenow_record_controller_deferred", {
+          turn: this.turnCount,
+          phase: "submit",
+          reason: submit.ok ? "untrusted_submit_result" : "tool_error",
+        });
+        this.context.addMessage({
+          role: "user",
+          content:
+            "The ServiceNow record form controller filled the requested fields but did not get trusted submit evidence. Verify validation errors or submit the form with configure_servicenow_form({ submit: true }).",
+        });
+        return null;
+      }
+
+      const summary = completion.finalSummary;
+      this.completedResult = { outcome: "completed", summary };
+      this.statusHandler(AgentStatus.IDLE, "Done");
+      this.messageHandler(summary, []);
+      this.saveTurnCheckpoint().catch(() => {});
+      this.traceRecorder?.recordEvent("servicenow_record_controller_completed", {
+        turn: this.turnCount,
+        summary,
+      });
+
+      return {
+        outcome: "completed",
+        turnCount: this.turnCount,
+        summary,
+        failure: { category: "none", code: "none" },
+        metrics: this.getMetrics(),
+      };
+    } finally {
+      await this.traceRecorder?.endTurn();
+    }
+  }
+
+  private shouldAutoSubmitTrustedServiceNowForm(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+  }): boolean {
+    if (this.selectedSkillId !== "servicenow-record-form") return false;
+    if (!this.isTaskLevelServiceNowRecordWorkflow()) return false;
+    if (!this.hasTrustedServiceNowSubmitIntent()) return false;
+    return Boolean(
+      detectTrustedFormFillStepCompletion({
+        toolName: params.toolName,
+        toolArgs: params.toolArgs,
+        toolResult: params.toolResult,
+      }),
+    );
+  }
+
+  private async maybeAutoSubmitTrustedServiceNowForm(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    tabId: number;
+    mode: "parallel" | "sequential";
+  }): Promise<{ finalSummary: string; newIndex: number } | null> {
+    if (!this.shouldAutoSubmitTrustedServiceNowForm(params)) return null;
+
+    const submitArgs = { submit: true, submitButton: "Submit" };
+    const submitToolCall: ToolCall = {
+      id: `auto_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: ToolName.CONFIGURE_SERVICENOW_FORM,
+        arguments: JSON.stringify(submitArgs),
+      },
+    } as ToolCall;
+    const toolStep: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "tool",
+      label: "Submit ServiceNow form",
+      detail: JSON.stringify(submitArgs),
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      status: "running",
+      timestamp: Date.now(),
+    };
+    this.stepHandler(toolStep, false);
+    this.log.info("agent", "Auto-submitting trusted ServiceNow form", {
+      turn: this.turnCount,
+      mode: params.mode,
+    });
+    this.traceRecorder?.recordEvent("trusted_form_auto_submit_started", {
+      turn: this.turnCount,
+      mode: params.mode,
+      trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
+    });
+
+    const startedAt = Date.now();
+    const result = await this.executeToolCall(submitToolCall, params.tabId);
+    const durationMs = Date.now() - startedAt;
+    this.stepHandler(
+      {
+        ...toolStep,
+        status: "done",
+        durationMs,
+      },
+      true,
+    );
+    this.traceRecorder?.recordToolExecution(
+      submitToolCall.id,
+      ToolName.CONFIGURE_SERVICENOW_FORM,
+      submitArgs,
+      result,
+      true,
+      durationMs,
+      RiskLevel.MEDIUM,
+    );
+    this.context.addMessage({
+      role: "tool",
+      content: result,
+      tool_call_id: submitToolCall.id,
+    });
+
+    return this.maybeCompleteTrustedFormSubmitStep({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: submitArgs,
+      toolResult: result,
+      mode: params.mode,
+    });
+  }
+
+  private maybeCompleteTrustedFormSubmitStep(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    mode: "parallel" | "sequential";
+  }): { finalSummary: string; newIndex: number } | null {
+    const signal = detectTrustedFormSubmitCompletion({
+      toolName: params.toolName,
+      toolArgs: params.toolArgs,
+      toolResult: params.toolResult,
+    });
+    if (!signal) return null;
+
+    const plan = this.context.getPlanStatusRaw();
+    if (
+      !plan ||
+      plan.currentIndex < 0 ||
+      plan.currentIndex >= plan.subtasks.length
+    ) {
+      if (
+        this.selectedSkillId !== "servicenow-record-form" ||
+        !this.hasTrustedServiceNowSubmitIntent()
+      ) {
+        return null;
+      }
+
+      this.log.info("agent", "trusted form helper completed planless submit", {
+        turn: this.turnCount,
+        mode: params.mode,
+        submittedRecord: signal.submittedRecord,
+      });
+      this.traceRecorder?.recordEvent("trusted_form_submit_success", {
+        fromStep: -1,
+        toStep: 0,
+        matchedTokens: signal.matchedTokens,
+        reason: signal.reason,
+        submittedRecord: signal.submittedRecord,
+        trustedTool: params.toolName,
+        mode: params.mode,
+        completedAllSteps: true,
+        planless: true,
+      });
+      return { finalSummary: signal.reason, newIndex: 0 };
+    }
+
+    const currentSubtask = plan.subtasks[plan.currentIndex];
+    if (!currentSubtask) return null;
+    if (this.getActiveToolProfileForStep(plan.currentIndex) !== "submit_form") {
+      return null;
+    }
+
+    this.consecutiveAutoAdvances = 0;
+    const fromStep = plan.currentIndex;
+    const newIndex = this.completeRemainingSubtasks(fromStep, signal.reason);
+    this.syncPlanStatus(newIndex, "trusted_form_submit_success", {
+      reason: signal.reason,
+      matchedTokens: signal.matchedTokens,
+      submittedRecord: signal.submittedRecord,
+      advancedTo: newIndex,
+      mode: params.mode,
+      trustedTool: params.toolName,
+    });
+    if (this.taskId) {
+      this.broadcast({
+        type: "TASK_PROGRESS",
+        payload: {
+          taskId: this.taskId,
+          subtasks: this.planSubtasks,
+          currentIndex: newIndex,
+          totalTurnsUsed: this.turnCount,
+        },
+      });
+    }
+    this.log.info("agent", "trusted form helper completed submit step", {
+      turn: this.turnCount,
+      fromStep,
+      toStep: newIndex,
+      mode: params.mode,
+      submittedRecord: signal.submittedRecord,
+    });
+    this.traceRecorder?.recordEvent("trusted_form_submit_success", {
+      fromStep,
+      toStep: newIndex,
+      matchedTokens: signal.matchedTokens,
+      reason: signal.reason,
+      submittedRecord: signal.submittedRecord,
+      trustedTool: params.toolName,
+      mode: params.mode,
+      completedAllSteps: newIndex >= this.planSubtasks.length,
+    });
+    return { finalSummary: signal.reason, newIndex };
   }
 
   private completeRemainingSubtasks(
@@ -5775,11 +6499,22 @@ export class AgentLoop {
     if (!subtask) return undefined;
     const explicitProfile = subtask.toolProfile;
     if (explicitProfile && resolveToolProfile(explicitProfile as ToolProfile)) {
-      return explicitProfile as ToolProfile;
+      return resolveSkillToolProfile(
+        this.selectedSkillId,
+        subtask.description,
+        this.planSteps[stepIndex]?.successCriteria || "",
+        explicitProfile as ToolProfile,
+      );
     }
-    return inferToolProfileForStep(
+    const inferredProfile = inferToolProfileForStep(
       subtask.description,
       this.planSteps[stepIndex]?.successCriteria || "",
+    );
+    return resolveSkillToolProfile(
+      this.selectedSkillId,
+      subtask.description,
+      this.planSteps[stepIndex]?.successCriteria || "",
+      inferredProfile,
     );
   }
 
@@ -8990,6 +9725,31 @@ export class AgentLoop {
                 }
               }
 
+              const missingRequiredEvidence =
+                this.getMissingRequiredEvidenceTypes();
+              if (missingRequiredEvidence.length > 0) {
+                this.doneRejections++;
+                this.log.warn("agent", "DONE rejected: missing typed evidence", {
+                  turn: this.turnCount,
+                  rejections: this.doneRejections,
+                  selectedSkillId: this.selectedSkillId,
+                  missingRequiredEvidence,
+                });
+                this.traceRecorder?.recordEvent("done_rejected_missing_evidence", {
+                  rejections: this.doneRejections,
+                  selectedSkillId: this.selectedSkillId,
+                  missingRequiredEvidence,
+                });
+                this.context.addMessage({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  content:
+                    `done() REJECTED: Missing required typed evidence: ${missingRequiredEvidence.join(", ")}.\n\n` +
+                    "Use the selected workflow tool to complete and verify the action before calling done().",
+                });
+                continue;
+              }
+
               // --- Normal done handling ---
               // Signal completion immediately — the orchestrator reads this
               // after a lane timeout to avoid retrying completed subtasks.
@@ -9817,7 +10577,55 @@ export class AgentLoop {
               tool_call_id: toolCall.id,
             });
 
+            const trustedSubmitCompletion =
+              this.maybeCompleteTrustedFormSubmitStep({
+                toolName,
+                toolArgs: args,
+                toolResult: result,
+                mode: "sequential",
+              });
+            if (trustedSubmitCompletion) {
+              doneSummary = trustedSubmitCompletion.finalSummary;
+              doneSignaled = true;
+              this.completedResult = {
+                outcome: "completed",
+                summary: doneSummary,
+              };
+              this.statusHandler(AgentStatus.IDLE, "Done");
+              this.messageHandler(doneSummary, []);
+              this.saveTurnCheckpoint().catch(() => {});
+              break;
+            }
+
             // Trigger B: Blind input detection — warn when type_text value has no evidence
+            this.maybeAdvanceTrustedFormFillStep({
+              toolName,
+              toolArgs: args,
+              toolResult: result,
+              mode: "sequential",
+            });
+
+            const trustedAutoSubmitCompletion =
+              await this.maybeAutoSubmitTrustedServiceNowForm({
+                toolName,
+                toolArgs: args,
+                toolResult: result,
+                tabId,
+                mode: "sequential",
+              });
+            if (trustedAutoSubmitCompletion) {
+              doneSummary = trustedAutoSubmitCompletion.finalSummary;
+              doneSignaled = true;
+              this.completedResult = {
+                outcome: "completed",
+                summary: doneSummary,
+              };
+              this.statusHandler(AgentStatus.IDLE, "Done");
+              this.messageHandler(doneSummary, []);
+              this.saveTurnCheckpoint().catch(() => {});
+              break;
+            }
+
             if (toolName === ToolName.TYPE_TEXT) {
               const typedValue = String(args.text || "");
               if (typedValue.length > 3) {
