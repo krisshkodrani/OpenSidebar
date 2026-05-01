@@ -4,6 +4,7 @@ import type { PendingUserInteraction } from "../agent/loop-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
 import {
   AgentRole,
+  EvidenceEvent,
   EscalationDecisionMessage,
   EscalationPacket,
   SessionMetrics,
@@ -29,9 +30,10 @@ export interface PlannerAssignment {
 }
 
 export interface StructuredEvidence {
-  claim: string;
-  basis: "tool_output" | "observation" | "inference" | "user_input";
-  confidence: number;
+  event?: EvidenceEvent;
+  claim?: string;
+  basis?: "tool_output" | "observation" | "inference" | "user_input";
+  confidence?: number;
   sourceToolCall?: string;
   turnNumber?: number;
 }

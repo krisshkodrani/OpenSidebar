@@ -85,6 +85,7 @@ import {
   OrchestratorVerifier,
   programmaticVerify,
 } from "./verifier";
+import { getLoadedSkillContract } from "./skills";
 import {
   buildAssumptionDriftSignal,
   buildCompletedStepsSummary,
@@ -4627,6 +4628,18 @@ export class Orchestrator {
               confidence: result.outcome === "completed" ? 0.85 : 0.5,
               sourceToolCall: entry.match(/\bT\d+:\s*([a-z_]+)/)?.[1],
             })),
+          ...(result.evidence ?? []).map((event) => ({
+            event,
+            claim: `${event.type} from ${event.source}`,
+            basis: "tool_output" as const,
+            confidence:
+              event.confidence === "high"
+                ? 1
+                : event.confidence === "medium"
+                  ? 0.75
+                  : 0.4,
+            sourceToolCall: event.source,
+          })),
         ];
         this.appendHandoffArtifact(node, {
           role: "executor",
@@ -4659,11 +4672,15 @@ export class Orchestrator {
             } catch {
               // Tab may have closed; proceed without post-execution tab info
             }
+            const requiredEvidenceTypes =
+              getLoadedSkillContract(node.selectedSkillId)
+                ?.requiredEvidenceTypes;
             const programmaticResult = programmaticVerify({
               output: result.summary,
               objective: node.description,
               successCriteria: node.successCriteria,
               evidence: executorEvidence,
+              requiredEvidenceTypes,
               previousUrl: snapshot?.url,
               currentUrl,
               previousTitle: snapshot?.title,
@@ -4693,6 +4710,7 @@ export class Orchestrator {
                   handoffContext: verifierHandoffContext,
                   executorOutcome: result.outcome,
                   evidence: executorEvidence,
+                  requiredEvidenceTypes,
                   previousUrl: snapshot?.url,
                   currentUrl,
                   previousTitle: snapshot?.title,
@@ -5309,7 +5327,7 @@ export class Orchestrator {
           node.handoffArtifacts.some(
             (artifact) =>
               artifact.phase === "executor_finished" &&
-              artifact.evidence?.some((entry) => entry.confidence < 1),
+              artifact.evidence?.some((entry) => (entry.confidence ?? 1) < 1),
           ),
       );
       if (

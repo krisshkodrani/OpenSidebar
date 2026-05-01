@@ -410,6 +410,11 @@ function extractPrimaryRecordId(
   snapshot: DomSnapshot | null | undefined,
 ): string | null {
   if (!snapshot) return null;
+  const titleRecordMatch = snapshot.title?.match(
+    /\b(?:Create|New|Record)\s+([A-Z]{2,}\d+)\b/i,
+  )?.[1];
+  if (titleRecordMatch) return titleRecordMatch;
+
   const numberField = snapshot.elements.find((element) =>
     /\b(?:number|record_number)\b/i.test(
       `${element.attributes.id ?? ""} ${element.attributes.name ?? ""}`,
@@ -426,6 +431,17 @@ function extractPrimaryRecordId(
       .filter(Boolean)
       .join(" ")
       .match(RECORD_ID_RE)?.[0] ?? null
+  );
+}
+
+function hasCreateRecordTitle(
+  snapshot: DomSnapshot | null | undefined,
+  recordId: string,
+): boolean {
+  if (!snapshot?.title || !recordId) return false;
+  const escapedRecordId = recordId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:Create|New)\\s+${escapedRecordId}\\b`, "i").test(
+    snapshot.title,
   );
 }
 
@@ -486,7 +502,11 @@ export function detectFormSubmissionResetSuccess(params: {
     toolArgs,
   } = params;
   if (!preActionSnapshot || !currentSnapshot || !actionEffect) return null;
-  if (toolName !== ToolName.CLICK_ELEMENT && toolName !== ToolName.PRESS_KEY) {
+  if (
+    toolName !== ToolName.CLICK_ELEMENT &&
+    toolName !== ToolName.PRESS_KEY &&
+    toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
+  ) {
     return null;
   }
 
@@ -501,6 +521,11 @@ export function detectFormSubmissionResetSuccess(params: {
     ) {
       return null;
     }
+  } else if (
+    toolName === ToolName.CONFIGURE_SERVICENOW_FORM &&
+    toolArgs?.submit !== true
+  ) {
+    return null;
   }
 
   const materiallyChanged =
@@ -511,6 +536,12 @@ export function detectFormSubmissionResetSuccess(params: {
   const beforeRecordId = extractPrimaryRecordId(preActionSnapshot);
   const afterRecordId = extractPrimaryRecordId(currentSnapshot);
   if (!beforeRecordId || !afterRecordId || beforeRecordId === afterRecordId) {
+    return null;
+  }
+  if (
+    !hasCreateRecordTitle(preActionSnapshot, beforeRecordId) ||
+    !hasCreateRecordTitle(currentSnapshot, afterRecordId)
+  ) {
     return null;
   }
 
@@ -549,7 +580,11 @@ export function shouldTrackFormSubmissionReset(params: {
     toolArgs,
   } = params;
   if (!preActionSnapshot) return false;
-  if (toolName !== ToolName.CLICK_ELEMENT && toolName !== ToolName.PRESS_KEY) {
+  if (
+    toolName !== ToolName.CLICK_ELEMENT &&
+    toolName !== ToolName.PRESS_KEY &&
+    toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
+  ) {
     return false;
   }
   const stepText = `${currentStepDescription}\n${currentStepSuccessCriteria ?? ""}`;
@@ -563,9 +598,89 @@ export function shouldTrackFormSubmissionReset(params: {
     ) {
       return false;
     }
+  } else if (
+    toolName === ToolName.CONFIGURE_SERVICENOW_FORM &&
+    toolArgs?.submit !== true
+  ) {
+    return false;
+  }
+
+  const beforeRecordId = extractPrimaryRecordId(preActionSnapshot);
+  if (!beforeRecordId || !hasCreateRecordTitle(preActionSnapshot, beforeRecordId)) {
+    return false;
   }
 
   return countUserEnteredFormValues(preActionSnapshot) >= 2;
+}
+
+export function detectTrustedFormFillStepCompletion(params: {
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult: string;
+}): { reason: string; matchedTokens: string[] } | null {
+  const { toolName, toolArgs, toolResult } = params;
+  if (toolName !== ToolName.CONFIGURE_SERVICENOW_FORM) return null;
+  if (toolArgs?.submit === true) return null;
+
+  const fields = Array.isArray(toolArgs?.fields) ? toolArgs.fields : [];
+  if (fields.length === 0) return null;
+
+  if (!toolResult.startsWith("Configured ServiceNow form.")) return null;
+  if (
+    toolResult.includes("Mismatches:") ||
+    toolResult.includes("ServiceNow form configuration incomplete.") ||
+    toolResult.startsWith("Error:")
+  ) {
+    return null;
+  }
+
+  const configuredRows = [
+    ...toolResult.matchAll(/^- .+\([^)]+\) = /gm),
+  ].length;
+  if (configuredRows < fields.length) return null;
+
+  return {
+    reason:
+      `Trusted form helper configured ${configuredRows} requested ` +
+      `field${configuredRows === 1 ? "" : "s"} without mismatches.`,
+    matchedTokens: ["Configured ServiceNow form", `${configuredRows} fields`],
+  };
+}
+
+export function detectTrustedFormSubmitCompletion(params: {
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult: string;
+}): { reason: string; matchedTokens: string[]; submittedRecord: string } | null {
+  const { toolName, toolArgs, toolResult } = params;
+  if (toolName !== ToolName.CONFIGURE_SERVICENOW_FORM) return null;
+  if (toolArgs?.submit !== true) return null;
+
+  const submittedRecord =
+    toolResult.match(/\bSubmitted ServiceNow form record:\s*([A-Z]{2,}\d+)\b/i)?.[1] ??
+    "";
+  if (!submittedRecord) return null;
+
+  if (!toolResult.startsWith("Configured ServiceNow form.")) return null;
+  if (
+    toolResult.includes("Mismatches:") ||
+    toolResult.includes("ServiceNow form configuration incomplete.") ||
+    toolResult.startsWith("Error:")
+  ) {
+    return null;
+  }
+  if (!/\bClicked submit control:/i.test(toolResult)) return null;
+
+  return {
+    reason: `Trusted ServiceNow form helper submitted record ${submittedRecord.toUpperCase()}.`,
+    matchedTokens: [
+      "Configured ServiceNow form",
+      "Clicked submit control",
+      "Submitted ServiceNow form record",
+      submittedRecord.toUpperCase(),
+    ],
+    submittedRecord: submittedRecord.toUpperCase(),
+  };
 }
 
 export interface SuccessCriteriaResult {

@@ -205,6 +205,8 @@ export function formatStepLabel(
       return "Inspect catalog item";
     case ToolName.CONFIGURE_CATALOG_ITEM:
       return "Configure catalog item";
+    case ToolName.CONFIGURE_SERVICENOW_FORM:
+      return "Configure ServiceNow form";
     case ToolName.XRAY_PAGE:
       return "Toggle X-ray mode";
     default:

@@ -1007,6 +1007,621 @@ describe("Tool Registration", () => {
     rectSpy.mockRestore();
   });
 
+  test("configure_servicenow_form fills fields by label and clicks submit", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <label for="incident.contact_type">Channel</label>
+            <select id="incident.contact_type" name="incident.contact_type">
+                <option value="">-- None --</option>
+                <option value="phone">Phone</option>
+            </select>
+            <button id="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["short_description", "contact_type"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="incident.${field}"]`),
+      getLabelOf: (field: string) =>
+        field === "short_description" ? "Short description" : "Channel",
+      getValue: (field: string) => values[field] || "",
+      getDisplayValue: () => "INC0034429",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="incident.${field}"]`,
+        ) as HTMLInputElement | HTMLSelectElement | null;
+        if (control) control.value = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "Create INC0034430 | Incident | ServiceNow";
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const execution = await toolRegistry.executeDetailed(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                { field: "Short description", value: "EMAIL Server Down Again" },
+                { field: "Channel", value: "Phone" },
+              ],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+      const result = execution.result;
+
+      expect(values.short_description).toBe("EMAIL Server Down Again");
+      expect(values.contact_type).toBe("phone");
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).not.toContain("Mismatches:");
+      expect(result).toContain("Submitted ServiceNow form record: INC0034429");
+      expect(execution.evidence?.map((event) => event.type)).toEqual(
+        expect.arrayContaining([
+          "fill_attempted",
+          "field_value_observed",
+          "submit_attempted",
+          "submit_succeeded",
+          "record_identity_observed",
+        ]),
+      );
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form does not report submission while still on the same create record", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <button id="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["short_description"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="incident.${field}"]`),
+      getLabelOf: () => "Short description",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="incident.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const execution = await toolRegistry.executeDetailed(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                { field: "Short description", value: "EMAIL Server Down Again" },
+              ],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+      const result = execution.result;
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("ServiceNow form configuration incomplete.");
+      expect(result).toContain(
+        "submit did not leave the create form for INC0034429",
+      );
+      expect(result).not.toContain("Submitted ServiceNow form record:");
+      expect(execution.evidence?.map((event) => event.type)).toContain(
+        "uncertainty_detected",
+      );
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form does not report submission when same create record is wrapped by classic nav", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    (window as any).happyDOM.setURL(`${origin}/incident.do`);
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <button id="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["short_description"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="incident.${field}"]`),
+      getLabelOf: () => "Short description",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="incident.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        "incident.do",
+      )}`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                { field: "Short description", value: "EMAIL Server Down Again" },
+              ],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("ServiceNow form configuration incomplete.");
+      expect(result).toContain(
+        "submit did not leave the create form for INC0034429",
+      );
+      expect(result).not.toContain("Submitted ServiceNow form record:");
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form prefers configured Number field over create title record", async () => {
+    const origin = "https://workarenapublic15.service-now.com";
+    (window as any).happyDOM.setURL(`${origin}/change_request.do`);
+    document.title = "Create CHG0040878 | Change Request | ServiceNow";
+    document.body.innerHTML = `
+            <label for="change_request.number">Number</label>
+            <input id="change_request.number" name="change_request.number" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["number"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="change_request.${field}"]`),
+      getLabelOf: () => "Number",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="change_request.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "Create CHG0040879 | Change Request | ServiceNow";
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        "change_request.do",
+      )}`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Number", value: "CHG0000021" }],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("Submitted ServiceNow form record: CHG0000021");
+      expect(result).not.toContain("Submitted ServiceNow form record: CHG0040878");
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form reads current Number field on submit-only calls", async () => {
+    const origin = "https://workarenapublic15.service-now.com";
+    (window as any).happyDOM.setURL(`${origin}/change_request.do`);
+    document.title = "Create CHG0040884 | Change Request | ServiceNow";
+    document.body.innerHTML = `
+            <label for="change_request.number">Number</label>
+            <input id="change_request.number" name="change_request.number" value="CHG0000021" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = { number: "CHG0000021" };
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["number"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="change_request.${field}"]`),
+      getLabelOf: () => "Number",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "Create CHG0040885 | Change Request | ServiceNow";
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        "change_request.do",
+      )}`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [],
+              submit: true,
+              submitButton: "Submit",
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("Submitted ServiceNow form record: CHG0000021");
+      expect(result).not.toContain("Submitted ServiceNow form record: CHG0040884");
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form opens the submitted ServiceNow record after insert redirects to a generic page", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    (window as any).happyDOM.setURL(`${origin}/incident.do`);
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    const originalFetch = (window as any).fetch;
+    (window as any).g_form = {
+      getTableName: () => "incident",
+      getFieldNames: () => ["short_description"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="incident.${field}"]`),
+      getLabelOf: () => "Short description",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="incident.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    (window as any).fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        result: [{ sys_id: "73d10c4693a8035065c5ff87dd03d644" }],
+      }),
+    }));
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "ServiceNow";
+      (window as any).happyDOM.setURL(`${origin}/welcome.do`);
+    });
+    let currentUrl = `${origin}/welcome.do`;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: currentUrl,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async (_tabId: number, update: any) => {
+      currentUrl = update.url;
+      document.title = "INC0034429 | Incident | ServiceNow";
+      return { id: 123, url: currentUrl, title: document.title, groupId: -1 };
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                { field: "Short description", value: "EMAIL Server Down Again" },
+              ],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      const expectedUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        "incident.do?sys_id=73d10c4693a8035065c5ff87dd03d644",
+      )}`;
+      expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: expectedUrl });
+      expect(result).toContain("Submitted ServiceNow form record: INC0034429");
+      expect(result).toContain(`Opened submitted ServiceNow record: ${expectedUrl}`);
+      expect(result).toContain("Current title: INC0034429 | Incident | ServiceNow");
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).fetch = originalFetch;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form commits ServiceNow reference fields with sys_id backing values", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.incident.caller_id">Caller</label>
+            <input
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.incident.caller_id",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "incident.caller_id",
+    ) as HTMLInputElement;
+    const values: Record<string, string> = {};
+    const sysId = "0123456789abcdef0123456789abcdef";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["caller_id"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "sys_user" }),
+      getLabelOf: () => "Caller",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string, display: string) => {
+        values[field] = value;
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            result: [{ sys_id: sysId, name: "Joe Employee" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Caller", value: "Joe Employee" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/now/table/sys_user?"),
+        expect.objectContaining({ credentials: "same-origin" }),
+      );
+      expect(values.caller_id).toBe(sysId);
+      expect(hiddenInput.value).toBe(sysId);
+      expect(displayInput.value).toBe("Joe Employee");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain("Caller (caller_id) = Joe Employee");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form does not treat textarea metadata as a reference field", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create INC0034429 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.description">Description</label>
+            <textarea id="incident.description" name="incident.description"></textarea>
+        `;
+    const textarea = document.getElementById(
+      "incident.description",
+    ) as HTMLTextAreaElement;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["description"],
+      getControl: () => textarea,
+      getGlideUIElement: () => ({ reference: "incident" }),
+      getLabelOf: () => "Description",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        textarea.value = value;
+      },
+    };
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-textarea-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                {
+                  field: "Description",
+                  value:
+                    "Multiple employees have reported that they are unable to send/receive email.",
+                },
+              ],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(values.description).toBe(
+        "Multiple employees have reported that they are unable to send/receive email.",
+      );
+      expect(textarea.value).toBe(
+        "Multiple employees have reported that they are unable to send/receive email.",
+      );
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
   test("configure_catalog_item prefers checkout over duplicate add-to-cart when cart is ready", async () => {
     document.title = "Standard Laptop | ServiceNow";
     document.body.innerHTML = `

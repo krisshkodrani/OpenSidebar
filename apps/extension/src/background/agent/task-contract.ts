@@ -102,28 +102,45 @@ function looksLikeQuotedAnswerPrompt(value: string): boolean {
   );
 }
 
-function extractFieldValuePairs(text: string): Array<{
+export function extractFieldValuePairs(text: string): Array<{
   field: string;
   value: string;
 }> {
   const pairs: Array<{ field: string; value: string }> = [];
-  const patterns = [
-    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([\s\S]*?)\3/gi,
-    /\bfield\s+(["'])([\s\S]*?)\1\s+(?:to|with|as|=)\s+(["'])([\s\S]*?)\3/gi,
-  ];
+  const seenFields = new Set<string>();
+  const pushPair = (field: string, value: string) => {
+    const trimmedField = field.trim();
+    if (!trimmedField) return;
+    const key = normalize(trimmedField);
+    if (seenFields.has(key)) return;
+    seenFields.add(key);
+    pairs.push({ field: trimmedField, value });
+  };
 
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      const first = match[2] ?? "";
-      const second = match[4] ?? "";
-      const field = pattern.source.startsWith("\\bfield") ? first : second;
-      const value = pattern.source.startsWith("\\bfield") ? second : first;
-      const trimmedField = field.trim();
-      if (!trimmedField) continue;
-      pairs.push({
-        field: trimmedField,
-        value,
-      });
+  for (const match of text.matchAll(
+    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([\s\S]*?)\3/gi,
+  )) {
+    pushPair(match[4] ?? "", match[2] ?? "");
+  }
+
+  for (const match of text.matchAll(
+    /\bfield\s+(["'])([^"'\r\n]{1,160})\1\s+(?:to|with|as|=)\s+(["'])([\s\S]*?)\3/gi,
+  )) {
+    pushPair(match[2] ?? "", match[4] ?? "");
+  }
+
+  if (pairs.length === 0) {
+    for (const match of text.matchAll(
+      /\b([A-Z][A-Za-z0-9 /_-]{1,80})\s*=\s*(?:(["'])([\s\S]*?)\2|\b(empty|false|true|none|null)\b)/g,
+    )) {
+      const field = match[1] ?? "";
+      const quotedValue = match[3];
+      const bareValue = match[4];
+      if (quotedValue != null) {
+        pushPair(field, quotedValue);
+      } else if (bareValue != null) {
+        pushPair(field, /^empty|none|null$/i.test(bareValue) ? "" : bareValue);
+      }
     }
   }
 

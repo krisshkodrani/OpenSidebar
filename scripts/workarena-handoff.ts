@@ -3,10 +3,8 @@
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "child_process";
 import { createInterface, type Interface } from "readline";
 import {
-  extractDoneSummary,
   filterTraceFilesByWorkspace,
   findAllNewTraceFiles,
-  readTrace,
 } from "../apps/extension/tests/e2e/helpers/diagnostics";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness";
 import {
@@ -38,12 +36,18 @@ import {
   writeJsonReport,
 } from "./workarena-adapter-lib.js";
 import { validateWorkArenaReport } from "./workarena-report-schema.js";
+import {
+  extractSubmittedRecordNumberFromText,
+  readTraceMetrics,
+  readTraceTerminalFromIndex,
+} from "./workarena-handoff-metrics.js";
 import { selectValidationUrl } from "./workarena-validation-url.js";
 import { resolve } from "path";
-import { existsSync, readFileSync } from "fs";
 import type { Page } from "puppeteer";
+import { fileURLToPath } from "url";
 
 const SESSION_BRIDGE_PATH = resolve(PROJECT_ROOT, "scripts", "workarena-session-bridge.py");
+const TRACE_INDEX_PATH = resolve(PROJECT_ROOT, "traces", "index.jsonl");
 
 type JsonRecord = Record<string, unknown>;
 
@@ -65,23 +69,6 @@ type AgentTerminal = {
   ok: boolean;
   reason: string;
   events: JsonRecord[];
-};
-
-type TraceMetrics = {
-  traceIds: string[];
-  traceFiles: string[];
-  finalAnswer: string | null;
-  submittedRecordNumber: string | null;
-  turns: number;
-  perceptions: number;
-  toolCalls: number;
-  toolExecutions: number;
-  tokens: {
-    input: number;
-    output: number;
-    total: number;
-  };
-  costUsd: number;
 };
 
 type StorageEntry = {
@@ -493,98 +480,6 @@ function validationFromBridge(
   };
 }
 
-function normalizeRecordNumber(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().toUpperCase();
-  return /^[A-Z]{2,}\d+$/.test(trimmed) ? trimmed : null;
-}
-
-function extractSubmittedRecordNumberFromText(value: unknown): string | null {
-  if (typeof value !== "string" || !value) return null;
-  const direct = value.match(
-    /\bSubmit advanced from populated record\s+([A-Z]{2,}\d+)\s+to\s+fresh record form\b/i,
-  );
-  if (direct) return normalizeRecordNumber(direct[1]);
-
-  const fallback = value.match(/\bpreviousRecordId["'\s:]+([A-Z]{2,}\d+)\b/i);
-  return fallback ? normalizeRecordNumber(fallback[1]) : null;
-}
-
-function submittedRecordNumberFromEvents(events: unknown): string | null {
-  if (!Array.isArray(events)) return null;
-  for (const event of events) {
-    if (!isRecord(event) || event.type !== "submit_form_reset_success") continue;
-    const data = nestedRecord(event, "data");
-    const direct = normalizeRecordNumber(data.previousRecordId);
-    if (direct) return direct;
-    const reason = extractSubmittedRecordNumberFromText(data.reason);
-    if (reason) return reason;
-  }
-  return null;
-}
-
-function readTraceMetrics(traceFiles: string[]): TraceMetrics {
-  let input = 0;
-  let output = 0;
-  let total = 0;
-  let costUsd = 0;
-  let toolCalls = 0;
-  let toolExecutions = 0;
-  let perceptions = 0;
-  let submittedRecordNumber: string | null = null;
-  const traceIds = new Set<string>();
-
-  for (const filePath of traceFiles) {
-    if (!existsSync(filePath)) continue;
-    const lines = readFileSync(filePath, "utf-8").trim().split(/\r?\n/).filter(Boolean);
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line) as any;
-        if (typeof entry.runId === "string") traceIds.add(entry.runId);
-        submittedRecordNumber =
-          submittedRecordNumber ?? submittedRecordNumberFromEvents(entry.events);
-        const usage = entry.llmResponse?.usage;
-        input += Number(usage?.prompt_tokens ?? 0);
-        output += Number(usage?.completion_tokens ?? 0);
-        total += Number(usage?.total_tokens ?? 0);
-        costUsd += Number(usage?.cost ?? 0);
-        toolCalls += Array.isArray(entry.llmResponse?.toolCalls)
-          ? entry.llmResponse.toolCalls.length
-          : 0;
-        toolExecutions += Array.isArray(entry.toolExecutions)
-          ? entry.toolExecutions.length
-          : 0;
-        const messages = entry.llmRequest?.messages ?? [];
-        if (
-          Array.isArray(messages) &&
-          messages.some(
-            (message) =>
-              typeof message?.content === "string" &&
-              message.content.includes("Page Interpretation"),
-          )
-        ) {
-          perceptions++;
-        }
-      } catch {
-        // Ignore malformed trace lines in metrics aggregation.
-      }
-    }
-  }
-
-  return {
-    traceIds: [...traceIds].sort(),
-    traceFiles,
-    finalAnswer: extractDoneSummary(traceFiles) || null,
-    submittedRecordNumber,
-    turns: traceFiles.flatMap((filePath) => readTrace(filePath)).length,
-    perceptions,
-    toolCalls,
-    toolExecutions,
-    tokens: { input, output, total },
-    costUsd,
-  };
-}
-
 function summarizeAgentTerminal(terminal: AgentTerminal): JsonRecord {
   const lastStatus = [...terminal.events]
     .reverse()
@@ -606,6 +501,43 @@ function summarizeAgentTerminal(terminal: AgentTerminal): JsonRecord {
     lastStatus,
     lastCompletion,
   };
+}
+
+function terminalFromTraceSession(
+  workspaceId: string,
+  traceTerminal: NonNullable<ReturnType<typeof readTraceTerminalFromIndex>>,
+): AgentTerminal {
+  const event: JsonRecord = {
+    type: "TASK_COMPLETION",
+    status: traceTerminal.status,
+    completionStatus: traceTerminal.status,
+    detail: traceTerminal.summary ?? traceTerminal.outcome,
+    workspaceId,
+    timestamp: Date.now(),
+    payload: {
+      source: "trace_session",
+      outcome: traceTerminal.outcome,
+      runId: traceTerminal.runId,
+      sessionId: traceTerminal.sessionId,
+      recordedAt: traceTerminal.recordedAt,
+      query: traceTerminal.query,
+      summary: traceTerminal.summary,
+    },
+  };
+  return {
+    ok: traceTerminal.ok,
+    reason: traceTerminal.reason,
+    events: [event],
+  };
+}
+
+function isTaskLevelTraceTerminal(
+  traceTerminal: NonNullable<ReturnType<typeof readTraceTerminalFromIndex>>,
+): boolean {
+  const query = traceTerminal.query ?? "";
+  return /\bObjective:\s*Complete the workflow for the original request\b/i.test(
+    query,
+  );
 }
 
 async function waitForAgentTerminal(
@@ -653,6 +585,14 @@ async function waitForAgentTerminal(
       return { ok: true, reason: "agent_idle", events };
     }
 
+    const traceTerminal = readTraceTerminalFromIndex(
+      TRACE_INDEX_PATH,
+      workspaceId,
+    );
+    if (traceTerminal && isTaskLevelTraceTerminal(traceTerminal)) {
+      return terminalFromTraceSession(workspaceId, traceTerminal);
+    }
+
     await new Promise((resolveWait) => setTimeout(resolveWait, 2_000));
   }
 
@@ -660,6 +600,13 @@ async function waitForAgentTerminal(
     (event: JsonRecord) =>
       event.workspaceId == null || event.workspaceId === workspaceId,
   );
+  const traceTerminal = readTraceTerminalFromIndex(
+    TRACE_INDEX_PATH,
+    workspaceId,
+  );
+  if (traceTerminal && isTaskLevelTraceTerminal(traceTerminal)) {
+    return terminalFromTraceSession(workspaceId, traceTerminal);
+  }
   return { ok: false, reason: "timeout", events };
 }
 
@@ -1162,7 +1109,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error("[workarena:handoff] Fatal error:", error);
-  process.exit(1);
-});
+const currentModulePath = fileURLToPath(import.meta.url);
+const invokedModulePath = process.argv[1] ? resolve(process.argv[1]) : "";
+
+if (currentModulePath === invokedModulePath) {
+  main().catch((error) => {
+    console.error("[workarena:handoff] Fatal error:", error);
+    process.exit(1);
+  });
+}
