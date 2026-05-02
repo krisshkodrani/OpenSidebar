@@ -22,7 +22,6 @@ import {
   DOM_MODIFYING_TOOLS,
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
-  MUTATION_SENSITIVE_TOOLS,
   resolveToolProfile,
   buildDomAwareProfile,
 } from "../tools/metadata";
@@ -82,11 +81,8 @@ import {
   turnCheckpointKey,
   buildMutationKey,
 } from "./checkpoint-types";
-import type {
-  TurnCheckpoint,
-  MutationLedgerEntry,
-  SideEffectEntry,
-} from "./checkpoint-types";
+import type { TurnCheckpoint } from "./checkpoint-types";
+import { MutationLedger } from "./mutation-ledger";
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
@@ -147,7 +143,6 @@ import {
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
-  djb2,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   isHallucinatedToolCall,
@@ -644,53 +639,6 @@ function actionMemoryKey(
     return rawArgsKey;
   }
   return `${rawArgsKey}@${getSnapshotFingerprint(snapshot ?? null)}`;
-}
-
-function getMutationReplayFingerprint(
-  snapshot: DomSnapshot | null | undefined,
-): string {
-  const base = getSnapshotFingerprint(snapshot ?? null);
-  if (!snapshot) return base;
-
-  const pageText =
-    `${snapshot.pageContent ?? ""}\n${snapshot.visibleContent ?? ""}`.trim();
-  if (pageText) return base;
-
-  const elementSignature = (snapshot.elements ?? [])
-    .slice(0, 120)
-    .map((element) => {
-      const attributes = element.attributes ?? {};
-      const attributeText = [
-        attributes["aria-label"],
-        attributes.placeholder,
-        attributes.value,
-        attributes.title,
-        attributes.href,
-      ]
-        .filter((value): value is string => typeof value === "string")
-        .join(" ");
-      return [
-        element.tag,
-        element.tagName,
-        element.role ?? "",
-        element.text ?? "",
-        attributeText,
-        element.isDisabled ? "disabled" : "enabled",
-      ]
-        .join(":")
-        .replace(/\s+/g, " ")
-        .slice(0, 180);
-    })
-    .join("|");
-
-  return `${base}|elements:${djb2(elementSignature)}`;
-}
-
-function getMutationReplayScopedKey(
-  mutationKey: string,
-  snapshot: DomSnapshot | null | undefined,
-): string {
-  return `${mutationKey}@${getMutationReplayFingerprint(snapshot)}`;
 }
 
 type MoneyTableAggregate = {
@@ -1394,19 +1342,15 @@ export class AgentLoop {
   private moneyTableAggregate: MoneyTableAggregate | null = null;
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
-  /** Tracks (tool+args) → result for non-idempotent action dedup after done() rejection */
-  private executedActions = new Map<string, string>();
-  /** Durable step-scoped mutation ledger — survives turns and restarts within a plan step. */
-  private stepMutationLedger: MutationLedgerEntry[] = [];
-  /** Durable log of externally-relevant side effects for failure reporting. */
-  private sideEffectsLog: SideEffectEntry[] = [];
+  /** Durable mutation replay guard and side-effect log. */
+  private mutationLedger = new MutationLedger();
   /** Turn checkpoint to restore from (injected by orchestrator on restart). */
   private pendingTurnCheckpoint: TurnCheckpoint | null = null;
   /** Pending interaction response injected by orchestrator on resume. */
   private resumeInteraction: PendingUserInteraction | null = null;
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
-  /** When true, executedActions persists across turns (set after done() rejection) */
+  /** When true, mutation replay guard persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
   /** Pending hint from the user, picked up on the next turn */
   private pendingFeedback: string | null = null;
@@ -1963,10 +1907,10 @@ export class AgentLoop {
         pageUrl: snapshot?.url ?? null,
 
         // Phase 2
-        stepMutationLedger: this.stepMutationLedger,
+        stepMutationLedger: this.mutationLedger.entries,
 
         // Phase 4
-        sideEffectsLog: this.sideEffectsLog,
+        sideEffectsLog: this.mutationLedger.sideEffects,
       };
       const key = turnCheckpointKey(this.workspaceId, this.nodeId);
       await chrome.storage.local.set({ [key]: cp });
@@ -2015,21 +1959,13 @@ export class AgentLoop {
         this.llm.switchToExecutor();
       }
 
-      // Phase 2 — mutation ledger
-      this.stepMutationLedger = Array.isArray(cp.stepMutationLedger)
-        ? cp.stepMutationLedger
-        : [];
-
-      // Phase 4 — side effects log
-      this.sideEffectsLog = Array.isArray(cp.sideEffectsLog)
-        ? cp.sideEffectsLog
-        : [];
+      this.mutationLedger.restore(cp.stepMutationLedger, cp.sideEffectsLog);
 
       this.log.info("agent", "Restored from turn checkpoint", {
         turn: cp.turnCount,
         historyMessages: cp.history.originalCount,
-        ledgerEntries: this.stepMutationLedger.length,
-        sideEffects: this.sideEffectsLog.length,
+        ledgerEntries: this.mutationLedger.entries.length,
+        sideEffects: this.mutationLedger.sideEffects.length,
       });
       return true;
     } catch (e) {
@@ -2055,27 +1991,13 @@ export class AgentLoop {
     toolName: ToolName,
     args: Record<string, unknown>,
   ): { result: string; source: "ledger" | "ephemeral" } | null {
-    if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return null;
-    const mutKey = buildMutationKey(toolName, args);
     const currentSnapshot = this.context.getSnapshot?.() ?? null;
-    const currentFingerprint = getMutationReplayFingerprint(currentSnapshot);
-    const ledgerHit = this.stepMutationLedger.find(
-      (entry) =>
-        entry.key === mutKey &&
-        entry.snapshotFingerprint === currentFingerprint,
+    return this.mutationLedger.lookup(
+      toolName,
+      args,
+      currentSnapshot,
+      this.guardAfterDoneRejection,
     );
-    if (ledgerHit) {
-      return { result: ledgerHit.result, source: "ledger" };
-    }
-    const ephemeralHit = this.guardAfterDoneRejection
-      ? this.executedActions.get(
-          getMutationReplayScopedKey(mutKey, currentSnapshot),
-        )
-      : null;
-    if (ephemeralHit) {
-      return { result: ephemeralHit, source: "ephemeral" };
-    }
-    return null;
   }
 
   private replayMutationSensitiveAction(
@@ -2130,53 +2052,15 @@ export class AgentLoop {
     result: string,
     actionSnapshot?: DomSnapshot | null,
   ): void {
-    if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return;
-
-    const mutKey = buildMutationKey(toolName, args);
-    const snapshotForReplay =
-      actionSnapshot ?? this.context.getSnapshot?.() ?? null;
-    const snapshotFingerprint = getMutationReplayFingerprint(snapshotForReplay);
-    this.executedActions.set(
-      getMutationReplayScopedKey(mutKey, snapshotForReplay),
+    this.mutationLedger.record({
+      toolName,
+      args,
       result,
-    );
-
-    const ledgerEntry: MutationLedgerEntry = {
-      key: mutKey,
-      toolName,
-      args,
-      result: result.slice(0, 500),
-      recordedAt: Date.now(),
+      actionSnapshot,
+      currentSnapshot: this.context.getSnapshot?.() ?? null,
       planIndex: this.lastPlanIndex,
-      snapshotFingerprint,
-    };
-    const existingEntryIndex = this.stepMutationLedger.findIndex(
-      (entry) => entry.key === mutKey,
-    );
-    if (existingEntryIndex >= 0) {
-      this.stepMutationLedger[existingEntryIndex] = ledgerEntry;
-    } else {
-      this.stepMutationLedger.push(ledgerEntry);
-      if (this.stepMutationLedger.length > 50) {
-        this.stepMutationLedger = this.stepMutationLedger.slice(-50);
-      }
-    }
-
-    this.sideEffectsLog.push({
-      id: crypto.randomUUID(),
       turn: this.turnCount,
-      planIndex: this.lastPlanIndex,
-      toolName,
-      args,
-      result: result.slice(0, 300),
-      timestamp: Date.now(),
-      snapshotFingerprint: getSnapshotFingerprint(
-        this.context.getSnapshot?.() ?? null,
-      ),
     });
-    if (this.sideEffectsLog.length > 100) {
-      this.sideEffectsLog = this.sideEffectsLog.slice(-100);
-    }
   }
 
   private isMoneyTableAggregateTask(): boolean {
@@ -3600,7 +3484,7 @@ export class AgentLoop {
         };
       }
     } finally {
-      result.sideEffectsLog = [...this.sideEffectsLog];
+      result.sideEffectsLog = [...this.mutationLedger.sideEffects];
       result.evidence = this.evidenceAccumulator.toArray();
 
       if (
@@ -3891,8 +3775,7 @@ export class AgentLoop {
 
     // 2. Clear history and idempotency ledger (keeps DOM snapshot)
     this.context.clearHistory();
-    this.executedActions.clear();
-    this.stepMutationLedger = [];
+    this.mutationLedger.clearReplayState();
 
     // 3. Re-inject original query
     this.context.addMessage({
@@ -5476,7 +5359,7 @@ export class AgentLoop {
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.stepRetryCount = 0;
-      this.stepMutationLedger = [];
+      this.mutationLedger.clearStepLedger();
     }
     return advancedTo;
   }
@@ -5518,8 +5401,7 @@ export class AgentLoop {
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
-      this.executedActions.clear();
-      this.stepMutationLedger = [];
+      this.mutationLedger.clearReplayState();
     }
 
     return resolvedIndex;
@@ -6227,8 +6109,7 @@ export class AgentLoop {
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
-      this.executedActions.clear();
-      this.stepMutationLedger = [];
+      this.mutationLedger.clearReplayState();
     }
 
     return resolvedIndex;
@@ -6775,7 +6656,7 @@ export class AgentLoop {
       // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
       // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
       if (!this.guardAfterDoneRejection) {
-        this.executedActions.clear();
+        this.mutationLedger.clearEphemeral();
       }
       this.guardAfterDoneRejection = false;
 
