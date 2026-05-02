@@ -152,6 +152,7 @@ import {
   approvalRequestStep,
   clarificationRequestStep,
 } from "./agent-interaction-steps";
+import { buildPlanStatusSnapshot } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
@@ -1408,34 +1409,14 @@ export class AgentLoop {
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
-    const existingPlan = this.context.getPlanStatusRaw();
-    const subtasks = this.planSubtasks.map((s, idx) => ({
-      description: s.description,
-      status: s.status,
-      completedAtUrl: s.completedAtUrl,
-      result: s.result,
-      ...(existingPlan?.subtasks[idx]?.verificationGate
-        ? { verificationGate: existingPlan.subtasks[idx].verificationGate }
-        : this.planSteps[idx]?.verifyAfter
-          ? { verificationGate: this.planSteps[idx].verifyAfter }
-          : {}),
-      ...(existingPlan?.subtasks[idx]?.toolProfile
-        ? { toolProfile: existingPlan.subtasks[idx].toolProfile }
-        : this.planSteps[idx]?.toolProfile
-          ? { toolProfile: this.planSteps[idx].toolProfile }
-          : {}),
-    }));
+    const { subtasks, repairedIndex } = buildPlanStatusSnapshot({
+      existingPlan: this.context.getPlanStatusRaw(),
+      planSubtasks: this.planSubtasks,
+      planSteps: this.planSteps,
+      currentIndex,
+    });
 
-    if (
-      !subtasks.some((subtask) => subtask.status === "running") &&
-      currentIndex < subtasks.length
-    ) {
-      const repairedIndex = subtasks.findIndex(
-        (subtask) => subtask.status !== "completed",
-      );
-      if (repairedIndex >= 0) {
-        subtasks[repairedIndex].status = "running";
-      }
+    if (repairedIndex !== null) {
       this.log.warn("agent", "Plan status missing running subtask", {
         turn: this.turnCount,
         currentIndex,
