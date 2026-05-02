@@ -58,11 +58,15 @@ Prefer these locations when making changes:
 
 ## Development Discipline
 
-These rules bias toward small, verifiable, product-quality changes. Use judgment for trivial tasks, but do not trade correctness for speed.
+These rules bias toward small, verifiable, product-quality changes. They align with the four coding-agent principles often summarized as: think before coding, simplicity first, surgical changes, and goal-driven execution.
+
+Use these principles as operating discipline, not slogans. They are strongest when combined: an agent should surface ambiguity before acting, choose the smallest viable design, limit the diff to the task, and verify against a concrete goal. The main failure mode is applying one principle in isolation, such as using "simplicity" to skip necessary edge cases, or "goal-driven execution" to overfit a test while missing the product behavior.
+
+Use judgment for trivial tasks, but do not trade correctness for speed.
 
 ### Think Before Coding
 
-Before implementing, identify the user-visible goal and any assumptions that affect behavior.
+Before implementing, identify the user-visible goal and any assumptions that affect behavior. Instead of silently making assumptions, surface meaningful ambiguity, state assumptions explicitly, and ask for clarification when the wrong assumption would be costly.
 
 - State important assumptions when they affect the solution.
 - If multiple interpretations are plausible and the wrong choice would be costly, ask before editing.
@@ -72,7 +76,7 @@ Before implementing, identify the user-visible goal and any assumptions that aff
 
 ### Simplicity First
 
-Implement the minimum product change that satisfies the request.
+Implement the minimum product change that satisfies the request. Prefer the least code that solves the real problem without overengineering, speculative abstractions, or unnecessary features.
 
 - Do not add features, configuration, abstraction, or generalized frameworks unless the request or existing design clearly calls for them.
 - Prefer existing helpers, patterns, and boundaries over new mechanisms.
@@ -81,7 +85,7 @@ Implement the minimum product change that satisfies the request.
 
 ### Surgical Changes
 
-Keep diffs tightly tied to the task.
+Keep diffs tightly tied to the task. Do not "improve" adjacent code, refactor unrelated sections, or change formatting unless it is required for the task.
 
 - Touch only files needed for the requested behavior.
 - Do not reformat, rename, reorganize, or clean up adjacent code unless required by the change.
@@ -94,7 +98,7 @@ Every changed line should have a clear reason connected to the user request or n
 
 ### Goal-Driven Execution
 
-Turn work into verifiable outcomes.
+Turn work into verifiable outcomes. Prefer clear success criteria over vague activity, then loop until the stated goal is verified by the narrowest relevant check.
 
 - For bug fixes, prefer a focused reproduction or regression test before or alongside the fix.
 - For behavior changes, verify the observable behavior, not just internal planner artifacts.
@@ -118,10 +122,10 @@ When implementing non-trivial code changes, use this workflow:
 1. Implement the requested change.
 2. Run the relevant tests/typechecks/lints.
 3. Call the DeepSeek MCP reviewer on the final diff.
-4. Treat DeepSeek as an adversarial reviewer, not as an automatic author.
+4. Treat DeepSeek as an adversarial reviewer and second-opinion doctor, not as an automatic author or final authority.
 5. For each DeepSeek finding:
    - **Accept** if it identifies a concrete bug, missed edge case, security issue, brittle selector, race condition, or maintainability problem.
-   - **Reject** if it is style-only, speculative, or increases complexity without clear benefit.
+   - **Reject** if it is style-only, speculative, increases complexity without clear benefit, or conflicts with stronger local evidence and Codex is confident in the implementation.
 6. Apply accepted fixes.
 7. Re-run tests.
 8. Summarize:
@@ -167,7 +171,7 @@ Ask DeepSeek to review especially for:
 Do not merge or finalize until:
 
 - tests pass, and
-- either DeepSeek approves, or Codex explicitly explains why remaining DeepSeek objections are rejected.
+- either DeepSeek approves, or Codex explicitly explains why remaining DeepSeek objections are rejected. DeepSeek is advisory; a confident Codex rejection is acceptable when supported by tests, code context, and concrete reasoning.
 
 ## Product And E2E Design Rules
 
