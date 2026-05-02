@@ -18,7 +18,11 @@ function ProgressBar({ rows }: { rows: { id: string; status: string }[] }) {
   if (rows.length === 0) return null;
   const hasFailed = rows.some((r) => r.status === "failed");
   return (
-    <div className="flex items-center gap-1">
+    <div
+      className="flex items-center gap-1"
+      role="progressbar"
+      aria-label={`${rows.filter((r) => r.status === "completed").length} of ${rows.length} steps completed`}
+    >
       <div className="flex h-2 flex-1 min-w-[60px] max-w-[160px] rounded-full overflow-hidden bg-warm-200 dark:bg-warm-700">
         {rows.map((row) => (
           <div
@@ -35,11 +39,16 @@ function ProgressBar({ rows }: { rows: { id: string; status: string }[] }) {
                       : ""
             }`}
             style={{ flex: 1 }}
+            role="presentation"
           />
         ))}
       </div>
       {hasFailed && (
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"
+          role="status"
+          aria-label="One or more steps failed"
+        />
       )}
     </div>
   );
@@ -347,7 +356,7 @@ export function PlanStrip({
                       }}
                       className="flex-1 rounded bg-primary-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-700 transition-colors"
                     >
-                      {feedback.trim() ? "Replan & Start" : "Start"}
+                      {feedback.trim() ? "Start with guidance" : "Start"}
                     </button>
                   </div>
                 </>

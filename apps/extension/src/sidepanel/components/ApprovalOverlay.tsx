@@ -138,7 +138,7 @@ export function ApprovalOverlay() {
           />
         </div>
         <span className="text-[10px] tabular-nums text-red-600 dark:text-red-400 shrink-0">
-          {Math.ceil(remainingMs / 1000)}s
+          Auto-rejects in {Math.ceil(remainingMs / 1000)}s
         </span>
       </div>
 

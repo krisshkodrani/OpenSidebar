@@ -322,6 +322,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
+    if (message.isStreaming) return "";
     let cleaned = message.content
       // Strip ReAct-style reasoning blocks
       .replace(
@@ -336,7 +337,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     const extracted = extractJsonText(cleaned);
     if (extracted) cleaned = extracted;
     return sanitizeHtml(marked.parse(cleaned) as string);
-  }, [message.content, isUser]);
+  }, [message.content, message.isStreaming, isUser]);
 
   // Human-readable summary for tool-only turns (no LLM text output)
   // Prefer pre-resolved step labels (with element names) over raw tool call labels
@@ -375,6 +376,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const showBubble =
     isUser ||
     message.completionData ||
+    message.isStreaming ||
     renderedHtml ||
     message.thinking ||
     toolOnlyLabel ||
@@ -431,6 +433,10 @@ export const MessageBubble = React.memo(function MessageBubble({
             message.content
           ) : message.completionData ? (
             <CompletionSummary data={message.completionData} />
+          ) : message.isStreaming ? (
+            <span className="inline-block min-h-[1.5em] whitespace-pre-wrap">
+              {message.content || "Thinking..."}
+            </span>
           ) : renderedHtml ? (
             <div
               className="prose-chat"
@@ -440,8 +446,6 @@ export const MessageBubble = React.memo(function MessageBubble({
             <span className="text-warm-400 dark:text-warm-500 italic text-xs">
               {toolOnlyLabel}
             </span>
-          ) : message.isStreaming ? (
-            <span className="text-warm-500 italic">Thinking...</span>
           ) : message.thinking ? null : (
             ""
           )}

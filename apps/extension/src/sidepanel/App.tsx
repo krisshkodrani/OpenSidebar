@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenSidebar - Side Panel UI
  *
  * React 18 + Tailwind CSS UI rendered in Chrome's side panel.
@@ -10,12 +10,13 @@
 
 import React, {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useCallback,
   useMemo,
 } from "react";
-import { X, ClipboardList } from "lucide-react";
+import { X } from "lucide-react";
 import { logger } from "../utils";
 import { speakText } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
@@ -78,12 +79,11 @@ export default function App() {
   const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
   const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
-  // Memoize filtered messages — avoids re-running filter/map on every delta
+  // Memoize filtered messages â€” avoids re-running filter/map on every delta
   const visibleMessages = useMemo(
     () =>
       messages.filter(
         (msg) =>
-          msg.isPlanCard ||
           msg.role === "user" ||
           msg.isStreaming ||
           msg.content.trim() ||
@@ -159,7 +159,6 @@ export default function App() {
   }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const screenshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldFollowLatestRef = useRef(true);
 
@@ -187,7 +186,7 @@ export default function App() {
     return () => mediaQuery.removeEventListener("change", handler);
   }, [settings.theme]);
 
-  // Initial load — resolve workspace, then load data
+  // Initial load â€” resolve workspace, then load data
   useEffect(() => {
     logger.info("ui", "Side Panel Mounted");
 
@@ -213,7 +212,7 @@ export default function App() {
             useStore.getState().setActiveWorkspaceId(ws.id);
           }
 
-          // 3. Notify background that panel is open — response carries workspace ID
+          // 3. Notify background that panel is open â€” response carries workspace ID
           //    (workspace may be created by background if this is a first open)
           try {
             const resp = await chrome.runtime.sendMessage({
@@ -288,7 +287,7 @@ export default function App() {
     setRecordSkillIntroDismissed,
   ]);
 
-  // Tab activation listener — detect workspace switches
+  // Tab activation listener â€” detect workspace switches
   useEffect(() => {
     const refreshBlockedWarning = async (tabId?: number) => {
       try {
@@ -346,7 +345,7 @@ export default function App() {
     return () => chrome.tabs.onActivated.removeListener(listener);
   }, [settings]);
 
-  // Visibility resync — recover state when panel becomes visible again
+  // Visibility resync â€” recover state when panel becomes visible again
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
@@ -372,7 +371,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Message Bridge — centralized message routing from background to store
+  // Message Bridge â€” centralized message routing from background to store
   useEffect(() => {
     const cleanup = initializeBridge(useStore, {
       onScreenshot: (payload) => {
@@ -420,7 +419,7 @@ export default function App() {
     }
   }, [settings.showDebugScreenshots, screenshot]);
 
-  // Auto-scroll — uses message count + streaming flag as lightweight trigger
+  // Auto-scroll â€” uses message count + streaming flag as lightweight trigger
   // instead of the full messages array reference (which changes on every delta).
   const lastVisibleMessage = visibleMessages[visibleMessages.length - 1];
   const scrollSignal = useMemo(
@@ -447,47 +446,18 @@ export default function App() {
     };
 
     updateFollowState();
-    el.addEventListener("scroll", updateFollowState);
+    el.addEventListener("scroll", updateFollowState, { passive: true });
     return () => el.removeEventListener("scroll", updateFollowState);
   }, []);
 
-  useEffect(() => {
-    if (scrollTimerRef.current) {
-      clearTimeout(scrollTimerRef.current);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && shouldFollowLatestRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
-    scrollTimerRef.current = setTimeout(() => {
-      const el = scrollRef.current;
-      if (el && (shouldFollowLatestRef.current || isAgentRunning)) {
-        el.scrollTop = el.scrollHeight;
-      }
-      scrollTimerRef.current = null;
-    }, 100);
-    return () => {
-      if (scrollTimerRef.current) {
-        clearTimeout(scrollTimerRef.current);
-        scrollTimerRef.current = null;
-      }
-    };
-  }, [scrollSignal, isAgentRunning]);
+  }, [scrollSignal]);
 
-  // Force-scroll to bottom on task completion so the summary is visible.
-  // Uses a ref to track the previous running state and detect the transition.
-  const prevRunningRef = useRef(isAgentRunning);
-  useEffect(() => {
-    const wasRunning = prevRunningRef.current;
-    prevRunningRef.current = isAgentRunning;
-    if (wasRunning && !isAgentRunning) {
-      // Agent just finished — scroll to bottom after a short delay
-      // so the final message / completion summary has rendered.
-      setTimeout(() => {
-        const el = scrollRef.current;
-        shouldFollowLatestRef.current = true;
-        if (el) el.scrollTop = el.scrollHeight;
-      }, 250);
-    }
-  }, [isAgentRunning]);
-
-  // Auto-TTS — speak the final assistant message when the agent finishes
+  // Auto-TTS â€” speak the final assistant message when the agent finishes
   const prevRunningForVoice = useRef(isAgentRunning);
   useEffect(() => {
     const wasRunning = prevRunningForVoice.current;
@@ -562,6 +532,7 @@ export default function App() {
       };
 
       addMessage(userEntry);
+      shouldFollowLatestRef.current = true;
 
       // Clear input and set running state
       setInputText("");
@@ -678,7 +649,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <div className="flex flex-col h-full bg-warm-gradient text-warm-800 dark:text-warm-100 font-sans transition-colors duration-200">
-        {/* Ambient activity bar — thin animated gradient when agent is running */}
+        {/* Ambient activity bar â€” thin animated gradient when agent is running */}
         {isAgentRunning && (
           <div
             className="h-0.5 shrink-0 animate-shimmer"
@@ -842,20 +813,9 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              visibleMessages.map((msg) =>
-                msg.isPlanCard ? (
-                  <button
-                    key={msg.id}
-                    onClick={() => setIsPlanExpanded(true)}
-                    className="w-full text-left px-3 py-1.5 my-1 rounded border border-warm-200 dark:border-warm-700 bg-warm-50/60 dark:bg-warm-800/40 text-[11px] text-warm-500 dark:text-warm-400 hover:bg-warm-100 dark:hover:bg-warm-800/60 transition-colors flex items-center gap-1.5"
-                  >
-                    <ClipboardList size={11} className="shrink-0" />
-                    Plan created — tap to view
-                  </button>
-                ) : (
-                  <MessageBubble key={msg.id} message={msg} />
-                ),
-              )
+              visibleMessages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))
             )}
           </div>
         </main>
@@ -959,3 +919,4 @@ export default function App() {
     </ErrorBoundary>
   );
 }
+

@@ -125,7 +125,13 @@ export function InputArea({
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [voiceEnabled, isRecording, isTranscribing, startRecording, stopRecording]);
+  }, [
+    voiceEnabled,
+    isRecording,
+    isTranscribing,
+    startRecording,
+    stopRecording,
+  ]);
 
   // Auto-dismiss STT errors after 5 seconds
   useEffect(() => {
@@ -216,7 +222,8 @@ export function InputArea({
                 Guide the agent
               </div>
               <div className="mt-0.5 text-[11px] leading-relaxed text-warm-500 dark:text-warm-400">
-                Add guidance, a correction, or a new constraint while the current run continues.
+                Add guidance, a correction, or a new constraint while the
+                current run continues.
               </div>
             </div>
             <div className="input-glow relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-all">
@@ -263,9 +270,15 @@ export function InputArea({
                 {/* Mic button — always visible when voice is enabled (Alt+V) */}
                 {voiceEnabled && (
                   <button
-                    onClick={() => isRecording ? stopRecording() : startRecording()}
+                    onClick={() =>
+                      isRecording ? stopRecording() : startRecording()
+                    }
                     disabled={isTranscribing}
-                    title={isRecording ? "Stop recording (Alt+V)" : "Voice input (Alt+V)"}
+                    title={
+                      isRecording
+                        ? "Stop recording (Alt+V)"
+                        : "Voice input (Alt+V)"
+                    }
                     className={clsx(
                       "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
                       isRecording
@@ -274,9 +287,15 @@ export function InputArea({
                           ? "bg-warm-400 text-white cursor-wait"
                           : "bg-warm-300 hover:bg-warm-400 dark:bg-warm-600 dark:hover:bg-warm-500 text-warm-700 dark:text-warm-200",
                     )}
-                    aria-label={isRecording ? "Stop recording" : "Start voice input"}
+                    aria-label={
+                      isRecording ? "Stop recording" : "Start voice input"
+                    }
                   >
-                    {isTranscribing ? <Loader2 size={16} className="animate-spin" /> : <Mic size={16} />}
+                    {isTranscribing ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <Mic size={16} />
+                    )}
                   </button>
                 )}
                 {/* Send button — appears when text is present */}
@@ -295,14 +314,20 @@ export function InputArea({
             {(sttError || isRecording || isTranscribing) && (
               <div className="px-1 mt-1 flex items-center gap-1.5">
                 {sttError ? (
-                  <span className="text-[11px] text-red-500 dark:text-red-400">{sttError}</span>
+                  <span className="text-[11px] text-red-500 dark:text-red-400">
+                    {sttError}
+                  </span>
                 ) : isRecording ? (
                   <>
                     <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-[11px] text-red-500 dark:text-red-400">Recording... press Alt+V or tap mic to stop</span>
+                    <span className="text-[11px] text-red-500 dark:text-red-400">
+                      Recording... press Alt+V or tap mic to stop
+                    </span>
                   </>
                 ) : isTranscribing ? (
-                  <span className="text-[11px] text-warm-400 dark:text-warm-500">Transcribing...</span>
+                  <span className="text-[11px] text-warm-400 dark:text-warm-500">
+                    Transcribing...
+                  </span>
                 ) : null}
               </div>
             )}
@@ -329,7 +354,7 @@ export function InputArea({
                 {autonomyMenuOpen && (
                   <>
                     <div
-                      className="fixed inset-0 z-40"
+                      className="fixed inset-0 z-40 bg-black/15"
                       onClick={() => setAutonomyMenuOpen(false)}
                     />
                     <div className="absolute bottom-full left-0 mb-1.5 w-64 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg z-50 overflow-hidden">
