@@ -137,6 +137,15 @@ import {
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
 } from "./agent-telemetry";
+import {
+  BroadcastMessage,
+  forwardSuppressedStreamChunk,
+  planTerminationMessage,
+  runtimeBroadcastMessage,
+  sessionMetricsMessage,
+  sessionMetricsSnapshot,
+  shouldBroadcastSessionMetrics,
+} from "./agent-broadcast";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
@@ -651,10 +660,11 @@ export class AgentLoop {
 
   /** Get the current accumulated metrics snapshot */
   public getMetrics(): SessionMetrics {
-    return {
-      ...this.metrics,
-      totalSessionTimeMs: Date.now() - this.sessionStartTime,
-    };
+    return sessionMetricsSnapshot({
+      metrics: this.metrics,
+      now: Date.now(),
+      sessionStartTime: this.sessionStartTime,
+    });
   }
 
   /** Record a citation for a URL the agent visited or read */
@@ -676,19 +686,17 @@ export class AgentLoop {
 
   /** Broadcast metrics to side panel (throttled) */
   private broadcastMetrics(): void {
-    if (!this.showSessionMetrics) return;
-    // Throttle: every N turns or on turn 1
     if (
-      this.turnCount !== 1 &&
-      this.turnCount % BROADCAST_INTERVALS.METRICS !== 0
+      !shouldBroadcastSessionMetrics({
+        showSessionMetrics: this.showSessionMetrics,
+        turnCount: this.turnCount,
+        interval: BROADCAST_INTERVALS.METRICS,
+      })
     )
       return;
 
     this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
-    this.broadcast({
-      type: "SESSION_METRICS",
-      payload: { ...this.metrics },
-    });
+    this.broadcast(sessionMetricsMessage(this.metrics));
   }
 
   constructor(
@@ -1445,42 +1453,21 @@ export class AgentLoop {
    * Automatically attaches collected citations to STREAM_CHUNK done=true messages.
    */
   private broadcast(
-    msg: Omit<RuntimeMessage, "requestId" | "source" | "workspaceId">,
+    msg: BroadcastMessage,
   ): void {
     if (this.suppressUiBroadcast) {
-      // Forward STREAM_CHUNK to callback even when UI broadcasts are suppressed
-      if (msg.type === "STREAM_CHUNK" && this.onStreamChunk) {
-        const p = msg.payload as {
-          delta: string;
-          done: boolean;
-          replaceContent?: string;
-          thinking?: string;
-        };
-        this.onStreamChunk(p.delta, p.done, p.replaceContent, p.thinking);
-      }
+      forwardSuppressedStreamChunk(msg, this.onStreamChunk ?? undefined);
       return;
     }
-    // Attach citations to the final stream chunk
-    if (msg.type === "STREAM_CHUNK") {
-      const p = msg.payload as {
-        delta: string;
-        done: boolean;
-        citations?: unknown[];
-      };
-      if (p.done && this.citations.length > 0) {
-        msg = {
-          ...msg,
-          payload: { ...p, citations: [...this.citations] },
-        } as typeof msg;
-      }
-    }
     chrome.runtime
-      .sendMessage({
-        ...msg,
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId: this.workspaceId,
-      } as RuntimeMessage)
+      .sendMessage(
+        runtimeBroadcastMessage({
+          msg,
+          citations: this.citations,
+          workspaceId: this.workspaceId,
+          requestId: crypto.randomUUID(),
+        }),
+      )
       .catch(() => {});
   }
 
@@ -1488,41 +1475,18 @@ export class AgentLoop {
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
   ): void {
-    if (!this.taskId || this.planSubtasks.length === 0) return;
-
-    const subtaskResults: SubtaskResult[] = this.planSubtasks.map((st) => ({
-      description: st.description,
-      status:
-        st.status === "completed"
-          ? ("completed" as const)
-          : st.status === "skipped"
-            ? ("skipped" as const)
-            : ("failed" as const),
-      turnsUsed: st.turnsUsed,
-      result: st.result || "",
-    }));
-
-    this.broadcast({
-      type: "TASK_COMPLETION",
-      payload: {
-        taskId: this.taskId,
-        status: subtaskResults.some((r) => r.status === "completed")
-          ? "partial"
-          : "failed",
-        totalTurnsUsed: this.turnCount,
-        totalTimeMs: Date.now() - this.taskStartTime,
-        summary,
-        subtaskResults,
-        urlHistory: this.urlHistory,
-        metrics: this.getMetrics(),
-        terminationReason:
-          outcome === "stopped"
-            ? "Stopped by user"
-            : outcome === "max_turns"
-              ? `Turn limit reached (${this.turnCount}/${this.maxTurns})`
-              : summary,
-      },
+    const message = planTerminationMessage({
+      taskId: this.taskId,
+      subtasks: this.planSubtasks,
+      outcome,
+      summary,
+      turnCount: this.turnCount,
+      maxTurns: this.maxTurns,
+      totalTimeMs: Date.now() - this.taskStartTime,
+      urlHistory: this.urlHistory,
+      metrics: this.getMetrics(),
     });
+    if (message) this.broadcast(message);
   }
 
   private getMatchingApprovalInteraction(
