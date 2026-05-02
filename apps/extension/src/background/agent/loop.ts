@@ -155,6 +155,7 @@ import {
 import {
   advanceCompletedPlanSubtasks,
   buildPlanStatusSnapshot,
+  completeRemainingPlanSubtasks,
   completeSinglePlanSubtask,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
@@ -5050,27 +5051,23 @@ export class AgentLoop {
     currentIndex: number,
     result: string,
   ): number {
-    if (currentIndex < 0 || currentIndex >= this.planSubtasks.length) {
-      return currentIndex;
-    }
+    const completion = completeRemainingPlanSubtasks({
+      subtasks: this.planSubtasks,
+      currentIndex,
+      result,
+      completedAtUrl: this.context.getCurrentUrl() || undefined,
+      lastPlanIndex: this.lastPlanIndex,
+    });
 
-    for (let i = currentIndex; i < this.planSubtasks.length; i++) {
-      const subtask = this.planSubtasks[i];
-      subtask.status = "completed";
-      subtask.result = subtask.result || result;
-      subtask.completedAtUrl = this.context.getCurrentUrl() || undefined;
-    }
-
-    const resolvedIndex = this.planSubtasks.length;
-    if (resolvedIndex !== this.lastPlanIndex) {
-      this.lastPlanIndex = resolvedIndex;
+    if (completion.planIndexChanged) {
+      this.lastPlanIndex = completion.currentIndex;
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.mutationLedger.clearReplayState();
     }
 
-    return resolvedIndex;
+    return completion.currentIndex;
   }
 
   private completeSubmitFormReset(

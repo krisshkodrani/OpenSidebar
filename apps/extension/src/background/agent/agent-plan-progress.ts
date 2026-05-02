@@ -126,3 +126,32 @@ export function completeSinglePlanSubtask(args: {
     planIndexChanged: resolvedIndex !== args.lastPlanIndex,
   };
 }
+
+export function completeRemainingPlanSubtasks(args: {
+  subtasks: MutablePlanSubtask[];
+  currentIndex: number;
+  result: string;
+  completedAtUrl?: string;
+  lastPlanIndex: number;
+}): { currentIndex: number; planIndexChanged: boolean } {
+  if (args.currentIndex < 0 || args.currentIndex >= args.subtasks.length) {
+    return {
+      currentIndex: args.currentIndex,
+      planIndexChanged: false,
+    };
+  }
+
+  for (let i = args.currentIndex; i < args.subtasks.length; i++) {
+    const subtask = args.subtasks[i];
+    subtask.status = "completed";
+    subtask.result = subtask.result || args.result;
+    subtask.completedAtUrl = args.completedAtUrl;
+  }
+
+  const resolvedIndex = args.subtasks.length;
+
+  return {
+    currentIndex: resolvedIndex,
+    planIndexChanged: resolvedIndex !== args.lastPlanIndex,
+  };
+}
