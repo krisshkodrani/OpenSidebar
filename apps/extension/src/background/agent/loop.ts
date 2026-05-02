@@ -5,7 +5,6 @@ import {
   Citation,
   MessageSource,
   PerceptionRuntimeMode,
-  RuntimeMessage,
   RiskLevel,
   SessionMetrics,
   SubtaskResult,
@@ -138,13 +137,16 @@ import {
   recordVisionTelemetryUsage,
 } from "./agent-telemetry";
 import {
+  approvalRequestMessage,
   BroadcastMessage,
+  clarificationRequestMessage,
   forwardSuppressedStreamChunk,
   planTerminationMessage,
   runtimeBroadcastMessage,
   sessionMetricsMessage,
   sessionMetricsSnapshot,
   shouldBroadcastSessionMetrics,
+  taskProgressMessage,
 } from "./agent-broadcast";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
@@ -1615,20 +1617,17 @@ export class AgentLoop {
       bypassApprovals: this.bypassApprovals,
     });
     chrome.runtime
-      .sendMessage({
-        type: "APPROVAL_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId: this.workspaceId,
-        payload: {
+      .sendMessage(
+        approvalRequestMessage({
           approvalId: interaction.approvalId,
           toolName,
-          args,
-          risk: RiskLevel.HIGH,
+          toolArgs: args,
           context,
           timeoutMs: remainingTimeoutMs,
-        },
-      } as RuntimeMessage)
+          workspaceId: this.workspaceId,
+          requestId: crypto.randomUUID(),
+        }),
+      )
       .catch((error: any) => {
         this.log.warn("policy", "Approval request dispatch failed", {
           approvalId: interaction.approvalId,
@@ -1719,18 +1718,16 @@ export class AgentLoop {
       question,
     });
     chrome.runtime
-      .sendMessage({
-        type: "CLARIFICATION_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        workspaceId: this.workspaceId,
-        payload: {
+      .sendMessage(
+        clarificationRequestMessage({
           clarificationId: interaction.clarificationId,
           question,
           suggestions,
           timeoutMs: remainingTimeoutMs,
-        },
-      } as RuntimeMessage)
+          workspaceId: this.workspaceId,
+          requestId: crypto.randomUUID(),
+        }),
+      )
       .catch((error: any) => {
         this.log.warn("agent", "Clarification request dispatch failed", {
           clarificationId: interaction.clarificationId,
@@ -7186,15 +7183,14 @@ export class AgentLoop {
                     mode: "parallel",
                     advancedTo: newIdx,
                   });
-                  this.broadcast({
-                    type: "TASK_PROGRESS",
-                    payload: {
+                  this.broadcast(
+                    taskProgressMessage({
                       taskId: this.taskId!,
                       subtasks: this.planSubtasks,
                       currentIndex: newIdx,
                       totalTurnsUsed: this.turnCount,
-                    },
-                  });
+                    }),
+                  );
                   this.context.addMessage({
                     role: "user",
                     content: `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
@@ -8504,15 +8500,14 @@ export class AgentLoop {
                           convertedFromDone: true,
                         },
                       );
-                      this.broadcast({
-                        type: "TASK_PROGRESS",
-                        payload: {
+                      this.broadcast(
+                        taskProgressMessage({
                           taskId: this.taskId!,
                           subtasks: this.planSubtasks,
                           currentIndex: newIdx,
                           totalTurnsUsed: this.turnCount,
-                        },
-                      });
+                        }),
+                      );
                       this.log.info(
                         "agent",
                         "DONE converted into step completion",

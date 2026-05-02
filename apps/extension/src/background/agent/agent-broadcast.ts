@@ -1,10 +1,12 @@
 import {
   Citation,
   MessageSource,
+  RiskLevel,
   RuntimeMessage,
   SessionMetrics,
   SubtaskResult,
   SubtaskSummary,
+  ToolName,
 } from "../../types";
 
 type RuntimeEnvelopeKey = "requestId" | "source" | "workspaceId";
@@ -42,6 +44,70 @@ export function sessionMetricsMessage(
     type: "SESSION_METRICS",
     payload: { ...metrics },
   };
+}
+
+export function taskProgressMessage(args: {
+  taskId: string;
+  subtasks: SubtaskSummary[];
+  currentIndex: number;
+  totalTurnsUsed: number;
+}): BroadcastMessage {
+  return {
+    type: "TASK_PROGRESS",
+    payload: {
+      taskId: args.taskId,
+      subtasks: args.subtasks,
+      currentIndex: args.currentIndex,
+      totalTurnsUsed: args.totalTurnsUsed,
+    },
+  };
+}
+
+export function approvalRequestMessage(args: {
+  approvalId: string;
+  toolName: ToolName;
+  toolArgs: Record<string, unknown>;
+  context: string;
+  timeoutMs: number;
+  workspaceId: string | null;
+  requestId: string;
+}): RuntimeMessage {
+  return {
+    type: "APPROVAL_REQUEST",
+    requestId: args.requestId,
+    source: MessageSource.BACKGROUND,
+    workspaceId: args.workspaceId,
+    payload: {
+      approvalId: args.approvalId,
+      toolName: args.toolName,
+      args: args.toolArgs,
+      risk: RiskLevel.HIGH,
+      context: args.context,
+      timeoutMs: args.timeoutMs,
+    },
+  } as RuntimeMessage;
+}
+
+export function clarificationRequestMessage(args: {
+  clarificationId: string;
+  question: string;
+  suggestions?: string[];
+  timeoutMs: number;
+  workspaceId: string | null;
+  requestId: string;
+}): RuntimeMessage {
+  return {
+    type: "CLARIFICATION_REQUEST",
+    requestId: args.requestId,
+    source: MessageSource.BACKGROUND,
+    workspaceId: args.workspaceId,
+    payload: {
+      clarificationId: args.clarificationId,
+      question: args.question,
+      suggestions: args.suggestions,
+      timeoutMs: args.timeoutMs,
+    },
+  } as RuntimeMessage;
 }
 
 export function forwardSuppressedStreamChunk(
