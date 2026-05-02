@@ -650,19 +650,40 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
 
                 <div className="grid grid-cols-1 gap-2">
                   <button
-                    onClick={() => void handleDataControl("clear_chat_history")}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Clear all chat history? This cannot be undone.",
+                        )
+                      )
+                        void handleDataControl("clear_chat_history");
+                    }}
                     className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
                   >
                     Clear Chat History
                   </button>
                   <button
-                    onClick={() => void handleDataControl("clear_logs")}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Clear all local logs? This cannot be undone.",
+                        )
+                      )
+                        void handleDataControl("clear_logs");
+                    }}
                     className="w-full flex items-center justify-center gap-2 p-2.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-red-200 dark:border-red-900/30 rounded-lg transition-colors text-sm font-medium"
                   >
                     Clear Local Logs
                   </button>
                   <button
-                    onClick={() => void handleDataControl("clear_local_data")}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Clear ALL local data? This includes chat history, logs, settings, and saved prompts. This cannot be undone.",
+                        )
+                      )
+                        void handleDataControl("clear_local_data");
+                    }}
                     className="w-full flex items-center justify-center gap-2 p-2.5 text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30 border border-red-300 dark:border-red-900/40 rounded-lg transition-colors text-sm font-semibold"
                   >
                     Clear All Local Data
@@ -927,13 +948,13 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                         ? MOONSHOT_MODEL_PLANNER
                         : providerMode === "xiaomi"
                           ? XIAOMI_MODEL_PLANNER
-                        : providerMode === "fireworks-deepseek"
-                          ? DEEPSEEK_MODEL_PLANNER
-                          : providerMode === "fireworks"
-                            ? FIREWORKS_MODEL_PLANNER
-                            : providerMode !== "openrouter"
-                              ? GROQ_MODEL_PLANNER
-                              : MODEL_PLANNER
+                          : providerMode === "fireworks-deepseek"
+                            ? DEEPSEEK_MODEL_PLANNER
+                            : providerMode === "fireworks"
+                              ? FIREWORKS_MODEL_PLANNER
+                              : providerMode !== "openrouter"
+                                ? GROQ_MODEL_PLANNER
+                                : MODEL_PLANNER
                     }
                     models={plannerModels}
                     loading={
@@ -1018,7 +1039,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   !formState.openaiApiKey &&
                   !formState.geminiApiKey && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
-                      Needs a Groq, OpenAI, or Gemini key. Add one in the Models tab.
+                      Needs a Groq, OpenAI, or Gemini key. Add one in the Models
+                      tab.
                     </p>
                   )}
               </section>

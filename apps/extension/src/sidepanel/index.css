@@ -15,11 +15,11 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background-color: #F8FAFC;
+  background-color: #f8fafc;
 }
 
 .dark body {
-  background-color: #0F172A;
+  background-color: #0f172a;
 }
 
 /* --- Prose styles for assistant markdown messages --- */
@@ -216,9 +216,9 @@ body,
   }
 }
 
-/* --- Message entrance animation (spring overshoot) --- */
+/* --- Message entrance animation --- */
 .message-enter {
-  animation: fade-in-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: fade-in-up 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
 @keyframes fade-in-up {
@@ -271,10 +271,10 @@ body,
 
 /* --- Azure background gradient --- */
 .bg-warm-gradient {
-  background: linear-gradient(to bottom, #F8FAFC, rgba(219, 234, 254, 0.28));
+  background: linear-gradient(to bottom, #f8fafc, rgba(219, 234, 254, 0.28));
 }
 .dark .bg-warm-gradient {
-  background: linear-gradient(to bottom, #0F172A, #020617);
+  background: linear-gradient(to bottom, #0f172a, #020617);
 }
 
 /* --- Glass surface --- */
@@ -299,6 +299,16 @@ button {
 
 button:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+/* --- Focus-visible ring for keyboard accessibility --- */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.dark :focus-visible {
+  outline-color: #60a5fa;
 }
 
 /* --- Plan sheet slide-up --- */

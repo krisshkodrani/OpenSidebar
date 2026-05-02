@@ -1,8 +1,4 @@
-﻿import {
-  AgentStatus,
-  RuntimeMessage,
-  MessageSource,
-} from "../types";
+﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
 
@@ -63,38 +59,52 @@ export function initializeBridge(
 
     switch (message.type) {
       case "AGENT_STATUS":
-        state.updateStatus(message.payload.status, message.payload.detail);
-        if (
-          message.payload.status === AgentStatus.IDLE ||
-          message.payload.status === AgentStatus.ERROR
-        ) {
-          state.setAgentRunning(false);
-          state.clearStagnationState();
-          state.clearTurnProgress();
-          state.clearPendingApproval();
-          state.clearPendingEscalation();
-          state.clearPendingPlanConfirmation();
-          state.clearPendingClarification();
-          state.clearTaskRecovery();
-          state.clearDurableRunStatus();
-          state.clearLaneTelemetry();
-          state.clearLatestStepLabel();
-          state.setIsPlanning(false);
-          // Clear stale task progress if no TASK_COMPLETION was received
-          if (state.taskProgress) {
-            state.clearTaskProgress();
+        store.setState((current) => {
+          if (
+            message.payload.status === AgentStatus.IDLE ||
+            message.payload.status === AgentStatus.ERROR
+          ) {
+            // Clear stale task progress if no TASK_COMPLETION was received.
+            // Keep sessionMetrics visible after completion (cleared on next run start).
+            return {
+              agentStatus: message.payload.status,
+              statusDetail: message.payload.detail,
+              isAgentRunning: false,
+              stagnationState: null,
+              turnProgress: null,
+              pendingApproval: null,
+              pendingEscalation: null,
+              pendingPlanConfirmation: null,
+              pendingClarification: null,
+              taskRecovery: null,
+              durableRunStatus: null,
+              laneTelemetry: null,
+              latestStepLabel: null,
+              isPlanning: false,
+              ...(current.taskProgress
+                ? { taskProgress: null, taskCompletion: null }
+                : {}),
+            };
           }
-          // Keep sessionMetrics visible after completion (cleared on next run start)
-        } else {
-          state.setAgentRunning(true);
-          // Clear stale completion/progress from previous run when a new run starts
           if (message.payload.status === AgentStatus.THINKING) {
-            state.clearTaskProgress(); // clears both taskProgress and taskCompletion
-            state.clearSessionMetrics();
-            state.clearDurableRunStatus();
-            state.setIsPlanning(true);
+            // Clear stale completion/progress from previous run when a new run starts.
+            return {
+              agentStatus: message.payload.status,
+              statusDetail: message.payload.detail,
+              isAgentRunning: true,
+              taskProgress: null,
+              taskCompletion: null,
+              sessionMetrics: null,
+              durableRunStatus: null,
+              isPlanning: true,
+            };
           }
-        }
+          return {
+            agentStatus: message.payload.status,
+            statusDetail: message.payload.detail,
+            isAgentRunning: true,
+          };
+        });
         break;
 
       case "APPROVAL_REQUEST":
@@ -129,16 +139,8 @@ export function initializeBridge(
           ...message.payload,
           requestedAt: Date.now(),
         });
-        // Inject a synthetic plan card into the chat timeline
-        state.addMessage({
-          id: `plan-${message.payload.confirmationId}`,
-          role: "assistant",
-          content: "",
-          timestamp: Date.now(),
-          toolCalls: [],
-          isStreaming: false,
-          isPlanCard: true,
-        });
+        // Plan confirmation is now surfaced exclusively via PlanStrip —
+        // no synthetic message card needed.
         break;
 
       case "CLARIFICATION_REQUEST":

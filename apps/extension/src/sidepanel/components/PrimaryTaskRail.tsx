@@ -252,20 +252,40 @@ export function PrimaryTaskRail() {
       <div className="flex items-start gap-3">
         <div className="mt-0.5 shrink-0">
           {isStalled ? (
-            <AlertTriangle size={15} className="text-amber-500" />
+            <AlertTriangle
+              size={15}
+              className="text-amber-500"
+              aria-label="Agent stalled"
+            />
           ) : isAgentRunning && !isPaused ? (
-            <Loader2 size={15} className="animate-spin text-primary-500" />
+            <Loader2
+              size={15}
+              className="animate-spin text-primary-500"
+              aria-label="Agent running"
+            />
           ) : (
             <span
               className={`mt-0.5 inline-flex h-2.5 w-2.5 rounded-full ${
                 taskCompletion?.status === "completed"
                   ? "bg-green-500"
-                  : taskCompletion?.status === "failed" || agentStatus === AgentStatus.ERROR
+                  : taskCompletion?.status === "failed" ||
+                      agentStatus === AgentStatus.ERROR
                     ? "bg-red-500"
                     : isPaused
                       ? "bg-yellow-500"
                       : "bg-primary-500"
               }`}
+              role="status"
+              aria-label={
+                taskCompletion?.status === "completed"
+                  ? "Task completed"
+                  : taskCompletion?.status === "failed" ||
+                      agentStatus === AgentStatus.ERROR
+                    ? "Task failed"
+                    : isPaused
+                      ? "Agent paused"
+                      : "Agent idle"
+              }
             />
           )}
         </div>
