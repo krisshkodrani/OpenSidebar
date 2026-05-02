@@ -1,0 +1,168 @@
+import { describe, expect, test } from "vitest";
+import "../setup";
+
+import {
+  getMutationReplayFingerprint,
+  MutationLedger,
+} from "../../src/background/agent/mutation-ledger";
+import type { DomSnapshot } from "../../src/types";
+import { ToolName } from "../../src/types";
+
+function snapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    url: "https://example.com",
+    title: "Example",
+    text: "",
+    pageContent: "",
+    visibleContent: "",
+    elements: [],
+    timestamp: 1,
+    ...overrides,
+  } as DomSnapshot;
+}
+
+describe("MutationLedger", () => {
+  test("ignores read-only tools", () => {
+    const ledger = new MutationLedger(() => 1, () => "id-1");
+    const snap = snapshot();
+
+    ledger.record({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result: "read",
+      currentSnapshot: snap,
+      planIndex: 0,
+      turn: 1,
+    });
+
+    expect(ledger.entries).toHaveLength(0);
+    expect(ledger.sideEffects).toHaveLength(0);
+    expect(ledger.lookup(ToolName.READ_PAGE, {}, snap, true)).toBeNull();
+  });
+
+  test("records mutation-sensitive actions and replays from ledger first", () => {
+    const ledger = new MutationLedger(() => 10, () => "effect-1");
+    const snap = snapshot();
+
+    ledger.record({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 5 },
+      result: "clicked",
+      actionSnapshot: snap,
+      currentSnapshot: snap,
+      planIndex: 2,
+      turn: 7,
+    });
+
+    expect(
+      ledger.lookup(ToolName.CLICK_ELEMENT, { id: 5 }, snap, false),
+    ).toEqual({
+      result: "clicked",
+      source: "ledger",
+    });
+    expect(ledger.sideEffects[0]).toMatchObject({
+      id: "effect-1",
+      turn: 7,
+      planIndex: 2,
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 5 },
+      result: "clicked",
+      timestamp: 10,
+    });
+  });
+
+  test("uses ephemeral replay only when done-rejection guard is enabled", () => {
+    const ledger = new MutationLedger(() => 10, () => "effect-1");
+    const snap = snapshot();
+
+    ledger.record({
+      toolName: ToolName.TYPE_TEXT,
+      args: { id: 1, text: "hello" },
+      result: "typed",
+      actionSnapshot: snap,
+      currentSnapshot: snap,
+      planIndex: 0,
+      turn: 1,
+    });
+    ledger.clearStepLedger();
+
+    expect(
+      ledger.lookup(ToolName.TYPE_TEXT, { id: 1, text: "hello" }, snap, false),
+    ).toBeNull();
+    expect(
+      ledger.lookup(ToolName.TYPE_TEXT, { id: 1, text: "hello" }, snap, true),
+    ).toEqual({ result: "typed", source: "ephemeral" });
+  });
+
+  test("truncates stored results and caps retained entries", () => {
+    let now = 0;
+    const ledger = new MutationLedger(() => ++now, () => `effect-${now}`);
+    const snap = snapshot();
+    const longResult = "x".repeat(600);
+
+    for (let i = 0; i < 55; i++) {
+      ledger.record({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: i },
+        result: longResult,
+        actionSnapshot: snap,
+        currentSnapshot: snap,
+        planIndex: 0,
+        turn: i,
+      });
+    }
+
+    expect(ledger.entries).toHaveLength(50);
+    expect(ledger.entries[0].args).toEqual({ id: 5 });
+    expect(ledger.entries[0].result).toHaveLength(500);
+    expect(ledger.sideEffects).toHaveLength(55);
+    expect(ledger.sideEffects[0].result).toHaveLength(300);
+
+    for (let i = 55; i < 105; i++) {
+      ledger.record({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: i },
+        result: "clicked",
+        actionSnapshot: snap,
+        currentSnapshot: snap,
+        planIndex: 0,
+        turn: i,
+      });
+    }
+
+    expect(ledger.sideEffects).toHaveLength(100);
+    expect(ledger.sideEffects[0].turn).toBe(5);
+  });
+
+  test("includes element signature when page text is empty", () => {
+    const first = getMutationReplayFingerprint(
+      snapshot({
+        elements: [
+          {
+            tag: 1,
+            tagName: "button",
+            text: "Save",
+            role: "button",
+            attributes: {},
+          },
+        ],
+      }),
+    );
+    const second = getMutationReplayFingerprint(
+      snapshot({
+        elements: [
+          {
+            tag: 1,
+            tagName: "button",
+            text: "Delete",
+            role: "button",
+            attributes: {},
+          },
+        ],
+      }),
+    );
+
+    expect(first).not.toBe(second);
+    expect(first).toContain("|elements:");
+  });
+});
