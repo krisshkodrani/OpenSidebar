@@ -177,6 +177,22 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
     }
   },
 
+  setCompletionOnLastMessage: (payload) => {
+    set((state) => {
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const message = state.messages[i];
+        if (message.role !== "assistant") continue;
+        message.completionData = payload;
+        message.isStreaming = false;
+        if (!message.content && payload.summary) {
+          message.content = payload.summary;
+        }
+        break;
+      }
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+  },
+
   finalizeStream: (citations?: Citation[]) => {
     set((state) => {
       const last = state.messages[state.messages.length - 1];

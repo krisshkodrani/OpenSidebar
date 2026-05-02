@@ -71,6 +71,19 @@ function extractJsonText(raw: string): string | null {
   return strings.length > 0 ? strings.join("\n\n") : null;
 }
 
+function cleanAssistantContent(content: string): string {
+  const cleaned = content
+    .replace(
+      /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
+      "",
+    )
+    .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
+    .replace(/\\n/g, "\n")
+    .trim();
+  if (!cleaned) return "";
+  return extractJsonText(cleaned) ?? cleaned;
+}
+
 function formatTokensCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -155,7 +168,11 @@ function CompletionSummary({
   data: TaskCompletionMessage["payload"];
 }) {
   const [copied, setCopied] = useState(false);
-  const [metricsOpen, setMetricsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const cleanedSummary = useMemo(
+    () => (data.summary ? cleanAssistantContent(data.summary) : ""),
+    [data.summary],
+  );
 
   const statusIcon =
     data.status === "completed" ? (
@@ -166,21 +183,39 @@ function CompletionSummary({
       <XCircle size={13} className="text-red-500 shrink-0" />
     );
 
+  const accentClass =
+    data.status === "completed"
+      ? "border-green-400"
+      : data.status === "partial"
+        ? "border-yellow-400"
+        : "border-red-400";
+  const detailParts = [
+    data.subtaskResults?.length
+      ? `${data.subtaskResults.length} ${data.subtaskResults.length === 1 ? "step" : "steps"}`
+      : null,
+    data.metrics ? `${formatTokensCompact(data.metrics.totalTokens)} tokens` : null,
+  ].filter(Boolean);
+  const hasDetails = Boolean(
+    (data.subtaskResults && data.subtaskResults.length > 0) || data.metrics,
+  );
+
   const summaryHtml = useMemo(
     () =>
-      data.summary ? sanitizeHtml(marked.parse(data.summary) as string) : "",
-    [data.summary],
+      cleanedSummary
+        ? sanitizeHtml(marked.parse(cleanedSummary) as string)
+        : "",
+    [cleanedSummary],
   );
 
   const handleCopy = () => {
-    if (!data.summary) return;
-    navigator.clipboard.writeText(data.summary);
+    if (!cleanedSummary) return;
+    navigator.clipboard.writeText(cleanedSummary);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   };
 
   return (
-    <div className="text-sm">
+    <div className={clsx("border-l-2 pl-3 text-sm", accentClass)}>
       {/* Status line */}
       <div className="flex items-center gap-1.5 mb-1.5">
         {statusIcon}
@@ -194,7 +229,7 @@ function CompletionSummary({
       </div>
 
       {/* Summary — markdown rendered, conversational */}
-      {data.summary && (
+      {cleanedSummary && (
         <div className="relative group/summary">
           <div
             className="prose-chat text-warm-700 dark:text-warm-200"
@@ -210,48 +245,48 @@ function CompletionSummary({
         </div>
       )}
 
-      {/* Subtask results — compact list */}
-      {data.subtaskResults && data.subtaskResults.length > 1 && (
-        <div className="mt-2 ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-0.5">
-          {data.subtaskResults.map((sr, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-xs">
-              <PlanStepIcon
-                status={
-                  sr.status === "completed"
-                    ? "completed"
-                    : sr.status === "failed"
-                      ? "failed"
-                      : sr.status === "skipped"
-                        ? "skipped"
-                        : "pending"
-                }
-                size={10}
-              />
-              <span className="text-warm-500 dark:text-warm-400 truncate">
-                {sr.description}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Session metrics — collapsible */}
-      {data.metrics && (
+      {hasDetails && (
         <div className="mt-2 pt-1">
           <button
-            onClick={() => setMetricsOpen((v) => !v)}
+            onClick={() => setDetailsOpen((v) => !v)}
             className="flex items-center gap-1 text-xs text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
           >
-            {metricsOpen ? (
+            {detailsOpen ? (
               <ChevronDown size={12} />
             ) : (
               <ChevronRight size={12} />
             )}
-            <span>Session metrics</span>
+            <span>
+              Details
+              {detailParts.length > 0 ? ` (${detailParts.join(", ")})` : ""}
+            </span>
           </button>
-          {metricsOpen && (
-            <div className="mt-1">
-              <MetricsSummary metrics={data.metrics} />
+          {detailsOpen && (
+            <div className="mt-2 space-y-2">
+              {data.subtaskResults && data.subtaskResults.length > 0 && (
+                <div className="ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-0.5">
+                  {data.subtaskResults.map((sr, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-xs">
+                      <PlanStepIcon
+                        status={
+                          sr.status === "completed"
+                            ? "completed"
+                            : sr.status === "failed"
+                              ? "failed"
+                              : sr.status === "skipped"
+                                ? "skipped"
+                                : "pending"
+                        }
+                        size={10}
+                      />
+                      <span className="text-warm-500 dark:text-warm-400 truncate">
+                        {sr.description}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {data.metrics && <MetricsSummary metrics={data.metrics} />}
             </div>
           )}
         </div>
@@ -323,19 +358,8 @@ export const MessageBubble = React.memo(function MessageBubble({
   const renderedHtml = useMemo(() => {
     if (isUser || !message.content) return "";
     if (message.isStreaming) return "";
-    let cleaned = message.content
-      // Strip ReAct-style reasoning blocks
-      .replace(
-        /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
-        "",
-      )
-      .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
-      // Normalize literal \n escape sequences to real newlines
-      .replace(/\\n/g, "\n")
-      .trim();
+    const cleaned = cleanAssistantContent(message.content);
     if (!cleaned) return "";
-    const extracted = extractJsonText(cleaned);
-    if (extracted) cleaned = extracted;
     return sanitizeHtml(marked.parse(cleaned) as string);
   }, [message.content, message.isStreaming, isUser]);
 

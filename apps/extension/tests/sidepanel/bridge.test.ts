@@ -298,6 +298,14 @@ describe("Bridge Message Routing", () => {
             currentIndex: 0,
             totalTurnsUsed: 0,
         });
+        useStore.getState().addMessage({
+            id: "a1",
+            role: "assistant",
+            content: "Done",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: true,
+        });
 
         setupBridge();
         const payload = {
@@ -312,6 +320,8 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().taskCompletion).toEqual(payload);
         // setTaskCompletion also clears taskProgress
         expect(useStore.getState().taskProgress).toBeNull();
+        expect(useStore.getState().messages[0].completionData).toEqual(payload);
+        expect(useStore.getState().messages[0].isStreaming).toBe(false);
     });
 
     test("STREAM_CHUNK delta appends to streaming message", () => {
