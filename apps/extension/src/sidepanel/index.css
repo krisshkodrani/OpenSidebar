@@ -395,3 +395,94 @@ button:active:not(:disabled) {
     animation: none !important;
   }
 }
+
+/* Syntax highlighting for assistant markdown code blocks. Scoped to chat prose only. */
+.prose-chat pre code .hljs-keyword,
+.prose-chat pre code .hljs-selector-tag,
+.prose-chat pre code .hljs-subst {
+  color: #d73a49;
+}
+
+.prose-chat pre code .hljs-string,
+.prose-chat pre code .hljs-regexp,
+.prose-chat pre code .hljs-symbol,
+.prose-chat pre code .hljs-template-variable {
+  color: #032f62;
+}
+
+.prose-chat pre code .hljs-comment,
+.prose-chat pre code .hljs-quote,
+.prose-chat pre code .hljs-meta {
+  color: #6a737d;
+}
+
+.prose-chat pre code .hljs-number,
+.prose-chat pre code .hljs-literal,
+.prose-chat pre code .hljs-built_in,
+.prose-chat pre code .hljs-bullet {
+  color: #005cc5;
+}
+
+.prose-chat pre code .hljs-title,
+.prose-chat pre code .hljs-section,
+.prose-chat pre code .hljs-name {
+  color: #6f42c1;
+}
+
+.prose-chat pre code .hljs-type,
+.prose-chat pre code .hljs-class .hljs-title,
+.prose-chat pre code .hljs-tag {
+  color: #22863a;
+}
+
+.prose-chat pre code .hljs-attr,
+.prose-chat pre code .hljs-attribute,
+.prose-chat pre code .hljs-variable,
+.prose-chat pre code .hljs-params {
+  color: #24292e;
+}
+
+.dark .prose-chat pre code .hljs-keyword,
+.dark .prose-chat pre code .hljs-selector-tag,
+.dark .prose-chat pre code .hljs-subst {
+  color: #ff7b72;
+}
+
+.dark .prose-chat pre code .hljs-string,
+.dark .prose-chat pre code .hljs-regexp,
+.dark .prose-chat pre code .hljs-symbol,
+.dark .prose-chat pre code .hljs-template-variable {
+  color: #a5d6ff;
+}
+
+.dark .prose-chat pre code .hljs-comment,
+.dark .prose-chat pre code .hljs-quote,
+.dark .prose-chat pre code .hljs-meta {
+  color: #8b949e;
+}
+
+.dark .prose-chat pre code .hljs-number,
+.dark .prose-chat pre code .hljs-literal,
+.dark .prose-chat pre code .hljs-built_in,
+.dark .prose-chat pre code .hljs-bullet {
+  color: #79c0ff;
+}
+
+.dark .prose-chat pre code .hljs-title,
+.dark .prose-chat pre code .hljs-section,
+.dark .prose-chat pre code .hljs-name {
+  color: #d2a8ff;
+}
+
+.dark .prose-chat pre code .hljs-type,
+.dark .prose-chat pre code .hljs-class .hljs-title,
+.dark .prose-chat pre code .hljs-tag {
+  color: #7ee787;
+}
+
+.dark .prose-chat pre code .hljs-attr,
+.dark .prose-chat pre code .hljs-attribute,
+.dark .prose-chat pre code .hljs-variable,
+.dark .prose-chat pre code .hljs-params {
+  color: #e6edf3;
+}

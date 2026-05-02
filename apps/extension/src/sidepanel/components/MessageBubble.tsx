@@ -1,5 +1,16 @@
 import React, { useMemo, useState } from "react";
-import { marked } from "marked";
+import { marked, type Tokens } from "marked";
+import hljs from "highlight.js/lib/core";
+import bash from "highlight.js/lib/languages/bash";
+import css from "highlight.js/lib/languages/css";
+import javascript from "highlight.js/lib/languages/javascript";
+import json from "highlight.js/lib/languages/json";
+import markdown from "highlight.js/lib/languages/markdown";
+import python from "highlight.js/lib/languages/python";
+import sql from "highlight.js/lib/languages/sql";
+import typescript from "highlight.js/lib/languages/typescript";
+import xml from "highlight.js/lib/languages/xml";
+import yaml from "highlight.js/lib/languages/yaml";
 import {
   ChatEntry,
   Citation,
@@ -28,7 +39,55 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-marked.setOptions({ breaks: true, gfm: true });
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("yaml", yaml);
+
+const LANGUAGE_ALIASES: Record<string, string> = {
+  html: "xml",
+  js: "javascript",
+  md: "markdown",
+  py: "python",
+  sh: "bash",
+  shell: "bash",
+  ts: "typescript",
+  yml: "yaml",
+};
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeHighlightLanguage(lang?: string): string | null {
+  const candidate = lang?.trim().toLowerCase().split(/\s+/)[0];
+  if (!candidate) return null;
+  const normalized = LANGUAGE_ALIASES[candidate] ?? candidate;
+  return hljs.getLanguage(normalized) ? normalized : null;
+}
+
+const markdownRenderer = new marked.Renderer();
+markdownRenderer.code = ({ text, lang }: Tokens.Code): string => {
+  const language = normalizeHighlightLanguage(lang);
+  const highlighted = language
+    ? hljs.highlight(text, { language, ignoreIllegals: true }).value
+    : escapeHtml(text);
+  const className = language ? ` class="hljs language-${language}"` : "";
+  return `<pre><code${className}>${highlighted}</code></pre>`;
+};
+
+marked.setOptions({ breaks: true, gfm: true, renderer: markdownRenderer });
 
 const JSON_TEXT_KEYS = [
   "summary",
