@@ -148,6 +148,10 @@ import {
   shouldBroadcastSessionMetrics,
   taskProgressMessage,
 } from "./agent-broadcast";
+import {
+  approvalRequestStep,
+  clarificationRequestStep,
+} from "./agent-interaction-steps";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
@@ -1589,13 +1593,11 @@ export class AgentLoop {
     }
 
     this.statusHandler(AgentStatus.PAUSED, "Waiting for approval...");
-    const approvalStep: AgentStep = {
+    const approvalStep = approvalRequestStep({
       id: crypto.randomUUID(),
-      type: "info",
-      label: `Approval requested: ${context}`,
-      status: "running",
+      context,
       timestamp: Date.now(),
-    };
+    });
     this.stepHandler(approvalStep, false);
     this.log.info("policy", "Approval request yielded to orchestrator", {
       approvalId: interaction.approvalId,
@@ -1695,13 +1697,11 @@ export class AgentLoop {
     }
 
     this.statusHandler(AgentStatus.PAUSED, "Waiting for user clarification...");
-    const clarifyStep: AgentStep = {
+    const clarifyStep = clarificationRequestStep({
       id: crypto.randomUUID(),
-      type: "info",
-      label: `Clarification: "${question.slice(0, 80)}"`,
-      status: "running",
+      question,
       timestamp: Date.now(),
-    };
+    });
     this.stepHandler(clarifyStep, false);
 
     this.log.info("agent", "Clarification yielded to orchestrator", {
