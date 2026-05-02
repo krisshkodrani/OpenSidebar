@@ -6,13 +6,14 @@
  * those valid controls, so use the element's ownerDocument constructors.
  */
 
-function getRealmCtor(
-  el: Element,
-  name: string,
-): Function | null {
+type RealmConstructor = abstract new (...args: never[]) => unknown;
+
+function getRealmCtor(el: Element, name: string): RealmConstructor | null {
   const view = el.ownerDocument?.defaultView ?? window;
   const ctor = (view as unknown as Record<string, unknown>)[name];
-  return typeof ctor === "function" ? ctor : null;
+  return typeof ctor === "function"
+    ? (ctor as unknown as RealmConstructor)
+    : null;
 }
 
 function isRealmInstance(
@@ -58,4 +59,3 @@ export function isButtonElement(el: Element | null): el is HTMLButtonElement {
 export function isAnchorElement(el: Element | null): el is HTMLAnchorElement {
   return isRealmInstance(el, "HTMLAnchorElement", "a");
 }
-
