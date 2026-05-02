@@ -131,6 +131,7 @@ import {
   shouldTrackRepeatAction,
 } from "./repeat-action-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
+import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
@@ -294,46 +295,6 @@ function countExplicitSteps(query: string): number {
 
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
-
-function formatProviderName(providerId: string): string {
-  switch (providerId) {
-    case "fireworks":
-      return "Fireworks";
-    case "moonshot":
-      return "Moonshot";
-    case "xiaomi":
-      return "Xiaomi MiMo";
-    case "groq":
-      return "Groq";
-    case "openai":
-      return "OpenAI";
-    case "openrouter":
-    case "openrouter-groq":
-      return "OpenRouter";
-    default:
-      return providerId || "LLM provider";
-  }
-}
-
-function getProviderCreditsUrl(providerId: string): string | null {
-  switch (providerId) {
-    case "openrouter":
-    case "openrouter-groq":
-      return "https://openrouter.ai/credits";
-    case "fireworks":
-      return "https://fireworks.ai";
-    case "moonshot":
-      return "https://platform.kimi.ai";
-    case "xiaomi":
-      return "https://platform.xiaomimimo.com";
-    case "groq":
-      return "https://console.groq.com";
-    case "openai":
-      return "https://platform.openai.com";
-    default:
-      return null;
-  }
-}
 
 export function isPerceptionFailurePlaceholder(
   interpretation: string | null | undefined,
