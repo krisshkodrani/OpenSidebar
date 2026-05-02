@@ -58,7 +58,6 @@ import {
   ProviderConfig,
   TokenUsage,
 } from "../llm/types";
-import { estimateCostUsd } from "../llm/pricing";
 import {
   formatStepLabel,
   buildElementResolver,
@@ -132,6 +131,12 @@ import {
 } from "./repeat-action-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
+import {
+  emptySessionMetrics,
+  recordCompletionUsage,
+  recordTelemetryCitation,
+  recordVisionTelemetryUsage,
+} from "./agent-telemetry";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
@@ -613,107 +618,19 @@ export class AgentLoop {
   private citationUrls = new Set<string>();
 
   /** Accumulated session metrics */
-  private metrics: SessionMetrics = AgentLoop.emptyMetrics();
+  private metrics: SessionMetrics = emptySessionMetrics();
   private sessionStartTime = 0;
-
-  private static emptyMetrics(): SessionMetrics {
-    return {
-      totalPromptTokens: 0,
-      totalCompletionTokens: 0,
-      totalTokens: 0,
-      totalCost: 0,
-      totalCostActual: 0,
-      totalCostEstimated: 0,
-      costMode: "none",
-      totalLlmTimeMs: 0,
-      totalSessionTimeMs: 0,
-      llmCallCount: 0,
-      totalCachedTokens: 0,
-      modelBreakdown: {},
-    };
-  }
-
-  private static deriveCostMode(
-    actualCost: number,
-    estimatedCost: number,
-  ): "none" | "actual" | "estimated" | "mixed" {
-    if (actualCost <= 0 && estimatedCost <= 0) return "none";
-    if (actualCost > 0 && estimatedCost > 0) return "mixed";
-    if (actualCost > 0) return "actual";
-    return "estimated";
-  }
-
-  private resolveCost(
-    usage: TokenUsage,
-    providerId: ProviderConfig["providerId"],
-    model: string,
-  ): { total: number; actual: number; estimated: number } {
-    // Always use static pricing table for consistent cost across all providers
-    const estimated = estimateCostUsd(providerId, model, usage) ?? 0;
-    return { total: estimated, actual: 0, estimated };
-  }
 
   /** Accumulate usage from an LLM response */
   private recordUsage(response: CompletionResponse, llmMs: number): void {
-    if (response.usage) {
-      this.metrics.totalPromptTokens += response.usage.prompt_tokens;
-      this.metrics.totalCompletionTokens += response.usage.completion_tokens;
-      this.metrics.totalTokens += response.usage.total_tokens;
-      const providerId = (response.actualProviderId ??
-        this.llm.getCurrentProvider()) as ProviderConfig["providerId"];
-      const model = response.actualModel ?? this.llm.getCurrentModel();
-      const cost = this.resolveCost(response.usage, providerId, model);
-      this.metrics.totalCost += cost.total;
-      this.metrics.totalCostActual =
-        (this.metrics.totalCostActual ?? 0) + cost.actual;
-      this.metrics.totalCostEstimated =
-        (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
-      this.metrics.costMode = AgentLoop.deriveCostMode(
-        this.metrics.totalCostActual ?? 0,
-        this.metrics.totalCostEstimated ?? 0,
-      );
-      if (response.usage.cached_tokens) {
-        this.metrics.totalCachedTokens += response.usage.cached_tokens;
-        this.log.debug("agent", "Cache hit", {
-          cached: response.usage.cached_tokens,
-          prompt: response.usage.prompt_tokens,
-          pct: Math.round(
-            (response.usage.cached_tokens / response.usage.prompt_tokens) * 100,
-          ),
-        });
-      }
-    }
-    this.metrics.totalLlmTimeMs += llmMs;
-    this.metrics.llmCallCount += 1;
-
-    const model = response.actualModel ?? this.llm.getCurrentModel();
-    if (!this.metrics.modelBreakdown[model]) {
-      this.metrics.modelBreakdown[model] = {
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0,
-        actualCost: 0,
-        estimatedCost: 0,
-        costMode: "none",
-        calls: 0,
-      };
-    }
-    const entry = this.metrics.modelBreakdown[model];
-    entry.calls += 1;
-    if (response.usage) {
-      entry.promptTokens += response.usage.prompt_tokens;
-      entry.completionTokens += response.usage.completion_tokens;
-      const providerId = (response.actualProviderId ??
-        this.llm.getCurrentProvider()) as ProviderConfig["providerId"];
-      const cost = this.resolveCost(response.usage, providerId, model);
-      entry.cost += cost.total;
-      entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
-      entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
-      entry.costMode = AgentLoop.deriveCostMode(
-        entry.actualCost ?? 0,
-        entry.estimatedCost ?? 0,
-      );
-    }
+    recordCompletionUsage({
+      metrics: this.metrics,
+      response,
+      llmMs,
+      currentProvider: this.llm.getCurrentProvider() as ProviderConfig["providerId"],
+      currentModel: this.llm.getCurrentModel(),
+      onCacheHit: (cacheHit) => this.log.debug("agent", "Cache hit", cacheHit),
+    });
   }
 
   /** Record usage from a vision API call */
@@ -723,44 +640,13 @@ export class AgentLoop {
     model: string,
     providerId: ProviderConfig["providerId"] = "openrouter",
   ): void {
-    this.metrics.totalPromptTokens += usage.prompt_tokens;
-    this.metrics.totalCompletionTokens += usage.completion_tokens;
-    this.metrics.totalTokens += usage.total_tokens;
-    const cost = this.resolveCost(usage, providerId, model);
-    this.metrics.totalCost += cost.total;
-    this.metrics.totalCostActual =
-      (this.metrics.totalCostActual ?? 0) + cost.actual;
-    this.metrics.totalCostEstimated =
-      (this.metrics.totalCostEstimated ?? 0) + cost.estimated;
-    this.metrics.costMode = AgentLoop.deriveCostMode(
-      this.metrics.totalCostActual ?? 0,
-      this.metrics.totalCostEstimated ?? 0,
-    );
-    this.metrics.totalLlmTimeMs += llmMs;
-    this.metrics.llmCallCount += 1;
-
-    if (!this.metrics.modelBreakdown[model]) {
-      this.metrics.modelBreakdown[model] = {
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0,
-        actualCost: 0,
-        estimatedCost: 0,
-        costMode: "none",
-        calls: 0,
-      };
-    }
-    const entry = this.metrics.modelBreakdown[model];
-    entry.calls += 1;
-    entry.promptTokens += usage.prompt_tokens;
-    entry.completionTokens += usage.completion_tokens;
-    entry.cost += cost.total;
-    entry.actualCost = (entry.actualCost ?? 0) + cost.actual;
-    entry.estimatedCost = (entry.estimatedCost ?? 0) + cost.estimated;
-    entry.costMode = AgentLoop.deriveCostMode(
-      entry.actualCost ?? 0,
-      entry.estimatedCost ?? 0,
-    );
+    recordVisionTelemetryUsage({
+      metrics: this.metrics,
+      usage,
+      llmMs,
+      model,
+      providerId,
+    });
   }
 
   /** Get the current accumulated metrics snapshot */
@@ -773,19 +659,14 @@ export class AgentLoop {
 
   /** Record a citation for a URL the agent visited or read */
   private recordCitation(url: string, title: string, tool: ToolName): void {
-    try {
-      const normalized = new URL(url).origin + new URL(url).pathname;
-      if (this.citationUrls.has(normalized)) return;
-      this.citationUrls.add(normalized);
-      this.citations.push({
-        url,
-        title: title || url,
-        tool,
-        turn: this.turnCount,
-      });
-    } catch {
-      // Ignore malformed URLs
-    }
+    recordTelemetryCitation({
+      citations: this.citations,
+      citationUrls: this.citationUrls,
+      url,
+      title,
+      tool,
+      turn: this.turnCount,
+    });
   }
 
   /** Get collected citations */
@@ -2044,7 +1925,7 @@ export class AgentLoop {
     this.pendingAsyncVerification = null;
     this.pendingFormSubmissionReset = null;
     this.perception.reset();
-    this.metrics = AgentLoop.emptyMetrics();
+    this.metrics = emptySessionMetrics();
     this.sessionStartTime = Date.now();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
     this.log = logger.withSessionId(this.traceRecorder.sessionId);
