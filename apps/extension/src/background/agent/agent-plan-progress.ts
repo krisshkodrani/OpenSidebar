@@ -50,6 +50,28 @@ export function buildPlanStatusSnapshot(args: {
   return { subtasks, repairedIndex };
 }
 
+export function replacePlanFromIndex(args: {
+  subtasks: SubtaskSummary[];
+  steps: PlanStep[];
+  fromIndex: number;
+  replacementSteps: PlanStep[];
+}): { subtasks: SubtaskSummary[]; steps: PlanStep[] } {
+  const keptSubtasks = args.subtasks.slice(0, args.fromIndex);
+  const replacementSubtasks: SubtaskSummary[] = args.replacementSteps.map(
+    (step, i) => ({
+      description: step.objective,
+      status: i === 0 ? "running" : "pending",
+      turnsUsed: 0,
+      turnBudget: 0,
+    }),
+  );
+
+  return {
+    subtasks: [...keptSubtasks, ...replacementSubtasks],
+    steps: [...args.steps.slice(0, args.fromIndex), ...args.replacementSteps],
+  };
+}
+
 export function advanceCompletedPlanSubtasks(args: {
   subtasks: MutablePlanSubtask[];
   captureResult: () => string;
