@@ -14,6 +14,7 @@ import {
 
 const createdLoopNodeIds: string[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
+const injectedFeedback: Array<{ nodeId?: string; text: string }> = [];
 
 type MockLoopConfig = { nodeId?: string };
 
@@ -75,6 +76,7 @@ describe("Orchestrator conversation collaboration", () => {
   beforeEach(() => {
     createdLoopNodeIds.length = 0;
     capturedInstructions.length = 0;
+    injectedFeedback.length = 0;
 
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
@@ -204,7 +206,9 @@ describe("Orchestrator conversation collaboration", () => {
           pause() {},
           resume() {},
           isPaused() { return false; },
-          injectFeedback(_text: string) {},
+          injectFeedback(text: string) {
+            injectedFeedback.push({ nodeId: cfg.nodeId, text });
+          },
         } as any;
       },
       workspaceManager: {
@@ -274,6 +278,32 @@ describe("Orchestrator conversation collaboration", () => {
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("completed");
+  });
+
+  test("queues feedback sent before executor starts", async () => {
+    let releasePlanner!: (nodes: TaskNode[]) => void;
+    const plannerStarted = new Promise<void>((resolve) => {
+      plannerBuildNodesImpl = async () => {
+        resolve();
+        return await new Promise<TaskNode[]>((release) => {
+          releasePlanner = release;
+        });
+      };
+    });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    const run = orchestrator.startTask(makeInput("use feedback during planning"));
+
+    await plannerStarted;
+    orchestrator.injectFeedback("ws-conv", "Use the latest user hint");
+    expect(injectedFeedback).toEqual([]);
+
+    releasePlanner([makeNode("n1", "apply the hint")]);
+    await run;
+
+    expect(injectedFeedback).toEqual([
+      { nodeId: "n1", text: "Use the latest user hint" },
+    ]);
   });
 
   test("same-workspace follow-up does not inject prior turn memory", async () => {

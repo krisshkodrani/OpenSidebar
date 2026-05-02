@@ -806,18 +806,26 @@ export function sanitizeCheckpoint(
   if (!isNonNegativeInteger(raw.savedAt)) return null;
   const task = sanitizeTask(raw.task);
   if (!task) return null;
+  const pendingFeedback = Array.isArray(raw.pendingFeedback)
+    ? raw.pendingFeedback.filter(
+        (entry): entry is string =>
+          typeof entry === "string" && entry.length > 0,
+      )
+    : [];
   if (raw.version !== CHECKPOINT_VERSION) {
     // Keep version check in prune flow for central logging path.
     return {
       version: raw.version as OrchestratorCheckpoint["version"],
       savedAt: raw.savedAt,
       task,
+      ...(pendingFeedback.length > 0 ? { pendingFeedback } : {}),
     };
   }
   return {
     version: CHECKPOINT_VERSION,
     savedAt: raw.savedAt,
     task,
+    ...(pendingFeedback.length > 0 ? { pendingFeedback } : {}),
   };
 }
 

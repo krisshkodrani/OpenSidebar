@@ -188,6 +188,7 @@ export interface OrchestratorCheckpoint {
   version: 1;
   savedAt: number;
   task: OrchestratorTask;
+  pendingFeedback?: string[];
 }
 
 export interface WorkerInstance {
