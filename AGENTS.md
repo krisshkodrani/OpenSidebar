@@ -11,6 +11,8 @@ Key areas:
 - `apps/extension/src/background`: the main agent runtime, including the orchestrator, agent loop, tools, LLM client, skills, checkpoints, and durability logic.
 - `apps/extension/src/content`: content-script code and page bridge logic.
 - `apps/extension/src/sidepanel`: the extension UI used to start and monitor tasks.
+- `apps/extension/src/shared/`: shared React UI components (used by both sidepanel and overlay harness).
+- `apps/extension/src/adapters/`: BrowserAdapter implementations (chrome, playwright, mock) for decoupled environment I/O.
 - `apps/extension/src/trace-viewer`: the trace viewer and analytics UI.
 - `apps/extension/tests/background`: focused runtime and orchestrator tests.
 - `apps/extension/tests/e2e`: fixture-driven E2E tests for real browser behavior.
@@ -25,6 +27,22 @@ Repo policy:
 - If Notion is available, send archive-bound notes, reports, RFCs, and research writeups there directly instead of keeping them in git.
 - If a real product bug, follow-up task, or cleanup need is identified during work and is not being fixed immediately, create a GitHub issue for it when GitHub tools are available.
 
+## Harness Architecture Direction (RFC-012 Draft)
+
+OpenSidebar is evaluating a dual-environment model:
+
+- **Extension (production):** Chrome sidepanel + chromeAdapter. Uses `chrome.tabs`, `chrome.scripting`, `chrome.storage`, `chrome.runtime`.
+- **Overlay (testing):** Draggable panel injected into any page via Playwright + playwrightAdapter. Uses `page.evaluate()`, `page.screenshot()`, in-memory storage.
+- **Headless (CI):** No UI. agent-core + mockAdapter. Trajectory output only.
+
+The target direction is for the same agent-core to run identically across all three. The shared React UI (sidepanel components) would power both the extension sidepanel and the overlay. A `BrowserAdapter` interface would abstract environment-specific I/O.
+
+Draft design constraints to preserve while RFC-012 is under review:
+
+- Sidepanel/UI components must NOT import `chrome.*` APIs directly. Use the bridge abstraction or adapter. Chrome APIs belong in the adapter layer only.
+- Agent-core (background) changes should avoid making a future overlay/headless adapter harder.
+- Trajectories should avoid Chrome-specific fields when the data is intended for cross-environment replay.
+
 ## Default Change Placement
 
 Prefer these locations when making changes:
@@ -32,7 +50,8 @@ Prefer these locations when making changes:
 - Put agent behavior changes in the product runtime first, usually under `apps/extension/src/background`.
 - Put page interaction fixes in reusable runtime policy, controllers, or skills before considering test changes.
 - Keep content-script and bridge fixes in `apps/extension/src/content` or background tool/bridge code, not in fixtures.
-- Keep the E2E harness thin. It may configure the environment, seed minimal state, collect diagnostics, and assert results, but it should not contain product logic.
+- **E2E test harness (fixtures):** Keep thin. It may configure the environment, seed minimal state, collect diagnostics, and assert results, but it must not contain product logic.
+- **Overlay harness (RFC-012 draft):** If approved, this should be treated as product code rather than a throwaway test utility. Until approved, avoid adding hard dependencies on it.
 - Use skills when a workflow pattern is stable and reusable across sites or tasks.
 - Use test-only instrumentation only when it is pure observability or minimal state injection needed for determinism.
 - Do not add repo-backed research workflows, vendored agent repos, or note-taking systems to the product tree.
@@ -92,6 +111,64 @@ For multi-step work, use a short plan with verification points when it improves 
 
 Strong success criteria should let the agent continue independently. Weak or ambiguous criteria should be clarified before large edits.
 
+## Code Review Workflow
+
+When implementing non-trivial code changes, use this workflow:
+
+1. Implement the requested change.
+2. Run the relevant tests/typechecks/lints.
+3. Call the DeepSeek MCP reviewer on the final diff.
+4. Treat DeepSeek as an adversarial reviewer, not as an automatic author.
+5. For each DeepSeek finding:
+   - **Accept** if it identifies a concrete bug, missed edge case, security issue, brittle selector, race condition, or maintainability problem.
+   - **Reject** if it is style-only, speculative, or increases complexity without clear benefit.
+6. Apply accepted fixes.
+7. Re-run tests.
+8. Summarize:
+   - what was implemented,
+   - what DeepSeek found,
+   - what was accepted/rejected,
+   - final test result.
+
+### When to skip the review
+
+Skip the review workflow for:
+
+- Single-line or trivial fixes (e.g., typo corrections, comment updates, log-level changes).
+- Changes under ~30 net lines of code with no structural or behavioral impact.
+- Purely mechanical changes (e.g., renaming a symbol consistently across the codebase with no logic changes).
+
+When in doubt, run the review.
+
+### Reviewer fallback
+
+If the DeepSeek MCP reviewer is unavailable (e.g., down, rate-limited, or returns empty results):
+
+- Self-review the diff against the same [reviewer focus list](#deepseek-reviewer-focus).
+- Note the unavailability and self-review result in the summary.
+- The agreement gate still applies: tests must pass, and any self-identified issues must be addressed or explicitly rejected with reasoning.
+
+### DeepSeek reviewer focus
+
+Ask DeepSeek to review especially for:
+
+- correctness bugs
+- async/race conditions
+- TypeScript type issues
+- browser automation brittleness
+- selector fragility
+- SPA re-render timing problems
+- missing act-check-act verification
+- security/session/auth mistakes
+- unnecessary complexity
+
+### Agreement gate
+
+Do not merge or finalize until:
+
+- tests pass, and
+- either DeepSeek approves, or Codex explicitly explains why remaining DeepSeek objections are rejected.
+
 ## Product And E2E Design Rules
 
 When working on runtime behavior, skills, prompts, or E2E-related failures, follow these rules:
@@ -112,6 +189,8 @@ When working on runtime behavior, skills, prompts, or E2E-related failures, foll
 14. Evaluation should be fair: a task is successful only when the real user objective is met, not when intermediate planner artifacts look good.
 15. Any optimization for long tasks should preserve correctness first, then reduce cost or turns second.
 16. If a behavior is useful outside E2E, it belongs in the product. If it is useful only inside E2E, it belongs nowhere unless it is pure test instrumentation.
+17. Sidepanel UI components must be environment-agnostic. Do not call `chrome.*` APIs directly inside components — use the bridge abstraction for message passing and persistence. This keeps the shared React app portable between sidepanel (chromeAdapter) and overlay (playwrightAdapter).
+18. Trajectories must be environment-agnostic. Record tool calls, observations, and step labels in a format that replays identically across adapters. Do not include Chrome-specific fields (tab ID references, `chrome.storage` keys) in trajectory entries intended for replay.
 
 ## Prompt And Skill Guidance
 
@@ -128,6 +207,13 @@ When working on runtime behavior, skills, prompts, or E2E-related failures, foll
 - When a staged run fails, debug the first clean, high-signal failure before spending tokens on later suites.
 - Re-run isolated E2E files when iterating on a specific failure.
 - Generated E2E reports belong in `.artifacts/e2e/`, not `docs/`.
+
+### Which environment to use
+
+- **WorkArena tasks** (ServiceNow, Notion) → use the staged E2E runner (`npm run test:e2e:staged`). These target benchmark fidelity and regression detection.
+- **Generic site tasks** (arbitrary pages) → use the Playwright harness. These target product correctness on real-world pages outside benchmarks.
+- **CI / headless** → mockAdapter. These target unit-level behavior and should run fast without a browser.
+- When fixing an agent-core bug, prefer verification that covers both benchmark-style WorkArena behavior and a generic non-WorkArena case when practical.
 
 Useful commands:
 
