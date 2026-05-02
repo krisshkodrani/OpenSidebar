@@ -157,6 +157,7 @@ import {
   buildPlanStatusSnapshot,
   completeRemainingPlanSubtasks,
   completeSinglePlanSubtask,
+  replacePlanFromIndex,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
@@ -3649,21 +3650,14 @@ export class AgentLoop {
     this.replanCount++;
 
     // Replace steps from deviation point onward
-    const keptSubtasks = this.planSubtasks.slice(0, runningIdx);
-    const newSubtasks: SubtaskSummary[] = replanResult.newSteps.map(
-      (step, i) => ({
-        description: step.objective,
-        status: i === 0 ? ("running" as const) : ("pending" as const),
-        turnsUsed: 0,
-        turnBudget: 0,
-      }),
-    );
-
-    this.planSubtasks = [...keptSubtasks, ...newSubtasks];
-    this.planSteps = [
-      ...this.planSteps.slice(0, runningIdx),
-      ...replanResult.newSteps,
-    ];
+    const replacement = replacePlanFromIndex({
+      subtasks: this.planSubtasks,
+      steps: this.planSteps,
+      fromIndex: runningIdx,
+      replacementSteps: replanResult.newSteps,
+    });
+    this.planSubtasks = replacement.subtasks;
+    this.planSteps = replacement.steps;
 
     // Update context with new plan
     this.context.setPlanStatus(
@@ -3850,21 +3844,14 @@ export class AgentLoop {
     this.replanCount++;
 
     // Replace steps from stuck point onward
-    const keptSubtasks = this.planSubtasks.slice(0, runningIdx);
-    const newSubtasks: SubtaskSummary[] = replanResult.newSteps.map(
-      (step, i) => ({
-        description: step.objective,
-        status: i === 0 ? ("running" as const) : ("pending" as const),
-        turnsUsed: 0,
-        turnBudget: 0,
-      }),
-    );
-
-    this.planSubtasks = [...keptSubtasks, ...newSubtasks];
-    this.planSteps = [
-      ...this.planSteps.slice(0, runningIdx),
-      ...replanResult.newSteps,
-    ];
+    const replacement = replacePlanFromIndex({
+      subtasks: this.planSubtasks,
+      steps: this.planSteps,
+      fromIndex: runningIdx,
+      replacementSteps: replanResult.newSteps,
+    });
+    this.planSubtasks = replacement.subtasks;
+    this.planSteps = replacement.steps;
 
     // Update context with new plan
     this.context.setPlanStatus(
