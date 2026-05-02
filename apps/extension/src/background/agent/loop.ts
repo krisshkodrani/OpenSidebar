@@ -130,6 +130,7 @@ import {
   actionMemoryKey,
   shouldTrackRepeatAction,
 } from "./repeat-action-policy";
+import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
@@ -293,31 +294,6 @@ function countExplicitSteps(query: string): number {
 
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
-
-/**
- * Module-level screenshot cache: allows parallel agent loops on the same tab
- * to share captured screenshots instead of each hitting the captureVisibleTab
- * quota (2/sec). Cached entries expire after 3 seconds.
- */
-const SCREENSHOT_CACHE_TTL_MS = 3000;
-const screenshotCache = new Map<
-  number,
-  { dataUrl: string; capturedAt: number }
->();
-
-function getCachedScreenshot(tabId: number): string | undefined {
-  const entry = screenshotCache.get(tabId);
-  if (!entry) return undefined;
-  if (Date.now() - entry.capturedAt > SCREENSHOT_CACHE_TTL_MS) {
-    screenshotCache.delete(tabId);
-    return undefined;
-  }
-  return entry.dataUrl;
-}
-
-function setCachedScreenshot(tabId: number, dataUrl: string): void {
-  screenshotCache.set(tabId, { dataUrl, capturedAt: Date.now() });
-}
 
 function formatProviderName(providerId: string): string {
   switch (providerId) {
