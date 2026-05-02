@@ -214,6 +214,7 @@ export function initializeBridge(
 
       case "TASK_COMPLETION":
         state.setTaskCompletion(message.payload);
+        state.setCompletionOnLastMessage(message.payload);
         break;
 
       case "SESSION_METRICS":

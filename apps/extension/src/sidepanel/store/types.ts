@@ -38,6 +38,9 @@ export interface ChatSlice {
     thinking?: string;
     citations?: Citation[];
   }) => void;
+  setCompletionOnLastMessage: (
+    payload: TaskCompletionMessage["payload"],
+  ) => void;
   finalizeStream: (citations?: Citation[]) => void;
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;
