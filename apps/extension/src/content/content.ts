@@ -614,6 +614,41 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return;
       }
 
+      if (message.type === "TASK_PROGRESS") {
+        const subtasks = Array.isArray(message.payload?.subtasks)
+          ? message.payload.subtasks
+          : [];
+        const currentIndex =
+          typeof message.payload?.currentIndex === "number"
+            ? message.payload.currentIndex
+            : 0;
+        currentPlanProgress =
+          subtasks.length > 0
+            ? { currentIndex, total: subtasks.length }
+            : null;
+        e2eRailState = {
+          ...e2eRailState,
+          planItems: subtasks
+            .map((subtask: { description?: unknown; title?: unknown }) =>
+              typeof subtask.description === "string"
+                ? subtask.description
+                : typeof subtask.title === "string"
+                  ? subtask.title
+                  : "",
+            )
+            .filter(Boolean),
+          updatedAt: Date.now(),
+        };
+        void renderE2ERail();
+        if (currentFloatingStep) {
+          updateFloatingStepLabel(
+            currentFloatingStep.label,
+            currentFloatingStep.status,
+          );
+        }
+        return;
+      }
+
       if (message.type === "AGENT_STEP_LABEL") {
         e2eRailState = {
           ...e2eRailState,
@@ -1313,6 +1348,11 @@ const E2E_VISIBLE_RAIL_STORAGE_KEY = "opensidebar:e2eVisibleRail";
 let agentSessionActive = false;
 let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
 let e2eRailEnabled: boolean | null = null;
+let currentPlanProgress: { currentIndex: number; total: number } | null = null;
+let currentFloatingStep: {
+  label: string;
+  status: "running" | "done" | "error";
+} | null = null;
 let e2eRailState = {
   active: false,
   status: "Idle",
@@ -2049,12 +2089,13 @@ function hideFloatingCue() {
 
 /** Update the step label text above the floating stop button */
 function updateFloatingStepLabel(label: string, status: "running" | "done" | "error") {
+  currentFloatingStep = { label, status };
   const el = document.getElementById(STEP_LABEL_ID);
   if (!el) return;
   const dot = el.querySelector("span") as HTMLSpanElement | null;
   const text = el.querySelector("[data-label]") as HTMLSpanElement | null;
   if (text) {
-    text.textContent = label;
+    text.textContent = formatFloatingStepLabel(label);
     text.style.color = "";
   }
   if (dot) {
@@ -2072,6 +2113,16 @@ function updateFloatingStepLabel(label: string, status: "running" | "done" | "er
       dot.style.animation = "opensidebar-pulse 1.5s ease-in-out infinite";
     }
   }
+}
+
+function formatFloatingStepLabel(label: string): string {
+  if (!currentPlanProgress || currentPlanProgress.total <= 0) return label;
+  const stepNumber =
+    Math.min(
+      Math.max(currentPlanProgress.currentIndex, 0),
+      currentPlanProgress.total - 1,
+    ) + 1;
+  return `Step ${stepNumber} of ${currentPlanProgress.total}: ${label}`;
 }
 
 function setAgentBorder(

@@ -625,6 +625,7 @@ export class Orchestrator {
     Set<(payload: TaskCompletionMessage["payload"]) => void>
   >();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
+  private pendingFeedbackQueue = new Map<string, string[]>();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
   private laneRuntimeByWorkspace = new Map<
     string,
@@ -978,6 +979,44 @@ export class Orchestrator {
     this.budgetEstimatorsByWorkspace.delete(workspaceId);
     this.laneRuntimeByWorkspace.delete(workspaceId);
     this.recentCompletion.delete(workspaceId);
+    this.pendingFeedbackQueue.delete(workspaceId);
+  }
+
+  private queueFeedback(workspaceId: string, text: string): void {
+    const queue = this.pendingFeedbackQueue.get(workspaceId) ?? [];
+    queue.push(text);
+    this.pendingFeedbackQueue.set(workspaceId, queue);
+    logger.warn("orchestrator", "Feedback queued without active executor", {
+      workspaceId,
+      queueLength: queue.length,
+    });
+
+    const task = this.tasksByWorkspace.get(workspaceId);
+    if (task) void this.persistTaskCheckpoint(task);
+  }
+
+  private drainPendingFeedbackIntoLoop(
+    workspaceId: string,
+    loop: WorkerInstance["loop"],
+    workerId: string,
+    nodeId: string,
+  ): void {
+    const pending = this.pendingFeedbackQueue.get(workspaceId);
+    if (!pending?.length) return;
+
+    for (const text of pending) {
+      loop.injectFeedback(text);
+    }
+    this.pendingFeedbackQueue.delete(workspaceId);
+    logger.info("orchestrator", "Queued feedback delivered to executor", {
+      workspaceId,
+      workerId,
+      nodeId,
+      feedbackCount: pending.length,
+    });
+
+    const task = this.tasksByWorkspace.get(workspaceId);
+    if (task) void this.persistTaskCheckpoint(task);
   }
 
   private getBudgetEstimator(workspaceId: string): BudgetEstimator {
@@ -2371,6 +2410,7 @@ export class Orchestrator {
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await this.loadCheckpoints();
+    const pendingFeedback = this.pendingFeedbackQueue.get(task.workspaceId);
     checkpoints[task.workspaceId] = {
       version: CHECKPOINT_VERSION,
       savedAt: Date.now(),
@@ -2378,6 +2418,9 @@ export class Orchestrator {
         ...task,
         nodes: task.nodes.map((n) => ({ ...n })),
       },
+      ...(pendingFeedback?.length
+        ? { pendingFeedback: [...pendingFeedback] }
+        : {}),
     };
     await this.saveCheckpoints(checkpoints);
     this.scheduleDurableTaskSync(task);
@@ -3052,6 +3095,11 @@ export class Orchestrator {
       ) {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
+      }
+      if (cp.pendingFeedback?.length) {
+        this.pendingFeedbackQueue.set(task.workspaceId, [...cp.pendingFeedback]);
+      } else {
+        this.pendingFeedbackQueue.delete(task.workspaceId);
       }
 
       const resumeSelection = await this.resolveResumeTabId(
@@ -4404,6 +4452,12 @@ export class Orchestrator {
         tabId,
         loop,
       });
+      this.drainPendingFeedbackIntoLoop(
+        task.workspaceId,
+        loop,
+        workerId,
+        node.id,
+      );
       logger.debug("orchestrator", "Executor worker registered in lane pool", {
         taskId: task.id,
         workspaceId: task.workspaceId,
@@ -5945,7 +5999,10 @@ export class Orchestrator {
 
   injectFeedback(workspaceId: string, text: string): void {
     const workers = this.workersByWorkspace.get(workspaceId)?.executor;
-    if (!workers) return;
+    if (!workers || workers.size === 0) {
+      this.queueFeedback(workspaceId, text);
+      return;
+    }
     for (const worker of workers.values()) {
       worker.loop.injectFeedback(text);
       if (worker.loop.isPaused()) worker.loop.resume();
@@ -6342,16 +6399,25 @@ export class Orchestrator {
   }
 
   private sendProgress(task: OrchestratorTask): void {
+    const payload = {
+      taskId: task.id,
+      subtasks: toSubtasks(task.nodes),
+      currentIndex: task.currentIndex,
+      totalTurnsUsed: 0,
+    };
     this.sendMessage({
       type: "TASK_PROGRESS",
       workspaceId: task.workspaceId,
-      payload: {
-        taskId: task.id,
-        subtasks: toSubtasks(task.nodes),
-        currentIndex: task.currentIndex,
-        totalTurnsUsed: 0,
-      },
+      payload,
     });
+    chrome.tabs
+      .sendMessage(task.rootTabId, {
+        type: "TASK_PROGRESS",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        payload,
+      })
+      .catch(() => {});
   }
 
   /**
