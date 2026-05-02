@@ -454,9 +454,7 @@ describe("Tool Registration", () => {
     allButton.addEventListener("click", allClick);
     hbaseLink.addEventListener("click", hbaseClick);
 
-    let scriptCalls = 0;
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
-      scriptCalls++;
       if (details.args?.[0] === "sys_app_module") {
         return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
       }
