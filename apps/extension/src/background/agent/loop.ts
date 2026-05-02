@@ -152,7 +152,11 @@ import {
   approvalRequestStep,
   clarificationRequestStep,
 } from "./agent-interaction-steps";
-import { buildPlanStatusSnapshot } from "./agent-plan-progress";
+import {
+  advanceCompletedPlanSubtasks,
+  buildPlanStatusSnapshot,
+  completeSinglePlanSubtask,
+} from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
@@ -4318,38 +4322,22 @@ export class AgentLoop {
    * Returns the new currentIndex (first non-completed step).
    */
   private advanceCompletedSubtasks(): number {
-    let advancedTo = 0;
-    for (let i = 0; i < this.planSubtasks.length; i++) {
-      const s = this.planSubtasks[i];
-      if (s.status === "completed") {
-        advancedTo = i + 1;
-        continue;
-      }
-      if (s.status === "running") {
-        // If planner rejected done(), the current "running" step
-        // might be done. Mark it completed with a captured result.
-        s.status = "completed";
-        s.result = s.result || this.captureSubtaskResult();
-        s.completedAtUrl = this.context.getCurrentUrl() || undefined;
-        advancedTo = i + 1;
-        continue;
-      }
-      break;
-    }
-    // Mark the next step as running
-    if (advancedTo < this.planSubtasks.length) {
-      this.planSubtasks[advancedTo].status = "running";
-    }
+    const result = advanceCompletedPlanSubtasks({
+      subtasks: this.planSubtasks,
+      captureResult: () => this.captureSubtaskResult(),
+      completedAtUrl: this.context.getCurrentUrl() || undefined,
+      lastPlanIndex: this.lastPlanIndex,
+    });
     // Plan-aware cache invalidation: force fresh perception on step advancement
-    if (advancedTo !== this.lastPlanIndex) {
-      this.lastPlanIndex = advancedTo;
+    if (result.planIndexChanged) {
+      this.lastPlanIndex = result.currentIndex;
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.stepRetryCount = 0;
       this.mutationLedger.clearStepLedger();
     }
-    return advancedTo;
+    return result.currentIndex;
   }
 
   /**
@@ -4358,41 +4346,23 @@ export class AgentLoop {
    * local structural evidence from the current page.
    */
   private completeSingleSubtask(currentIndex: number): number {
-    if (currentIndex < 0 || currentIndex >= this.planSubtasks.length) {
-      return currentIndex;
-    }
+    const result = completeSinglePlanSubtask({
+      subtasks: this.planSubtasks,
+      currentIndex,
+      captureResult: () => this.captureSubtaskResult(),
+      completedAtUrl: this.context.getCurrentUrl() || undefined,
+      lastPlanIndex: this.lastPlanIndex,
+    });
 
-    const target = this.planSubtasks[currentIndex];
-    if (target.status !== "completed") {
-      target.status = "completed";
-      target.result = target.result || this.captureSubtaskResult();
-      target.completedAtUrl = this.context.getCurrentUrl() || undefined;
-    }
-
-    for (let i = currentIndex + 1; i < this.planSubtasks.length; i++) {
-      if (this.planSubtasks[i].status !== "completed") {
-        this.planSubtasks[i].status = "pending";
-      }
-    }
-
-    const nextIndex = this.planSubtasks.findIndex(
-      (subtask, idx) => idx > currentIndex && subtask.status !== "completed",
-    );
-    if (nextIndex >= 0) {
-      this.planSubtasks[nextIndex].status = "running";
-    }
-
-    const resolvedIndex = nextIndex >= 0 ? nextIndex : this.planSubtasks.length;
-
-    if (resolvedIndex !== this.lastPlanIndex) {
-      this.lastPlanIndex = resolvedIndex;
+    if (result.planIndexChanged) {
+      this.lastPlanIndex = result.currentIndex;
       this.perception.invalidateCache();
       this.turnsOnCurrentStep = 0;
       this.escalationsOnCurrentStep = 0;
       this.mutationLedger.clearReplayState();
     }
 
-    return resolvedIndex;
+    return result.currentIndex;
   }
 
   private maybeAdvanceTrustedFormFillStep(params: {
