@@ -132,6 +132,15 @@ import {
 } from "./repeat-action-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
+import { applySkillTurnCap } from "./skill-turn-cap-policy";
+import { isToolProfileName } from "./tool-profile-policy";
+import { countExplicitSteps } from "./explicit-steps";
+import { rectsLikelyOverlap } from "./geometry";
+import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
+export {
+  isPerceptionFailurePlaceholder,
+  shouldOmitPerceptionForDoneValidation,
+} from "./perception-done-validation";
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
@@ -224,22 +233,6 @@ import {
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
 
-const SKILL_TURN_CAPS: Record<string, number> = {
-  "multi-tab-procurement-loop": 45,
-  "list-detail-review-loop": 45,
-  "paginated-table-scan": 55,
-  "paginated-record-lookup": 35,
-};
-
-function applySkillTurnCap(
-  selectedSkillId: string | null | undefined,
-  maxTurns: number,
-): number {
-  if (!selectedSkillId) return maxTurns;
-  const cap = SKILL_TURN_CAPS[selectedSkillId];
-  return typeof cap === "number" ? Math.min(maxTurns, cap) : maxTurns;
-}
-
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
   if (!text.includes("?")) return false;
@@ -262,80 +255,8 @@ export function isDoneSummaryAskingClarification(summary: string): boolean {
   return /\?$/.test(text);
 }
 
-function isToolProfileName(value: string | undefined): value is ToolProfile {
-  return (
-    value === "full" ||
-    value === "read_only" ||
-    value === "form_fill" ||
-    value === "edit_surface" ||
-    value === "navigate" ||
-    value === "enter_code" ||
-    value === "submit_form" ||
-    value === "inspect_hidden_state" ||
-    value === "recover_from_stuck" ||
-    value === "navigation_only"
-  );
-}
-
-/**
- * Count explicit numbered steps in a user query.
- * Matches patterns like "Step 1:", "1.", "1)", and sequential markers.
- * Returns the number of distinct steps detected.
- */
-function countExplicitSteps(query: string): number {
-  // Match numbered patterns: "Step 1", "Step 2", "1.", "2.", "1)", "2)"
-  const numberedStepPattern = /(?:^|\n)\s*(?:step\s+)?(\d+)[.):\s]/gim;
-  const numbers = new Set<number>();
-  let match: RegExpExecArray | null;
-  while ((match = numberedStepPattern.exec(query)) !== null) {
-    numbers.add(parseInt(match[1], 10));
-  }
-  return numbers.size;
-}
-
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
-
-export function isPerceptionFailurePlaceholder(
-  interpretation: string | null | undefined,
-): boolean {
-  if (!interpretation) return false;
-  return /\[visual perception failed:/i.test(interpretation);
-}
-
-export function shouldOmitPerceptionForDoneValidation(args: {
-  interpretation: string | null | undefined;
-  hasReadPage: boolean;
-  originalQuery: string;
-  activeStepDescription?: string;
-  activeStepToolProfile?: ToolProfile;
-}): boolean {
-  if (!args.hasReadPage) return false;
-  if (!isPerceptionFailurePlaceholder(args.interpretation)) return false;
-
-  const activeProfile =
-    args.activeStepToolProfile ??
-    inferToolProfileForStep(
-      args.activeStepDescription || args.originalQuery,
-      "",
-    );
-  if (activeProfile === "read_only") return true;
-
-  return inferToolProfileForStep(args.originalQuery, "") === "read_only";
-}
-
-function rectsLikelyOverlap(
-  a: DomSnapshot["elements"][number]["rect"] | undefined,
-  b: DomSnapshot["elements"][number]["rect"] | undefined,
-): boolean {
-  if (!a || !b) return false;
-  return !(
-    a.x + a.width < b.x ||
-    b.x + b.width < a.x ||
-    a.y + a.height < b.y ||
-    b.y + b.height < a.y
-  );
-}
 
 class PendingInteractionYield extends Error {
   constructor(readonly pendingInteraction: PendingUserInteraction) {
