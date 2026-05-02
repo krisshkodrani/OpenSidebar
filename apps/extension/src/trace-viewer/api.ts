@@ -15,6 +15,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export async function fetchTraceSessions(
   filters: TraceFilters,
+  signal?: AbortSignal,
 ): Promise<TraceSession[]> {
   const params = new URLSearchParams();
   if (filters.outcome && filters.outcome !== "all")
@@ -29,15 +30,22 @@ export async function fetchTraceSessions(
     params.set("skill", filters.skill);
   if (filters.runId) params.set("runId", filters.runId);
   params.set("limit", "1000");
-  return fetchJson(`/api/traces/search?${params.toString()}`);
+  return fetchJson(
+    `/api/traces/search?${params.toString()}`,
+    signal ? { signal } : undefined,
+  );
 }
 
-export async function fetchTraceDays(): Promise<DayBucket[]> {
-  return fetchJson("/api/traces/days");
+export async function fetchTraceDays(
+  signal?: AbortSignal,
+): Promise<DayBucket[]> {
+  return fetchJson("/api/traces/days", signal ? { signal } : undefined);
 }
 
-export async function fetchTraceModels(): Promise<ModelBucket[]> {
-  return fetchJson("/api/traces/models");
+export async function fetchTraceModels(
+  signal?: AbortSignal,
+): Promise<ModelBucket[]> {
+  return fetchJson("/api/traces/models", signal ? { signal } : undefined);
 }
 
 export interface TraceInsightsQuery {

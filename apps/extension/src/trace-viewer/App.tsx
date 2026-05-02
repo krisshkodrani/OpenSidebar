@@ -76,9 +76,32 @@ export default function App() {
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const scrollPositions = useStore((s) => s.scrollPositions);
+  const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Apply viewer theme
+  useEffect(() => {
+    const root = document.documentElement;
+    const apply = () => {
+      if (
+        viewerTheme === "dark" ||
+        (viewerTheme === "system" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches)
+      ) {
+        root.classList.add("dark");
+      } else {
+        root.classList.remove("dark");
+      }
+    };
+    apply();
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const listener = () => apply();
+    mq.addEventListener("change", listener);
+    return () => mq.removeEventListener("change", listener);
+  }, [viewerTheme]);
 
   useEffect(() => {
     const { session, view, top, turn, skill } = parseHash();
@@ -109,7 +132,8 @@ export default function App() {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
-      else if (activeTopLevelView !== "sessions") parts.push(`top=${activeTopLevelView}`);
+      else if (activeTopLevelView !== "sessions")
+        parts.push(`top=${activeTopLevelView}`);
       if (currentSessionId && activeSubview && activeSubview !== "overview")
         parts.push(`view=${activeSubview}`);
     }
@@ -131,13 +155,15 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
-  // Restore scroll position when switching tabs
+  // Restore scroll position when switching tabs or sessions
   useEffect(() => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop =
-        scrollPositions[activeSubview] || 0;
+      const key = currentSessionId
+        ? `${currentSessionId}:${activeSubview}`
+        : activeSubview;
+      scrollContainerRef.current.scrollTop = scrollPositions[key] || 0;
     }
-  }, [activeSubview, scrollPositions]);
+  }, [activeSubview, scrollPositions, currentSessionId]);
 
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
@@ -149,9 +175,19 @@ export default function App() {
           <ViewerBody
             scrollContainerRef={scrollContainerRef}
             navigateToSkill={navigateToSkill}
+            setShowShortcuts={setShowShortcuts}
           />
         )}
       </ViewerErrorBoundary>
+      {showShortcuts && (
+        <div className="fixed right-4 bottom-4 z-50 rounded-lg border border-trace-border bg-trace-bg/95 px-3 py-2 text-[11px] text-trace-muted shadow-xl">
+          <div className="mb-1 font-semibold text-trace-text">Shortcuts</div>
+          <div>? toggle help</div>
+          <div>Esc back to sessions</div>
+          <div>[ / ] previous / next session</div>
+          <div>1-7 switch detail tabs</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -161,9 +197,11 @@ export default function App() {
 function ViewerBody({
   scrollContainerRef,
   navigateToSkill,
+  setShowShortcuts,
 }: {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   navigateToSkill: (skillId: string) => void;
+  setShowShortcuts: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const currentSessionId = useStore((s) => s.currentSessionId);
   const currentEntries = useStore((s) => s.currentEntries);
@@ -243,6 +281,12 @@ function ViewerBody({
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowShortcuts((prev: boolean) => !prev);
+        return;
+      }
+
       if (e.key === "Escape" && currentSessionId) {
         e.preventDefault();
         deselectSession();
@@ -296,6 +340,7 @@ function ViewerBody({
     deselectSession,
     activeSubview,
     setActiveSubview,
+    setShowShortcuts,
   ]);
 
   // Save scroll position on scroll

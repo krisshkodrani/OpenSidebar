@@ -71,7 +71,7 @@ export default function TurnList() {
       setFocusedIdx(idx);
     }
     // Clear focus after scrolling
-    useStore.getState().focusTurnNumber = null;
+    useStore.setState({ focusTurnNumber: null });
   }, [focusTurnNumber, filtered, virtualizer]);
 
   // j/k keyboard navigation

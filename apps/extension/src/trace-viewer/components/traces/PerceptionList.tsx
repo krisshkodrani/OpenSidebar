@@ -28,7 +28,7 @@ export default function PerceptionList() {
     if (idx >= 0) {
       virtualizer.scrollToIndex(idx, { align: "start" });
     }
-    useStore.getState().focusTurnNumber = null;
+    useStore.setState({ focusTurnNumber: null });
   }, [focusTurnNumber, perceptionEntries, virtualizer]);
 
   if (perceptionEntries.length === 0) {

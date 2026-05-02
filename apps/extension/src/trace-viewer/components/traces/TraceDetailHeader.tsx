@@ -301,9 +301,13 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
               </Tooltip>
             )}
             {diagnostics.elementOnlyTurns > 0 && (
-              <Badge variant="event-stuck_signal">
-                {diagnostics.elementOnlyTurns} element-only
-              </Badge>
+              <Tooltip content="Turns that only used element-level DOM access without full page perception">
+                <div>
+                  <Badge variant="event-stuck_signal">
+                    {diagnostics.elementOnlyTurns} element-only
+                  </Badge>
+                </div>
+              </Tooltip>
             )}
           </div>
 
@@ -328,24 +332,16 @@ function QueryTitle({ query }: { query: string }) {
   return (
     <div>
       <div className="text-sm text-trace-text font-medium break-words">
-        {title}
-        {hasMore && !expanded && (
+        {expanded ? query : `${title}${hasMore ? "..." : ""}`}
+        {hasMore && (
           <button
-            onClick={() => setExpanded(true)}
-            className="ml-1.5 text-[11px] text-trace-accent hover:underline font-normal"
+            onClick={() => setExpanded((v) => !v)}
+            className="ml-1.5 text-[11px] text-trace-accent hover:text-trace-accent-light border border-trace-accent/30 rounded px-1.5 py-0.5 font-medium transition-colors"
           >
-            more
+            {expanded ? "less" : "more"}
           </button>
         )}
       </div>
-      {expanded && (
-        <pre
-          className="mt-1.5 text-[11px] text-trace-muted leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-trace-bg border border-trace-border rounded px-2 py-1.5 scrollbar-thin cursor-pointer"
-          onClick={() => setExpanded(false)}
-        >
-          {query}
-        </pre>
-      )}
     </div>
   );
 }
