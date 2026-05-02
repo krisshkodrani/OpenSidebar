@@ -1,6 +1,23 @@
 import React from "react";
+import { useStore } from "../store";
 
 export default function ViewerHeader() {
+  const viewerTheme = useStore((s) => s.viewerTheme);
+  const setViewerTheme = useStore((s) => s.setViewerTheme);
+
+  const cycleTheme = () => {
+    const next =
+      viewerTheme === "light"
+        ? "dark"
+        : viewerTheme === "dark"
+          ? "system"
+          : "light";
+    setViewerTheme(next);
+  };
+
+  const icon =
+    viewerTheme === "light" ? "☀" : viewerTheme === "dark" ? "☾" : "◐";
+
   return (
     <header className="viewer-header shrink-0 px-5 py-2">
       <div className="flex items-center gap-4">
@@ -15,8 +32,18 @@ export default function ViewerHeader() {
             </h1>
           </div>
         </div>
-        <div className="ml-auto hidden md:block text-[11px] text-trace-muted">
-          Trace Operations
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={cycleTheme}
+            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+            title={`Theme: ${viewerTheme}`}
+            aria-label={`Current theme: ${viewerTheme}. Click to cycle.`}
+          >
+            {icon} {viewerTheme}
+          </button>
+          <div className="hidden md:block text-[11px] text-trace-muted">
+            Trace Operations
+          </div>
         </div>
       </div>
     </header>

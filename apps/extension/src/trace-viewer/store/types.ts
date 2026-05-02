@@ -100,6 +100,9 @@ export interface TracesSlice {
   toggleRunGroup: (runId: string) => void;
   expandAllRunGroups: () => void;
   collapseAllRunGroups: () => void;
+  /** Viewer theme: light | dark | system */
+  viewerTheme: "light" | "dark" | "system";
+  setViewerTheme: (theme: "light" | "dark" | "system") => void;
 }
 
 export type Subview =
@@ -114,13 +117,7 @@ export type Subview =
 export type TopLevelView = "sessions" | "runs" | "insights";
 
 export interface ScrollPositions {
-  overview: number;
-  plan: number;
-  turns: number;
-  perception: number;
-  prompts: number;
-  skills: number;
-  logs: number;
+  [key: string]: number;
 }
 
 // ── Combined Store ─────────────────────────────────────────────

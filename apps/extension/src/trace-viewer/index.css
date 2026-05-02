@@ -4,6 +4,38 @@
 
 :root {
   color-scheme: light;
+  --trace-text: #0f172a;
+  --trace-subtle: #334155;
+  --trace-muted: #64748b;
+  --trace-dim: #94a3b8;
+  --trace-accent: #2563eb;
+  --trace-accent-light: #3b82f6;
+  --trace-border: #e2e8f0;
+  --trace-panel: #f8fafc;
+  --trace-bg: #ffffff;
+  --trace-surface: #f1f5f9;
+  --state-success: #16a34a;
+  --state-warning: #d97706;
+  --state-error: #dc2626;
+  --brand-live: #2563eb;
+}
+
+.dark {
+  color-scheme: dark;
+  --trace-text: #f1f5f9;
+  --trace-subtle: #cbd5e1;
+  --trace-muted: #94a3b8;
+  --trace-dim: #64748b;
+  --trace-accent: #60a5fa;
+  --trace-accent-light: #93c5fd;
+  --trace-border: #1e293b;
+  --trace-panel: #0f172a;
+  --trace-bg: #020617;
+  --trace-surface: #0f172a;
+  --state-success: #22c55e;
+  --state-warning: #f59e0b;
+  --state-error: #ef4444;
+  --brand-live: #60a5fa;
 }
 
 /* ── Scrollbar Styling ──────────────────────────────────────── */
@@ -137,8 +169,13 @@ body {
 }
 
 .viewer-header {
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--trace-bg);
+  border-bottom: 1px solid var(--trace-border);
+}
+
+.dark .viewer-header {
+  background: #020617;
+  border-bottom: 1px solid #1e293b;
 }
 
 .viewer-brand-mark {
@@ -155,10 +192,61 @@ body {
   letter-spacing: 0.18em;
 }
 
+.dark .viewer-brand-mark {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+  color: #93c5fd;
+}
+
 .viewer-metric-card {
   min-width: 7rem;
   padding: 0.65rem 0.85rem;
   border-radius: 0.375rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--trace-surface);
+  border: 1px solid var(--trace-border);
+}
+
+.dark .viewer-metric-card {
+  background: #0f172a;
+  border-color: #1e293b;
+}
+
+/* Dark mode scrollbar overrides */
+.dark .scrollbar-thin {
+  scrollbar-color: #475569 #1e293b;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Dark mode scroll-shadow */
+.dark .scroll-shadow-y {
+  background:
+    linear-gradient(#020617 30%, rgba(2, 6, 23, 0)) center top,
+    linear-gradient(rgba(2, 6, 23, 0), #020617 70%) center bottom,
+    radial-gradient(
+        farthest-side at 50% 0,
+        rgba(255, 255, 255, 0.08),
+        rgba(255, 255, 255, 0)
+      )
+      center top,
+    radial-gradient(
+        farthest-side at 50% 100%,
+        rgba(255, 255, 255, 0.08),
+        rgba(255, 255, 255, 0)
+      )
+      center bottom;
+  background-repeat: no-repeat;
+  background-size:
+    100% 18px,
+    100% 18px,
+    100% 8px,
+    100% 8px;
+  background-attachment: local, local, scroll, scroll;
 }

@@ -65,13 +65,18 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
 
   const durations = entries.map((e) => e.llmResponse?.durationMs ?? 0);
   const maxDuration = Math.max(...durations, 1);
+  const MIN_SEGMENT_WIDTH = 14; // Minimum clickable width per segment
+  const totalMinWidth = entries.length * (MIN_SEGMENT_WIDTH + 1); // +1 for gap
+  const needsScroll = totalMinWidth > 800;
 
   return (
     <div className="mb-3">
-      <div className="text-[10px] text-trace-muted uppercase tracking-wider mb-1.5 font-semibold">
+      <div className="text-[11px] text-trace-muted uppercase tracking-wider mb-1.5 font-semibold">
         Turn Timeline
       </div>
-      <div className="flex gap-px h-6 rounded overflow-hidden bg-trace-accent/[0.12]">
+      <div
+        className={`flex gap-px h-6 rounded overflow-x-auto bg-trace-accent/[0.12] ${needsScroll ? "overflow-x-auto" : "overflow-hidden"}`}
+      >
         {entries.map((entry, i) => {
           const dur = entry.llmResponse?.durationMs ?? 0;
           const widthPct = Math.max((dur / maxDuration) * 100, 2);
@@ -87,8 +92,11 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
             <button
               key={i}
               type="button"
-              className={`${bgColor} border-0 p-0 transition-colors cursor-pointer`}
-              style={{ width: `${widthPct}%`, minWidth: "3px" }}
+              className={`${bgColor} border-0 p-0 transition-colors cursor-pointer shrink-0`}
+              style={{
+                width: needsScroll ? `${MIN_SEGMENT_WIDTH}px` : `${widthPct}%`,
+                minWidth: `${MIN_SEGMENT_WIDTH}px`,
+              }}
               title={buildTitle(entry, turnNum)}
               aria-label={`Jump to turn ${turnNum}`}
               onClick={() => navigateToTurn(turnNum)}
@@ -96,7 +104,7 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
           );
         })}
       </div>
-      <div className="flex justify-between mt-1 text-[9px] text-trace-dim">
+      <div className="flex justify-between mt-1 text-[11px] text-trace-dim">
         <span>T1</span>
         <div className="flex gap-3">
           <span className="inline-flex items-center gap-1">

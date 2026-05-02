@@ -3,6 +3,7 @@ import type {
   TracesSlice,
   TraceFilters,
   RunGroup,
+  ScrollPositions,
 } from "./types";
 import type { TraceSession } from "../../types/traces";
 import { isoDayOffset } from "../utils";
@@ -104,18 +105,11 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   logsWarning: null,
   searchQuery: "",
   activeSubview: "overview" as const,
-  scrollPositions: {
-    overview: 0,
-    plan: 0,
-    turns: 0,
-    perception: 0,
-    prompts: 0,
-    skills: 0,
-    logs: 0,
-  },
+  scrollPositions: {} as ScrollPositions,
   saveScrollPosition: (view, position) =>
     set((s) => {
-      s.scrollPositions[view] = position;
+      const key = s.currentSessionId ? `${s.currentSessionId}:${view}` : view;
+      s.scrollPositions[key] = position;
     }),
   tracesLoading: false,
   tracesError: null,
@@ -232,5 +226,11 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   collapseAllRunGroups: () =>
     set((s) => {
       for (const g of s.runGroups) g.expanded = false;
+    }),
+
+  viewerTheme: "system" as const,
+  setViewerTheme: (theme) =>
+    set((s) => {
+      s.viewerTheme = theme;
     }),
 });
