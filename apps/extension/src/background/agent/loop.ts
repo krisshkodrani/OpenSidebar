@@ -1522,6 +1522,105 @@ export class AgentLoop {
     });
   }
 
+  private rejectDoneQuestionAsClarification(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    if (
+      this.turnCount > 2 ||
+      !isDoneSummaryAskingClarification(summary)
+    ) {
+      return false;
+    }
+
+    this.log.warn(
+      "agent",
+      "DONE rejected: summary is a question on T1, redirecting to clarify",
+      {
+        turn: this.turnCount,
+        summary: summary.slice(0, 150),
+      },
+    );
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        "done() REJECTED: Your summary is a question, not a completion report. " +
+        "Use the clarify() tool to ask the user a question. " +
+        "Do NOT call done() to ask questions.",
+    });
+    return true;
+  }
+
+  private async rejectDoneBeforeGroundingRead(
+    toolCallId: string,
+    summary: string,
+    tabId: number,
+  ): Promise<boolean> {
+    // Done() Content Verification Guard
+    // Reject done() if the agent never had access to page content and the page
+    // has substantive content - prevents hallucinated summaries from filename/URL alone.
+    // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
+    // includes substantive content (system prompt provides it via {{pageContent}}).
+    if (
+      this.hasReadPage ||
+      (!this.taskId && !requiresGroundingReadBeforeDone(this.originalQuery))
+    ) {
+      return false;
+    }
+
+    const snap = this.context.getSnapshot();
+    const elementCount = snap?.elements?.length ?? 0;
+    const visibleLen = (
+      snap?.visibleContent ||
+      snap?.pageContent ||
+      ""
+    ).length;
+    if (elementCount <= 5 || visibleLen <= 100) {
+      return false;
+    }
+
+    const needsGroundingRead = requiresGroundingReadBeforeDone(
+      this.originalQuery,
+    );
+    this.log.warn(
+      "agent",
+      "DONE rejected: read_page never called on substantive page",
+      {
+        turn: this.turnCount,
+        taskId: this.taskId,
+        requiresGroundingReadBeforeDone: needsGroundingRead,
+        elementCount,
+        visibleLen,
+        summary: summary.slice(0, 150),
+      },
+    );
+    this.traceRecorder?.recordEvent("done_rejected_no_read", {
+      turn: this.turnCount,
+      elementCount,
+      visibleLen,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
+        "Do NOT summarize from the page title or URL alone.",
+    });
+    if (needsGroundingRead) {
+      await this.forceGroundingRefresh(
+        tabId,
+        "done_before_grounding_read",
+      );
+      this.context.addMessage({
+        role: "user",
+        content:
+          'The page has been refreshed for grounding. Use the current page content to answer, then call done({"summary": "..."}).',
+      });
+    }
+    return true;
+  }
+
   private rejectDoneAfterPlanValidation(
     toolCallId: string,
     rejectReason: string,
@@ -8348,89 +8447,18 @@ export class AgentLoop {
                 continue;
               }
 
-              // Guard: reject done() on early turns when the summary looks like a question
-              // (model is asking for clarification instead of using the clarify tool)
-              if (
-                this.turnCount <= 2 &&
-                isDoneSummaryAskingClarification(summary)
-              ) {
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: summary is a question on T1, redirecting to clarify",
-                  {
-                    turn: this.turnCount,
-                    summary: summary.slice(0, 150),
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    "done() REJECTED: Your summary is a question, not a completion report. " +
-                    "Use the clarify() tool to ask the user a question. " +
-                    "Do NOT call done() to ask questions.",
-                });
+              if (this.rejectDoneQuestionAsClarification(toolCall.id, summary)) {
                 continue;
               }
 
-              // Done() Content Verification Guard
-              // Reject done() if the agent never had access to page content and the page
-              // has substantive content — prevents hallucinated summaries from filename/URL alone.
-              // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
-              // includes substantive content (system prompt provides it via {{pageContent}}).
               if (
-                !this.hasReadPage &&
-                (this.taskId ||
-                  requiresGroundingReadBeforeDone(this.originalQuery))
+                await this.rejectDoneBeforeGroundingRead(
+                  toolCall.id,
+                  summary,
+                  tabId,
+                )
               ) {
-                const snap = this.context.getSnapshot();
-                const elementCount = snap?.elements?.length ?? 0;
-                const visibleLen = (
-                  snap?.visibleContent ||
-                  snap?.pageContent ||
-                  ""
-                ).length;
-                if (elementCount > 5 && visibleLen > 100) {
-                  const needsGroundingRead = requiresGroundingReadBeforeDone(
-                    this.originalQuery,
-                  );
-                  this.log.warn(
-                    "agent",
-                    "DONE rejected: read_page never called on substantive page",
-                    {
-                      turn: this.turnCount,
-                      taskId: this.taskId,
-                      requiresGroundingReadBeforeDone: needsGroundingRead,
-                      elementCount,
-                      visibleLen,
-                      summary: summary.slice(0, 150),
-                    },
-                  );
-                  this.traceRecorder?.recordEvent("done_rejected_no_read", {
-                    turn: this.turnCount,
-                    elementCount,
-                    visibleLen,
-                  });
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content:
-                      "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
-                      "Do NOT summarize from the page title or URL alone.",
-                  });
-                  if (needsGroundingRead) {
-                    await this.forceGroundingRefresh(
-                      tabId,
-                      "done_before_grounding_read",
-                    );
-                    this.context.addMessage({
-                      role: "user",
-                      content:
-                        'The page has been refreshed for grounding. Use the current page content to answer, then call done({"summary": "..."}).',
-                    });
-                  }
-                  continue;
-                }
+                continue;
               }
 
               if (this.rejectDoneForMoneyTableAggregate(toolCall.id, summary)) {
