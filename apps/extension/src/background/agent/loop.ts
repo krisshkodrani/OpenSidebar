@@ -208,6 +208,7 @@ import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
   assessFailedActionRepeat,
+  assessReadElementSameIdNudge,
   buildFailureBrief,
   buildHandoffBriefing,
   buildStructuredFailureContext,
@@ -6998,37 +6999,35 @@ export class AgentLoop {
                 );
               }
 
-              // read_element same-ID nudge (parallel path)
-              if (toolName === ToolName.READ_ELEMENT) {
-                const elemId =
-                  typeof args.id === "number" ? args.id : Number(args.id);
-                if (elemId === lastReadElementId) {
-                  consecutiveReadElementSameId++;
-                  if (consecutiveReadElementSameId >= 2) {
-                    const nudgeMsg =
-                      `You have called read_element on element [${elemId}] ${consecutiveReadElementSameId + 1} times. ` +
-                      `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`;
-                    this.log.warn("agent", "read_element same-ID nudge", {
-                      turn: this.turnCount,
-                      elementId: elemId,
-                      consecutive: consecutiveReadElementSameId + 1,
-                    });
-                    this.traceRecorder?.recordEvent(
-                      "read_element_same_id_nudge",
-                      {
-                        elementId: elemId,
-                        consecutive: consecutiveReadElementSameId + 1,
-                      },
-                    );
-                    return { toolCall, result: nudgeMsg, error: null };
-                  }
-                } else {
-                  lastReadElementId = elemId;
-                  consecutiveReadElementSameId = 0;
-                }
-              } else {
-                lastReadElementId = null;
-                consecutiveReadElementSameId = 0;
+              const readElementNudge = assessReadElementSameIdNudge({
+                toolName,
+                args,
+                state: {
+                  lastReadElementId,
+                  consecutiveReadElementSameId,
+                },
+              });
+              lastReadElementId = readElementNudge.state.lastReadElementId;
+              consecutiveReadElementSameId =
+                readElementNudge.state.consecutiveReadElementSameId;
+              if (readElementNudge.nudge) {
+                this.log.warn("agent", "read_element same-ID nudge", {
+                  turn: this.turnCount,
+                  elementId: readElementNudge.nudge.elementId,
+                  consecutive: readElementNudge.nudge.consecutive,
+                });
+                this.traceRecorder?.recordEvent(
+                  "read_element_same_id_nudge",
+                  {
+                    elementId: readElementNudge.nudge.elementId,
+                    consecutive: readElementNudge.nudge.consecutive,
+                  },
+                );
+                return {
+                  toolCall,
+                  result: readElementNudge.nudge.message,
+                  error: null,
+                };
               }
 
               // Failed-action memory: block exact repeat of a previously failed tool call
@@ -7632,42 +7631,33 @@ export class AgentLoop {
               );
             }
 
-            // read_element same-ID nudge (sequential path)
-            if (toolName === ToolName.READ_ELEMENT) {
-              const elemId =
-                typeof args.id === "number" ? args.id : Number(args.id);
-              if (elemId === lastReadElementId) {
-                consecutiveReadElementSameId++;
-                if (consecutiveReadElementSameId >= 2) {
-                  const nudgeMsg =
-                    `You have called read_element on element [${elemId}] ${consecutiveReadElementSameId + 1} times. ` +
-                    `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`;
-                  this.log.warn("agent", "read_element same-ID nudge", {
-                    turn: this.turnCount,
-                    elementId: elemId,
-                    consecutive: consecutiveReadElementSameId + 1,
-                  });
-                  this.traceRecorder?.recordEvent(
-                    "read_element_same_id_nudge",
-                    {
-                      elementId: elemId,
-                      consecutive: consecutiveReadElementSameId + 1,
-                    },
-                  );
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: nudgeMsg,
-                  });
-                  continue;
-                }
-              } else {
-                lastReadElementId = elemId;
-                consecutiveReadElementSameId = 0;
-              }
-            } else {
-              lastReadElementId = null;
-              consecutiveReadElementSameId = 0;
+            const readElementNudge = assessReadElementSameIdNudge({
+              toolName,
+              args,
+              state: {
+                lastReadElementId,
+                consecutiveReadElementSameId,
+              },
+            });
+            lastReadElementId = readElementNudge.state.lastReadElementId;
+            consecutiveReadElementSameId =
+              readElementNudge.state.consecutiveReadElementSameId;
+            if (readElementNudge.nudge) {
+              this.log.warn("agent", "read_element same-ID nudge", {
+                turn: this.turnCount,
+                elementId: readElementNudge.nudge.elementId,
+                consecutive: readElementNudge.nudge.consecutive,
+              });
+              this.traceRecorder?.recordEvent("read_element_same_id_nudge", {
+                elementId: readElementNudge.nudge.elementId,
+                consecutive: readElementNudge.nudge.consecutive,
+              });
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: readElementNudge.nudge.message,
+              });
+              continue;
             }
 
             // Failed-action memory: block exact repeat of a previously failed tool call

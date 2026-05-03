@@ -1119,6 +1119,69 @@ export function assessFailedActionRepeat(params: {
   };
 }
 
+export interface ReadElementNudgeState {
+  lastReadElementId: number | null;
+  consecutiveReadElementSameId: number;
+}
+
+export interface ReadElementSameIdNudgeDecision {
+  state: ReadElementNudgeState;
+  nudge:
+    | {
+        elementId: number;
+        consecutive: number;
+        message: string;
+      }
+    | null;
+}
+
+export function assessReadElementSameIdNudge(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  state: ReadElementNudgeState;
+}): ReadElementSameIdNudgeDecision {
+  const { toolName, args, state } = params;
+  if (toolName !== ToolName.READ_ELEMENT) {
+    return {
+      state: {
+        lastReadElementId: null,
+        consecutiveReadElementSameId: 0,
+      },
+      nudge: null,
+    };
+  }
+
+  const elemId = typeof args.id === "number" ? args.id : Number(args.id);
+  if (elemId !== state.lastReadElementId) {
+    return {
+      state: {
+        lastReadElementId: elemId,
+        consecutiveReadElementSameId: 0,
+      },
+      nudge: null,
+    };
+  }
+
+  const consecutiveReadElementSameId = state.consecutiveReadElementSameId + 1;
+  const consecutive = consecutiveReadElementSameId + 1;
+  return {
+    state: {
+      lastReadElementId: elemId,
+      consecutiveReadElementSameId,
+    },
+    nudge:
+      consecutiveReadElementSameId >= 2
+        ? {
+            elementId: elemId,
+            consecutive,
+            message:
+              `You have called read_element on element [${elemId}] ${consecutive} times. ` +
+              `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`,
+          }
+        : null,
+  };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
