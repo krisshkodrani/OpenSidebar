@@ -1301,6 +1301,84 @@ export function assessRedundantSuccessBlock(params: {
   };
 }
 
+export type RecentSuccessTrackingDecision =
+  | { kind: "none" }
+  | {
+      kind: "redundant_nudge";
+      sameStateCount: number;
+      totalRepeatCount: number;
+      message: string;
+    }
+  | {
+      kind: "tool_name_pattern";
+      toolNameCount: number;
+      message: string;
+    };
+
+export function recordRecentSuccessfulAction(params: {
+  recentSuccesses: RecentAction[];
+  toolName: ToolName;
+  argsKey: string;
+  resultContent: string;
+  snapshot: DomSnapshot | null | undefined;
+  windowSize: number;
+  infoThreshold: number;
+  toolNameInfoThreshold: number;
+}): RecentSuccessTrackingDecision {
+  const isSuccess =
+    !params.resultContent.startsWith("Error:") &&
+    !params.resultContent.includes("does not appear to be") &&
+    !params.resultContent.includes("No element with tag") &&
+    !params.resultContent.includes("Click intercepted") &&
+    !params.resultContent.includes("REJECTED");
+  if (!isSuccess) return { kind: "none" };
+
+  const actionFingerprint = getSnapshotFingerprint(params.snapshot ?? null);
+  params.recentSuccesses.push({
+    tool: params.toolName,
+    args: params.argsKey,
+    result: params.resultContent,
+    snapshotFingerprint: actionFingerprint,
+  });
+  if (params.recentSuccesses.length > params.windowSize) {
+    params.recentSuccesses.shift();
+  }
+
+  const sameStateCount = params.recentSuccesses.filter(
+    (entry) =>
+      entry.tool === params.toolName &&
+      entry.args === params.argsKey &&
+      entry.snapshotFingerprint === actionFingerprint,
+  ).length;
+  const totalRepeatCount = params.recentSuccesses.filter(
+    (entry) => entry.tool === params.toolName && entry.args === params.argsKey,
+  ).length;
+
+  if (sameStateCount >= params.infoThreshold) {
+    params.recentSuccesses.length = 0;
+    return {
+      kind: "redundant_nudge",
+      sameStateCount,
+      totalRepeatCount,
+      message: `Note: You have called ${params.toolName} ${sameStateCount} times with similar arguments and the page appears unchanged each time. Consider whether a different approach might be more effective.`,
+    };
+  }
+
+  const toolNameCount = params.recentSuccesses.filter(
+    (entry) => entry.tool === params.toolName,
+  ).length;
+  if (toolNameCount >= params.toolNameInfoThreshold) {
+    params.recentSuccesses.length = 0;
+    return {
+      kind: "tool_name_pattern",
+      toolNameCount,
+      message: `Note: You have used ${params.toolName} ${toolNameCount} times in recent turns. If your current approach isn't yielding results, a different strategy might help.`,
+    };
+  }
+
+  return { kind: "none" };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.

@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
+  storeSuccessfulToolResult,
   type AgentLoopToolHandlerHost,
 } from "../../src/background/agent/loop-tool-handlers";
 import { RiskLevel, ToolName, type AgentStep, type ToolCall } from "../../src/types";
@@ -11,7 +12,9 @@ function host(): AgentLoopToolHandlerHost {
   return {
     checkNavigateGuard: vi.fn(),
     consecutiveAutoAdvances: 0,
-    context: {},
+    context: {
+      getSnapshot: vi.fn(() => null),
+    },
     disabledTools: new Set(),
     elementResolver: {},
     escalateModel: vi.fn(),
@@ -41,7 +44,9 @@ function host(): AgentLoopToolHandlerHost {
     shouldBlockTabManagementTools: vi.fn(),
     statusHandler: vi.fn(),
     stepHandler: vi.fn(),
-    toolCache: {},
+    toolCache: {
+      set: vi.fn(),
+    },
     traceRecorder: {
       recordToolExecution: vi.fn(),
     },
@@ -168,5 +173,36 @@ describe("tool result recording", () => {
       RiskLevel.LOW,
       "No element",
     );
+  });
+
+  test("stores successful cacheable tool results", () => {
+    const loop = host();
+
+    storeSuccessfulToolResult(loop, {
+      toolName: ToolName.FIND_ELEMENT,
+      args: { text: "Save" },
+      result: "Found [12]",
+      cacheType: "dom",
+    });
+
+    expect(loop.toolCache.set).toHaveBeenCalledWith(
+      'find_element:{"text":"Save"}',
+      "Found [12]",
+      "none|0|0",
+      "dom",
+    );
+  });
+
+  test("does not store error tool results", () => {
+    const loop = host();
+
+    storeSuccessfulToolResult(loop, {
+      toolName: ToolName.FIND_ELEMENT,
+      args: { text: "Save" },
+      result: "Error: missing",
+      cacheType: "dom",
+    });
+
+    expect(loop.toolCache.set).not.toHaveBeenCalled();
   });
 });

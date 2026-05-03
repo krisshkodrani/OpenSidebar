@@ -9,6 +9,7 @@ import {
   assessReadElementSameIdNudge,
   assessToolCacheHit,
   buildZeroEffectDecision,
+  recordRecentSuccessfulAction,
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
@@ -426,5 +427,74 @@ describe("assessRedundantSuccessBlock", () => {
         blockThreshold: 2,
       }),
     ).toBeNull();
+  });
+});
+
+describe("recordRecentSuccessfulAction", () => {
+  it("records successes and returns no decision below thresholds", () => {
+    const recentSuccesses = [];
+
+    expect(
+      recordRecentSuccessfulAction({
+        recentSuccesses,
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        resultContent: "Clicked",
+        snapshot: null,
+        windowSize: 3,
+        infoThreshold: 2,
+        toolNameInfoThreshold: 3,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(recentSuccesses).toHaveLength(1);
+  });
+
+  it("returns a redundant nudge and clears the buffer at the same-state threshold", () => {
+    const recentSuccesses = [
+      {
+        tool: ToolName.CLICK_ELEMENT,
+        args: '{"id":1}',
+        result: "Clicked",
+        snapshotFingerprint: "none|0|0",
+      },
+    ];
+
+    expect(
+      recordRecentSuccessfulAction({
+        recentSuccesses,
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        resultContent: "Clicked again",
+        snapshot: null,
+        windowSize: 3,
+        infoThreshold: 2,
+        toolNameInfoThreshold: 3,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "redundant_nudge",
+        sameStateCount: 2,
+        totalRepeatCount: 2,
+      }),
+    );
+    expect(recentSuccesses).toHaveLength(0);
+  });
+
+  it("does not record failed-looking results", () => {
+    const recentSuccesses = [];
+
+    expect(
+      recordRecentSuccessfulAction({
+        recentSuccesses,
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        resultContent: "Error: failed",
+        snapshot: null,
+        windowSize: 3,
+        infoThreshold: 2,
+        toolNameInfoThreshold: 3,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(recentSuccesses).toHaveLength(0);
   });
 });
