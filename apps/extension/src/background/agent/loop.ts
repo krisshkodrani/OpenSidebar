@@ -291,6 +291,10 @@ import {
   updateMoneyTableAggregateFromSnapshot,
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
+import {
+  resolveToolApprovalRequest,
+  TOOL_APPROVAL_DENIED_MESSAGE,
+} from "./approval-enforcement";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 
@@ -8049,21 +8053,22 @@ export class AgentLoop {
             }
             const forceConsequentialActionApproval =
               this.requiresConsequentialActionApproval(toolName, args);
-            if (
-              preDecision.requiresApproval ||
-              forceConsequentialActionApproval
-            ) {
+            const approvalRequest = resolveToolApprovalRequest(
+              preDecision,
+              forceConsequentialActionApproval,
+            );
+            if (approvalRequest.requiresApproval) {
               const approved = await this.ensureToolApproval(
                 toolName,
                 args,
-                preDecision.riskLevel,
-                forceConsequentialActionApproval,
+                approvalRequest.riskLevel,
+                approvalRequest.forceApproval,
               );
               if (!approved) {
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: "Error: Action denied by user approval policy.",
+                  content: TOOL_APPROVAL_DENIED_MESSAGE,
                 });
                 continue;
               }
