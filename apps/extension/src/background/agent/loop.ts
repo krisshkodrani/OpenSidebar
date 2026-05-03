@@ -18,7 +18,7 @@ import {
   resolvePerceptionRuntimeMode,
   resolvePerceptionRuntimeModeDecision,
 } from "../../utils/perception-mode";
-import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
+import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
 import {
   DOM_MODIFYING_TOOLS,
@@ -49,7 +49,6 @@ import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
 import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
-import { recoverToolCallsFromText } from "./tool-recovery";
 import { DomSnapshot } from "../../types";
 import {
   CompletionResponse,
@@ -69,6 +68,18 @@ import {
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
+import {
+  isEmptyCompletionResponse,
+  normalizeResponseContent,
+  recoverResponseToolCallsFromText,
+  summarizeToolCalls,
+} from "./response-normalization";
+import {
+  buildHallucinationRetryMessage,
+  buildTurnRetryStep,
+  getTurnRetryBackoffMs,
+  removeTurnRetryDiagnosticMessages,
+} from "./turn-retry";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
@@ -6360,10 +6371,7 @@ export class AgentLoop {
           );
 
           // Check for empty response (retryable)
-          if (
-            !response.content &&
-            (!response.tool_calls || response.tool_calls.length === 0)
-          ) {
+          if (isEmptyCompletionResponse(response)) {
             const switchedToFallback =
               !this.llm.isPlannerTier() &&
               this.llm.activateExecutorFallback("empty_response");
@@ -6383,13 +6391,11 @@ export class AgentLoop {
                 payload: { delta: "", done: false, replaceContent: "" },
               });
               this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "info",
-                  label: `Retrying with fallback model (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
-                  status: "running",
-                  timestamp: Date.now(),
-                },
+                buildTurnRetryStep({
+                  retryCount: turnRetryCount,
+                  maxRetries: MAX_TURN_RETRIES,
+                  fallbackModel: this.llm.getCurrentModel(),
+                }),
                 false,
               );
               this.traceRecorder?.recordEvent(
@@ -6400,7 +6406,10 @@ export class AgentLoop {
                   model: this.llm.getCurrentModel(),
                 },
               );
-              const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+              const backoff = getTurnRetryBackoffMs(
+                turnRetryCount,
+                TURN_RETRY_BACKOFF_MS,
+              );
               if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
               this.abortController?.signal.removeEventListener(
                 "abort",
@@ -6422,13 +6431,10 @@ export class AgentLoop {
                 payload: { delta: "", done: false, replaceContent: "" },
               });
               this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "info",
-                  label: `Retrying (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
-                  status: "running",
-                  timestamp: Date.now(),
-                },
+                buildTurnRetryStep({
+                  retryCount: turnRetryCount,
+                  maxRetries: MAX_TURN_RETRIES,
+                }),
                 false,
               );
               this.traceRecorder?.recordEvent("turn_retry", {
@@ -6436,7 +6442,10 @@ export class AgentLoop {
                 retry: turnRetryCount,
                 errorClass: "empty_response",
               });
-              const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+              const backoff = getTurnRetryBackoffMs(
+                turnRetryCount,
+                TURN_RETRY_BACKOFF_MS,
+              );
               if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
               this.abortController?.signal.removeEventListener(
                 "abort",
@@ -6516,13 +6525,10 @@ export class AgentLoop {
 
             // Show retry step in timeline
             this.stepHandler(
-              {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: `Retrying (${turnRetryCount}/${MAX_TURN_RETRIES})...`,
-                status: "running",
-                timestamp: Date.now(),
-              },
+              buildTurnRetryStep({
+                retryCount: turnRetryCount,
+                maxRetries: MAX_TURN_RETRIES,
+              }),
               false,
             );
 
@@ -6538,21 +6544,16 @@ export class AgentLoop {
                 turn: this.turnCount,
                 textLen: streamedTextAccumulator.length,
               });
-              messages = [
-                ...messages,
-                {
-                  role: "user" as const,
-                  content:
-                    "[System] Your previous response contained raw JSON instead of a proper tool call. " +
-                    "Use the tool_calls API to invoke tools. Do not emit JSON as text.",
-                },
-              ];
+              messages = [...messages, buildHallucinationRetryMessage()];
             }
 
             // Invalidate perception cache (force fresh observation on retry)
             this.perception.invalidateCache();
 
-            const backoff = TURN_RETRY_BACKOFF_MS[turnRetryCount - 1] ?? 500;
+            const backoff = getTurnRetryBackoffMs(
+              turnRetryCount,
+              TURN_RETRY_BACKOFF_MS,
+            );
             if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
             continue retryLoop;
           }
@@ -6583,14 +6584,7 @@ export class AgentLoop {
 
       // Clean up diagnostic hints injected during retries (don't pollute history)
       if (turnRetryCount > 0) {
-        messages = messages.filter(
-          (m) =>
-            !(
-              m.role === "user" &&
-              typeof m.content === "string" &&
-              m.content.startsWith("[System] Your previous response")
-            ),
-        );
+        messages = removeTurnRetryDiagnosticMessages(messages);
       }
 
       const llmMs = Date.now() - llmStart;
@@ -6614,16 +6608,14 @@ export class AgentLoop {
 
       // Derive clean content (no <think> blocks) for logging and logic,
       // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
-      const rawContent = response.content;
-      let cleanContent = rawContent ? stripThinkTags(rawContent) || null : null;
+      const normalizedContent = normalizeResponseContent(response);
+      const rawContent = normalizedContent.rawContent;
+      let cleanContent = normalizedContent.cleanContent;
 
       // Fix 2: Empty Response Circuit Breaker
       // After retry loop exhausts, a truly empty response (no content AND no tool_calls)
       // should exit immediately rather than degrading through the text-only flow.
-      if (
-        !rawContent &&
-        (!response.tool_calls || response.tool_calls.length === 0)
-      ) {
+      if (isEmptyCompletionResponse(response)) {
         this.log.error("agent", "Empty response after retries exhausted", {
           turn: this.turnCount,
         });
@@ -6652,9 +6644,7 @@ export class AgentLoop {
       }
 
       // Extract thinking content and broadcast to UI before any done:true
-      const thinkingContent = rawContent
-        ? extractThinkContent(rawContent)
-        : null;
+      const thinkingContent = normalizedContent.thinkingContent;
       if (thinkingContent) {
         this.broadcast({
           type: "STREAM_CHUNK",
@@ -6663,19 +6653,10 @@ export class AgentLoop {
       }
 
       // Log LLM response summary for debugging
-      const toolSummary =
-        response.tool_calls?.map((tc) => {
-          let argSnippet = "";
-          try {
-            argSnippet = tc.function.arguments.slice(
-              0,
-              STRING_LIMITS.TOOL_CALL_SNIPPET,
-            );
-          } catch {
-            /* */
-          }
-          return `${tc.function.name}(${argSnippet})`;
-        }) ?? [];
+      const toolSummary = summarizeToolCalls(
+        response.tool_calls,
+        STRING_LIMITS.TOOL_CALL_SNIPPET,
+      );
       this.log.info("agent", "LLM response", {
         turn: this.turnCount,
         llmMs,
@@ -6700,30 +6681,20 @@ export class AgentLoop {
 
       // Recover tool calls from text output (models sometimes emit JSON as text)
       let toolsRecoveredFromText = false;
-      if (
-        (!response.tool_calls || response.tool_calls.length === 0) &&
-        cleanContent
-      ) {
-        const recovered = recoverToolCallsFromText(cleanContent);
-        if (recovered && recovered.length > 0) {
-          this.log.info("agent", "Recovered tool calls from text", {
-            turn: this.turnCount,
-            count: recovered.length,
-            tools: recovered.map((tc) => tc.function.name),
-          });
-          response.tool_calls = recovered;
-          toolsRecoveredFromText = true;
-          // Clear text content — it was tool-call JSON, not real narration.
-          // Leaving it causes 422 errors: providers reject assistant messages
-          // with both non-null content and tool_calls.
-          response.content = null;
-          cleanContent = null;
-          // Retract the raw JSON that was already streamed to chat.
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: false, replaceContent: "" },
-          });
-        }
+      const recovery = recoverResponseToolCallsFromText(response, cleanContent);
+      if (recovery.recovered) {
+        this.log.info("agent", "Recovered tool calls from text", {
+          turn: this.turnCount,
+          count: recovery.recoveredToolCalls.length,
+          tools: recovery.recoveredToolCalls.map((tc) => tc.function.name),
+        });
+        toolsRecoveredFromText = true;
+        cleanContent = recovery.cleanContent;
+        // Retract the raw JSON that was already streamed to chat.
+        this.broadcast({
+          type: "STREAM_CHUNK",
+          payload: { delta: "", done: false, replaceContent: "" },
+        });
       }
 
       const llmIntention =
@@ -6762,9 +6733,7 @@ export class AgentLoop {
         // Only nudge (no forced escalation) — stagnation monitor and dead-end
         // detection handle actual stuck loops. Forced escalation caused
         // escalate→de-escalate loops with models that naturally omit reasoning.
-        const hadThinking = rawContent
-          ? extractThinkContent(rawContent) !== null
-          : false;
+        const hadThinking = normalizedContent.hadThinking;
         if (!cleanContent && !toolsRecoveredFromText && !hadThinking) {
           consecutiveBlindToolTurns++;
           if (consecutiveBlindToolTurns === 3) {
