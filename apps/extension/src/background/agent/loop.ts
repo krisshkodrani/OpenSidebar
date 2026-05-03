@@ -1597,6 +1597,87 @@ export class AgentLoop {
     );
   }
 
+  private async evaluateDonePlanValidation(
+    summary: string,
+    effectiveCurrentIdx: number,
+    completedMoneyTableAggregate: boolean,
+    initialShouldReject: boolean,
+    initialRejectReason: string,
+  ): Promise<{ shouldReject: boolean; rejectReason: string }> {
+    let shouldReject = initialShouldReject;
+    let rejectReason = initialRejectReason;
+
+    try {
+      this.stepHandler(
+        {
+          id: crypto.randomUUID(),
+          type: "thinking",
+          label: "Verifying completion...",
+          status: "running",
+          timestamp: Date.now(),
+        },
+        false,
+      );
+
+      // Skip planner validateDone for orchestrator sub-nodes.
+      // Sub-nodes only need to satisfy their node-level objective;
+      // the orchestrator's own verifier checks node completion.
+      // Calling validateDone with the full original query would
+      // reject because sibling steps aren't done yet.
+      if (!shouldReject && !this.nodeId && !completedMoneyTableAggregate) {
+        const currentSubtask =
+          effectiveCurrentIdx >= 0
+            ? this.planSubtasks[effectiveCurrentIdx]
+            : undefined;
+        const interpretation = this.perception.getInterpretation();
+        const validationPerception = shouldOmitPerceptionForDoneValidation({
+          interpretation,
+          hasReadPage: this.hasReadPage,
+          originalQuery: this.originalQuery,
+          activeStepDescription: currentSubtask?.description,
+          activeStepToolProfile:
+            currentSubtask?.toolProfile &&
+            resolveToolProfile(currentSubtask.toolProfile as ToolProfile)
+              ? (currentSubtask.toolProfile as ToolProfile)
+              : undefined,
+        })
+          ? undefined
+          : (interpretation ?? undefined);
+        const lastEffect = this.stagnation.lastActionEffect;
+        const stateEvidence = lastEffect
+          ? formatStateEvidence(lastEffect)
+          : undefined;
+        const validation = await this.planner.validateDone(
+          this.originalQuery,
+          this.planSubtasks,
+          summary,
+          this.context.getSnapshot()?.title || "",
+          this.context.getSnapshot()?.url || "",
+          this.abortController!.signal,
+          validationPerception,
+          this.planSteps[effectiveCurrentIdx]?.successCriteria,
+          stateEvidence ?? undefined,
+        );
+
+        if (!validation.approved) {
+          shouldReject = true;
+          rejectReason = validation.reason || "Task is not yet complete.";
+        }
+      }
+    } catch (_err: any) {
+      // Planner call failed - structural fallback
+      const completedCount = this.planSubtasks.filter(
+        (s) => s.status === "completed",
+      ).length;
+      if (completedCount < this.planSubtasks.length) {
+        shouldReject = true;
+        rejectReason = `Planner unavailable. ${completedCount}/${this.planSubtasks.length} subtasks completed. Continue.`;
+      }
+    }
+
+    return { shouldReject, rejectReason };
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8207,81 +8288,14 @@ export class AgentLoop {
                   this.pendingAsyncVerification = null;
                 }
 
-                try {
-                  this.stepHandler(
-                    {
-                      id: crypto.randomUUID(),
-                      type: "thinking",
-                      label: "Verifying completion...",
-                      status: "running",
-                      timestamp: Date.now(),
-                    },
-                    false,
-                  );
-
-                  // Skip planner validateDone for orchestrator sub-nodes.
-                  // Sub-nodes only need to satisfy their node-level objective;
-                  // the orchestrator's own verifier checks node completion.
-                  // Calling validateDone with the full original query would
-                  // reject because sibling steps aren't done yet.
-                  if (
-                    !shouldReject &&
-                    !this.nodeId &&
-                    !completedMoneyTableAggregate
-                  ) {
-                    const currentSubtask =
-                      effectiveCurrentIdx >= 0
-                        ? this.planSubtasks[effectiveCurrentIdx]
-                        : undefined;
-                    const interpretation = this.perception.getInterpretation();
-                    const validationPerception =
-                      shouldOmitPerceptionForDoneValidation({
-                        interpretation,
-                        hasReadPage: this.hasReadPage,
-                        originalQuery: this.originalQuery,
-                        activeStepDescription: currentSubtask?.description,
-                        activeStepToolProfile:
-                          currentSubtask?.toolProfile &&
-                          resolveToolProfile(
-                            currentSubtask.toolProfile as ToolProfile,
-                          )
-                            ? (currentSubtask.toolProfile as ToolProfile)
-                            : undefined,
-                      })
-                        ? undefined
-                        : (interpretation ?? undefined);
-                    const lastEffect = this.stagnation.lastActionEffect;
-                    const stateEvidence = lastEffect
-                      ? formatStateEvidence(lastEffect)
-                      : undefined;
-                    const validation = await this.planner.validateDone(
-                      this.originalQuery,
-                      this.planSubtasks,
-                      summary,
-                      this.context.getSnapshot()?.title || "",
-                      this.context.getSnapshot()?.url || "",
-                      this.abortController!.signal,
-                      validationPerception,
-                      this.planSteps[effectiveCurrentIdx]?.successCriteria,
-                      stateEvidence ?? undefined,
-                    );
-
-                    if (!validation.approved) {
-                      shouldReject = true;
-                      rejectReason =
-                        validation.reason || "Task is not yet complete.";
-                    }
-                  }
-                } catch (_err: any) {
-                  // Planner call failed — structural fallback
-                  const completedCount = this.planSubtasks.filter(
-                    (s) => s.status === "completed",
-                  ).length;
-                  if (completedCount < this.planSubtasks.length) {
-                    shouldReject = true;
-                    rejectReason = `Planner unavailable. ${completedCount}/${this.planSubtasks.length} subtasks completed. Continue.`;
-                  }
-                }
+                ({ shouldReject, rejectReason } =
+                  await this.evaluateDonePlanValidation(
+                    summary,
+                    effectiveCurrentIdx,
+                    completedMoneyTableAggregate,
+                    shouldReject,
+                    rejectReason,
+                  ));
 
                 if (shouldReject) {
                   // retry_step: when the current step uses retry semantics
