@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 
 import {
+  assessAutocompleteTextRewrite,
   assessTextEntryClickGuard,
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
@@ -90,6 +91,21 @@ describe("text entry guards", () => {
         attributes: { "aria-autocomplete": "list" },
       }),
       typedText: "Acme Corporation",
+    });
+
+    expect(result?.rewrittenText).toBe("Acme C");
+    expect(result?.reason).toContain("Autocomplete guard");
+  });
+
+  test("assesses autocomplete rewrite from tool args", () => {
+    const result = assessAutocompleteTextRewrite({
+      objectiveText: "Choose the matching suggestion from the dropdown",
+      originalQuery: "Choose Acme Corporation from suggestions",
+      element: element({
+        role: "combobox",
+        attributes: { "aria-autocomplete": "list" },
+      }),
+      args: { text: "Acme Corporation" },
     });
 
     expect(result?.rewrittenText).toBe("Acme C");

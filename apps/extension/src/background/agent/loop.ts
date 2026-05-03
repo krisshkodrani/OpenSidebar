@@ -83,10 +83,10 @@ import {
   type MoneyTableAggregate,
 } from "./money-table-aggregate";
 import {
+  assessAutocompleteTextRewrite,
   assessTextEntryClickGuard,
   isTextLikeInputElement,
   normalizeGuardText,
-  rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "./text-entry-guards";
 export {
@@ -7301,11 +7301,11 @@ export class AgentLoop {
                 const activeObjective =
                   planStatus?.subtasks[planStatus.currentIndex]?.description ??
                   this.originalQuery;
-                const rewrite = rewriteAutocompleteTextEntry({
+                const rewrite = assessAutocompleteTextRewrite({
                   objectiveText: activeObjective,
                   originalQuery: this.originalQuery,
                   element: target,
-                  typedText: String(args.text || ""),
+                  args,
                 });
                 if (rewrite) {
                   args.text = rewrite.rewrittenText;
@@ -7970,11 +7970,11 @@ export class AgentLoop {
               const activeObjective =
                 planStatus?.subtasks[planStatus.currentIndex]?.description ??
                 this.originalQuery;
-              const rewrite = rewriteAutocompleteTextEntry({
+              const rewrite = assessAutocompleteTextRewrite({
                 objectiveText: activeObjective,
                 originalQuery: this.originalQuery,
                 element: target,
-                typedText: String(args.text || ""),
+                args,
               });
               if (rewrite) {
                 args.text = rewrite.rewrittenText;
