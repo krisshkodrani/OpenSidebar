@@ -12,6 +12,7 @@ import {
   countTrailingToolResultOutcomes,
   recordRecentSuccessfulAction,
   updateConsecutiveAllFailTurns,
+  updateSameToolFailureTracking,
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
@@ -539,5 +540,86 @@ describe("tool result turn failure tracking", () => {
         turnFailures: 0,
       }),
     ).toBe(0);
+  });
+});
+
+describe("updateSameToolFailureTracking", () => {
+  it("records failed actions and returns a warning at the warning threshold", () => {
+    const blockedActions = [];
+    const toolFailCounts = new Map<string, number>();
+
+    const first = updateSameToolFailureTracking({
+      blockedActions,
+      toolFailCounts,
+      toolName: ToolName.CLICK_ELEMENT,
+      argsKey: '{"id":7}',
+      resultContent: "Error: covered by overlay",
+      turn: 3,
+      bufferSize: 3,
+      warnThreshold: 2,
+      exitThreshold: 4,
+    });
+    const second = updateSameToolFailureTracking({
+      blockedActions,
+      toolFailCounts,
+      toolName: ToolName.CLICK_ELEMENT,
+      argsKey: '{"id":7}',
+      resultContent: "Error: covered by overlay",
+      turn: 4,
+      bufferSize: 3,
+      warnThreshold: 2,
+      exitThreshold: 4,
+    });
+
+    expect(first).toEqual({ kind: "none", count: 1 });
+    expect(second).toEqual(
+      expect.objectContaining({ kind: "warn", count: 2 }),
+    );
+    expect(blockedActions).toHaveLength(2);
+    expect(toolFailCounts.get('click_element:{"id":7}')).toBe(2);
+  });
+
+  it("returns exit at the exit threshold", () => {
+    const blockedActions = [];
+    const toolFailCounts = new Map<string, number>([
+      ['click_element:{"id":7}', 2],
+    ]);
+
+    expect(
+      updateSameToolFailureTracking({
+        blockedActions,
+        toolFailCounts,
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":7}',
+        resultContent: "Click intercepted",
+        turn: 5,
+        bufferSize: 3,
+        warnThreshold: 2,
+        exitThreshold: 3,
+      }),
+    ).toEqual(expect.objectContaining({ kind: "exit", count: 3 }));
+  });
+
+  it("resets the repeated failure count on success", () => {
+    const blockedActions = [];
+    const toolFailCounts = new Map<string, number>([
+      ['click_element:{"id":7}', 2],
+    ]);
+
+    expect(
+      updateSameToolFailureTracking({
+        blockedActions,
+        toolFailCounts,
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":7}',
+        resultContent: "Clicked",
+        turn: 5,
+        bufferSize: 3,
+        warnThreshold: 2,
+        exitThreshold: 3,
+      }),
+    ).toEqual({ kind: "none", count: 0 });
+    expect(toolFailCounts.has('click_element:{"id":7}')).toBe(false);
+    expect(blockedActions).toHaveLength(0);
   });
 });

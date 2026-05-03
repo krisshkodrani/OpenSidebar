@@ -248,6 +248,7 @@ import {
   TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
   updateConsecutiveAllFailTurns,
+  updateSameToolFailureTracking,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
 import {
@@ -8208,7 +8209,6 @@ export class AgentLoop {
               rawArgsKey,
               this.context.getSnapshot(),
             );
-            const failKey = `${toolName}:${argsKey}`;
 
             // Find the corresponding tool result
             const toolResult = recentMessages.find(
@@ -8216,71 +8216,56 @@ export class AgentLoop {
             );
             const resultContent =
               typeof toolResult?.content === "string" ? toolResult.content : "";
-            const isFail =
-              resultContent.startsWith("Error:") ||
-              resultContent.includes("does not appear to be") ||
-              resultContent.includes("No element with tag") ||
-              resultContent.includes("Click intercepted");
+            const failureTracking = updateSameToolFailureTracking({
+              blockedActions,
+              toolFailCounts,
+              toolName,
+              argsKey,
+              resultContent,
+              turn: this.turnCount,
+              bufferSize: FAILED_ACTION_MEMORY.BUFFER_SIZE,
+              warnThreshold: this.limits.toolFailureWarn,
+              exitThreshold: this.limits.toolFailureExit,
+            });
 
-            if (isFail) {
-              // Record to failed-action memory ring buffer
-              blockedActions.push({
-                tool: toolName,
-                argsKey,
-                error: resultContent.split("\n")[0].slice(0, 80),
-                turn: this.turnCount,
-              });
-              if (blockedActions.length > FAILED_ACTION_MEMORY.BUFFER_SIZE) {
-                blockedActions.shift();
-              }
-
-              const count = (toolFailCounts.get(failKey) || 0) + 1;
-              toolFailCounts.set(failKey, count);
-
-              if (count >= this.limits.toolFailureExit) {
-                this.log.warn(
-                  "agent",
-                  "Circuit breaker: same-tool repeat failure",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    count,
-                  },
-                );
-                this.traceRecorder?.recordEvent("circuit_breaker", {
-                  reason: "same_tool_repeat",
+            if (failureTracking.kind === "exit") {
+              this.log.warn(
+                "agent",
+                "Circuit breaker: same-tool repeat failure",
+                {
+                  turn: this.turnCount,
                   tool: toolName,
-                  count,
-                });
-                this.circuitBreakerExit(
-                  `The same tool call (${toolName}) has failed ${count} times with the same arguments. The agent is stuck in a loop. Send a follow-up with different instructions.`,
-                );
-                return {
-                  outcome: "error" as const,
-                  turnCount: this.turnCount,
-                  summary: "Circuit breaker: repeated tool failure",
-                  metrics: this.getMetrics(),
-                };
-              }
+                  count: failureTracking.count,
+                },
+              );
+              this.traceRecorder?.recordEvent("circuit_breaker", {
+                reason: "same_tool_repeat",
+                tool: toolName,
+                count: failureTracking.count,
+              });
+              this.circuitBreakerExit(failureTracking.message);
+              return {
+                outcome: "error" as const,
+                turnCount: this.turnCount,
+                summary: "Circuit breaker: repeated tool failure",
+                metrics: this.getMetrics(),
+              };
+            }
 
-              if (count === this.limits.toolFailureWarn) {
-                this.log.warn(
-                  "agent",
-                  "Circuit breaker warning: tool repeating failures",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    count,
-                  },
-                );
-                this.context.addMessage({
-                  role: "user",
-                  content: `WARNING: ${toolName} has failed ${count} times with similar arguments. Stop repeating this approach. Try a fundamentally different strategy — use a different tool, different element, or scroll/navigate to find an alternative path.`,
-                });
-              }
-            } else {
-              // Reset on success for this tool+args combo
-              toolFailCounts.delete(failKey);
+            if (failureTracking.kind === "warn") {
+              this.log.warn(
+                "agent",
+                "Circuit breaker warning: tool repeating failures",
+                {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  count: failureTracking.count,
+                },
+              );
+              this.context.addMessage({
+                role: "user",
+                content: failureTracking.message,
+              });
             }
           }
 
