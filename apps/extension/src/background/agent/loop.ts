@@ -1453,6 +1453,13 @@ export class AgentLoop {
     this.messageHandler(summary, []);
   }
 
+  private completeTaskResult(summary: string): void {
+    this.completedResult = { outcome: "completed", summary };
+    this.statusHandler(AgentStatus.IDLE, "Done");
+    this.messageHandler(summary, []);
+    this.saveTurnCheckpoint().catch(() => {});
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -4435,10 +4442,7 @@ export class AgentLoop {
     const finalSummary = /completed|submitted|configured/i.test(summary)
       ? summary
       : `${contract.name} completed: ${summary}`;
-    this.completedResult = { outcome: "completed", summary: finalSummary };
-    this.statusHandler(AgentStatus.IDLE, "Done");
-    this.messageHandler(finalSummary, []);
-    this.saveTurnCheckpoint().catch(() => {});
+    this.completeTaskResult(finalSummary);
     this.traceRecorder?.recordEvent("atomic_skill_controller_completed", {
       turn: this.turnCount,
       selectedSkillId: contract.id,
@@ -4717,10 +4721,7 @@ export class AgentLoop {
       }
 
       const summary = completion.finalSummary;
-      this.completedResult = { outcome: "completed", summary };
-      this.statusHandler(AgentStatus.IDLE, "Done");
-      this.messageHandler(summary, []);
-      this.saveTurnCheckpoint().catch(() => {});
+      this.completeTaskResult(summary);
       this.traceRecorder?.recordEvent("servicenow_record_controller_completed", {
         turn: this.turnCount,
         summary,
@@ -9202,13 +9203,7 @@ export class AgentLoop {
             if (trustedSubmitCompletion) {
               doneSummary = trustedSubmitCompletion.finalSummary;
               doneSignaled = true;
-              this.completedResult = {
-                outcome: "completed",
-                summary: doneSummary,
-              };
-              this.statusHandler(AgentStatus.IDLE, "Done");
-              this.messageHandler(doneSummary, []);
-              this.saveTurnCheckpoint().catch(() => {});
+              this.completeTaskResult(doneSummary);
               break;
             }
 
@@ -9231,13 +9226,7 @@ export class AgentLoop {
             if (trustedAutoSubmitCompletion) {
               doneSummary = trustedAutoSubmitCompletion.finalSummary;
               doneSignaled = true;
-              this.completedResult = {
-                outcome: "completed",
-                summary: doneSummary,
-              };
-              this.statusHandler(AgentStatus.IDLE, "Done");
-              this.messageHandler(doneSummary, []);
-              this.saveTurnCheckpoint().catch(() => {});
+              this.completeTaskResult(doneSummary);
               break;
             }
 
@@ -10286,13 +10275,7 @@ export class AgentLoop {
                   this.pendingFormSubmissionReset = null;
                   doneSummary = finalSummary;
                   doneSignaled = true;
-                  this.completedResult = {
-                    outcome: "completed",
-                    summary: finalSummary,
-                  };
-                  this.statusHandler(AgentStatus.IDLE, "Done");
-                  this.messageHandler(finalSummary, []);
-                  this.saveTurnCheckpoint().catch(() => {});
+                  this.completeTaskResult(finalSummary);
                   await this.traceRecorder?.endTurn();
                   break;
                 }
@@ -10432,13 +10415,7 @@ export class AgentLoop {
                       );
                       doneSummary = finalSummary;
                       doneSignaled = true;
-                      this.completedResult = {
-                        outcome: "completed",
-                        summary: finalSummary,
-                      };
-                      this.statusHandler(AgentStatus.IDLE, "Done");
-                      this.messageHandler(finalSummary, []);
-                      this.saveTurnCheckpoint().catch(() => {});
+                      this.completeTaskResult(finalSummary);
                       await this.traceRecorder?.endTurn();
                       break;
                     } else if (
