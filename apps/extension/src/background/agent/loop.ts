@@ -153,8 +153,9 @@ import {
   clarificationRequestStep,
 } from "./agent-interaction-steps";
 import {
-  buildPlanStatusEntries,
   advanceCompletedPlanSubtasks,
+  buildInitialPlanSubtasks,
+  buildPlanStatusEntries,
   buildPlanStatusSnapshot,
   completeRemainingPlanSubtasks,
   completeSinglePlanSubtask,
@@ -2258,12 +2259,9 @@ export class AgentLoop {
           if (decomposition.subtasks.length >= 2) {
             this.taskId = crypto.randomUUID();
             this.taskStartTime = Date.now();
-            this.planSubtasks = decomposition.subtasks.map((desc, i) => ({
-              description: desc,
-              status: i === 0 ? ("running" as const) : ("pending" as const),
-              turnsUsed: 0,
-              turnBudget: 0,
-            }));
+            this.planSubtasks = buildInitialPlanSubtasks(
+              decomposition.subtasks,
+            );
             this.planSteps = decomposition.steps || [];
 
             // Detect if plan steps require tab management
@@ -2277,16 +2275,10 @@ export class AgentLoop {
 
             // Inject plan status into system prompt (visible every turn)
             this.context.setPlanStatus(
-              decomposition.subtasks.map((desc, i) => ({
-                description: desc,
-                status: i === 0 ? "running" : "pending",
-                ...(decomposition.steps?.[i]?.verifyAfter
-                  ? { verificationGate: decomposition.steps[i].verifyAfter }
-                  : {}),
-                ...(decomposition.steps?.[i]?.toolProfile
-                  ? { toolProfile: decomposition.steps[i].toolProfile }
-                  : {}),
-              })),
+              buildPlanStatusEntries({
+                planSubtasks: this.planSubtasks,
+                planSteps: this.planSteps,
+              }),
               0,
             );
             this.log.info("agent", "Runtime plan status initialized", {

@@ -8,6 +8,17 @@ type MutablePlanSubtask = Pick<
   "status" | "result" | "completedAtUrl"
 >;
 
+export function buildInitialPlanSubtasks(
+  descriptions: string[],
+): SubtaskSummary[] {
+  return descriptions.map((description, i) => ({
+    description,
+    status: i === 0 ? "running" : "pending",
+    turnsUsed: 0,
+    turnBudget: 0,
+  }));
+}
+
 export function buildPlanStatusEntries(args: {
   existingPlan?: PlanStatus | null;
   planSubtasks: SubtaskSummary[];
