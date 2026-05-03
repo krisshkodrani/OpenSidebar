@@ -687,6 +687,10 @@ export interface SessionMetrics {
   totalSessionTimeMs: number;
   /** Number of LLM calls made (including vision) */
   llmCallCount: number;
+  /** Number of screenshot-based vision/perception model calls made */
+  visionCallCount?: number;
+  /** Number of cached screenshot/perception observations reused without a model call */
+  cachedVisionCallCount?: number;
   /** Total prompt tokens served from cache (prefix caching) */
   totalCachedTokens: number;
   /** Per-model breakdown */

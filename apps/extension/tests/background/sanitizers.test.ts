@@ -84,6 +84,8 @@ function validSessionMetrics() {
     totalLlmTimeMs: 500,
     totalSessionTimeMs: 2000,
     llmCallCount: 3,
+    visionCallCount: 1,
+    cachedVisionCallCount: 2,
     totalCachedTokens: 20,
     modelBreakdown: {},
   };
@@ -477,6 +479,8 @@ describe("sanitizeSessionMetrics", () => {
     const result = sanitizeSessionMetrics(validSessionMetrics());
     expect(result).not.toBeNull();
     expect(result!.totalTokens).toBe(150);
+    expect(result!.visionCallCount).toBe(1);
+    expect(result!.cachedVisionCallCount).toBe(2);
   });
 
   test("rejects NaN in numeric fields", () => {
@@ -542,6 +546,24 @@ describe("sanitizeSessionMetrics", () => {
     delete (metrics as any).totalCostActual;
     const result = sanitizeSessionMetrics(metrics);
     expect(result!.totalCostActual).toBe(metrics.totalCost);
+  });
+
+  test("defaults missing vision counters for legacy metrics", () => {
+    const metrics = validSessionMetrics();
+    delete (metrics as any).visionCallCount;
+    delete (metrics as any).cachedVisionCallCount;
+    const result = sanitizeSessionMetrics(metrics);
+    expect(result!.visionCallCount).toBe(0);
+    expect(result!.cachedVisionCallCount).toBe(0);
+  });
+
+  test("rejects invalid optional vision counters", () => {
+    expect(
+      sanitizeSessionMetrics({
+        ...validSessionMetrics(),
+        visionCallCount: -1,
+      }),
+    ).toBeNull();
   });
 });
 
@@ -616,14 +638,18 @@ describe("mergeSessionMetrics", () => {
     const target = emptySessionMetrics();
     target.totalTokens = 100;
     target.llmCallCount = 2;
+    target.visionCallCount = 1;
 
     const incoming = emptySessionMetrics();
     incoming.totalTokens = 50;
     incoming.llmCallCount = 1;
+    incoming.cachedVisionCallCount = 2;
 
     const result = mergeSessionMetrics(target, incoming);
     expect(result.totalTokens).toBe(150);
     expect(result.llmCallCount).toBe(3);
+    expect(result.visionCallCount).toBe(1);
+    expect(result.cachedVisionCallCount).toBe(2);
   });
 
   test("merges modelBreakdown entries", () => {

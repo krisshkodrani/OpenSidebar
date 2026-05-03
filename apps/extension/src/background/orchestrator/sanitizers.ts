@@ -585,6 +585,8 @@ export function emptySessionMetrics(): SessionMetrics {
     totalLlmTimeMs: 0,
     totalSessionTimeMs: 0,
     llmCallCount: 0,
+    visionCallCount: 0,
+    cachedVisionCallCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
@@ -607,6 +609,15 @@ export function sanitizeSessionMetrics(
     const value = raw[key];
     if (typeof value !== "number" || Number.isNaN(value) || value < 0)
       return null;
+  }
+  for (const key of ["visionCallCount", "cachedVisionCallCount"] as const) {
+    const value = raw[key];
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || Number.isNaN(value) || value < 0)
+    ) {
+      return null;
+    }
   }
   const modelBreakdown: SessionMetrics["modelBreakdown"] = {};
   if (isRecord(raw.modelBreakdown)) {
@@ -701,6 +712,18 @@ export function sanitizeSessionMetrics(
           : totalCostEstimated > 0
             ? "estimated"
             : "none";
+  const visionCallCount =
+    typeof raw.visionCallCount === "number" &&
+    !Number.isNaN(raw.visionCallCount) &&
+    raw.visionCallCount >= 0
+      ? raw.visionCallCount
+      : 0;
+  const cachedVisionCallCount =
+    typeof raw.cachedVisionCallCount === "number" &&
+    !Number.isNaN(raw.cachedVisionCallCount) &&
+    raw.cachedVisionCallCount >= 0
+      ? raw.cachedVisionCallCount
+      : 0;
 
   return {
     totalPromptTokens: raw.totalPromptTokens as number,
@@ -713,6 +736,8 @@ export function sanitizeSessionMetrics(
     totalLlmTimeMs: raw.totalLlmTimeMs as number,
     totalSessionTimeMs: raw.totalSessionTimeMs as number,
     llmCallCount: raw.llmCallCount as number,
+    visionCallCount,
+    cachedVisionCallCount,
     totalCachedTokens: raw.totalCachedTokens as number,
     modelBreakdown,
   };
@@ -766,6 +791,11 @@ export function mergeSessionMetrics(
   target.totalLlmTimeMs += incoming.totalLlmTimeMs;
   target.totalSessionTimeMs += incoming.totalSessionTimeMs;
   target.llmCallCount += incoming.llmCallCount;
+  target.visionCallCount =
+    (target.visionCallCount ?? 0) + (incoming.visionCallCount ?? 0);
+  target.cachedVisionCallCount =
+    (target.cachedVisionCallCount ?? 0) +
+    (incoming.cachedVisionCallCount ?? 0);
   target.totalCachedTokens += incoming.totalCachedTokens;
   for (const [model, metrics] of Object.entries(incoming.modelBreakdown)) {
     const existing = target.modelBreakdown[model] || {

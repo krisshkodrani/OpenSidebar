@@ -193,6 +193,19 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
         </span>
         <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
+        {(metrics.visionCallCount ?? 0) +
+          (metrics.cachedVisionCallCount ?? 0) >
+          0 && (
+          <>
+            <span className="text-warm-300 dark:text-warm-600">·</span>
+            <span>
+              Vision {metrics.visionCallCount ?? 0}
+              {(metrics.cachedVisionCallCount ?? 0) > 0
+                ? ` +${metrics.cachedVisionCallCount} cached`
+                : ""}
+            </span>
+          </>
+        )}
         <span className="text-warm-300 dark:text-warm-600">·</span>
         <span>Total {formatTimeCompact(metrics.totalSessionTimeMs)}</span>
       </div>

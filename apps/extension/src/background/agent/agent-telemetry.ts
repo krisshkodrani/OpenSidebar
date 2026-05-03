@@ -16,6 +16,8 @@ export function emptySessionMetrics(): SessionMetrics {
     totalLlmTimeMs: 0,
     totalSessionTimeMs: 0,
     llmCallCount: 0,
+    visionCallCount: 0,
+    cachedVisionCallCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
@@ -123,6 +125,7 @@ export function recordVisionTelemetryUsage(args: {
   providerId: ProviderConfig["providerId"];
 }): void {
   const { metrics, usage, llmMs, model, providerId } = args;
+  metrics.visionCallCount = (metrics.visionCallCount ?? 0) + 1;
   metrics.totalPromptTokens += usage.prompt_tokens;
   metrics.totalCompletionTokens += usage.completion_tokens;
   metrics.totalTokens += usage.total_tokens;
@@ -149,6 +152,10 @@ export function recordVisionTelemetryUsage(args: {
     entry.actualCost ?? 0,
     entry.estimatedCost ?? 0,
   );
+}
+
+export function recordCachedVisionTelemetryUse(metrics: SessionMetrics): void {
+  metrics.cachedVisionCallCount = (metrics.cachedVisionCallCount ?? 0) + 1;
 }
 
 export function recordTelemetryCitation(args: {
