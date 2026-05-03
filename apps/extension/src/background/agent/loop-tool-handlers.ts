@@ -599,7 +599,7 @@ export async function handleCreateTabToolCall(loop: AgentLoopToolHandlerHost,
   }
 }
 
-export async function handleGenericSequentialToolCall(loop: AgentLoopToolHandlerHost,params: {
+export interface GenericSequentialToolCallParams {
   toolCall: ToolCall;
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -617,14 +617,12 @@ export async function handleGenericSequentialToolCall(loop: AgentLoopToolHandler
   domModified: boolean;
   visuallyModified: boolean;
   lastDomAffectingToolName: string | null;
-}): Promise<{
-  prevElementCount: number;
-  domModified: boolean;
-  visuallyModified: boolean;
-  lastDomAffectingToolName: string | null;
-  breakLoop: boolean;
-  completedSummary: string | null;
-}> {
+}
+
+export async function handleGenericSequentialToolCall(
+  loop: AgentLoopToolHandlerHost,
+  params: GenericSequentialToolCallParams,
+): Promise<GenericSequentialToolState> {
   const {
     toolCall,
     toolName,
