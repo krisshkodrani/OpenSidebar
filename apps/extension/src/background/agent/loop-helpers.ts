@@ -1575,6 +1575,26 @@ export function assessDeadEndPattern(params: {
   };
 }
 
+export type PostEscalationPivotDecision =
+  | { kind: "none"; turnsSinceStepEscalation: number }
+  | { kind: "pivot"; turnsSinceStepEscalation: number };
+
+export function updatePostEscalationPivot(params: {
+  turnsSinceStepEscalation: number;
+  pivotTurns: number;
+}): PostEscalationPivotDecision {
+  if (params.turnsSinceStepEscalation < 0) {
+    return { kind: "none", turnsSinceStepEscalation: -1 };
+  }
+
+  const turnsSinceStepEscalation = params.turnsSinceStepEscalation + 1;
+  if (turnsSinceStepEscalation >= params.pivotTurns) {
+    return { kind: "pivot", turnsSinceStepEscalation };
+  }
+
+  return { kind: "none", turnsSinceStepEscalation };
+}
+
 /** Simple djb2 hash for short strings. */
 export function djb2(str: string): number {
   let hash = 5381;

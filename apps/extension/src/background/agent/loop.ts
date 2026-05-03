@@ -251,6 +251,7 @@ import {
   tokenizeStepText,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
+  updatePostEscalationPivot,
   updateSameToolFailureTracking,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
@@ -8466,19 +8467,21 @@ export class AgentLoop {
 
           // E-pre. Post-escalation forced pivot: if N turns passed since step watchdog escalation
           // without step advancement, force a strategy pivot and clear failed-action memory.
-          if (turnsSinceStepEscalation >= 0) {
-            turnsSinceStepEscalation++;
-            if (
-              turnsSinceStepEscalation >=
-              FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS
-            ) {
+          {
+            const postEscalationPivot = updatePostEscalationPivot({
+              turnsSinceStepEscalation,
+              pivotTurns: FAILED_ACTION_MEMORY.POST_ESCALATION_PIVOT_TURNS,
+            });
+            turnsSinceStepEscalation =
+              postEscalationPivot.turnsSinceStepEscalation;
+            if (postEscalationPivot.kind === "pivot") {
               this.log.info("agent", "Post-escalation forced pivot", {
                 turn: this.turnCount,
                 turnsSinceStepEscalation,
               });
               await this.strategyPivot(tabId);
               blockedActions.length = 0;
-              turnsSinceStepEscalation = -1; // Reset — only trigger once per escalation
+              turnsSinceStepEscalation = -1;
             }
           }
 
