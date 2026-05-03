@@ -7,7 +7,6 @@ import {
   PerceptionRuntimeMode,
   RiskLevel,
   SessionMetrics,
-  SubtaskResult,
   SubtaskSummary,
   ToolDefinition,
   ToolCall,
@@ -146,6 +145,7 @@ import {
   sessionMetricsMessage,
   sessionMetricsSnapshot,
   shouldBroadcastSessionMetrics,
+  successfulTaskCompletionMessage,
   taskProgressMessage,
 } from "./agent-broadcast";
 import {
@@ -8431,36 +8431,15 @@ export class AgentLoop {
                 this.planSubtasks[this.planSubtasks.length - 1].result =
                   summary.slice(0, 200);
 
-                const subtaskResults: SubtaskResult[] = this.planSubtasks.map(
-                  (st) => ({
-                    description: st.description,
-                    status:
-                      st.status === "failed"
-                        ? ("failed" as const)
-                        : st.status === "skipped"
-                          ? ("skipped" as const)
-                          : ("completed" as const),
-                    turnsUsed: st.turnsUsed,
-                    result: st.result || "",
-                  }),
-                );
-
-                this.broadcast({
-                  type: "TASK_COMPLETION",
-                  payload: {
-                    taskId: this.taskId,
-                    status: subtaskResults.every(
-                      (sr) => sr.status === "completed",
-                    )
-                      ? "completed"
-                      : "partial",
-                    totalTurnsUsed: this.turnCount,
-                    totalTimeMs: Date.now() - this.taskStartTime,
-                    summary,
-                    subtaskResults,
-                    urlHistory: this.urlHistory,
-                  },
+                const completionMessage = successfulTaskCompletionMessage({
+                  taskId: this.taskId,
+                  subtasks: this.planSubtasks,
+                  turnCount: this.turnCount,
+                  totalTimeMs: Date.now() - this.taskStartTime,
+                  summary,
+                  urlHistory: this.urlHistory,
                 });
+                if (completionMessage) this.broadcast(completionMessage);
               }
 
               // Broadcast final metrics

@@ -171,6 +171,47 @@ export function buildSubtaskResults(
   }));
 }
 
+export function successfulTaskCompletionMessage(args: {
+  taskId: string | null;
+  subtasks: Pick<
+    SubtaskSummary,
+    "description" | "status" | "turnsUsed" | "result"
+  >[];
+  turnCount: number;
+  totalTimeMs: number;
+  summary: string;
+  urlHistory: string[];
+}): BroadcastMessage | null {
+  if (!args.taskId || args.subtasks.length === 0) return null;
+
+  const subtaskResults: SubtaskResult[] = args.subtasks.map((st) => ({
+    description: st.description,
+    status:
+      st.status === "failed"
+        ? ("failed" as const)
+        : st.status === "skipped"
+          ? ("skipped" as const)
+          : ("completed" as const),
+    turnsUsed: st.turnsUsed,
+    result: st.result || "",
+  }));
+
+  return {
+    type: "TASK_COMPLETION",
+    payload: {
+      taskId: args.taskId,
+      status: subtaskResults.every((sr) => sr.status === "completed")
+        ? "completed"
+        : "partial",
+      totalTurnsUsed: args.turnCount,
+      totalTimeMs: args.totalTimeMs,
+      summary: args.summary,
+      subtaskResults,
+      urlHistory: args.urlHistory,
+    },
+  };
+}
+
 export function planTerminationMessage(args: {
   taskId: string | null;
   subtasks: Pick<
