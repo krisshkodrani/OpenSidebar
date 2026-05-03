@@ -1,4 +1,5 @@
 import type { DomSnapshot } from "../../types";
+import { rectsLikelyOverlap } from "./geometry";
 
 export function normalizeGuardText(value: unknown): string {
   return String(value ?? "")
@@ -182,6 +183,46 @@ export function assessTextEntryClickGuard(params: {
     blockReason:
       `Error: This step requires entering "${explicitValue}" into [${params.targetId}]. ` +
       `Use type_text instead of click_element on this input.`,
+  };
+}
+
+export function assessInlineEditTextEntryRetarget(params: {
+  activeToolProfile: string | null | undefined;
+  snapshot: DomSnapshot | null | undefined;
+  targetId: number;
+}): { retargetedId: number; reason: string } | null {
+  if (params.activeToolProfile !== "edit_surface") return null;
+
+  const target = params.snapshot?.elements?.find(
+    (element) => element.tag === params.targetId,
+  );
+  if (!target || isTextLikeInputElement(target)) return null;
+
+  const visibleTextInputs =
+    params.snapshot?.elements?.filter(
+      (element) =>
+        element.isVisible !== false && isTextLikeInputElement(element),
+    ) ?? [];
+  if (visibleTextInputs.length === 0) return null;
+
+  const targetText = normalizeGuardText(target.text);
+  const retarget =
+    visibleTextInputs.find((element) =>
+      rectsLikelyOverlap(target.rect, element.rect),
+    ) ??
+    visibleTextInputs.find((element) => {
+      const liveValue = normalizeGuardText(
+        element.attributes.value || element.text,
+      );
+      return Boolean(targetText) && liveValue === targetText;
+    });
+  if (!retarget) return null;
+
+  return {
+    retargetedId: retarget.tag,
+    reason:
+      `Retargeted type_text from [${params.targetId}] to the active inline editor ` +
+      `[${retarget.tag}] for this edit-surface step.`,
   };
 }
 
