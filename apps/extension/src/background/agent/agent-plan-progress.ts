@@ -157,6 +157,27 @@ export function replacePlanFromIndex(args: {
   };
 }
 
+export function buildPlanReplacementState(args: {
+  subtasks: SubtaskSummary[];
+  steps: PlanStep[];
+  fromIndex: number;
+  replacementSteps: PlanStep[];
+}): {
+  planSubtasks: SubtaskSummary[];
+  planSteps: PlanStep[];
+  statusEntries: PlanStatusSubtask[];
+} {
+  const replacement = replacePlanFromIndex(args);
+  return {
+    planSubtasks: replacement.subtasks,
+    planSteps: replacement.steps,
+    statusEntries: buildPlanStatusEntries({
+      planSubtasks: replacement.subtasks,
+      planSteps: replacement.steps,
+    }),
+  };
+}
+
 export function advanceCompletedPlanSubtasks(args: {
   subtasks: MutablePlanSubtask[];
   captureResult: () => string;
