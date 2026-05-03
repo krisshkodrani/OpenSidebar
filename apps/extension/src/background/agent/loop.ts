@@ -1453,11 +1453,16 @@ export class AgentLoop {
     this.messageHandler(summary, []);
   }
 
-  private completeTaskResult(summary: string): void {
+  private completeTaskResult(
+    summary: string,
+    options: { saveCheckpoint?: boolean } = {},
+  ): void {
     this.completedResult = { outcome: "completed", summary };
     this.statusHandler(AgentStatus.IDLE, "Done");
     this.messageHandler(summary, []);
-    this.saveTurnCheckpoint().catch(() => {});
+    if (options.saveCheckpoint !== false) {
+      this.saveTurnCheckpoint().catch(() => {});
+    }
   }
 
   private broadcastPlanTermination(
@@ -6226,6 +6231,14 @@ export class AgentLoop {
 
         // Execute Tools
         let doneSignaled = false;
+        const signalCompletedResult = (
+          summary: string,
+          options?: { saveCheckpoint?: boolean },
+        ) => {
+          doneSummary = summary;
+          doneSignaled = true;
+          this.completeTaskResult(summary, options);
+        };
         let domModified = false;
         let visuallyModified = false;
         let lastDomAffectingToolName: string | null = null;
@@ -9201,9 +9214,7 @@ export class AgentLoop {
                 mode: "sequential",
               });
             if (trustedSubmitCompletion) {
-              doneSummary = trustedSubmitCompletion.finalSummary;
-              doneSignaled = true;
-              this.completeTaskResult(doneSummary);
+              signalCompletedResult(trustedSubmitCompletion.finalSummary);
               break;
             }
 
@@ -9224,9 +9235,7 @@ export class AgentLoop {
                 mode: "sequential",
               });
             if (trustedAutoSubmitCompletion) {
-              doneSummary = trustedAutoSubmitCompletion.finalSummary;
-              doneSignaled = true;
-              this.completeTaskResult(doneSummary);
+              signalCompletedResult(trustedAutoSubmitCompletion.finalSummary);
               break;
             }
 
@@ -10273,9 +10282,7 @@ export class AgentLoop {
                     delayedSubmitSignal,
                   );
                   this.pendingFormSubmissionReset = null;
-                  doneSummary = finalSummary;
-                  doneSignaled = true;
-                  this.completeTaskResult(finalSummary);
+                  signalCompletedResult(finalSummary);
                   await this.traceRecorder?.endTurn();
                   break;
                 }
@@ -10413,9 +10420,7 @@ export class AgentLoop {
                         fromStep,
                         submitResetSignal,
                       );
-                      doneSummary = finalSummary;
-                      doneSignaled = true;
-                      this.completeTaskResult(finalSummary);
+                      signalCompletedResult(finalSummary);
                       await this.traceRecorder?.endTurn();
                       break;
                     } else if (
@@ -10517,14 +10522,9 @@ export class AgentLoop {
                       this.broadcastTaskProgress(newIdx);
                       if (completedAllSteps) {
                         const finalSummary = `Completed final planned step: ${reason}.`;
-                        doneSummary = finalSummary;
-                        doneSignaled = true;
-                        this.completedResult = {
-                          outcome: "completed",
-                          summary: finalSummary,
-                        };
-                        this.statusHandler(AgentStatus.IDLE, "Done");
-                        this.messageHandler(finalSummary, []);
+                        signalCompletedResult(finalSummary, {
+                          saveCheckpoint: false,
+                        });
                       }
                       this.log.info("agent", `${traceEvent} triggered`, {
                         turn: this.turnCount,
