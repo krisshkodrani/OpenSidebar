@@ -157,9 +157,11 @@ import {
   buildInitialPlanSubtasks,
   buildPlanStatusEntries,
   buildPlanStatusSnapshot,
+  buildRestoredPlanState,
   completeRemainingPlanSubtasks,
   completeSinglePlanSubtask,
   replacePlanFromIndex,
+  type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { isToolProfileName } from "./tool-profile-policy";
@@ -486,25 +488,7 @@ export class AgentLoop {
     allowedTools: ToolName[];
   } | null;
   private verificationTurnMode: boolean;
-  private initialPlanState: {
-    subtasks: Array<{
-      description: string;
-      successCriteria?: string;
-      status: SubtaskSummary["status"];
-      turnsUsed?: number;
-      turnBudget?: number;
-      result?: string;
-      completedAtUrl?: string;
-      verificationGate?: {
-        trigger: string;
-        action: "call_done" | "advance_step" | "retry_step";
-        maxRetries?: number;
-        pattern?: string;
-      };
-      toolProfile?: ToolProfile;
-    }>;
-    currentIndex: number;
-  } | null;
+  private initialPlanState: RestorablePlanState | null;
   private disabledTools: Set<ToolName>;
   private suppressUiBroadcast: boolean;
   private onStreamChunk:
@@ -748,25 +732,7 @@ export class AgentLoop {
         replaceContent?: string,
         thinking?: string,
       ) => void;
-      initialPlanState?: {
-        subtasks: Array<{
-          description: string;
-          successCriteria?: string;
-          status: SubtaskSummary["status"];
-          turnsUsed?: number;
-          turnBudget?: number;
-          result?: string;
-          completedAtUrl?: string;
-          verificationGate?: {
-            trigger: string;
-            action: "call_done" | "advance_step" | "retry_step";
-            maxRetries?: number;
-            pattern?: string;
-          };
-          toolProfile?: ToolProfile;
-        }>;
-        currentIndex: number;
-      };
+      initialPlanState?: RestorablePlanState;
       verificationTurnMode?: boolean;
       disableInternalPlanning?: boolean;
       bypassApprovals?: boolean;
@@ -896,44 +862,11 @@ export class AgentLoop {
 
     this.taskId = this.taskIdRef;
     this.taskStartTime = Date.now();
-    this.planSubtasks = this.initialPlanState.subtasks.map((subtask) => ({
-      description: subtask.description,
-      status: subtask.status,
-      turnsUsed: subtask.turnsUsed ?? 0,
-      turnBudget: subtask.turnBudget ?? 0,
-      ...(subtask.result ? { result: subtask.result } : {}),
-      ...(subtask.completedAtUrl
-        ? { completedAtUrl: subtask.completedAtUrl }
-        : {}),
-    }));
-    this.planSteps = this.initialPlanState.subtasks.map((subtask) => ({
-      objective: subtask.description,
-      successCriteria:
-        subtask.successCriteria ||
-        "The current step is completed and verified.",
-      dependencies: [],
-      assumptions: [],
-      ...(subtask.verificationGate
-        ? { verifyAfter: subtask.verificationGate }
-        : {}),
-      ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
-    }));
-    this.lastPlanIndex = this.initialPlanState.currentIndex;
-    this.context.setPlanStatus(
-      this.initialPlanState.subtasks.map((subtask) => ({
-        description: subtask.description,
-        status: subtask.status,
-        ...(subtask.result ? { result: subtask.result } : {}),
-        ...(subtask.completedAtUrl
-          ? { completedAtUrl: subtask.completedAtUrl }
-          : {}),
-        ...(subtask.verificationGate
-          ? { verificationGate: subtask.verificationGate }
-          : {}),
-        ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
-      })),
-      this.initialPlanState.currentIndex,
-    );
+    const restored = buildRestoredPlanState(this.initialPlanState);
+    this.planSubtasks = restored.planSubtasks;
+    this.planSteps = restored.planSteps;
+    this.lastPlanIndex = restored.currentIndex;
+    this.context.setPlanStatus(restored.statusEntries, restored.currentIndex);
   }
 
   // ---------------------------------------------------------------------------
