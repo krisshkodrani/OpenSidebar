@@ -119,6 +119,64 @@ export function handleParallelVerificationGate(params: {
   host.recordVerificationGate?.(eventData);
 }
 
+export function collectTrailingToolResultMessages(
+  messages: Array<{ role: string; content?: unknown }>,
+): string[] {
+  const toolResults: string[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "tool") break;
+    if (typeof message.content === "string") toolResults.push(message.content);
+  }
+  return toolResults;
+}
+
+export function handleSequentialVerificationGate(params: {
+  planStatus: PlanStatus | null | undefined;
+  toolResults: string[];
+  currentUrl: string | null;
+  host: ParallelVerificationGateHost;
+}): void {
+  const { planStatus, toolResults, currentUrl, host } = params;
+  if (!planStatus) return;
+
+  const currentSub = planStatus.subtasks[planStatus.currentIndex];
+  if (!currentSub?.verificationGate) return;
+
+  const gateResult = checkVerificationGate(
+    toolResults,
+    currentSub.verificationGate,
+    currentUrl ?? undefined,
+  );
+  if (!gateResult.matched) return;
+
+  if (currentSub.verificationGate.action === "advance_step") {
+    host.resetConsecutiveAutoAdvances();
+    const newIdx = host.advanceCompletedSubtasks();
+    host.syncPlanStatus(newIdx, "step_advanced_by_gate", {
+      evidence: gateResult.evidence,
+      mode: "sequential",
+      advancedTo: newIdx,
+    });
+    host.broadcastTaskProgress(newIdx);
+    host.addUserMessage(
+      `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
+    );
+  } else {
+    host.addUserMessage(
+      `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`,
+    );
+  }
+
+  const eventData = {
+    action: currentSub.verificationGate.action,
+    evidence: gateResult.evidence,
+    mode: "sequential",
+  };
+  host.logVerificationGate(eventData);
+  host.recordVerificationGate?.(eventData);
+}
+
 export function assessParallelToolCalls(
   toolCalls: ToolCall[],
 ): ParallelToolCallDecision {

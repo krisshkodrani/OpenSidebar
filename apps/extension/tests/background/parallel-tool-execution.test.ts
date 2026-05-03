@@ -3,7 +3,9 @@ import { ToolCall, ToolName } from "../../src/types";
 import {
   addParallelToolResultsToContext,
   assessParallelToolCalls,
+  collectTrailingToolResultMessages,
   handleParallelVerificationGate,
+  handleSequentialVerificationGate,
 } from "../../src/background/agent/parallel-tool-execution";
 
 function toolCall(name: ToolName, args: Record<string, unknown> = {}): ToolCall {
@@ -162,6 +164,76 @@ describe("parallel tool execution assessment", () => {
         action: "advance_step",
         evidence: "The confirmation is visibl",
         mode: "parallel",
+      },
+    ]);
+    expect(recorded).toEqual(logged);
+  });
+
+  test("collects only trailing sequential tool results", () => {
+    expect(
+      collectTrailingToolResultMessages([
+        { role: "tool", content: "old result" },
+        { role: "assistant", content: "thinking" },
+        { role: "tool", content: "first current result" },
+        { role: "tool", content: "second current result" },
+      ]),
+    ).toEqual(["second current result", "first current result"]);
+  });
+
+  test("advances a sequential verification gate when evidence matches", () => {
+    const userMessages: string[] = [];
+    const synced: unknown[] = [];
+    const broadcasted: number[] = [];
+    const logged: unknown[] = [];
+    const recorded: unknown[] = [];
+
+    handleSequentialVerificationGate({
+      planStatus: {
+        currentIndex: 0,
+        subtasks: [
+          {
+            description: "Find confirmation",
+            status: "running",
+            verificationGate: {
+              trigger: "confirmation",
+              action: "advance_step",
+            },
+          },
+        ],
+      },
+      currentUrl: "https://example.com",
+      toolResults: ["The confirmation is visible"],
+      host: {
+        advanceCompletedSubtasks: () => 1,
+        resetConsecutiveAutoAdvances: () => undefined,
+        syncPlanStatus: (...args) => synced.push(args),
+        broadcastTaskProgress: (currentIndex) => broadcasted.push(currentIndex),
+        addUserMessage: (content) => userMessages.push(content),
+        logVerificationGate: (data) => logged.push(data),
+        recordVerificationGate: (data) => recorded.push(data),
+      },
+    });
+
+    expect(synced).toEqual([
+      [
+        1,
+        "step_advanced_by_gate",
+        {
+          evidence: "The confirmation is visibl",
+          mode: "sequential",
+          advancedTo: 1,
+        },
+      ],
+    ]);
+    expect(broadcasted).toEqual([1]);
+    expect(userMessages).toEqual([
+      "STEP ADVANCED: 'The confirmation is visibl' matched. Now on step 2.",
+    ]);
+    expect(logged).toEqual([
+      {
+        action: "advance_step",
+        evidence: "The confirmation is visibl",
+        mode: "sequential",
       },
     ]);
     expect(recorded).toEqual(logged);

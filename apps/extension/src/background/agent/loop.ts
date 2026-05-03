@@ -43,7 +43,6 @@ import {
   assessDoneSummary,
   assessWorkflowDoneGuard,
   checkSummaryStepCoherence,
-  checkVerificationGate,
   detectAdmission,
 } from "./verification";
 import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
@@ -322,7 +321,9 @@ import { assessConsequentialActionApproval } from "./consequential-action-policy
 import {
   addParallelToolResultsToContext,
   assessParallelToolCalls,
+  collectTrailingToolResultMessages,
   handleParallelVerificationGate,
+  handleSequentialVerificationGate,
 } from "./parallel-tool-execution";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
@@ -8155,63 +8156,43 @@ export class AgentLoop {
           }
 
           // Post-sequential verification gate check
-          const planAfterSeq = this.context.getPlanStatusRaw();
-          if (planAfterSeq && !doneSignaled) {
-            const currentSubSeq =
-              planAfterSeq.subtasks[planAfterSeq.currentIndex];
-            if (currentSubSeq?.verificationGate) {
-              // Collect recent tool result messages from this turn
-              const seqMessages = this.context.getMessages();
-              const seqToolResults: string[] = [];
-              for (let ri = seqMessages.length - 1; ri >= 0; ri--) {
-                const msg = seqMessages[ri];
-                if (msg.role !== "tool") break;
-                if (typeof msg.content === "string")
-                  seqToolResults.push(msg.content);
-              }
-              const seqGateResult = checkVerificationGate(
-                seqToolResults,
-                currentSubSeq.verificationGate,
-                this.context.getCurrentUrl(),
-              );
-              if (seqGateResult.matched) {
-                if (currentSubSeq.verificationGate.action === "advance_step") {
-                  this.consecutiveAutoAdvances = 0;
-                  const newIdx = advanceCompletedSubtasks(
+          if (!doneSignaled) {
+            handleSequentialVerificationGate({
+              planStatus: this.context.getPlanStatusRaw(),
+              toolResults: collectTrailingToolResultMessages(
+                this.context.getMessages(),
+              ),
+              currentUrl: this.context.getCurrentUrl(),
+              host: {
+                advanceCompletedSubtasks: () =>
+                  advanceCompletedSubtasks(
                     this as unknown as AgentLoopPlanProgressHost,
-                  );
-                  this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
-                    evidence: seqGateResult.evidence,
-                    mode: "sequential",
-                    advancedTo: newIdx,
-                  });
-                  this.broadcastTaskProgress(newIdx);
-                  this.context.addMessage({
-                    role: "user",
-                    content: `STEP ADVANCED: '${seqGateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
-                  });
-                } else {
-                  this.context.addMessage({
-                    role: "user",
-                    content: `CHECKPOINT: Gate triggered. Evidence: '${seqGateResult.evidence}'. Call done() now.`,
-                  });
-                }
-                this.log.info(
-                  "agent",
-                  "Verification gate triggered (sequential)",
-                  {
-                    turn: this.turnCount,
-                    action: currentSubSeq.verificationGate.action,
-                    evidence: seqGateResult.evidence,
-                  },
-                );
-                this.traceRecorder?.recordEvent("verification_gate_triggered", {
-                  action: currentSubSeq.verificationGate.action,
-                  evidence: seqGateResult.evidence,
-                  mode: "sequential",
-                });
-              }
-            }
+                  ),
+                resetConsecutiveAutoAdvances: () => {
+                  this.consecutiveAutoAdvances = 0;
+                },
+                syncPlanStatus: (currentIndex, reason, data) =>
+                  this.syncPlanStatus(currentIndex, reason, data),
+                broadcastTaskProgress: (currentIndex) =>
+                  this.broadcastTaskProgress(currentIndex),
+                addUserMessage: (content) =>
+                  this.context.addMessage({ role: "user", content }),
+                logVerificationGate: (data) =>
+                  this.log.info(
+                    "agent",
+                    "Verification gate triggered (sequential)",
+                    {
+                      turn: this.turnCount,
+                      ...data,
+                    },
+                  ),
+                recordVerificationGate: (data) =>
+                  this.traceRecorder?.recordEvent(
+                    "verification_gate_triggered",
+                    data,
+                  ),
+              },
+            });
           }
         }
 
