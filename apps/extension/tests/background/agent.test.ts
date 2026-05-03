@@ -3165,6 +3165,119 @@ Showing 6-10 of 50`,
     expect(result.outcome).not.toBe("completed");
   });
 
+  test("done accepts planless completion and finalizes the UI", async () => {
+    mockCompleteStream.mockReset();
+    mockCompleteStream.mockImplementation(
+      (_request: any, _onTextDelta: (delta: string) => void) =>
+        Promise.resolve({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done_planless",
+              type: "function",
+              function: {
+                name: "done",
+                arguments: '{"summary":"Planless task is complete."}',
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }),
+    );
+
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: onStatus,
+      onMessage,
+      onStep: vi.fn(),
+    });
+    (agent as any).hasReadPage = true;
+
+    const result = await agent.start("Report that the task is complete", 123);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.summary).toBe("Planless task is complete.");
+    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
+    expect(onMessage).toHaveBeenCalledWith("Planless task is complete.", []);
+  });
+
+  test("done accepts completed plan when planner validation approves", async () => {
+    mockCompleteStream.mockReset();
+    mockCompleteStream.mockImplementation(
+      (_request: any, _onTextDelta: (delta: string) => void) =>
+        Promise.resolve({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done_completed_plan",
+              type: "function",
+              function: {
+                name: "done",
+                arguments:
+                  '{"summary":"Warehouse Gamma inventory count is 6,412 units."}',
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }),
+    );
+
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: onStatus,
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-done-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Report Warehouse Gamma count",
+              status: "completed",
+            },
+          ],
+        },
+      },
+    );
+    (agent as any).hasReadPage = true;
+    (agent as any).planner.validateDone = vi
+      .fn()
+      .mockResolvedValue({ approved: true, reason: "ok" });
+    (agent as any).planSteps = [
+      { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+    ];
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Warehouse Gamma",
+      url: "https://example.com/gamma",
+      elements: [],
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = await agent.start("Report Warehouse Gamma count", 123);
+
+    expect(result.outcome).toBe("completed");
+    expect(result.summary).toBe(
+      "Warehouse Gamma inventory count is 6,412 units.",
+    );
+    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
+    expect(onMessage).toHaveBeenCalledWith(
+      "Warehouse Gamma inventory count is 6,412 units.",
+      [],
+    );
+  });
+
   test("bypasses stale plan rejection for satisfied spreadsheet edit tasks", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
