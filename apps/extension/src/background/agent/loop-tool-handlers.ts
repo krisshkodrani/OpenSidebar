@@ -77,6 +77,114 @@ export type GenericSequentialToolState = {
   completedSummary: string | null;
 };
 
+export function recordSuccessfulToolExecution(
+  loop: AgentLoopToolHandlerHost,
+  params: {
+    toolCall: ToolCall;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    result: string;
+    toolStep: AgentStep;
+    preDecision: PreToolDecision;
+    discoveredTagIds: Set<number>;
+    llmIntention: string | null | undefined;
+    mode: "parallel" | "sequential";
+  },
+): number {
+  const toolMs = Date.now() - params.toolStep.timestamp;
+  for (const id of extractDiscoveredTagIds(params.toolName, params.result)) {
+    params.discoveredTagIds.add(id);
+  }
+  loop.middleware.evaluatePostTool(
+    params.toolName,
+    params.result,
+    null,
+    toolMs,
+    loop.turnCount,
+  );
+  loop.stepHandler(
+    {
+      ...params.toolStep,
+      status: "done",
+      durationMs: toolMs,
+    },
+    true,
+  );
+  loop.log.info("tools", `${params.toolName} OK`, {
+    turn: loop.turnCount,
+    tool: params.toolName,
+    risk: params.preDecision.riskLevel,
+    mode: params.mode,
+    args: JSON.stringify(params.args).slice(0, STRING_LIMITS.ARGS_LOG),
+    result: params.result.slice(0, STRING_LIMITS.RESULT_LOG),
+    durationMs: toolMs,
+    intention: params.llmIntention,
+  });
+  loop.traceRecorder?.recordToolExecution(
+    params.toolCall.id,
+    params.toolName,
+    params.args,
+    params.result,
+    true,
+    toolMs,
+    params.preDecision.riskLevel,
+  );
+  return toolMs;
+}
+
+export function recordFailedToolExecution(
+  loop: AgentLoopToolHandlerHost,
+  params: {
+    toolCall: ToolCall;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    errorMsg: string;
+    toolStep: AgentStep;
+    preDecision: PreToolDecision;
+    llmIntention: string | null | undefined;
+    mode: "parallel" | "sequential";
+  },
+): number {
+  const toolMs = Date.now() - params.toolStep.timestamp;
+  loop.middleware.evaluatePostTool(
+    params.toolName,
+    null,
+    params.errorMsg,
+    toolMs,
+    loop.turnCount,
+  );
+  loop.log.error("tools", `${params.toolName} FAIL`, {
+    turn: loop.turnCount,
+    tool: params.toolName,
+    risk: params.preDecision.riskLevel,
+    mode: params.mode,
+    args: JSON.stringify(params.args).slice(0, STRING_LIMITS.ARGS_LOG),
+    error: params.errorMsg,
+    durationMs: toolMs,
+    intention: params.llmIntention,
+  });
+  loop.traceRecorder?.recordToolExecution(
+    params.toolCall.id,
+    params.toolName,
+    params.args,
+    params.errorMsg,
+    false,
+    toolMs,
+    params.preDecision.riskLevel,
+    params.errorMsg,
+  );
+  loop.stepHandler(
+    {
+      ...params.toolStep,
+      status: "error",
+      durationMs: toolMs,
+      errorMessage: params.errorMsg,
+    },
+    true,
+  );
+  return toolMs;
+}
+
 export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
@@ -679,45 +787,17 @@ export async function handleGenericSequentialToolCall(
       result = `${result}\n${autocompleteRewriteReason}`;
     }
     loop.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
-    const toolMs = Date.now() - toolStep.timestamp;
-    // Track tag IDs discovered by find_element
-    for (const id of extractDiscoveredTagIds(toolName, result)) {
-      discoveredTagIds.add(id);
-    }
-    loop.middleware.evaluatePostTool(
-      toolName,
-      result,
-      null,
-      toolMs,
-      loop.turnCount,
-    );
-    loop.stepHandler(
-      {
-        ...toolStep,
-        status: "done",
-        durationMs: toolMs,
-      },
-      true,
-    );
-    loop.log.info("tools", `${toolName} OK`, {
-      turn: loop.turnCount,
-      tool: toolName,
-      risk: preDecision.riskLevel,
-      mode: "sequential",
-      args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-      result: result.slice(0, STRING_LIMITS.RESULT_LOG),
-      durationMs: toolMs,
-      intention: llmIntention,
-    });
-    loop.traceRecorder?.recordToolExecution(
-      toolCall.id,
+    recordSuccessfulToolExecution(loop, {
+      toolCall,
       toolName,
       args,
       result,
-      true,
-      toolMs,
-      preDecision.riskLevel,
-    );
+      toolStep,
+      preDecision,
+      discoveredTagIds,
+      llmIntention,
+      mode: "sequential",
+    });
     if (
       loop.pendingInlineEditVerification &&
       loop.pendingInlineEditVerification.stepIndex === currentStepIndex &&
@@ -741,43 +821,16 @@ export async function handleGenericSequentialToolCall(
   } catch (toolError: any) {
     if (toolError.name === "AbortError") throw toolError;
     const errorMsg = toolError.message || String(toolError);
-    const toolMs = Date.now() - toolStep.timestamp;
-    loop.middleware.evaluatePostTool(
-      toolName,
-      null,
-      errorMsg,
-      toolMs,
-      loop.turnCount,
-    );
-    loop.log.error("tools", `${toolName} FAIL`, {
-      turn: loop.turnCount,
-      tool: toolName,
-      risk: preDecision.riskLevel,
-      mode: "sequential",
-      args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-      error: errorMsg,
-      durationMs: toolMs,
-      intention: llmIntention,
-    });
-    loop.traceRecorder?.recordToolExecution(
-      toolCall.id,
+    recordFailedToolExecution(loop, {
+      toolCall,
       toolName,
       args,
       errorMsg,
-      false,
-      toolMs,
-      preDecision.riskLevel,
-      errorMsg,
-    );
-    loop.stepHandler(
-      {
-        ...toolStep,
-        status: "error",
-        durationMs: toolMs,
-        errorMessage: errorMsg,
-      },
-      true,
-    );
+      toolStep,
+      preDecision,
+      llmIntention,
+      mode: "sequential",
+    });
     // Add error to conversation history so the LLM can recover
     loop.context.addMessage({
       role: "tool",
