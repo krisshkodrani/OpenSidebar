@@ -4,8 +4,22 @@ import {
   estimateCostUsd,
   findModelPricing,
 } from "../../src/background/llm/pricing";
+import { DEFAULT_MODEL_PRICING } from "../../src/background/llm/pricing-data";
 
 describe("LLM pricing table", () => {
+  test("uses checked-in local pricing defaults", () => {
+    expect(DEFAULT_MODEL_PRICING.length).toBeGreaterThan(0);
+    expect(
+      DEFAULT_MODEL_PRICING.every(
+        (entry) =>
+          entry.providerId &&
+          entry.model &&
+          Number.isFinite(entry.inputUsdPerMillion) &&
+          Number.isFinite(entry.outputUsdPerMillion),
+      ),
+    ).toBe(true);
+  });
+
   test("uses refreshed Fireworks Kimi K2.5 Turbo pricing", () => {
     const pricing = findModelPricing(
       "fireworks",
@@ -62,5 +76,16 @@ describe("LLM pricing table", () => {
       cached_tokens: 500_000,
     });
     expect(cost).toBeCloseTo(0.15 * 0.5 + 0.075 * 0.5 + 0.6, 6);
+  });
+
+  test("returns null for unknown model pricing", () => {
+    expect(findModelPricing("fireworks", "unknown/model")).toBeNull();
+    expect(
+      estimateCostUsd("fireworks", "unknown/model", {
+        prompt_tokens: 100,
+        completion_tokens: 100,
+        total_tokens: 200,
+      }),
+    ).toBeNull();
   });
 });
