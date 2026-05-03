@@ -264,3 +264,40 @@ export function getListDetailWorkflowBlock(params: {
 
   return `BLOCKED: ${params.toolName} is off workflow while unreviewed list details are visible. ${instruction}`;
 }
+
+export interface ListDetailWorkflowDecision {
+  visibleDetailActionCount: number;
+  block: string | null;
+}
+
+export function assessListDetailWorkflow(params: {
+  selectedSkillId?: string | null;
+  query: string;
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null | undefined;
+  reviewedTargets: Iterable<string>;
+  openedTargets?: Iterable<string>;
+  previousVisibleDetailActionCount: number;
+}): ListDetailWorkflowDecision {
+  const currentVisibleDetailActionCount = countVisibleListDetailActions(
+    params.snapshot,
+  );
+  const visibleDetailActionCount = Math.max(
+    params.previousVisibleDetailActionCount,
+    currentVisibleDetailActionCount,
+  );
+  return {
+    visibleDetailActionCount,
+    block: getListDetailWorkflowBlock({
+      selectedSkillId: params.selectedSkillId,
+      query: params.query,
+      toolName: params.toolName,
+      args: params.args,
+      snapshot: params.snapshot,
+      reviewedTargets: params.reviewedTargets,
+      openedTargets: params.openedTargets,
+      visibleDetailActionCount,
+    }),
+  };
+}
