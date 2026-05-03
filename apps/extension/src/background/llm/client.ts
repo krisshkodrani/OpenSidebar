@@ -1,7 +1,6 @@
 import { ToolCall, ToolName } from "../../types";
 import { logger } from "../../utils";
 import {
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER,
   isVLCapable as isExecutorVLCapable,
   normalizeExecutorFallbackModel,
   normalizeExecutorModel,
@@ -15,6 +14,7 @@ import {
   LLMToolCall,
   ProviderConfig,
 } from "./types";
+import { LLM_MODEL_CONFIG } from "./model-config";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -38,47 +38,44 @@ function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
 
 /** Executor model tier — used for initial turns (Fireworks Kimi K2.5 Turbo) */
 export const MODEL_EXECUTOR =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter;
+  LLM_MODEL_CONFIG.executor;
 /** Fallback: same model (no :nitro variant on Fireworks) */
 export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter;
+  LLM_MODEL_CONFIG.executorEmptyResponseFallback;
 /** Planner model tier — used after escalation (Fireworks Kimi K2.5 Turbo) */
-export const MODEL_PLANNER = "accounts/fireworks/routers/kimi-k2p5-turbo";
+export const MODEL_PLANNER = LLM_MODEL_CONFIG.planner;
 
 /** OpenAI direct API — redirected to Fireworks */
 const OPENAI_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
 export const OPENAI_MODEL_EXECUTOR =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"];
-export const OPENAI_MODEL_PLANNER =
-  "accounts/fireworks/routers/kimi-k2p5-turbo";
-export const OPENAI_MODEL_PERCEPTION =
-  "accounts/fireworks/routers/kimi-k2p5-turbo";
+  LLM_MODEL_CONFIG.openai.executor;
+export const OPENAI_MODEL_PLANNER = LLM_MODEL_CONFIG.openai.planner;
+export const OPENAI_MODEL_PERCEPTION = LLM_MODEL_CONFIG.openai.perception;
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
-export const GROQ_MODEL_PLANNER = "openai/gpt-oss-120b";
-export const GROQ_MODEL_PERCEPTION =
-  "meta-llama/llama-4-scout-17b-16e-instruct";
+export const GROQ_MODEL_PLANNER = LLM_MODEL_CONFIG.groq.planner;
+export const GROQ_MODEL_PERCEPTION = LLM_MODEL_CONFIG.groq.perception;
 
 /** Moonshot direct API */
 const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
 export const MOONSHOT_MODEL_EXECUTOR =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.moonshot;
-export const MOONSHOT_MODEL_PLANNER = "kimi-k2.6";
-export const MOONSHOT_MODEL_PERCEPTION = "kimi-k2.6";
+  LLM_MODEL_CONFIG.moonshot.executor;
+export const MOONSHOT_MODEL_PLANNER = LLM_MODEL_CONFIG.moonshot.planner;
+export const MOONSHOT_MODEL_PERCEPTION = LLM_MODEL_CONFIG.moonshot.perception;
 
 /** Xiaomi MiMo direct API */
 const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
 export const XIAOMI_MODEL_EXECUTOR =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.xiaomi;
-export const XIAOMI_MODEL_PLANNER = "mimo-v2-pro";
-export const XIAOMI_MODEL_PERCEPTION = "mimo-v2-omni";
+  LLM_MODEL_CONFIG.xiaomi.executor;
+export const XIAOMI_MODEL_PLANNER = LLM_MODEL_CONFIG.xiaomi.planner;
+export const XIAOMI_MODEL_PERCEPTION = LLM_MODEL_CONFIG.xiaomi.perception;
 
 /** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
-export const DEEPSEEK_MODEL_PLANNER = "deepseek-v4-flash";
-export const DEEPSEEK_MODEL_PLANNER_PRO = "deepseek-v4-pro";
+export const DEEPSEEK_MODEL_PLANNER = LLM_MODEL_CONFIG.deepseek.planner;
+export const DEEPSEEK_MODEL_PLANNER_PRO = LLM_MODEL_CONFIG.deepseek.plannerPro;
 
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
@@ -102,9 +99,8 @@ function groqProvider(apiKey: string): ProviderConfig {
 const FIREWORKS_BASE_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
 export const FIREWORKS_MODEL_EXECUTOR =
-  DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks;
-export const FIREWORKS_MODEL_PLANNER =
-  "accounts/fireworks/routers/kimi-k2p5-turbo";
+  LLM_MODEL_CONFIG.fireworks.executor;
+export const FIREWORKS_MODEL_PLANNER = LLM_MODEL_CONFIG.fireworks.planner;
 
 /** Check if a model supports unified VL executor mode (vision + tool calling). */
 export const isVLCapable = isExecutorVLCapable;
