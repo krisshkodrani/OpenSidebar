@@ -120,7 +120,8 @@ import {
 } from "./action-exemption-policy";
 import {
   actionMemoryKey,
-  shouldTrackRepeatAction,
+  assessRepeatAction,
+  rememberRepeatAction,
 } from "./repeat-action-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
@@ -6939,65 +6940,63 @@ export class AgentLoop {
                 }) ||
                 (this.selectedSkillId === "multi-tab-procurement-loop" &&
                   toolName === ToolName.SWITCH_TAB);
-              if (shouldTrackRepeatAction(toolName) && !repeatActionExempt) {
-                const priorRepeatCount = recentToolCalls.filter(
-                  (entry) =>
-                    entry.tool === toolName && entry.argsKey === argsKey,
-                ).length;
-                if (priorRepeatCount >= 2) {
-                  const finalClickBypass =
-                    !verifiedFinalClickBypassKeys.has(argsKey) &&
-                    hasRecentExactTextFieldRead(this.context.getMessages()) &&
-                    isFinalCommunicationClick({
-                      selectedSkillId: this.selectedSkillId,
-                      toolName,
-                      args,
-                      snapshot: this.context.getSnapshot(),
-                      originalQuery: this.originalQuery,
-                    });
-                  if (finalClickBypass) {
-                    verifiedFinalClickBypassKeys.add(argsKey);
-                    this.log.info(
-                      "agent",
-                      "Repeat final communication click allowed after exact draft read",
-                      {
-                        turn: this.turnCount,
-                        tool: toolName,
-                        mode: "parallel",
-                      },
-                    );
-                    this.traceRecorder?.recordEvent(
-                      "repeat_final_click_allowed",
-                      {
-                        turn: this.turnCount,
-                        tool: toolName,
-                        mode: "parallel",
-                      },
-                    );
-                  } else {
-                    const repeatCount = priorRepeatCount + 1;
-                    const blockMsg =
-                      `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
-                      `This is cycling. Try a fundamentally different action or call escalate({"reason": "Repeated ${toolName} without progress"})`;
-                    this.log.warn("agent", "Repeat action blocked", {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      repeatCount,
-                      mode: "parallel",
-                    });
-                    this.traceRecorder?.recordEvent("repeat_action_blocked", {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      repeatCount,
-                      mode: "parallel",
-                    });
-                    return { toolCall, result: blockMsg, error: null };
-                  }
-                }
-                recentToolCalls.push({ tool: toolName, argsKey });
-                if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
-                  recentToolCalls.shift();
-                }
+              const repeatDecision = assessRepeatAction({
+                toolName,
+                argsKey,
+                recentToolCalls,
+                isExempt: repeatActionExempt,
+                allowFinalClickBypass: () =>
+                  !verifiedFinalClickBypassKeys.has(argsKey) &&
+                  hasRecentExactTextFieldRead(this.context.getMessages()) &&
+                  isFinalCommunicationClick({
+                    selectedSkillId: this.selectedSkillId,
+                    toolName,
+                    args,
+                    snapshot: this.context.getSnapshot(),
+                    originalQuery: this.originalQuery,
+                  }),
+              });
+              if (repeatDecision.action === "allow_final_click_bypass") {
+                verifiedFinalClickBypassKeys.add(argsKey);
+                this.log.info(
+                  "agent",
+                  "Repeat final communication click allowed after exact draft read",
+                  {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    mode: "parallel",
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "repeat_final_click_allowed",
+                  {
+                    turn: this.turnCount,
+                    tool: toolName,
+                    mode: "parallel",
+                  },
+                );
+              } else if (repeatDecision.action === "block") {
+                this.log.warn("agent", "Repeat action blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  repeatCount: repeatDecision.repeatCount,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent("repeat_action_blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  repeatCount: repeatDecision.repeatCount,
+                  mode: "parallel",
+                });
+                return { toolCall, result: repeatDecision.message, error: null };
+              }
+              if (repeatDecision.action !== "skip_tracking") {
+                rememberRepeatAction(
+                  recentToolCalls,
+                  toolName,
+                  argsKey,
+                  REPEAT_ACTION_WINDOW,
+                );
               }
 
               // read_element same-ID nudge (parallel path)
@@ -7569,69 +7568,68 @@ export class AgentLoop {
               }) ||
               (this.selectedSkillId === "multi-tab-procurement-loop" &&
                 toolName === ToolName.SWITCH_TAB);
-            if (shouldTrackRepeatAction(toolName) && !repeatActionExempt) {
-              const priorRepeatCount = recentToolCalls.filter(
-                (entry) => entry.tool === toolName && entry.argsKey === argsKey,
-              ).length;
-              if (priorRepeatCount >= 2) {
-                const finalClickBypass =
-                  !verifiedFinalClickBypassKeys.has(argsKey) &&
-                  hasRecentExactTextFieldRead(this.context.getMessages()) &&
-                  isFinalCommunicationClick({
-                    selectedSkillId: this.selectedSkillId,
-                    toolName,
-                    args,
-                    snapshot: this.context.getSnapshot(),
-                    originalQuery: this.originalQuery,
-                  });
-                if (finalClickBypass) {
-                  verifiedFinalClickBypassKeys.add(argsKey);
-                  this.log.info(
-                    "agent",
-                    "Repeat final communication click allowed after exact draft read",
-                    {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      mode: "sequential",
-                    },
-                  );
-                  this.traceRecorder?.recordEvent(
-                    "repeat_final_click_allowed",
-                    {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      mode: "sequential",
-                    },
-                  );
-                } else {
-                  const repeatCount = priorRepeatCount + 1;
-                  const blockMsg =
-                    `BLOCKED: You already called ${toolName} with the same arguments ${repeatCount} times in recent turns. ` +
-                    `This is cycling. Try a fundamentally different action or call escalate({"reason": "Repeated ${toolName} without progress"})`;
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: blockMsg,
-                  });
-                  this.log.warn("agent", "Repeat action blocked", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    repeatCount,
-                    mode: "sequential",
-                  });
-                  this.traceRecorder?.recordEvent("repeat_action_blocked", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    repeatCount,
-                    mode: "sequential",
-                  });
-                  continue;
-                }
-              }
-              recentToolCalls.push({ tool: toolName, argsKey });
-              if (recentToolCalls.length > REPEAT_ACTION_WINDOW) {
-                recentToolCalls.shift();
-              }
+            const repeatDecision = assessRepeatAction({
+              toolName,
+              argsKey,
+              recentToolCalls,
+              isExempt: repeatActionExempt,
+              allowFinalClickBypass: () =>
+                !verifiedFinalClickBypassKeys.has(argsKey) &&
+                hasRecentExactTextFieldRead(this.context.getMessages()) &&
+                isFinalCommunicationClick({
+                  selectedSkillId: this.selectedSkillId,
+                  toolName,
+                  args,
+                  snapshot: this.context.getSnapshot(),
+                  originalQuery: this.originalQuery,
+                }),
+            });
+            if (repeatDecision.action === "allow_final_click_bypass") {
+              verifiedFinalClickBypassKeys.add(argsKey);
+              this.log.info(
+                "agent",
+                "Repeat final communication click allowed after exact draft read",
+                {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  mode: "sequential",
+                },
+              );
+              this.traceRecorder?.recordEvent(
+                "repeat_final_click_allowed",
+                {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  mode: "sequential",
+                },
+              );
+            } else if (repeatDecision.action === "block") {
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: repeatDecision.message,
+              });
+              this.log.warn("agent", "Repeat action blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                repeatCount: repeatDecision.repeatCount,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent("repeat_action_blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                repeatCount: repeatDecision.repeatCount,
+                mode: "sequential",
+              });
+              continue;
+            }
+            if (repeatDecision.action !== "skip_tracking") {
+              rememberRepeatAction(
+                recentToolCalls,
+                toolName,
+                argsKey,
+                REPEAT_ACTION_WINDOW,
+              );
             }
 
             // read_element same-ID nudge (sequential path)
