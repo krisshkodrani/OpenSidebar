@@ -153,7 +153,6 @@ import {
   clarificationRequestStep,
 } from "./agent-interaction-steps";
 import {
-  advanceCompletedPlanSubtasks,
   buildCompletedPlanStepSummaries,
   buildFailedPlanStep,
   buildInitialPlanSubtasks,
@@ -163,8 +162,6 @@ import {
   buildPlanStatusEntries,
   buildPlanStatusSnapshot,
   buildRestoredPlanState,
-  completeRemainingPlanSubtasks,
-  completeSinglePlanSubtask,
   type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
@@ -279,6 +276,12 @@ import {
   handleWaitToolCall,
   type AgentLoopToolHandlerHost,
 } from "./loop-tool-handlers";
+import {
+  advanceCompletedSubtasks,
+  completeRemainingSubtasks,
+  completeSingleSubtask,
+  type AgentLoopPlanProgressHost,
+} from "./loop-plan-progress";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -2039,7 +2042,9 @@ export class AgentLoop {
         // Gate passed — proceed with auto-advance
         this.consecutiveAutoAdvances++;
         const previousIdx = effectiveCurrentIdx;
-        const newIdx = this.advanceCompletedSubtasks();
+        const newIdx = advanceCompletedSubtasks(
+          this as unknown as AgentLoopPlanProgressHost,
+        );
         const completedStep =
           this.planSubtasks[previousIdx]?.description ||
           `Step ${previousIdx + 1}`;
@@ -5212,53 +5217,28 @@ export class AgentLoop {
     );
   }
 
-  /**
-   * Walk planSubtasks and mark early steps as completed based on
-   * planner rejection (which implies the agent has progressed past them).
-   * Returns the new currentIndex (first non-completed step).
-   */
   private advanceCompletedSubtasks(): number {
-    const result = advanceCompletedPlanSubtasks({
-      subtasks: this.planSubtasks,
-      captureResult: () => this.captureSubtaskResult(),
-      completedAtUrl: this.context.getCurrentUrl() || undefined,
-      lastPlanIndex: this.lastPlanIndex,
-    });
-    // Plan-aware cache invalidation: force fresh perception on step advancement
-    if (result.planIndexChanged) {
-      this.lastPlanIndex = result.currentIndex;
-      this.perception.invalidateCache();
-      this.turnsOnCurrentStep = 0;
-      this.escalationsOnCurrentStep = 0;
-      this.stepRetryCount = 0;
-      this.mutationLedger.clearStepLedger();
-    }
-    return result.currentIndex;
+    return advanceCompletedSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
+    );
   }
 
-  /**
-   * Complete exactly one plan subtask and move the running pointer forward.
-   * This is safer than walking all subtasks when advancement is triggered by
-   * local structural evidence from the current page.
-   */
   private completeSingleSubtask(currentIndex: number): number {
-    const result = completeSinglePlanSubtask({
-      subtasks: this.planSubtasks,
+    return completeSingleSubtask(
+      this as unknown as AgentLoopPlanProgressHost,
       currentIndex,
-      captureResult: () => this.captureSubtaskResult(),
-      completedAtUrl: this.context.getCurrentUrl() || undefined,
-      lastPlanIndex: this.lastPlanIndex,
-    });
+    );
+  }
 
-    if (result.planIndexChanged) {
-      this.lastPlanIndex = result.currentIndex;
-      this.perception.invalidateCache();
-      this.turnsOnCurrentStep = 0;
-      this.escalationsOnCurrentStep = 0;
-      this.mutationLedger.clearReplayState();
-    }
-
-    return result.currentIndex;
+  private completeRemainingSubtasks(
+    currentIndex: number,
+    result: string,
+  ): number {
+    return completeRemainingSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
+      currentIndex,
+      result,
+    );
   }
 
   private maybeAdvanceTrustedFormFillStep(params: {
@@ -5293,7 +5273,10 @@ export class AgentLoop {
 
     this.consecutiveAutoAdvances = 0;
     const fromStep = plan.currentIndex;
-    const newIdx = this.completeSingleSubtask(fromStep);
+    const newIdx = completeSingleSubtask(
+      this as unknown as AgentLoopPlanProgressHost,
+      fromStep,
+    );
     this.syncPlanStatus(newIdx, "structural_step_advance", {
       reason: signal.reason,
       matchedTokens: signal.matchedTokens,
@@ -5888,7 +5871,11 @@ export class AgentLoop {
 
     this.consecutiveAutoAdvances = 0;
     const fromStep = plan.currentIndex;
-    const newIndex = this.completeRemainingSubtasks(fromStep, signal.reason);
+    const newIndex = completeRemainingSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
+      fromStep,
+      signal.reason,
+    );
     this.syncPlanStatus(newIndex, "trusted_form_submit_success", {
       reason: signal.reason,
       matchedTokens: signal.matchedTokens,
@@ -5918,34 +5905,12 @@ export class AgentLoop {
     return { finalSummary: signal.reason, newIndex };
   }
 
-  private completeRemainingSubtasks(
-    currentIndex: number,
-    result: string,
-  ): number {
-    const completion = completeRemainingPlanSubtasks({
-      subtasks: this.planSubtasks,
-      currentIndex,
-      result,
-      completedAtUrl: this.context.getCurrentUrl() || undefined,
-      lastPlanIndex: this.lastPlanIndex,
-    });
-
-    if (completion.planIndexChanged) {
-      this.lastPlanIndex = completion.currentIndex;
-      this.perception.invalidateCache();
-      this.turnsOnCurrentStep = 0;
-      this.escalationsOnCurrentStep = 0;
-      this.mutationLedger.clearReplayState();
-    }
-
-    return completion.currentIndex;
-  }
-
   private completeSubmitFormReset(
     currentIndex: number,
     signal: NonNullable<ReturnType<typeof detectFormSubmissionResetSuccess>>,
   ): { finalSummary: string; newIndex: number } {
-    const newIndex = this.completeRemainingSubtasks(
+    const newIndex = completeRemainingSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
       currentIndex,
       signal.reason,
     );
@@ -7982,7 +7947,9 @@ export class AgentLoop {
               if (gateResult.matched) {
                 if (currentSub.verificationGate.action === "advance_step") {
                   this.consecutiveAutoAdvances = 0;
-                  const newIdx = this.advanceCompletedSubtasks();
+                  const newIdx = advanceCompletedSubtasks(
+                    this as unknown as AgentLoopPlanProgressHost,
+                  );
                   this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
                     evidence: gateResult.evidence,
                     mode: "parallel",
@@ -8737,7 +8704,9 @@ export class AgentLoop {
               if (seqGateResult.matched) {
                 if (currentSubSeq.verificationGate.action === "advance_step") {
                   this.consecutiveAutoAdvances = 0;
-                  const newIdx = this.advanceCompletedSubtasks();
+                  const newIdx = advanceCompletedSubtasks(
+                    this as unknown as AgentLoopPlanProgressHost,
+                  );
                   this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
                     evidence: seqGateResult.evidence,
                     mode: "sequential",
@@ -9564,7 +9533,9 @@ export class AgentLoop {
                   runningIdx >= 0 &&
                   runningIdx < this.planSubtasks.length - 1
                 ) {
-                  const newIdx = this.advanceCompletedSubtasks();
+                  const newIdx = advanceCompletedSubtasks(
+                    this as unknown as AgentLoopPlanProgressHost,
+                  );
                   const nextDesc =
                     this.planSubtasks[newIdx]?.description ||
                     "Continue to next step";
@@ -9885,7 +9856,10 @@ export class AgentLoop {
                     if (advanceSignal || shouldPassiveAdvance) {
                       this.consecutiveAutoAdvances = 0;
                       const fromStep = planAfterAction.currentIndex;
-                      const newIdx = this.completeSingleSubtask(fromStep);
+                      const newIdx = completeSingleSubtask(
+                        this as unknown as AgentLoopPlanProgressHost,
+                        fromStep,
+                      );
                       const isStructural = !!advanceSignal;
                       const reason = isStructural
                         ? advanceSignal!.reason
@@ -10423,7 +10397,10 @@ export class AgentLoop {
                   continue;
                 }
 
-                const newIdx = this.completeSingleSubtask(gate.runningIdx);
+                const newIdx = completeSingleSubtask(
+                  this as unknown as AgentLoopPlanProgressHost,
+                  gate.runningIdx,
+                );
                 const nextDesc =
                   this.planSubtasks[newIdx]?.description ||
                   "Continue to next step";
