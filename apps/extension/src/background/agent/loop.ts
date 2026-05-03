@@ -66,14 +66,9 @@ import {
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
-import {
-  buildLlmResponseLogPayload,
-  isEmptyCompletionResponse,
-  normalizeResponseContent,
-  recoverResponseToolCallsFromText,
-} from "./response-normalization";
 import { completeTurnWithRetries } from "./turn-completion";
 import { prepareLlmTurnRequest } from "./loop-turn-preparation";
+import { processLlmTurnResponse } from "./loop-response-processing";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import {
@@ -5903,137 +5898,32 @@ export class AgentLoop {
       const hallucinationDetected =
         turnCompletion.synthesizedFromHallucination;
 
-      // Accumulate token usage and broadcast metrics
-      this.recordUsage(response, llmMs);
-      this.broadcastMetrics();
-
-      // Trace: record LLM response
-      if (this.traceRecorder) {
-        this.traceRecorder.recordLLMResponse(
-          response.content,
-          response.tool_calls || [],
-          response.finish_reason,
-          response.usage ?? null,
-          llmMs,
-          response.actualProviderId,
-          response.actualModel,
-        );
+      const processedResponse = await processLlmTurnResponse({
+        response,
+        llmMs,
+        turnCount: this.turnCount,
+        thinkingStep,
+        context: this.context,
+        traceRecorder: this.traceRecorder,
+        log: this.log,
+        recordUsage: (completion, durationMs) =>
+          this.recordUsage(completion, durationMs),
+        broadcastMetrics: () => this.broadcastMetrics(),
+        broadcast: (message) => this.broadcast(message),
+        finishStream: () => this.finishStream(),
+        statusHandler: (status, message) =>
+          this.statusHandler(status, message),
+        stepHandler: (step, replace) => this.stepHandler(step, replace),
+        getMetrics: () => this.getMetrics(),
+      });
+      if (processedResponse.kind === "early_result") {
+        return processedResponse.result;
       }
-
-      // Derive clean content (no <think> blocks) for logging and logic,
-      // but keep raw content (with think blocks) in history for M2.5 reasoning chain continuity.
-      const normalizedContent = normalizeResponseContent(response);
-      const rawContent = normalizedContent.rawContent;
-      let cleanContent = normalizedContent.cleanContent;
-
-      // Fix 2: Empty Response Circuit Breaker
-      // After retry loop exhausts, a truly empty response (no content AND no tool_calls)
-      // should exit immediately rather than degrading through the text-only flow.
-      if (isEmptyCompletionResponse(response)) {
-        this.log.error("agent", "Empty response after retries exhausted", {
-          turn: this.turnCount,
-        });
-        this.traceRecorder?.recordEvent("empty_response_circuit_breaker", {
-          turn: this.turnCount,
-        });
-        const errorMsg = "AI provider returned an empty response. Try again.";
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: errorMsg, done: false },
-        });
-        this.finishStream();
-        this.statusHandler(AgentStatus.ERROR, "Empty response from provider");
-        await this.traceRecorder?.endTurn();
-        return {
-          outcome: "error" as const,
-          turnCount: this.turnCount,
-          summary: "AI provider returned an empty response",
-          failure: {
-            category: "provider" as const,
-            code: "empty_response",
-            detail: `Turn ${this.turnCount}: no content and no tool_calls after retry loop`,
-          },
-          metrics: this.getMetrics(),
-        };
-      }
-
-      // Extract thinking content and broadcast to UI before any done:true
-      const thinkingContent = normalizedContent.thinkingContent;
-      if (thinkingContent) {
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: false, thinking: thinkingContent },
-        });
-      }
-
-      // Log LLM response summary for debugging
-      this.log.info(
-        "agent",
-        "LLM response",
-        buildLlmResponseLogPayload({
-          turn: this.turnCount,
-          llmMs,
-          url: this.context.getCurrentUrl(),
-          cleanContent,
-          toolCalls: response.tool_calls,
-          maxReasoningChars: STRING_LIMITS.REASONING_LOG,
-          maxArgumentChars: STRING_LIMITS.TOOL_CALL_SNIPPET,
-        }),
-      );
-
-      // Full reasoning at DEBUG level (untruncated for performance analysis)
-      if (cleanContent) {
-        this.log.debug("agent", "LLM reasoning (full)", {
-          turn: this.turnCount,
-          text: cleanContent,
-        });
-      }
-
-      // Grounding: mark first turn done so the observe-first prompt is only injected once
-      if (this.context.getIsFirstTurn()) {
-        this.context.setFirstTurnDone();
-      }
-
-      // Recover tool calls from text output (models sometimes emit JSON as text)
-      let toolsRecoveredFromText = false;
-      const recovery = recoverResponseToolCallsFromText(response, cleanContent);
-      if (recovery.recovered) {
-        this.log.info("agent", "Recovered tool calls from text", {
-          turn: this.turnCount,
-          count: recovery.recoveredToolCalls.length,
-          tools: recovery.recoveredToolCalls.map((tc) => tc.function.name),
-        });
-        toolsRecoveredFromText = true;
-        cleanContent = recovery.cleanContent;
-        // Retract the raw JSON that was already streamed to chat.
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: false, replaceContent: "" },
-        });
-      }
-
-      const llmIntention =
-        cleanContent?.slice(0, STRING_LIMITS.REASONING_LOG) || null;
-
-      // 2. Add Assistant Message to History
-      // For tool_calls path, deferred until after safety gate + batch cap
-      // so tool_calls in history match actual results (prevents 422 on next turn).
-      if (!response.tool_calls || response.tool_calls.length === 0) {
-        this.context.addMessage({
-          role: "assistant",
-          content: response.content,
-        });
-      }
-
-      // Mark thinking step as done
-      this.stepHandler(
-        {
-          ...thinkingStep,
-          status: "done",
-          durationMs: Date.now() - thinkingStep.timestamp,
-        },
-        true,
-      );
+      const normalizedContent = processedResponse.normalizedContent;
+      const rawContent = processedResponse.rawContent;
+      const cleanContent = processedResponse.cleanContent;
+      const toolsRecoveredFromText = processedResponse.toolsRecoveredFromText;
+      const llmIntention = processedResponse.llmIntention;
 
       // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
