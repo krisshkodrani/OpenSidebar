@@ -73,6 +73,7 @@ import {
   recoverResponseToolCallsFromText,
 } from "./response-normalization";
 import { completeTurnWithRetries } from "./turn-completion";
+import { prepareLlmTurnRequest } from "./loop-turn-preparation";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import {
@@ -5846,94 +5847,25 @@ export class AgentLoop {
 
       // 1. LLM Inference (streamed)
       // `let` because retry loop may append diagnostic hints (cleaned up after)
-      let messages = this.context.getPrompt();
       const allTools = toolRegistry.getDefinitions(this.disabledTools);
-      // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
-      const tools = this.applySkillToolRanking(
-        this.applySkillToolSuppression(this.applyToolProfile(allTools)),
-      );
-
-      // Log context metrics for telemetry (reuse already-computed prompt)
-      const metrics = this.context.getPromptMetricsFrom(messages);
-      if (prevElementCount < 0) prevElementCount = metrics.elementCount;
-      this.log.info("agent", "Context metrics", {
-        turn: this.turnCount,
-        systemTokens: metrics.systemTokens,
-        historyTokens: metrics.historyTokens,
-        totalTokens: metrics.totalTokens,
-        utilization: Math.round(metrics.utilization * 100) + "%",
-        elements: metrics.elementCount,
-        compression: metrics.compressionLevel,
-        toolCount: tools.length,
+      const turnPreparation = await prepareLlmTurnRequest({
+        turnCount: this.turnCount,
+        previousElementCount: prevElementCount,
+        context: this.context,
+        allTools,
+        // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
+        selectTools: (definitions) =>
+          this.applySkillToolRanking(
+            this.applySkillToolSuppression(this.applyToolProfile(definitions)),
+          ),
+        llm: this.llm,
+        perception: this.perception,
+        log: this.log,
+        traceRecorder: this.traceRecorder,
       });
-
-      // Trace: start turn recording
-      if (this.traceRecorder) {
-        const snap = this.context.getSnapshot();
-
-        // Compute context metrics for trace
-        const systemContent =
-          messages.length > 0 && messages[0].role === "system"
-            ? typeof messages[0].content === "string"
-              ? messages[0].content
-              : ""
-            : "";
-        const cachedPrefixLength = systemContent.indexOf("## Page Context");
-        const droppedMessageCount = Math.max(
-          0,
-          this.context.getHistoryLength() - (messages.length - 1),
-        );
-
-        this.traceRecorder.startTurn(
-          this.turnCount,
-          {
-            url: snap?.url || "",
-            title: snap?.title || "",
-            elementCount: metrics.elementCount,
-            visibleContentLength: snap?.visibleContent?.length || 0,
-            pageContentLength: snap?.pageContent?.length || 0,
-            scrollY: snap?.scroll?.y || 0,
-          },
-          snap?.elements || [],
-          metrics.systemTokens + metrics.historyTokens,
-          tools.length,
-          this.llm.getCurrentModel(),
-          metrics.compressionLevel,
-          TraceRecorder.toTraceMessages(messages),
-          {
-            systemTokens: metrics.systemTokens,
-            historyTokens: metrics.historyTokens,
-            totalTokens: metrics.totalTokens,
-            maxTokens: metrics.maxTokens,
-            utilization: metrics.utilization,
-            droppedMessageCount,
-            compressionLevel: metrics.compressionLevel,
-            cachedPrefixLength:
-              cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
-          },
-          this.llm.isPlannerTier() ? "planner" : "executor",
-        );
-
-        // Record initial perception on T1 (retroactive — perception ran before first startTurn)
-        if (this.turnCount === 1 && this.perception.getInterpretation()) {
-          const elSummary = snap
-            ? buildElementSummary(snap.elements)
-            : undefined;
-          const perceptionMeta = this.perception.getLastTraceMeta();
-          await this.traceRecorder.recordPerception(
-            {
-              interpretation: this.perception.getInterpretation()!,
-              model: "google/gemini-2.5-flash",
-              durationMs: 0,
-              cached: false,
-              ...perceptionMeta,
-            },
-            this.perception.getLastScreenshot() || undefined,
-            elSummary,
-            this.perception.getPanoramicShots() || undefined,
-          );
-        }
-      }
+      let messages = turnPreparation.messages;
+      const tools = turnPreparation.tools;
+      prevElementCount = turnPreparation.previousElementCount;
 
       const thinkingStepId = crypto.randomUUID();
       const thinkingStep: AgentStep = {
