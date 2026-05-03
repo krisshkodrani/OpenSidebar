@@ -1477,6 +1477,34 @@ export function updateSameToolFailureTracking(params: {
   return { kind: "none", count };
 }
 
+export type ExplorationBudgetDecision =
+  | { consecutiveTurns: number; message: null }
+  | { consecutiveTurns: number; message: string };
+
+export function updateExplorationBudget(params: {
+  previousCount: number;
+  toolNames: string[];
+  explorationOnlyTools: Set<string>;
+  maxConsecutive: number;
+}): ExplorationBudgetDecision {
+  const allDiscovery = params.toolNames.every((toolName) =>
+    params.explorationOnlyTools.has(toolName),
+  );
+  if (!allDiscovery) return { consecutiveTurns: 0, message: null };
+
+  const consecutiveTurns = params.previousCount + 1;
+  if (consecutiveTurns < params.maxConsecutive) {
+    return { consecutiveTurns, message: null };
+  }
+
+  return {
+    consecutiveTurns,
+    message:
+      `You've spent ${consecutiveTurns} consecutive turns only reading/inspecting without acting. ` +
+      "Use what you've gathered - click, type, scroll, navigate - or escalate if stuck.",
+  };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.

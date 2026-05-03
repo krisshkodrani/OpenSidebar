@@ -248,6 +248,7 @@ import {
   TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
   updateConsecutiveAllFailTurns,
+  updateExplorationBudget,
   updateSameToolFailureTracking,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
@@ -8271,22 +8272,19 @@ export class AgentLoop {
 
           // B2. Exploration budget: nudge after N consecutive turns of only reading/inspecting
           {
-            const allDiscovery = response.tool_calls!.every((tc) =>
-              EXPLORATION_ONLY_TOOLS.has(tc.function.name),
-            );
-            if (allDiscovery) {
-              consecutiveExplorationTurns++;
-              if (
-                consecutiveExplorationTurns >=
-                EXPLORATION_BUDGET.MAX_CONSECUTIVE
-              ) {
-                this.context.addMessage({
-                  role: "user",
-                  content: `You've spent ${consecutiveExplorationTurns} consecutive turns only reading/inspecting without acting. Use what you've gathered — click, type, scroll, navigate — or escalate if stuck.`,
-                });
-              }
-            } else {
-              consecutiveExplorationTurns = 0;
+            const explorationBudget = updateExplorationBudget({
+              previousCount: consecutiveExplorationTurns,
+              toolNames: response.tool_calls!.map((tc) => tc.function.name),
+              explorationOnlyTools: EXPLORATION_ONLY_TOOLS,
+              maxConsecutive: EXPLORATION_BUDGET.MAX_CONSECUTIVE,
+            });
+            consecutiveExplorationTurns =
+              explorationBudget.consecutiveTurns;
+            if (explorationBudget.message) {
+              this.context.addMessage({
+                role: "user",
+                content: explorationBudget.message,
+              });
             }
           }
 
