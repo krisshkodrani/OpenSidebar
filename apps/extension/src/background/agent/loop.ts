@@ -6008,6 +6008,31 @@ export class AgentLoop {
     // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
 
+    const resetEscalationWorkingMemory = (options?: {
+      resetProgressSignals?: boolean;
+      resetStepEscalation?: boolean;
+      resetZeroEffectTurns?: boolean;
+      clearStuckFlag?: boolean;
+    }): void => {
+      this.stagnation.resetEscalation();
+      subgoalAttempts.length = 0;
+      recentOutcomes.length = 0;
+      consecutiveTextOnly = 0;
+      recentSuccesses.length = 0;
+      if (options?.resetProgressSignals) {
+        consecutiveProgressSignals = 0;
+      }
+      if (options?.resetStepEscalation) {
+        turnsSinceStepEscalation = -1;
+      }
+      if (options?.resetZeroEffectTurns) {
+        this.consecutiveZeroEffectTurns = 0;
+      }
+      if (options?.clearStuckFlag) {
+        wasStuck = false;
+      }
+    };
+
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
@@ -8504,12 +8529,7 @@ export class AgentLoop {
                 this.abortController?.signal,
               );
               if (replanSucceeded) {
-                this.stagnation.resetEscalation();
-                subgoalAttempts.length = 0;
-                recentOutcomes.length = 0;
-                consecutiveTextOnly = 0;
-                recentSuccesses.length = 0;
-                turnsSinceStepEscalation = -1;
+                resetEscalationWorkingMemory({ resetStepEscalation: true });
               } else {
                 // Fallback: old escalation behavior
                 const stepAttemptSummary = extractAttemptSummary(
@@ -8588,11 +8608,7 @@ export class AgentLoop {
             this.abortController?.signal,
           );
           if (sameUrlReplanOk) {
-            this.stagnation.resetEscalation();
-            subgoalAttempts.length = 0;
-            recentOutcomes.length = 0;
-            consecutiveTextOnly = 0;
-            recentSuccesses.length = 0;
+            resetEscalationWorkingMemory();
           } else {
             // Fallback: old escalation behavior
             const urlAttemptSummary = extractAttemptSummary(
@@ -9300,14 +9316,11 @@ export class AgentLoop {
                       this.abortController?.signal,
                     );
                     if (zeroEffectReplanOk) {
-                      this.stagnation.resetEscalation();
-                      subgoalAttempts.length = 0;
-                      recentOutcomes.length = 0;
-                      consecutiveTextOnly = 0;
-                      recentSuccesses.length = 0;
-                      consecutiveProgressSignals = 0;
-                      this.consecutiveZeroEffectTurns = 0;
-                      wasStuck = false;
+                      resetEscalationWorkingMemory({
+                        resetProgressSignals: true,
+                        resetZeroEffectTurns: true,
+                        clearStuckFlag: true,
+                      });
                       continue;
                     }
 
@@ -9484,13 +9497,10 @@ export class AgentLoop {
                     this.abortController?.signal,
                   );
                   if (stagnationReplanOk) {
-                    this.stagnation.resetEscalation();
-                    subgoalAttempts.length = 0;
-                    recentOutcomes.length = 0;
-                    consecutiveTextOnly = 0;
-                    recentSuccesses.length = 0;
-                    consecutiveProgressSignals = 0;
-                    wasStuck = false;
+                    resetEscalationWorkingMemory({
+                      resetProgressSignals: true,
+                      clearStuckFlag: true,
+                    });
                   } else {
                     // Fallback: old escalation behavior
                     // Invalidate perception cache so the planner model gets a fresh interpretation
@@ -9826,11 +9836,7 @@ export class AgentLoop {
             this.abortController?.signal,
           );
           if (textReplanOk) {
-            this.stagnation.resetEscalation();
-            subgoalAttempts.length = 0;
-            recentOutcomes.length = 0;
-            consecutiveTextOnly = 0;
-            recentSuccesses.length = 0;
+            resetEscalationWorkingMemory();
             this.finishStream();
             continue;
           }
