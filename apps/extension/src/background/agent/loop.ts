@@ -206,6 +206,7 @@ import {
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
+  assessElementIdPreDispatch,
   assessFailedActionRepeat,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
@@ -242,7 +243,6 @@ import {
   TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
   userExplicitlyRequestedTabManagement,
-  validateElementIds,
   extractDiscoveredTagIds,
 } from "./loop-helpers";
 import {
@@ -7101,32 +7101,35 @@ export class AgentLoop {
                 };
               }
 
-              // Pre-dispatch element ID validation
-              const idError = validateElementIds(
+              const idPreDispatch = assessElementIdPreDispatch({
                 toolName,
                 args,
-                this.context.getSnapshot(),
-                discoveredTagIds,
-              );
-              if (idError) {
+                snapshot: this.context.getSnapshot(),
+                discoveredIds: discoveredTagIds,
+                currentUrl: this.context.getCurrentUrl(),
+              });
+              if (idPreDispatch.error) {
                 this.log.warn("agent", "Invalid element ID pre-dispatch", {
                   turn: this.turnCount,
                   tool: toolName,
-                  args: JSON.stringify(args).slice(0, 100),
+                  args: idPreDispatch.logArgs,
                   mode: "parallel",
                 });
-                this.traceRecorder?.recordEvent("grounding_mismatch", {
-                  turn: this.turnCount,
-                  toolName,
-                  requestedId:
-                    typeof args.id === "number"
-                      ? args.id
-                      : (args.sourceId ?? args.targetId ?? null),
-                  currentUrl: this.context.getCurrentUrl(),
-                  reason: "invalid_element_id_pre_dispatch",
-                  mode: "parallel",
-                });
-                return { toolCall, result: null, error: idError };
+                this.traceRecorder?.recordEvent(
+                  "grounding_mismatch",
+                  idPreDispatch.traceData
+                    ? {
+                        turn: this.turnCount,
+                        ...idPreDispatch.traceData,
+                        mode: "parallel",
+                      }
+                    : {},
+                );
+                return {
+                  toolCall,
+                  result: null,
+                  error: idPreDispatch.error,
+                };
               }
 
               // Pre-action feasibility check (disabled, zero-size, invisible)
@@ -7728,36 +7731,35 @@ export class AgentLoop {
               continue;
             }
 
-            // Pre-dispatch element ID validation
-            const idError = validateElementIds(
+            const idPreDispatch = assessElementIdPreDispatch({
               toolName,
               args,
-              this.context.getSnapshot(),
-              discoveredTagIds,
-            );
-            if (idError) {
+              snapshot: this.context.getSnapshot(),
+              discoveredIds: discoveredTagIds,
+              currentUrl: this.context.getCurrentUrl(),
+            });
+            if (idPreDispatch.error) {
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content: idError,
+                content: idPreDispatch.error,
               });
               this.log.warn("agent", "Invalid element ID pre-dispatch", {
                 turn: this.turnCount,
                 tool: toolName,
-                args: JSON.stringify(args).slice(0, 100),
+                args: idPreDispatch.logArgs,
                 mode: "sequential",
               });
-              this.traceRecorder?.recordEvent("grounding_mismatch", {
-                turn: this.turnCount,
-                toolName,
-                requestedId:
-                  typeof args.id === "number"
-                    ? args.id
-                    : (args.sourceId ?? args.targetId ?? null),
-                currentUrl: this.context.getCurrentUrl(),
-                reason: "invalid_element_id_pre_dispatch",
-                mode: "sequential",
-              });
+              this.traceRecorder?.recordEvent(
+                "grounding_mismatch",
+                idPreDispatch.traceData
+                  ? {
+                      turn: this.turnCount,
+                      ...idPreDispatch.traceData,
+                      mode: "sequential",
+                    }
+                  : {},
+              );
               continue;
             }
 
