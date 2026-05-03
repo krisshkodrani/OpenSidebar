@@ -2064,6 +2064,51 @@ export class AgentLoop {
     );
   }
 
+  private async handleDoneToolCall(
+    toolCallId: string,
+    summary: string,
+    tabId: number,
+  ): Promise<boolean> {
+    if (await this.rejectDoneBeforePlanValidation(toolCallId, summary, tabId)) {
+      return false;
+    }
+
+    // Planner validation: only when a plan exists
+    if (this.taskId && this.planSubtasks.length > 0) {
+      const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
+      let shouldReject = donePlanPrecheck.shouldReject;
+      let rejectReason = donePlanPrecheck.rejectReason;
+      const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
+      const completedMoneyTableAggregate =
+        donePlanPrecheck.completedMoneyTableAggregate;
+
+      ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
+        summary,
+        effectiveCurrentIdx,
+        completedMoneyTableAggregate,
+        shouldReject,
+        rejectReason,
+      ));
+
+      if (shouldReject) {
+        this.handleDonePlanRejection(
+          toolCallId,
+          summary,
+          rejectReason,
+          effectiveCurrentIdx,
+        );
+        return false;
+      }
+    }
+
+    if (this.rejectDoneForMissingRequiredEvidence(toolCallId)) {
+      return false;
+    }
+
+    this.acceptDoneToolCall(summary, toolCallId);
+    return true;
+  }
+
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
     const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
     if (missingRequiredEvidence.length === 0) return false;
@@ -8487,56 +8532,12 @@ export class AgentLoop {
             if (toolName === ToolName.DONE) {
               const summary = (args.summary as string) || "Task completed.";
 
-              if (
-                await this.rejectDoneBeforePlanValidation(
-                  toolCall.id,
-                  summary,
-                  tabId,
-                )
-              ) {
+              if (!(await this.handleDoneToolCall(toolCall.id, summary, tabId))) {
                 continue;
               }
 
-              // Planner validation: only when a plan exists
-              if (this.taskId && this.planSubtasks.length > 0) {
-                const donePlanPrecheck =
-                  this.evaluateDonePlanPrecheck(summary);
-                let shouldReject = donePlanPrecheck.shouldReject;
-                let rejectReason = donePlanPrecheck.rejectReason;
-                const effectiveCurrentIdx =
-                  donePlanPrecheck.effectiveCurrentIdx;
-                const completedMoneyTableAggregate =
-                  donePlanPrecheck.completedMoneyTableAggregate;
-
-                ({ shouldReject, rejectReason } =
-                  await this.evaluateDonePlanValidation(
-                    summary,
-                    effectiveCurrentIdx,
-                    completedMoneyTableAggregate,
-                    shouldReject,
-                    rejectReason,
-                  ));
-
-                if (shouldReject) {
-                  this.handleDonePlanRejection(
-                    toolCall.id,
-                    summary,
-                    rejectReason,
-                    effectiveCurrentIdx,
-                  );
-                  continue; // Resume executor loop
-                }
-              }
-
-              if (this.rejectDoneForMissingRequiredEvidence(toolCall.id)) {
-                continue;
-              }
-
-              // --- Normal done handling ---
-              this.acceptDoneToolCall(summary, toolCall.id);
               doneSummary = summary;
               doneSignaled = true;
-
               break;
             }
 
