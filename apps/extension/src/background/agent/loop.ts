@@ -221,6 +221,7 @@ import {
   buildZeroEffectDecision,
   buildFirstTurnTextOnlyNudge,
   classifyTurnError,
+  countTrailingToolResultOutcomes,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
   detectPendingAsyncChange,
@@ -246,6 +247,7 @@ import {
   SubgoalAttempt,
   TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
+  updateConsecutiveAllFailTurns,
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
 import {
@@ -8155,33 +8157,16 @@ export class AgentLoop {
 
         // --- Circuit Breaker: track tool failures ---
         if (!doneSignaled) {
-          // Count successes/failures from this turn's tool results
-          let turnSuccesses = 0;
-          let turnFailures = 0;
           const recentMessages = this.context.getMessages();
-          // Look at the tool results we just added (they're the most recent messages)
-          for (let i = recentMessages.length - 1; i >= 0; i--) {
-            const msg = recentMessages[i];
-            if (msg.role !== "tool") break;
-            const content = typeof msg.content === "string" ? msg.content : "";
-            if (
-              content.startsWith("Error:") ||
-              content.includes("does not appear to be") ||
-              content.includes("No element with tag") ||
-              content.includes("Click intercepted")
-            ) {
-              turnFailures++;
-            } else {
-              turnSuccesses++;
-            }
-          }
+          const { turnSuccesses, turnFailures } =
+            countTrailingToolResultOutcomes(recentMessages);
 
           // A. Consecutive all-fail turns
-          if (turnFailures > 0 && turnSuccesses === 0) {
-            consecutiveAllFailTurns++;
-          } else {
-            consecutiveAllFailTurns = 0;
-          }
+          consecutiveAllFailTurns = updateConsecutiveAllFailTurns({
+            previousCount: consecutiveAllFailTurns,
+            turnSuccesses,
+            turnFailures,
+          });
 
           if (consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail) {
             this.log.warn(
