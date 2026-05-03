@@ -8,6 +8,7 @@ import {
   assessPreflightElement,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
+  assessSameUrlForcedEscalation,
   assessToolCacheHit,
   assessStepDurationWatchdog,
   buildZeroEffectDecision,
@@ -856,6 +857,46 @@ describe("assessStepDurationWatchdog", () => {
         ...base,
         turnsOnCurrentStep: 5,
         cooldownRemaining: 1,
+      }),
+    ).toEqual({ kind: "none" });
+  });
+});
+
+describe("assessSameUrlForcedEscalation", () => {
+  it("escalates when same-url turns reach the threshold", () => {
+    expect(
+      assessSameUrlForcedEscalation({
+        escalationTier: 0,
+        cooldownRemaining: 0,
+        sameUrlTurns: 5,
+        sameUrlEscalate: 5,
+      }),
+    ).toEqual({ kind: "escalate" });
+  });
+
+  it("does not escalate below threshold, while escalated, or during cooldown", () => {
+    expect(
+      assessSameUrlForcedEscalation({
+        escalationTier: 0,
+        cooldownRemaining: 0,
+        sameUrlTurns: 4,
+        sameUrlEscalate: 5,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(
+      assessSameUrlForcedEscalation({
+        escalationTier: 1,
+        cooldownRemaining: 0,
+        sameUrlTurns: 5,
+        sameUrlEscalate: 5,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(
+      assessSameUrlForcedEscalation({
+        escalationTier: 0,
+        cooldownRemaining: 1,
+        sameUrlTurns: 5,
+        sameUrlEscalate: 5,
       }),
     ).toEqual({ kind: "none" });
   });

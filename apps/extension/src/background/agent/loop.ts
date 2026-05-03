@@ -215,6 +215,7 @@ import {
   assessRedundantSuccessBlock,
   assessDeadEndPattern,
   assessReadElementSameIdNudge,
+  assessSameUrlForcedEscalation,
   assessStepDurationWatchdog,
   assessToolCacheHit,
   buildFailureBrief,
@@ -8576,11 +8577,13 @@ export class AgentLoop {
 
         // Trigger A: Same-URL forced escalation — fires even without a plan/subtask structure.
         // Catches the agent spinning on one page regardless of DOM changes (Fix 5A).
-        if (
-          escalationTier < 1 &&
-          cooldownRemaining <= 0 &&
-          this.stagnation.sameUrlTurns >= this.limits.sameUrlEscalate
-        ) {
+        const sameUrlEscalation = assessSameUrlForcedEscalation({
+          escalationTier,
+          cooldownRemaining,
+          sameUrlTurns: this.stagnation.sameUrlTurns,
+          sameUrlEscalate: this.limits.sameUrlEscalate,
+        });
+        if (sameUrlEscalation.kind === "escalate") {
           this.log.warn("agent", "Same-URL forced escalation", {
             turn: this.turnCount,
             sameUrlTurns: this.stagnation.sameUrlTurns,
