@@ -1,4 +1,5 @@
 import { Citation, SessionMetrics, ToolName } from "../../types";
+import type { PerceptionRuntimeModeDecision } from "../../utils/perception-mode";
 import { estimateCostUsd } from "../llm/pricing";
 import { CompletionResponse, ProviderConfig, TokenUsage } from "../llm/types";
 
@@ -156,6 +157,17 @@ export function recordVisionTelemetryUsage(args: {
 
 export function recordCachedVisionTelemetryUse(metrics: SessionMetrics): void {
   metrics.cachedVisionCallCount = (metrics.cachedVisionCallCount ?? 0) + 1;
+}
+
+export function recordPerceptionModeDecision(
+  metrics: SessionMetrics,
+  decision: PerceptionRuntimeModeDecision,
+): void {
+  metrics.perceptionModeDecision = {
+    mode: decision.mode,
+    reason: decision.reason,
+    signals: [...decision.signals],
+  };
 }
 
 export function recordTelemetryCitation(args: {

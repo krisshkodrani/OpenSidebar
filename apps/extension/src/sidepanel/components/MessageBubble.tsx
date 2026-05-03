@@ -180,24 +180,25 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
   const models = Object.entries(metrics.modelBreakdown);
   const showBreakdown = models.length > 1;
   const costMode = resolveCostMode(metrics);
+  const perceptionDecision = metrics.perceptionModeDecision;
 
   return (
     <div className="text-xs text-warm-500 dark:text-warm-400 tabular-nums space-y-0.5">
       <div className="flex items-center gap-1.5 flex-wrap">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
-        <span className="text-warm-300 dark:text-warm-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">Â·</span>
         <span>
           {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "--"}
           {metrics.totalCost > 0 && costMode === "estimated" ? " (est.)" : ""}
           {metrics.totalCost > 0 && costMode === "mixed" ? " (mixed)" : ""}
         </span>
-        <span className="text-warm-300 dark:text-warm-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">Â·</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
         {(metrics.visionCallCount ?? 0) +
           (metrics.cachedVisionCallCount ?? 0) >
           0 && (
           <>
-            <span className="text-warm-300 dark:text-warm-600">·</span>
+            <span className="text-warm-300 dark:text-warm-600">Â·</span>
             <span>
               Vision {metrics.visionCallCount ?? 0}
               {(metrics.cachedVisionCallCount ?? 0) > 0
@@ -206,9 +207,14 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
             </span>
           </>
         )}
-        <span className="text-warm-300 dark:text-warm-600">·</span>
+        <span className="text-warm-300 dark:text-warm-600">Â·</span>
         <span>Total {formatTimeCompact(metrics.totalSessionTimeMs)}</span>
       </div>
+      {perceptionDecision && (
+        <div>
+          Perception {perceptionDecision.mode} Â· {perceptionDecision.reason}
+        </div>
+      )}
       {showBreakdown && (
         <div className="pl-2 space-y-0.5">
           {models.map(([model, data]) => (
@@ -222,7 +228,7 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
               </span>
               {data.cost > 0 && (
                 <>
-                  <span className="text-warm-300 dark:text-warm-600">·</span>
+                  <span className="text-warm-300 dark:text-warm-600">Â·</span>
                   <span>{formatCostCompact(data.cost)}</span>
                 </>
               )}
@@ -300,7 +306,7 @@ function CompletionSummary({
         </span>
       </div>
 
-      {/* Summary — markdown rendered, conversational */}
+      {/* Summary â€” markdown rendered, conversational */}
       {cleanedSummary && (
         <div className="relative group/summary">
           <div
@@ -457,9 +463,9 @@ export const MessageBubble = React.memo(function MessageBubble({
     const MAX_VISIBLE = 3;
     if (labels.length > MAX_VISIBLE) {
       const tail = labels.slice(-MAX_VISIBLE);
-      return `... +${labels.length - MAX_VISIBLE} → ${tail.join(" → ")}`;
+      return `... +${labels.length - MAX_VISIBLE} â†’ ${tail.join(" â†’ ")}`;
     }
-    return labels.join(" → ");
+    return labels.join(" â†’ ");
   }, [
     isUser,
     renderedHtml,
@@ -548,7 +554,7 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
-      {/* TTS speaker icon — assistant messages with content */}
+      {/* TTS speaker icon â€” assistant messages with content */}
       {voiceOutputEnabled && (groqApiKey || openaiApiKey || geminiApiKey) && !isUser && renderedHtml && !message.isStreaming && (
         <div className="flex items-center gap-1.5 mt-1">
           <button

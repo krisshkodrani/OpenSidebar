@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   emptySessionMetrics,
   recordCachedVisionTelemetryUse,
+  recordPerceptionModeDecision,
   recordVisionTelemetryUsage,
 } from "../../src/background/agent/agent-telemetry";
 
@@ -26,5 +27,21 @@ describe("agent telemetry", () => {
     expect(metrics.cachedVisionCallCount).toBe(1);
     expect(metrics.llmCallCount).toBe(1);
     expect(metrics.totalTokens).toBe(120);
+  });
+
+  test("records perception mode decisions defensively", () => {
+    const metrics = emptySessionMetrics();
+
+    recordPerceptionModeDecision(metrics, {
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: ["visual_task_text"],
+    });
+
+    expect(metrics.perceptionModeDecision).toEqual({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: ["visual_task_text"],
+    });
   });
 });

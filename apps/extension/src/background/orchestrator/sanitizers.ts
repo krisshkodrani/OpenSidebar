@@ -724,6 +724,26 @@ export function sanitizeSessionMetrics(
     raw.cachedVisionCallCount >= 0
       ? raw.cachedVisionCallCount
       : 0;
+  let perceptionModeDecision: SessionMetrics["perceptionModeDecision"];
+  if (raw.perceptionModeDecision !== undefined) {
+    if (!isRecord(raw.perceptionModeDecision)) return null;
+    const mode = raw.perceptionModeDecision.mode;
+    const reason = raw.perceptionModeDecision.reason;
+    const signals = raw.perceptionModeDecision.signals;
+    if (
+      (mode !== "structured" && mode !== "unified_vl") ||
+      typeof reason !== "string" ||
+      !Array.isArray(signals) ||
+      !signals.every((signal) => typeof signal === "string")
+    ) {
+      return null;
+    }
+    perceptionModeDecision = {
+      mode,
+      reason,
+      signals: [...signals],
+    };
+  }
 
   return {
     totalPromptTokens: raw.totalPromptTokens as number,
@@ -738,6 +758,7 @@ export function sanitizeSessionMetrics(
     llmCallCount: raw.llmCallCount as number,
     visionCallCount,
     cachedVisionCallCount,
+    perceptionModeDecision,
     totalCachedTokens: raw.totalCachedTokens as number,
     modelBreakdown,
   };
@@ -796,6 +817,13 @@ export function mergeSessionMetrics(
   target.cachedVisionCallCount =
     (target.cachedVisionCallCount ?? 0) +
     (incoming.cachedVisionCallCount ?? 0);
+  if (incoming.perceptionModeDecision) {
+    target.perceptionModeDecision = {
+      mode: incoming.perceptionModeDecision.mode,
+      reason: incoming.perceptionModeDecision.reason,
+      signals: [...incoming.perceptionModeDecision.signals],
+    };
+  }
   target.totalCachedTokens += incoming.totalCachedTokens;
   for (const [model, metrics] of Object.entries(incoming.modelBreakdown)) {
     const existing = target.modelBreakdown[model] || {

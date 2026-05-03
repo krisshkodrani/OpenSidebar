@@ -691,6 +691,12 @@ export interface SessionMetrics {
   visionCallCount?: number;
   /** Number of cached screenshot/perception observations reused without a model call */
   cachedVisionCallCount?: number;
+  /** Selected perception path and why it was chosen for this run */
+  perceptionModeDecision?: {
+    mode: "structured" | "unified_vl";
+    reason: string;
+    signals: string[];
+  };
   /** Total prompt tokens served from cache (prefix caching) */
   totalCachedTokens: number;
   /** Per-model breakdown */

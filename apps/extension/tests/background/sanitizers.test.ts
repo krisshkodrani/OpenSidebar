@@ -86,6 +86,11 @@ function validSessionMetrics() {
     llmCallCount: 3,
     visionCallCount: 1,
     cachedVisionCallCount: 2,
+    perceptionModeDecision: {
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: ["visual_task_text"],
+    },
     totalCachedTokens: 20,
     modelBreakdown: {},
   };
@@ -481,6 +486,11 @@ describe("sanitizeSessionMetrics", () => {
     expect(result!.totalTokens).toBe(150);
     expect(result!.visionCallCount).toBe(1);
     expect(result!.cachedVisionCallCount).toBe(2);
+    expect(result!.perceptionModeDecision).toEqual({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: ["visual_task_text"],
+    });
   });
 
   test("rejects NaN in numeric fields", () => {
@@ -565,6 +575,19 @@ describe("sanitizeSessionMetrics", () => {
       }),
     ).toBeNull();
   });
+
+  test("rejects invalid perception mode decisions", () => {
+    expect(
+      sanitizeSessionMetrics({
+        ...validSessionMetrics(),
+        perceptionModeDecision: {
+          mode: "auto",
+          reason: "bad",
+          signals: [],
+        },
+      }),
+    ).toBeNull();
+  });
 });
 
 // ========================================================================
@@ -639,17 +662,32 @@ describe("mergeSessionMetrics", () => {
     target.totalTokens = 100;
     target.llmCallCount = 2;
     target.visionCallCount = 1;
+    target.perceptionModeDecision = {
+      mode: "structured",
+      reason: "dom_signals_sufficient",
+      signals: [],
+    };
 
     const incoming = emptySessionMetrics();
     incoming.totalTokens = 50;
     incoming.llmCallCount = 1;
     incoming.cachedVisionCallCount = 2;
+    incoming.perceptionModeDecision = {
+      mode: "unified_vl",
+      reason: "canvas_present",
+      signals: ["canvas_present"],
+    };
 
     const result = mergeSessionMetrics(target, incoming);
     expect(result.totalTokens).toBe(150);
     expect(result.llmCallCount).toBe(3);
     expect(result.visionCallCount).toBe(1);
     expect(result.cachedVisionCallCount).toBe(2);
+    expect(result.perceptionModeDecision).toEqual({
+      mode: "unified_vl",
+      reason: "canvas_present",
+      signals: ["canvas_present"],
+    });
   });
 
   test("merges modelBreakdown entries", () => {
