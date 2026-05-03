@@ -12,6 +12,7 @@ import {
   countTrailingToolResultOutcomes,
   recordRecentSuccessfulAction,
   updateConsecutiveAllFailTurns,
+  updateExplorationBudget,
   updateSameToolFailureTracking,
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
@@ -621,5 +622,52 @@ describe("updateSameToolFailureTracking", () => {
     ).toEqual({ kind: "none", count: 0 });
     expect(toolFailCounts.has('click_element:{"id":7}')).toBe(false);
     expect(blockedActions).toHaveLength(0);
+  });
+});
+
+describe("updateExplorationBudget", () => {
+  const explorationOnlyTools = new Set<string>([
+    ToolName.READ_PAGE,
+    ToolName.FIND_ELEMENT,
+  ]);
+
+  it("increments discovery-only turns without nudging below threshold", () => {
+    expect(
+      updateExplorationBudget({
+        previousCount: 1,
+        toolNames: [ToolName.READ_PAGE, ToolName.FIND_ELEMENT],
+        explorationOnlyTools,
+        maxConsecutive: 3,
+      }),
+    ).toEqual({
+      consecutiveTurns: 2,
+      message: null,
+    });
+  });
+
+  it("returns a nudge at the exploration threshold", () => {
+    const decision = updateExplorationBudget({
+      previousCount: 2,
+      toolNames: [ToolName.READ_PAGE],
+      explorationOnlyTools,
+      maxConsecutive: 3,
+    });
+
+    expect(decision.consecutiveTurns).toBe(3);
+    expect(decision.message).toContain("only reading/inspecting");
+  });
+
+  it("resets when the turn includes an action tool", () => {
+    expect(
+      updateExplorationBudget({
+        previousCount: 2,
+        toolNames: [ToolName.CLICK_ELEMENT],
+        explorationOnlyTools,
+        maxConsecutive: 3,
+      }),
+    ).toEqual({
+      consecutiveTurns: 0,
+      message: null,
+    });
   });
 });
