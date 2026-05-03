@@ -220,6 +220,7 @@ import {
   assessToolCacheHit,
   buildFailureBrief,
   buildHandoffBriefing,
+  buildSubgoalAttempt,
   buildStructuredFailureContext,
   buildZeroEffectDecision,
   buildFirstTurnTextOnlyNudge,
@@ -8386,29 +8387,15 @@ export class AgentLoop {
                 windowSize: STAGNATION_DETECTION.WINDOW,
               });
 
-              // Accumulate subgoal attempts for cumulative failure brief
-              const toolName = toolCall.function.name;
-              const firstLine = resultContent.split("\n")[0].slice(0, 120);
-              const wasFailure =
-                firstLine.startsWith("Error:") ||
-                firstLine.includes("does not appear") ||
-                firstLine.includes("No element with tag") ||
-                firstLine.includes("Click intercepted") ||
-                firstLine.includes("REJECTED");
-              let argSnippet = "";
-              try {
-                argSnippet = toolCall.function.arguments.slice(0, 100);
-              } catch {
-                /* */
-              }
-              subgoalAttempts.push({
-                turn: this.turnCount,
-                tool: toolName,
-                args: argSnippet,
-                outcome: firstLine,
-                wasFailure,
-                snapshotFp: currentSnapshotFp,
-              });
+              subgoalAttempts.push(
+                buildSubgoalAttempt({
+                  turn: this.turnCount,
+                  toolName: toolCall.function.name,
+                  toolArguments: toolCall.function.arguments,
+                  resultContent,
+                  snapshotFp: currentSnapshotFp,
+                }),
+              );
             }
           }
           // Check for dead-end pattern (all recent outcomes identical AND same page state)

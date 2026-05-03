@@ -11,6 +11,7 @@ import {
   assessSameUrlForcedEscalation,
   assessToolCacheHit,
   assessStepDurationWatchdog,
+  buildSubgoalAttempt,
   buildZeroEffectDecision,
   countTrailingToolResultOutcomes,
   normalizeOutcome,
@@ -899,5 +900,55 @@ describe("assessSameUrlForcedEscalation", () => {
         sameUrlEscalate: 5,
       }),
     ).toEqual({ kind: "none" });
+  });
+});
+
+describe("buildSubgoalAttempt", () => {
+  it("formats successful tool attempts for failure brief tracking", () => {
+    expect(
+      buildSubgoalAttempt({
+        turn: 7,
+        toolName: "click_element",
+        toolArguments: '{"id":123,"extra":"long"}',
+        resultContent: "Clicked [123]\nExtra detail",
+        snapshotFp: "page-a",
+      }),
+    ).toEqual({
+      turn: 7,
+      tool: "click_element",
+      args: '{"id":123,"extra":"long"}',
+      outcome: "Clicked [123]",
+      wasFailure: false,
+      snapshotFp: "page-a",
+    });
+  });
+
+  it("marks failed-looking outcomes as failures and truncates args/outcome", () => {
+    const longArgs = `{"id":${"1".repeat(140)}}`;
+    const longResult = `Error: ${"x".repeat(160)}\nMore detail`;
+
+    const attempt = buildSubgoalAttempt({
+      turn: 8,
+      toolName: "click_element",
+      toolArguments: longArgs,
+      resultContent: longResult,
+      snapshotFp: "page-b",
+    });
+
+    expect(attempt.wasFailure).toBe(true);
+    expect(attempt.args).toHaveLength(100);
+    expect(attempt.outcome).toHaveLength(120);
+  });
+
+  it("falls back to empty args for non-string tool arguments", () => {
+    const attempt = buildSubgoalAttempt({
+      turn: 9,
+      toolName: "click_element",
+      toolArguments: { id: 123 },
+      resultContent: "Clicked [123]",
+      snapshotFp: "page-c",
+    });
+
+    expect(attempt.args).toBe("");
   });
 });
