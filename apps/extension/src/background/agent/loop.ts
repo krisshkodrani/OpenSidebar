@@ -215,6 +215,7 @@ import {
   assessRedundantSuccessBlock,
   assessDeadEndPattern,
   assessReadElementSameIdNudge,
+  assessStepDurationWatchdog,
   assessToolCacheHit,
   buildFailureBrief,
   buildHandoffBriefing,
@@ -8486,16 +8487,17 @@ export class AgentLoop {
           }
 
           // E. Step duration watchdog
-          if (
-            this.taskId &&
-            this.planSubtasks.length > 0 &&
-            this.turnsOnCurrentStep > 0
-          ) {
-            if (
-              this.turnsOnCurrentStep >= this.limits.stepEscalateTurns &&
-              escalationTier < 1 &&
-              cooldownRemaining <= 0
-            ) {
+          {
+            const stepWatchdog = assessStepDurationWatchdog({
+              hasTaskId: Boolean(this.taskId),
+              planSubtaskCount: this.planSubtasks.length,
+              turnsOnCurrentStep: this.turnsOnCurrentStep,
+              escalationTier,
+              cooldownRemaining,
+              warnTurns: this.limits.stepWarnTurns,
+              escalateTurns: this.limits.stepEscalateTurns,
+            });
+            if (stepWatchdog.kind === "escalate") {
               this.log.warn("agent", "Step watchdog: force escalation", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
@@ -8554,7 +8556,7 @@ export class AgentLoop {
                   false,
                 );
               }
-            } else if (this.turnsOnCurrentStep === this.limits.stepWarnTurns) {
+            } else if (stepWatchdog.kind === "warn") {
               this.log.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
