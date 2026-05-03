@@ -25,14 +25,6 @@ export function classifyConsequentialActionConsentMode(
   taskText: string,
 ): ConsequentialActionConsentMode {
   if (
-    /\b(?:do not|don't|never)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
-      taskText,
-    )
-  ) {
-    return "forbidden";
-  }
-
-  if (
     /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b/i.test(
       taskText,
     ) ||
@@ -41,6 +33,14 @@ export function classifyConsequentialActionConsentMode(
     )
   ) {
     return "prepare_only";
+  }
+
+  if (
+    /\b(?:do not|don't|never)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
+      taskText,
+    )
+  ) {
+    return "forbidden";
   }
 
   if (
