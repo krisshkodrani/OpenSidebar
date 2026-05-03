@@ -154,8 +154,12 @@ import {
 } from "./agent-interaction-steps";
 import {
   advanceCompletedPlanSubtasks,
+  buildCompletedPlanStepSummaries,
+  buildFailedPlanStep,
   buildInitialPlanSubtasks,
+  buildPlanMonitorReplanMessage,
   buildPlanReplacementState,
+  buildPlanRevisionMessage,
   buildPlanStatusEntries,
   buildPlanStatusSnapshot,
   buildRestoredPlanState,
@@ -3533,20 +3537,10 @@ export class AgentLoop {
     const perception = this.perception.getInterpretation() || "";
     const pageUrl = this.context.getSnapshot()?.url || "";
 
-    // Build completed steps summary
-    const completedSteps = this.planSubtasks
-      .map((s, i) => ({ index: i, objective: s.description, result: s.result }))
-      .filter((s) => this.planSubtasks[s.index].status === "completed");
-
     const runningIdx = this.planSubtasks.findIndex(
       (s) => s.status === "running",
     );
     if (runningIdx < 0) return;
-
-    const failedStep = {
-      index: runningIdx,
-      objective: this.planSubtasks[runningIdx].description,
-    };
 
     this.stepHandler(
       {
@@ -3561,8 +3555,8 @@ export class AgentLoop {
 
     const replanResult = await this.planner.replanFrom(
       this.originalQuery,
-      completedSteps,
-      failedStep,
+      buildCompletedPlanStepSummaries(this.planSubtasks),
+      buildFailedPlanStep(this.planSubtasks, runningIdx),
       perception,
       pageUrl,
       signal,
@@ -3591,13 +3585,11 @@ export class AgentLoop {
     // Inject plan monitor message into conversation
     this.context.addMessage({
       role: "user",
-      content:
-        `[Plan Monitor]: Plan deviated at step ${runningIdx + 1}. Reason: ${monitorResult.reason}\n` +
-        `Replanned from step ${runningIdx + 1}:\n` +
-        replanResult.newSteps
-          .map((s, i) => `${runningIdx + i + 1}. ${s.objective}`)
-          .join("\n") +
-        `\n\nExecute step ${runningIdx + 1} now.`,
+      content: buildPlanMonitorReplanMessage({
+        fromIndex: runningIdx,
+        reason: monitorResult.reason,
+        replacementSteps: replanResult.newSteps,
+      }),
     });
 
     // Broadcast updated progress
@@ -3723,25 +3715,11 @@ export class AgentLoop {
     const perception = this.perception.getInterpretation() || "";
     const pageUrl = this.context.getSnapshot()?.url || "";
 
-    // Build completed steps summary
-    const completedSteps = this.planSubtasks
-      .map((s, i) => ({
-        index: i,
-        objective: s.description,
-        result: s.result,
-      }))
-      .filter((s) => this.planSubtasks[s.index].status === "completed");
-
-    const failedStep = {
-      index: runningIdx,
-      objective: stuckStepGoal,
-    };
-
     // Call the planner to replan (temporarily — no model switch needed, planner has its own LLM)
     const replanResult = await this.planner.replanFrom(
       this.originalQuery,
-      completedSteps,
-      failedStep,
+      buildCompletedPlanStepSummaries(this.planSubtasks),
+      buildFailedPlanStep(this.planSubtasks, runningIdx),
       perception,
       pageUrl,
       signal,
@@ -3776,13 +3754,11 @@ export class AgentLoop {
     });
     this.context.addMessage({
       role: "user",
-      content:
-        `[Plan Revised]: Step ${runningIdx + 1} was stuck. New plan:\n` +
-        replanResult.newSteps
-          .map((s, i) => `${runningIdx + i + 1}. ${s.objective}`)
-          .join("\n") +
-        `\n\nReason: ${replanResult.reason}\n` +
-        `Execute step ${runningIdx + 1} now.`,
+      content: buildPlanRevisionMessage({
+        fromIndex: runningIdx,
+        reason: replanResult.reason,
+        replacementSteps: replanResult.newSteps,
+      }),
     });
 
     // Reset step tracking for the new step
