@@ -159,6 +159,32 @@ export function validateTextEntryTarget(
   return null;
 }
 
+export interface TextEntryClickGuardDecision {
+  blockReason: string | null;
+  explicitValue: string | null;
+}
+
+export function assessTextEntryClickGuard(params: {
+  objectiveText: string;
+  element: DomSnapshot["elements"][number] | null | undefined;
+  targetId: number;
+}): TextEntryClickGuardDecision {
+  const explicitValue = extractExplicitInputValueForElement(
+    params.objectiveText,
+    params.element,
+  );
+  if (!isTextLikeInputElement(params.element) || !explicitValue) {
+    return { blockReason: null, explicitValue };
+  }
+
+  return {
+    explicitValue,
+    blockReason:
+      `Error: This step requires entering "${explicitValue}" into [${params.targetId}]. ` +
+      `Use type_text instead of click_element on this input.`,
+  };
+}
+
 function isAutocompleteLikeElement(
   element: DomSnapshot["elements"][number] | null | undefined,
 ): boolean {

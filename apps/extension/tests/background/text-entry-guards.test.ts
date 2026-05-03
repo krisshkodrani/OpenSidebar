@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 
 import {
+  assessTextEntryClickGuard,
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "../../src/background/agent/text-entry-guards";
@@ -49,6 +50,36 @@ describe("text entry guards", () => {
         "user@example.com",
       ),
     ).toBeNull();
+  });
+
+  test("blocks clicking a text input when the objective requires typing a value", () => {
+    expect(
+      assessTextEntryClickGuard({
+        objectiveText: "Set the email address with user@example.com",
+        element: element({
+          attributes: { type: "email", placeholder: "Email" },
+        }),
+        targetId: 7,
+      }),
+    ).toEqual({
+      explicitValue: "user@example.com",
+      blockReason:
+        'Error: This step requires entering "user@example.com" into [7]. ' +
+        "Use type_text instead of click_element on this input.",
+    });
+  });
+
+  test("allows clicking non-text inputs for text-entry objectives", () => {
+    expect(
+      assessTextEntryClickGuard({
+        objectiveText: "Set the email address with user@example.com",
+        element: element({ attributes: { type: "checkbox" } }),
+        targetId: 7,
+      }),
+    ).toEqual({
+      explicitValue: null,
+      blockReason: null,
+    });
   });
 
   test("rewrites autocomplete text entry to a prefix", () => {

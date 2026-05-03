@@ -83,7 +83,7 @@ import {
   type MoneyTableAggregate,
 } from "./money-table-aggregate";
 import {
-  extractExplicitInputValueForElement,
+  assessTextEntryClickGuard,
   isTextLikeInputElement,
   normalizeGuardText,
   rewriteAutocompleteTextEntry,
@@ -7240,22 +7240,24 @@ export class AgentLoop {
                 const activeObjective =
                   planStatus?.subtasks[planStatus.currentIndex]?.description ??
                   this.originalQuery;
-                const explicitValue = extractExplicitInputValueForElement(
-                  activeObjective,
-                  target,
-                );
-                if (isTextLikeInputElement(target) && explicitValue) {
-                  const blockReason =
-                    `Error: This step requires entering "${explicitValue}" into [${args.id}]. ` +
-                    `Use type_text instead of click_element on this input.`;
+                const textEntryClickGuard = assessTextEntryClickGuard({
+                  objectiveText: activeObjective,
+                  element: target,
+                  targetId: args.id,
+                });
+                if (textEntryClickGuard.blockReason) {
                   this.log.warn("agent", "Text entry click blocked", {
                     turn: this.turnCount,
                     tool: toolName,
                     id: args.id,
-                    explicitValue,
+                    explicitValue: textEntryClickGuard.explicitValue,
                     mode: "parallel",
                   });
-                  return { toolCall, result: null, error: blockReason };
+                  return {
+                    toolCall,
+                    result: null,
+                    error: textEntryClickGuard.blockReason,
+                  };
                 }
               }
 
@@ -7905,24 +7907,22 @@ export class AgentLoop {
               const activeObjective =
                 planStatus?.subtasks[planStatus.currentIndex]?.description ??
                 this.originalQuery;
-              const explicitValue = extractExplicitInputValueForElement(
-                activeObjective,
-                target,
-              );
-              if (isTextLikeInputElement(target) && explicitValue) {
-                const blockReason =
-                  `Error: This step requires entering "${explicitValue}" into [${args.id}]. ` +
-                  `Use type_text instead of click_element on this input.`;
+              const textEntryClickGuard = assessTextEntryClickGuard({
+                objectiveText: activeObjective,
+                element: target,
+                targetId: args.id,
+              });
+              if (textEntryClickGuard.blockReason) {
                 this.context.addMessage({
                   role: "tool",
                   tool_call_id: toolCall.id,
-                  content: blockReason,
+                  content: textEntryClickGuard.blockReason,
                 });
                 this.log.warn("agent", "Text entry click blocked", {
                   turn: this.turnCount,
                   tool: toolName,
                   id: args.id,
-                  explicitValue,
+                  explicitValue: textEntryClickGuard.explicitValue,
                   mode: "sequential",
                 });
                 continue;
