@@ -2680,6 +2680,19 @@ export function selectPrimarySkill(input: {
     };
   }
 
+  if (
+    catalogOrderPattern.test(corpus) &&
+    /\b(order|request|catalog|quantity|configure|cart|laptop|software|item)\b/i.test(
+      corpus,
+    )
+  ) {
+    return {
+      id: "catalog-order-workflow",
+      reason:
+        "Task requires configuring and ordering a catalog item through request or order confirmation.",
+    };
+  }
+
   if (consequentialActionConsentPattern.test(corpus)) {
     return {
       id: "consequential-action-consent",
@@ -2722,18 +2735,6 @@ export function selectPrimarySkill(input: {
     };
   }
 
-  if (
-    catalogOrderPattern.test(corpus) &&
-    /\b(order|request|catalog|quantity|configure|cart|laptop|software|item)\b/i.test(
-      corpus,
-    )
-  ) {
-    return {
-      id: "catalog-order-workflow",
-      reason:
-        "Task requires configuring and ordering a catalog item through request or order confirmation.",
-    };
-  }
 
   if (
     searchAnswerPattern.test(corpus) &&
