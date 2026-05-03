@@ -239,6 +239,7 @@ import {
   matchSuccessCriteria,
   MAX_TURN_RETRIES,
   normalizeOutcome,
+  recordRecentSuccessfulAction,
   RecentAction,
   requiresGroundingReadBeforeDone,
   RETRYABLE_ERRORS,
@@ -271,6 +272,7 @@ import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
   handleSwitchTabToolCall,
+  storeSuccessfulToolResult,
   handleUpdateNotesToolCall,
   handleWaitToolCall,
   type AgentLoopToolHandlerHost,
@@ -7404,16 +7406,10 @@ export class AgentLoop {
                   this.hasReadPage = true;
                 }
 
-                // Cache store (Feature 1): cache successful results for cacheable tools
-                if (cacheType && !result.startsWith("Error:")) {
-                  const fp = getSnapshotFingerprint(this.context.getSnapshot());
-                  this.toolCache.set(
-                    ToolResultCache.key(toolName, args),
-                    result,
-                    fp,
-                    cacheType,
-                  );
-                }
+                storeSuccessfulToolResult(
+                  this as unknown as AgentLoopToolHandlerHost,
+                  { toolName, args, result, cacheType },
+                );
 
                 // Track investigation tools during orientation for adaptive tier allocation
                 if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
@@ -8409,89 +8405,53 @@ export class AgentLoop {
             );
             const resultContent =
               typeof toolResult?.content === "string" ? toolResult.content : "";
-            const isSuccess =
-              !resultContent.startsWith("Error:") &&
-              !resultContent.includes("does not appear to be") &&
-              !resultContent.includes("No element with tag") &&
-              !resultContent.includes("Click intercepted") &&
-              !resultContent.includes("REJECTED");
+            const recentSuccessDecision = recordRecentSuccessfulAction({
+              recentSuccesses,
+              toolName,
+              argsKey,
+              resultContent,
+              snapshot: this.context.getSnapshot(),
+              windowSize: REDUNDANT_ACTION.WINDOW,
+              infoThreshold: REDUNDANT_ACTION.INFO_THRESHOLD,
+              toolNameInfoThreshold:
+                REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD,
+            });
 
-            if (isSuccess) {
-              // Push to ring buffer (capped at WINDOW size)
-              const actionFingerprint = getSnapshotFingerprint(
-                this.context.getSnapshot(),
-              );
-              recentSuccesses.push({
+            if (recentSuccessDecision.kind === "redundant_nudge") {
+              this.log.info("agent", "Redundant action nudge", {
+                turn: this.turnCount,
                 tool: toolName,
-                args: argsKey,
-                result: resultContent,
-                snapshotFingerprint: actionFingerprint,
+                sameStateCount: recentSuccessDecision.sameStateCount,
+                totalRepeats: recentSuccessDecision.totalRepeatCount,
               });
-              if (recentSuccesses.length > REDUNDANT_ACTION.WINDOW) {
-                recentSuccesses.shift();
-              }
-
-              // Count repetitions of this tool+args WITH same page state in the window
-              const sameStateCount = recentSuccesses.filter(
-                (entry) =>
-                  entry.tool === toolName &&
-                  entry.args === argsKey &&
-                  entry.snapshotFingerprint === actionFingerprint,
-              ).length;
-              // Also count total calls to this tool+args regardless of page state
-              const totalRepeatCount = recentSuccesses.filter(
-                (entry) => entry.tool === toolName && entry.args === argsKey,
-              ).length;
-
-              // If page state changed between calls, the action is making progress — no nudge
-              // Only nudge when same action + same page state (truly stuck)
-              if (sameStateCount >= REDUNDANT_ACTION.INFO_THRESHOLD) {
-                this.log.info("agent", "Redundant action nudge", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  sameStateCount,
-                  totalRepeats: totalRepeatCount,
-                });
-                this.traceRecorder?.recordEvent("redundant_action_nudge", {
-                  tool: toolName,
-                  count: sameStateCount,
-                });
-                this.traceRecorder?.recordEvent("multi_turn_pathology", {
-                  pathology: "anchoring",
-                  trigger: "redundant_action_nudge",
-                  turn: this.turnCount,
-                  details: `${toolName} x${sameStateCount} same state`,
-                });
-                this.context.addMessage({
-                  role: "user",
-                  content: `Note: You have called ${toolName} ${sameStateCount} times with similar arguments and the page appears unchanged each time. Consider whether a different approach might be more effective.`,
-                });
-                // Clear the buffer so the nudge doesn't fire every subsequent turn
-                recentSuccesses.length = 0;
-              } else {
-                // Tool-name-only pattern: same tool with varying args
-                const toolNameCount = recentSuccesses.filter(
-                  (entry) => entry.tool === toolName,
-                ).length;
-                if (
-                  toolNameCount >= REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD
-                ) {
-                  this.log.info("agent", "Tool-name pattern noted", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    count: toolNameCount,
-                  });
-                  this.traceRecorder?.recordEvent("tool_name_pattern", {
-                    tool: toolName,
-                    count: toolNameCount,
-                  });
-                  this.context.addMessage({
-                    role: "user",
-                    content: `Note: You have used ${toolName} ${toolNameCount} times in recent turns. If your current approach isn't yielding results, a different strategy might help.`,
-                  });
-                  recentSuccesses.length = 0;
-                }
-              }
+              this.traceRecorder?.recordEvent("redundant_action_nudge", {
+                tool: toolName,
+                count: recentSuccessDecision.sameStateCount,
+              });
+              this.traceRecorder?.recordEvent("multi_turn_pathology", {
+                pathology: "anchoring",
+                trigger: "redundant_action_nudge",
+                turn: this.turnCount,
+                details: `${toolName} x${recentSuccessDecision.sameStateCount} same state`,
+              });
+              this.context.addMessage({
+                role: "user",
+                content: recentSuccessDecision.message,
+              });
+            } else if (recentSuccessDecision.kind === "tool_name_pattern") {
+              this.log.info("agent", "Tool-name pattern noted", {
+                turn: this.turnCount,
+                tool: toolName,
+                count: recentSuccessDecision.toolNameCount,
+              });
+              this.traceRecorder?.recordEvent("tool_name_pattern", {
+                tool: toolName,
+                count: recentSuccessDecision.toolNameCount,
+              });
+              this.context.addMessage({
+                role: "user",
+                content: recentSuccessDecision.message,
+              });
             }
           }
 

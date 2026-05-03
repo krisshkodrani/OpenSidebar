@@ -3,7 +3,7 @@ import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { formatStepLabel } from "./step-labels";
-import { ToolResultCache } from "./tool-cache";
+import { ToolResultCache, type CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
 import { ESCALATION_REFLECTION } from "./loop-prompts";
@@ -183,6 +183,26 @@ export function recordFailedToolExecution(
     true,
   );
   return toolMs;
+}
+
+export function storeSuccessfulToolResult(
+  loop: AgentLoopToolHandlerHost,
+  params: {
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    result: string;
+    cacheType: CacheType | undefined;
+  },
+): void {
+  if (!params.cacheType || params.result.startsWith("Error:")) return;
+
+  const fp = getSnapshotFingerprint(loop.context.getSnapshot());
+  loop.toolCache.set(
+    ToolResultCache.key(params.toolName, params.args),
+    params.result,
+    fp,
+    params.cacheType,
+  );
 }
 
 export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
@@ -875,16 +895,7 @@ export async function handleGenericSequentialToolCall(
     }
   }
 
-  // Cache store (Feature 1): cache successful results for cacheable tools
-  if (cacheType && !result.startsWith("Error:")) {
-    const fp = getSnapshotFingerprint(loop.context.getSnapshot());
-    loop.toolCache.set(
-      ToolResultCache.key(toolName, args),
-      result,
-      fp,
-      cacheType,
-    );
-  }
+  storeSuccessfulToolResult(loop, { toolName, args, result, cacheType });
 
   // Track investigation tools during orientation for adaptive tier allocation
   if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
