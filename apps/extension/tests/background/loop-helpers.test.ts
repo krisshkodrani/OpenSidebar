@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { ACTION_EFFECT } from "../../src/background/agent/constants";
-import { buildZeroEffectDecision } from "../../src/background/agent/loop-helpers";
+import {
+  assessFailedActionRepeat,
+  buildZeroEffectDecision,
+} from "../../src/background/agent/loop-helpers";
 
 describe("buildZeroEffectDecision", () => {
   it("warns on the first consecutive zero-effect turn", () => {
@@ -37,5 +40,46 @@ describe("buildZeroEffectDecision", () => {
     expect(decision.kind).toBe("escalate");
     expect(decision.message).toContain("- click [12] Save");
     expect(decision.message).toContain("- read_page()");
+  });
+});
+
+describe("assessFailedActionRepeat", () => {
+  it("allows actions with no prior matching failure", () => {
+    expect(
+      assessFailedActionRepeat({
+        blockedActions: [
+          {
+            tool: "click_element",
+            argsKey: '{"id":1}',
+            error: "Click failed",
+            turn: 3,
+          },
+        ],
+        tool: "click_element",
+        argsKey: '{"id":2}',
+      }),
+    ).toBeNull();
+  });
+
+  it("blocks exact repeats of prior failed actions", () => {
+    const decision = assessFailedActionRepeat({
+      blockedActions: [
+        {
+          tool: "click_element",
+          argsKey: '{"id":1}',
+          error: "No element with tag 1",
+          turn: 3,
+        },
+      ],
+      tool: "click_element",
+      argsKey: '{"id":1}',
+    });
+
+    expect(decision).toEqual({
+      priorTurn: 3,
+      message:
+        "Error: This exact action already failed at turn 3 with: 'No element with tag 1'. " +
+        "Suggestions: read_page to refresh element IDs, or find_element to locate by text.",
+    });
   });
 });
