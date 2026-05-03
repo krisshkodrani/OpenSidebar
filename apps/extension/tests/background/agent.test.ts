@@ -98,6 +98,7 @@ import {
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
 import { getSnapshotFingerprint } from "../../src/background/agent/loop-helpers";
+import { assessInlineEditTextEntryRetarget } from "../../src/background/agent/text-entry-guards";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
 import type { TaggedElement } from "../../src/types";
@@ -3908,25 +3909,10 @@ Showing 6-10 of 50`,
   });
 
   test("retargets inline-edit text entry from the cell tag to the active input", () => {
-    const agent = new AgentLoop("test-key", {
-      onStatusUpdate: vi.fn(),
-      onMessage: vi.fn(),
-      onStep: vi.fn(),
-    });
-
-    setPlanContext(agent, {
-      subtasks: [
-        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
-      ],
-      planSteps: [
-        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
-      ],
-      snapshotText:
-        "Spreadsheet editor is open for row 1 Q1 Sales while the cell is being edited.",
-    });
-    (agent as any).originalQuery =
-      "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
-    (agent as any).context.getSnapshot = vi.fn(() => ({
+    const result = assessInlineEditTextEntryRetarget({
+      activeToolProfile: "edit_surface",
+      targetId: 37,
+      snapshot: {
       title: "Quarterly Sales Sheet",
       url: "https://example.com/sheet",
       elements: [
@@ -3958,11 +3944,7 @@ Showing 6-10 of 50`,
       scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
       viewportHeight: 800,
       timestamp: Date.now(),
-    }));
-
-    const result = (agent as any).retargetInlineEditTextEntry({
-      targetId: 37,
-      currentStepIndex: 0,
+      },
     });
 
     expect(result).toEqual({

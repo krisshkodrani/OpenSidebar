@@ -3,6 +3,7 @@ import "../setup";
 
 import {
   assessAutocompleteTextRewrite,
+  assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
@@ -81,6 +82,72 @@ describe("text entry guards", () => {
       explicitValue: null,
       blockReason: null,
     });
+  });
+
+  test("retargets inline-edit text entry from a cell to the active input", () => {
+    const result = assessInlineEditTextEntryRetarget({
+      activeToolProfile: "edit_surface",
+      targetId: 37,
+      snapshot: {
+        title: "Sheet",
+        url: "https://example.com/sheet",
+        elements: [
+          element({
+            tag: 37,
+            tagName: "td",
+            role: "gridcell",
+            text: "130",
+            rect: { x: 10, y: 10, width: 80, height: 24 },
+          }),
+          element({
+            tag: 44,
+            tagName: "input",
+            role: "textbox",
+            text: "130",
+            isVisible: true,
+            rect: { x: 12, y: 12, width: 76, height: 20 },
+            attributes: {
+              type: "text",
+              value: "130",
+              "aria-label": "Q1 Sales editor",
+            },
+          }),
+        ],
+        pageContent: "Sheet editor",
+        visibleContent: "Sheet editor",
+        scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+        viewportHeight: 800,
+        timestamp: Date.now(),
+      },
+    });
+
+    expect(result).toEqual({
+      retargetedId: 44,
+      reason:
+        "Retargeted type_text from [37] to the active inline editor [44] for this edit-surface step.",
+    });
+  });
+
+  test("does not retarget inline-edit text entry outside edit-surface profile", () => {
+    expect(
+      assessInlineEditTextEntryRetarget({
+        activeToolProfile: "form_fill",
+        targetId: 37,
+        snapshot: {
+          title: "Sheet",
+          url: "https://example.com/sheet",
+          elements: [
+            element({ tag: 37, tagName: "td", role: "gridcell" }),
+            element({ tag: 44, tagName: "input" }),
+          ],
+          pageContent: "Sheet editor",
+          visibleContent: "Sheet editor",
+          scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+          viewportHeight: 800,
+          timestamp: Date.now(),
+        },
+      }),
+    ).toBeNull();
   });
 
   test("rewrites autocomplete text entry to a prefix", () => {

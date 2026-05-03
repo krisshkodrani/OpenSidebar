@@ -82,6 +82,7 @@ import {
   type MoneyTableAggregate,
 } from "./money-table-aggregate";
 import {
+  assessInlineEditTextEntryRetarget,
   assessAutocompleteTextRewrite,
   assessTextEntryClickGuard,
   isTextLikeInputElement,
@@ -163,7 +164,6 @@ import {
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
 import { countExplicitSteps } from "./explicit-steps";
-import { rectsLikelyOverlap } from "./geometry";
 import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
 export {
   isPerceptionFailurePlaceholder,
@@ -5838,53 +5838,6 @@ export class AgentLoop {
     );
   }
 
-  private retargetInlineEditTextEntry(params: {
-    targetId: number;
-    currentStepIndex: number;
-  }): { retargetedId: number; reason: string } | null {
-    const { targetId, currentStepIndex } = params;
-    if (this.getActiveToolProfileForStep(currentStepIndex) !== "edit_surface") {
-      return null;
-    }
-
-    const snapshot = this.context.getSnapshot();
-    const target = snapshot?.elements?.find((el) => el.tag === targetId);
-    if (!target || isTextLikeInputElement(target)) {
-      return null;
-    }
-
-    const visibleTextInputs =
-      snapshot?.elements?.filter(
-        (element) =>
-          element.isVisible !== false && isTextLikeInputElement(element),
-      ) ?? [];
-    if (visibleTextInputs.length === 0) {
-      return null;
-    }
-
-    const targetText = normalizeGuardText(target.text);
-    const retarget =
-      visibleTextInputs.find((element) =>
-        rectsLikelyOverlap(target.rect, element.rect),
-      ) ??
-      visibleTextInputs.find((element) => {
-        const liveValue = normalizeGuardText(
-          element.attributes.value || element.text,
-        );
-        return Boolean(targetText) && liveValue === targetText;
-      });
-    if (!retarget) {
-      return null;
-    }
-
-    return {
-      retargetedId: retarget.tag,
-      reason:
-        `Retargeted type_text from [${targetId}] to the active inline editor ` +
-        `[${retarget.tag}] for this edit-surface step.`,
-    };
-  }
-
   private getPendingInlineEditVerificationBlock(
     toolName: ToolName,
     currentStepIndex: number,
@@ -7201,9 +7154,11 @@ export class AgentLoop {
               ) {
                 const planStatus = this.context.getPlanStatusRaw();
                 const currentStepIndex = planStatus?.currentIndex ?? -1;
-                const inlineRetarget = this.retargetInlineEditTextEntry({
+                const inlineRetarget = assessInlineEditTextEntryRetarget({
+                  activeToolProfile:
+                    this.getActiveToolProfileForStep(currentStepIndex),
+                  snapshot: this.context.getSnapshot(),
                   targetId: args.id,
-                  currentStepIndex,
                 });
                 if (inlineRetarget) {
                   args.id = inlineRetarget.retargetedId;
@@ -7805,9 +7760,11 @@ export class AgentLoop {
               typeof args.text === "string"
             ) {
               const planStatus = this.context.getPlanStatusRaw();
-              const inlineRetarget = this.retargetInlineEditTextEntry({
+              const inlineRetarget = assessInlineEditTextEntryRetarget({
+                activeToolProfile:
+                  this.getActiveToolProfileForStep(currentStepIndex),
+                snapshot: this.context.getSnapshot(),
                 targetId: args.id,
-                currentStepIndex,
               });
               if (inlineRetarget) {
                 args.id = inlineRetarget.retargetedId;
