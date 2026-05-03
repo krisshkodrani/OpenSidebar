@@ -9,7 +9,9 @@ import {
   assessReadElementSameIdNudge,
   assessToolCacheHit,
   buildZeroEffectDecision,
+  countTrailingToolResultOutcomes,
   recordRecentSuccessfulAction,
+  updateConsecutiveAllFailTurns,
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
@@ -496,5 +498,46 @@ describe("recordRecentSuccessfulAction", () => {
       }),
     ).toEqual({ kind: "none" });
     expect(recentSuccesses).toHaveLength(0);
+  });
+});
+
+describe("tool result turn failure tracking", () => {
+  it("counts only trailing tool result messages", () => {
+    expect(
+      countTrailingToolResultOutcomes([
+        { role: "tool", content: "old success" },
+        { role: "assistant", content: "next turn" },
+        { role: "tool", content: "Error: first failure" },
+        { role: "tool", content: "Clicked" },
+        { role: "tool", content: "No element with tag 7" },
+      ]),
+    ).toEqual({
+      turnSuccesses: 1,
+      turnFailures: 2,
+    });
+  });
+
+  it("increments consecutive all-fail turns only when the turn has failures and no successes", () => {
+    expect(
+      updateConsecutiveAllFailTurns({
+        previousCount: 2,
+        turnSuccesses: 0,
+        turnFailures: 1,
+      }),
+    ).toBe(3);
+    expect(
+      updateConsecutiveAllFailTurns({
+        previousCount: 2,
+        turnSuccesses: 1,
+        turnFailures: 1,
+      }),
+    ).toBe(0);
+    expect(
+      updateConsecutiveAllFailTurns({
+        previousCount: 2,
+        turnSuccesses: 0,
+        turnFailures: 0,
+      }),
+    ).toBe(0);
   });
 });

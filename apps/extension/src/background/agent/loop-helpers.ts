@@ -1379,6 +1379,44 @@ export function recordRecentSuccessfulAction(params: {
   return { kind: "none" };
 }
 
+export interface ToolResultTurnCounts {
+  turnSuccesses: number;
+  turnFailures: number;
+}
+
+export function countTrailingToolResultOutcomes(
+  messages: Array<{ role: string; content?: unknown }>,
+): ToolResultTurnCounts {
+  let turnSuccesses = 0;
+  let turnFailures = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "tool") break;
+    const content = typeof message.content === "string" ? message.content : "";
+    if (
+      content.startsWith("Error:") ||
+      content.includes("does not appear to be") ||
+      content.includes("No element with tag") ||
+      content.includes("Click intercepted")
+    ) {
+      turnFailures++;
+    } else {
+      turnSuccesses++;
+    }
+  }
+  return { turnSuccesses, turnFailures };
+}
+
+export function updateConsecutiveAllFailTurns(params: {
+  previousCount: number;
+  turnSuccesses: number;
+  turnFailures: number;
+}): number {
+  return params.turnFailures > 0 && params.turnSuccesses === 0
+    ? params.previousCount + 1
+    : 0;
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
