@@ -259,8 +259,9 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const temperature = process.env.E2E_TEMPERATURE
         ? parseFloat(process.env.E2E_TEMPERATURE)
         : undefined;
-      const useVLExecutor =
-        process.env.E2E_USE_VL_EXECUTOR === "true" || undefined;
+      const perceptionMode =
+        process.env.E2E_PERCEPTION_MODE ||
+        (process.env.E2E_USE_VL_EXECUTOR === "true" ? "unified_vl" : undefined);
       suiteReport.setRunMetadata({
         provider: providerMode,
         lane,
@@ -280,7 +281,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           xiaomiKey: string | null,
           execModel: string | null,
           temp: number | null,
-          vlExec: boolean | null,
+          perceptionMode: string | null,
         ) => {
           const localData: Record<string, string> = {};
           if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
@@ -301,7 +302,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           };
           if (execModel) settings.executorModel = execModel;
           if (temp !== null) settings.temperature = temp;
-          if (vlExec) settings.useVLExecutor = true;
+          if (perceptionMode) settings.perceptionMode = perceptionMode;
           await chrome.storage.sync.set({ userSettings: settings });
         },
         openRouterKey ?? null,
@@ -315,7 +316,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         xiaomiKey ?? null,
         executorModel ?? null,
         temperature ?? null,
-        useVLExecutor ?? null,
+        perceptionMode ?? null,
       );
 
       await setupEventMonitor(ctx.serviceWorker);

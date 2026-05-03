@@ -6,15 +6,19 @@ import {
 } from "../../src/utils/perception-mode";
 
 describe("perception mode resolution", () => {
-  test("auto defaults Fireworks to structured when DOM signals are sufficient", () => {
+  test("auto defaults to unified VL even when DOM signals are sufficient", () => {
     expect(
-      resolvePerceptionRuntimeMode({
+      resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
         providerMode: "fireworks",
         elementCount: 20,
         pageTextLength: 2000,
       }),
-    ).toBe("structured");
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "auto_default_unified_vl",
+      signals: [],
+    });
   });
 
   test("auto selects unified VL for visual task text", () => {
@@ -115,7 +119,7 @@ describe("perception mode resolution", () => {
     ).toBe("unified_vl");
   });
 
-  test("keeps legacy useVLExecutor true as unified VL but ignores false", () => {
+  test("keeps legacy useVLExecutor true as unified VL and lets false fall through to auto", () => {
     expect(
       resolvePerceptionRuntimeMode({
         useVLExecutor: true,
@@ -129,7 +133,7 @@ describe("perception mode resolution", () => {
         elementCount: 20,
         pageTextLength: 2000,
       }),
-    ).toBe("structured");
+    ).toBe("unified_vl");
   });
 
   test("extracts page signals from snapshot tags and text", () => {
