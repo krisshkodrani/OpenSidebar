@@ -1943,6 +1943,97 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForIncompleteTaskContract(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const activePlanIdxForTaskContract =
+      this.planSubtasks.length > 0
+        ? this.planSubtasks.findIndex((s) => s.status === "running")
+        : -1;
+    const isIntermediateRootPlanStep =
+      !this.nodeId &&
+      this.planSubtasks.length > 1 &&
+      activePlanIdxForTaskContract >= 0 &&
+      activePlanIdxForTaskContract < this.planSubtasks.length - 1;
+
+    // Skip the full task contract guard for orchestrator sub-nodes
+    // and for intermediate root plan steps. In both cases, the
+    // current executor objective is intentionally narrower than the
+    // original user request; plan validation handles step completion
+    // and the full guard still runs on the final root step.
+    const taskContractGuard =
+      this.nodeId || isIntermediateRootPlanStep
+        ? {
+            blocked: false,
+            reason: null,
+            summaryCoverage: {
+              missingEntities: [],
+              missingNumbers: [],
+              missingReturnTarget: false,
+              satisfied: true,
+            },
+            missingReturnTarget: false,
+          }
+        : evaluateDoneTaskContractGuard({
+            query: this.originalQuery,
+            summary,
+            snapshot: this.context.getSnapshot(),
+          });
+    if (!taskContractGuard.blocked) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: task contract incomplete", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      reason: taskContractGuard.reason,
+      missingEntities: taskContractGuard.summaryCoverage.missingEntities,
+      missingNumbers: taskContractGuard.summaryCoverage.missingNumbers,
+      missingReturnTarget: taskContractGuard.missingReturnTarget,
+    });
+    this.traceRecorder?.recordEvent("done_rejected_task_contract", {
+      rejections: this.doneRejections,
+      reason: taskContractGuard.reason,
+      missingEntities: taskContractGuard.summaryCoverage.missingEntities,
+      missingNumbers: taskContractGuard.summaryCoverage.missingNumbers,
+      missingReturnTarget: taskContractGuard.missingReturnTarget,
+    });
+
+    if (this.doneRejections >= this.limits.maxDoneRejections) {
+      this.log.warn(
+        "agent",
+        "DONE blocked after max rejections due to incomplete task contract",
+        {
+          turn: this.turnCount,
+          rejections: this.doneRejections,
+        },
+      );
+      this.traceRecorder?.recordEvent("done_blocked_max_rejections", {
+        rejections: this.doneRejections,
+        reason: taskContractGuard.reason,
+        source: "task_contract",
+      });
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content:
+          `done() REJECTED: ${taskContractGuard.reason}\n\n` +
+          "You have repeated done() too many times while the task is still incomplete. " +
+          "Do not call done() again from this state. Take a different action or call escalate().",
+      });
+      return true;
+    }
+
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${taskContractGuard.reason}\n\n` +
+        "Complete the missing task obligations, verify them on the page, then call done() again.",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8272,103 +8363,11 @@ export class AgentLoop {
                 }
               }
 
-              const activePlanIdxForTaskContract =
-                this.planSubtasks.length > 0
-                  ? this.planSubtasks.findIndex((s) => s.status === "running")
-                  : -1;
-              const isIntermediateRootPlanStep =
-                !this.nodeId &&
-                this.planSubtasks.length > 1 &&
-                activePlanIdxForTaskContract >= 0 &&
-                activePlanIdxForTaskContract < this.planSubtasks.length - 1;
-
-              // Skip the full task contract guard for orchestrator sub-nodes
-              // and for intermediate root plan steps. In both cases, the
-              // current executor objective is intentionally narrower than the
-              // original user request; plan validation handles step completion
-              // and the full guard still runs on the final root step.
-              const taskContractGuard =
-                this.nodeId || isIntermediateRootPlanStep
-                ? {
-                    blocked: false,
-                    reason: null,
-                    summaryCoverage: {
-                      missingEntities: [],
-                      missingNumbers: [],
-                      missingReturnTarget: false,
-                      satisfied: true,
-                    },
-                    missingReturnTarget: false,
-                  }
-                : evaluateDoneTaskContractGuard({
-                    query: this.originalQuery,
-                    summary,
-                    snapshot: this.context.getSnapshot(),
-                  });
-              if (taskContractGuard.blocked) {
-                this.doneRejections++;
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: task contract incomplete",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    reason: taskContractGuard.reason,
-                    missingEntities:
-                      taskContractGuard.summaryCoverage.missingEntities,
-                    missingNumbers:
-                      taskContractGuard.summaryCoverage.missingNumbers,
-                    missingReturnTarget: taskContractGuard.missingReturnTarget,
-                  },
-                );
-                this.traceRecorder?.recordEvent("done_rejected_task_contract", {
-                  rejections: this.doneRejections,
-                  reason: taskContractGuard.reason,
-                  missingEntities:
-                    taskContractGuard.summaryCoverage.missingEntities,
-                  missingNumbers:
-                    taskContractGuard.summaryCoverage.missingNumbers,
-                  missingReturnTarget: taskContractGuard.missingReturnTarget,
-                });
-
-                if (this.doneRejections >= this.limits.maxDoneRejections) {
-                  this.log.warn(
-                    "agent",
-                    "DONE blocked after max rejections due to incomplete task contract",
-                    {
-                      turn: this.turnCount,
-                      rejections: this.doneRejections,
-                    },
-                  );
-                  this.traceRecorder?.recordEvent(
-                    "done_blocked_max_rejections",
-                    {
-                      rejections: this.doneRejections,
-                      reason: taskContractGuard.reason,
-                      source: "task_contract",
-                    },
-                  );
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content:
-                      `done() REJECTED: ${taskContractGuard.reason}\n\n` +
-                      "You have repeated done() too many times while the task is still incomplete. " +
-                      "Do not call done() again from this state. Take a different action or call escalate().",
-                  });
-                  continue;
-                } else {
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content:
-                      `done() REJECTED: ${taskContractGuard.reason}\n\n` +
-                      "Complete the missing task obligations, verify them on the page, then call done() again.",
-                  });
-                  continue;
-                }
+              if (
+                this.rejectDoneForIncompleteTaskContract(toolCall.id, summary)
+              ) {
+                continue;
               }
-
               const workflowSnapshot = this.context.getSnapshot();
               const workflowDoneGuard = assessWorkflowDoneGuard({
                 query: this.originalQuery,
