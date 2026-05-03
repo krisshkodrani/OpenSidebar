@@ -1465,6 +1465,47 @@ export class AgentLoop {
     }
   }
 
+  private acceptDoneToolCall(summary: string, toolCallId: string): void {
+    // Signal completion immediately - the orchestrator reads this after a lane
+    // timeout to avoid retrying completed subtasks.
+    this.completedResult = { outcome: "completed", summary };
+
+    this.context.clearPlanStatus();
+    this.log.info("agent", "DONE called", {
+      turn: this.turnCount,
+      url: this.context.getCurrentUrl(),
+      summary: summary.slice(0, STRING_LIMITS.SUMMARY_LOG),
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: summary,
+    });
+    this.completeTaskUi(summary);
+
+    if (this.taskId && this.planSubtasks.length > 0) {
+      for (const sub of this.planSubtasks) {
+        if (!sub.result) sub.result = "Completed";
+      }
+      this.planSubtasks[this.planSubtasks.length - 1].result = summary.slice(
+        0,
+        200,
+      );
+
+      const completionMessage = successfulTaskCompletionMessage({
+        taskId: this.taskId,
+        subtasks: this.planSubtasks,
+        turnCount: this.turnCount,
+        totalTimeMs: Date.now() - this.taskStartTime,
+        summary,
+        urlHistory: this.urlHistory,
+      });
+      if (completionMessage) this.broadcast(completionMessage);
+    }
+
+    this.broadcastFinalMetrics();
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8426,48 +8467,9 @@ export class AgentLoop {
               }
 
               // --- Normal done handling ---
-              // Signal completion immediately — the orchestrator reads this
-              // after a lane timeout to avoid retrying completed subtasks.
-              this.completedResult = { outcome: "completed", summary };
-
-              this.context.clearPlanStatus();
-              this.log.info("agent", "DONE called", {
-                turn: this.turnCount,
-                url: this.context.getCurrentUrl(),
-                summary: summary.slice(0, STRING_LIMITS.SUMMARY_LOG),
-              });
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: summary,
-              });
-              this.completeTaskUi(summary);
+              this.acceptDoneToolCall(summary, toolCall.id);
               doneSummary = summary;
               doneSignaled = true;
-
-              // Broadcast task completion if plan was active
-              if (this.taskId && this.planSubtasks.length > 0) {
-                // Populate results for all subtasks before broadcasting
-                for (const sub of this.planSubtasks) {
-                  if (!sub.result) sub.result = "Completed";
-                }
-                // Last subtask gets the done() summary
-                this.planSubtasks[this.planSubtasks.length - 1].result =
-                  summary.slice(0, 200);
-
-                const completionMessage = successfulTaskCompletionMessage({
-                  taskId: this.taskId,
-                  subtasks: this.planSubtasks,
-                  turnCount: this.turnCount,
-                  totalTimeMs: Date.now() - this.taskStartTime,
-                  summary,
-                  urlHistory: this.urlHistory,
-                });
-                if (completionMessage) this.broadcast(completionMessage);
-              }
-
-              // Broadcast final metrics
-              this.broadcastFinalMetrics();
 
               break;
             }
