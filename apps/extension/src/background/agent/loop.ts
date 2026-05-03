@@ -22,12 +22,11 @@ import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
 import {
   DOM_MODIFYING_TOOLS,
-  SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
   resolveToolProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
-import { classifyRisk, validateToolCalls } from "../security";
+import { validateToolCalls } from "../security";
 import { waitForDomReady, ensureContentScript } from "../tab-ready";
 import {
   isBridgeDisconnect,
@@ -310,6 +309,7 @@ import {
 import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
+import { assessParallelToolCalls } from "./parallel-tool-execution";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -6844,30 +6844,9 @@ export class AgentLoop {
         // Use the model's original allowed batch shape for workflow redirect telemetry.
         // After a redirect, collapse the allowed batch to the single corrected
         // navigation action so follow-on calls cannot run against the wrong page.
-        const originalHasSequentialTool = response.tool_calls.some((tc) =>
-          SEQUENTIAL_TOOLS.has(tc.function.name as ToolName),
-        );
-        const originalHasHighRiskTool = response.tool_calls.some((tc) => {
-          try {
-            const parsed = JSON.parse(tc.function.arguments || "{}");
-            return (
-              classifyRisk(tc.function.name as ToolName, parsed) ===
-              RiskLevel.HIGH
-            );
-          } catch {
-            return (
-              classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH
-            );
-          }
-        });
-        const originalHasDomModifyingTool = response.tool_calls.some((tc) =>
-          DOM_MODIFYING_TOOLS.has(tc.function.name as ToolName),
-        );
-        const originalCanParallelize =
-          !originalHasSequentialTool &&
-          !originalHasHighRiskTool &&
-          !originalHasDomModifyingTool &&
-          response.tool_calls.length > 1;
+        const originalCanParallelize = assessParallelToolCalls(
+          response.tool_calls,
+        ).canParallelize;
         const workflowRedirectMode = originalCanParallelize
           ? "parallel"
           : "sequential";
@@ -6922,30 +6901,9 @@ export class AgentLoop {
         }
 
         // Determine if we can parallelize: no sequential tools present
-        const hasSequentialTool = response.tool_calls.some((tc) =>
-          SEQUENTIAL_TOOLS.has(tc.function.name as ToolName),
-        );
-        const hasHighRiskTool = response.tool_calls.some((tc) => {
-          try {
-            const parsed = JSON.parse(tc.function.arguments || "{}");
-            return (
-              classifyRisk(tc.function.name as ToolName, parsed) ===
-              RiskLevel.HIGH
-            );
-          } catch {
-            return (
-              classifyRisk(tc.function.name as ToolName, {}) === RiskLevel.HIGH
-            );
-          }
-        });
-        const hasDomModifyingTool = response.tool_calls.some((tc) =>
-          DOM_MODIFYING_TOOLS.has(tc.function.name as ToolName),
-        );
-        const canParallelize =
-          !hasSequentialTool &&
-          !hasHighRiskTool &&
-          !hasDomModifyingTool &&
-          response.tool_calls.length > 1;
+        const canParallelize = assessParallelToolCalls(
+          response.tool_calls,
+        ).canParallelize;
 
         if (canParallelize) {
           this.throwIfGracefulStopRequested();
