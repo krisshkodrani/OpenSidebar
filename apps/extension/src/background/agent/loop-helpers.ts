@@ -1505,6 +1505,11 @@ export function updateExplorationBudget(params: {
   };
 }
 
+export interface RecentOutcome {
+  fingerprint: string;
+  snapshotFp: string;
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
@@ -1516,6 +1521,58 @@ export function normalizeOutcome(result: string): string {
     .replace(/«(\d+)»/g, "[$1]") // restore element refs
     .slice(0, 120)
     .trim();
+}
+
+export function recordRecentOutcome(params: {
+  recentOutcomes: RecentOutcome[];
+  resultContent: string;
+  snapshotFp: string;
+  windowSize: number;
+}): void {
+  if (!params.resultContent) return;
+
+  params.recentOutcomes.push({
+    fingerprint: normalizeOutcome(params.resultContent),
+    snapshotFp: params.snapshotFp,
+  });
+  if (params.recentOutcomes.length > params.windowSize) {
+    params.recentOutcomes.shift();
+  }
+}
+
+export type DeadEndPatternDecision =
+  | { kind: "none" }
+  | { kind: "nudge"; pattern: string; count: number; message: string }
+  | { kind: "pivot"; pattern: string; count: number };
+
+export function assessDeadEndPattern(params: {
+  recentOutcomes: RecentOutcome[];
+  reflectionThreshold: number;
+  pivotThreshold: number;
+}): DeadEndPatternDecision {
+  const lastN = params.recentOutcomes.slice(-params.pivotThreshold);
+  const allSame =
+    lastN.length >= params.reflectionThreshold &&
+    lastN.every(
+      (outcome) =>
+        outcome.fingerprint === lastN[0].fingerprint &&
+        outcome.snapshotFp === lastN[0].snapshotFp,
+    );
+  if (!allSame) return { kind: "none" };
+
+  const pattern = lastN[0].fingerprint;
+  if (lastN.length >= params.pivotThreshold) {
+    return { kind: "pivot", pattern, count: lastN.length };
+  }
+
+  return {
+    kind: "nudge",
+    pattern,
+    count: lastN.length,
+    message:
+      `Dead-end detected: last ${lastN.length} actions all produced the same outcome pattern: "${pattern.slice(0, 80)}". ` +
+      "Try a fundamentally different approach - use read_page, scroll_page, or find_element to reassess the page.",
+  };
 }
 
 /** Simple djb2 hash for short strings. */
