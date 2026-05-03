@@ -1632,6 +1632,27 @@ export function assessStepDurationWatchdog(params: {
   return { kind: "none" };
 }
 
+export type SameUrlEscalationDecision =
+  | { kind: "none" }
+  | { kind: "escalate" };
+
+export function assessSameUrlForcedEscalation(params: {
+  escalationTier: number;
+  cooldownRemaining: number;
+  sameUrlTurns: number;
+  sameUrlEscalate: number;
+}): SameUrlEscalationDecision {
+  if (
+    params.escalationTier < 1 &&
+    params.cooldownRemaining <= 0 &&
+    params.sameUrlTurns >= params.sameUrlEscalate
+  ) {
+    return { kind: "escalate" };
+  }
+
+  return { kind: "none" };
+}
+
 /** Simple djb2 hash for short strings. */
 export function djb2(str: string): number {
   let hash = 5381;
