@@ -1917,6 +1917,32 @@ export class AgentLoop {
     );
   }
 
+  private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
+    const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
+    if (missingRequiredEvidence.length === 0) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: missing typed evidence", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      selectedSkillId: this.selectedSkillId,
+      missingRequiredEvidence,
+    });
+    this.traceRecorder?.recordEvent("done_rejected_missing_evidence", {
+      rejections: this.doneRejections,
+      selectedSkillId: this.selectedSkillId,
+      missingRequiredEvidence,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: Missing required typed evidence: ${missingRequiredEvidence.join(", ")}.\n\n` +
+        "Use the selected workflow tool to complete and verify the action before calling done().",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8462,28 +8488,7 @@ export class AgentLoop {
                 }
               }
 
-              const missingRequiredEvidence =
-                this.getMissingRequiredEvidenceTypes();
-              if (missingRequiredEvidence.length > 0) {
-                this.doneRejections++;
-                this.log.warn("agent", "DONE rejected: missing typed evidence", {
-                  turn: this.turnCount,
-                  rejections: this.doneRejections,
-                  selectedSkillId: this.selectedSkillId,
-                  missingRequiredEvidence,
-                });
-                this.traceRecorder?.recordEvent("done_rejected_missing_evidence", {
-                  rejections: this.doneRejections,
-                  selectedSkillId: this.selectedSkillId,
-                  missingRequiredEvidence,
-                });
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    `done() REJECTED: Missing required typed evidence: ${missingRequiredEvidence.join(", ")}.\n\n` +
-                    "Use the selected workflow tool to complete and verify the action before calling done().",
-                });
+              if (this.rejectDoneForMissingRequiredEvidence(toolCall.id)) {
                 continue;
               }
 
