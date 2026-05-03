@@ -69,10 +69,10 @@ import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import {
+  buildLlmResponseLogPayload,
   isEmptyCompletionResponse,
   normalizeResponseContent,
   recoverResponseToolCallsFromText,
-  summarizeToolCalls,
 } from "./response-normalization";
 import {
   buildHallucinationRetryMessage,
@@ -6654,18 +6654,19 @@ export class AgentLoop {
       }
 
       // Log LLM response summary for debugging
-      const toolSummary = summarizeToolCalls(
-        response.tool_calls,
-        STRING_LIMITS.TOOL_CALL_SNIPPET,
+      this.log.info(
+        "agent",
+        "LLM response",
+        buildLlmResponseLogPayload({
+          turn: this.turnCount,
+          llmMs,
+          url: this.context.getCurrentUrl(),
+          cleanContent,
+          toolCalls: response.tool_calls,
+          maxReasoningChars: STRING_LIMITS.REASONING_LOG,
+          maxArgumentChars: STRING_LIMITS.TOOL_CALL_SNIPPET,
+        }),
       );
-      this.log.info("agent", "LLM response", {
-        turn: this.turnCount,
-        llmMs,
-        url: this.context.getCurrentUrl(),
-        text: cleanContent?.slice(0, STRING_LIMITS.REASONING_LOG) || null,
-        toolCalls: toolSummary,
-        toolCount: toolSummary.length,
-      });
 
       // Full reasoning at DEBUG level (untruncated for performance analysis)
       if (cleanContent) {

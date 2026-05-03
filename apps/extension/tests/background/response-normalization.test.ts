@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { CompletionResponse } from "../../src/background/llm/types";
 import {
+  buildLlmResponseLogPayload,
   isEmptyCompletionResponse,
   normalizeResponseContent,
   recoverResponseToolCallsFromText,
@@ -52,6 +53,33 @@ describe("response normalization", () => {
         6,
       ),
     ).toEqual(['click_element({"id":)']);
+  });
+
+  test("builds bounded LLM response log payloads", () => {
+    expect(
+      buildLlmResponseLogPayload({
+        turn: 2,
+        llmMs: 123,
+        url: "https://example.test",
+        cleanContent: "abcdef",
+        toolCalls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: "read_page", arguments: '{"full":true}' },
+          },
+        ],
+        maxReasoningChars: 3,
+        maxArgumentChars: 8,
+      }),
+    ).toEqual({
+      turn: 2,
+      llmMs: 123,
+      url: "https://example.test",
+      text: "abc",
+      toolCalls: ['read_page({"full":)'],
+      toolCount: 1,
+    });
   });
 
   test("recovers tool calls from JSON text and clears assistant content", () => {
