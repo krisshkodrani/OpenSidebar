@@ -81,6 +81,47 @@ export function validateElementIds(
   return null;
 }
 
+export interface ElementIdPreDispatchDecision {
+  error: string | null;
+  logArgs: string;
+  traceData: {
+    toolName: string;
+    requestedId: unknown;
+    currentUrl: string | null;
+    reason: "invalid_element_id_pre_dispatch";
+  } | null;
+}
+
+export function assessElementIdPreDispatch(params: {
+  toolName: string;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null;
+  discoveredIds?: Set<number>;
+  currentUrl: string | null;
+}): ElementIdPreDispatchDecision {
+  const error = validateElementIds(
+    params.toolName,
+    params.args,
+    params.snapshot,
+    params.discoveredIds,
+  );
+  return {
+    error,
+    logArgs: JSON.stringify(params.args).slice(0, 100),
+    traceData: error
+      ? {
+          toolName: params.toolName,
+          requestedId:
+            typeof params.args.id === "number"
+              ? params.args.id
+              : (params.args.sourceId ?? params.args.targetId ?? null),
+          currentUrl: params.currentUrl,
+          reason: "invalid_element_id_pre_dispatch",
+        }
+      : null,
+  };
+}
+
 /**
  * Extract tag IDs mentioned in tool results.
  * Tools report dynamic tags as [N] — e.g. find_element ("near [30] <td>"),

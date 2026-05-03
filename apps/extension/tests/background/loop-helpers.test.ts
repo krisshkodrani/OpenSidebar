@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ACTION_EFFECT } from "../../src/background/agent/constants";
 import {
+  assessElementIdPreDispatch,
   assessFailedActionRepeat,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
@@ -85,6 +86,69 @@ describe("assessFailedActionRepeat", () => {
       message:
         "Error: This exact action already failed at turn 3 with: 'No element with tag 1'. " +
         "Suggestions: read_page to refresh element IDs, or find_element to locate by text.",
+    });
+  });
+});
+
+describe("assessElementIdPreDispatch", () => {
+  const snapshot = {
+    url: "https://example.com",
+    elements: [
+      {
+        tag: 1,
+        tagName: "button",
+        text: "Save",
+      },
+    ],
+  } as any;
+
+  it("allows valid current element ids", () => {
+    expect(
+      assessElementIdPreDispatch({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 1 },
+        snapshot,
+        currentUrl: "https://example.com",
+      }),
+    ).toEqual({
+      error: null,
+      logArgs: '{"id":1}',
+      traceData: null,
+    });
+  });
+
+  it("blocks invalid ids and builds grounding trace data", () => {
+    const decision = assessElementIdPreDispatch({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 99 },
+      snapshot,
+      currentUrl: "https://example.com",
+    });
+
+    expect(decision.error).toContain("Element id=99 does not exist");
+    expect(decision.logArgs).toBe('{"id":99}');
+    expect(decision.traceData).toEqual({
+      toolName: ToolName.CLICK_ELEMENT,
+      requestedId: 99,
+      currentUrl: "https://example.com",
+      reason: "invalid_element_id_pre_dispatch",
+    });
+  });
+
+  it("uses sourceId or targetId for dual-id trace data", () => {
+    const decision = assessElementIdPreDispatch({
+      toolName: ToolName.DRAG_AND_DROP,
+      args: { sourceId: 12, targetId: 13 },
+      snapshot,
+      currentUrl: "https://example.com",
+    });
+
+    expect(decision.error).toContain("Element sourceId=12 does not exist");
+    expect(decision.traceData).toEqual({
+      toolName: ToolName.DRAG_AND_DROP,
+      requestedId: 12,
+      currentUrl: "https://example.com",
+      reason: "invalid_element_id_pre_dispatch",
     });
   });
 });
