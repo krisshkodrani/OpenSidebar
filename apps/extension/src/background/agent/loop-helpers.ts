@@ -1417,6 +1417,66 @@ export function updateConsecutiveAllFailTurns(params: {
     : 0;
 }
 
+export type SameToolFailureTrackingDecision =
+  | { kind: "none"; count: number }
+  | { kind: "warn"; count: number; message: string }
+  | { kind: "exit"; count: number; message: string };
+
+export function updateSameToolFailureTracking(params: {
+  blockedActions: BlockedAction[];
+  toolFailCounts: Map<string, number>;
+  toolName: ToolName;
+  argsKey: string;
+  resultContent: string;
+  turn: number;
+  bufferSize: number;
+  warnThreshold: number;
+  exitThreshold: number;
+}): SameToolFailureTrackingDecision {
+  const isFail =
+    params.resultContent.startsWith("Error:") ||
+    params.resultContent.includes("does not appear to be") ||
+    params.resultContent.includes("No element with tag") ||
+    params.resultContent.includes("Click intercepted");
+  const failKey = `${params.toolName}:${params.argsKey}`;
+
+  if (!isFail) {
+    params.toolFailCounts.delete(failKey);
+    return { kind: "none", count: 0 };
+  }
+
+  params.blockedActions.push({
+    tool: params.toolName,
+    argsKey: params.argsKey,
+    error: params.resultContent.split("\n")[0].slice(0, 80),
+    turn: params.turn,
+  });
+  if (params.blockedActions.length > params.bufferSize) {
+    params.blockedActions.shift();
+  }
+
+  const count = (params.toolFailCounts.get(failKey) || 0) + 1;
+  params.toolFailCounts.set(failKey, count);
+
+  if (count >= params.exitThreshold) {
+    return {
+      kind: "exit",
+      count,
+      message: `The same tool call (${params.toolName}) has failed ${count} times with the same arguments. The agent is stuck in a loop. Send a follow-up with different instructions.`,
+    };
+  }
+
+  if (count === params.warnThreshold) {
+    return {
+      kind: "warn",
+      count,
+      message: `WARNING: ${params.toolName} has failed ${count} times with similar arguments. Stop repeating this approach. Try a fundamentally different strategy — use a different tool, different element, or scroll/navigate to find an alternative path.`,
+    };
+  }
+
+  return { kind: "none", count };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
