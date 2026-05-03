@@ -16,6 +16,7 @@ import {
   recordRecentOutcome,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
+  updatePostEscalationPivot,
   updateSameToolFailureTracking,
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
@@ -756,5 +757,43 @@ describe("dead-end outcome tracking", () => {
         pivotThreshold: 4,
       }),
     ).toEqual({ kind: "none" });
+  });
+});
+
+describe("updatePostEscalationPivot", () => {
+  it("stays inactive when no step escalation is active", () => {
+    expect(
+      updatePostEscalationPivot({
+        turnsSinceStepEscalation: -1,
+        pivotTurns: 3,
+      }),
+    ).toEqual({
+      kind: "none",
+      turnsSinceStepEscalation: -1,
+    });
+  });
+
+  it("increments without pivoting below the threshold", () => {
+    expect(
+      updatePostEscalationPivot({
+        turnsSinceStepEscalation: 1,
+        pivotTurns: 3,
+      }),
+    ).toEqual({
+      kind: "none",
+      turnsSinceStepEscalation: 2,
+    });
+  });
+
+  it("requests a pivot at the threshold", () => {
+    expect(
+      updatePostEscalationPivot({
+        turnsSinceStepEscalation: 2,
+        pivotTurns: 3,
+      }),
+    ).toEqual({
+      kind: "pivot",
+      turnsSinceStepEscalation: 3,
+    });
   });
 });
