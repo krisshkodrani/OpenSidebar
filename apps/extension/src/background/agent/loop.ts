@@ -1506,6 +1506,22 @@ export class AgentLoop {
     this.broadcastFinalMetrics();
   }
 
+  private rejectDoneAfterMaxRejections(toolCallId: string): void {
+    this.log.warn("agent", "DONE hard-gated (max rejections exceeded)", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      max: this.limits.maxDoneRejections,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        "done() BLOCKED: You have already exceeded the maximum rejection limit. " +
+        "You MUST take a different action - click a button, type into a field, " +
+        "scroll the page, or call escalate(). Do NOT call done() again.",
+    });
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -7606,23 +7622,7 @@ export class AgentLoop {
               // Prevents the LLM from burning turns + LLM calls on repeated
               // done() attempts after it's already been told to stop.
               if (this.doneRejections >= this.limits.maxDoneRejections) {
-                this.log.warn(
-                  "agent",
-                  "DONE hard-gated (max rejections exceeded)",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    max: this.limits.maxDoneRejections,
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    "done() BLOCKED: You have already exceeded the maximum rejection limit. " +
-                    "You MUST take a different action — click a button, type into a field, " +
-                    "scroll the page, or call escalate(). Do NOT call done() again.",
-                });
+                this.rejectDoneAfterMaxRejections(toolCall.id);
                 continue;
               }
 

@@ -3278,6 +3278,193 @@ Showing 6-10 of 50`,
     );
   });
 
+  test("done rejects completed plan when planner validation rejects", async () => {
+    mockCompleteStream.mockReset();
+    mockCompleteStream.mockImplementation(
+      (_request: any, _onTextDelta: (delta: string) => void) =>
+        Promise.resolve({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done_rejected_plan",
+              type: "function",
+              function: {
+                name: "done",
+                arguments:
+                  '{"summary":"Warehouse Gamma inventory count is 6,412 units."}',
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }),
+    );
+
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-done-reject-1",
+        initialPlanState: {
+          currentIndex: 0,
+          subtasks: [
+            {
+              description: "Report Warehouse Gamma count",
+              status: "completed",
+            },
+          ],
+        },
+      },
+    );
+    (agent as any).hasReadPage = true;
+    const validateDone = vi
+      .fn()
+      .mockResolvedValue({ approved: false, reason: "Need more evidence." });
+    (agent as any).planner.validateDone = validateDone;
+    (agent as any).planSteps = [
+      { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+    ];
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Warehouse Gamma",
+      url: "https://example.com/gamma",
+      elements: [],
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = await agent.start("Report Warehouse Gamma count", 123);
+
+    expect(validateDone).toHaveBeenCalled();
+    expect(result.outcome).not.toBe("completed");
+    expect((agent as any).doneRejections).toBeGreaterThan(0);
+    expect(onMessage).not.toHaveBeenCalledWith(
+      "Warehouse Gamma inventory count is 6,412 units.",
+      [],
+    );
+  });
+
+  test("done rejects incomplete plan when planner validation is unavailable", async () => {
+    mockCompleteStream.mockReset();
+    mockCompleteStream.mockImplementation(
+      (_request: any, _onTextDelta: (delta: string) => void) =>
+        Promise.resolve({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done_planner_unavailable",
+              type: "function",
+              function: {
+                name: "done",
+                arguments: '{"summary":"The final step is complete."}',
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }),
+    );
+
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        taskId: "task-done-reject-2",
+        initialPlanState: {
+          currentIndex: 1,
+          subtasks: [
+            {
+              description: "Open the warehouse page",
+              status: "pending",
+            },
+            {
+              description: "Report the warehouse count",
+              status: "running",
+            },
+          ],
+        },
+      },
+    );
+    (agent as any).hasReadPage = true;
+    const validateDone = vi.fn().mockRejectedValue(new Error("planner down"));
+    (agent as any).planner.validateDone = validateDone;
+    (agent as any).planSteps = [
+      { successCriteria: "Warehouse page opened" },
+      { successCriteria: "Warehouse count reported" },
+    ];
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Warehouse Gamma",
+      url: "https://example.com/gamma",
+      elements: [],
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    const result = await agent.start("Report Warehouse Gamma count", 123);
+
+    expect(validateDone).toHaveBeenCalled();
+    expect(result.outcome).not.toBe("completed");
+    expect((agent as any).doneRejections).toBeGreaterThan(0);
+    expect(onMessage).not.toHaveBeenCalledWith("The final step is complete.", []);
+  });
+
+  test("done hard gate blocks repeated done after max rejections", async () => {
+    mockCompleteStream.mockReset();
+    mockCompleteStream.mockImplementation(
+      (_request: any, _onTextDelta: (delta: string) => void) =>
+        Promise.resolve({
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done_hard_gate",
+              type: "function",
+              function: {
+                name: "done",
+                arguments: '{"summary":"Trying to finish too early."}',
+              },
+            },
+          ],
+          finish_reason: "tool_calls",
+        }),
+    );
+
+    const onMessage = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage,
+      onStep: vi.fn(),
+    });
+    (agent as any).limits.maxDoneRejections = 0;
+    (agent as any).hasReadPage = true;
+
+    const result = await agent.start("Try to finish repeatedly", 123);
+    const messages = (agent as any).context.getMessages();
+
+    expect(result.outcome).not.toBe("completed");
+    expect(
+      messages.some((message: any) =>
+        String(message.content).includes("done() BLOCKED"),
+      ),
+    ).toBe(true);
+    expect(onMessage).not.toHaveBeenCalledWith("Trying to finish too early.", []);
+  });
+
   test("bypasses stale plan rejection for satisfied spreadsheet edit tasks", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
