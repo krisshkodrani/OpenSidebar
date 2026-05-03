@@ -74,12 +74,7 @@ import {
   normalizeResponseContent,
   recoverResponseToolCallsFromText,
 } from "./response-normalization";
-import {
-  buildHallucinationRetryMessage,
-  buildTurnRetryStep,
-  getTurnRetryBackoffMs,
-  removeTurnRetryDiagnosticMessages,
-} from "./turn-retry";
+import { completeTurnWithRetries } from "./turn-completion";
 import { assessBlindToolCallReasoning } from "./blind-tool-call-policy";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
@@ -136,7 +131,6 @@ import {
   rememberRepeatAction,
 } from "./repeat-action-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
-import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
 import {
   emptySessionMetrics,
   recordCachedVisionTelemetryUse,
@@ -236,7 +230,6 @@ import {
   buildStructuredFailureContext,
   buildZeroEffectDecision,
   buildFirstTurnTextOnlyNudge,
-  classifyTurnError,
   countTrailingToolResultOutcomes,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
@@ -251,18 +244,14 @@ import {
   getSnapshotFingerprint,
   isPendingAsyncChangeSatisfied,
   isFillerText,
-  isHallucinatedToolCall,
   matchSuccessCriteria,
-  MAX_TURN_RETRIES,
   recordRecentOutcome,
   recordRecentSuccessfulAction,
   type RecentOutcome,
   RecentAction,
   requiresGroundingReadBeforeDone,
-  RETRYABLE_ERRORS,
   shouldTrackFormSubmissionReset,
   SubgoalAttempt,
-  TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
@@ -6065,10 +6054,6 @@ export class AgentLoop {
       }
       this.guardAfterDoneRejection = false;
 
-      // Per-turn hallucination detection state (reset each turn)
-      let hallucinationDetected = false;
-      let streamedTextAccumulator = "";
-
       if (
         this.middleware.shouldHaltTurn(
           this.turnCount,
@@ -6314,281 +6299,31 @@ export class AgentLoop {
       };
       this.stepHandler(thinkingStep, false);
 
-      // ── LLM call with bounded retry loop ──
-      // Retries hallucinations, network errors, and empty responses up to MAX_TURN_RETRIES.
-      // Non-retryable errors (user abort, 402, bad request) exit immediately.
-      const llmStart = Date.now();
-      let response: CompletionResponse;
-      let turnRetryCount = 0;
-
-      // eslint-disable-next-line no-constant-condition
-      retryLoop: while (true) {
-        // Reset per-attempt streaming state
-        streamedTextAccumulator = "";
-        hallucinationDetected = false;
-
-        // Per-turn AbortController: allows aborting just this turn (e.g. on hallucination)
-        // while keeping the main loop alive. Recreated on each retry attempt.
-        const turnAbortController = new AbortController();
-        const onMainAbort = () => turnAbortController.abort();
-        this.abortController!.signal.addEventListener("abort", onMainAbort);
-
-        // Always stream deltas to side panel, with hallucination detection
-        const onTextDelta = (delta: string) => {
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta, done: false },
-          });
-          // Accumulate streamed text for hallucination detection
-          streamedTextAccumulator += delta;
-          if (
-            !hallucinationDetected &&
-            streamedTextAccumulator.length > 150 &&
-            isHallucinatedToolCall(streamedTextAccumulator)
-          ) {
-            hallucinationDetected = true;
-            this.log.warn(
-              "agent",
-              "Hallucinated tool call detected, aborting stream",
-              {
-                turn: this.turnCount,
-                textLen: streamedTextAccumulator.length,
-              },
-            );
-            turnAbortController.abort();
-          }
-        };
-
-        try {
-          response = await this.llm.completeStream(
-            {
-              messages,
-              tools,
-              max_tokens: LLM_CONFIG.MAX_TOKENS,
-              stop: ["Observation:"], // ReAct pattern stop token just in case
-              signal: turnAbortController.signal,
-            },
-            onTextDelta,
-          );
-
-          // Check for empty response (retryable)
-          if (isEmptyCompletionResponse(response)) {
-            const switchedToFallback =
-              !this.llm.isPlannerTier() &&
-              this.llm.activateExecutorFallback("empty_response");
-            if (switchedToFallback) {
-              turnRetryCount++;
-              this.log.warn(
-                "agent",
-                "Empty LLM response, switching to executor fallback model",
-                {
-                  turn: this.turnCount,
-                  retry: turnRetryCount,
-                  fallbackModel: this.llm.getCurrentModel(),
-                },
-              );
-              this.broadcast({
-                type: "STREAM_CHUNK",
-                payload: { delta: "", done: false, replaceContent: "" },
-              });
-              this.stepHandler(
-                buildTurnRetryStep({
-                  retryCount: turnRetryCount,
-                  maxRetries: MAX_TURN_RETRIES,
-                  fallbackModel: this.llm.getCurrentModel(),
-                }),
-                false,
-              );
-              this.traceRecorder?.recordEvent(
-                "executor_empty_response_fallback",
-                {
-                  turn: this.turnCount,
-                  retry: turnRetryCount,
-                  model: this.llm.getCurrentModel(),
-                },
-              );
-              const backoff = getTurnRetryBackoffMs(
-                turnRetryCount,
-                TURN_RETRY_BACKOFF_MS,
-              );
-              if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
-              this.abortController?.signal.removeEventListener(
-                "abort",
-                onMainAbort,
-              );
-              continue retryLoop;
-            }
-            if (
-              turnRetryCount < MAX_TURN_RETRIES &&
-              RETRYABLE_ERRORS.has("empty_response")
-            ) {
-              turnRetryCount++;
-              this.log.warn("agent", "Empty LLM response, retrying", {
-                turn: this.turnCount,
-                retry: turnRetryCount,
-              });
-              this.broadcast({
-                type: "STREAM_CHUNK",
-                payload: { delta: "", done: false, replaceContent: "" },
-              });
-              this.stepHandler(
-                buildTurnRetryStep({
-                  retryCount: turnRetryCount,
-                  maxRetries: MAX_TURN_RETRIES,
-                }),
-                false,
-              );
-              this.traceRecorder?.recordEvent("turn_retry", {
-                turn: this.turnCount,
-                retry: turnRetryCount,
-                errorClass: "empty_response",
-              });
-              const backoff = getTurnRetryBackoffMs(
-                turnRetryCount,
-                TURN_RETRY_BACKOFF_MS,
-              );
-              if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
-              this.abortController?.signal.removeEventListener(
-                "abort",
-                onMainAbort,
-              );
-              continue retryLoop;
-            }
-          }
-
-          // Success — exit retry loop
-          this.abortController?.signal.removeEventListener(
-            "abort",
-            onMainAbort,
-          );
-          // Reset fallback to primary model after a successful response
-          this.llm.resetExecutorFallback();
-          break;
-        } catch (llmError: any) {
-          // Always clean up the main abort listener
-          this.abortController?.signal.removeEventListener(
-            "abort",
-            onMainAbort,
-          );
-
-          const errorClass = classifyTurnError(llmError, hallucinationDetected);
-
-          // Non-retryable: user abort — propagate immediately
-          if (errorClass === "user_abort" && !hallucinationDetected) {
-            throw llmError;
-          }
-
-          // Non-retryable: insufficient credits
-          if (errorClass === "credits_exhausted") {
-            const providerId = this.llm.getActiveProviderInfo().providerId;
-            const providerName = formatProviderName(providerId);
-            const creditsUrl = getProviderCreditsUrl(providerId);
-            const msg =
-              `Your ${providerName} account has insufficient credits.` +
-              (creditsUrl
-                ? ` Please add credits at ${creditsUrl} and try again.`
-                : "");
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: msg, done: false },
-            });
-            this.finishStream();
-            this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
-            return {
-              outcome: "error" as const,
-              turnCount: this.turnCount,
-              summary: `Insufficient ${providerName} credits`,
-              failure: {
-                category: "provider" as const,
-                code: "credits_exhausted",
-                detail: `HTTP 402 from ${providerName}`,
-              },
-              metrics: this.getMetrics(),
-            };
-          }
-
-          // Retryable errors: hallucination, network
-          if (
-            turnRetryCount < MAX_TURN_RETRIES &&
-            RETRYABLE_ERRORS.has(errorClass)
-          ) {
-            turnRetryCount++;
-            this.log.warn("agent", `Turn error (${errorClass}), retrying`, {
-              turn: this.turnCount,
-              retry: turnRetryCount,
-            });
-
-            // Clear any garbage streamed to UI
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: "", done: false, replaceContent: "" },
-            });
-
-            // Show retry step in timeline
-            this.stepHandler(
-              buildTurnRetryStep({
-                retryCount: turnRetryCount,
-                maxRetries: MAX_TURN_RETRIES,
-              }),
-              false,
-            );
-
-            this.traceRecorder?.recordEvent("turn_retry", {
-              turn: this.turnCount,
-              retry: turnRetryCount,
-              errorClass,
-            });
-
-            // Inject diagnostic hint for hallucination retries
-            if (errorClass === "hallucination") {
-              this.traceRecorder?.recordEvent("hallucination_detected", {
-                turn: this.turnCount,
-                textLen: streamedTextAccumulator.length,
-              });
-              messages = [...messages, buildHallucinationRetryMessage()];
-            }
-
-            // Invalidate perception cache (force fresh observation on retry)
-            this.perception.invalidateCache();
-
-            const backoff = getTurnRetryBackoffMs(
-              turnRetryCount,
-              TURN_RETRY_BACKOFF_MS,
-            );
-            if (backoff > 0) await new Promise((r) => setTimeout(r, backoff));
-            continue retryLoop;
-          }
-
-          // Retries exhausted for hallucination — fall through with synthesized response
-          if (hallucinationDetected) {
-            this.traceRecorder?.recordEvent("hallucination_detected", {
-              turn: this.turnCount,
-              textLen: streamedTextAccumulator.length,
-            });
-            // Clear the hallucinated garbage from the chat stream
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: "", done: false, replaceContent: "" },
-            });
-            response = {
-              role: "assistant",
-              content: streamedTextAccumulator,
-              tool_calls: undefined,
-              finish_reason: "stop",
-            };
-            break;
-          }
-
-          throw llmError;
-        }
-      } // end retryLoop
-
-      // Clean up diagnostic hints injected during retries (don't pollute history)
-      if (turnRetryCount > 0) {
-        messages = removeTurnRetryDiagnosticMessages(messages);
+      const turnCompletion = await completeTurnWithRetries({
+        llm: this.llm,
+        messages,
+        tools,
+        maxTokens: LLM_CONFIG.MAX_TOKENS,
+        turnCount: this.turnCount,
+        mainAbortSignal: this.abortController!.signal,
+        log: this.log,
+        traceRecorder: this.traceRecorder,
+        broadcast: (message) => this.broadcast(message),
+        stepHandler: (step, replace) => this.stepHandler(step, replace),
+        finishStream: () => this.finishStream(),
+        statusHandler: (status, message) =>
+          this.statusHandler(status, message),
+        getMetrics: () => this.getMetrics(),
+        invalidatePerceptionCache: () => this.perception.invalidateCache(),
+      });
+      if (turnCompletion.kind === "early_result") {
+        return turnCompletion.result;
       }
-
-      const llmMs = Date.now() - llmStart;
+      const response = turnCompletion.response;
+      messages = turnCompletion.messages;
+      const llmMs = turnCompletion.llmMs;
+      const hallucinationDetected =
+        turnCompletion.synthesizedFromHallucination;
 
       // Accumulate token usage and broadcast metrics
       this.recordUsage(response, llmMs);
