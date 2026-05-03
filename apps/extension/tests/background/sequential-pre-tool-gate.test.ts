@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildApprovalBypassedStep,
+  getPreToolDeniedReason,
   getPreToolDeniedMessage,
   shouldReportApprovalBypass,
 } from "../../src/background/agent/sequential-pre-tool-gate";
@@ -41,6 +42,17 @@ describe("sequential pre-tool gate", () => {
         }),
       ),
     ).toBe("Error: Blocked by policy middleware.");
+  });
+
+  test("formats middleware denial reasons with branch-specific fallback", () => {
+    expect(
+      getPreToolDeniedReason(
+        preDecision({
+          allowed: false,
+        }),
+        "Tool click_element denied by middleware",
+      ),
+    ).toBe("Tool click_element denied by middleware");
   });
 
   test("reports approval bypass only for high-risk bypassed decisions", () => {

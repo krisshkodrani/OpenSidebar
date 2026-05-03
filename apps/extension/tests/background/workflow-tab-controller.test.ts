@@ -1,8 +1,18 @@
 import { describe, expect, test } from "vitest";
 import { ToolName } from "../../src/types";
-import { evaluateWorkflowTabRedirect } from "../../src/background/agent/workflow-tab-controller";
+import {
+  evaluateWorkflowTabRedirect,
+  shouldCheckWorkflowTabRedirect,
+} from "../../src/background/agent/workflow-tab-controller";
 
 describe("workflow tab controller", () => {
+  test("identifies tools eligible for workflow tab redirect checks", () => {
+    expect(shouldCheckWorkflowTabRedirect(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(shouldCheckWorkflowTabRedirect(ToolName.CREATE_TAB)).toBe(true);
+    expect(shouldCheckWorkflowTabRedirect(ToolName.RIGHT_CLICK)).toBe(true);
+    expect(shouldCheckWorkflowTabRedirect(ToolName.READ_PAGE)).toBe(false);
+  });
+
   test("procurement loop redirects back to an existing checklist tab", () => {
     const decision = evaluateWorkflowTabRedirect({
       skillId: "multi-tab-procurement-loop",

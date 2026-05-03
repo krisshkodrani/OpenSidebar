@@ -23,6 +23,14 @@ export type WorkflowTabControllerInput = {
   workspaceTabs: WorkflowTabLike[];
 };
 
+export function shouldCheckWorkflowTabRedirect(toolName: ToolName): boolean {
+  return (
+    toolName === ToolName.CLICK_ELEMENT ||
+    toolName === ToolName.CREATE_TAB ||
+    toolName === ToolName.RIGHT_CLICK
+  );
+}
+
 function normalizeUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
