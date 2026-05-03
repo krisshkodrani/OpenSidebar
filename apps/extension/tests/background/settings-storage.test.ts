@@ -19,7 +19,7 @@ describe("settings storage", () => {
     chrome.storage.session.remove = originalSessionRemove;
   });
 
-  test("migrates legacy useVLExecutor to unified multimodal perception", async () => {
+  test("migrates legacy useVLExecutor to auto perception", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
         providerMode: "fireworks",
@@ -45,7 +45,7 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.perceptionMode).toBe("unified_vl");
+    expect(settings?.perceptionMode).toBe("auto");
     expect("useVLExecutor" in (settings ?? {})).toBe(false);
     expect(settings?.kimiApiKey).toBe("sk-kimi-test");
     expect(settings?.xiaomiApiKey).toBe("sk-xiaomi-test");
@@ -103,7 +103,7 @@ describe("settings storage", () => {
     const settings = await loadSettings();
 
     expect(settings?.executorModel).toBeUndefined();
-    expect(settings?.perceptionMode).toBe("unified_vl");
+    expect(settings?.perceptionMode).toBe("auto");
   });
 
   test("persists providerMode when saving settings without an explicit mode", async () => {
@@ -125,7 +125,7 @@ describe("settings storage", () => {
     expect(syncSet).toHaveBeenCalledWith({
       userSettings: expect.objectContaining({
         providerMode: "fireworks",
-        perceptionMode: "unified_vl",
+        perceptionMode: "auto",
       }),
     });
   });
@@ -281,6 +281,6 @@ describe("settings storage", () => {
 
     const payload = syncSet.mock.calls[0]?.[0]?.userSettings;
     expect(payload.executorModel).toBeUndefined();
-    expect(payload.perceptionMode).toBe("unified_vl");
+    expect(payload.perceptionMode).toBe("auto");
   });
 });

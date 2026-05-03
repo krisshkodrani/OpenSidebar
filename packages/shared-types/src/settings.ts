@@ -80,8 +80,8 @@ export interface UserSettings {
   temperature?: number;
   /**
    * Runtime observation path.
-   * - `auto`: unified VL executor
-   * - `unified_vl`: screenshot goes directly to the executor
+   * - `auto`: runtime chooses DOM-only or unified VL from task/page signals
+   * - `unified_vl`: screenshot always goes directly to the executor
    * - `structured`: internal degraded fallback that produces `Page Interpretation`
    */
   perceptionMode?: PerceptionRuntimeMode;

@@ -13,7 +13,11 @@ import {
   ToolName,
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
-import { resolvePerceptionRuntimeMode } from "../../utils/perception-mode";
+import {
+  extractPerceptionPageSignals,
+  resolvePerceptionRuntimeMode,
+  resolvePerceptionRuntimeModeDecision,
+} from "../../utils/perception-mode";
 import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
 import {
@@ -473,6 +477,16 @@ export class AgentLoop {
   private resumeInteraction: PendingUserInteraction | null = null;
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
+  private perceptionModeOption?: PerceptionRuntimeMode;
+  private useVLExecutorOption?: boolean;
+  private providerModeOption?:
+    | "openrouter"
+    | "openrouter-groq"
+    | "openai-groq"
+    | "fireworks"
+    | "fireworks-deepseek"
+    | "moonshot"
+    | "xiaomi";
   /** When true, mutation replay guard persists across turns (set after done() rejection) */
   private guardAfterDoneRejection = false;
   /** Pending hint from the user, picked up on the next turn */
@@ -716,13 +730,16 @@ export class AgentLoop {
     },
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
-    // Observation path: Fireworks defaults to unified VL; other stacks default
-    // to structured perception unless explicitly overridden.
+    this.perceptionModeOption = options?.perceptionMode;
+    this.useVLExecutorOption = options?.useVLExecutor;
+    this.providerModeOption = options?.providerMode;
+    // Initial observation path. start() refines auto mode once task/page
+    // signals are available from the initial snapshot.
     this.useVLExecutor =
       resolvePerceptionRuntimeMode({
-        perceptionMode: options?.perceptionMode,
-        useVLExecutor: options?.useVLExecutor,
-        providerMode: options?.providerMode,
+        perceptionMode: this.perceptionModeOption,
+        useVLExecutor: this.useVLExecutorOption,
+        providerMode: this.providerModeOption,
       }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
@@ -2703,6 +2720,25 @@ export class AgentLoop {
 
     // Save initial scroll position for restoration when the agent finishes
     let initialScrollY: number | null = null;
+
+    const perceptionDecision = resolvePerceptionRuntimeModeDecision({
+      perceptionMode: this.perceptionModeOption,
+      useVLExecutor: this.useVLExecutorOption,
+      providerMode: this.providerModeOption,
+      taskText: initialUserText ?? "",
+      ...extractPerceptionPageSignals(snapshot),
+    });
+    this.useVLExecutor = perceptionDecision.mode === "unified_vl";
+    this.log.info("agent", "Resolved perception runtime mode", {
+      mode: perceptionDecision.mode,
+      reason: perceptionDecision.reason,
+      signals: perceptionDecision.signals,
+    });
+    this.traceRecorder?.recordEvent("perception_mode_decision", {
+      mode: perceptionDecision.mode,
+      reason: perceptionDecision.reason,
+      signals: perceptionDecision.signals,
+    });
 
     if (snapshot) {
       initialScrollY = snapshot.scroll?.y ?? 0;
