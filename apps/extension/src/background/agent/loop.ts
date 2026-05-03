@@ -1403,6 +1403,21 @@ export class AgentLoop {
       .catch(() => {});
   }
 
+  private broadcastTaskProgress(
+    currentIndex: number,
+    totalTurnsUsed = this.turnCount,
+  ): void {
+    if (!this.taskId) return;
+    this.broadcast(
+      taskProgressMessage({
+        taskId: this.taskId,
+        subtasks: this.planSubtasks,
+        currentIndex,
+        totalTurnsUsed,
+      }),
+    );
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -2247,15 +2262,7 @@ export class AgentLoop {
                 `Call done() when all ${decomposition.subtasks.length} steps are complete.`,
             });
 
-            this.broadcast({
-              type: "TASK_PROGRESS",
-              payload: {
-                taskId: this.taskId,
-                subtasks: this.planSubtasks,
-                currentIndex: 0,
-                totalTurnsUsed: 0,
-              },
-            });
+            this.broadcastTaskProgress(0, 0);
 
             this.stepHandler(
               {
@@ -3593,15 +3600,7 @@ export class AgentLoop {
     });
 
     // Broadcast updated progress
-    this.broadcast({
-      type: "TASK_PROGRESS",
-      payload: {
-        taskId: this.taskId!,
-        subtasks: this.planSubtasks,
-        currentIndex: runningIdx,
-        totalTurnsUsed: this.turnCount,
-      },
-    });
+    this.broadcastTaskProgress(runningIdx);
 
     this.traceRecorder?.recordEvent("plan_replan", {
       fromIndex: runningIdx,
@@ -3767,15 +3766,7 @@ export class AgentLoop {
     this.lastPlanIndex = runningIdx;
 
     // Broadcast updated progress
-    this.broadcast({
-      type: "TASK_PROGRESS",
-      payload: {
-        taskId: this.taskId!,
-        subtasks: this.planSubtasks,
-        currentIndex: runningIdx,
-        totalTurnsUsed: this.turnCount,
-      },
-    });
+    this.broadcastTaskProgress(runningIdx);
 
     this.traceRecorder?.recordEvent("replan_on_escalation", {
       fromIndex: runningIdx,
@@ -4276,15 +4267,7 @@ export class AgentLoop {
         `Continue with the next step: ${nextStepDesc}. ` +
         `Do NOT re-verify the completed form-fill step unless the page reports an error.`,
     });
-    this.broadcast({
-      type: "TASK_PROGRESS",
-      payload: {
-        taskId: this.taskId,
-        subtasks: this.planSubtasks,
-        currentIndex: newIdx,
-        totalTurnsUsed: this.turnCount,
-      },
-    });
+    this.broadcastTaskProgress(newIdx);
     this.log.info("agent", "trusted form helper advanced step", {
       turn: this.turnCount,
       fromStep,
@@ -4877,17 +4860,7 @@ export class AgentLoop {
       mode: params.mode,
       trustedTool: params.toolName,
     });
-    if (this.taskId) {
-      this.broadcast({
-        type: "TASK_PROGRESS",
-        payload: {
-          taskId: this.taskId,
-          subtasks: this.planSubtasks,
-          currentIndex: newIndex,
-          totalTurnsUsed: this.turnCount,
-        },
-      });
-    }
+    this.broadcastTaskProgress(newIndex);
     this.log.info("agent", "trusted form helper completed submit step", {
       turn: this.turnCount,
       fromStep,
@@ -4946,17 +4919,7 @@ export class AgentLoop {
       filledFieldsBeforeSubmit: signal.filledFieldsBeforeSubmit,
       advancedTo: newIndex,
     });
-    if (this.taskId) {
-      this.broadcast({
-        type: "TASK_PROGRESS",
-        payload: {
-          taskId: this.taskId,
-          subtasks: this.planSubtasks,
-          currentIndex: newIndex,
-          totalTurnsUsed: this.turnCount,
-        },
-      });
-    }
+    this.broadcastTaskProgress(newIndex);
     this.log.info("agent", "submit_form_reset_success", {
       turn: this.turnCount,
       fromStep: currentIndex,
@@ -6992,14 +6955,7 @@ export class AgentLoop {
                     mode: "parallel",
                     advancedTo: newIdx,
                   });
-                  this.broadcast(
-                    taskProgressMessage({
-                      taskId: this.taskId!,
-                      subtasks: this.planSubtasks,
-                      currentIndex: newIdx,
-                      totalTurnsUsed: this.turnCount,
-                    }),
-                  );
+                  this.broadcastTaskProgress(newIdx);
                   this.context.addMessage({
                     role: "user",
                     content: `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
@@ -8309,14 +8265,7 @@ export class AgentLoop {
                           convertedFromDone: true,
                         },
                       );
-                      this.broadcast(
-                        taskProgressMessage({
-                          taskId: this.taskId!,
-                          subtasks: this.planSubtasks,
-                          currentIndex: newIdx,
-                          totalTurnsUsed: this.turnCount,
-                        }),
-                      );
+                      this.broadcastTaskProgress(newIdx);
                       this.log.info(
                         "agent",
                         "DONE converted into step completion",
@@ -9430,15 +9379,7 @@ export class AgentLoop {
                     mode: "sequential",
                     advancedTo: newIdx,
                   });
-                  this.broadcast({
-                    type: "TASK_PROGRESS",
-                    payload: {
-                      taskId: this.taskId!,
-                      subtasks: this.planSubtasks,
-                      currentIndex: newIdx,
-                      totalTurnsUsed: this.turnCount,
-                    },
-                  });
+                  this.broadcastTaskProgress(newIdx);
                   this.context.addMessage({
                     role: "user",
                     content: `STEP ADVANCED: '${seqGateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
@@ -10647,15 +10588,7 @@ export class AgentLoop {
                             `Do NOT call done() - keep acting.`,
                         });
                       }
-                      this.broadcast({
-                        type: "TASK_PROGRESS",
-                        payload: {
-                          taskId: this.taskId!,
-                          subtasks: this.planSubtasks,
-                          currentIndex: newIdx,
-                          totalTurnsUsed: this.turnCount,
-                        },
-                      });
+                      this.broadcastTaskProgress(newIdx);
                       if (completedAllSteps) {
                         const finalSummary = `Completed final planned step: ${reason}.`;
                         doneSummary = finalSummary;
