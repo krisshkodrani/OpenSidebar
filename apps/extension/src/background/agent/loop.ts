@@ -94,6 +94,7 @@ export {
   validateTextEntryTarget,
 } from "./text-entry-guards";
 import {
+  assessListDetailWorkflow,
   countVisibleListDetailActions,
   getListDetailDoneRejection,
   getListDetailReturnControl,
@@ -7148,14 +7149,7 @@ export class AgentLoop {
               }
 
               const currentSnapshot = this.context.getSnapshot();
-              const visibleDetailActionCount =
-                countVisibleListDetailActions(currentSnapshot);
-              if (
-                visibleDetailActionCount > this.listDetailVisibleActionCount
-              ) {
-                this.listDetailVisibleActionCount = visibleDetailActionCount;
-              }
-              const listDetailWorkflowBlock = getListDetailWorkflowBlock({
+              const listDetailWorkflow = assessListDetailWorkflow({
                 selectedSkillId: this.selectedSkillId,
                 query: this.originalQuery,
                 toolName,
@@ -7163,9 +7157,12 @@ export class AgentLoop {
                 snapshot: currentSnapshot,
                 reviewedTargets: this.listDetailReviewedTargets,
                 openedTargets: this.listDetailOpenedTargets,
-                visibleDetailActionCount: this.listDetailVisibleActionCount,
+                previousVisibleDetailActionCount:
+                  this.listDetailVisibleActionCount,
               });
-              if (listDetailWorkflowBlock) {
+              this.listDetailVisibleActionCount =
+                listDetailWorkflow.visibleDetailActionCount;
+              if (listDetailWorkflow.block) {
                 this.log.warn("agent", "List-detail workflow tool blocked", {
                   turn: this.turnCount,
                   tool: toolName,
@@ -7184,7 +7181,7 @@ export class AgentLoop {
                 );
                 return {
                   toolCall,
-                  result: listDetailWorkflowBlock,
+                  result: listDetailWorkflow.block,
                   error: null,
                 };
               }
@@ -7790,12 +7787,7 @@ export class AgentLoop {
             }
 
             const currentSnapshot = this.context.getSnapshot();
-            const visibleDetailActionCount =
-              countVisibleListDetailActions(currentSnapshot);
-            if (visibleDetailActionCount > this.listDetailVisibleActionCount) {
-              this.listDetailVisibleActionCount = visibleDetailActionCount;
-            }
-            const listDetailWorkflowBlock = getListDetailWorkflowBlock({
+            const listDetailWorkflow = assessListDetailWorkflow({
               selectedSkillId: this.selectedSkillId,
               query: this.originalQuery,
               toolName,
@@ -7803,13 +7795,16 @@ export class AgentLoop {
               snapshot: currentSnapshot,
               reviewedTargets: this.listDetailReviewedTargets,
               openedTargets: this.listDetailOpenedTargets,
-              visibleDetailActionCount: this.listDetailVisibleActionCount,
+              previousVisibleDetailActionCount:
+                this.listDetailVisibleActionCount,
             });
-            if (listDetailWorkflowBlock) {
+            this.listDetailVisibleActionCount =
+              listDetailWorkflow.visibleDetailActionCount;
+            if (listDetailWorkflow.block) {
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content: listDetailWorkflowBlock,
+                content: listDetailWorkflow.block,
               });
               this.log.warn("agent", "List-detail workflow tool blocked", {
                 turn: this.turnCount,
