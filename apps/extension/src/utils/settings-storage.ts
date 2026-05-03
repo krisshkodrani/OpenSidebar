@@ -30,7 +30,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
   const normalized: UserSettings = {
     ...settings,
     providerMode: settings.providerMode ?? "fireworks",
-    perceptionMode: "unified_vl",
+    perceptionMode: settings.perceptionMode ?? "auto",
   };
   if (
     normalized.executorModel &&
@@ -151,8 +151,9 @@ export async function loadSettings(): Promise<UserSettings | null> {
   }
   if (!raw.providerMode) raw.providerMode = "fireworks";
 
-  // Migrate legacy unified-vision toggle to explicit perception mode.
-  raw.perceptionMode = "unified_vl";
+  // Migrate legacy unified-vision toggle to auto mode. The runtime chooses
+  // unified VL only when page or task signals indicate vision is useful.
+  if (!raw.perceptionMode) raw.perceptionMode = "auto";
   delete raw.useVLExecutor;
 
   if (

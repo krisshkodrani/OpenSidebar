@@ -1,41 +1,99 @@
 import { describe, expect, test } from "vitest";
-import { resolvePerceptionRuntimeMode } from "../../src/utils/perception-mode";
+import {
+  extractPerceptionPageSignals,
+  resolvePerceptionRuntimeMode,
+  resolvePerceptionRuntimeModeDecision,
+} from "../../src/utils/perception-mode";
 
 describe("perception mode resolution", () => {
-  test("defaults Fireworks to unified VL", () => {
+  test("auto defaults Fireworks to structured when DOM signals are sufficient", () => {
     expect(
       resolvePerceptionRuntimeMode({
         perceptionMode: "auto",
         providerMode: "fireworks",
+        elementCount: 20,
+        pageTextLength: 2000,
       }),
-    ).toBe("unified_vl");
+    ).toBe("structured");
   });
 
-  test("defaults Moonshot to unified VL", () => {
+  test("auto selects unified VL for visual task text", () => {
     expect(
-      resolvePerceptionRuntimeMode({
+      resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
         providerMode: "moonshot",
+        taskText: "Read the chart and tell me the highest value",
+        elementCount: 20,
+        pageTextLength: 2000,
       }),
-    ).toBe("unified_vl");
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: ["visual_task_text"],
+    });
   });
 
-  test("defaults Fireworks + DeepSeek hybrid to unified VL", () => {
+  test("auto selects unified VL for sparse DOM", () => {
     expect(
-      resolvePerceptionRuntimeMode({
+      resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
         providerMode: "fireworks-deepseek",
+        elementCount: 1,
+        pageTextLength: 100,
+      }),
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "sparse_dom",
+    });
+  });
+
+  test("auto selects unified VL for canvas, svg, and image-heavy pages", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "auto",
+        hasCanvas: true,
+        elementCount: 20,
+        pageTextLength: 2000,
+      }),
+    ).toBe("unified_vl");
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "auto",
+        hasSvg: true,
+        elementCount: 20,
+        pageTextLength: 2000,
+      }),
+    ).toBe("unified_vl");
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "auto",
+        imageCount: 3,
+        elementCount: 20,
+        pageTextLength: 2000,
       }),
     ).toBe("unified_vl");
   });
 
-  test("defaults non-Fireworks stacks to unified VL", () => {
+  test("records all auto signals while using the first signal as reason", () => {
     expect(
-      resolvePerceptionRuntimeMode({
+      resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        providerMode: "openrouter",
+        taskText: "Describe the visual chart",
+        hasCanvas: true,
+        imageCount: 3,
+        elementCount: 1,
+        pageTextLength: 100,
       }),
-    ).toBe("unified_vl");
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+      signals: [
+        "visual_task_text",
+        "canvas_present",
+        "image_heavy_page",
+        "sparse_dom",
+      ],
+    });
   });
 
   test("respects explicit structured override", () => {
@@ -47,7 +105,17 @@ describe("perception mode resolution", () => {
     ).toBe("structured");
   });
 
-  test("ignores legacy useVLExecutor false in favor of unified VL", () => {
+  test("respects explicit unified VL override", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "unified_vl",
+        elementCount: 20,
+        pageTextLength: 2000,
+      }),
+    ).toBe("unified_vl");
+  });
+
+  test("keeps legacy useVLExecutor true as unified VL but ignores false", () => {
     expect(
       resolvePerceptionRuntimeMode({
         useVLExecutor: true,
@@ -58,7 +126,45 @@ describe("perception mode resolution", () => {
       resolvePerceptionRuntimeMode({
         useVLExecutor: false,
         providerMode: "fireworks",
+        elementCount: 20,
+        pageTextLength: 2000,
       }),
-    ).toBe("unified_vl");
+    ).toBe("structured");
+  });
+
+  test("extracts page signals from snapshot tags and text", () => {
+    expect(
+      extractPerceptionPageSignals({
+        elements: [
+          {
+            tag: 1,
+            tagName: "button",
+            role: "button",
+            text: "Open",
+            attributes: {},
+            rect: { x: 0, y: 0, width: 10, height: 10 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+        visibleContent: "Short",
+        pageContent: "Short page",
+        framework: "react",
+        skeleton: [
+          {
+            tagName: "canvas",
+            role: "canvas",
+            text: "",
+            depth: 0,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      elementCount: 1,
+      visibleTextLength: 5,
+      pageTextLength: 10,
+      hasCanvas: true,
+      framework: "react",
+    });
   });
 });
