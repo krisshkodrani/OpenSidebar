@@ -331,6 +331,7 @@ import {
   collectTrailingToolResultMessages,
   handleParallelVerificationGate,
   handleSequentialVerificationGate,
+  type ParallelToolExecutionResult,
 } from "./parallel-tool-execution";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
@@ -1168,6 +1169,49 @@ export class AgentLoop {
         totalTurnsUsed,
       }),
     );
+  }
+
+  private finalizeParallelToolResults(
+    results: ParallelToolExecutionResult[],
+  ): void {
+    addParallelToolResultsToContext(this.context, results);
+    handleParallelVerificationGate({
+      planStatus: this.context.getPlanStatusRaw(),
+      results,
+      currentUrl: this.context.getCurrentUrl(),
+      host: {
+        advanceCompletedSubtasks: () =>
+          advanceCompletedSubtasks(
+            this as unknown as AgentLoopPlanProgressHost,
+          ),
+        resetConsecutiveAutoAdvances: () => {
+          this.consecutiveAutoAdvances = 0;
+        },
+        syncPlanStatus: (currentIndex, reason, data) =>
+          this.syncPlanStatus(currentIndex, reason, data),
+        broadcastTaskProgress: (currentIndex) =>
+          this.broadcastTaskProgress(currentIndex),
+        addUserMessage: (content) => {
+          this.context.addMessage({
+            role: "user",
+            content,
+          });
+        },
+        logVerificationGate: (data) => {
+          this.log.info("agent", "Verification gate triggered (parallel)", {
+            turn: this.turnCount,
+            action: data.action,
+            evidence: data.evidence,
+          });
+        },
+        recordVerificationGate: (data) => {
+          this.traceRecorder?.recordEvent(
+            "verification_gate_triggered",
+            data,
+          );
+        },
+      },
+    });
   }
 
   private finishStream(replaceContent?: string): void {
@@ -6493,48 +6537,7 @@ export class AgentLoop {
             }),
           );
 
-          addParallelToolResultsToContext(this.context, results);
-          handleParallelVerificationGate({
-            planStatus: this.context.getPlanStatusRaw(),
-            results,
-            currentUrl: this.context.getCurrentUrl(),
-            host: {
-              advanceCompletedSubtasks: () =>
-                advanceCompletedSubtasks(
-                  this as unknown as AgentLoopPlanProgressHost,
-                ),
-              resetConsecutiveAutoAdvances: () => {
-                this.consecutiveAutoAdvances = 0;
-              },
-              syncPlanStatus: (currentIndex, reason, data) =>
-                this.syncPlanStatus(currentIndex, reason, data),
-              broadcastTaskProgress: (currentIndex) =>
-                this.broadcastTaskProgress(currentIndex),
-              addUserMessage: (content) => {
-                this.context.addMessage({
-                  role: "user",
-                  content,
-                });
-              },
-              logVerificationGate: (data) => {
-                this.log.info(
-                  "agent",
-                  "Verification gate triggered (parallel)",
-                  {
-                    turn: this.turnCount,
-                    action: data.action,
-                    evidence: data.evidence,
-                  },
-                );
-              },
-              recordVerificationGate: (data) => {
-                this.traceRecorder?.recordEvent(
-                  "verification_gate_triggered",
-                  data,
-                );
-              },
-            },
-          });
+          this.finalizeParallelToolResults(results);
         } else {
           // SEQUENTIAL EXECUTION (has sequential tools or single tool)
           for (const toolCall of response.tool_calls) {
