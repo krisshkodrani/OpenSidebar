@@ -24,7 +24,7 @@ import {
   buildDomAwareProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
-import { classifyRisk, sanitizeUrl, validateToolCalls } from "../security";
+import { classifyRisk, validateToolCalls } from "../security";
 import { waitForDomReady, ensureContentScript } from "../tab-ready";
 import {
   isBridgeDisconnect,
@@ -70,7 +70,7 @@ import {
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
-import { AgentMiddleware, type PreToolDecision } from "./middleware";
+import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
   TURN_CHECKPOINT_VERSION,
@@ -267,6 +267,18 @@ import {
   PIVOT_MESSAGE,
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
+import {
+  handleCloseTabToolCall,
+  handleCreateTabToolCall,
+  handleEscalateToolCall,
+  handleGenericSequentialToolCall,
+  handleListTabsToolCall,
+  handleNavigateGuardToolCall,
+  handleSwitchTabToolCall,
+  handleUpdateNotesToolCall,
+  handleWaitToolCall,
+  type AgentLoopToolHandlerHost,
+} from "./loop-tool-handlers";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -2126,896 +2138,6 @@ export class AgentLoop {
       question: question.slice(0, 100),
       answer: answer.slice(0, 200),
     });
-  }
-
-  private async handleEscalateToolCall(
-    toolCallId: string,
-    args: Record<string, unknown>,
-    tabId: number,
-    prevElementCount: number,
-    escalationTier: number,
-    plannerModelStartTurn: number,
-    orientationPhase: boolean,
-  ): Promise<{
-    escalationTier: number;
-    plannerModelStartTurn: number;
-    orientationPhase: boolean;
-    prevElementCount: number;
-  }> {
-    const reason = (args.reason as string) || "";
-    if (escalationTier < 1) {
-      this.escalateModel();
-      escalationTier = 1;
-      plannerModelStartTurn = this.turnCount;
-      orientationPhase = false; // Cancel plan-then-act handoff
-      prevElementCount = await this.refreshSnapshotWithRetry(
-        tabId,
-        prevElementCount,
-      );
-      await this.refreshPerceptionAndTriage(tabId);
-      this.stepHandler(
-        {
-          id: crypto.randomUUID(),
-          type: "info",
-          label: reason
-            ? `Escalating: "${reason.slice(0, STRING_LIMITS.ESCALATION_REASON)}"`
-            : "Escalating to smarter model",
-          status: "done",
-          timestamp: Date.now(),
-        },
-        false,
-      );
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: ESCALATION_REFLECTION(reason || "voluntary escalation"),
-      });
-    } else {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Already using the most capable model (${this.llm.getCurrentModel()}). Escalation won't help further. Try a fundamentally different approach:\n- Use read_page to force a fresh page perception\n- Try a completely different interaction strategy`,
-      });
-    }
-    this.log.info("agent", "ESCALATE called", {
-      turn: this.turnCount,
-      reason,
-      tier: escalationTier,
-    });
-    this.traceRecorder?.recordEvent("escalation", {
-      reason,
-      voluntary: true,
-    });
-
-    return {
-      escalationTier,
-      plannerModelStartTurn,
-      orientationPhase,
-      prevElementCount,
-    };
-  }
-
-  private handleUpdateNotesToolCall(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-  ): void {
-    const note = (args.note as string) || "";
-    this.context.appendWorkingNote(note);
-    this.trackListDetailToolSuccess(
-      toolName,
-      args,
-      this.context.getSnapshot(),
-    );
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: "Note saved.",
-    });
-    this.log.info("agent", "UPDATE_NOTES saved", {
-      turn: this.turnCount,
-      noteLength: note.length,
-    });
-  }
-
-  private async handleWaitToolCall(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    tabId: number,
-    prevElementCount: number,
-  ): Promise<number> {
-    const seconds = Math.min(Math.max((args.seconds as number) || 2, 1), 10);
-    const reason = (args.reason as string) || "";
-
-    // Signal WAITING status so the UI activity indicator stays visible
-    this.statusHandler(
-      AgentStatus.WAITING_FOR_PAGE_LOAD,
-      `Waiting ${seconds}s…`,
-    );
-    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-    this.statusHandler(AgentStatus.THINKING, "Analyzing…");
-
-    // Refresh DOM snapshot for fresh context
-    prevElementCount = await this.refreshSnapshotWithRetry(
-      tabId,
-      prevElementCount,
-    );
-
-    // Build re-orientation response
-    const snapshot = this.context.getSnapshot();
-    const parts: string[] = [`--- RE-ORIENTATION (waited ${seconds}s) ---`];
-    if (reason) parts.push(`Reason: ${reason}`);
-    parts.push(`\nOriginal task: "${this.originalQuery}"`);
-
-    if (this.planSubtasks.length > 0) {
-      const planLines = this.planSubtasks.map((s, i) => {
-        const marker =
-          s.status === "completed"
-            ? "[done]"
-            : s.status === "running"
-              ? "[NOW]"
-              : "[pending]";
-        return `  ${i + 1}. ${marker} ${s.description}`;
-      });
-      parts.push(`\nPlan progress:\n${planLines.join("\n")}`);
-    }
-
-    parts.push(
-      `\nCurrent page: "${snapshot?.title || "unknown"}" — ${snapshot?.url || "unknown"}`,
-    );
-    parts.push(`Turn: ${this.turnCount} / ${this.maxTurns}`);
-    parts.push(`\nReview the above → observe the page → decide your next action.`);
-
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: parts.join("\n"),
-    });
-
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "tool",
-        label: formatStepLabel(toolName, args, this.elementResolver),
-        toolName,
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-
-    this.log.info("agent", "WAIT_REORIENT", {
-      turn: this.turnCount,
-      seconds,
-      reason: reason.slice(0, 100),
-    });
-    this.traceRecorder?.recordEvent("wait_reorient", {
-      seconds,
-      reason,
-    });
-
-    return prevElementCount;
-  }
-
-  private handleNavigateGuardToolCall(
-    toolCallId: string,
-    args: Record<string, unknown>,
-  ): boolean {
-    if (!args.url) return false;
-
-    const blockMessage = this.checkNavigateGuard(args.url as string);
-    if (!blockMessage) return false;
-
-    this.log.warn("agent", "Navigate blocked by guard", {
-      turn: this.turnCount,
-      targetUrl: (args.url as string).slice(0, 120),
-    });
-    this.traceRecorder?.recordEvent("navigate_blocked", {
-      targetUrl: args.url,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: blockMessage,
-    });
-    this.stepHandler(
-      {
-        id: crypto.randomUUID(),
-        type: "info",
-        label: "Navigate blocked — would undo progress",
-        status: "done",
-        timestamp: Date.now(),
-      },
-      false,
-    );
-    return true;
-  }
-
-  private async handleListTabsToolCall(
-    toolCallId: string,
-    tabId: number,
-  ): Promise<void> {
-    const wsTabIds = await this.getWorkspaceTabIds();
-    let tabLines: string[];
-    if (wsTabIds) {
-      // Filter to workspace tabs only
-      const tabs: chrome.tabs.Tab[] = [];
-      for (const id of wsTabIds) {
-        try {
-          tabs.push(await chrome.tabs.get(id));
-        } catch {
-          // Tab may have been closed externally
-        }
-      }
-      if (tabs.length === 0) {
-        tabLines = ["No open tabs in this workspace."];
-      } else {
-        tabLines = tabs.map(
-          (t) =>
-            `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
-        );
-      }
-    } else {
-      // No workspace - show all tabs (fallback)
-      const allTabs = await chrome.tabs.query({});
-      tabLines = allTabs.map(
-        (t: any) =>
-          `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
-      );
-    }
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: tabLines.join("\n") || "No open tabs.",
-    });
-    this.log.info("agent", "LIST_TABS", {
-      turn: this.turnCount,
-      count: tabLines.length,
-      workspaceScoped: wsTabIds !== null,
-    });
-  }
-
-  private async handleSwitchTabToolCall(
-    toolCallId: string,
-    args: Record<string, unknown>,
-    tabId: number,
-    prevElementCount: number,
-  ): Promise<{ tabId: number; prevElementCount: number }> {
-    if (this.shouldBlockTabManagementTools()) {
-      const blockedMessage =
-        "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
-        "Stay on the current tab unless the user asks for tab switching. " +
-        "Tab management tools disabled for this session.";
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: blockedMessage,
-      });
-      for (const tabTool of [
-        ToolName.CREATE_TAB,
-        ToolName.SWITCH_TAB,
-        ToolName.CLOSE_TAB,
-        ToolName.CREATE_WINDOW,
-      ]) {
-        this.disabledTools.add(tabTool);
-      }
-      this.log.warn(
-        "agent",
-        "switch_tab blocked - not explicitly requested, tab tools disabled",
-        {
-          turn: this.turnCount,
-          originalQuery: this.originalQuery,
-        },
-      );
-      return { tabId, prevElementCount };
-    }
-
-    // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
-    const rawId = args.tabId ?? args.id;
-    const targetTabId =
-      typeof rawId === "string" ? parseInt(rawId, 10) : (rawId as number);
-    if (!targetTabId || isNaN(targetTabId)) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error: Invalid tab ID. Use switch_tab({"tabId": <integer>}) with the numeric tab ID from create_tab or list_tabs.`,
-      });
-      return { tabId, prevElementCount };
-    }
-    const wsTabIds = await this.getWorkspaceTabIds();
-
-    if (wsTabIds && !wsTabIds.includes(targetTabId)) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
-      });
-      this.log.warn("agent", "switch_tab blocked — outside workspace", {
-        turn: this.turnCount,
-        targetTabId,
-        workspaceTabs: wsTabIds,
-      });
-      return { tabId, prevElementCount };
-    }
-
-    try {
-      await chrome.tabs.update(targetTabId, { active: true });
-      tabId = targetTabId;
-
-      // Refresh snapshot for new tab
-      prevElementCount = await this.refreshSnapshotWithRetry(
-        tabId,
-        prevElementCount,
-      );
-
-      // Warm start: pre-run perception so next turn already has page interpretation
-      await this.refreshPerceptionAndTriage(tabId);
-
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Switched to tab ${targetTabId}. Fresh page snapshot is available.`,
-      });
-    } catch (e: any) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error switching to tab ${targetTabId}: ${e.message}`,
-      });
-    }
-    this.log.info("agent", "SWITCH_TAB", {
-      turn: this.turnCount,
-      targetTabId,
-      newTabId: tabId,
-    });
-
-    return { tabId, prevElementCount };
-  }
-
-  private async handleCloseTabToolCall(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    tabId: number,
-  ): Promise<void> {
-    if (this.replayMutationSensitiveAction(toolCallId, toolName, args)) {
-      return;
-    }
-    if (this.shouldBlockTabManagementTools()) {
-      const blockedMessage =
-        "Blocked: close_tab requires explicit user instruction to manage tabs. " +
-        "Tab management tools disabled for this session.";
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: blockedMessage,
-      });
-      for (const tabTool of [
-        ToolName.CREATE_TAB,
-        ToolName.SWITCH_TAB,
-        ToolName.CLOSE_TAB,
-        ToolName.CREATE_WINDOW,
-      ]) {
-        this.disabledTools.add(tabTool);
-      }
-      this.log.warn(
-        "agent",
-        "close_tab blocked - not explicitly requested, tab tools disabled",
-        {
-          turn: this.turnCount,
-          originalQuery: this.originalQuery,
-        },
-      );
-      return;
-    }
-
-    // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
-    const rawCloseId = args.tabId ?? args.id;
-    const parsedCloseId =
-      typeof rawCloseId === "string"
-        ? parseInt(rawCloseId, 10)
-        : (rawCloseId as number);
-    const targetTabId =
-      parsedCloseId && !isNaN(parsedCloseId) ? parsedCloseId : tabId;
-
-    if (targetTabId === tabId) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error: Cannot close the current tab (${tabId}). Use switch_tab to move to another tab first.`,
-      });
-      return;
-    }
-
-    const wsTabIds = await this.getWorkspaceTabIds();
-    if (wsTabIds && !wsTabIds.includes(targetTabId)) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
-      });
-      this.log.warn("agent", "close_tab blocked — outside workspace", {
-        turn: this.turnCount,
-        targetTabId,
-        workspaceTabs: wsTabIds,
-      });
-      return;
-    }
-
-    try {
-      await chrome.tabs.remove(targetTabId);
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Closed tab ${targetTabId}.`,
-      });
-      this.recordMutationSensitiveAction(
-        toolName,
-        args,
-        `Closed tab ${targetTabId}.`,
-      );
-    } catch (e: any) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error closing tab ${targetTabId}: ${e.message}`,
-      });
-    }
-    this.log.info("agent", "CLOSE_TAB", {
-      turn: this.turnCount,
-      targetTabId,
-    });
-  }
-
-  private async handleCreateTabToolCall(
-    toolCallId: string,
-    toolName: ToolName,
-    args: Record<string, unknown>,
-  ): Promise<void> {
-    if (this.replayMutationSensitiveAction(toolCallId, toolName, args)) {
-      return;
-    }
-    if (this.shouldBlockTabManagementTools()) {
-      const blockedMessage =
-        "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
-        "Tab management tools disabled for this session.";
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: blockedMessage,
-      });
-      for (const tabTool of [
-        ToolName.CREATE_TAB,
-        ToolName.SWITCH_TAB,
-        ToolName.CLOSE_TAB,
-        ToolName.CREATE_WINDOW,
-      ]) {
-        this.disabledTools.add(tabTool);
-      }
-      this.log.warn(
-        "agent",
-        "create_tab blocked - not explicitly requested, tab tools disabled",
-        {
-          turn: this.turnCount,
-          originalQuery: this.originalQuery,
-        },
-      );
-      return;
-    }
-
-    const url = args.url as string;
-    const urlResult = sanitizeUrl(url);
-    if (!urlResult.ok) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error: ${urlResult.error}`,
-      });
-      return;
-    }
-
-    try {
-      const newTab = await chrome.tabs.create({
-        url: urlResult.value,
-      });
-      if (newTab.id && this.workspaceId && this.workspaceId !== "default") {
-        await workspaceManager.addTabToWorkspace(newTab.id, this.workspaceId);
-      }
-
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
-      });
-      this.recordMutationSensitiveAction(
-        toolName,
-        args,
-        `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
-      );
-      this.log.info("agent", "CREATE_TAB", {
-        turn: this.turnCount,
-        newTabId: newTab.id,
-        url: urlResult.value,
-        workspaceId: this.workspaceId,
-      });
-    } catch (e: any) {
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: `Error creating tab: ${e.message}`,
-      });
-    }
-  }
-
-  private async handleGenericSequentialToolCall(params: {
-    toolCall: ToolCall;
-    toolName: ToolName;
-    args: Record<string, unknown>;
-    tabId: number;
-    prevElementCount: number;
-    autocompleteRewriteReason: string | null;
-    discoveredTagIds: Set<number>;
-    preDecision: PreToolDecision;
-    llmIntention?: string | null;
-    currentStepIndex: number;
-    shouldArmInlineEditVerification: boolean;
-    cacheType: ReturnType<typeof CACHEABLE_TOOLS.get>;
-    orientationPhase: boolean;
-    orientationToolsUsed: Set<string>;
-    domModified: boolean;
-    visuallyModified: boolean;
-    lastDomAffectingToolName: string | null;
-  }): Promise<{
-    prevElementCount: number;
-    domModified: boolean;
-    visuallyModified: boolean;
-    lastDomAffectingToolName: string | null;
-    breakLoop: boolean;
-    completedSummary: string | null;
-  }> {
-    const {
-      toolCall,
-      toolName,
-      args,
-      tabId,
-      autocompleteRewriteReason,
-      discoveredTagIds,
-      preDecision,
-      llmIntention,
-      currentStepIndex,
-      shouldArmInlineEditVerification,
-      cacheType,
-      orientationPhase,
-      orientationToolsUsed,
-    } = params;
-    let {
-      prevElementCount,
-      domModified,
-      visuallyModified,
-      lastDomAffectingToolName,
-    } = params;
-
-    // Idempotency guard: prevent re-execution of mutation-sensitive actions
-    // within the same plan step. Checks the durable step mutation ledger first
-    // (survives SW restart), then the ephemeral turn cache.
-    if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
-      return {
-        prevElementCount,
-        domModified,
-        visuallyModified,
-        lastDomAffectingToolName,
-        breakLoop: false,
-        completedSummary: null,
-      };
-    }
-
-    const toolStepId = crypto.randomUUID();
-    const toolStep: AgentStep = {
-      id: toolStepId,
-      type: "tool",
-      label: formatStepLabel(toolName, args, this.elementResolver),
-      detail: JSON.stringify(args),
-      toolName,
-      status: "running",
-      timestamp: Date.now(),
-    };
-    this.stepHandler(toolStep, false);
-
-    let result: string;
-    try {
-      const preActionSnapshot = this.context.getSnapshot();
-      result = await this.executeToolCall(toolCall, tabId);
-      if (autocompleteRewriteReason) {
-        result = `${result}\n${autocompleteRewriteReason}`;
-      }
-      this.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
-      const toolMs = Date.now() - toolStep.timestamp;
-      // Track tag IDs discovered by find_element
-      for (const id of extractDiscoveredTagIds(toolName, result)) {
-        discoveredTagIds.add(id);
-      }
-      this.middleware.evaluatePostTool(
-        toolName,
-        result,
-        null,
-        toolMs,
-        this.turnCount,
-      );
-      this.stepHandler(
-        {
-          ...toolStep,
-          status: "done",
-          durationMs: toolMs,
-        },
-        true,
-      );
-      this.log.info("tools", `${toolName} OK`, {
-        turn: this.turnCount,
-        tool: toolName,
-        risk: preDecision.riskLevel,
-        mode: "sequential",
-        args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-        result: result.slice(0, STRING_LIMITS.RESULT_LOG),
-        durationMs: toolMs,
-        intention: llmIntention,
-      });
-      this.traceRecorder?.recordToolExecution(
-        toolCall.id,
-        toolName,
-        args,
-        result,
-        true,
-        toolMs,
-        preDecision.riskLevel,
-      );
-      if (
-        this.pendingInlineEditVerification &&
-        this.pendingInlineEditVerification.stepIndex === currentStepIndex &&
-        [ToolName.READ_PAGE, ToolName.READ_ELEMENT, ToolName.FIND_ELEMENT].includes(
-          toolName,
-        )
-      ) {
-        this.pendingInlineEditVerification = null;
-      } else if (shouldArmInlineEditVerification) {
-        this.pendingInlineEditVerification = {
-          stepIndex: currentStepIndex,
-          reason: "You likely just committed an inline edit on this step.",
-        };
-      }
-      this.recordMutationSensitiveAction(
-        toolName,
-        args,
-        result,
-        preActionSnapshot,
-      );
-    } catch (toolError: any) {
-      if (toolError.name === "AbortError") throw toolError;
-      const errorMsg = toolError.message || String(toolError);
-      const toolMs = Date.now() - toolStep.timestamp;
-      this.middleware.evaluatePostTool(
-        toolName,
-        null,
-        errorMsg,
-        toolMs,
-        this.turnCount,
-      );
-      this.log.error("tools", `${toolName} FAIL`, {
-        turn: this.turnCount,
-        tool: toolName,
-        risk: preDecision.riskLevel,
-        mode: "sequential",
-        args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-        error: errorMsg,
-        durationMs: toolMs,
-        intention: llmIntention,
-      });
-      this.traceRecorder?.recordToolExecution(
-        toolCall.id,
-        toolName,
-        args,
-        errorMsg,
-        false,
-        toolMs,
-        preDecision.riskLevel,
-        errorMsg,
-      );
-      this.stepHandler(
-        {
-          ...toolStep,
-          status: "error",
-          durationMs: toolMs,
-          errorMessage: errorMsg,
-        },
-        true,
-      );
-      // Add error to conversation history so the LLM can recover
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: `Error: ${errorMsg}`,
-      });
-      return {
-        prevElementCount,
-        domModified,
-        visuallyModified,
-        lastDomAffectingToolName,
-        breakLoop: false,
-        completedSummary: null,
-      };
-    }
-
-    if (
-      DOM_MODIFYING_TOOLS.has(toolName) &&
-      !result.includes("Click intercepted")
-    ) {
-      domModified = true;
-      this.consecutiveAutoAdvances = 0;
-      if (toolName !== ToolName.READ_PAGE) {
-        visuallyModified = true;
-        lastDomAffectingToolName = toolName;
-      }
-      this.lastDomStep = {
-        ...toolStep,
-        status: "done",
-        durationMs: Date.now() - toolStep.timestamp,
-      };
-    }
-
-    // Track read_page / xray_page for done() content verification guard
-    if (toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE) {
-      this.hasReadPage = true;
-    }
-    if (toolName === ToolName.READ_PAGE) {
-      const aggregateNote = this.updateMoneyTableAggregate(result);
-      if (aggregateNote) {
-        result = `${result}\n\n${aggregateNote}`;
-      }
-    }
-
-    // Cache store (Feature 1): cache successful results for cacheable tools
-    if (cacheType && !result.startsWith("Error:")) {
-      const fp = getSnapshotFingerprint(this.context.getSnapshot());
-      this.toolCache.set(
-        ToolResultCache.key(toolName, args),
-        result,
-        fp,
-        cacheType,
-      );
-    }
-
-    // Track investigation tools during orientation for adaptive tier allocation
-    if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
-      orientationToolsUsed.add(toolName);
-    }
-
-    // Add Tool Result to History
-    this.context.addMessage({
-      role: "tool",
-      content: result,
-      tool_call_id: toolCall.id,
-    });
-
-    const trustedSubmitCompletion = this.maybeCompleteTrustedFormSubmitStep({
-      toolName,
-      toolArgs: args,
-      toolResult: result,
-      mode: "sequential",
-    });
-    if (trustedSubmitCompletion) {
-      return {
-        prevElementCount,
-        domModified,
-        visuallyModified,
-        lastDomAffectingToolName,
-        breakLoop: true,
-        completedSummary: trustedSubmitCompletion.finalSummary,
-      };
-    }
-
-    // Trigger B: Blind input detection — warn when type_text value has no evidence
-    this.maybeAdvanceTrustedFormFillStep({
-      toolName,
-      toolArgs: args,
-      toolResult: result,
-      mode: "sequential",
-    });
-
-    const trustedAutoSubmitCompletion =
-      await this.maybeAutoSubmitTrustedServiceNowForm({
-        toolName,
-        toolArgs: args,
-        toolResult: result,
-        tabId,
-        mode: "sequential",
-      });
-    if (trustedAutoSubmitCompletion) {
-      return {
-        prevElementCount,
-        domModified,
-        visuallyModified,
-        lastDomAffectingToolName,
-        breakLoop: true,
-        completedSummary: trustedAutoSubmitCompletion.finalSummary,
-      };
-    }
-
-    if (toolName === ToolName.TYPE_TEXT) {
-      const typedValue = String(args.text || "");
-      if (typedValue.length > 3) {
-        const snap = this.context.getSnapshot();
-        const pageText = snap?.pageContent || snap?.visibleContent || "";
-        const originalQuery = this.originalQuery || "";
-        // Check if typed value appears in any recent tool result
-        let hasEvidence = false;
-        if (pageText.includes(typedValue) || originalQuery.includes(typedValue)) {
-          hasEvidence = true;
-        } else {
-          const recentMsgs = this.context.getMessages();
-          const lookback = Math.min(20, recentMsgs.length);
-          for (
-            let ri = recentMsgs.length - 1;
-            ri >= recentMsgs.length - lookback && ri >= 0;
-            ri--
-          ) {
-            const m = recentMsgs[ri];
-            if (
-              m.role === "tool" &&
-              typeof m.content === "string" &&
-              m.content.includes(typedValue)
-            ) {
-              hasEvidence = true;
-              break;
-            }
-          }
-        }
-        if (!hasEvidence) {
-          this.log.warn("agent", "Blind input detected", {
-            turn: this.turnCount,
-            typedValue: typedValue.slice(0, 50),
-          });
-          this.traceRecorder?.recordEvent("blind_input_detected", {
-            typedValue: typedValue.slice(0, 50),
-          });
-          this.context.addMessage({
-            role: "user",
-            content: `WARNING: You typed "${typedValue.slice(0, 50)}" but this value doesn't appear in any page content, tool result, or the user's query. Use investigation tools first (inspect_hidden, execute_js, read_element) to find the correct value before typing.`,
-          });
-        }
-      }
-    }
-
-    // Post-type_text DOM settle: detect autocomplete/dropdown appearance
-    if (
-      !args.pressEnter &&
-      !result.includes("ServiceNow reference value committed")
-    ) {
-      const preCount = this.context.getSnapshot()?.elements.length ?? 0;
-      await new Promise((r) => setTimeout(r, 400));
-      prevElementCount = await this.refreshSnapshotWithRetry(tabId, preCount);
-      if (prevElementCount > preCount + 2) {
-        const delta = prevElementCount - preCount;
-        this.context.addMessage({
-          role: "user",
-          content: `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value — select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`,
-        });
-        this.log.info("agent", "Post-type DOM settle: new elements detected", {
-          turn: this.turnCount,
-          preCount,
-          postCount: prevElementCount,
-          delta,
-        });
-      }
-    }
-
-    return {
-      prevElementCount,
-      domModified,
-      visuallyModified,
-      lastDomAffectingToolName,
-      breakLoop: false,
-      completedSummary: null,
-    };
   }
 
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
@@ -9452,7 +8574,8 @@ export class AgentLoop {
 
             // ESCALATE tool — voluntary model upgrade (de-escalates after progress)
             if (toolName === ToolName.ESCALATE) {
-              const escalateState = await this.handleEscalateToolCall(
+              const escalateState = await handleEscalateToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
                 toolCall.id,
                 args,
                 tabId,
@@ -9476,13 +8599,19 @@ export class AgentLoop {
 
             // UPDATE_NOTES tool - save a note to the current run scratchpad
             if (toolName === ToolName.UPDATE_NOTES) {
-              this.handleUpdateNotesToolCall(toolCall.id, toolName, args);
+              handleUpdateNotesToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                toolCall.id,
+                toolName,
+                args,
+              );
               continue;
             }
 
             // WAIT tool — re-orientation mechanism
             if (toolName === ToolName.WAIT) {
-              prevElementCount = await this.handleWaitToolCall(
+              prevElementCount = await handleWaitToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
                 toolCall.id,
                 toolName,
                 args,
@@ -9495,20 +8624,29 @@ export class AgentLoop {
             // NAVIGATE guard — block navigation to completed step URLs
             if (
               toolName === ToolName.NAVIGATE &&
-              this.handleNavigateGuardToolCall(toolCall.id, args)
+              handleNavigateGuardToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                toolCall.id,
+                args,
+              )
             ) {
               continue;
             }
 
             // LIST_TABS — workspace-scoped
             if (toolName === ToolName.LIST_TABS) {
-              await this.handleListTabsToolCall(toolCall.id, tabId);
+              await handleListTabsToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                toolCall.id,
+                tabId,
+              );
               continue;
             }
 
             // SWITCH_TAB — workspace-scoped, updates loop tabId
             if (toolName === ToolName.SWITCH_TAB) {
-              const switchTabState = await this.handleSwitchTabToolCall(
+              const switchTabState = await handleSwitchTabToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
                 toolCall.id,
                 args,
                 tabId,
@@ -9521,7 +8659,8 @@ export class AgentLoop {
 
             // CLOSE_TAB — workspace-scoped, prevents closing current tab
             if (toolName === ToolName.CLOSE_TAB) {
-              await this.handleCloseTabToolCall(
+              await handleCloseTabToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
                 toolCall.id,
                 toolName,
                 args,
@@ -9532,12 +8671,19 @@ export class AgentLoop {
 
             // CREATE_TAB — workspace-scoped, auto-adds to workspace
             if (toolName === ToolName.CREATE_TAB) {
-              await this.handleCreateTabToolCall(toolCall.id, toolName, args);
+              await handleCreateTabToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                toolCall.id,
+                toolName,
+                args,
+              );
               continue;
             }
 
             const genericToolState =
-              await this.handleGenericSequentialToolCall({
+              await handleGenericSequentialToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                {
                 toolCall,
                 toolName,
                 args,
@@ -9555,7 +8701,8 @@ export class AgentLoop {
                 domModified,
                 visuallyModified,
                 lastDomAffectingToolName,
-              });
+                },
+              );
             prevElementCount = genericToolState.prevElementCount;
             domModified = genericToolState.domModified;
             visuallyModified = genericToolState.visuallyModified;
