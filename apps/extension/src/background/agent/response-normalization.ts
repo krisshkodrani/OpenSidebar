@@ -16,6 +16,15 @@ export type ToolCallRecoveryResult = {
   cleanContent: string | null;
 };
 
+export type LlmResponseLogPayload = {
+  turn: number;
+  llmMs: number;
+  url: string;
+  text: string | null;
+  toolCalls: string[];
+  toolCount: number;
+};
+
 export function isEmptyCompletionResponse(
   response: CompletionResponse,
 ): boolean {
@@ -55,6 +64,30 @@ export function summarizeToolCalls(
       return `${toolCall.function.name}(${argSnippet})`;
     }) ?? []
   );
+}
+
+export function buildLlmResponseLogPayload(args: {
+  turn: number;
+  llmMs: number;
+  url: string;
+  cleanContent: string | null;
+  toolCalls: ToolCall[] | undefined;
+  maxReasoningChars: number;
+  maxArgumentChars: number;
+}): LlmResponseLogPayload {
+  const toolCalls = summarizeToolCalls(
+    args.toolCalls,
+    args.maxArgumentChars,
+  );
+
+  return {
+    turn: args.turn,
+    llmMs: args.llmMs,
+    url: args.url,
+    text: args.cleanContent?.slice(0, args.maxReasoningChars) || null,
+    toolCalls,
+    toolCount: toolCalls.length,
+  };
 }
 
 export function recoverResponseToolCallsFromText(
