@@ -8,16 +8,12 @@ type MutablePlanSubtask = Pick<
   "status" | "result" | "completedAtUrl"
 >;
 
-export function buildPlanStatusSnapshot(args: {
-  existingPlan: PlanStatus | null;
+export function buildPlanStatusEntries(args: {
+  existingPlan?: PlanStatus | null;
   planSubtasks: SubtaskSummary[];
   planSteps: Pick<PlanStep, "verifyAfter" | "toolProfile">[];
-  currentIndex: number;
-}): {
-  subtasks: PlanStatusSubtask[];
-  repairedIndex: number | null;
-} {
-  const subtasks = args.planSubtasks.map((subtask, idx) => {
+}): PlanStatusSubtask[] {
+  return args.planSubtasks.map((subtask, idx) => {
     const existingSubtask = args.existingPlan?.subtasks[idx];
     const planStep = args.planSteps[idx];
     const verificationGate =
@@ -32,6 +28,22 @@ export function buildPlanStatusSnapshot(args: {
       ...(verificationGate ? { verificationGate } : {}),
       ...(toolProfile ? { toolProfile } : {}),
     };
+  });
+}
+
+export function buildPlanStatusSnapshot(args: {
+  existingPlan: PlanStatus | null;
+  planSubtasks: SubtaskSummary[];
+  planSteps: Pick<PlanStep, "verifyAfter" | "toolProfile">[];
+  currentIndex: number;
+}): {
+  subtasks: PlanStatusSubtask[];
+  repairedIndex: number | null;
+} {
+  const subtasks = buildPlanStatusEntries({
+    existingPlan: args.existingPlan,
+    planSubtasks: args.planSubtasks,
+    planSteps: args.planSteps,
   });
 
   if (
