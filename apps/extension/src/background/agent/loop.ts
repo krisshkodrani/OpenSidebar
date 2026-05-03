@@ -1621,6 +1621,54 @@ export class AgentLoop {
     return true;
   }
 
+  private async rejectDoneBeforePlanValidation(
+    toolCallId: string,
+    summary: string,
+    tabId: number,
+  ): Promise<boolean> {
+    // Hard gate: immediately reject done() when max rejections exceeded.
+    // Prevents the LLM from burning turns + LLM calls on repeated
+    // done() attempts after it's already been told to stop.
+    if (this.doneRejections >= this.limits.maxDoneRejections) {
+      this.rejectDoneAfterMaxRejections(toolCallId);
+      return true;
+    }
+
+    if (this.rejectDoneQuestionAsClarification(toolCallId, summary)) {
+      return true;
+    }
+
+    if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
+      return true;
+    }
+
+    if (this.rejectDoneForMoneyTableAggregate(toolCallId, summary)) {
+      return true;
+    }
+
+    if (this.rejectDoneForEarlyMultiStepTask(toolCallId, summary)) {
+      return true;
+    }
+
+    if (this.rejectDoneForIncompleteMultiReturn(toolCallId, summary)) {
+      return true;
+    }
+
+    if (this.rejectDoneForIncompleteTaskContract(toolCallId, summary)) {
+      return true;
+    }
+
+    if (this.rejectDoneForWorkflowContract(toolCallId, summary)) {
+      return true;
+    }
+
+    if (this.rejectDoneForIncompleteListDetailReview(toolCallId)) {
+      return true;
+    }
+
+    return false;
+  }
+
   private rejectDoneAfterPlanValidation(
     toolCallId: string,
     rejectReason: string,
@@ -8439,20 +8487,8 @@ export class AgentLoop {
             if (toolName === ToolName.DONE) {
               const summary = (args.summary as string) || "Task completed.";
 
-              // Hard gate: immediately reject done() when max rejections exceeded.
-              // Prevents the LLM from burning turns + LLM calls on repeated
-              // done() attempts after it's already been told to stop.
-              if (this.doneRejections >= this.limits.maxDoneRejections) {
-                this.rejectDoneAfterMaxRejections(toolCall.id);
-                continue;
-              }
-
-              if (this.rejectDoneQuestionAsClarification(toolCall.id, summary)) {
-                continue;
-              }
-
               if (
-                await this.rejectDoneBeforeGroundingRead(
+                await this.rejectDoneBeforePlanValidation(
                   toolCall.id,
                   summary,
                   tabId,
@@ -8461,28 +8497,6 @@ export class AgentLoop {
                 continue;
               }
 
-              if (this.rejectDoneForMoneyTableAggregate(toolCall.id, summary)) {
-                continue;
-              }
-              if (this.rejectDoneForEarlyMultiStepTask(toolCall.id, summary)) {
-                continue;
-              }
-
-              if (this.rejectDoneForIncompleteMultiReturn(toolCall.id, summary)) {
-                continue;
-              }
-
-              if (
-                this.rejectDoneForIncompleteTaskContract(toolCall.id, summary)
-              ) {
-                continue;
-              }              if (this.rejectDoneForWorkflowContract(toolCall.id, summary)) {
-                continue;
-              }
-
-              if (this.rejectDoneForIncompleteListDetailReview(toolCall.id)) {
-                continue;
-              }
               // Planner validation: only when a plan exists
               if (this.taskId && this.planSubtasks.length > 0) {
                 const donePlanPrecheck =
