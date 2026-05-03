@@ -309,7 +309,11 @@ import {
 import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
-import { assessParallelToolCalls } from "./parallel-tool-execution";
+import {
+  addParallelToolResultsToContext,
+  assessParallelToolCalls,
+  handleParallelVerificationGate,
+} from "./parallel-tool-execution";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -7491,68 +7495,48 @@ export class AgentLoop {
             }),
           );
 
-          // Add all results to context
-          for (const { toolCall, result, error } of results) {
-            this.context.addMessage({
-              role: "tool",
-              tool_call_id: toolCall.id,
-              content: error ? `Error: ${error}` : result!,
-            });
-          }
-
-          // Post-batch verification gate check
-          const planAfterParallel = this.context.getPlanStatusRaw();
-          if (planAfterParallel) {
-            const currentSub =
-              planAfterParallel.subtasks[planAfterParallel.currentIndex];
-            if (currentSub?.verificationGate) {
-              const toolResultStrings = results.map((r) =>
-                r.error ? `Error: ${r.error}` : r.result!,
-              );
-              const gateResult = checkVerificationGate(
-                toolResultStrings,
-                currentSub.verificationGate,
-                this.context.getCurrentUrl(),
-              );
-              if (gateResult.matched) {
-                if (currentSub.verificationGate.action === "advance_step") {
-                  this.consecutiveAutoAdvances = 0;
-                  const newIdx = advanceCompletedSubtasks(
-                    this as unknown as AgentLoopPlanProgressHost,
-                  );
-                  this.syncPlanStatus(newIdx, "step_advanced_by_gate", {
-                    evidence: gateResult.evidence,
-                    mode: "parallel",
-                    advancedTo: newIdx,
-                  });
-                  this.broadcastTaskProgress(newIdx);
-                  this.context.addMessage({
-                    role: "user",
-                    content: `STEP ADVANCED: '${gateResult.evidence}' matched. Now on step ${newIdx + 1}.`,
-                  });
-                } else {
-                  this.context.addMessage({
-                    role: "user",
-                    content: `CHECKPOINT: Gate triggered. Evidence: '${gateResult.evidence}'. Call done() now.`,
-                  });
-                }
+          addParallelToolResultsToContext(this.context, results);
+          handleParallelVerificationGate({
+            planStatus: this.context.getPlanStatusRaw(),
+            results,
+            currentUrl: this.context.getCurrentUrl(),
+            host: {
+              advanceCompletedSubtasks: () =>
+                advanceCompletedSubtasks(
+                  this as unknown as AgentLoopPlanProgressHost,
+                ),
+              resetConsecutiveAutoAdvances: () => {
+                this.consecutiveAutoAdvances = 0;
+              },
+              syncPlanStatus: (currentIndex, reason, data) =>
+                this.syncPlanStatus(currentIndex, reason, data),
+              broadcastTaskProgress: (currentIndex) =>
+                this.broadcastTaskProgress(currentIndex),
+              addUserMessage: (content) => {
+                this.context.addMessage({
+                  role: "user",
+                  content,
+                });
+              },
+              logVerificationGate: (data) => {
                 this.log.info(
                   "agent",
                   "Verification gate triggered (parallel)",
                   {
                     turn: this.turnCount,
-                    action: currentSub.verificationGate.action,
-                    evidence: gateResult.evidence,
+                    action: data.action,
+                    evidence: data.evidence,
                   },
                 );
-                this.traceRecorder?.recordEvent("verification_gate_triggered", {
-                  action: currentSub.verificationGate.action,
-                  evidence: gateResult.evidence,
-                  mode: "parallel",
-                });
-              }
-            }
-          }
+              },
+              recordVerificationGate: (data) => {
+                this.traceRecorder?.recordEvent(
+                  "verification_gate_triggered",
+                  data,
+                );
+              },
+            },
+          });
         } else {
           // SEQUENTIAL EXECUTION (has sequential tools or single tool)
           for (const toolCall of response.tool_calls) {
