@@ -21,7 +21,6 @@ import {
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
   resolveToolProfile,
-  buildDomAwareProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { classifyRisk, validateToolCalls } from "../security";
@@ -63,7 +62,6 @@ import {
 } from "./step-labels";
 import {
   TaskPlanner,
-  inferToolProfileForStep,
   PlanStep,
   PlanMonitorResult,
 } from "./planner";
@@ -108,7 +106,6 @@ import {
   isListDetailReturnControlRepeatExempt,
   listDetailActionTargetLabel,
   listDetailElementLabel,
-  requiresBroadListDetailReview,
 } from "./list-detail-policy";
 export {
   countVisibleListDetailActions,
@@ -165,7 +162,6 @@ import {
   type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
-import { isToolProfileName } from "./tool-profile-policy";
 import { countExplicitSteps } from "./explicit-steps";
 import { rectsLikelyOverlap } from "./geometry";
 import { shouldOmitPerceptionForDoneValidation } from "./perception-done-validation";
@@ -205,11 +201,7 @@ import type {
   PendingUserInteraction,
 } from "./loop-types";
 import {
-  getSkillToolPolicy,
-  getSkillToolSuppressionPolicy,
   getLoadedSkillContract,
-  resolveSkillToolProfile,
-  type SkillToolPolicy,
 } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
@@ -282,6 +274,18 @@ import {
   completeSingleSubtask,
   type AgentLoopPlanProgressHost,
 } from "./loop-plan-progress";
+import {
+  applySkillToolRanking,
+  applySkillToolSuppression,
+  applyToolProfile,
+  classifySkillToolPreference,
+  getActiveSkillToolPolicy,
+  getActiveToolProfileForStep,
+  isSkillOwnedListDetailReview,
+  isSkillOwnedProcurementLoop,
+  recordSkillToolSelection,
+  type AgentLoopSkillToolsHost,
+} from "./loop-skill-tools";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -342,138 +346,42 @@ export * from "./loop-helpers";
  * - Model escalation on stuck
  */
 export class AgentLoop {
-  private getActiveSkillToolPolicy(): SkillToolPolicy | null {
-    return getSkillToolPolicy(this.selectedSkillId ?? undefined);
+  private getActiveSkillToolPolicy() {
+    return getActiveSkillToolPolicy(this as unknown as AgentLoopSkillToolsHost);
   }
 
   private classifySkillToolPreference(
     toolName: ToolName,
   ): "preferred" | "discouraged" | "neutral" | null {
-    const policy = this.getActiveSkillToolPolicy();
-    if (!policy) return null;
-    if (policy.preferredTools.includes(toolName)) return "preferred";
-    if (policy.discouragedTools.includes(toolName)) return "discouraged";
-    return "neutral";
+    return classifySkillToolPreference(
+      this as unknown as AgentLoopSkillToolsHost,
+      toolName,
+    );
   }
 
   private applySkillToolRanking(tools: ToolDefinition[]): ToolDefinition[] {
-    const policy = this.getActiveSkillToolPolicy();
-    if (!policy) return tools;
-
-    const preferredIndex = new Map<ToolName, number>(
-      policy.preferredTools.map((toolName, index) => [toolName, index]),
+    return applySkillToolRanking(
+      this as unknown as AgentLoopSkillToolsHost,
+      tools,
     );
-    const discouragedIndex = new Map<ToolName, number>(
-      policy.discouragedTools.map((toolName, index) => [toolName, index]),
-    );
-
-    const ranked = [...tools]
-      .map((tool, originalIndex) => {
-        const toolName = tool.function.name as ToolName;
-        if (preferredIndex.has(toolName)) {
-          return {
-            tool,
-            bucket: 0,
-            policyIndex: preferredIndex.get(toolName) ?? 0,
-            originalIndex,
-          };
-        }
-        if (discouragedIndex.has(toolName)) {
-          return {
-            tool,
-            bucket: 2,
-            policyIndex: discouragedIndex.get(toolName) ?? 0,
-            originalIndex,
-          };
-        }
-        return {
-          tool,
-          bucket: 1,
-          policyIndex: Number.MAX_SAFE_INTEGER,
-          originalIndex,
-        };
-      })
-      .sort((a, b) => {
-        if (a.bucket !== b.bucket) return a.bucket - b.bucket;
-        if (a.policyIndex !== b.policyIndex)
-          return a.policyIndex - b.policyIndex;
-        return a.originalIndex - b.originalIndex;
-      })
-      .map((entry) => entry.tool);
-
-    const originalOrder = tools.map((tool) => tool.function.name).join(",");
-    const rankedOrder = ranked.map((tool) => tool.function.name).join(",");
-    if (originalOrder !== rankedOrder) {
-      this.log.info("agent", "Skill tool ranking applied", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId,
-        preferredTools: policy.preferredTools,
-        discouragedTools: policy.discouragedTools,
-        originalToolCount: tools.length,
-        rankedToolCount: ranked.length,
-      });
-      this.traceRecorder?.recordEvent("skill_tool_ranking_applied", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId ?? "unknown",
-        preferredTools: policy.preferredTools,
-        discouragedTools: policy.discouragedTools,
-        originalOrder: tools.map((tool) => tool.function.name),
-        rankedOrder: ranked.map((tool) => tool.function.name),
-      });
-    }
-
-    return ranked;
   }
 
   private applySkillToolSuppression(tools: ToolDefinition[]): ToolDefinition[] {
-    const policy = getSkillToolSuppressionPolicy(
-      this.selectedSkillId ?? undefined,
+    return applySkillToolSuppression(
+      this as unknown as AgentLoopSkillToolsHost,
+      tools,
     );
-    if (!policy) return tools;
-
-    const suppressed = new Set<ToolName>(
-      policy.temporarilySuppressedTools.filter(
-        (tool) => !policy.exemptTools.includes(tool),
-      ),
-    );
-    if (suppressed.size === 0) return tools;
-
-    const filtered = tools.filter(
-      (tool) => !suppressed.has(tool.function.name as ToolName),
-    );
-    if (filtered.length !== tools.length) {
-      this.log.info("agent", "Skill tool suppression applied", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId,
-        suppressedTools: Array.from(suppressed),
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-      this.traceRecorder?.recordEvent("skill_tool_suppression_applied", {
-        turn: this.turnCount,
-        skillId: this.selectedSkillId ?? "unknown",
-        suppressedTools: Array.from(suppressed),
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-    }
-
-    return filtered;
   }
 
   private recordSkillToolSelection(
     toolName: ToolName,
     mode: "parallel" | "sequential",
   ): void {
-    const preference = this.classifySkillToolPreference(toolName);
-    if (!this.selectedSkillId || !preference) return;
-    this.traceRecorder?.recordEvent("skill_tool_selected", {
-      turn: this.turnCount,
-      skillId: this.selectedSkillId,
+    recordSkillToolSelection(
+      this as unknown as AgentLoopSkillToolsHost,
       toolName,
-      preference,
       mode,
-    });
+    );
   }
 
   /**
@@ -3883,105 +3791,7 @@ export class AgentLoop {
    * elements → include drag_and_drop, file inputs → include upload_file).
    */
   private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
-    const planStatus = this.context.getPlanStatusRaw();
-    const currentSubtaskIndex =
-      planStatus?.subtasks.findIndex((s) => s.status === "running") ?? -1;
-    const currentSubtask =
-      currentSubtaskIndex >= 0
-        ? planStatus?.subtasks[currentSubtaskIndex]
-        : undefined;
-
-    // If planner assigned an explicit profile, use it. Otherwise infer one
-    // from the active step so inline-edit tasks do not fall back to an overly
-    // broad DOM-aware tool set.
-    const explicitProfile = isToolProfileName(currentSubtask?.toolProfile)
-      ? currentSubtask.toolProfile
-      : undefined;
-    const inferredProfile =
-      !explicitProfile && currentSubtask
-        ? inferToolProfileForStep(
-            currentSubtask.description,
-            this.planSteps[currentSubtaskIndex]?.successCriteria || "",
-          )
-        : undefined;
-    const activeProfile = resolveSkillToolProfile(
-      this.selectedSkillId,
-      currentSubtask?.description ?? this.originalQuery,
-      this.planSteps[currentSubtaskIndex]?.successCriteria || "",
-      explicitProfile ?? inferredProfile,
-    );
-    if (activeProfile) {
-      if (this.turnsOnCurrentStep >= this.limits.stepWarnTurns) {
-        this.log.info("agent", "Tool profile widened due to step stagnation", {
-          turn: this.turnCount,
-          profile: activeProfile,
-          turnsOnCurrentStep: this.turnsOnCurrentStep,
-          stepWarnTurns: this.limits.stepWarnTurns,
-        });
-        this.traceRecorder?.recordEvent("tool_profile_widened", {
-          turn: this.turnCount,
-          profile: activeProfile,
-          reason: "step_stagnation",
-          turnsOnCurrentStep: this.turnsOnCurrentStep,
-        });
-        return tools;
-      }
-
-      const allowedNames = resolveToolProfile(activeProfile as ToolProfile);
-      if (!allowedNames) return tools; // "full" or unknown → no filtering
-
-      const allowedSet = new Set<string>(allowedNames);
-      allowedSet.add(ToolName.DONE);
-      allowedSet.add(ToolName.ESCALATE);
-      allowedSet.add(ToolName.CLARIFY);
-      allowedSet.add(ToolName.UPDATE_NOTES);
-
-      const filtered = tools.filter((t) => allowedSet.has(t.function.name));
-      this.log.info("agent", "Tool profile applied", {
-        turn: this.turnCount,
-        profile: activeProfile,
-        subtask: currentSubtask?.description,
-        source: explicitProfile ? "plan_status" : "step_inference",
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-      this.traceRecorder?.recordEvent("tool_profile_applied", {
-        turn: this.turnCount,
-        profile: activeProfile,
-        source: explicitProfile ? "plan_status" : "step_inference",
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-      return filtered;
-    }
-
-    // No explicit profile — use DOM-aware profiling based on current snapshot
-    const snapshot = this.context.getSnapshot();
-    if (snapshot?.elements) {
-      const allowedSet = buildDomAwareProfile(snapshot.elements);
-      const filtered = tools.filter((t) =>
-        allowedSet.has(t.function.name as ToolName),
-      );
-      this.log.info("agent", "Tool profile applied", {
-        turn: this.turnCount,
-        profile: "dom_aware",
-        subtask: currentSubtask?.description ?? this.originalQuery,
-        source: "dom_snapshot",
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-      this.traceRecorder?.recordEvent("tool_profile_applied", {
-        turn: this.turnCount,
-        profile: "dom_aware",
-        source: "dom_snapshot",
-        originalToolCount: tools.length,
-        filteredToolCount: filtered.length,
-      });
-      return filtered;
-    }
-
-    // No snapshot available — use all tools
-    return tools;
+    return applyToolProfile(this as unknown as AgentLoopSkillToolsHost, tools);
   }
 
   /**
@@ -4503,14 +4313,15 @@ export class AgentLoop {
   }
 
   private isSkillOwnedListDetailReview(): boolean {
-    return (
-      this.selectedSkillId === "list-detail-review-loop" &&
-      requiresBroadListDetailReview(this.originalQuery)
+    return isSkillOwnedListDetailReview(
+      this as unknown as AgentLoopSkillToolsHost,
     );
   }
 
   private isSkillOwnedProcurementLoop(): boolean {
-    return this.selectedSkillId === "multi-tab-procurement-loop";
+    return isSkillOwnedProcurementLoop(
+      this as unknown as AgentLoopSkillToolsHost,
+    );
   }
 
   /**
@@ -6157,26 +5968,9 @@ export class AgentLoop {
   private getActiveToolProfileForStep(
     stepIndex: number,
   ): ToolProfile | undefined {
-    const subtask = this.planSubtasks[stepIndex];
-    if (!subtask) return undefined;
-    const explicitProfile = subtask.toolProfile;
-    if (explicitProfile && resolveToolProfile(explicitProfile as ToolProfile)) {
-      return resolveSkillToolProfile(
-        this.selectedSkillId,
-        subtask.description,
-        this.planSteps[stepIndex]?.successCriteria || "",
-        explicitProfile as ToolProfile,
-      );
-    }
-    const inferredProfile = inferToolProfileForStep(
-      subtask.description,
-      this.planSteps[stepIndex]?.successCriteria || "",
-    );
-    return resolveSkillToolProfile(
-      this.selectedSkillId,
-      subtask.description,
-      this.planSteps[stepIndex]?.successCriteria || "",
-      inferredProfile,
+    return getActiveToolProfileForStep(
+      this as unknown as AgentLoopSkillToolsHost,
+      stepIndex,
     );
   }
 
