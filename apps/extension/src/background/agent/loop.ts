@@ -204,7 +204,10 @@ import type {
 import {
   getLoadedSkillContract,
 } from "../orchestrator/skills";
-import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
+import {
+  evaluateWorkflowTabRedirect,
+  shouldCheckWorkflowTabRedirect,
+} from "./workflow-tab-controller";
 import {
   BlockedAction,
   assessElementIdPreDispatch,
@@ -306,6 +309,7 @@ import {
 } from "./approval-enforcement";
 import {
   buildApprovalBypassedStep,
+  getPreToolDeniedReason,
   getPreToolDeniedMessage,
   shouldReportApprovalBypass,
 } from "./sequential-pre-tool-gate";
@@ -7261,11 +7265,7 @@ export class AgentLoop {
                 }
               }
 
-              if (
-                toolName === ToolName.CLICK_ELEMENT ||
-                toolName === ToolName.CREATE_TAB ||
-                toolName === ToolName.RIGHT_CLICK
-              ) {
+              if (shouldCheckWorkflowTabRedirect(toolName)) {
                 const workflowRedirect = await this.getWorkflowTabToolRedirect({
                   toolName,
                   args,
@@ -7332,9 +7332,10 @@ export class AgentLoop {
               this.stepHandler(toolStep, false);
 
               if (!preDecision.allowed) {
-                const deniedReason =
-                  preDecision.denyReason ||
-                  `Tool ${toolName} denied by middleware`;
+                const deniedReason = getPreToolDeniedReason(
+                  preDecision,
+                  `Tool ${toolName} denied by middleware`,
+                );
                 const toolMs = Date.now() - toolStep.timestamp;
                 this.stepHandler(
                   {
@@ -7929,11 +7930,7 @@ export class AgentLoop {
               }
             }
 
-            if (
-              toolName === ToolName.CLICK_ELEMENT ||
-              toolName === ToolName.CREATE_TAB ||
-              toolName === ToolName.RIGHT_CLICK
-            ) {
+            if (shouldCheckWorkflowTabRedirect(toolName)) {
               const workflowRedirect = await this.getWorkflowTabToolRedirect({
                 toolName,
                 args,

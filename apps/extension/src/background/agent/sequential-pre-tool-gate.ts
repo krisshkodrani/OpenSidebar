@@ -1,8 +1,15 @@
 import { RiskLevel, ToolName, type AgentStep } from "../../types";
 import type { PreToolDecision } from "./middleware";
 
+export function getPreToolDeniedReason(
+  preDecision: PreToolDecision,
+  fallback = "Blocked by policy middleware.",
+): string {
+  return preDecision.denyReason || fallback;
+}
+
 export function getPreToolDeniedMessage(preDecision: PreToolDecision): string {
-  return `Error: ${preDecision.denyReason || "Blocked by policy middleware."}`;
+  return `Error: ${getPreToolDeniedReason(preDecision)}`;
 }
 
 export function shouldReportApprovalBypass(
