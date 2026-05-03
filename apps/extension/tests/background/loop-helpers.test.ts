@@ -4,8 +4,10 @@ import { ACTION_EFFECT } from "../../src/background/agent/constants";
 import {
   assessFailedActionRepeat,
   assessReadElementSameIdNudge,
+  assessToolCacheHit,
   buildZeroEffectDecision,
 } from "../../src/background/agent/loop-helpers";
+import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
 
 describe("buildZeroEffectDecision", () => {
@@ -166,6 +168,62 @@ describe("assessReadElementSameIdNudge", () => {
           "You have called read_element on element [7] 3 times. " +
           "Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.",
       },
+    });
+  });
+});
+
+describe("assessToolCacheHit", () => {
+  it("returns no cache type for non-cacheable tools", () => {
+    const toolCache = new ToolResultCache();
+
+    expect(
+      assessToolCacheHit({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 1 },
+        snapshot: null,
+        toolCache,
+      }),
+    ).toEqual({
+      cacheType: undefined,
+      cachedResult: null,
+    });
+  });
+
+  it("returns cache type and null result for cacheable misses", () => {
+    const toolCache = new ToolResultCache();
+
+    expect(
+      assessToolCacheHit({
+        toolName: ToolName.READ_PAGE,
+        args: {},
+        snapshot: null,
+        toolCache,
+      }),
+    ).toEqual({
+      cacheType: "dom",
+      cachedResult: null,
+    });
+  });
+
+  it("returns cached result for cacheable hits", () => {
+    const toolCache = new ToolResultCache();
+    toolCache.set(
+      ToolResultCache.key(ToolName.GET_COOKIES, {}),
+      "cached cookies",
+      "",
+      "static",
+    );
+
+    expect(
+      assessToolCacheHit({
+        toolName: ToolName.GET_COOKIES,
+        args: {},
+        snapshot: null,
+        toolCache,
+      }),
+    ).toEqual({
+      cacheType: "static",
+      cachedResult: "cached cookies",
     });
   });
 });
