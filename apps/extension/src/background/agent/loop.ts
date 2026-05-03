@@ -36,7 +36,6 @@ import { workspaceManager } from "../workspaces/manager";
 import {
   ContextManager,
   summarizeCausalChain,
-  summarizeHistory,
 } from "./context";
 import {
   assessDoneSummary,
@@ -75,6 +74,12 @@ import {
 } from "./response-normalization";
 import { completeTurnWithRetries } from "./turn-completion";
 import { resolveInitialSnapshot } from "./initial-snapshot";
+import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
+import {
+  PendingInteractionYield,
+  runStartExecution,
+} from "./start-result";
+import { finalizeStartResult } from "./start-finalization";
 import { assessBlindToolCallReasoning } from "./blind-tool-call-policy";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
@@ -159,11 +164,9 @@ import {
 import {
   buildCompletedPlanStepSummaries,
   buildFailedPlanStep,
-  buildInitialPlanSubtasks,
   buildPlanMonitorReplanMessage,
   buildPlanReplacementState,
   buildPlanRevisionMessage,
-  buildPlanStatusEntries,
   buildPlanStatusSnapshot,
   buildRestoredPlanState,
   type RestorablePlanState,
@@ -190,7 +193,6 @@ import {
   TOOL_CACHE,
   ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
-  resolveRuntimeLimits,
   INVESTIGATION_TOOLS,
   INVESTIGATION_EXTENSION,
   MAX_ORIENTATION_TURNS,
@@ -361,17 +363,6 @@ export function isDoneSummaryAskingClarification(summary: string): boolean {
 
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
-
-class PendingInteractionYield extends Error {
-  constructor(readonly pendingInteraction: PendingUserInteraction) {
-    super(
-      pendingInteraction.kind === "approval"
-        ? "Awaiting approval"
-        : "Awaiting clarification",
-    );
-    this.name = "PendingInteractionYield";
-  }
-}
 
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
@@ -2851,215 +2842,39 @@ export class AgentLoop {
       }
     }
 
-    // --- Planner: decompose task into plan (task-agnostic) ---
-    if (!this.disableInternalPlanning) {
-      try {
-        this.stepHandler(
-          {
-            id: crypto.randomUUID(),
-            type: "thinking",
-            label: "Analyzing task scope...",
-            status: "running",
-            timestamp: Date.now(),
-          },
-          false,
-        );
-
-        const decomposition = await this.planner.decompose(
-          initialUserText,
-          this.context.getSnapshot()?.title || "",
-          this.context.getSnapshot()?.url || "",
-          this.abortController!.signal,
-          this.perception.getInterpretation() ?? undefined,
-        );
-
-        if (decomposition) {
-          this.log.info("agent", "Planner decomposition outcome", {
-            turn: this.turnCount,
-            outcome:
-              decomposition.instrumentation?.outcome ??
-              (decomposition.steps
-                ? "structured_steps"
-                : decomposition.subtasks.length >= 2
-                  ? "legacy_subtasks"
-                  : "simple_task"),
-            requestedMultiStep:
-              decomposition.instrumentation?.requestedMultiStep ?? null,
-            parsedStepCount:
-              decomposition.instrumentation?.parsedStepCount ??
-              decomposition.steps?.length ??
-              0,
-            parsedSubtaskCount:
-              decomposition.instrumentation?.parsedSubtaskCount ??
-              decomposition.subtasks.length,
-            runtimeSubtaskCount: decomposition.subtasks.length,
-          });
-          this.traceRecorder?.recordEvent("planner_decomposition_outcome", {
-            turn: this.turnCount,
-            outcome:
-              decomposition.instrumentation?.outcome ??
-              (decomposition.steps
-                ? "structured_steps"
-                : decomposition.subtasks.length >= 2
-                  ? "legacy_subtasks"
-                  : "simple_task"),
-            requestedMultiStep:
-              decomposition.instrumentation?.requestedMultiStep ?? null,
-            parsedStepCount:
-              decomposition.instrumentation?.parsedStepCount ??
-              decomposition.steps?.length ??
-              0,
-            parsedSubtaskCount:
-              decomposition.instrumentation?.parsedSubtaskCount ??
-              decomposition.subtasks.length,
-            runtimeSubtaskCount: decomposition.subtasks.length,
-          });
-          // Apply difficulty-adaptive runtime limits
-          this.difficulty = decomposition.difficulty;
-          this.limits = resolveRuntimeLimits(
-            decomposition.difficulty,
-            decomposition.limitOverrides,
-          );
-          this.log.info("agent", "Difficulty assessment applied", {
-            difficulty: this.difficulty,
-            limits: this.limits,
-            overrides: decomposition.limitOverrides ?? null,
-          });
-          this.traceRecorder?.setDifficultyInfo({
-            difficulty: this.difficulty,
-            resolvedLimits: { ...this.limits },
-            plannerOverrides: decomposition.limitOverrides
-              ? { ...(decomposition.limitOverrides as Record<string, number>) }
-              : null,
-          });
-          this.traceRecorder?.setPlanDecomposition({
-            subtasks: decomposition.subtasks,
-            steps: (decomposition.steps ?? []).map((s: any) => ({
-              objective: s.objective,
-              successCriteria: s.successCriteria,
-              dependencies: s.dependencies,
-              assumptions: s.assumptions,
-              ...(s.verifyAfter ? { verifyAfter: s.verifyAfter } : {}),
-              ...(s.toolProfile ? { toolProfile: s.toolProfile } : {}),
-              ...(s.expectedState ? { expectedState: s.expectedState } : {}),
-            })),
-          });
-
-          if (decomposition.subtasks.length >= 2) {
-            this.taskId = crypto.randomUUID();
-            this.taskStartTime = Date.now();
-            this.planSubtasks = buildInitialPlanSubtasks(
-              decomposition.subtasks,
-            );
-            this.planSteps = decomposition.steps || [];
-
-            // Detect if plan steps require tab management
-            const TAB_STEP_KEYWORDS =
-              /(new tab|open.*tab|switch.*tab|close.*tab|separate tab|another tab|each tab|multiple tab|across tab)/i;
-            this.planRequiresTabManagement =
-              decomposition.requiresTabManagement ??
-              this.planSteps.some((s) =>
-                TAB_STEP_KEYWORDS.test(s.objective || ""),
-              );
-
-            // Inject plan status into system prompt (visible every turn)
-            this.context.setPlanStatus(
-              buildPlanStatusEntries({
-                planSubtasks: this.planSubtasks,
-                planSteps: this.planSteps,
-              }),
-              0,
-            );
-            this.log.info("agent", "Runtime plan status initialized", {
-              turn: this.turnCount,
-              subtaskCount: decomposition.subtasks.length,
-              currentIndex: 0,
-              toolProfiles: (decomposition.steps ?? []).map(
-                (step) => step.toolProfile ?? null,
-              ),
-            });
-            this.traceRecorder?.recordEvent("runtime_plan_status_initialized", {
-              turn: this.turnCount,
-              subtaskCount: decomposition.subtasks.length,
-              currentIndex: 0,
-              toolProfiles: (decomposition.steps ?? []).map(
-                (step) => step.toolProfile ?? null,
-              ),
-            });
-
-            this.context.addMessage({
-              role: "user",
-              content:
-                `[Task Planner]: This is a multi-step task (${decomposition.subtasks.length} steps). Your plan:\n` +
-                decomposition.subtasks
-                  .map((s, i) => `${i + 1}. ${s}`)
-                  .join("\n") +
-                `\n\nExecute step 1 now. Complete each step in order and verify progress before continuing. ` +
-                `If the plan fails, revise your approach and continue from the best next step. ` +
-                `Call done() when all ${decomposition.subtasks.length} steps are complete.`,
-            });
-
-            this.broadcastTaskProgress(0, 0);
-
-            this.stepHandler(
-              {
-                id: crypto.randomUUID(),
-                type: "info",
-                label: `Plan: ${decomposition.subtasks.length} steps (${this.difficulty})`,
-                status: "done",
-                timestamp: Date.now(),
-              },
-              false,
-            );
-          } else {
-            this.log.info(
-              "agent",
-              "Planner decomposition did not initialize runtime plan",
-              {
-                turn: this.turnCount,
-                runtimeSubtaskCount: decomposition.subtasks.length,
-                outcome:
-                  decomposition.instrumentation?.outcome ??
-                  (decomposition.steps ? "structured_steps" : "simple_task"),
-              },
-            );
-            this.traceRecorder?.recordEvent("runtime_plan_status_skipped", {
-              turn: this.turnCount,
-              runtimeSubtaskCount: decomposition.subtasks.length,
-              outcome:
-                decomposition.instrumentation?.outcome ??
-                (decomposition.steps ? "structured_steps" : "simple_task"),
-            });
-          }
-        } else {
-          this.log.warn("agent", "Planner decomposition returned null", {
-            turn: this.turnCount,
-          });
-          this.traceRecorder?.recordEvent("planner_decomposition_outcome", {
-            turn: this.turnCount,
-            outcome: "null",
-          });
-        }
-      } catch (err: any) {
-        this.log.warn("agent", "Planner decompose error (non-fatal)", {
-          error: err?.message,
-        });
-      }
-    } else {
-      this.log.info(
-        "agent",
-        "Internal planning disabled for this executor run",
-        {
-          workspaceId: this.workspaceId,
-          workerId: this.workerId,
-          originalQueryPreview: initialUserText.slice(0, 200),
-        },
-      );
-      this.traceRecorder?.recordEvent("internal_planning_disabled", {
-        workspaceId: this.workspaceId,
-        workerId: this.workerId,
-      });
-    }
+    const runtimePlanState = await bootstrapRuntimePlan({
+      initialUserText,
+      disableInternalPlanning: this.disableInternalPlanning,
+      turnCount: this.turnCount,
+      workspaceId: this.workspaceId,
+      workerId: this.workerId,
+      context: this.context,
+      planner: this.planner,
+      abortSignal: this.abortController!.signal,
+      perceptionInterpretation: this.perception.getInterpretation() ?? undefined,
+      log: this.log,
+      traceRecorder: this.traceRecorder,
+      stepHandler: (step, update) => this.stepHandler(step, update),
+      broadcastTaskProgress: (currentIndex, totalTurnsUsed) =>
+        this.broadcastTaskProgress(currentIndex, totalTurnsUsed),
+      currentState: {
+        difficulty: this.difficulty,
+        limits: this.limits,
+        taskId: this.taskId,
+        taskStartTime: this.taskStartTime,
+        planSubtasks: this.planSubtasks,
+        planSteps: this.planSteps,
+        planRequiresTabManagement: this.planRequiresTabManagement,
+      },
+    });
+    this.difficulty = runtimePlanState.difficulty;
+    this.limits = runtimePlanState.limits;
+    this.taskId = runtimePlanState.taskId;
+    this.taskStartTime = runtimePlanState.taskStartTime;
+    this.planSubtasks = runtimePlanState.planSubtasks;
+    this.planSteps = runtimePlanState.planSteps;
+    this.planRequiresTabManagement =
+      runtimePlanState.planRequiresTabManagement;
 
     this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
@@ -3077,148 +2892,46 @@ export class AgentLoop {
       );
     });
 
-    let result: LoopResult = {
-      outcome: "completed",
-      turnCount: 0,
-      summary: "",
-      failure: { category: "none", code: "none" },
-      metrics: undefined,
-    };
+    const result = await runStartExecution({
+      run: async () => {
+        const controllerResult = await this.maybeRunAtomicSkillController(tabId);
+        return controllerResult ?? (await this.loop(tabId));
+      },
+      getTurnCount: () => this.turnCount,
+      nodeId: this.nodeId,
+      log: this.log,
+      getMetrics: () => this.getMetrics(),
+      broadcast: (message) => this.broadcast(message),
+      finishStream: () => this.finishStream(),
+      statusHandler: (status, detail) => this.statusHandler(status, detail),
+    });
     try {
-      const controllerResult =
-        await this.maybeRunAtomicSkillController(tabId);
-      result = controllerResult ?? (await this.loop(tabId));
-    } catch (error: any) {
-      if (error instanceof PendingInteractionYield) {
-        const awaitingSummary =
-          error.pendingInteraction.kind === "approval"
-            ? "Awaiting approval"
-            : "Awaiting clarification";
-        this.log.info("agent", "Loop yielded for user interaction", {
-          outcome:
-            error.pendingInteraction.kind === "approval"
-              ? "awaiting_approval"
-              : "awaiting_clarification",
-          nodeId: this.nodeId,
-          turn: this.turnCount,
-        });
-        result = {
-          outcome:
-            error.pendingInteraction.kind === "approval"
-              ? "awaiting_approval"
-              : "awaiting_clarification",
-          turnCount: this.turnCount,
-          summary: awaitingSummary,
-          failure: { category: "none", code: "none" },
-          metrics: this.getMetrics(),
-          pendingInteraction: error.pendingInteraction,
-        };
-      } else if (error.name === "AbortError") {
-        this.log.info("agent", "Agent stopped by user");
-        this.statusHandler(AgentStatus.IDLE, "Stopped");
-        result = {
-          outcome: "stopped",
-          turnCount: this.turnCount,
-          summary: "Stopped by user",
-          failure: {
-            category: "user",
-            code: "user_stopped",
-            detail: "Stopped by user",
-          },
-          metrics: this.getMetrics(),
-        };
-      } else {
-        this.log.error("agent", "Loop Error", { error });
-        const errorMsg = `Agent stopped: ${error.message}. Send a follow-up message to retry.`;
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: false, replaceContent: errorMsg },
-        });
-        this.finishStream();
-        this.statusHandler(AgentStatus.ERROR, error.message);
-        result = {
-          outcome: "error",
-          turnCount: this.turnCount,
-          summary: error.message,
-          failure: {
-            category: "runtime",
-            code: "runtime_error",
-            detail: error.message,
-          },
-          metrics: this.getMetrics(),
-        };
-      }
+      return result;
     } finally {
-      result.sideEffectsLog = [...this.mutationLedger.sideEffects];
-      result.evidence = this.evidenceAccumulator.toArray();
-
-      if (
-        result.outcome !== "awaiting_approval" &&
-        result.outcome !== "awaiting_clarification"
-      ) {
-        // Clean up durable turn checkpoint — node has reached a terminal state
-        this.clearTurnCheckpoint().catch(() => {});
-      }
-
-      if (
-        result.outcome !== "completed" &&
-        result.outcome !== "awaiting_approval" &&
-        result.outcome !== "awaiting_clarification" &&
-        this.taskId &&
-        this.planSubtasks.length > 0
-      ) {
-        this.broadcastPlanTermination(
-          result.outcome as "stopped" | "max_turns" | "error",
-          result.summary,
-        );
-      }
-
-      // Restore the user's original scroll position (only on successful completion —
-      // on stop/error, freeze the page exactly where it is)
-      if (initialScrollY !== null && result.outcome === "completed") {
-        try {
-          await this.scrollContentScript(tabId, initialScrollY, 1500);
-        } catch (error) {
-          this.traceRecorder?.recordEvent("terminal_cleanup_timeout", {
-            phase: "restore_scroll",
-            tabId,
-            targetScrollY: initialScrollY,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          // Tab may have been closed or navigated — safe to ignore
-        }
-      }
-
-      this.isRunning = false;
-
-      // Capture condensed action history for handoff to the next same-tab node.
-      // This lets the successor know what happened (e.g. "cart drawer opened")
-      // without carrying the full conversation history.
-      try {
-        const trajectory = summarizeHistory(this.context.getMessages(), 20);
-        if (trajectory.length > 0) {
-          result.trajectory = trajectory;
-        }
-      } catch {
-        // Non-critical — trajectory is best-effort for handoff
-      }
-
-      // Finalize trace recording (fire-and-forget)
-      if (this.traceRecorder) {
-        this.traceRecorder.recordEvent("tool_cache_stats", {
-          ...this.toolCache.getStats(),
-        } as Record<string, unknown>);
-        await this.traceRecorder.finalize(
-          result.outcome,
-          result.summary,
-          result.turnCount,
-          result.failure ?? null,
-          result.metrics ?? null,
-        );
-        this.traceRecorder = null;
-      }
+      await finalizeStartResult({
+        result,
+        tabId,
+        initialScrollY,
+        taskId: this.taskId,
+        planSubtasks: this.planSubtasks,
+        mutationLedger: this.mutationLedger,
+        evidenceAccumulator: this.evidenceAccumulator,
+        context: this.context,
+        traceRecorder: this.traceRecorder,
+        toolCache: this.toolCache,
+        clearTurnCheckpoint: () => this.clearTurnCheckpoint(),
+        broadcastPlanTermination: (outcome, summary) =>
+          this.broadcastPlanTermination(outcome, summary),
+        scrollContentScript: (targetTabId, y, timeoutMs) =>
+          this.scrollContentScript(targetTabId, y, timeoutMs),
+        setRunning: (isRunning) => {
+          this.isRunning = isRunning;
+        },
+        clearTraceRecorder: () => {
+          this.traceRecorder = null;
+        },
+      });
     }
-    return result;
   }
 
   public stop() {
