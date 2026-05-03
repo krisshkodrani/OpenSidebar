@@ -2034,6 +2034,42 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForWorkflowContract(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const workflowSnapshot = this.context.getSnapshot();
+    const workflowDoneGuard = assessWorkflowDoneGuard({
+      query: this.originalQuery,
+      summary,
+      selectedSkillId: this.selectedSkillId,
+      pageUrl: workflowSnapshot?.url,
+      pageTitle: workflowSnapshot?.title,
+    });
+    if (!workflowDoneGuard.blocked) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: workflow completion guard", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      selectedSkillId: this.selectedSkillId,
+      reason: workflowDoneGuard.reason,
+    });
+    this.traceRecorder?.recordEvent("done_rejected_workflow_contract", {
+      rejections: this.doneRejections,
+      selectedSkillId: this.selectedSkillId,
+      reason: workflowDoneGuard.reason,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${workflowDoneGuard.reason}\n\n` +
+        "Continue the workflow, verify the requested final state, then call done() again.",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8368,41 +8404,7 @@ export class AgentLoop {
               ) {
                 continue;
               }
-              const workflowSnapshot = this.context.getSnapshot();
-              const workflowDoneGuard = assessWorkflowDoneGuard({
-                query: this.originalQuery,
-                summary,
-                selectedSkillId: this.selectedSkillId,
-                pageUrl: workflowSnapshot?.url,
-                pageTitle: workflowSnapshot?.title,
-              });
-              if (workflowDoneGuard.blocked) {
-                this.doneRejections++;
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: workflow completion guard",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    selectedSkillId: this.selectedSkillId,
-                    reason: workflowDoneGuard.reason,
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "done_rejected_workflow_contract",
-                  {
-                    rejections: this.doneRejections,
-                    selectedSkillId: this.selectedSkillId,
-                    reason: workflowDoneGuard.reason,
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    `done() REJECTED: ${workflowDoneGuard.reason}\n\n` +
-                    "Continue the workflow, verify the requested final state, then call done() again.",
-                });
+              if (this.rejectDoneForWorkflowContract(toolCall.id, summary)) {
                 continue;
               }
 
