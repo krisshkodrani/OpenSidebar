@@ -80,6 +80,7 @@ import {
   getTurnRetryBackoffMs,
   removeTurnRetryDiagnosticMessages,
 } from "./turn-retry";
+import { assessBlindToolCallReasoning } from "./blind-tool-call-policy";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
@@ -6734,43 +6735,40 @@ export class AgentLoop {
         // detection handle actual stuck loops. Forced escalation caused
         // escalate→de-escalate loops with models that naturally omit reasoning.
         const hadThinking = normalizedContent.hadThinking;
-        if (!cleanContent && !toolsRecoveredFromText && !hadThinking) {
-          consecutiveBlindToolTurns++;
-          if (consecutiveBlindToolTurns === 3) {
-            this.log.warn(
-              "agent",
-              "Blind tool calls: 3 consecutive turns with no reasoning",
-              {
-                turn: this.turnCount,
-              },
-            );
-            this.traceRecorder?.recordEvent("blind_tool_call_nudge", {
+        const blindToolCallAssessment = assessBlindToolCallReasoning({
+          cleanContent,
+          toolsRecoveredFromText,
+          hadThinking,
+          consecutiveBlindToolTurns,
+        });
+        consecutiveBlindToolTurns =
+          blindToolCallAssessment.consecutiveBlindToolTurns;
+        if (blindToolCallAssessment.nudge === "initial") {
+          this.log.warn(
+            "agent",
+            "Blind tool calls: 3 consecutive turns with no reasoning",
+            {
               turn: this.turnCount,
-              consecutive: consecutiveBlindToolTurns,
-            });
-            this.context.addMessage({
-              role: "user",
-              content:
-                "WARNING: You have made 3 consecutive tool calls with no reasoning. " +
-                "Include your Think step before calling tools — state what you observe, your plan, and why this action.",
-            });
-          } else if (
-            consecutiveBlindToolTurns > 0 &&
-            consecutiveBlindToolTurns % 6 === 0
-          ) {
-            // Repeat the nudge every 6 blind turns (no escalation)
-            this.log.warn("agent", "Blind tool calls: repeating nudge", {
-              turn: this.turnCount,
-              consecutive: consecutiveBlindToolTurns,
-            });
-            this.context.addMessage({
-              role: "user",
-              content:
-                "REMINDER: Include reasoning text before tool calls. Explain what you see and your plan.",
-            });
-          }
-        } else {
-          consecutiveBlindToolTurns = 0;
+            },
+          );
+          this.traceRecorder?.recordEvent("blind_tool_call_nudge", {
+            turn: this.turnCount,
+            consecutive: consecutiveBlindToolTurns,
+          });
+          this.context.addMessage({
+            role: "user",
+            content: blindToolCallAssessment.message,
+          });
+        } else if (blindToolCallAssessment.nudge === "repeat") {
+          // Repeat the nudge every 6 blind turns (no escalation)
+          this.log.warn("agent", "Blind tool calls: repeating nudge", {
+            turn: this.turnCount,
+            consecutive: consecutiveBlindToolTurns,
+          });
+          this.context.addMessage({
+            role: "user",
+            content: blindToolCallAssessment.message,
+          });
         }
 
         const firstToolName = response.tool_calls[0].function.name;
