@@ -8,6 +8,21 @@ type MutablePlanSubtask = Pick<
   "status" | "result" | "completedAtUrl"
 >;
 
+export interface RestorablePlanState {
+  subtasks: Array<{
+    description: string;
+    successCriteria?: string;
+    status: SubtaskSummary["status"];
+    turnsUsed?: number;
+    turnBudget?: number;
+    result?: string;
+    completedAtUrl?: string;
+    verificationGate?: PlanStatusSubtask["verificationGate"];
+    toolProfile?: PlanStep["toolProfile"];
+  }>;
+  currentIndex: number;
+}
+
 export function buildInitialPlanSubtasks(
   descriptions: string[],
 ): SubtaskSummary[] {
@@ -17,6 +32,53 @@ export function buildInitialPlanSubtasks(
     turnsUsed: 0,
     turnBudget: 0,
   }));
+}
+
+export function buildRestoredPlanState(
+  initialPlanState: RestorablePlanState,
+): {
+  planSubtasks: SubtaskSummary[];
+  planSteps: PlanStep[];
+  statusEntries: PlanStatusSubtask[];
+  currentIndex: number;
+} {
+  return {
+    planSubtasks: initialPlanState.subtasks.map((subtask) => ({
+      description: subtask.description,
+      status: subtask.status,
+      turnsUsed: subtask.turnsUsed ?? 0,
+      turnBudget: subtask.turnBudget ?? 0,
+      ...(subtask.result ? { result: subtask.result } : {}),
+      ...(subtask.completedAtUrl
+        ? { completedAtUrl: subtask.completedAtUrl }
+        : {}),
+    })),
+    planSteps: initialPlanState.subtasks.map((subtask) => ({
+      objective: subtask.description,
+      successCriteria:
+        subtask.successCriteria ||
+        "The current step is completed and verified.",
+      dependencies: [],
+      assumptions: [],
+      ...(subtask.verificationGate
+        ? { verifyAfter: subtask.verificationGate }
+        : {}),
+      ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
+    })),
+    statusEntries: initialPlanState.subtasks.map((subtask) => ({
+      description: subtask.description,
+      status: subtask.status,
+      ...(subtask.result ? { result: subtask.result } : {}),
+      ...(subtask.completedAtUrl
+        ? { completedAtUrl: subtask.completedAtUrl }
+        : {}),
+      ...(subtask.verificationGate
+        ? { verificationGate: subtask.verificationGate }
+        : {}),
+      ...(subtask.toolProfile ? { toolProfile: subtask.toolProfile } : {}),
+    })),
+    currentIndex: initialPlanState.currentIndex,
+  };
 }
 
 export function buildPlanStatusEntries(args: {
