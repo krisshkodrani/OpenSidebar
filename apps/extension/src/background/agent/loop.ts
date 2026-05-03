@@ -129,6 +129,7 @@ import {
   emptySessionMetrics,
   recordCachedVisionTelemetryUse,
   recordCompletionUsage,
+  recordPerceptionModeDecision,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
 } from "./agent-telemetry";
@@ -2734,6 +2735,7 @@ export class AgentLoop {
       ...extractPerceptionPageSignals(snapshot),
     });
     this.useVLExecutor = perceptionDecision.mode === "unified_vl";
+    recordPerceptionModeDecision(this.metrics, perceptionDecision);
     this.log.info("agent", "Resolved perception runtime mode", {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
