@@ -1418,6 +1418,16 @@ export class AgentLoop {
     );
   }
 
+  private finishStream(replaceContent?: string): void {
+    this.broadcast({
+      type: "STREAM_CHUNK",
+      payload:
+        replaceContent === undefined
+          ? { delta: "", done: true }
+          : { delta: "", done: true, replaceContent },
+    });
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -2397,10 +2407,7 @@ export class AgentLoop {
           type: "STREAM_CHUNK",
           payload: { delta: "", done: false, replaceContent: errorMsg },
         });
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         this.statusHandler(AgentStatus.ERROR, error.message);
         result = {
           outcome: "error",
@@ -4159,10 +4166,7 @@ export class AgentLoop {
       type: "STREAM_CHUNK",
       payload: { delta: message, done: false },
     });
-    this.broadcast({
-      type: "STREAM_CHUNK",
-      payload: { delta: "", done: true },
-    });
+    this.finishStream();
     this.statusHandler(
       AgentStatus.IDLE,
       "Circuit breaker — send a follow-up to continue",
@@ -5422,10 +5426,7 @@ export class AgentLoop {
       this.throwIfGracefulStopRequested();
       if (!this.isRunning) {
         // Finalize the stream so the side panel exits isStreaming state
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         break;
       }
 
@@ -5461,10 +5462,7 @@ export class AgentLoop {
           type: "STREAM_CHUNK",
           payload: { delta: haltMessage, done: false },
         });
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         this.statusHandler(AgentStatus.IDLE, "Stopped by middleware policy");
         break;
       }
@@ -5871,10 +5869,7 @@ export class AgentLoop {
               type: "STREAM_CHUNK",
               payload: { delta: msg, done: false },
             });
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: "", done: true },
-            });
+            this.finishStream();
             this.statusHandler(AgentStatus.ERROR, "Insufficient credits");
             return {
               outcome: "error" as const,
@@ -6027,10 +6022,7 @@ export class AgentLoop {
           type: "STREAM_CHUNK",
           payload: { delta: errorMsg, done: false },
         });
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         this.statusHandler(AgentStatus.ERROR, "Empty response from provider");
         await this.traceRecorder?.endTurn();
         return {
@@ -8423,10 +8415,7 @@ export class AgentLoop {
               // Replace accumulated reasoning with clean summary and finalize the stream.
               // done:true is critical — without it the side panel message stays in
               // isStreaming state and the "Thinking..." placeholder hides the summary.
-              this.broadcast({
-                type: "STREAM_CHUNK",
-                payload: { delta: "", done: true, replaceContent: summary },
-              });
+              this.finishStream(summary);
               this.statusHandler(AgentStatus.IDLE, "Done");
               this.messageHandler(summary, []);
               doneSummary = summary;
@@ -10190,10 +10179,7 @@ export class AgentLoop {
                   },
                   false,
                 );
-                this.broadcast({
-                  type: "STREAM_CHUNK",
-                  payload: { delta: "", done: true, replaceContent: summary },
-                });
+                this.finishStream(summary);
                 this.statusHandler(AgentStatus.IDLE, "Done");
                 this.messageHandler(summary, []);
                 doneSummary = summary;
@@ -11015,10 +11001,7 @@ export class AgentLoop {
               "You MUST include at least one tool call. Use read_page to inspect the page, " +
               "or done() if the task is already complete.",
           });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
+          this.finishStream();
           await this.traceRecorder?.endTurn();
           continue;
         }
@@ -11050,10 +11033,7 @@ export class AgentLoop {
             role: "user",
             content: buildFirstTurnTextOnlyNudge(this.originalQuery),
           });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
+          this.finishStream();
           continue;
         }
 
@@ -11102,10 +11082,7 @@ export class AgentLoop {
                       `Call done({"summary": "..."}) now with the complete result ` +
                       `including all requested data.`,
                   });
-                  this.broadcast({
-                    type: "STREAM_CHUNK",
-                    payload: { delta: "", done: true },
-                  });
+                  this.finishStream();
                   continue;
                 }
 
@@ -11133,10 +11110,7 @@ export class AgentLoop {
                     `Step verified complete (criteria matched, text confirms success). ` +
                     `Advancing.\nYOUR NEW OBJECTIVE: ${nextDesc}`,
                 });
-                this.broadcast({
-                  type: "STREAM_CHUNK",
-                  payload: { delta: "", done: true },
-                });
+                this.finishStream();
                 continue;
               }
             }
@@ -11146,10 +11120,7 @@ export class AgentLoop {
                 ? `You stated: "${admission.match}". Call done() to deliver the result.`
                 : `You stated: "${admission.match}". Call done() to report inability, or call escalate() for help.`;
             this.context.addMessage({ role: "user", content: nudge });
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: "", done: true },
-            });
+            this.finishStream();
             continue;
           }
         }
@@ -11212,10 +11183,7 @@ export class AgentLoop {
             recentOutcomes.length = 0;
             consecutiveTextOnly = 0;
             recentSuccesses.length = 0;
-            this.broadcast({
-              type: "STREAM_CHUNK",
-              payload: { delta: "", done: true },
-            });
+            this.finishStream();
             continue;
           }
 
@@ -11248,10 +11216,7 @@ export class AgentLoop {
             false,
           );
           this.statusHandler(AgentStatus.THINKING, "Escalating model...");
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
+          this.finishStream();
           continue;
         }
 
@@ -11269,10 +11234,7 @@ export class AgentLoop {
             type: "STREAM_CHUNK",
             payload: { delta: "", done: false, replaceContent: stuckMsg },
           });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
+          this.finishStream();
           this.statusHandler(
             AgentStatus.IDLE,
             "Stalled — send a follow-up to continue",
@@ -11301,10 +11263,7 @@ export class AgentLoop {
             type: "STREAM_CHUNK",
             payload: { delta: "", done: false, replaceContent: stuckMsg },
           });
-          this.broadcast({
-            type: "STREAM_CHUNK",
-            payload: { delta: "", done: true },
-          });
+          this.finishStream();
           this.statusHandler(
             AgentStatus.IDLE,
             "Stalled — send a follow-up to continue",
@@ -11327,10 +11286,7 @@ export class AgentLoop {
 
         // Trace: flush turn
         await this.traceRecorder?.endTurn();
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         continue;
       }
 
@@ -11351,10 +11307,7 @@ export class AgentLoop {
         type: "STREAM_CHUNK",
         payload: { delta: "", done: false, replaceContent: limitMsg },
       });
-      this.broadcast({
-        type: "STREAM_CHUNK",
-        payload: { delta: "", done: true },
-      });
+      this.finishStream();
       this.statusHandler(
         AgentStatus.IDLE,
         `Turn limit (${this.turnCount}/${this.maxTurns})`,
@@ -11472,10 +11425,7 @@ export class AgentLoop {
           type: "STREAM_CHUNK",
           payload: { delta: "", done: false, replaceContent: errorMsg },
         });
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: "", done: true },
-        });
+        this.finishStream();
         this.statusHandler(AgentStatus.ERROR, error.message);
       }
     } finally {
