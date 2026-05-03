@@ -153,6 +153,7 @@ import {
   clarificationRequestStep,
 } from "./agent-interaction-steps";
 import {
+  buildPlanStatusEntries,
   advanceCompletedPlanSubtasks,
   buildPlanStatusSnapshot,
   completeRemainingPlanSubtasks,
@@ -3661,18 +3662,10 @@ export class AgentLoop {
 
     // Update context with new plan
     this.context.setPlanStatus(
-      this.planSubtasks.map((s, idx) => ({
-        description: s.description,
-        status: s.status,
-        completedAtUrl: s.completedAtUrl,
-        result: s.result,
-        ...(this.planSteps[idx]?.verifyAfter
-          ? { verificationGate: this.planSteps[idx].verifyAfter }
-          : {}),
-        ...(this.planSteps[idx]?.toolProfile
-          ? { toolProfile: this.planSteps[idx].toolProfile }
-          : {}),
-      })),
+      buildPlanStatusEntries({
+        planSubtasks: this.planSubtasks,
+        planSteps: this.planSteps,
+      }),
       runningIdx,
     );
 
@@ -3855,18 +3848,10 @@ export class AgentLoop {
 
     // Update context with new plan
     this.context.setPlanStatus(
-      this.planSubtasks.map((s, idx) => ({
-        description: s.description,
-        status: s.status,
-        completedAtUrl: s.completedAtUrl,
-        result: s.result,
-        ...(this.planSteps[idx]?.verifyAfter
-          ? { verificationGate: this.planSteps[idx].verifyAfter }
-          : {}),
-        ...(this.planSteps[idx]?.toolProfile
-          ? { toolProfile: this.planSteps[idx].toolProfile }
-          : {}),
-      })),
+      buildPlanStatusEntries({
+        planSubtasks: this.planSubtasks,
+        planSteps: this.planSteps,
+      }),
       runningIdx,
     );
 
