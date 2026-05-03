@@ -1208,6 +1208,41 @@ export function assessToolCacheHit(params: {
   };
 }
 
+export interface RedundantSuccessBlock {
+  count: number;
+  result: string;
+}
+
+export function assessRedundantSuccessBlock(params: {
+  recentSuccesses: RecentAction[];
+  toolName: ToolName;
+  argsKey: string;
+  snapshot: DomSnapshot | null | undefined;
+  blockThreshold: number;
+}): RedundantSuccessBlock | null {
+  const fingerprint = getSnapshotFingerprint(params.snapshot ?? null);
+  const sameCount = params.recentSuccesses.filter(
+    (entry) =>
+      entry.tool === params.toolName &&
+      entry.args === params.argsKey &&
+      entry.snapshotFingerprint === fingerprint,
+  ).length;
+  if (sameCount < params.blockThreshold) return null;
+
+  const lastMatch = params.recentSuccesses.findLast(
+    (entry) =>
+      entry.tool === params.toolName &&
+      entry.args === params.argsKey &&
+      entry.snapshotFingerprint === fingerprint,
+  );
+  if (!lastMatch) return null;
+
+  return {
+    count: sameCount,
+    result: lastMatch.result,
+  };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.

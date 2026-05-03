@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ACTION_EFFECT } from "../../src/background/agent/constants";
 import {
   assessFailedActionRepeat,
+  assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
   buildZeroEffectDecision,
@@ -225,5 +226,79 @@ describe("assessToolCacheHit", () => {
       cacheType: "static",
       cachedResult: "cached cookies",
     });
+  });
+});
+
+describe("assessRedundantSuccessBlock", () => {
+  it("allows matching successes below the block threshold", () => {
+    expect(
+      assessRedundantSuccessBlock({
+        recentSuccesses: [
+          {
+            tool: ToolName.CLICK_ELEMENT,
+            args: '{"id":1}',
+            result: "clicked",
+            snapshotFingerprint: "none|0|0",
+          },
+        ],
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        snapshot: null,
+        blockThreshold: 2,
+      }),
+    ).toBeNull();
+  });
+
+  it("blocks at the threshold and returns the last matching result", () => {
+    expect(
+      assessRedundantSuccessBlock({
+        recentSuccesses: [
+          {
+            tool: ToolName.CLICK_ELEMENT,
+            args: '{"id":1}',
+            result: "first result",
+            snapshotFingerprint: "none|0|0",
+          },
+          {
+            tool: ToolName.CLICK_ELEMENT,
+            args: '{"id":1}',
+            result: "last result",
+            snapshotFingerprint: "none|0|0",
+          },
+        ],
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        snapshot: null,
+        blockThreshold: 2,
+      }),
+    ).toEqual({
+      count: 2,
+      result: "last result",
+    });
+  });
+
+  it("does not block matches from a different snapshot fingerprint", () => {
+    expect(
+      assessRedundantSuccessBlock({
+        recentSuccesses: [
+          {
+            tool: ToolName.CLICK_ELEMENT,
+            args: '{"id":1}',
+            result: "clicked",
+            snapshotFingerprint: "other",
+          },
+          {
+            tool: ToolName.CLICK_ELEMENT,
+            args: '{"id":1}',
+            result: "clicked again",
+            snapshotFingerprint: "other",
+          },
+        ],
+        toolName: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":1}',
+        snapshot: null,
+        blockThreshold: 2,
+      }),
+    ).toBeNull();
   });
 });
