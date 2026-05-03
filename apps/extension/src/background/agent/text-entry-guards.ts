@@ -278,3 +278,20 @@ export function rewriteAutocompleteTextEntry(params: {
       `Typed partial text "${rewrittenText}" only. Wait for suggestions/dropdown, then click the exact match "${trimmed}".`,
   };
 }
+
+export function assessAutocompleteTextRewrite(params: {
+  objectiveText: string;
+  originalQuery: string;
+  element: DomSnapshot["elements"][number] | null | undefined;
+  args: Record<string, unknown>;
+}): {
+  rewrittenText: string;
+  reason: string;
+} | null {
+  return rewriteAutocompleteTextEntry({
+    objectiveText: params.objectiveText,
+    originalQuery: params.originalQuery,
+    element: params.element,
+    typedText: String(params.args.text || ""),
+  });
+}
