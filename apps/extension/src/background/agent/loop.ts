@@ -127,6 +127,7 @@ import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import { formatProviderName, getProviderCreditsUrl } from "./provider-display";
 import {
   emptySessionMetrics,
+  recordCachedVisionTelemetryUse,
   recordCompletionUsage,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
@@ -2528,6 +2529,10 @@ export class AgentLoop {
     });
   }
 
+  public recordCachedVisionUsage(): void {
+    recordCachedVisionTelemetryUse(this.metrics);
+  }
+
   private getJobApplicationApprovalTaskText(): string {
     return this.getConsequentialActionTaskText();
   }
@@ -2781,6 +2786,7 @@ export class AgentLoop {
         this.context.setScreenshotForExecutor(warmupScreenshot);
         this.context.setPageInterpretation(null);
         this.perception.setScreenshotUrl(warmupScreenshot);
+        this.recordCachedVisionUsage();
         this.traceRecorder?.recordPerception(
           {
             interpretation:
@@ -2810,6 +2816,7 @@ export class AgentLoop {
           snapshot.url,
         );
         this.context.setPageInterpretation(warmupPerception.interpretation);
+        this.recordCachedVisionUsage();
         this.log.info("agent", "Perception from warmup (skipped vision API)", {
           provider: warmupPerception.providerId,
           durationMs: warmupPerception.durationMs,
@@ -3927,6 +3934,8 @@ export class AgentLoop {
             result.model,
             result.providerId as ProviderConfig["providerId"] | undefined,
           );
+        } else if (result.cached) {
+          this.recordCachedVisionUsage();
         }
       }
     } catch (e: any) {
