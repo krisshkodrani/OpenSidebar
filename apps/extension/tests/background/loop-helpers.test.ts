@@ -4,6 +4,7 @@ import { ACTION_EFFECT } from "../../src/background/agent/constants";
 import {
   assessElementIdPreDispatch,
   assessFailedActionRepeat,
+  assessPreflightElement,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
@@ -149,6 +150,67 @@ describe("assessElementIdPreDispatch", () => {
       requestedId: 12,
       currentUrl: "https://example.com",
       reason: "invalid_element_id_pre_dispatch",
+    });
+  });
+});
+
+describe("assessPreflightElement", () => {
+  it("returns no issue for non-preflight tools", () => {
+    expect(
+      assessPreflightElement({
+        toolName: ToolName.READ_PAGE,
+        args: {},
+        snapshot: null,
+      }),
+    ).toEqual({
+      error: null,
+      warning: null,
+    });
+  });
+
+  it("blocks disabled target elements", () => {
+    expect(
+      assessPreflightElement({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 1 },
+        snapshot: {
+          elements: [
+            {
+              tag: 1,
+              isDisabled: true,
+              rect: { width: 10, height: 10 },
+              isVisible: true,
+            },
+          ],
+        } as any,
+      }),
+    ).toEqual({
+      error:
+        "Error: Element [1] (id) is disabled and cannot be interacted with. Find an alternative or wait for it to become enabled.",
+      warning: null,
+    });
+  });
+
+  it("warns for invisible target elements without blocking", () => {
+    expect(
+      assessPreflightElement({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 1 },
+        snapshot: {
+          elements: [
+            {
+              tag: 1,
+              isDisabled: false,
+              rect: { width: 10, height: 10 },
+              isVisible: false,
+            },
+          ],
+        } as any,
+      }),
+    ).toEqual({
+      error: null,
+      warning:
+        "Warning: Element [1] (id) is not visible in the viewport. Consider scrolling to it first, or it may be hidden.",
     });
   });
 });

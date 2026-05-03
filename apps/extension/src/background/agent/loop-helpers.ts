@@ -1094,6 +1094,23 @@ export function preflightElementCheck(
   return { error: null, warning: null };
 }
 
+export interface PreflightElementDecision {
+  error: string | null;
+  warning: string | null;
+}
+
+export function assessPreflightElement(params: {
+  toolName: string;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null;
+}): PreflightElementDecision {
+  return preflightElementCheck(
+    params.toolName,
+    params.args,
+    params.snapshot,
+  );
+}
+
 /** Tracks a recent successful tool call for redundant action detection */
 export interface RecentAction {
   tool: string;
