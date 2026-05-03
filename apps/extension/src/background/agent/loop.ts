@@ -247,7 +247,6 @@ import {
   TURN_RETRY_BACKOFF_MS,
   tokenizeStepText,
   userExplicitlyRequestedTabManagement,
-  extractDiscoveredTagIds,
 } from "./loop-helpers";
 import {
   assessTaskContractCoverage,
@@ -269,6 +268,8 @@ import {
   handleGenericSequentialToolCall,
   handleListTabsToolCall,
   handleNavigateGuardToolCall,
+  recordFailedToolExecution,
+  recordSuccessfulToolExecution,
   handleSwitchTabToolCall,
   handleUpdateNotesToolCall,
   handleWaitToolCall,
@@ -7364,44 +7365,19 @@ export class AgentLoop {
                   args,
                   preActionSnapshot,
                 );
-                const toolMs = Date.now() - toolStep.timestamp;
-                // Track tag IDs discovered by find_element
-                for (const id of extractDiscoveredTagIds(toolName, result)) {
-                  discoveredTagIds.add(id);
-                }
-                this.middleware.evaluatePostTool(
-                  toolName,
-                  result,
-                  null,
-                  toolMs,
-                  this.turnCount,
-                );
-                this.stepHandler(
+                const toolMs = recordSuccessfulToolExecution(
+                  this as unknown as AgentLoopToolHandlerHost,
                   {
-                    ...toolStep,
-                    status: "done",
-                    durationMs: toolMs,
+                    toolCall,
+                    toolName,
+                    args,
+                    result,
+                    toolStep,
+                    preDecision,
+                    discoveredTagIds,
+                    llmIntention,
+                    mode: "parallel",
                   },
-                  true,
-                );
-                this.log.info("tools", `${toolName} OK`, {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  risk: preDecision.riskLevel,
-                  mode: "parallel",
-                  args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-                  result: result.slice(0, STRING_LIMITS.RESULT_LOG),
-                  durationMs: toolMs,
-                  intention: llmIntention,
-                });
-                this.traceRecorder?.recordToolExecution(
-                  toolCall.id,
-                  toolName,
-                  args,
-                  result,
-                  true,
-                  toolMs,
-                  preDecision.riskLevel,
                 );
 
                 if (
@@ -7448,42 +7424,18 @@ export class AgentLoop {
               } catch (toolError: any) {
                 if (toolError.name === "AbortError") throw toolError;
                 const errorMsg = toolError.message || String(toolError);
-                const toolMs = Date.now() - toolStep.timestamp;
-                this.middleware.evaluatePostTool(
-                  toolName,
-                  null,
-                  errorMsg,
-                  toolMs,
-                  this.turnCount,
-                );
-                this.log.error("tools", `${toolName} FAIL`, {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  risk: preDecision.riskLevel,
-                  mode: "parallel",
-                  args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-                  error: errorMsg,
-                  durationMs: toolMs,
-                  intention: llmIntention,
-                });
-                this.traceRecorder?.recordToolExecution(
-                  toolCall.id,
-                  toolName,
-                  args,
-                  errorMsg,
-                  false,
-                  toolMs,
-                  preDecision.riskLevel,
-                  errorMsg,
-                );
-                this.stepHandler(
+                recordFailedToolExecution(
+                  this as unknown as AgentLoopToolHandlerHost,
                   {
-                    ...toolStep,
-                    status: "error",
-                    durationMs: Date.now() - toolStep.timestamp,
-                    errorMessage: errorMsg,
+                    toolCall,
+                    toolName,
+                    args,
+                    errorMsg,
+                    toolStep,
+                    preDecision,
+                    llmIntention,
+                    mode: "parallel",
                   },
-                  true,
                 );
                 return { toolCall, result: null, error: errorMsg };
               }
