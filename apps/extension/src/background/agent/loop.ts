@@ -70,7 +70,7 @@ import {
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
-import { AgentMiddleware } from "./middleware";
+import { AgentMiddleware, type PreToolDecision } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
   TURN_CHECKPOINT_VERSION,
@@ -2646,6 +2646,376 @@ export class AgentLoop {
         content: `Error creating tab: ${e.message}`,
       });
     }
+  }
+
+  private async handleGenericSequentialToolCall(params: {
+    toolCall: ToolCall;
+    toolName: ToolName;
+    args: Record<string, unknown>;
+    tabId: number;
+    prevElementCount: number;
+    autocompleteRewriteReason: string | null;
+    discoveredTagIds: Set<number>;
+    preDecision: PreToolDecision;
+    llmIntention?: string | null;
+    currentStepIndex: number;
+    shouldArmInlineEditVerification: boolean;
+    cacheType: ReturnType<typeof CACHEABLE_TOOLS.get>;
+    orientationPhase: boolean;
+    orientationToolsUsed: Set<string>;
+    domModified: boolean;
+    visuallyModified: boolean;
+    lastDomAffectingToolName: string | null;
+  }): Promise<{
+    prevElementCount: number;
+    domModified: boolean;
+    visuallyModified: boolean;
+    lastDomAffectingToolName: string | null;
+    breakLoop: boolean;
+    completedSummary: string | null;
+  }> {
+    const {
+      toolCall,
+      toolName,
+      args,
+      tabId,
+      autocompleteRewriteReason,
+      discoveredTagIds,
+      preDecision,
+      llmIntention,
+      currentStepIndex,
+      shouldArmInlineEditVerification,
+      cacheType,
+      orientationPhase,
+      orientationToolsUsed,
+    } = params;
+    let {
+      prevElementCount,
+      domModified,
+      visuallyModified,
+      lastDomAffectingToolName,
+    } = params;
+
+    // Idempotency guard: prevent re-execution of mutation-sensitive actions
+    // within the same plan step. Checks the durable step mutation ledger first
+    // (survives SW restart), then the ephemeral turn cache.
+    if (this.replayMutationSensitiveAction(toolCall.id, toolName, args)) {
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: false,
+        completedSummary: null,
+      };
+    }
+
+    const toolStepId = crypto.randomUUID();
+    const toolStep: AgentStep = {
+      id: toolStepId,
+      type: "tool",
+      label: formatStepLabel(toolName, args, this.elementResolver),
+      detail: JSON.stringify(args),
+      toolName,
+      status: "running",
+      timestamp: Date.now(),
+    };
+    this.stepHandler(toolStep, false);
+
+    let result: string;
+    try {
+      const preActionSnapshot = this.context.getSnapshot();
+      result = await this.executeToolCall(toolCall, tabId);
+      if (autocompleteRewriteReason) {
+        result = `${result}\n${autocompleteRewriteReason}`;
+      }
+      this.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
+      const toolMs = Date.now() - toolStep.timestamp;
+      // Track tag IDs discovered by find_element
+      for (const id of extractDiscoveredTagIds(toolName, result)) {
+        discoveredTagIds.add(id);
+      }
+      this.middleware.evaluatePostTool(
+        toolName,
+        result,
+        null,
+        toolMs,
+        this.turnCount,
+      );
+      this.stepHandler(
+        {
+          ...toolStep,
+          status: "done",
+          durationMs: toolMs,
+        },
+        true,
+      );
+      this.log.info("tools", `${toolName} OK`, {
+        turn: this.turnCount,
+        tool: toolName,
+        risk: preDecision.riskLevel,
+        mode: "sequential",
+        args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
+        result: result.slice(0, STRING_LIMITS.RESULT_LOG),
+        durationMs: toolMs,
+        intention: llmIntention,
+      });
+      this.traceRecorder?.recordToolExecution(
+        toolCall.id,
+        toolName,
+        args,
+        result,
+        true,
+        toolMs,
+        preDecision.riskLevel,
+      );
+      if (
+        this.pendingInlineEditVerification &&
+        this.pendingInlineEditVerification.stepIndex === currentStepIndex &&
+        [ToolName.READ_PAGE, ToolName.READ_ELEMENT, ToolName.FIND_ELEMENT].includes(
+          toolName,
+        )
+      ) {
+        this.pendingInlineEditVerification = null;
+      } else if (shouldArmInlineEditVerification) {
+        this.pendingInlineEditVerification = {
+          stepIndex: currentStepIndex,
+          reason: "You likely just committed an inline edit on this step.",
+        };
+      }
+      this.recordMutationSensitiveAction(
+        toolName,
+        args,
+        result,
+        preActionSnapshot,
+      );
+    } catch (toolError: any) {
+      if (toolError.name === "AbortError") throw toolError;
+      const errorMsg = toolError.message || String(toolError);
+      const toolMs = Date.now() - toolStep.timestamp;
+      this.middleware.evaluatePostTool(
+        toolName,
+        null,
+        errorMsg,
+        toolMs,
+        this.turnCount,
+      );
+      this.log.error("tools", `${toolName} FAIL`, {
+        turn: this.turnCount,
+        tool: toolName,
+        risk: preDecision.riskLevel,
+        mode: "sequential",
+        args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
+        error: errorMsg,
+        durationMs: toolMs,
+        intention: llmIntention,
+      });
+      this.traceRecorder?.recordToolExecution(
+        toolCall.id,
+        toolName,
+        args,
+        errorMsg,
+        false,
+        toolMs,
+        preDecision.riskLevel,
+        errorMsg,
+      );
+      this.stepHandler(
+        {
+          ...toolStep,
+          status: "error",
+          durationMs: toolMs,
+          errorMessage: errorMsg,
+        },
+        true,
+      );
+      // Add error to conversation history so the LLM can recover
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: `Error: ${errorMsg}`,
+      });
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: false,
+        completedSummary: null,
+      };
+    }
+
+    if (
+      DOM_MODIFYING_TOOLS.has(toolName) &&
+      !result.includes("Click intercepted")
+    ) {
+      domModified = true;
+      this.consecutiveAutoAdvances = 0;
+      if (toolName !== ToolName.READ_PAGE) {
+        visuallyModified = true;
+        lastDomAffectingToolName = toolName;
+      }
+      this.lastDomStep = {
+        ...toolStep,
+        status: "done",
+        durationMs: Date.now() - toolStep.timestamp,
+      };
+    }
+
+    // Track read_page / xray_page for done() content verification guard
+    if (toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE) {
+      this.hasReadPage = true;
+    }
+    if (toolName === ToolName.READ_PAGE) {
+      const aggregateNote = this.updateMoneyTableAggregate(result);
+      if (aggregateNote) {
+        result = `${result}\n\n${aggregateNote}`;
+      }
+    }
+
+    // Cache store (Feature 1): cache successful results for cacheable tools
+    if (cacheType && !result.startsWith("Error:")) {
+      const fp = getSnapshotFingerprint(this.context.getSnapshot());
+      this.toolCache.set(
+        ToolResultCache.key(toolName, args),
+        result,
+        fp,
+        cacheType,
+      );
+    }
+
+    // Track investigation tools during orientation for adaptive tier allocation
+    if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
+      orientationToolsUsed.add(toolName);
+    }
+
+    // Add Tool Result to History
+    this.context.addMessage({
+      role: "tool",
+      content: result,
+      tool_call_id: toolCall.id,
+    });
+
+    const trustedSubmitCompletion = this.maybeCompleteTrustedFormSubmitStep({
+      toolName,
+      toolArgs: args,
+      toolResult: result,
+      mode: "sequential",
+    });
+    if (trustedSubmitCompletion) {
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: true,
+        completedSummary: trustedSubmitCompletion.finalSummary,
+      };
+    }
+
+    // Trigger B: Blind input detection — warn when type_text value has no evidence
+    this.maybeAdvanceTrustedFormFillStep({
+      toolName,
+      toolArgs: args,
+      toolResult: result,
+      mode: "sequential",
+    });
+
+    const trustedAutoSubmitCompletion =
+      await this.maybeAutoSubmitTrustedServiceNowForm({
+        toolName,
+        toolArgs: args,
+        toolResult: result,
+        tabId,
+        mode: "sequential",
+      });
+    if (trustedAutoSubmitCompletion) {
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: true,
+        completedSummary: trustedAutoSubmitCompletion.finalSummary,
+      };
+    }
+
+    if (toolName === ToolName.TYPE_TEXT) {
+      const typedValue = String(args.text || "");
+      if (typedValue.length > 3) {
+        const snap = this.context.getSnapshot();
+        const pageText = snap?.pageContent || snap?.visibleContent || "";
+        const originalQuery = this.originalQuery || "";
+        // Check if typed value appears in any recent tool result
+        let hasEvidence = false;
+        if (pageText.includes(typedValue) || originalQuery.includes(typedValue)) {
+          hasEvidence = true;
+        } else {
+          const recentMsgs = this.context.getMessages();
+          const lookback = Math.min(20, recentMsgs.length);
+          for (
+            let ri = recentMsgs.length - 1;
+            ri >= recentMsgs.length - lookback && ri >= 0;
+            ri--
+          ) {
+            const m = recentMsgs[ri];
+            if (
+              m.role === "tool" &&
+              typeof m.content === "string" &&
+              m.content.includes(typedValue)
+            ) {
+              hasEvidence = true;
+              break;
+            }
+          }
+        }
+        if (!hasEvidence) {
+          this.log.warn("agent", "Blind input detected", {
+            turn: this.turnCount,
+            typedValue: typedValue.slice(0, 50),
+          });
+          this.traceRecorder?.recordEvent("blind_input_detected", {
+            typedValue: typedValue.slice(0, 50),
+          });
+          this.context.addMessage({
+            role: "user",
+            content: `WARNING: You typed "${typedValue.slice(0, 50)}" but this value doesn't appear in any page content, tool result, or the user's query. Use investigation tools first (inspect_hidden, execute_js, read_element) to find the correct value before typing.`,
+          });
+        }
+      }
+    }
+
+    // Post-type_text DOM settle: detect autocomplete/dropdown appearance
+    if (
+      !args.pressEnter &&
+      !result.includes("ServiceNow reference value committed")
+    ) {
+      const preCount = this.context.getSnapshot()?.elements.length ?? 0;
+      await new Promise((r) => setTimeout(r, 400));
+      prevElementCount = await this.refreshSnapshotWithRetry(tabId, preCount);
+      if (prevElementCount > preCount + 2) {
+        const delta = prevElementCount - preCount;
+        this.context.addMessage({
+          role: "user",
+          content: `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value — select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`,
+        });
+        this.log.info("agent", "Post-type DOM settle: new elements detected", {
+          turn: this.turnCount,
+          preCount,
+          postCount: prevElementCount,
+          delta,
+        });
+      }
+    }
+
+    return {
+      prevElementCount,
+      domModified,
+      visuallyModified,
+      lastDomAffectingToolName,
+      breakLoop: false,
+      completedSummary: null,
+    };
   }
 
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
@@ -9166,315 +9536,34 @@ export class AgentLoop {
               continue;
             }
 
-            // Idempotency guard: prevent re-execution of mutation-sensitive actions
-            // within the same plan step. Checks the durable step mutation ledger first
-            // (survives SW restart), then the ephemeral turn cache.
-            if (
-              this.replayMutationSensitiveAction(toolCall.id, toolName, args)
-            ) {
-              continue;
-            }
-
-            const toolStepId = crypto.randomUUID();
-            const toolStep: AgentStep = {
-              id: toolStepId,
-              type: "tool",
-              label: formatStepLabel(toolName, args, this.elementResolver),
-              detail: JSON.stringify(args),
-              toolName,
-              status: "running",
-              timestamp: Date.now(),
-            };
-            this.stepHandler(toolStep, false);
-
-            let result: string;
-            try {
-              const preActionSnapshot = this.context.getSnapshot();
-              result = await this.executeToolCall(toolCall, tabId);
-              if (autocompleteRewriteReason) {
-                result = `${result}\n${autocompleteRewriteReason}`;
-              }
-              this.trackListDetailToolSuccess(
+            const genericToolState =
+              await this.handleGenericSequentialToolCall({
+                toolCall,
                 toolName,
                 args,
-                preActionSnapshot,
-              );
-              const toolMs = Date.now() - toolStep.timestamp;
-              // Track tag IDs discovered by find_element
-              for (const id of extractDiscoveredTagIds(toolName, result)) {
-                discoveredTagIds.add(id);
-              }
-              this.middleware.evaluatePostTool(
-                toolName,
-                result,
-                null,
-                toolMs,
-                this.turnCount,
-              );
-              this.stepHandler(
-                {
-                  ...toolStep,
-                  status: "done",
-                  durationMs: toolMs,
-                },
-                true,
-              );
-              this.log.info("tools", `${toolName} OK`, {
-                turn: this.turnCount,
-                tool: toolName,
-                risk: preDecision.riskLevel,
-                mode: "sequential",
-                args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-                result: result.slice(0, STRING_LIMITS.RESULT_LOG),
-                durationMs: toolMs,
-                intention: llmIntention,
-              });
-              this.traceRecorder?.recordToolExecution(
-                toolCall.id,
-                toolName,
-                args,
-                result,
-                true,
-                toolMs,
-                preDecision.riskLevel,
-              );
-              if (
-                this.pendingInlineEditVerification &&
-                this.pendingInlineEditVerification.stepIndex ===
-                  currentStepIndex &&
-                [
-                  ToolName.READ_PAGE,
-                  ToolName.READ_ELEMENT,
-                  ToolName.FIND_ELEMENT,
-                ].includes(toolName)
-              ) {
-                this.pendingInlineEditVerification = null;
-              } else if (shouldArmInlineEditVerification) {
-                this.pendingInlineEditVerification = {
-                  stepIndex: currentStepIndex,
-                  reason:
-                    "You likely just committed an inline edit on this step.",
-                };
-              }
-              this.recordMutationSensitiveAction(
-                toolName,
-                args,
-                result,
-                preActionSnapshot,
-              );
-            } catch (toolError: any) {
-              if (toolError.name === "AbortError") throw toolError;
-              const errorMsg = toolError.message || String(toolError);
-              const toolMs = Date.now() - toolStep.timestamp;
-              this.middleware.evaluatePostTool(
-                toolName,
-                null,
-                errorMsg,
-                toolMs,
-                this.turnCount,
-              );
-              this.log.error("tools", `${toolName} FAIL`, {
-                turn: this.turnCount,
-                tool: toolName,
-                risk: preDecision.riskLevel,
-                mode: "sequential",
-                args: JSON.stringify(args).slice(0, STRING_LIMITS.ARGS_LOG),
-                error: errorMsg,
-                durationMs: toolMs,
-                intention: llmIntention,
-              });
-              this.traceRecorder?.recordToolExecution(
-                toolCall.id,
-                toolName,
-                args,
-                errorMsg,
-                false,
-                toolMs,
-                preDecision.riskLevel,
-                errorMsg,
-              );
-              this.stepHandler(
-                {
-                  ...toolStep,
-                  status: "error",
-                  durationMs: toolMs,
-                  errorMessage: errorMsg,
-                },
-                true,
-              );
-              // Add error to conversation history so the LLM can recover
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: `Error: ${errorMsg}`,
-              });
-              continue;
-            }
-
-            if (
-              DOM_MODIFYING_TOOLS.has(toolName) &&
-              !result.includes("Click intercepted")
-            ) {
-              domModified = true;
-              this.consecutiveAutoAdvances = 0;
-              if (toolName !== ToolName.READ_PAGE) {
-                visuallyModified = true;
-                lastDomAffectingToolName = toolName;
-              }
-              this.lastDomStep = {
-                ...toolStep,
-                status: "done",
-                durationMs: Date.now() - toolStep.timestamp,
-              };
-            }
-
-            // Track read_page / xray_page for done() content verification guard
-            if (
-              toolName === ToolName.READ_PAGE ||
-              toolName === ToolName.XRAY_PAGE
-            ) {
-              this.hasReadPage = true;
-            }
-            if (toolName === ToolName.READ_PAGE) {
-              const aggregateNote = this.updateMoneyTableAggregate(result);
-              if (aggregateNote) {
-                result = `${result}\n\n${aggregateNote}`;
-              }
-            }
-
-            // Cache store (Feature 1): cache successful results for cacheable tools
-            if (cacheType && !result.startsWith("Error:")) {
-              const fp = getSnapshotFingerprint(this.context.getSnapshot());
-              this.toolCache.set(
-                ToolResultCache.key(toolName, args),
-                result,
-                fp,
+                tabId,
+                prevElementCount,
+                autocompleteRewriteReason,
+                discoveredTagIds,
+                preDecision,
+                llmIntention,
+                currentStepIndex,
+                shouldArmInlineEditVerification,
                 cacheType,
-              );
-            }
-
-            // Track investigation tools during orientation for adaptive tier allocation
-            if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
-              orientationToolsUsed.add(toolName);
-            }
-
-            // Add Tool Result to History
-            this.context.addMessage({
-              role: "tool",
-              content: result,
-              tool_call_id: toolCall.id,
-            });
-
-            const trustedSubmitCompletion =
-              this.maybeCompleteTrustedFormSubmitStep({
-                toolName,
-                toolArgs: args,
-                toolResult: result,
-                mode: "sequential",
+                orientationPhase,
+                orientationToolsUsed,
+                domModified,
+                visuallyModified,
+                lastDomAffectingToolName,
               });
-            if (trustedSubmitCompletion) {
-              signalCompletedResult(trustedSubmitCompletion.finalSummary);
+            prevElementCount = genericToolState.prevElementCount;
+            domModified = genericToolState.domModified;
+            visuallyModified = genericToolState.visuallyModified;
+            lastDomAffectingToolName =
+              genericToolState.lastDomAffectingToolName;
+            if (genericToolState.breakLoop) {
+              signalCompletedResult(genericToolState.completedSummary || "");
               break;
-            }
-
-            // Trigger B: Blind input detection — warn when type_text value has no evidence
-            this.maybeAdvanceTrustedFormFillStep({
-              toolName,
-              toolArgs: args,
-              toolResult: result,
-              mode: "sequential",
-            });
-
-            const trustedAutoSubmitCompletion =
-              await this.maybeAutoSubmitTrustedServiceNowForm({
-                toolName,
-                toolArgs: args,
-                toolResult: result,
-                tabId,
-                mode: "sequential",
-              });
-            if (trustedAutoSubmitCompletion) {
-              signalCompletedResult(trustedAutoSubmitCompletion.finalSummary);
-              break;
-            }
-
-            if (toolName === ToolName.TYPE_TEXT) {
-              const typedValue = String(args.text || "");
-              if (typedValue.length > 3) {
-                const snap = this.context.getSnapshot();
-                const pageText =
-                  snap?.pageContent || snap?.visibleContent || "";
-                const originalQuery = this.originalQuery || "";
-                // Check if typed value appears in any recent tool result
-                let hasEvidence = false;
-                if (
-                  pageText.includes(typedValue) ||
-                  originalQuery.includes(typedValue)
-                ) {
-                  hasEvidence = true;
-                } else {
-                  const recentMsgs = this.context.getMessages();
-                  const lookback = Math.min(20, recentMsgs.length);
-                  for (
-                    let ri = recentMsgs.length - 1;
-                    ri >= recentMsgs.length - lookback && ri >= 0;
-                    ri--
-                  ) {
-                    const m = recentMsgs[ri];
-                    if (
-                      m.role === "tool" &&
-                      typeof m.content === "string" &&
-                      m.content.includes(typedValue)
-                    ) {
-                      hasEvidence = true;
-                      break;
-                    }
-                  }
-                }
-                if (!hasEvidence) {
-                  this.log.warn("agent", "Blind input detected", {
-                    turn: this.turnCount,
-                    typedValue: typedValue.slice(0, 50),
-                  });
-                  this.traceRecorder?.recordEvent("blind_input_detected", {
-                    typedValue: typedValue.slice(0, 50),
-                  });
-                  this.context.addMessage({
-                    role: "user",
-                    content: `WARNING: You typed "${typedValue.slice(0, 50)}" but this value doesn't appear in any page content, tool result, or the user's query. Use investigation tools first (inspect_hidden, execute_js, read_element) to find the correct value before typing.`,
-                  });
-                }
-              }
-            }
-
-            // Post-type_text DOM settle: detect autocomplete/dropdown appearance
-            if (
-              !args.pressEnter &&
-              !result.includes("ServiceNow reference value committed")
-            ) {
-              const preCount = this.context.getSnapshot()?.elements.length ?? 0;
-              await new Promise((r) => setTimeout(r, 400));
-              prevElementCount = await this.refreshSnapshotWithRetry(
-                tabId,
-                preCount,
-              );
-              if (prevElementCount > preCount + 2) {
-                const delta = prevElementCount - preCount;
-                this.context.addMessage({
-                  role: "user",
-                  content: `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value — select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`,
-                });
-                this.log.info(
-                  "agent",
-                  "Post-type DOM settle: new elements detected",
-                  {
-                    turn: this.turnCount,
-                    preCount,
-                    postCount: prevElementCount,
-                    delta,
-                  },
-                );
-              }
             }
           }
 
@@ -10357,11 +10446,13 @@ export class AgentLoop {
               }
 
               // Retroactive screenshot attachment: update the last DOM-modifying step with the screenshot
-              if (this.perception.getLastScreenshot() && this.lastDomStep) {
+              const lastScreenshot = this.perception.getLastScreenshot();
+              const lastDomStep = this.lastDomStep as AgentStep | null;
+              if (lastScreenshot && lastDomStep) {
                 this.stepHandler(
                   {
-                    ...this.lastDomStep,
-                    screenshotUrl: this.perception.getLastScreenshot()!,
+                    ...lastDomStep,
+                    screenshotUrl: lastScreenshot,
                   },
                   true,
                 );
