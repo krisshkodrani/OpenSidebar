@@ -702,6 +702,12 @@ export class AgentLoop {
     this.broadcast(sessionMetricsMessage(this.metrics));
   }
 
+  private broadcastFinalMetrics(): void {
+    if (!this.showSessionMetrics) return;
+    this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
+    this.broadcast(sessionMetricsMessage(this.metrics));
+  }
+
   constructor(
     openRouterApiKey: string,
     callbacks: {
@@ -8443,14 +8449,7 @@ export class AgentLoop {
               }
 
               // Broadcast final metrics
-              if (this.showSessionMetrics) {
-                this.metrics.totalSessionTimeMs =
-                  Date.now() - this.sessionStartTime;
-                this.broadcast({
-                  type: "SESSION_METRICS",
-                  payload: { ...this.metrics },
-                });
-              }
+              this.broadcastFinalMetrics();
 
               break;
             }
@@ -10164,14 +10163,7 @@ export class AgentLoop {
                 doneSummary = summary;
                 doneSignaled = true;
 
-                if (this.showSessionMetrics) {
-                  this.metrics.totalSessionTimeMs =
-                    Date.now() - this.sessionStartTime;
-                  this.broadcast({
-                    type: "SESSION_METRICS",
-                    payload: { ...this.metrics },
-                  });
-                }
+                this.broadcastFinalMetrics();
               } else if (
                 explicitSuccessSignal &&
                 taskContractMultiReturn >= 2 &&
