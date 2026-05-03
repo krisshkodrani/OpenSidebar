@@ -1597,6 +1597,103 @@ export class AgentLoop {
     );
   }
 
+  private evaluateDonePlanPrecheck(summary: string): {
+    shouldReject: boolean;
+    rejectReason: string;
+    effectiveCurrentIdx: number;
+    completedMoneyTableAggregate: boolean;
+  } {
+    let shouldReject = false;
+    let rejectReason = "";
+    const completedMoneyTableAggregate =
+      this.isCompletedMoneyTableAggregateSummary(summary);
+    const completedCount = this.planSubtasks.filter(
+      (s) => s.status === "completed",
+    ).length;
+    const runningIdx = this.planSubtasks.findIndex(
+      (s) => s.status === "running",
+    );
+    const effectiveCurrentIdx = runningIdx >= 0 ? runningIdx : completedCount;
+    const uncommittedInlineEditRejection =
+      this.getUncommittedInlineEditDoneRejection(effectiveCurrentIdx);
+    if (uncommittedInlineEditRejection) {
+      shouldReject = true;
+      rejectReason = uncommittedInlineEditRejection;
+    }
+
+    const bypassPlanIncompleteRejection = shouldReject
+      ? false
+      : completedMoneyTableAggregate ||
+        this.shouldBypassPlanIncompleteDoneRejection({
+          summary,
+          currentStepIndex: effectiveCurrentIdx,
+        });
+    if (
+      effectiveCurrentIdx < this.planSubtasks.length - 1 &&
+      !shouldReject &&
+      !bypassPlanIncompleteRejection
+    ) {
+      shouldReject = true;
+      rejectReason = `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
+    } else if (bypassPlanIncompleteRejection) {
+      this.log.info(
+        "agent",
+        "Bypassing stale plan done rejection for satisfied task",
+        {
+          turn: this.turnCount,
+          step: effectiveCurrentIdx,
+          remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
+          selectedSkillId: this.selectedSkillId,
+          reason: completedMoneyTableAggregate
+            ? "completed_money_table_aggregate"
+            : "satisfied_edit_task",
+        },
+      );
+      this.traceRecorder?.recordEvent("done_plan_incomplete_bypassed", {
+        step: effectiveCurrentIdx,
+        remainingSteps: this.planSubtasks.length - effectiveCurrentIdx - 1,
+        selectedSkillId: this.selectedSkillId,
+        reason: completedMoneyTableAggregate
+          ? "completed_money_table_aggregate"
+          : "satisfied_edit_task",
+      });
+    }
+
+    const activeAsyncExpectation =
+      this.pendingAsyncVerification &&
+      this.pendingAsyncVerification.stepIndex === effectiveCurrentIdx
+        ? this.pendingAsyncVerification
+        : null;
+    if (
+      this.pendingAsyncVerification &&
+      this.pendingAsyncVerification.stepIndex !== effectiveCurrentIdx
+    ) {
+      this.pendingAsyncVerification = null;
+    }
+    if (
+      activeAsyncExpectation &&
+      !isPendingAsyncChangeSatisfied({
+        snapshot: this.context.getSnapshot(),
+        expectedTokens: activeAsyncExpectation.expectedTokens,
+        baselineLoadingKeywords:
+          activeAsyncExpectation.baselineLoadingKeywords,
+      }) &&
+      !this.hasRecentToolEvidenceForTokens(activeAsyncExpectation.expectedTokens)
+    ) {
+      shouldReject = true;
+      rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
+    } else if (activeAsyncExpectation) {
+      this.pendingAsyncVerification = null;
+    }
+
+    return {
+      shouldReject,
+      rejectReason,
+      effectiveCurrentIdx,
+      completedMoneyTableAggregate,
+    };
+  }
+
   private async evaluateDonePlanValidation(
     summary: string,
     effectiveCurrentIdx: number,
@@ -8194,99 +8291,14 @@ export class AgentLoop {
 
               // Planner validation: only when a plan exists
               if (this.taskId && this.planSubtasks.length > 0) {
-                let shouldReject = false;
-                let rejectReason = "";
-                const completedMoneyTableAggregate =
-                  this.isCompletedMoneyTableAggregateSummary(summary);
-                const completedCount = this.planSubtasks.filter(
-                  (s) => s.status === "completed",
-                ).length;
-                const runningIdx = this.planSubtasks.findIndex(
-                  (s) => s.status === "running",
-                );
+                const donePlanPrecheck =
+                  this.evaluateDonePlanPrecheck(summary);
+                let shouldReject = donePlanPrecheck.shouldReject;
+                let rejectReason = donePlanPrecheck.rejectReason;
                 const effectiveCurrentIdx =
-                  runningIdx >= 0 ? runningIdx : completedCount;
-                const uncommittedInlineEditRejection =
-                  this.getUncommittedInlineEditDoneRejection(
-                    effectiveCurrentIdx,
-                  );
-                if (uncommittedInlineEditRejection) {
-                  shouldReject = true;
-                  rejectReason = uncommittedInlineEditRejection;
-                }
-                const bypassPlanIncompleteRejection = shouldReject
-                  ? false
-                  : completedMoneyTableAggregate ||
-                    this.shouldBypassPlanIncompleteDoneRejection({
-                      summary,
-                      currentStepIndex: effectiveCurrentIdx,
-                    });
-                if (
-                  effectiveCurrentIdx < this.planSubtasks.length - 1 &&
-                  !shouldReject &&
-                  !bypassPlanIncompleteRejection
-                ) {
-                  shouldReject = true;
-                  rejectReason = `Plan incomplete. Step ${effectiveCurrentIdx + 1}/${this.planSubtasks.length} is active; continue to the next planned step instead of ending the task.`;
-                } else if (bypassPlanIncompleteRejection) {
-                  this.log.info(
-                    "agent",
-                    "Bypassing stale plan done rejection for satisfied task",
-                    {
-                      turn: this.turnCount,
-                      step: effectiveCurrentIdx,
-                      remainingSteps:
-                        this.planSubtasks.length - effectiveCurrentIdx - 1,
-                      selectedSkillId: this.selectedSkillId,
-                      reason: completedMoneyTableAggregate
-                        ? "completed_money_table_aggregate"
-                        : "satisfied_edit_task",
-                    },
-                  );
-                  this.traceRecorder?.recordEvent(
-                    "done_plan_incomplete_bypassed",
-                    {
-                      step: effectiveCurrentIdx,
-                      remainingSteps:
-                        this.planSubtasks.length - effectiveCurrentIdx - 1,
-                      selectedSkillId: this.selectedSkillId,
-                      reason: completedMoneyTableAggregate
-                        ? "completed_money_table_aggregate"
-                        : "satisfied_edit_task",
-                    },
-                  );
-                }
-
-                const activeAsyncExpectation =
-                  this.pendingAsyncVerification &&
-                  this.pendingAsyncVerification.stepIndex ===
-                    effectiveCurrentIdx
-                    ? this.pendingAsyncVerification
-                    : null;
-                if (
-                  this.pendingAsyncVerification &&
-                  this.pendingAsyncVerification.stepIndex !==
-                    effectiveCurrentIdx
-                ) {
-                  this.pendingAsyncVerification = null;
-                }
-                if (
-                  activeAsyncExpectation &&
-                  !isPendingAsyncChangeSatisfied({
-                    snapshot: this.context.getSnapshot(),
-                    expectedTokens: activeAsyncExpectation.expectedTokens,
-                    baselineLoadingKeywords:
-                      activeAsyncExpectation.baselineLoadingKeywords,
-                  }) &&
-                  !this.hasRecentToolEvidenceForTokens(
-                    activeAsyncExpectation.expectedTokens,
-                  )
-                ) {
-                  shouldReject = true;
-                  rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
-                } else if (activeAsyncExpectation) {
-                  this.pendingAsyncVerification = null;
-                }
+                  donePlanPrecheck.effectiveCurrentIdx;
+                const completedMoneyTableAggregate =
+                  donePlanPrecheck.completedMoneyTableAggregate;
 
                 ({ shouldReject, rejectReason } =
                   await this.evaluateDonePlanValidation(
