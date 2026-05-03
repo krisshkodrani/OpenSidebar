@@ -9,6 +9,7 @@ import {
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
+  assessStepDurationWatchdog,
   buildZeroEffectDecision,
   countTrailingToolResultOutcomes,
   normalizeOutcome,
@@ -795,5 +796,67 @@ describe("updatePostEscalationPivot", () => {
       kind: "pivot",
       turnsSinceStepEscalation: 3,
     });
+  });
+});
+
+describe("assessStepDurationWatchdog", () => {
+  const base = {
+    hasTaskId: true,
+    planSubtaskCount: 1,
+    turnsOnCurrentStep: 1,
+    escalationTier: 0,
+    cooldownRemaining: 0,
+    warnTurns: 3,
+    escalateTurns: 5,
+  };
+
+  it("stays inactive without an active planned task", () => {
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        hasTaskId: false,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        planSubtaskCount: 0,
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("warns at the warn threshold", () => {
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 3,
+      }),
+    ).toEqual({ kind: "warn" });
+  });
+
+  it("escalates at the escalation threshold when tier and cooldown allow", () => {
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 5,
+      }),
+    ).toEqual({ kind: "escalate" });
+  });
+
+  it("does not escalate while already escalated or cooling down", () => {
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 5,
+        escalationTier: 1,
+      }),
+    ).toEqual({ kind: "none" });
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 5,
+        cooldownRemaining: 1,
+      }),
+    ).toEqual({ kind: "none" });
   });
 });

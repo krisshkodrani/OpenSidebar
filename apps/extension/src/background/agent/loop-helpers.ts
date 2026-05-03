@@ -1595,6 +1595,43 @@ export function updatePostEscalationPivot(params: {
   return { kind: "none", turnsSinceStepEscalation };
 }
 
+export type StepDurationWatchdogDecision =
+  | { kind: "none" }
+  | { kind: "warn" }
+  | { kind: "escalate" };
+
+export function assessStepDurationWatchdog(params: {
+  hasTaskId: boolean;
+  planSubtaskCount: number;
+  turnsOnCurrentStep: number;
+  escalationTier: number;
+  cooldownRemaining: number;
+  warnTurns: number;
+  escalateTurns: number;
+}): StepDurationWatchdogDecision {
+  if (
+    !params.hasTaskId ||
+    params.planSubtaskCount <= 0 ||
+    params.turnsOnCurrentStep <= 0
+  ) {
+    return { kind: "none" };
+  }
+
+  if (
+    params.turnsOnCurrentStep >= params.escalateTurns &&
+    params.escalationTier < 1 &&
+    params.cooldownRemaining <= 0
+  ) {
+    return { kind: "escalate" };
+  }
+
+  if (params.turnsOnCurrentStep === params.warnTurns) {
+    return { kind: "warn" };
+  }
+
+  return { kind: "none" };
+}
+
 /** Simple djb2 hash for short strings. */
 export function djb2(str: string): number {
   let hash = 5381;
