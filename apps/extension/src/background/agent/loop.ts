@@ -291,6 +291,7 @@ import {
   updateMoneyTableAggregateFromSnapshot,
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
+import { assessConsequentialActionApproval } from "./consequential-action-policy";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -2469,34 +2470,26 @@ export class AgentLoop {
     return approved;
   }
 
+  private requiresConsequentialActionApproval(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): boolean {
+    return assessConsequentialActionApproval({
+      toolName,
+      args,
+      taskText: this.getConsequentialActionTaskText(),
+      actionLabel: formatStepLabel(toolName, args, this.elementResolver),
+    }).requiresApproval;
+  }
+
   private requiresJobApplicationSubmitApproval(
     toolName: ToolName,
     args: Record<string, unknown>,
   ): boolean {
-    if (toolName !== ToolName.CLICK_ELEMENT) return false;
-    if (args.id == null) return false;
-    const taskText = this.getJobApplicationApprovalTaskText();
-    const isJobApplicationWorkflow =
-      /\b(job|career|position|vacancy|cv|resume)\b/.test(taskText) ||
-      /\b(apply|application)\b[^.\n]{0,80}\b(job|career|position|vacancy)\b/.test(
-        taskText,
-      ) ||
-      /\b(job|career|position|vacancy)\b[^.\n]{0,80}\b(apply|application)\b/.test(
-        taskText,
-      );
-    if (!isJobApplicationWorkflow) return false;
-    const label = formatStepLabel(
-      toolName,
-      args,
-      this.elementResolver,
-    ).toLowerCase();
-    return (
-      /\b(submit|send|finish|complete)\b/.test(label) ||
-      /\bapply\b.*\b(application|form)\b/.test(label)
-    );
+    return this.requiresConsequentialActionApproval(toolName, args);
   }
 
-  private getJobApplicationApprovalTaskText(): string {
+  private getConsequentialActionTaskText(): string {
     const planStatus = this.context.getPlanStatusRaw();
     const activeIndex =
       planStatus?.currentIndex ??
@@ -2522,6 +2515,10 @@ export class AgentLoop {
       .filter(Boolean)
       .join("\n")
       .toLowerCase();
+  }
+
+  private getJobApplicationApprovalTaskText(): string {
+    return this.getConsequentialActionTaskText();
   }
 
   /**
@@ -8067,14 +8064,17 @@ export class AgentLoop {
                 false,
               );
             }
-            const forceJobSubmitApproval =
-              this.requiresJobApplicationSubmitApproval(toolName, args);
-            if (preDecision.requiresApproval || forceJobSubmitApproval) {
+            const forceConsequentialActionApproval =
+              this.requiresConsequentialActionApproval(toolName, args);
+            if (
+              preDecision.requiresApproval ||
+              forceConsequentialActionApproval
+            ) {
               const approved = await this.ensureToolApproval(
                 toolName,
                 args,
                 preDecision.riskLevel,
-                forceJobSubmitApproval,
+                forceConsequentialActionApproval,
               );
               if (!approved) {
                 this.context.addMessage({

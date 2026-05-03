@@ -532,6 +532,73 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
+    id: "consequential-action-consent",
+    name: "Consequential Action Consent",
+    description:
+      "Prepare workflows that may send, submit, publish, purchase, delete, confirm, or otherwise create real-world consequences, then stop for approval when user intent is unclear or approval is requested.",
+    tags: ["workflow", "consent", "approval", "safety"],
+    triggers: [
+      "wait for approval before final action",
+      "ask before submitting",
+      "prepare but do not send",
+      "draft and wait for confirmation",
+      "final approval required",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "update_notes",
+      "type_text",
+      "select_option",
+      "set_checkbox",
+      "click_element",
+      "clarify",
+    ],
+    discouragedTools: ["done", "click_coordinates", "press_key"],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Treat consequential final actions as approval-gated unless the user clearly authorized them.",
+      "If the user's policy is unclear, ask whether to execute final actions or stop for approval.",
+      "Preparation and verification may continue; final execution must wait for consent when requested or ambiguous.",
+    ],
+  },
+  {
+    id: "job-application-assistant",
+    name: "Job Application Assistant",
+    description:
+      "Fill or prepare job, career, vacancy, CV, or resume application workflows, verify the application data, and stop before final submit unless explicit approval is obtained.",
+    tags: ["workflow", "jobs", "application", "forms", "consent"],
+    triggers: [
+      "job application",
+      "apply for a job",
+      "career application",
+      "submit resume",
+      "fill job form and wait for approval",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "update_notes",
+      "type_text",
+      "select_option",
+      "set_checkbox",
+      "click_element",
+      "clarify",
+    ],
+    discouragedTools: ["done", "click_coordinates", "press_key"],
+    capabilityNeeds: ["read_context", "update_record", "verify_saved"],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Do not invent personal data, salary expectations, legal answers, or availability.",
+      "Fill and verify requested fields, then summarize what is ready before final submit.",
+      "Final application submission is a consequential action and must be approval-gated by runtime policy.",
+    ],
+  },
+  {
     id: "servicenow-record-form",
     name: "ServiceNow Record Form",
     description:
@@ -1558,6 +1625,103 @@ const SKILL_BODIES: Record<
       ],
     },
   },
+  "consequential-action-consent": {
+    procedureMarkdown: [
+      "1. Identify whether the task includes a consequential final action: submit, send, publish, buy, place order, delete, confirm, or approve.",
+      "2. Determine the user's consent mode from the request: explicit go-ahead, prepare-only, forbidden, or unclear.",
+      "3. If consent is unclear, ask the user whether final actions should be executed automatically or held for approval.",
+      "4. Continue safe preparation: read context, fill drafts or forms, configure options, and collect verification evidence.",
+      "5. Before any consequential final action, summarize what will happen and wait for approval when the user requested approval or the policy is unclear.",
+      "6. Do not use test fixture wording, hidden selectors, or benchmark-specific assumptions to decide consent.",
+      "7. After an approved final action, verify real page feedback such as confirmation, sent state, published item, order receipt, or deleted/changed state.",
+    ].join("\n"),
+    requiredEvidence: [
+      "The consequential action type and target",
+      "The user's consent mode or explicit approval request",
+      "Prepared state before final action",
+      "Post-action confirmation when execution is approved",
+    ],
+    commonFailures: [
+      {
+        signal: "final action is available but user consent is unclear",
+        recovery:
+          "ask a clarification or approval question instead of clicking the final action",
+      },
+      {
+        signal: "task was prepare-only but the agent tries to submit",
+        recovery:
+          "stop after preparation, summarize ready state, and request approval",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Classify consent mode, prepare safely, verify ready state, then request approval before final action when required.",
+      ],
+      toolDiscipline: [
+        "Use clarify when the user's final-action policy is unclear.",
+        "Avoid press_key shortcuts for final submit/send/publish/buy/delete actions.",
+        "Prefer tagged click targets over coordinates for approval-gated final actions.",
+      ],
+      completionChecks: [
+        "The final action was either approved and verified, or intentionally stopped pending approval.",
+        "The final answer states whether the consequential action was executed or is waiting for approval.",
+      ],
+      failureRecovery: [
+        "If approval is denied or absent, report the prepared state without executing the final action.",
+        "If the final target is ambiguous, re-ground and ask which target should receive the action.",
+      ],
+    },
+  },
+  "job-application-assistant": {
+    procedureMarkdown: [
+      "1. Identify the job, role, company, and application page before filling fields.",
+      "2. Read visible requirements and required fields; do not infer personal, legal, salary, sponsorship, availability, or eligibility answers that the user did not provide.",
+      "3. Fill fields only from the user's request, saved profile evidence, or visible page context.",
+      "4. Use update_notes to track missing user-supplied values and fields that are ready.",
+      "5. Re-read the application before final submission and verify the visible values or attached resume/CV state.",
+      "6. Stop before the final Submit/Send/Apply action unless the user has approved that exact final submission.",
+      "7. If approval is needed, summarize the target job and what will be submitted before requesting approval.",
+      "8. After approved submission, verify confirmation, application received state, or equivalent page feedback.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Target job/application identity",
+      "Field/value mapping from user request, saved profile, or page context",
+      "Application ready-state before final submit",
+      "User approval or confirmation evidence before final submit",
+      "Post-submit confirmation if executed",
+    ],
+    commonFailures: [
+      {
+        signal: "guessing personal or eligibility answers",
+        recovery:
+          "leave the field unchanged and ask the user for the missing value or policy",
+      },
+      {
+        signal: "clicking Submit/Apply as soon as the form looks filled",
+        recovery:
+          "re-read the prepared application and request approval before final submit",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Identify job, map fields, fill known values, verify ready state, request approval, then submit only after approval.",
+      ],
+      toolDiscipline: [
+        "Use read_page and read_element to verify required fields and final submit target.",
+        "Use type_text/select_option/set_checkbox for explicit values only.",
+        "Avoid press_key and click_coordinates for final application submission.",
+      ],
+      completionChecks: [
+        "All known requested fields are filled or missing values are surfaced.",
+        "The final submit action is either waiting for approval or was approved and verified.",
+        "The final answer clearly states submitted vs ready-for-approval.",
+      ],
+      failureRecovery: [
+        "If the application page shows validation errors, report the exact missing fields and do not submit.",
+        "If the submit target is ambiguous, ask for confirmation before proceeding.",
+      ],
+    },
+  },
   "inline-edit-surface": {
     procedureMarkdown: [
       "1. Identify the exact editable surface that must change: the target grid cell, table row, filename, or inline field.",
@@ -2079,6 +2243,10 @@ const configuratorPattern =
   /\b(configure|configurator|pick|choose|select|enable|disable)\b[\s\S]{0,120}\b(size|option|engraving|color|variant|total price|total|price|summary)\b/i;
 const profileFieldPattern =
   /\b(saved profile|profile field|profile data|identity\.(?:first_name|last_name|email)|full name|email address)\b/i;
+const consequentialActionConsentPattern =
+  /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b|\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b|\b(?:final approval|required approval|approval required|ask before)\b/i;
+const jobApplicationPattern =
+  /\b(?:job|career|position|vacancy|resume|cv)\b[\s\S]{0,160}\b(?:apply|application|submit|form|cover letter|resume|cv)\b|\b(?:apply|application|submit)\b[\s\S]{0,160}\b(?:job|career|position|vacancy|resume|cv)\b/i;
 const transactionPattern =
   /\b(verify|confirm|check|delete account|dismiss popups?|inspect|status|activity feed|posted comment|ticket status)\b/i;
 const navigateReturnPattern =
@@ -2501,6 +2669,22 @@ export function selectPrimarySkill(input: {
       id: "servicenow-record-form",
       reason:
         "Task contains explicit ServiceNow record field/value pairs and should use deterministic form configuration and submit evidence.",
+    };
+  }
+
+  if (jobApplicationPattern.test(corpus)) {
+    return {
+      id: "job-application-assistant",
+      reason:
+        "Task is a job application workflow and should prepare, verify, and approval-gate final submission.",
+    };
+  }
+
+  if (consequentialActionConsentPattern.test(corpus)) {
+    return {
+      id: "consequential-action-consent",
+      reason:
+        "Task mentions approval, confirmation, prepare-only, or unclear final-action consent and should treat final actions as approval-gated.",
     };
   }
 
