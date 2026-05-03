@@ -208,6 +208,7 @@ import {
   BlockedAction,
   assessElementIdPreDispatch,
   assessFailedActionRepeat,
+  assessPreflightElement,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
@@ -234,7 +235,6 @@ import {
   matchSuccessCriteria,
   MAX_TURN_RETRIES,
   normalizeOutcome,
-  preflightElementCheck,
   RecentAction,
   requiresGroundingReadBeforeDone,
   RETRYABLE_ERRORS,
@@ -7132,12 +7132,11 @@ export class AgentLoop {
                 };
               }
 
-              // Pre-action feasibility check (disabled, zero-size, invisible)
-              const preflight = preflightElementCheck(
+              const preflight = assessPreflightElement({
                 toolName,
                 args,
-                this.context.getSnapshot(),
-              );
+                snapshot: this.context.getSnapshot(),
+              });
               if (preflight.error) {
                 this.log.warn("agent", "Preflight check failed", {
                   turn: this.turnCount,
@@ -7763,12 +7762,11 @@ export class AgentLoop {
               continue;
             }
 
-            // Pre-action feasibility check (disabled, zero-size, invisible)
-            const preflight = preflightElementCheck(
+            const preflight = assessPreflightElement({
               toolName,
               args,
-              this.context.getSnapshot(),
-            );
+              snapshot: this.context.getSnapshot(),
+            });
             if (preflight.error) {
               this.context.addMessage({
                 role: "tool",
