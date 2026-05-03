@@ -2376,6 +2376,278 @@ export class AgentLoop {
     });
   }
 
+  private async handleSwitchTabToolCall(
+    toolCallId: string,
+    args: Record<string, unknown>,
+    tabId: number,
+    prevElementCount: number,
+  ): Promise<{ tabId: number; prevElementCount: number }> {
+    if (this.shouldBlockTabManagementTools()) {
+      const blockedMessage =
+        "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
+        "Stay on the current tab unless the user asks for tab switching. " +
+        "Tab management tools disabled for this session.";
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: blockedMessage,
+      });
+      for (const tabTool of [
+        ToolName.CREATE_TAB,
+        ToolName.SWITCH_TAB,
+        ToolName.CLOSE_TAB,
+        ToolName.CREATE_WINDOW,
+      ]) {
+        this.disabledTools.add(tabTool);
+      }
+      this.log.warn(
+        "agent",
+        "switch_tab blocked - not explicitly requested, tab tools disabled",
+        {
+          turn: this.turnCount,
+          originalQuery: this.originalQuery,
+        },
+      );
+      return { tabId, prevElementCount };
+    }
+
+    // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
+    const rawId = args.tabId ?? args.id;
+    const targetTabId =
+      typeof rawId === "string" ? parseInt(rawId, 10) : (rawId as number);
+    if (!targetTabId || isNaN(targetTabId)) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error: Invalid tab ID. Use switch_tab({"tabId": <integer>}) with the numeric tab ID from create_tab or list_tabs.`,
+      });
+      return { tabId, prevElementCount };
+    }
+    const wsTabIds = await this.getWorkspaceTabIds();
+
+    if (wsTabIds && !wsTabIds.includes(targetTabId)) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
+      });
+      this.log.warn("agent", "switch_tab blocked — outside workspace", {
+        turn: this.turnCount,
+        targetTabId,
+        workspaceTabs: wsTabIds,
+      });
+      return { tabId, prevElementCount };
+    }
+
+    try {
+      await chrome.tabs.update(targetTabId, { active: true });
+      tabId = targetTabId;
+
+      // Refresh snapshot for new tab
+      prevElementCount = await this.refreshSnapshotWithRetry(
+        tabId,
+        prevElementCount,
+      );
+
+      // Warm start: pre-run perception so next turn already has page interpretation
+      await this.refreshPerceptionAndTriage(tabId);
+
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Switched to tab ${targetTabId}. Fresh page snapshot is available.`,
+      });
+    } catch (e: any) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error switching to tab ${targetTabId}: ${e.message}`,
+      });
+    }
+    this.log.info("agent", "SWITCH_TAB", {
+      turn: this.turnCount,
+      targetTabId,
+      newTabId: tabId,
+    });
+
+    return { tabId, prevElementCount };
+  }
+
+  private async handleCloseTabToolCall(
+    toolCallId: string,
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    tabId: number,
+  ): Promise<void> {
+    if (this.replayMutationSensitiveAction(toolCallId, toolName, args)) {
+      return;
+    }
+    if (this.shouldBlockTabManagementTools()) {
+      const blockedMessage =
+        "Blocked: close_tab requires explicit user instruction to manage tabs. " +
+        "Tab management tools disabled for this session.";
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: blockedMessage,
+      });
+      for (const tabTool of [
+        ToolName.CREATE_TAB,
+        ToolName.SWITCH_TAB,
+        ToolName.CLOSE_TAB,
+        ToolName.CREATE_WINDOW,
+      ]) {
+        this.disabledTools.add(tabTool);
+      }
+      this.log.warn(
+        "agent",
+        "close_tab blocked - not explicitly requested, tab tools disabled",
+        {
+          turn: this.turnCount,
+          originalQuery: this.originalQuery,
+        },
+      );
+      return;
+    }
+
+    // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
+    const rawCloseId = args.tabId ?? args.id;
+    const parsedCloseId =
+      typeof rawCloseId === "string"
+        ? parseInt(rawCloseId, 10)
+        : (rawCloseId as number);
+    const targetTabId =
+      parsedCloseId && !isNaN(parsedCloseId) ? parsedCloseId : tabId;
+
+    if (targetTabId === tabId) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error: Cannot close the current tab (${tabId}). Use switch_tab to move to another tab first.`,
+      });
+      return;
+    }
+
+    const wsTabIds = await this.getWorkspaceTabIds();
+    if (wsTabIds && !wsTabIds.includes(targetTabId)) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
+      });
+      this.log.warn("agent", "close_tab blocked — outside workspace", {
+        turn: this.turnCount,
+        targetTabId,
+        workspaceTabs: wsTabIds,
+      });
+      return;
+    }
+
+    try {
+      await chrome.tabs.remove(targetTabId);
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Closed tab ${targetTabId}.`,
+      });
+      this.recordMutationSensitiveAction(
+        toolName,
+        args,
+        `Closed tab ${targetTabId}.`,
+      );
+    } catch (e: any) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error closing tab ${targetTabId}: ${e.message}`,
+      });
+    }
+    this.log.info("agent", "CLOSE_TAB", {
+      turn: this.turnCount,
+      targetTabId,
+    });
+  }
+
+  private async handleCreateTabToolCall(
+    toolCallId: string,
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (this.replayMutationSensitiveAction(toolCallId, toolName, args)) {
+      return;
+    }
+    if (this.shouldBlockTabManagementTools()) {
+      const blockedMessage =
+        "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
+        "Tab management tools disabled for this session.";
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: blockedMessage,
+      });
+      for (const tabTool of [
+        ToolName.CREATE_TAB,
+        ToolName.SWITCH_TAB,
+        ToolName.CLOSE_TAB,
+        ToolName.CREATE_WINDOW,
+      ]) {
+        this.disabledTools.add(tabTool);
+      }
+      this.log.warn(
+        "agent",
+        "create_tab blocked - not explicitly requested, tab tools disabled",
+        {
+          turn: this.turnCount,
+          originalQuery: this.originalQuery,
+        },
+      );
+      return;
+    }
+
+    const url = args.url as string;
+    const urlResult = sanitizeUrl(url);
+    if (!urlResult.ok) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error: ${urlResult.error}`,
+      });
+      return;
+    }
+
+    try {
+      const newTab = await chrome.tabs.create({
+        url: urlResult.value,
+      });
+      if (newTab.id && this.workspaceId && this.workspaceId !== "default") {
+        await workspaceManager.addTabToWorkspace(newTab.id, this.workspaceId);
+      }
+
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
+      });
+      this.recordMutationSensitiveAction(
+        toolName,
+        args,
+        `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
+      );
+      this.log.info("agent", "CREATE_TAB", {
+        turn: this.turnCount,
+        newTabId: newTab.id,
+        url: urlResult.value,
+        workspaceId: this.workspaceId,
+      });
+    } catch (e: any) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Error creating tab: ${e.message}`,
+      });
+    }
+  }
+
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
     const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
     if (missingRequiredEvidence.length === 0) return false;
@@ -8866,284 +9138,31 @@ export class AgentLoop {
 
             // SWITCH_TAB — workspace-scoped, updates loop tabId
             if (toolName === ToolName.SWITCH_TAB) {
-              if (this.shouldBlockTabManagementTools()) {
-                const blockedMessage =
-                  "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
-                  "Stay on the current tab unless the user asks for tab switching. " +
-                  "Tab management tools disabled for this session.";
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: blockedMessage,
-                });
-                for (const tabTool of [
-                  ToolName.CREATE_TAB,
-                  ToolName.SWITCH_TAB,
-                  ToolName.CLOSE_TAB,
-                  ToolName.CREATE_WINDOW,
-                ]) {
-                  this.disabledTools.add(tabTool);
-                }
-                this.log.warn(
-                  "agent",
-                  "switch_tab blocked - not explicitly requested, tab tools disabled",
-                  {
-                    turn: this.turnCount,
-                    originalQuery: this.originalQuery,
-                  },
-                );
-                continue;
-              }
-
-              // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
-              const rawId = args.tabId ?? args.id;
-              const targetTabId =
-                typeof rawId === "string"
-                  ? parseInt(rawId, 10)
-                  : (rawId as number);
-              if (!targetTabId || isNaN(targetTabId)) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error: Invalid tab ID. Use switch_tab({"tabId": <integer>}) with the numeric tab ID from create_tab or list_tabs.`,
-                });
-                continue;
-              }
-              const wsTabIds = await this.getWorkspaceTabIds();
-
-              if (wsTabIds && !wsTabIds.includes(targetTabId)) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
-                });
-                this.log.warn(
-                  "agent",
-                  "switch_tab blocked — outside workspace",
-                  {
-                    turn: this.turnCount,
-                    targetTabId,
-                    workspaceTabs: wsTabIds,
-                  },
-                );
-                continue;
-              }
-
-              try {
-                await chrome.tabs.update(targetTabId, { active: true });
-                tabId = targetTabId;
-
-                // Refresh snapshot for new tab
-                prevElementCount = await this.refreshSnapshotWithRetry(
-                  tabId,
-                  prevElementCount,
-                );
-
-                // Warm start: pre-run perception so next turn already has page interpretation
-                await this.refreshPerceptionAndTriage(tabId);
-
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Switched to tab ${targetTabId}. Fresh page snapshot is available.`,
-                });
-              } catch (e: any) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error switching to tab ${targetTabId}: ${e.message}`,
-                });
-              }
-              this.log.info("agent", "SWITCH_TAB", {
-                turn: this.turnCount,
-                targetTabId,
-                newTabId: tabId,
-              });
+              const switchTabState = await this.handleSwitchTabToolCall(
+                toolCall.id,
+                args,
+                tabId,
+                prevElementCount,
+              );
+              tabId = switchTabState.tabId;
+              prevElementCount = switchTabState.prevElementCount;
               continue;
             }
 
             // CLOSE_TAB — workspace-scoped, prevents closing current tab
             if (toolName === ToolName.CLOSE_TAB) {
-              if (
-                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
-              ) {
-                continue;
-              }
-              if (this.shouldBlockTabManagementTools()) {
-                const blockedMessage =
-                  "Blocked: close_tab requires explicit user instruction to manage tabs. " +
-                  "Tab management tools disabled for this session.";
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: blockedMessage,
-                });
-                for (const tabTool of [
-                  ToolName.CREATE_TAB,
-                  ToolName.SWITCH_TAB,
-                  ToolName.CLOSE_TAB,
-                  ToolName.CREATE_WINDOW,
-                ]) {
-                  this.disabledTools.add(tabTool);
-                }
-                this.log.warn(
-                  "agent",
-                  "close_tab blocked - not explicitly requested, tab tools disabled",
-                  {
-                    turn: this.turnCount,
-                    originalQuery: this.originalQuery,
-                  },
-                );
-                continue;
-              }
-
-              // Normalize: LLMs sometimes send "id" instead of "tabId", or strings instead of ints
-              const rawCloseId = args.tabId ?? args.id;
-              const parsedCloseId =
-                typeof rawCloseId === "string"
-                  ? parseInt(rawCloseId, 10)
-                  : (rawCloseId as number);
-              const targetTabId =
-                parsedCloseId && !isNaN(parsedCloseId) ? parsedCloseId : tabId;
-
-              if (targetTabId === tabId) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error: Cannot close the current tab (${tabId}). Use switch_tab to move to another tab first.`,
-                });
-                continue;
-              }
-
-              const wsTabIds = await this.getWorkspaceTabIds();
-              if (wsTabIds && !wsTabIds.includes(targetTabId)) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error: Tab ${targetTabId} is not in this workspace. Available tabs: ${wsTabIds.join(", ")}`,
-                });
-                this.log.warn(
-                  "agent",
-                  "close_tab blocked — outside workspace",
-                  {
-                    turn: this.turnCount,
-                    targetTabId,
-                    workspaceTabs: wsTabIds,
-                  },
-                );
-                continue;
-              }
-
-              try {
-                await chrome.tabs.remove(targetTabId);
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Closed tab ${targetTabId}.`,
-                });
-                this.recordMutationSensitiveAction(
-                  toolName,
-                  args,
-                  `Closed tab ${targetTabId}.`,
-                );
-              } catch (e: any) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error closing tab ${targetTabId}: ${e.message}`,
-                });
-              }
-              this.log.info("agent", "CLOSE_TAB", {
-                turn: this.turnCount,
-                targetTabId,
-              });
+              await this.handleCloseTabToolCall(
+                toolCall.id,
+                toolName,
+                args,
+                tabId,
+              );
               continue;
             }
 
             // CREATE_TAB — workspace-scoped, auto-adds to workspace
             if (toolName === ToolName.CREATE_TAB) {
-              if (
-                this.replayMutationSensitiveAction(toolCall.id, toolName, args)
-              ) {
-                continue;
-              }
-              if (this.shouldBlockTabManagementTools()) {
-                const blockedMessage =
-                  "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
-                  "Tab management tools disabled for this session.";
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: blockedMessage,
-                });
-                for (const tabTool of [
-                  ToolName.CREATE_TAB,
-                  ToolName.SWITCH_TAB,
-                  ToolName.CLOSE_TAB,
-                  ToolName.CREATE_WINDOW,
-                ]) {
-                  this.disabledTools.add(tabTool);
-                }
-                this.log.warn(
-                  "agent",
-                  "create_tab blocked - not explicitly requested, tab tools disabled",
-                  {
-                    turn: this.turnCount,
-                    originalQuery: this.originalQuery,
-                  },
-                );
-                continue;
-              }
-
-              const url = args.url as string;
-              const urlResult = sanitizeUrl(url);
-              if (!urlResult.ok) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error: ${urlResult.error}`,
-                });
-                continue;
-              }
-
-              try {
-                const newTab = await chrome.tabs.create({
-                  url: urlResult.value,
-                });
-                if (
-                  newTab.id &&
-                  this.workspaceId &&
-                  this.workspaceId !== "default"
-                ) {
-                  await workspaceManager.addTabToWorkspace(
-                    newTab.id,
-                    this.workspaceId,
-                  );
-                }
-
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
-                });
-                this.recordMutationSensitiveAction(
-                  toolName,
-                  args,
-                  `Created new tab (ID: ${newTab.id}) with URL: ${urlResult.value}. Use switch_tab to make it the active tab.`,
-                );
-                this.log.info("agent", "CREATE_TAB", {
-                  turn: this.turnCount,
-                  newTabId: newTab.id,
-                  url: urlResult.value,
-                  workspaceId: this.workspaceId,
-                });
-              } catch (e: any) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Error creating tab: ${e.message}`,
-                });
-              }
+              await this.handleCreateTabToolCall(toolCall.id, toolName, args);
               continue;
             }
 
