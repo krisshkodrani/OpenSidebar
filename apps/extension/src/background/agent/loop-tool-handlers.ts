@@ -205,6 +205,33 @@ export function storeSuccessfulToolResult(
   );
 }
 
+export function updateInlineEditVerificationState(
+  loop: AgentLoopToolHandlerHost,
+  params: {
+    toolName: ToolName;
+    currentStepIndex: number;
+    shouldArmInlineEditVerification: boolean;
+  },
+): void {
+  if (
+    loop.pendingInlineEditVerification &&
+    loop.pendingInlineEditVerification.stepIndex === params.currentStepIndex &&
+    [ToolName.READ_PAGE, ToolName.READ_ELEMENT, ToolName.FIND_ELEMENT].includes(
+      params.toolName,
+    )
+  ) {
+    loop.pendingInlineEditVerification = null;
+    return;
+  }
+
+  if (params.shouldArmInlineEditVerification) {
+    loop.pendingInlineEditVerification = {
+      stepIndex: params.currentStepIndex,
+      reason: "You likely just committed an inline edit on this step.",
+    };
+  }
+}
+
 export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
@@ -818,20 +845,11 @@ export async function handleGenericSequentialToolCall(
       llmIntention,
       mode: "sequential",
     });
-    if (
-      loop.pendingInlineEditVerification &&
-      loop.pendingInlineEditVerification.stepIndex === currentStepIndex &&
-      [ToolName.READ_PAGE, ToolName.READ_ELEMENT, ToolName.FIND_ELEMENT].includes(
-        toolName,
-      )
-    ) {
-      loop.pendingInlineEditVerification = null;
-    } else if (shouldArmInlineEditVerification) {
-      loop.pendingInlineEditVerification = {
-        stepIndex: currentStepIndex,
-        reason: "You likely just committed an inline edit on this step.",
-      };
-    }
+    updateInlineEditVerificationState(loop, {
+      toolName,
+      currentStepIndex,
+      shouldArmInlineEditVerification,
+    });
     loop.recordMutationSensitiveAction(
       toolName,
       args,

@@ -3,6 +3,7 @@ import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
   storeSuccessfulToolResult,
+  updateInlineEditVerificationState,
   type AgentLoopToolHandlerHost,
 } from "../../src/background/agent/loop-tool-handlers";
 import { RiskLevel, ToolName, type AgentStep, type ToolCall } from "../../src/types";
@@ -204,5 +205,36 @@ describe("tool result recording", () => {
     });
 
     expect(loop.toolCache.set).not.toHaveBeenCalled();
+  });
+
+  test("arms inline edit verification after a commit-like action", () => {
+    const loop = host();
+
+    updateInlineEditVerificationState(loop, {
+      toolName: ToolName.PRESS_KEY,
+      currentStepIndex: 2,
+      shouldArmInlineEditVerification: true,
+    });
+
+    expect(loop.pendingInlineEditVerification).toEqual({
+      stepIndex: 2,
+      reason: "You likely just committed an inline edit on this step.",
+    });
+  });
+
+  test("clears inline edit verification after a grounding read", () => {
+    const loop = host();
+    loop.pendingInlineEditVerification = {
+      stepIndex: 2,
+      reason: "You likely just committed an inline edit on this step.",
+    };
+
+    updateInlineEditVerificationState(loop, {
+      toolName: ToolName.READ_PAGE,
+      currentStepIndex: 2,
+      shouldArmInlineEditVerification: false,
+    });
+
+    expect(loop.pendingInlineEditVerification).toBeNull();
   });
 });
