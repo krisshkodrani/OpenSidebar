@@ -2305,6 +2305,29 @@ export interface SubgoalAttempt {
   snapshotFp: string; // page state fingerprint at time of action
 }
 
+export function buildSubgoalAttempt(params: {
+  turn: number;
+  toolName: string;
+  toolArguments: unknown;
+  resultContent: string;
+  snapshotFp: string;
+}): SubgoalAttempt {
+  const firstLine = params.resultContent.split("\n")[0].slice(0, 120);
+  return {
+    turn: params.turn,
+    tool: params.toolName,
+    args: typeof params.toolArguments === "string" ? params.toolArguments.slice(0, 100) : "",
+    outcome: firstLine,
+    wasFailure:
+      firstLine.startsWith("Error:") ||
+      firstLine.includes("does not appear") ||
+      firstLine.includes("No element with tag") ||
+      firstLine.includes("Click intercepted") ||
+      firstLine.includes("REJECTED"),
+    snapshotFp: params.snapshotFp,
+  };
+}
+
 /** Failure-pattern keywords → human-readable insights. */
 const FAILURE_SYNTHESIS_RULES: Array<{
   test: (a: SubgoalAttempt) => boolean;
