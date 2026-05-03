@@ -291,6 +291,7 @@ import {
   updateMoneyTableAggregateFromSnapshot,
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
+import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
@@ -2490,31 +2491,13 @@ export class AgentLoop {
   }
 
   private getConsequentialActionTaskText(): string {
-    const planStatus = this.context.getPlanStatusRaw();
-    const activeIndex =
-      planStatus?.currentIndex ??
-      this.planSubtasks.findIndex((subtask) => subtask.status === "running");
-    const stepIndex =
-      activeIndex != null && activeIndex >= 0 ? activeIndex : this.lastPlanIndex;
-
-    const currentTaskObjective =
-      this.originalQuery.match(/## Current Task[\s\S]*?Objective:\s*([^\n]+)/i)?.[1] ??
-      this.originalQuery.match(/^Objective:\s*([^\n]+)/im)?.[1] ??
-      "";
-    const originalUserRequest =
-      this.originalQuery.match(/Original user request[^:\n]*:\s*\n([^\n]+)/i)?.[1] ??
-      "";
-
-    return [
-      this.planSubtasks[stepIndex]?.description,
-      this.planSteps[stepIndex]?.objective,
-      this.planSteps[stepIndex]?.successCriteria,
-      currentTaskObjective,
-      originalUserRequest,
-    ]
-      .filter(Boolean)
-      .join("\n")
-      .toLowerCase();
+    return buildConsequentialActionTaskText({
+      planStatus: this.context.getPlanStatusRaw(),
+      planSubtasks: this.planSubtasks,
+      planSteps: this.planSteps,
+      lastPlanIndex: this.lastPlanIndex,
+      originalQuery: this.originalQuery,
+    });
   }
 
   private getJobApplicationApprovalTaskText(): string {
