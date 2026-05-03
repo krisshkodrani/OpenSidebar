@@ -26,13 +26,12 @@ import {
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { validateToolCalls } from "../security";
-import { waitForDomReady, ensureContentScript } from "../tab-ready";
+import { waitForDomReady } from "../tab-ready";
 import {
   isBridgeDisconnect,
   recoverContentScriptBridge,
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
-import { perceptionWarmup } from "../perception-warmup";
 import { workspaceManager } from "../workspaces/manager";
 import {
   ContextManager,
@@ -75,6 +74,7 @@ import {
   recoverResponseToolCallsFromText,
 } from "./response-normalization";
 import { completeTurnWithRetries } from "./turn-completion";
+import { resolveInitialSnapshot } from "./initial-snapshot";
 import { assessBlindToolCallReasoning } from "./blind-tool-call-policy";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
@@ -2672,83 +2672,16 @@ export class AgentLoop {
       }
     }
 
-    // Ensure we have a snapshot — either from the orchestrator, warmup cache, or by fetching our own
-    let snapshot = initialSnapshot;
-    let warmupPerception: {
-      interpretation: string;
-      providerId?: string;
-      durationMs: number;
-    } | null = null;
-    let warmupScreenshot: string | null = null;
-
-    if (!snapshot) {
-      this.log.warn(
-        "agent",
-        "No initial snapshot from orchestrator, checking warmup",
-        { tabId },
-      );
-
-      // Check if warmup has a cached or in-progress result for this tab
-      const pending = perceptionWarmup.getPending(tabId);
-      if (pending) {
-        this.log.info("agent", "Awaiting perception warmup", { tabId });
-        const entry = await pending;
-        if (entry) {
-          snapshot = entry.snapshot;
-          if (entry.perception) warmupPerception = entry.perception;
-          warmupScreenshot = entry.screenshotUrl;
-          this.log.info(
-            "agent",
-            "Using warmup snapshot" +
-              (entry.screenshotOnly ? " (screenshot-only)" : " + perception"),
-            {
-              tabId,
-              elementCount: snapshot.elements.length,
-              screenshotOnly: entry.screenshotOnly ?? false,
-              provider: entry.perception?.providerId,
-            },
-          );
-        }
-      } else {
-        // Check static cache (warmup may have finished already)
-        const cached = perceptionWarmup.get(tabId);
-        if (cached) {
-          snapshot = cached.snapshot;
-          if (cached.perception) warmupPerception = cached.perception;
-          warmupScreenshot = cached.screenshotUrl;
-          this.log.info(
-            "agent",
-            "Using cached warmup snapshot" +
-              (cached.screenshotOnly ? " (screenshot-only)" : " + perception"),
-            {
-              tabId,
-              elementCount: snapshot.elements.length,
-              ageMs: Date.now() - cached.timestamp,
-            },
-          );
-        }
-      }
-
-      // Still no snapshot — ensure content script is injected (handles SW restart), then fetch
-      if (!snapshot) {
-        this.log.warn(
-          "agent",
-          "No warmup available, ensuring content script and fetching snapshot",
-          { tabId },
-        );
-        await ensureContentScript(tabId, 5000);
-        const count = await this.refreshSnapshot(tabId);
-        if (count >= 0) {
-          snapshot = this.context.getSnapshot() ?? undefined;
-          this.log.info("agent", "Fetched snapshot fallback", {
-            elementCount: count,
-          });
-        }
-      }
-    }
-
-    // Consume the warmup entry so it's not reused by a subsequent task
-    perceptionWarmup.consume(tabId);
+    const initialSnapshotResolution = await resolveInitialSnapshot({
+      tabId,
+      initialSnapshot,
+      log: this.log,
+      refreshSnapshot: (targetTabId) => this.refreshSnapshot(targetTabId),
+      getSnapshot: () => this.context.getSnapshot(),
+    });
+    const snapshot = initialSnapshotResolution.snapshot;
+    const warmupPerception = initialSnapshotResolution.warmupPerception;
+    const warmupScreenshot = initialSnapshotResolution.warmupScreenshot;
 
     // Save initial scroll position for restoration when the agent finishes
     let initialScrollY: number | null = null;
