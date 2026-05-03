@@ -2109,6 +2109,25 @@ export class AgentLoop {
     return true;
   }
 
+  private async handleClarifyToolCall(
+    toolCallId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const question = (args.question as string) || "Could you clarify?";
+    const suggestions = args.suggestions as string[] | undefined;
+    const answer = await this.requestClarification(question, suggestions);
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: `User's answer: ${answer}`,
+    });
+    this.log.info("agent", "CLARIFY answered", {
+      turn: this.turnCount,
+      question: question.slice(0, 100),
+      answer: answer.slice(0, 200),
+    });
+  }
+
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
     const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
     if (missingRequiredEvidence.length === 0) return false;
@@ -8594,23 +8613,7 @@ export class AgentLoop {
 
             // CLARIFY tool — ask the user a question mid-execution
             if (toolName === ToolName.CLARIFY) {
-              const question =
-                (args.question as string) || "Could you clarify?";
-              const suggestions = args.suggestions as string[] | undefined;
-              const answer = await this.requestClarification(
-                question,
-                suggestions,
-              );
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: `User's answer: ${answer}`,
-              });
-              this.log.info("agent", "CLARIFY answered", {
-                turn: this.turnCount,
-                question: question.slice(0, 100),
-                answer: answer.slice(0, 200),
-              });
+              await this.handleClarifyToolCall(toolCall.id, args);
               continue;
             }
 
