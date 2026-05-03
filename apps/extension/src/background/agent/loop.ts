@@ -2128,6 +2128,254 @@ export class AgentLoop {
     });
   }
 
+  private async handleEscalateToolCall(
+    toolCallId: string,
+    args: Record<string, unknown>,
+    tabId: number,
+    prevElementCount: number,
+    escalationTier: number,
+    plannerModelStartTurn: number,
+    orientationPhase: boolean,
+  ): Promise<{
+    escalationTier: number;
+    plannerModelStartTurn: number;
+    orientationPhase: boolean;
+    prevElementCount: number;
+  }> {
+    const reason = (args.reason as string) || "";
+    if (escalationTier < 1) {
+      this.escalateModel();
+      escalationTier = 1;
+      plannerModelStartTurn = this.turnCount;
+      orientationPhase = false; // Cancel plan-then-act handoff
+      prevElementCount = await this.refreshSnapshotWithRetry(
+        tabId,
+        prevElementCount,
+      );
+      await this.refreshPerceptionAndTriage(tabId);
+      this.stepHandler(
+        {
+          id: crypto.randomUUID(),
+          type: "info",
+          label: reason
+            ? `Escalating: "${reason.slice(0, STRING_LIMITS.ESCALATION_REASON)}"`
+            : "Escalating to smarter model",
+          status: "done",
+          timestamp: Date.now(),
+        },
+        false,
+      );
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: ESCALATION_REFLECTION(reason || "voluntary escalation"),
+      });
+    } else {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: `Already using the most capable model (${this.llm.getCurrentModel()}). Escalation won't help further. Try a fundamentally different approach:\n- Use read_page to force a fresh page perception\n- Try a completely different interaction strategy`,
+      });
+    }
+    this.log.info("agent", "ESCALATE called", {
+      turn: this.turnCount,
+      reason,
+      tier: escalationTier,
+    });
+    this.traceRecorder?.recordEvent("escalation", {
+      reason,
+      voluntary: true,
+    });
+
+    return {
+      escalationTier,
+      plannerModelStartTurn,
+      orientationPhase,
+      prevElementCount,
+    };
+  }
+
+  private handleUpdateNotesToolCall(
+    toolCallId: string,
+    toolName: ToolName,
+    args: Record<string, unknown>,
+  ): void {
+    const note = (args.note as string) || "";
+    this.context.appendWorkingNote(note);
+    this.trackListDetailToolSuccess(
+      toolName,
+      args,
+      this.context.getSnapshot(),
+    );
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: "Note saved.",
+    });
+    this.log.info("agent", "UPDATE_NOTES saved", {
+      turn: this.turnCount,
+      noteLength: note.length,
+    });
+  }
+
+  private async handleWaitToolCall(
+    toolCallId: string,
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    tabId: number,
+    prevElementCount: number,
+  ): Promise<number> {
+    const seconds = Math.min(Math.max((args.seconds as number) || 2, 1), 10);
+    const reason = (args.reason as string) || "";
+
+    // Signal WAITING status so the UI activity indicator stays visible
+    this.statusHandler(
+      AgentStatus.WAITING_FOR_PAGE_LOAD,
+      `Waiting ${seconds}s…`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+    this.statusHandler(AgentStatus.THINKING, "Analyzing…");
+
+    // Refresh DOM snapshot for fresh context
+    prevElementCount = await this.refreshSnapshotWithRetry(
+      tabId,
+      prevElementCount,
+    );
+
+    // Build re-orientation response
+    const snapshot = this.context.getSnapshot();
+    const parts: string[] = [`--- RE-ORIENTATION (waited ${seconds}s) ---`];
+    if (reason) parts.push(`Reason: ${reason}`);
+    parts.push(`\nOriginal task: "${this.originalQuery}"`);
+
+    if (this.planSubtasks.length > 0) {
+      const planLines = this.planSubtasks.map((s, i) => {
+        const marker =
+          s.status === "completed"
+            ? "[done]"
+            : s.status === "running"
+              ? "[NOW]"
+              : "[pending]";
+        return `  ${i + 1}. ${marker} ${s.description}`;
+      });
+      parts.push(`\nPlan progress:\n${planLines.join("\n")}`);
+    }
+
+    parts.push(
+      `\nCurrent page: "${snapshot?.title || "unknown"}" — ${snapshot?.url || "unknown"}`,
+    );
+    parts.push(`Turn: ${this.turnCount} / ${this.maxTurns}`);
+    parts.push(`\nReview the above → observe the page → decide your next action.`);
+
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: parts.join("\n"),
+    });
+
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "tool",
+        label: formatStepLabel(toolName, args, this.elementResolver),
+        toolName,
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+
+    this.log.info("agent", "WAIT_REORIENT", {
+      turn: this.turnCount,
+      seconds,
+      reason: reason.slice(0, 100),
+    });
+    this.traceRecorder?.recordEvent("wait_reorient", {
+      seconds,
+      reason,
+    });
+
+    return prevElementCount;
+  }
+
+  private handleNavigateGuardToolCall(
+    toolCallId: string,
+    args: Record<string, unknown>,
+  ): boolean {
+    if (!args.url) return false;
+
+    const blockMessage = this.checkNavigateGuard(args.url as string);
+    if (!blockMessage) return false;
+
+    this.log.warn("agent", "Navigate blocked by guard", {
+      turn: this.turnCount,
+      targetUrl: (args.url as string).slice(0, 120),
+    });
+    this.traceRecorder?.recordEvent("navigate_blocked", {
+      targetUrl: args.url,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: blockMessage,
+    });
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: "Navigate blocked — would undo progress",
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+    return true;
+  }
+
+  private async handleListTabsToolCall(
+    toolCallId: string,
+    tabId: number,
+  ): Promise<void> {
+    const wsTabIds = await this.getWorkspaceTabIds();
+    let tabLines: string[];
+    if (wsTabIds) {
+      // Filter to workspace tabs only
+      const tabs: chrome.tabs.Tab[] = [];
+      for (const id of wsTabIds) {
+        try {
+          tabs.push(await chrome.tabs.get(id));
+        } catch {
+          // Tab may have been closed externally
+        }
+      }
+      if (tabs.length === 0) {
+        tabLines = ["No open tabs in this workspace."];
+      } else {
+        tabLines = tabs.map(
+          (t) =>
+            `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+        );
+      }
+    } else {
+      // No workspace - show all tabs (fallback)
+      const allTabs = await chrome.tabs.query({});
+      tabLines = allTabs.map(
+        (t: any) =>
+          `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+      );
+    }
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: tabLines.join("\n") || "No open tabs.",
+    });
+    this.log.info("agent", "LIST_TABS", {
+      turn: this.turnCount,
+      count: tabLines.length,
+      workspaceScoped: wsTabIds !== null,
+    });
+  }
+
   private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
     const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
     if (missingRequiredEvidence.length === 0) return false;
@@ -8562,52 +8810,19 @@ export class AgentLoop {
 
             // ESCALATE tool — voluntary model upgrade (de-escalates after progress)
             if (toolName === ToolName.ESCALATE) {
-              const reason = (args.reason as string) || "";
-              if (escalationTier < 1) {
-                this.escalateModel();
-                escalationTier = 1;
-                plannerModelStartTurn = this.turnCount;
-                orientationPhase = false; // Cancel plan-then-act handoff
-                prevElementCount = await this.refreshSnapshotWithRetry(
-                  tabId,
-                  prevElementCount,
-                );
-                await this.refreshPerceptionAndTriage(tabId);
-                this.stepHandler(
-                  {
-                    id: crypto.randomUUID(),
-                    type: "info",
-                    label: reason
-                      ? `Escalating: "${reason.slice(0, STRING_LIMITS.ESCALATION_REASON)}"`
-                      : "Escalating to smarter model",
-                    status: "done",
-                    timestamp: Date.now(),
-                  },
-                  false,
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: ESCALATION_REFLECTION(
-                    reason || "voluntary escalation",
-                  ),
-                });
-              } else {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: `Already using the most capable model (${this.llm.getCurrentModel()}). Escalation won't help further. Try a fundamentally different approach:\n- Use read_page to force a fresh page perception\n- Try a completely different interaction strategy`,
-                });
-              }
-              this.log.info("agent", "ESCALATE called", {
-                turn: this.turnCount,
-                reason,
-                tier: escalationTier,
-              });
-              this.traceRecorder?.recordEvent("escalation", {
-                reason,
-                voluntary: true,
-              });
+              const escalateState = await this.handleEscalateToolCall(
+                toolCall.id,
+                args,
+                tabId,
+                prevElementCount,
+                escalationTier,
+                plannerModelStartTurn,
+                orientationPhase,
+              );
+              escalationTier = escalateState.escalationTier;
+              plannerModelStartTurn = escalateState.plannerModelStartTurn;
+              orientationPhase = escalateState.orientationPhase;
+              prevElementCount = escalateState.prevElementCount;
               continue;
             }
 
@@ -8619,180 +8834,33 @@ export class AgentLoop {
 
             // UPDATE_NOTES tool - save a note to the current run scratchpad
             if (toolName === ToolName.UPDATE_NOTES) {
-              const note = (args.note as string) || "";
-              this.context.appendWorkingNote(note);
-              this.trackListDetailToolSuccess(
-                toolName,
-                args,
-                this.context.getSnapshot(),
-              );
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: "Note saved.",
-              });
-              this.log.info("agent", "UPDATE_NOTES saved", {
-                turn: this.turnCount,
-                noteLength: note.length,
-              });
+              this.handleUpdateNotesToolCall(toolCall.id, toolName, args);
               continue;
             }
 
             // WAIT tool — re-orientation mechanism
             if (toolName === ToolName.WAIT) {
-              const seconds = Math.min(
-                Math.max((args.seconds as number) || 2, 1),
-                10,
-              );
-              const reason = (args.reason as string) || "";
-
-              // Signal WAITING status so the UI activity indicator stays visible
-              this.statusHandler(
-                AgentStatus.WAITING_FOR_PAGE_LOAD,
-                `Waiting ${seconds}s…`,
-              );
-              await new Promise((resolve) =>
-                setTimeout(resolve, seconds * 1000),
-              );
-              this.statusHandler(AgentStatus.THINKING, "Analyzing…");
-
-              // Refresh DOM snapshot for fresh context
-              prevElementCount = await this.refreshSnapshotWithRetry(
+              prevElementCount = await this.handleWaitToolCall(
+                toolCall.id,
+                toolName,
+                args,
                 tabId,
                 prevElementCount,
               );
-
-              // Build re-orientation response
-              const snapshot = this.context.getSnapshot();
-              const parts: string[] = [
-                `--- RE-ORIENTATION (waited ${seconds}s) ---`,
-              ];
-              if (reason) parts.push(`Reason: ${reason}`);
-              parts.push(`\nOriginal task: "${this.originalQuery}"`);
-
-              if (this.planSubtasks.length > 0) {
-                const planLines = this.planSubtasks.map((s, i) => {
-                  const marker =
-                    s.status === "completed"
-                      ? "[done]"
-                      : s.status === "running"
-                        ? "[NOW]"
-                        : "[pending]";
-                  return `  ${i + 1}. ${marker} ${s.description}`;
-                });
-                parts.push(`\nPlan progress:\n${planLines.join("\n")}`);
-              }
-
-              parts.push(
-                `\nCurrent page: "${snapshot?.title || "unknown"}" — ${snapshot?.url || "unknown"}`,
-              );
-              parts.push(`Turn: ${this.turnCount} / ${this.maxTurns}`);
-              parts.push(
-                `\nReview the above → observe the page → decide your next action.`,
-              );
-
-              const reorientation = parts.join("\n");
-
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: reorientation,
-              });
-
-              this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "tool",
-                  label: formatStepLabel(toolName, args, this.elementResolver),
-                  toolName,
-                  status: "done",
-                  timestamp: Date.now(),
-                },
-                false,
-              );
-
-              this.log.info("agent", "WAIT_REORIENT", {
-                turn: this.turnCount,
-                seconds,
-                reason: reason.slice(0, 100),
-              });
-              this.traceRecorder?.recordEvent("wait_reorient", {
-                seconds,
-                reason,
-              });
               continue;
             }
 
             // NAVIGATE guard — block navigation to completed step URLs
-            if (toolName === ToolName.NAVIGATE && args.url) {
-              const blockMessage = this.checkNavigateGuard(args.url as string);
-              if (blockMessage) {
-                this.log.warn("agent", "Navigate blocked by guard", {
-                  turn: this.turnCount,
-                  targetUrl: (args.url as string).slice(0, 120),
-                });
-                this.traceRecorder?.recordEvent("navigate_blocked", {
-                  targetUrl: args.url,
-                });
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: blockMessage,
-                });
-                this.stepHandler(
-                  {
-                    id: crypto.randomUUID(),
-                    type: "info",
-                    label: "Navigate blocked — would undo progress",
-                    status: "done",
-                    timestamp: Date.now(),
-                  },
-                  false,
-                );
-                continue;
-              }
+            if (
+              toolName === ToolName.NAVIGATE &&
+              this.handleNavigateGuardToolCall(toolCall.id, args)
+            ) {
+              continue;
             }
 
             // LIST_TABS — workspace-scoped
             if (toolName === ToolName.LIST_TABS) {
-              const wsTabIds = await this.getWorkspaceTabIds();
-              let tabLines: string[];
-              if (wsTabIds) {
-                // Filter to workspace tabs only
-                const tabs: chrome.tabs.Tab[] = [];
-                for (const id of wsTabIds) {
-                  try {
-                    tabs.push(await chrome.tabs.get(id));
-                  } catch {
-                    // Tab may have been closed externally
-                  }
-                }
-                if (tabs.length === 0) {
-                  tabLines = ["No open tabs in this workspace."];
-                } else {
-                  tabLines = tabs.map(
-                    (t) =>
-                      `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
-                  );
-                }
-              } else {
-                // No workspace — show all tabs (fallback)
-                const allTabs = await chrome.tabs.query({});
-                tabLines = allTabs.map(
-                  (t: any) =>
-                    `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
-                );
-              }
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: tabLines.join("\n") || "No open tabs.",
-              });
-              this.log.info("agent", "LIST_TABS", {
-                turn: this.turnCount,
-                count: tabLines.length,
-                workspaceScoped: wsTabIds !== null,
-              });
+              await this.handleListTabsToolCall(toolCall.id, tabId);
               continue;
             }
 
