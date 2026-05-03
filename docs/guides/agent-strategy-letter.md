@@ -370,13 +370,7 @@ Detects remaining viewport-covering overlays. If any survive, they're dynamicall
 
 ## 12. Perception Layer
 
-Instead of a manual `take_screenshot` tool, OpenSidebar uses an automatic **perception layer** (`src/background/perception.ts`) that runs after every DOM-modifying action. The `perceive()` function:
-
-1. Captures the visible tab as a screenshot via `chrome.tabs.captureVisibleTab`
-2. Sends the screenshot + element summary to a vision model for structured interpretation
-3. Returns the compact five-section interpretation: `LOCATION`, `CHANGES`, `BLOCKERS`, `VISUAL-ONLY`, and `AFFORDANCES`
-
-The default runtime uses `unified_vl`, sending screenshots directly to the executor. The structured perception path remains available for targeted debugging and fallback use with provider-specific vision models.
+OpenSidebar has two visual observation paths. The default runtime uses `unified_vl`, where the current screenshot is sent directly to the executor. The older structured perception path remains available for targeted debugging and fallback use with provider-specific vision models; in that mode the runtime captures the visible tab, sends the screenshot plus element summary to a vision model, and stores the result as `Page Interpretation`.
 
 Response parameters: `max_tokens: 600`, `temperature: 0.1`, timeout 20s. Up to 2 retries with 800ms base delay and exponential backoff plus jitter. Fingerprint-based caching (via `computeSnapshotFingerprint()`) avoids redundant calls when the page hasn't changed.
 
@@ -416,7 +410,7 @@ For longer-term state preservation, the `ContextManager` auto-saves conversation
 - **Generic**: No site-specific code. Works on any website the user can visit.
 - **Self-correcting**: The Verify step + stuck detection + model escalation create a multi-layered recovery system. The agent doesn't just try harder — it tries differently.
 - **Cost-efficient**: Starts with the cheapest viable model, escalates only when needed. Dynamic compression adapts context to budget. Compact element format saves ~300-450 tokens per turn compared to verbose representations.
-- **Vision-assisted**: The automatic perception layer interprets the page visually every turn, capturing spatial layout, canvas content, and non-DOM elements that pure DOM inspection would miss.
+- **Vision-assisted**: In default `unified_vl` mode, the executor receives the current screenshot directly. In explicit `structured` mode, the perception layer summarizes spatial layout, canvas content, and non-DOM elements that pure DOM inspection would miss.
 - **Transparent**: Session metrics expose exactly how many tokens and dollars each task costs, with per-model breakdowns.
 
 ### Known Limitations
