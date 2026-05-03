@@ -262,6 +262,7 @@ import {
   handleUpdateNotesToolCall,
   handleWaitToolCall,
   type AgentLoopToolHandlerHost,
+  type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
 import {
   advanceCompletedSubtasks,
@@ -295,6 +296,12 @@ import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
 } from "./approval-enforcement";
+import {
+  buildApprovalBypassedStep,
+  getPreToolDeniedMessage,
+  shouldReportApprovalBypass,
+} from "./sequential-pre-tool-gate";
+import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 
@@ -8032,22 +8039,18 @@ export class AgentLoop {
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content: `Error: ${preDecision.denyReason || "Blocked by policy middleware."}`,
+                content: getPreToolDeniedMessage(preDecision),
               });
               continue;
             }
-            if (
-              preDecision.approvalMode === "bypassed" &&
-              preDecision.riskLevel === RiskLevel.HIGH
-            ) {
+            if (shouldReportApprovalBypass(preDecision)) {
               this.stepHandler(
-                {
+                buildApprovalBypassedStep({
                   id: crypto.randomUUID(),
-                  type: "info",
-                  label: `Approval bypassed: ${formatStepLabel(toolName, args, this.elementResolver)}`,
-                  status: "done",
+                  label: formatStepLabel(toolName, args, this.elementResolver),
                   timestamp: Date.now(),
-                },
+                  toolName,
+                }),
                 false,
               );
             }
@@ -8209,10 +8212,7 @@ export class AgentLoop {
               continue;
             }
 
-            const genericToolState =
-              await handleGenericSequentialToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                {
+            const genericToolParams: GenericSequentialToolCallParams = {
                 toolCall,
                 toolName,
                 args,
@@ -8230,13 +8230,26 @@ export class AgentLoop {
                 domModified,
                 visuallyModified,
                 lastDomAffectingToolName,
-                },
+            };
+            const genericToolState =
+              await handleGenericSequentialToolCall(
+                this as unknown as AgentLoopToolHandlerHost,
+                genericToolParams,
               );
-            prevElementCount = genericToolState.prevElementCount;
-            domModified = genericToolState.domModified;
-            visuallyModified = genericToolState.visuallyModified;
+            const mergedSequentialState = mergeGenericSequentialToolState(
+              {
+                prevElementCount,
+                domModified,
+                visuallyModified,
+                lastDomAffectingToolName,
+              },
+              genericToolState,
+            );
+            prevElementCount = mergedSequentialState.prevElementCount;
+            domModified = mergedSequentialState.domModified;
+            visuallyModified = mergedSequentialState.visuallyModified;
             lastDomAffectingToolName =
-              genericToolState.lastDomAffectingToolName;
+              mergedSequentialState.lastDomAffectingToolName;
             if (genericToolState.breakLoop) {
               signalCompletedResult(genericToolState.completedSummary || "");
               break;
