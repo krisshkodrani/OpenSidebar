@@ -178,6 +178,65 @@ export function buildPlanReplacementState(args: {
   };
 }
 
+export function buildCompletedPlanStepSummaries(
+  subtasks: SubtaskSummary[],
+): Array<{ index: number; objective: string; result?: string }> {
+  return subtasks
+    .map((subtask, index) => ({
+      index,
+      objective: subtask.description,
+      result: subtask.result,
+    }))
+    .filter((step) => subtasks[step.index].status === "completed");
+}
+
+export function buildFailedPlanStep(
+  subtasks: SubtaskSummary[],
+  index: number,
+): { index: number; objective: string } {
+  return {
+    index,
+    objective: subtasks[index]?.description ?? "",
+  };
+}
+
+function formatReplacementSteps(
+  fromIndex: number,
+  steps: Pick<PlanStep, "objective">[],
+): string {
+  return steps
+    .map((step, i) => `${fromIndex + i + 1}. ${step.objective}`)
+    .join("\n");
+}
+
+export function buildPlanMonitorReplanMessage(args: {
+  fromIndex: number;
+  reason: string;
+  replacementSteps: Pick<PlanStep, "objective">[];
+}): string {
+  const stepNumber = args.fromIndex + 1;
+  return (
+    `[Plan Monitor]: Plan deviated at step ${stepNumber}. Reason: ${args.reason}\n` +
+    `Replanned from step ${stepNumber}:\n` +
+    formatReplacementSteps(args.fromIndex, args.replacementSteps) +
+    `\n\nExecute step ${stepNumber} now.`
+  );
+}
+
+export function buildPlanRevisionMessage(args: {
+  fromIndex: number;
+  reason: string;
+  replacementSteps: Pick<PlanStep, "objective">[];
+}): string {
+  const stepNumber = args.fromIndex + 1;
+  return (
+    `[Plan Revised]: Step ${stepNumber} was stuck. New plan:\n` +
+    formatReplacementSteps(args.fromIndex, args.replacementSteps) +
+    `\n\nReason: ${args.reason}\n` +
+    `Execute step ${stepNumber} now.`
+  );
+}
+
 export function advanceCompletedPlanSubtasks(args: {
   subtasks: MutablePlanSubtask[];
   captureResult: () => string;
