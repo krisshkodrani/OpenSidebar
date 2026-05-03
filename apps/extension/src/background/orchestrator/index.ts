@@ -108,11 +108,8 @@ import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
 import {
   CreateAgentLoopInput,
-  DEFAULT_LANE_POLICIES,
   EscalationDecisionPayload,
-  LaneBudgetPolicy,
   LaneIsolationError,
-  LaneOperationInstance,
   LaneRuntimeState,
   LaneSupervisorState,
   LaneTimeoutError,
@@ -121,6 +118,22 @@ import {
   WorkspaceLanePools,
 } from "./lane-types";
 import type { OrchestratorDeps } from "./lane-types";
+import {
+  beginLaneOperation,
+  buildLaneTelemetrySnapshot as buildLaneTelemetrySnapshotData,
+  clearLaneSupervisorTimers,
+  createWorkspaceLanePools,
+  createWorkspaceLaneRuntime,
+  createWorkspaceLaneSupervisors,
+  enqueueLaneOperation,
+  getNextLaneDrainDecision,
+  isLaneIsolated,
+  recordLaneOperationFailure,
+  recordLaneOperationSuccess,
+  registerLaneOperation,
+  releaseLaneOperation,
+  releaseLaneOperationRegistration,
+} from "./lane-supervisor";
 import {
   CHECKPOINT_VERSION,
   DEFAULT_MAX_REPLANS,
@@ -861,54 +874,8 @@ export class Orchestrator {
     };
   }
 
-  private buildLanePolicy(
-    lane: RuntimeLane,
-    maxWorkers?: number,
-  ): LaneBudgetPolicy {
-    const base = DEFAULT_LANE_POLICIES[lane];
-    const override = this.deps.lanePolicies[lane] ?? {};
-    const runtimeDefaultMaxConcurrent =
-      lane === "executor" || lane === "verifier"
-        ? maxWorkers || base.maxConcurrent
-        : base.maxConcurrent;
-
-    return {
-      maxConcurrent: clampInteger(
-        override.maxConcurrent ?? runtimeDefaultMaxConcurrent,
-        1,
-        8,
-      ),
-      maxFailuresBeforeIsolation: clampInteger(
-        override.maxFailuresBeforeIsolation ?? base.maxFailuresBeforeIsolation,
-        1,
-      ),
-      isolationCooldownMs: clampInteger(
-        override.isolationCooldownMs ?? base.isolationCooldownMs,
-        1_000,
-      ),
-      maxCallMs: clampInteger(override.maxCallMs ?? base.maxCallMs, 1_000),
-    };
-  }
-
   private createWorkspaceLanePools(): WorkspaceLanePools {
-    return {
-      planner: new Map<string, LaneOperationInstance>(),
-      executor: new Map<string, WorkerInstance>(),
-      verifier: new Map<string, LaneOperationInstance>(),
-    };
-  }
-
-  private createLaneSupervisor(lane: RuntimeLane): LaneSupervisorState {
-    return {
-      lane,
-      queue: [],
-      active: 0,
-      draining: false,
-      restartCount: 0,
-      consecutiveCrashes: 0,
-      circuitOpenUntilMs: 0,
-      resumeTimer: null,
-    };
+    return createWorkspaceLanePools();
   }
 
   private getWorkspaceLanePools(workspaceId: string): WorkspaceLanePools {
@@ -926,40 +893,17 @@ export class Orchestrator {
   ): void {
     this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
-    this.laneSupervisorsByWorkspace.set(workspaceId, {
-      planner: this.createLaneSupervisor("planner"),
-      executor: this.createLaneSupervisor("executor"),
-      verifier: this.createLaneSupervisor("verifier"),
-    });
-    this.laneRuntimeByWorkspace.set(workspaceId, {
-      planner: {
-        lane: "planner",
-        activeCalls: 0,
-        totalCalls: 0,
-        failures: 0,
-        totalDurationMs: 0,
-        isolatedUntilMs: 0,
-        policy: this.buildLanePolicy("planner", maxWorkers),
-      },
-      executor: {
-        lane: "executor",
-        activeCalls: 0,
-        totalCalls: 0,
-        failures: 0,
-        totalDurationMs: 0,
-        isolatedUntilMs: 0,
-        policy: this.buildLanePolicy("executor", maxWorkers),
-      },
-      verifier: {
-        lane: "verifier",
-        activeCalls: 0,
-        totalCalls: 0,
-        failures: 0,
-        totalDurationMs: 0,
-        isolatedUntilMs: 0,
-        policy: this.buildLanePolicy("verifier", maxWorkers),
-      },
-    });
+    this.laneSupervisorsByWorkspace.set(
+      workspaceId,
+      createWorkspaceLaneSupervisors(),
+    );
+    this.laneRuntimeByWorkspace.set(
+      workspaceId,
+      createWorkspaceLaneRuntime({
+        maxWorkers,
+        overrides: this.deps.lanePolicies,
+      }),
+    );
     logger.debug("orchestrator", "Workspace runtime isolation initialized", {
       workspaceId,
       maxWorkers,
@@ -970,10 +914,7 @@ export class Orchestrator {
   private cleanupWorkspaceRuntime(workspaceId: string): void {
     this.clearPendingInteractionTimer(workspaceId);
     const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
-    for (const lane of ["planner", "executor", "verifier"] as const) {
-      const supervisor = supervisors?.[lane];
-      if (supervisor?.resumeTimer) clearTimeout(supervisor.resumeTimer);
-    }
+    clearLaneSupervisorTimers(supervisors);
     this.laneSupervisorsByWorkspace.delete(workspaceId);
     this.workersByWorkspace.delete(workspaceId);
     this.budgetEstimatorsByWorkspace.delete(workspaceId);
@@ -1066,34 +1007,10 @@ export class Orchestrator {
       }
     >;
   } {
-    const runtime = this.laneRuntimeByWorkspace.get(workspaceId);
-    const supervisors = this.laneSupervisorsByWorkspace.get(workspaceId);
-    const now = Date.now();
-
-    const buildLane = (lane: RuntimeLane) => {
-      const activeCalls = runtime?.[lane]?.activeCalls ?? 0;
-      const supervisor = supervisors?.[lane];
-      return {
-        activeCalls,
-        queueDepth: supervisor?.queue.length ?? 0,
-        restartCount: supervisor?.restartCount ?? 0,
-        consecutiveCrashes: supervisor?.consecutiveCrashes ?? 0,
-        circuitOpenUntilMs:
-          (supervisor?.circuitOpenUntilMs ?? 0) > now
-            ? (supervisor?.circuitOpenUntilMs ?? 0)
-            : 0,
-        lastCrashError: supervisor?.lastCrashError,
-      };
-    };
-
-    return {
-      timestamp: now,
-      lanes: {
-        planner: buildLane("planner"),
-        executor: buildLane("executor"),
-        verifier: buildLane("verifier"),
-      },
-    };
+    return buildLaneTelemetrySnapshotData({
+      runtime: this.laneRuntimeByWorkspace.get(workspaceId),
+      supervisors: this.laneSupervisorsByWorkspace.get(workspaceId),
+    });
   }
 
   private emitLaneSupervisorActivity(workspaceId: string): void {
@@ -1115,7 +1032,7 @@ export class Orchestrator {
   }
 
   private isLaneIsolated(state: LaneRuntimeState): boolean {
-    return state.isolatedUntilMs > Date.now();
+    return isLaneIsolated(state);
   }
 
   private emitLaneIsolationStep(
@@ -1147,37 +1064,28 @@ export class Orchestrator {
   ): Promise<T> {
     const state = this.getLaneRuntimeState(task.workspaceId, lane);
     const supervisor = this.getLaneSupervisorState(task.workspaceId, lane);
-    supervisor.active += 1;
-    state.activeCalls = supervisor.active;
-    state.totalCalls += 1;
+    beginLaneOperation(state, supervisor);
     const startedAt = Date.now();
-    const queueLatencyMs = startedAt - queued.enqueuedAt;
     const laneOperationId =
       lane === "executor" ? null : `${lane}-op-${crypto.randomUUID()}`;
-    if (laneOperationId) {
-      const pools = this.getWorkspaceLanePools(task.workspaceId);
-      const narrowedLane = lane as Exclude<RuntimeLane, "executor">;
-      const op: LaneOperationInstance = {
-        operationId: laneOperationId,
-        lane: narrowedLane,
-        taskId: queued.taskId,
-        workspaceId: queued.workspaceId,
-        startedAt,
-        timeoutMs: state.policy.maxCallMs,
-        label: queued.label,
-        nodeId: queued.nodeId,
-      };
-      (pools[narrowedLane] as Map<string, LaneOperationInstance>).set(
-        laneOperationId,
-        op,
-      );
+    const registration = laneOperationId
+      ? registerLaneOperation({
+          pools: this.getWorkspaceLanePools(task.workspaceId),
+          lane,
+          queued,
+          startedAt,
+          timeoutMs: state.policy.maxCallMs,
+          operationId: laneOperationId,
+        })
+      : null;
+    if (registration) {
       logger.debug("orchestrator", "Lane operation registered", {
         taskId: queued.taskId,
         workspaceId: queued.workspaceId,
         lane,
-        operationId: laneOperationId,
-        activeLaneOperations: pools[lane].size,
-        queueLatencyMs,
+        operationId: registration.operationId,
+        activeLaneOperations: registration.activeLaneOperations,
+        queueLatencyMs: registration.queueLatencyMs,
       });
     }
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -1190,11 +1098,11 @@ export class Orchestrator {
           )),
       );
       const result = (await Promise.race([queued.operation(), timeout])) as T;
-      state.totalDurationMs += Date.now() - startedAt;
-      if (state.failures > 0) {
-        state.failures = Math.max(0, state.failures - 1);
-      }
-      supervisor.consecutiveCrashes = 0;
+      recordLaneOperationSuccess({
+        state,
+        supervisor,
+        durationMs: Date.now() - startedAt,
+      });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1209,17 +1117,12 @@ export class Orchestrator {
           `Lane timeout after ${state.policy.maxCallMs}ms`,
         );
       }
-      state.failures += 1;
-      state.lastError = message;
-      state.totalDurationMs += Date.now() - startedAt;
-      supervisor.restartCount += 1;
-      supervisor.consecutiveCrashes += 1;
-      supervisor.lastCrashAtMs = Date.now();
-      supervisor.lastCrashError = message;
-      const backoffMs = Math.min(
-        250 * 2 ** Math.max(0, supervisor.consecutiveCrashes - 1),
-        5_000,
-      );
+      const failure = recordLaneOperationFailure({
+        state,
+        supervisor,
+        message,
+        durationMs: Date.now() - startedAt,
+      });
       logger.warn("orchestrator", "Lane execution failed", {
         workspaceId: task.workspaceId,
         taskId: task.id,
@@ -1229,19 +1132,15 @@ export class Orchestrator {
         error: message,
         laneRestartCount: supervisor.restartCount,
         laneConsecutiveCrashes: supervisor.consecutiveCrashes,
-        backoffMs,
+        backoffMs: failure.backoffMs,
       });
-      if (state.failures >= state.policy.maxFailuresBeforeIsolation) {
-        state.isolatedUntilMs = Date.now() + state.policy.isolationCooldownMs;
-        const detail =
-          `${lane} lane entered cooldown after ${state.failures} failure(s). ` +
-          `Cooldown=${state.policy.isolationCooldownMs}ms. Last error: ${message}`;
+      if (failure.isolated) {
         logger.warn("orchestrator", "Lane isolated", {
           workspaceId: task.workspaceId,
           taskId: task.id,
           lane,
           isolatedUntilMs: state.isolatedUntilMs,
-          detail,
+          detail: failure.detail,
         });
         this.emitTraceEvent(
           task,
@@ -1252,11 +1151,11 @@ export class Orchestrator {
             lane,
             failures: state.failures,
             isolatedUntilMs: state.isolatedUntilMs,
-            detail,
+            detail: failure.detail,
           },
           lane,
         );
-        this.emitLaneIsolationStep(task.workspaceId, state, detail);
+        this.emitLaneIsolationStep(task.workspaceId, state, failure.detail);
         throw new LaneIsolationError(
           lane,
           state.policy.isolationCooldownMs,
@@ -1264,12 +1163,11 @@ export class Orchestrator {
         );
       }
 
-      supervisor.circuitOpenUntilMs = Date.now() + backoffMs;
       logger.warn("orchestrator", "Lane supervisor backoff", {
         workspaceId: task.workspaceId,
         taskId: task.id,
         lane,
-        backoffMs,
+        backoffMs: failure.backoffMs,
         circuitOpenUntilMs: supervisor.circuitOpenUntilMs,
         restartCount: supervisor.restartCount,
         queueDepth: supervisor.queue.length,
@@ -1279,18 +1177,20 @@ export class Orchestrator {
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
       if (laneOperationId) {
-        const pools = this.getWorkspaceLanePools(task.workspaceId);
-        pools[lane].delete(laneOperationId);
+        const activeLaneOperations = releaseLaneOperationRegistration({
+          pools: this.getWorkspaceLanePools(task.workspaceId),
+          lane,
+          operationId: laneOperationId,
+        });
         logger.debug("orchestrator", "Lane operation released", {
           taskId: task.id,
           workspaceId: task.workspaceId,
           lane,
           operationId: laneOperationId,
-          activeLaneOperations: pools[lane].size,
+          activeLaneOperations,
         });
       }
-      supervisor.active = Math.max(0, supervisor.active - 1);
-      state.activeCalls = supervisor.active;
+      releaseLaneOperation(state, supervisor);
       this.emitLaneSupervisorActivity(task.workspaceId);
       void this.drainLaneQueue(task.workspaceId, lane);
     }
@@ -1307,33 +1207,32 @@ export class Orchestrator {
     try {
       let shouldContinue = true;
       while (shouldContinue) {
-        const now = Date.now();
-        if (this.isLaneIsolated(runtimeState)) {
-          const remainingMs = runtimeState.isolatedUntilMs - now;
-          const pending = supervisor.queue.splice(0, supervisor.queue.length);
-          for (const queued of pending) {
-            queued.reject(
-              new LaneIsolationError(lane, remainingMs, runtimeState.lastError),
-            );
+        const decision = getNextLaneDrainDecision({
+          lane,
+          state: runtimeState,
+          supervisor,
+        });
+        if (decision.action === "isolated") {
+          for (const queued of decision.pending) {
+            queued.reject(decision.error);
           }
           shouldContinue = false;
           continue;
         }
 
-        if (supervisor.circuitOpenUntilMs > now) {
-          const waitMs = supervisor.circuitOpenUntilMs - now;
+        if (decision.action === "wait") {
           if (!supervisor.resumeTimer) {
             supervisor.resumeTimer = setTimeout(() => {
               supervisor.resumeTimer = null;
               void this.drainLaneQueue(workspaceId, lane);
-            }, waitMs);
+            }, decision.waitMs);
             logger.debug(
               "orchestrator",
               "Lane supervisor waiting for backoff",
               {
                 workspaceId,
                 lane,
-                waitMs,
+                waitMs: decision.waitMs,
                 queueDepth: supervisor.queue.length,
               },
             );
@@ -1342,27 +1241,21 @@ export class Orchestrator {
           continue;
         }
 
-        if (
-          supervisor.queue.length === 0 ||
-          supervisor.active >= runtimeState.policy.maxConcurrent
-        ) {
-          shouldContinue = false;
-          continue;
-        }
-
-        const queued = supervisor.queue.shift();
-        if (!queued) {
+        if (decision.action !== "execute") {
           shouldContinue = false;
           continue;
         }
 
         void this.executeLaneOperation(
-          { id: queued.taskId, workspaceId: queued.workspaceId },
+          {
+            id: decision.queued.taskId,
+            workspaceId: decision.queued.workspaceId,
+          },
           lane,
-          queued,
+          decision.queued,
         )
-          .then((result) => queued.resolve(result))
-          .catch((error) => queued.reject(error));
+          .then((result) => decision.queued.resolve(result))
+          .catch((error) => decision.queued.reject(error));
       }
     } finally {
       supervisor.draining = false;
@@ -1377,39 +1270,33 @@ export class Orchestrator {
   ): Promise<T> {
     const state = this.getLaneRuntimeState(task.workspaceId, lane);
     const supervisor = this.getLaneSupervisorState(task.workspaceId, lane);
-    const now = Date.now();
-    if (this.isLaneIsolated(state)) {
-      const remainingMs = state.isolatedUntilMs - now;
-      return Promise.reject(
-        new LaneIsolationError(lane, remainingMs, state.lastError),
-      );
-    }
-
     const operationId = `${lane}-queued-${crypto.randomUUID()}`;
-    return new Promise<T>((resolve, reject) => {
-      supervisor.queue.push({
-        operationId,
-        taskId: task.id,
-        workspaceId: task.workspaceId,
-        label: metadata?.label || `${lane} lane call`,
-        nodeId: metadata?.nodeId,
-        enqueuedAt: Date.now(),
-        operation: operation as () => Promise<unknown>,
-        resolve: resolve as (value: unknown) => void,
-        reject,
-      });
+    const enqueued = enqueueLaneOperation({
+      taskId: task.id,
+      workspaceId: task.workspaceId,
+      lane,
+      state,
+      supervisor,
+      operation,
+      metadata,
+      operationId,
+    });
+
+    if (enqueued.queued) {
       logger.debug("orchestrator", "Lane operation queued", {
         taskId: task.id,
         workspaceId: task.workspaceId,
         lane,
         operationId,
         nodeId: metadata?.nodeId,
-        queueDepth: supervisor.queue.length,
+        queueDepth: enqueued.queueDepth,
         activeLaneCalls: supervisor.active,
       });
       this.emitLaneSupervisorActivity(task.workspaceId);
       void this.drainLaneQueue(task.workspaceId, lane);
-    });
+    }
+
+    return enqueued.promise;
   }
 
   private stopExecutorWorkerForNode(
