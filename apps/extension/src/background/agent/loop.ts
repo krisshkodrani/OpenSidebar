@@ -2070,6 +2070,48 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForIncompleteListDetailReview(
+    toolCallId: string,
+  ): boolean {
+    const latestListDetailActionCount = countVisibleListDetailActions(
+      this.context.getSnapshot(),
+    );
+    const visibleDetailActionCount = Math.max(
+      this.listDetailVisibleActionCount,
+      latestListDetailActionCount,
+    );
+    const listDetailDoneRejection = getListDetailDoneRejection({
+      selectedSkillId: this.selectedSkillId,
+      query: this.originalQuery,
+      reviewedDetailCount: this.listDetailReviewedTargets.size,
+      visibleDetailActionCount,
+    });
+    if (!listDetailDoneRejection) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: list-detail review incomplete", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      openedDetailCount: this.listDetailOpenedTargets.size,
+      reviewedDetailCount: this.listDetailReviewedTargets.size,
+      visibleDetailActionCount,
+    });
+    this.traceRecorder?.recordEvent("done_rejected_list_detail_incomplete", {
+      rejections: this.doneRejections,
+      openedDetailCount: this.listDetailOpenedTargets.size,
+      reviewedDetailCount: this.listDetailReviewedTargets.size,
+      visibleDetailActionCount,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${listDetailDoneRejection}\n\n` +
+        "Do NOT synthesize the recommendation from list-card snippets alone.",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8408,56 +8450,9 @@ export class AgentLoop {
                 continue;
               }
 
-              const latestListDetailActionCount = countVisibleListDetailActions(
-                this.context.getSnapshot(),
-              );
-              const listDetailDoneRejection = getListDetailDoneRejection({
-                selectedSkillId: this.selectedSkillId,
-                query: this.originalQuery,
-                reviewedDetailCount: this.listDetailReviewedTargets.size,
-                visibleDetailActionCount: Math.max(
-                  this.listDetailVisibleActionCount,
-                  latestListDetailActionCount,
-                ),
-              });
-              if (listDetailDoneRejection) {
-                this.doneRejections++;
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: list-detail review incomplete",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    openedDetailCount: this.listDetailOpenedTargets.size,
-                    reviewedDetailCount: this.listDetailReviewedTargets.size,
-                    visibleDetailActionCount: Math.max(
-                      this.listDetailVisibleActionCount,
-                      latestListDetailActionCount,
-                    ),
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "done_rejected_list_detail_incomplete",
-                  {
-                    rejections: this.doneRejections,
-                    openedDetailCount: this.listDetailOpenedTargets.size,
-                    reviewedDetailCount: this.listDetailReviewedTargets.size,
-                    visibleDetailActionCount: Math.max(
-                      this.listDetailVisibleActionCount,
-                      latestListDetailActionCount,
-                    ),
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    `done() REJECTED: ${listDetailDoneRejection}\n\n` +
-                    "Do NOT synthesize the recommendation from list-card snippets alone.",
-                });
+              if (this.rejectDoneForIncompleteListDetailReview(toolCall.id)) {
                 continue;
               }
-
               // Planner validation: only when a plan exists
               if (this.taskId && this.planSubtasks.length > 0) {
                 const donePlanPrecheck =
