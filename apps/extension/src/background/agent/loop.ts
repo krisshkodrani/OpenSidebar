@@ -1434,6 +1434,25 @@ export class AgentLoop {
     });
   }
 
+  private completeTaskUi(summary: string): void {
+    this.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: "Task complete",
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+    // Replace accumulated reasoning with clean summary and finalize the stream.
+    // done:true is critical - without it the side panel message stays in
+    // isStreaming state and the "Thinking..." placeholder hides the summary.
+    this.finishStream(summary);
+    this.statusHandler(AgentStatus.IDLE, "Done");
+    this.messageHandler(summary, []);
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8408,22 +8427,7 @@ export class AgentLoop {
                 tool_call_id: toolCall.id,
                 content: summary,
               });
-              this.stepHandler(
-                {
-                  id: crypto.randomUUID(),
-                  type: "info",
-                  label: "Task complete",
-                  status: "done",
-                  timestamp: Date.now(),
-                },
-                false,
-              );
-              // Replace accumulated reasoning with clean summary and finalize the stream.
-              // done:true is critical — without it the side panel message stays in
-              // isStreaming state and the "Thinking..." placeholder hides the summary.
-              this.finishStream(summary);
-              this.statusHandler(AgentStatus.IDLE, "Done");
-              this.messageHandler(summary, []);
+              this.completeTaskUi(summary);
               doneSummary = summary;
               doneSignaled = true;
 
@@ -10147,19 +10151,7 @@ export class AgentLoop {
                   tool_call_id: crypto.randomUUID(),
                   content: summary,
                 });
-                this.stepHandler(
-                  {
-                    id: crypto.randomUUID(),
-                    type: "info",
-                    label: "Task complete",
-                    status: "done",
-                    timestamp: Date.now(),
-                  },
-                  false,
-                );
-                this.finishStream(summary);
-                this.statusHandler(AgentStatus.IDLE, "Done");
-                this.messageHandler(summary, []);
+                this.completeTaskUi(summary);
                 doneSummary = summary;
                 doneSignaled = true;
 
