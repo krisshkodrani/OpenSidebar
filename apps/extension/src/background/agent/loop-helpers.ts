@@ -8,6 +8,8 @@ import { LLMMessage } from "../llm/types";
 import { stripThinkTags } from "../llm";
 import { ActionEffect } from "./stagnation";
 import { ACTION_EFFECT } from "./constants";
+import { CACHEABLE_TOOLS } from "../tools/metadata";
+import { ToolResultCache, type CacheType } from "./tool-cache";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
@@ -1179,6 +1181,30 @@ export function assessReadElementSameIdNudge(params: {
               `Try a different approach: click_element to interact with it, read_page for full page context, or find_element to locate a different target.`,
           }
         : null,
+  };
+}
+
+export interface ToolCacheHitDecision {
+  cacheType: CacheType | undefined;
+  cachedResult: string | null;
+}
+
+export function assessToolCacheHit(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null | undefined;
+  toolCache: ToolResultCache;
+}): ToolCacheHitDecision {
+  const cacheType = CACHEABLE_TOOLS.get(params.toolName);
+  if (!cacheType) {
+    return { cacheType, cachedResult: null };
+  }
+
+  const cacheKey = ToolResultCache.key(params.toolName, params.args);
+  const fingerprint = getSnapshotFingerprint(params.snapshot ?? null);
+  return {
+    cacheType,
+    cachedResult: params.toolCache.get(cacheKey, fingerprint),
   };
 }
 

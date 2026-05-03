@@ -22,7 +22,6 @@ import { LLMClient, stripThinkTags, extractThinkContent } from "../llm";
 import { toolRegistry } from "../tools";
 import {
   DOM_MODIFYING_TOOLS,
-  CACHEABLE_TOOLS,
   resolveToolProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
@@ -209,6 +208,7 @@ import {
   BlockedAction,
   assessFailedActionRepeat,
   assessReadElementSameIdNudge,
+  assessToolCacheHit,
   buildFailureBrief,
   buildHandoffBriefing,
   buildStructuredFailureContext,
@@ -7050,24 +7050,28 @@ export class AgentLoop {
                 };
               }
 
-              // Tool result cache lookup (Feature 1)
-              const cacheType = CACHEABLE_TOOLS.get(toolName);
-              if (cacheType) {
-                const cacheKey = ToolResultCache.key(toolName, args);
-                const fp = getSnapshotFingerprint(this.context.getSnapshot());
-                const cached = this.toolCache.get(cacheKey, fp);
-                if (cached !== null) {
-                  this.log.info("agent", "Tool cache hit", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    mode: "parallel",
-                  });
-                  this.traceRecorder?.recordEvent("tool_cache_hit", {
-                    tool: toolName,
-                    mode: "parallel",
-                  });
-                  return { toolCall, result: cached, error: null };
-                }
+              const cacheLookup = assessToolCacheHit({
+                toolName,
+                args,
+                snapshot: this.context.getSnapshot(),
+                toolCache: this.toolCache,
+              });
+              const cacheType = cacheLookup.cacheType;
+              if (cacheLookup.cachedResult !== null) {
+                this.log.info("agent", "Tool cache hit", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent("tool_cache_hit", {
+                  tool: toolName,
+                  mode: "parallel",
+                });
+                return {
+                  toolCall,
+                  result: cacheLookup.cachedResult,
+                  error: null,
+                };
               }
 
               // Redundant action block (Feature 2): skip if same (tool+args+fingerprint) repeated >= threshold
@@ -7681,29 +7685,29 @@ export class AgentLoop {
               continue;
             }
 
-            // Tool result cache lookup (Feature 1)
-            const cacheType = CACHEABLE_TOOLS.get(toolName);
-            if (cacheType) {
-              const cacheKey = ToolResultCache.key(toolName, args);
-              const fp = getSnapshotFingerprint(this.context.getSnapshot());
-              const cached = this.toolCache.get(cacheKey, fp);
-              if (cached !== null) {
-                this.log.info("agent", "Tool cache hit", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "sequential",
-                });
-                this.traceRecorder?.recordEvent("tool_cache_hit", {
-                  tool: toolName,
-                  mode: "sequential",
-                });
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: cached,
-                });
-                continue;
-              }
+            const cacheLookup = assessToolCacheHit({
+              toolName,
+              args,
+              snapshot: this.context.getSnapshot(),
+              toolCache: this.toolCache,
+            });
+            const cacheType = cacheLookup.cacheType;
+            if (cacheLookup.cachedResult !== null) {
+              this.log.info("agent", "Tool cache hit", {
+                turn: this.turnCount,
+                tool: toolName,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent("tool_cache_hit", {
+                tool: toolName,
+                mode: "sequential",
+              });
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: cacheLookup.cachedResult,
+              });
+              continue;
             }
 
             // Redundant action block (Feature 2): skip if same (tool+args+fingerprint) repeated >= threshold
