@@ -25,7 +25,6 @@ import {
   resolveToolProfile,
 } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
-import { validateToolCalls } from "../security";
 import { waitForDomReady } from "../tab-ready";
 import {
   isBridgeDisconnect,
@@ -76,7 +75,7 @@ import {
   runStartExecution,
 } from "./start-result";
 import { finalizeStartResult } from "./start-finalization";
-import { assessBlindToolCallReasoning } from "./blind-tool-call-policy";
+import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
@@ -329,7 +328,6 @@ import { buildConsequentialActionTaskText } from "./consequential-action-context
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 import {
   addParallelToolResultsToContext,
-  assessParallelToolCalls,
   collectTrailingToolResultMessages,
   handleParallelVerificationGate,
   handleSequentialVerificationGate,
@@ -5931,53 +5929,6 @@ export class AgentLoop {
         consecutiveTextOnly = 0;
         this.throwIfGracefulStopRequested();
 
-        // Blind Tool Call Guard — nudge when tool calls arrive with no reasoning.
-        // Skip for text-recovered tool calls: the model DID produce text, it was just JSON.
-        // Skip when model emitted think tags: reasoning IS present, just in <think> blocks
-        // (Qwen3, DeepSeek, etc. put all reasoning in think tags before tool calls).
-        // Only nudge (no forced escalation) — stagnation monitor and dead-end
-        // detection handle actual stuck loops. Forced escalation caused
-        // escalate→de-escalate loops with models that naturally omit reasoning.
-        const hadThinking = normalizedContent.hadThinking;
-        const blindToolCallAssessment = assessBlindToolCallReasoning({
-          cleanContent,
-          toolsRecoveredFromText,
-          hadThinking,
-          consecutiveBlindToolTurns,
-        });
-        consecutiveBlindToolTurns =
-          blindToolCallAssessment.consecutiveBlindToolTurns;
-        if (blindToolCallAssessment.nudge === "initial") {
-          this.log.warn(
-            "agent",
-            "Blind tool calls: 3 consecutive turns with no reasoning",
-            {
-              turn: this.turnCount,
-            },
-          );
-          this.traceRecorder?.recordEvent("blind_tool_call_nudge", {
-            turn: this.turnCount,
-            consecutive: consecutiveBlindToolTurns,
-          });
-          this.context.addMessage({
-            role: "user",
-            content: blindToolCallAssessment.message,
-          });
-        } else if (blindToolCallAssessment.nudge === "repeat") {
-          // Repeat the nudge every 6 blind turns (no escalation)
-          this.log.warn("agent", "Blind tool calls: repeating nudge", {
-            turn: this.turnCount,
-            consecutive: consecutiveBlindToolTurns,
-          });
-          this.context.addMessage({
-            role: "user",
-            content: blindToolCallAssessment.message,
-          });
-        }
-
-        const firstToolName = response.tool_calls[0].function.name;
-        this.statusHandler(AgentStatus.ACTING, `Executing ${firstToolName}...`);
-
         // Keep the streaming message open across tool-calling turns.
         // The stream is finalized when done() is called (with replaceContent)
         // or when the loop exits (by the orchestrator or exit-path handlers).
@@ -5997,87 +5948,29 @@ export class AgentLoop {
         let lastDomAffectingToolName: string | null = null;
         this.lastDomStep = null;
         this.context.setLastActionOutcome(null);
-
-        // --- Safety gate: validate tool calls before dispatch ---
-        const validated = validateToolCalls(response.tool_calls);
-        const blockedCalls = validated.filter((v) => v.blocked);
-        const auditedCalls = validated.filter((v) => v.auditFlag);
-        for (const a of auditedCalls) {
-          this.traceRecorder?.recordEvent("safety_gate_audit", {
-            tool: a.original.function.name,
-            flag: a.auditFlag ?? "unknown",
-            phase: "output",
-          });
-        }
-        const allowedToolCalls = validated
-          .filter((v) => !v.blocked)
-          .map((v) => v.original);
-
-        response.tool_calls = allowedToolCalls;
-
-        // Use the model's original allowed batch shape for workflow redirect telemetry.
-        // After a redirect, collapse the allowed batch to the single corrected
-        // navigation action so follow-on calls cannot run against the wrong page.
-        const originalCanParallelize = assessParallelToolCalls(
-          response.tool_calls,
-        ).canParallelize;
-        const workflowRedirectMode = originalCanParallelize
-          ? "parallel"
-          : "sequential";
-        for (const toolCall of response.tool_calls) {
-          if (
-            this.rewriteListDetailWorkflowToolCall(
-              toolCall,
-              workflowRedirectMode,
-            )
-          ) {
-            response.tool_calls = [toolCall];
-            break;
-          }
-        }
-
-        // Deferred assistant message: only includes tool_calls that will have
-        // corresponding results (blocked calls + allowed). Prevents 422
-        // errors from orphaned tool_call IDs.
-        const finalToolCalls = [
-          ...blockedCalls.map((b) => b.original),
-          ...response.tool_calls,
-        ];
-        this.context.addMessage({
-          role: "assistant",
-          content: response.content,
-          tool_calls: finalToolCalls.map((tc) => ({
-            id: tc.id,
-            type: "function",
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            },
-          })),
+        const toolCallSetup = prepareToolCallBranch({
+          response,
+          turnCount: this.turnCount,
+          cleanContent,
+          toolsRecoveredFromText,
+          hadThinking: normalizedContent.hadThinking,
+          consecutiveBlindToolTurns,
+          context: this.context,
+          traceRecorder: this.traceRecorder,
+          log: this.log,
+          statusHandler: (status, message) =>
+            this.statusHandler(status, message),
+          rewriteListDetailWorkflowToolCall: (toolCall, mode) =>
+            this.rewriteListDetailWorkflowToolCall(toolCall, mode),
         });
+        consecutiveBlindToolTurns =
+          toolCallSetup.consecutiveBlindToolTurns;
 
-        // Add blocked tool results (after assistant message for correct ordering)
-        for (const b of blockedCalls) {
-          this.context.addMessage({
-            role: "tool",
-            tool_call_id: b.original.id,
-            content: `Blocked: ${b.reason}`,
-          });
-          this.traceRecorder?.recordEvent("safety_gate_blocked", {
-            tool: b.original.function.name,
-            reason: b.reason ?? "unknown",
-            phase: "output",
-          });
+        if (toolCallSetup.allCallsBlocked) {
+          continue; // All tool calls blocked - retry
         }
 
-        if (response.tool_calls.length === 0 && blockedCalls.length > 0) {
-          continue; // All tool calls blocked — retry
-        }
-
-        // Determine if we can parallelize: no sequential tools present
-        const canParallelize = assessParallelToolCalls(
-          response.tool_calls,
-        ).canParallelize;
+        const canParallelize = toolCallSetup.canParallelize;
 
         if (canParallelize) {
           this.throwIfGracefulStopRequested();
