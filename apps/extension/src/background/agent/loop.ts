@@ -207,8 +207,8 @@ import {
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
+  assessFailedActionRepeat,
   buildFailureBrief,
-  buildFailureRecovery,
   buildHandoffBriefing,
   buildStructuredFailureContext,
   buildZeroEffectDecision,
@@ -222,7 +222,6 @@ import {
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
   evaluateDoneTaskContractGuard,
-  findPriorFailure,
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
@@ -7033,22 +7032,23 @@ export class AgentLoop {
               }
 
               // Failed-action memory: block exact repeat of a previously failed tool call
-              const priorFail = findPriorFailure(
+              const failedActionRepeat = assessFailedActionRepeat({
                 blockedActions,
-                toolName,
+                tool: toolName,
                 argsKey,
-              );
-              if (priorFail) {
-                const failMsg =
-                  `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
-                  buildFailureRecovery(priorFail.error);
+              });
+              if (failedActionRepeat) {
                 this.log.warn("agent", "Failed-action repeat blocked", {
                   turn: this.turnCount,
                   tool: toolName,
-                  priorTurn: priorFail.turn,
+                  priorTurn: failedActionRepeat.priorTurn,
                   mode: "parallel",
                 });
-                return { toolCall, result: null, error: failMsg };
+                return {
+                  toolCall,
+                  result: null,
+                  error: failedActionRepeat.message,
+                };
               }
 
               // Tool result cache lookup (Feature 1)
@@ -7671,24 +7671,21 @@ export class AgentLoop {
             }
 
             // Failed-action memory: block exact repeat of a previously failed tool call
-            const priorFail = findPriorFailure(
+            const failedActionRepeat = assessFailedActionRepeat({
               blockedActions,
-              toolName,
+              tool: toolName,
               argsKey,
-            );
-            if (priorFail) {
-              const failMsg =
-                `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
-                buildFailureRecovery(priorFail.error);
+            });
+            if (failedActionRepeat) {
               this.context.addMessage({
                 role: "tool",
                 tool_call_id: toolCall.id,
-                content: failMsg,
+                content: failedActionRepeat.message,
               });
               this.log.warn("agent", "Failed-action repeat blocked", {
                 turn: this.turnCount,
                 tool: toolName,
-                priorTurn: priorFail.turn,
+                priorTurn: failedActionRepeat.priorTurn,
                 mode: "sequential",
               });
               continue;

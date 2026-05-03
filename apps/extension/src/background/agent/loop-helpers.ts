@@ -1094,6 +1094,31 @@ export function buildFailureRecovery(error: string): string {
   return `Choose a different approach — try a different element ID, different tool, or read_page to reassess.`;
 }
 
+export interface FailedActionRepeatBlock {
+  priorTurn: number;
+  message: string;
+}
+
+export function assessFailedActionRepeat(params: {
+  blockedActions: BlockedAction[];
+  tool: string;
+  argsKey: string;
+}): FailedActionRepeatBlock | null {
+  const priorFail = findPriorFailure(
+    params.blockedActions,
+    params.tool,
+    params.argsKey,
+  );
+  if (!priorFail) return null;
+
+  return {
+    priorTurn: priorFail.turn,
+    message:
+      `Error: This exact action already failed at turn ${priorFail.turn} with: '${priorFail.error}'. ` +
+      buildFailureRecovery(priorFail.error),
+  };
+}
+
 /**
  * Normalize a tool result into a fingerprint for dead-end detection.
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
