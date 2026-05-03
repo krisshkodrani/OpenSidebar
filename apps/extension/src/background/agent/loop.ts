@@ -2112,6 +2112,71 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForMoneyTableAggregate(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const incompleteMoneyTableScan =
+      this.getIncompleteMoneyTableAggregateDoneRejection();
+    if (incompleteMoneyTableScan) {
+      this.doneRejections++;
+      this.log.warn(
+        "agent",
+        "DONE rejected: paginated money table scan incomplete",
+        {
+          turn: this.turnCount,
+          rejections: this.doneRejections,
+          reason: incompleteMoneyTableScan.slice(0, 200),
+        },
+      );
+      this.traceRecorder?.recordEvent(
+        "done_rejected_incomplete_money_table_scan",
+        {
+          turn: this.turnCount,
+          reason: incompleteMoneyTableScan,
+        },
+      );
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content:
+          `done() REJECTED: ${incompleteMoneyTableScan}\n\n` +
+          "Do not call done() until the scan is exhaustive.",
+      });
+      return true;
+    }
+
+    const incorrectMoneyTableAnswer =
+      this.getIncorrectMoneyTableAggregateDoneRejection(summary);
+    if (!incorrectMoneyTableAnswer) return false;
+
+    this.doneRejections++;
+    this.log.warn(
+      "agent",
+      "DONE rejected: paginated money table answer conflicts with aggregate",
+      {
+        turn: this.turnCount,
+        rejections: this.doneRejections,
+        reason: incorrectMoneyTableAnswer.slice(0, 200),
+      },
+    );
+    this.traceRecorder?.recordEvent(
+      "done_rejected_incorrect_money_table_answer",
+      {
+        turn: this.turnCount,
+        reason: incorrectMoneyTableAnswer,
+      },
+    );
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${incorrectMoneyTableAnswer}\n\n` +
+        "Use the tracked aggregate candidate in the final answer.",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8301,66 +8366,9 @@ export class AgentLoop {
                 }
               }
 
-              const incompleteMoneyTableScan =
-                this.getIncompleteMoneyTableAggregateDoneRejection();
-              if (incompleteMoneyTableScan) {
-                this.doneRejections++;
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: paginated money table scan incomplete",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    reason: incompleteMoneyTableScan.slice(0, 200),
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "done_rejected_incomplete_money_table_scan",
-                  {
-                    turn: this.turnCount,
-                    reason: incompleteMoneyTableScan,
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    `done() REJECTED: ${incompleteMoneyTableScan}\n\n` +
-                    "Do not call done() until the scan is exhaustive.",
-                });
+              if (this.rejectDoneForMoneyTableAggregate(toolCall.id, summary)) {
                 continue;
               }
-
-              const incorrectMoneyTableAnswer =
-                this.getIncorrectMoneyTableAggregateDoneRejection(summary);
-              if (incorrectMoneyTableAnswer) {
-                this.doneRejections++;
-                this.log.warn(
-                  "agent",
-                  "DONE rejected: paginated money table answer conflicts with aggregate",
-                  {
-                    turn: this.turnCount,
-                    rejections: this.doneRejections,
-                    reason: incorrectMoneyTableAnswer.slice(0, 200),
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "done_rejected_incorrect_money_table_answer",
-                  {
-                    turn: this.turnCount,
-                    reason: incorrectMoneyTableAnswer,
-                  },
-                );
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content:
-                    `done() REJECTED: ${incorrectMoneyTableAnswer}\n\n` +
-                    "Use the tracked aggregate candidate in the final answer.",
-                });
-                continue;
-              }
-
               // Multi-step early done() guard (works without plan state)
               // If the user's query has numbered steps and the agent has barely
               // started, reject once. Uses doneRejections so maxDoneRejections
