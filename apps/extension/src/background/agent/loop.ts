@@ -207,6 +207,7 @@ import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
   assessFailedActionRepeat,
+  assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
   buildFailureBrief,
@@ -7074,40 +7075,30 @@ export class AgentLoop {
                 };
               }
 
-              // Redundant action block (Feature 2): skip if same (tool+args+fingerprint) repeated >= threshold
-              {
-                const fp = getSnapshotFingerprint(this.context.getSnapshot());
-                const sameCount = recentSuccesses.filter(
-                  (e) =>
-                    e.tool === toolName &&
-                    e.args === argsKey &&
-                    e.snapshotFingerprint === fp,
-                ).length;
-                if (sameCount >= TOOL_CACHE.BLOCK_THRESHOLD) {
-                  const lastMatch = recentSuccesses.findLast(
-                    (e) =>
-                      e.tool === toolName &&
-                      e.args === argsKey &&
-                      e.snapshotFingerprint === fp,
-                  );
-                  if (lastMatch) {
-                    this.log.info("agent", "Redundant action blocked", {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      count: sameCount,
-                      mode: "parallel",
-                    });
-                    this.traceRecorder?.recordEvent(
-                      "redundant_action_blocked",
-                      {
-                        tool: toolName,
-                        count: sameCount,
-                        mode: "parallel",
-                      },
-                    );
-                    return { toolCall, result: lastMatch.result, error: null };
-                  }
-                }
+              const redundantSuccessBlock = assessRedundantSuccessBlock({
+                recentSuccesses,
+                toolName,
+                argsKey,
+                snapshot: this.context.getSnapshot(),
+                blockThreshold: TOOL_CACHE.BLOCK_THRESHOLD,
+              });
+              if (redundantSuccessBlock) {
+                this.log.info("agent", "Redundant action blocked", {
+                  turn: this.turnCount,
+                  tool: toolName,
+                  count: redundantSuccessBlock.count,
+                  mode: "parallel",
+                });
+                this.traceRecorder?.recordEvent("redundant_action_blocked", {
+                  tool: toolName,
+                  count: redundantSuccessBlock.count,
+                  mode: "parallel",
+                });
+                return {
+                  toolCall,
+                  result: redundantSuccessBlock.result,
+                  error: null,
+                };
               }
 
               // Pre-dispatch element ID validation
@@ -7710,42 +7701,31 @@ export class AgentLoop {
               continue;
             }
 
-            // Redundant action block (Feature 2): skip if same (tool+args+fingerprint) repeated >= threshold
-            {
-              const fp = getSnapshotFingerprint(this.context.getSnapshot());
-              const sameCount = recentSuccesses.filter(
-                (e) =>
-                  e.tool === toolName &&
-                  e.args === argsKey &&
-                  e.snapshotFingerprint === fp,
-              ).length;
-              if (sameCount >= TOOL_CACHE.BLOCK_THRESHOLD) {
-                const lastMatch = recentSuccesses.findLast(
-                  (e) =>
-                    e.tool === toolName &&
-                    e.args === argsKey &&
-                    e.snapshotFingerprint === fp,
-                );
-                if (lastMatch) {
-                  this.log.info("agent", "Redundant action blocked", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    count: sameCount,
-                    mode: "sequential",
-                  });
-                  this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                    tool: toolName,
-                    count: sameCount,
-                    mode: "sequential",
-                  });
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: lastMatch.result,
-                  });
-                  continue;
-                }
-              }
+            const redundantSuccessBlock = assessRedundantSuccessBlock({
+              recentSuccesses,
+              toolName,
+              argsKey,
+              snapshot: this.context.getSnapshot(),
+              blockThreshold: TOOL_CACHE.BLOCK_THRESHOLD,
+            });
+            if (redundantSuccessBlock) {
+              this.log.info("agent", "Redundant action blocked", {
+                turn: this.turnCount,
+                tool: toolName,
+                count: redundantSuccessBlock.count,
+                mode: "sequential",
+              });
+              this.traceRecorder?.recordEvent("redundant_action_blocked", {
+                tool: toolName,
+                count: redundantSuccessBlock.count,
+                mode: "sequential",
+              });
+              this.context.addMessage({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                content: redundantSuccessBlock.result,
+              });
+              continue;
             }
 
             // Pre-dispatch element ID validation
