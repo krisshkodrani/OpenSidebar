@@ -213,6 +213,7 @@ import {
   assessFailedActionRepeat,
   assessPreflightElement,
   assessRedundantSuccessBlock,
+  assessDeadEndPattern,
   assessReadElementSameIdNudge,
   assessToolCacheHit,
   buildFailureBrief,
@@ -238,8 +239,9 @@ import {
   isHallucinatedToolCall,
   matchSuccessCriteria,
   MAX_TURN_RETRIES,
-  normalizeOutcome,
+  recordRecentOutcome,
   recordRecentSuccessfulAction,
+  type RecentOutcome,
   RecentAction,
   requiresGroundingReadBeforeDone,
   RETRYABLE_ERRORS,
@@ -5997,7 +5999,7 @@ export class AgentLoop {
 
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
-    const recentOutcomes: { fingerprint: string; snapshotFp: string }[] = [];
+    const recentOutcomes: RecentOutcome[] = [];
 
     // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
@@ -8374,15 +8376,12 @@ export class AgentLoop {
                 typeof toolResult?.content === "string"
                   ? toolResult.content
                   : "";
-              if (resultContent) {
-                const fingerprint = normalizeOutcome(resultContent);
-                recentOutcomes.push({
-                  fingerprint,
-                  snapshotFp: currentSnapshotFp,
-                });
-                if (recentOutcomes.length > STAGNATION_DETECTION.WINDOW)
-                  recentOutcomes.shift();
-              }
+              recordRecentOutcome({
+                recentOutcomes,
+                resultContent,
+                snapshotFp: currentSnapshotFp,
+                windowSize: STAGNATION_DETECTION.WINDOW,
+              });
 
               // Accumulate subgoal attempts for cumulative failure brief
               const toolName = toolCall.function.name;
@@ -8411,59 +8410,56 @@ export class AgentLoop {
           }
           // Check for dead-end pattern (all recent outcomes identical AND same page state)
           {
-            const lastN = recentOutcomes.slice(-this.limits.stagnationPivot);
-            const allSame =
-              lastN.length >= this.limits.stagnationReflection &&
-              lastN.every(
-                (o) =>
-                  o.fingerprint === lastN[0].fingerprint &&
-                  o.snapshotFp === lastN[0].snapshotFp,
-              );
-            if (allSame && lastN.length >= this.limits.stagnationPivot) {
+            const deadEnd = assessDeadEndPattern({
+              recentOutcomes,
+              reflectionThreshold: this.limits.stagnationReflection,
+              pivotThreshold: this.limits.stagnationPivot,
+            });
+            if (deadEnd.kind === "pivot") {
               this.log.warn(
                 "agent",
                 "Dead-end detected: forcing strategy pivot",
                 {
                   turn: this.turnCount,
-                  pattern: lastN[0].fingerprint.slice(0, 80),
-                  count: lastN.length,
+                  pattern: deadEnd.pattern.slice(0, 80),
+                  count: deadEnd.count,
                 },
               );
               this.traceRecorder?.recordEvent("dead_end_pivot", {
-                pattern: lastN[0].fingerprint.slice(0, 80),
-                count: lastN.length,
+                pattern: deadEnd.pattern.slice(0, 80),
+                count: deadEnd.count,
               });
               this.traceRecorder?.recordEvent("multi_turn_pathology", {
                 pathology: "anchoring",
                 trigger: "dead_end_pivot",
                 turn: this.turnCount,
-                details: `pattern: ${lastN[0].fingerprint.slice(0, 60)}`,
+                details: `pattern: ${deadEnd.pattern.slice(0, 60)}`,
               });
               await this.strategyPivot(tabId);
               recentOutcomes.length = 0;
-            } else if (allSame) {
+            } else if (deadEnd.kind === "nudge") {
               this.log.info(
                 "agent",
                 "Dead-end nudge: repeated outcome pattern",
                 {
                   turn: this.turnCount,
-                  pattern: lastN[0].fingerprint.slice(0, 80),
-                  count: lastN.length,
+                  pattern: deadEnd.pattern.slice(0, 80),
+                  count: deadEnd.count,
                 },
               );
               this.traceRecorder?.recordEvent("dead_end_nudge", {
-                pattern: lastN[0].fingerprint.slice(0, 80),
-                count: lastN.length,
+                pattern: deadEnd.pattern.slice(0, 80),
+                count: deadEnd.count,
               });
               this.traceRecorder?.recordEvent("multi_turn_pathology", {
                 pathology: "anchoring",
                 trigger: "dead_end_nudge",
                 turn: this.turnCount,
-                details: `pattern: ${lastN[0].fingerprint.slice(0, 60)}`,
+                details: `pattern: ${deadEnd.pattern.slice(0, 60)}`,
               });
               this.context.addMessage({
                 role: "user",
-                content: `⚠ Dead-end detected: last ${lastN.length} actions all produced the same outcome pattern: "${lastN[0].fingerprint.slice(0, 80)}". Try a fundamentally different approach — use read_page, scroll_page, or find_element to reassess the page.`,
+                content: deadEnd.message,
               });
             }
           }

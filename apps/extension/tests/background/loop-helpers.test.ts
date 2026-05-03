@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ACTION_EFFECT } from "../../src/background/agent/constants";
 import {
   assessElementIdPreDispatch,
+  assessDeadEndPattern,
   assessFailedActionRepeat,
   assessPreflightElement,
   assessRedundantSuccessBlock,
@@ -10,7 +11,9 @@ import {
   assessToolCacheHit,
   buildZeroEffectDecision,
   countTrailingToolResultOutcomes,
+  normalizeOutcome,
   recordRecentSuccessfulAction,
+  recordRecentOutcome,
   updateConsecutiveAllFailTurns,
   updateExplorationBudget,
   updateSameToolFailureTracking,
@@ -669,5 +672,89 @@ describe("updateExplorationBudget", () => {
       consecutiveTurns: 0,
       message: null,
     });
+  });
+});
+
+describe("dead-end outcome tracking", () => {
+  it("records normalized outcomes and caps the window", () => {
+    const recentOutcomes = [];
+
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: "No element with tag [12]",
+      snapshotFp: "page-a",
+      windowSize: 2,
+    });
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: "No element with tag [13]",
+      snapshotFp: "page-a",
+      windowSize: 2,
+    });
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: "Clicked [7]",
+      snapshotFp: "page-a",
+      windowSize: 2,
+    });
+
+    expect(recentOutcomes).toHaveLength(2);
+    expect(recentOutcomes[0]).toEqual({
+      fingerprint: normalizeOutcome("No element with tag [13]"),
+      snapshotFp: "page-a",
+    });
+  });
+
+  it("returns a nudge when repeated outcomes hit the reflection threshold", () => {
+    expect(
+      assessDeadEndPattern({
+        recentOutcomes: [
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+        ],
+        reflectionThreshold: 3,
+        pivotThreshold: 4,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        kind: "nudge",
+        pattern: "same",
+        count: 3,
+      }),
+    );
+  });
+
+  it("returns a pivot when repeated outcomes hit the pivot threshold", () => {
+    expect(
+      assessDeadEndPattern({
+        recentOutcomes: [
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+        ],
+        reflectionThreshold: 3,
+        pivotThreshold: 4,
+      }),
+    ).toEqual({
+      kind: "pivot",
+      pattern: "same",
+      count: 4,
+    });
+  });
+
+  it("does not trigger for the same outcome on a changed snapshot", () => {
+    expect(
+      assessDeadEndPattern({
+        recentOutcomes: [
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-a" },
+          { fingerprint: "same", snapshotFp: "page-b" },
+        ],
+        reflectionThreshold: 3,
+        pivotThreshold: 4,
+      }),
+    ).toEqual({ kind: "none" });
   });
 });
