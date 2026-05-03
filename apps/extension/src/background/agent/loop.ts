@@ -155,12 +155,12 @@ import {
 import {
   advanceCompletedPlanSubtasks,
   buildInitialPlanSubtasks,
+  buildPlanReplacementState,
   buildPlanStatusEntries,
   buildPlanStatusSnapshot,
   buildRestoredPlanState,
   completeRemainingPlanSubtasks,
   completeSinglePlanSubtask,
-  replacePlanFromIndex,
   type RestorablePlanState,
 } from "./agent-plan-progress";
 import { applySkillTurnCap } from "./skill-turn-cap-policy";
@@ -3576,23 +3576,17 @@ export class AgentLoop {
     this.replanCount++;
 
     // Replace steps from deviation point onward
-    const replacement = replacePlanFromIndex({
+    const replacement = buildPlanReplacementState({
       subtasks: this.planSubtasks,
       steps: this.planSteps,
       fromIndex: runningIdx,
       replacementSteps: replanResult.newSteps,
     });
-    this.planSubtasks = replacement.subtasks;
-    this.planSteps = replacement.steps;
+    this.planSubtasks = replacement.planSubtasks;
+    this.planSteps = replacement.planSteps;
 
     // Update context with new plan
-    this.context.setPlanStatus(
-      buildPlanStatusEntries({
-        planSubtasks: this.planSubtasks,
-        planSteps: this.planSteps,
-      }),
-      runningIdx,
-    );
+    this.context.setPlanStatus(replacement.statusEntries, runningIdx);
 
     // Inject plan monitor message into conversation
     this.context.addMessage({
@@ -3762,23 +3756,17 @@ export class AgentLoop {
     this.replanCount++;
 
     // Replace steps from stuck point onward
-    const replacement = replacePlanFromIndex({
+    const replacement = buildPlanReplacementState({
       subtasks: this.planSubtasks,
       steps: this.planSteps,
       fromIndex: runningIdx,
       replacementSteps: replanResult.newSteps,
     });
-    this.planSubtasks = replacement.subtasks;
-    this.planSteps = replacement.steps;
+    this.planSubtasks = replacement.planSubtasks;
+    this.planSteps = replacement.planSteps;
 
     // Update context with new plan
-    this.context.setPlanStatus(
-      buildPlanStatusEntries({
-        planSubtasks: this.planSubtasks,
-        planSteps: this.planSteps,
-      }),
-      runningIdx,
-    );
+    this.context.setPlanStatus(replacement.statusEntries, runningIdx);
 
     // Clear history and inject fresh context with the new plan
     this.context.clearHistory();
