@@ -2177,6 +2177,73 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForEarlyMultiStepTask(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    if (this.doneRejections !== 0 || !this.originalQuery || this.nodeId) {
+      return false;
+    }
+
+    const stepCount = countExplicitSteps(this.originalQuery);
+    // Activate for queries with 3+ explicit steps where the agent
+    // has spent very few turns (turnCount includes planner's ~2 turns,
+    // so turnCount <= 3 means the executor ran at most 1 turn)
+    if (stepCount < 3 || this.turnCount > 3) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: multi-step query, too few turns", {
+      turn: this.turnCount,
+      stepCount,
+      doneRejections: this.doneRejections,
+      summary: summary.slice(0, 150),
+    });
+    this.traceRecorder?.recordEvent("done_rejected_early_multistep", {
+      turn: this.turnCount,
+      stepCount,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: The task has ${stepCount} steps but you have only completed the first action. ` +
+        "Continue working through the remaining steps before calling done().",
+    });
+    return true;
+  }
+
+  private rejectDoneForIncompleteMultiReturn(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    // Multi-return guard: only for root agent (no nodeId).
+    // For orchestrator nodes, individual steps handle their own
+    // objectives - the task-level final verification in the
+    // orchestrator catches multi-return requirements after all
+    // nodes complete.
+    if (this.nodeId) return false;
+
+    const multiReturnContract = buildTaskContract(this.originalQuery);
+    if ((multiReturnContract.multiReturnCount ?? 0) < 2) return false;
+
+    const multiCoverage = assessTaskContractCoverage({
+      contract: multiReturnContract,
+      text: summary,
+    });
+    if (multiCoverage.satisfied) return false;
+
+    const rejectReason = `Query requires ${multiReturnContract.multiReturnCount} results (detected "both"/"all") but summary only covers ${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. Missing: ${multiCoverage.missingEntities.join(", ")}`;
+    this.doneRejections++;
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${rejectReason}\n\n` +
+        "Return all requested results before calling done().",
+    });
+    return true;
+  }
+
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
@@ -8369,92 +8436,19 @@ export class AgentLoop {
               if (this.rejectDoneForMoneyTableAggregate(toolCall.id, summary)) {
                 continue;
               }
-              // Multi-step early done() guard (works without plan state)
-              // If the user's query has numbered steps and the agent has barely
-              // started, reject once. Uses doneRejections so maxDoneRejections
-              // cap prevents ghost sessions.
-              if (
-                this.doneRejections === 0 &&
-                this.originalQuery &&
-                !this.nodeId
-              ) {
-                const stepCount = countExplicitSteps(this.originalQuery);
-                // Activate for queries with 3+ explicit steps where the agent
-                // has spent very few turns (turnCount includes planner's ~2 turns,
-                // so turnCount <= 3 means the executor ran at most 1 turn)
-                if (stepCount >= 3 && this.turnCount <= 3) {
-                  this.doneRejections++;
-                  this.log.warn(
-                    "agent",
-                    "DONE rejected: multi-step query, too few turns",
-                    {
-                      turn: this.turnCount,
-                      stepCount,
-                      doneRejections: this.doneRejections,
-                      summary: summary.slice(0, 150),
-                    },
-                  );
-                  this.traceRecorder?.recordEvent(
-                    "done_rejected_early_multistep",
-                    {
-                      turn: this.turnCount,
-                      stepCount,
-                    },
-                  );
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content:
-                      `done() REJECTED: The task has ${stepCount} steps but you have only completed the first action. ` +
-                      "Continue working through the remaining steps before calling done().",
-                  });
-                  continue;
-                }
+              if (this.rejectDoneForEarlyMultiStepTask(toolCall.id, summary)) {
+                continue;
               }
 
-              // Multi-return guard: only for root agent (no nodeId).
-              // For orchestrator nodes, individual steps handle their own
-              // objectives — the task-level final verification in the
-              // orchestrator catches multi-return requirements after all
-              // nodes complete.
-              if (!this.nodeId) {
-                let shouldReject = false;
-                let rejectReason = "";
-                const multiReturnContract = buildTaskContract(
-                  this.originalQuery,
-                );
-                if (
-                  (multiReturnContract.multiReturnCount ?? 0) >= 2 &&
-                  !shouldReject
-                ) {
-                  const multiCoverage = assessTaskContractCoverage({
-                    contract: multiReturnContract,
-                    text: summary,
-                  });
-                  if (!multiCoverage.satisfied) {
-                    shouldReject = true;
-                    rejectReason = `Query requires ${multiReturnContract.multiReturnCount} results (detected "both"/"all") but summary only covers ${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. Missing: ${multiCoverage.missingEntities.join(", ")}`;
-                  }
-                }
-                if (shouldReject) {
-                  this.doneRejections++;
-                  this.context.addMessage({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content:
-                      `done() REJECTED: ${rejectReason}\n\n` +
-                      "Return all requested results before calling done().",
-                  });
-                  continue;
-                }
+              if (this.rejectDoneForIncompleteMultiReturn(toolCall.id, summary)) {
+                continue;
               }
 
               if (
                 this.rejectDoneForIncompleteTaskContract(toolCall.id, summary)
               ) {
                 continue;
-              }
-              if (this.rejectDoneForWorkflowContract(toolCall.id, summary)) {
+              }              if (this.rejectDoneForWorkflowContract(toolCall.id, summary)) {
                 continue;
               }
 
