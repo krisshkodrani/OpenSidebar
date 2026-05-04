@@ -9,6 +9,7 @@ import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
+import BackendPanel from "./components/BackendPanel";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
 import FilterBar from "./components/traces/FilterBar";
@@ -78,6 +79,7 @@ export default function App() {
   const scrollPositions = useStore((s) => s.scrollPositions);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
+  const [backendView, setBackendView] = useState<boolean>(false);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -106,9 +108,14 @@ export default function App() {
   useEffect(() => {
     const { session, view, top, turn, skill } = parseHash();
     if (skill) setCurrentSkillId(skill);
+    if (view === "backend") setBackendView(true);
     if (session) setCurrentSessionId(session);
-    if (view && VALID_SUBVIEWS.has(view)) setActiveSubview(view as Subview);
+    if (view && VALID_SUBVIEWS.has(view)) {
+      setBackendView(false);
+      setActiveSubview(view as Subview);
+    }
     if (top && VALID_TOP_LEVEL_VIEWS.has(top)) {
+      setBackendView(false);
       setActiveTopLevelView(top as TopLevelView);
     }
     if (turn && !isNaN(turn)) {
@@ -128,7 +135,9 @@ export default function App() {
 
   useEffect(() => {
     const parts: string[] = [];
-    if (currentSkillId) {
+    if (backendView) {
+      parts.push("view=backend");
+    } else if (currentSkillId) {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
@@ -145,7 +154,13 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [currentSessionId, activeSubview, activeTopLevelView, currentSkillId]);
+  }, [
+    backendView,
+    currentSessionId,
+    activeSubview,
+    activeTopLevelView,
+    currentSkillId,
+  ]);
 
   const navigateToSkill = useCallback((skillId: string) => {
     setCurrentSkillId(skillId);
@@ -171,6 +186,8 @@ export default function App() {
       <ViewerErrorBoundary>
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
+        ) : backendView ? (
+          <BackendPanel />
         ) : (
           <ViewerBody
             scrollContainerRef={scrollContainerRef}

@@ -154,7 +154,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("ignores unsupported top-level view from hash", async () => {
+  test("renders backend panel from backend hash route", async () => {
     window.location.hash = "#view=backend";
 
     await act(async () => {
@@ -163,8 +163,8 @@ describe("trace-viewer App", () => {
 
     await waitFor(() => {
       expect(useStore.getState().activeSubview).toBe("overview");
-      expect(container.textContent).toContain("UnifiedSessionsTableView");
-      expect(container.textContent).not.toContain("BackendPanel");
+      expect(container.textContent).toContain("BackendPanel");
+      expect(container.textContent).not.toContain("UnifiedSessionsTableView");
     });
   });
 

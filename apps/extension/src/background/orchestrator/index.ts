@@ -2254,6 +2254,21 @@ export class Orchestrator {
     preferredTabId: number,
   ): Promise<ReturnType<typeof selectResumeOwnedTab>> {
     const liveTabs = await this.getLiveWorkspaceTabs(taskLike.workspaceId);
+    if (liveTabs.length === 0) {
+      const fallbackTabIds = new Set(
+        [preferredTabId, taskLike.rootTabId].filter(
+          (tabId) => Number.isFinite(tabId) && tabId > 0,
+        ),
+      );
+      for (const tabId of fallbackTabIds) {
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (tab?.id) liveTabs.push(tab);
+        } catch {
+          // The durable root tab may have been closed.
+        }
+      }
+    }
     return selectResumeOwnedTab(taskLike, liveTabs, preferredTabId);
   }
 
