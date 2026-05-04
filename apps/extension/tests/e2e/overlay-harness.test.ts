@@ -224,4 +224,55 @@ describe("Overlay harness browser injection", () => {
     );
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
+
+  it("exposes seeded runtime tab and storage state without Chrome APIs", async () => {
+    const runner = await setupRunner({
+      runtimeOptions: {
+        tab: {
+          id: 42,
+          url: "https://example.test/reports/quarterly",
+          title: "Quarterly report",
+          windowId: 7,
+        },
+        window: { id: 7 },
+        storage: {
+          local: {
+            fireworksApiKey_local: "fake-fireworks-key",
+            "overlay:local-probe": { ok: true },
+          },
+          sync: {
+            userSettings: {
+              providerMode: "fireworks",
+              showSessionMetrics: false,
+            },
+          },
+          session: {
+            "overlay:session-probe": "session-value",
+          },
+        },
+      },
+    });
+    await runner.inject();
+
+    const snapshot = await runner.readRuntimeSnapshot();
+    expect(snapshot.activeTab).toMatchObject({
+      id: 42,
+      url: "https://example.test/reports/quarterly",
+      title: "Quarterly report",
+      active: true,
+      windowId: 7,
+    });
+    expect(snapshot.currentWindow).toEqual({ id: 7 });
+    expect(snapshot.storage.local["overlay:local-probe"]).toEqual({
+      ok: true,
+    });
+    expect(snapshot.storage.sync.userSettings).toMatchObject({
+      providerMode: "fireworks",
+      showSessionMetrics: false,
+    });
+    expect(snapshot.storage.session["overlay:session-probe"]).toBe(
+      "session-value",
+    );
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
 });
