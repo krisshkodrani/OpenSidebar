@@ -60,7 +60,6 @@ import {
 } from "../agent/task-contract";
 import {
   NodeHandoffArtifact,
-  OrchestratorCheckpoint,
   OrchestratorStartInput,
   OrchestratorTask,
   StructuredEvidence,
@@ -143,9 +142,13 @@ import {
   emptySessionMetrics,
   isRecord,
   mergeSessionMetrics,
-  sanitizeCheckpoint,
   sanitizeSessionMetrics,
 } from "./sanitizers";
+import {
+  loadOrchestratorCheckpoints,
+  pruneOrchestratorCheckpoints,
+  saveOrchestratorCheckpoints,
+} from "./checkpoint-store";
 import {
   clampConfidence,
   clampInteger,
@@ -200,7 +203,9 @@ function isGlobalGoalShortcutSkip(node: TaskNode): boolean {
 function isNavigationGoalShortcutSkip(node: TaskNode): boolean {
   return (
     node.status === "skipped" &&
-    String(node.result || "").includes("Skipped: navigation goal already achieved")
+    String(node.result || "").includes(
+      "Skipped: navigation goal already achieved",
+    )
   );
 }
 
@@ -260,10 +265,7 @@ function extractQuotedNavigationLabels(query: string): string[] {
     labels.push(label);
     if (label.includes(">")) {
       labels.push(
-        ...label
-          .split(">")
-          .map(cleanNavigationLabel)
-          .filter(Boolean),
+        ...label.split(">").map(cleanNavigationLabel).filter(Boolean),
       );
     }
   }
@@ -296,10 +298,7 @@ function extractNavigationTargetLabels(query: string): {
     );
     if (label) {
       quotedLabels.push(label);
-      const parts = label
-        .split(">")
-        .map(cleanNavigationLabel)
-        .filter(Boolean);
+      const parts = label.split(">").map(cleanNavigationLabel).filter(Boolean);
       terminalLabels.push(parts.length > 0 ? parts[parts.length - 1] : label);
     }
   }
@@ -369,9 +368,8 @@ function assessNavigationGoalCompletion(input: {
     ...input.completedNodes.map((node) => node.result || ""),
   ].join("\n");
 
-  const currentMatches = (terminalLabels.length > 0
-    ? terminalLabels
-    : targetLabels
+  const currentMatches = (
+    terminalLabels.length > 0 ? terminalLabels : targetLabels
   ).filter((label) => navigationLabelMatches(label, currentLocationCorpus));
   const evidenceMatches = targetLabels.filter((label) =>
     navigationLabelMatches(label, evidenceCorpus),
@@ -392,7 +390,8 @@ function assessNavigationGoalCompletion(input: {
     return {
       satisfied: false,
       matchedLabels: evidenceMatches,
-      reason: "Completed evidence does not cover enough requested destination labels.",
+      reason:
+        "Completed evidence does not cover enough requested destination labels.",
     };
   }
 
@@ -594,8 +593,6 @@ const DEFAULT_MAX_WORKERS = 3;
 const MAX_HORIZON_EXPANSIONS = 30;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
-const CHECKPOINTS_STORAGE_KEY = "opensidebar:orchestrator:checkpoints";
-const CHECKPOINT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_PERSISTED_MESSAGES = 200;
 const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
@@ -1338,103 +1335,6 @@ export class Orchestrator {
       phase: entry.phase,
       note: entry.note.slice(0, 180),
     });
-  }
-
-  private async loadCheckpoints(): Promise<
-    Record<string, OrchestratorCheckpoint>
-  > {
-    try {
-      const stored = await chrome.storage.local.get(CHECKPOINTS_STORAGE_KEY);
-      const raw = stored[CHECKPOINTS_STORAGE_KEY];
-      if (!isRecord(raw)) return {};
-
-      const parsed: Record<string, OrchestratorCheckpoint> = {};
-      for (const [workspaceId, value] of Object.entries(raw)) {
-        if (typeof workspaceId !== "string" || workspaceId.length === 0)
-          continue;
-        const cp = sanitizeCheckpoint(value);
-        if (!cp) {
-          logger.warn("orchestrator", "Dropping malformed checkpoint", {
-            workspaceId,
-          });
-          continue;
-        }
-        if (cp.task.workspaceId !== workspaceId) {
-          logger.warn(
-            "orchestrator",
-            "Dropping checkpoint with mismatched workspace",
-            {
-              keyWorkspaceId: workspaceId,
-              taskWorkspaceId: cp.task.workspaceId,
-            },
-          );
-          continue;
-        }
-        parsed[workspaceId] = cp;
-      }
-      return parsed;
-    } catch (error) {
-      logger.warn("orchestrator", "Failed to load checkpoints", { error });
-      return {};
-    }
-  }
-
-  private isCheckpointFresh(checkpoint: OrchestratorCheckpoint): boolean {
-    return Date.now() - checkpoint.savedAt <= CHECKPOINT_TTL_MS;
-  }
-
-  private isCheckpointCompatible(checkpoint: OrchestratorCheckpoint): boolean {
-    return checkpoint.version === CHECKPOINT_VERSION;
-  }
-
-  private async pruneCheckpoints(
-    checkpoints: Record<string, OrchestratorCheckpoint>,
-  ): Promise<Record<string, OrchestratorCheckpoint>> {
-    let mutated = false;
-    const kept: Record<string, OrchestratorCheckpoint> = {};
-
-    for (const [workspaceId, cp] of Object.entries(checkpoints)) {
-      if (!this.isCheckpointCompatible(cp)) {
-        mutated = true;
-        logger.warn(
-          "orchestrator",
-          "Dropping incompatible checkpoint version",
-          {
-            workspaceId,
-            foundVersion: cp.version,
-            expectedVersion: CHECKPOINT_VERSION,
-          },
-        );
-        continue;
-      }
-      if (!this.isCheckpointFresh(cp)) {
-        mutated = true;
-        logger.info("orchestrator", "Dropping stale checkpoint", {
-          workspaceId,
-          ageMs: Date.now() - cp.savedAt,
-          ttlMs: CHECKPOINT_TTL_MS,
-        });
-        continue;
-      }
-      kept[workspaceId] = cp;
-    }
-
-    if (mutated) {
-      await this.saveCheckpoints(kept);
-    }
-    return kept;
-  }
-
-  private async saveCheckpoints(
-    checkpoints: Record<string, OrchestratorCheckpoint>,
-  ): Promise<void> {
-    try {
-      await chrome.storage.local.set({
-        [CHECKPOINTS_STORAGE_KEY]: checkpoints,
-      });
-    } catch (error) {
-      logger.warn("orchestrator", "Failed to save checkpoints", { error });
-    }
   }
 
   private buildDurableCheckpointSummary(task: OrchestratorTask): {
@@ -2296,7 +2196,7 @@ export class Orchestrator {
   }
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
-    const checkpoints = await this.loadCheckpoints();
+    const checkpoints = await loadOrchestratorCheckpoints();
     const pendingFeedback = this.pendingFeedbackQueue.get(task.workspaceId);
     checkpoints[task.workspaceId] = {
       version: CHECKPOINT_VERSION,
@@ -2309,12 +2209,12 @@ export class Orchestrator {
         ? { pendingFeedback: [...pendingFeedback] }
         : {}),
     };
-    await this.saveCheckpoints(checkpoints);
+    await saveOrchestratorCheckpoints(checkpoints);
     this.scheduleDurableTaskSync(task);
   }
 
   private async clearTaskCheckpoint(workspaceId: string): Promise<void> {
-    const checkpoints = await this.loadCheckpoints();
+    const checkpoints = await loadOrchestratorCheckpoints();
     const cp = checkpoints[workspaceId];
     if (!cp) return;
 
@@ -2327,7 +2227,7 @@ export class Orchestrator {
     }
 
     delete checkpoints[workspaceId];
-    await this.saveCheckpoints(checkpoints);
+    await saveOrchestratorCheckpoints(checkpoints);
   }
 
   private async getLiveWorkspaceTabs(
@@ -2958,8 +2858,8 @@ export class Orchestrator {
   }
 
   public async restoreFromCheckpoints(): Promise<void> {
-    const checkpoints = await this.pruneCheckpoints(
-      await this.loadCheckpoints(),
+    const checkpoints = await pruneOrchestratorCheckpoints(
+      await loadOrchestratorCheckpoints(),
     );
     const entries = Object.values(checkpoints);
     const seenWorkspaceIds = new Set<string>(
@@ -2984,7 +2884,9 @@ export class Orchestrator {
         continue;
       }
       if (cp.pendingFeedback?.length) {
-        this.pendingFeedbackQueue.set(task.workspaceId, [...cp.pendingFeedback]);
+        this.pendingFeedbackQueue.set(task.workspaceId, [
+          ...cp.pendingFeedback,
+        ]);
       } else {
         this.pendingFeedbackQueue.delete(task.workspaceId);
       }
@@ -3531,11 +3433,7 @@ export class Orchestrator {
         input.openRouterApiKey,
         modelOverrides,
       );
-      this.attachPlannerUsageTrace(
-        planner,
-        task,
-        () => "plan_decomposition",
-      );
+      this.attachPlannerUsageTrace(planner, task, () => "plan_decomposition");
       const tab = await chrome.tabs.get(input.tabId);
       const buildResult = await this.runInLane(task, "planner", async () =>
         planner.buildNodes(
@@ -4561,7 +4459,9 @@ export class Orchestrator {
             confidence: result.outcome === "completed" ? 1.0 : 0.5,
           },
           ...(result.trajectory ?? [])
-            .filter((entry) => /\b(inspect_chart|read_page|read_element)\b/.test(entry))
+            .filter((entry) =>
+              /\b(inspect_chart|read_page|read_element)\b/.test(entry),
+            )
             .slice(-4)
             .map((entry) => ({
               claim: entry,
@@ -4613,9 +4513,9 @@ export class Orchestrator {
             } catch {
               // Tab may have closed; proceed without post-execution tab info
             }
-            const requiredEvidenceTypes =
-              getLoadedSkillContract(node.selectedSkillId)
-                ?.requiredEvidenceTypes;
+            const requiredEvidenceTypes = getLoadedSkillContract(
+              node.selectedSkillId,
+            )?.requiredEvidenceTypes;
             const programmaticResult = programmaticVerify({
               output: result.summary,
               objective: node.description,
@@ -5316,14 +5216,10 @@ export class Orchestrator {
             matchedLabels: navigationCompletion.matchedLabels,
           });
         } catch (err) {
-          logger.debug(
-            "orchestrator",
-            "Navigation goal gate snapshot failed",
-            {
-              taskId: task.id,
-              error: err instanceof Error ? err.message : String(err),
-            },
-          );
+          logger.debug("orchestrator", "Navigation goal gate snapshot failed", {
+            taskId: task.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
       // Only allow skipping when at most 1 node remains pending.
@@ -5670,7 +5566,8 @@ export class Orchestrator {
 
     const subtaskResults = this.buildSubtaskResults(task);
     const penalizedSkipped = task.nodes.filter(
-      (node) => node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
+      (node) =>
+        node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
     ).length;
 
     let completionStatus: "completed" | "partial" | "failed" =
