@@ -293,6 +293,14 @@ describe("requiresGroundingReadBeforeDone", () => {
         "Extract the main points from this article and report them back.",
       ),
     ).toBe(true);
+    expect(
+      requiresGroundingReadBeforeDone(
+        "Find the source referenced by Footnote 2 in the article and tell me what source it cites.",
+      ),
+    ).toBe(true);
+    expect(
+      requiresGroundingReadBeforeDone("Find the source code for this page."),
+    ).toBe(false);
   });
 
   test("does not require grounding for trivial page metadata questions", () => {

@@ -472,6 +472,8 @@ export class AgentLoop {
   private doneRejections = 0;
   /** Whether read_page or xray_page has been called at least once this session */
   private hasReadPage = false;
+  /** Whether read_page has been explicitly called rather than inferred from initial context. */
+  private hasExplicitPageRead = false;
   /** Turns spent on the current plan step */
   private turnsOnCurrentStep = 0;
   /** Last plan index — used to detect step transitions */
@@ -1340,10 +1342,13 @@ export class AgentLoop {
     // has substantive content - prevents hallucinated summaries from filename/URL alone.
     // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
     // includes substantive content (system prompt provides it via {{pageContent}}).
-    if (
-      this.hasReadPage ||
-      (!this.taskId && !requiresGroundingReadBeforeDone(this.originalQuery))
-    ) {
+    const needsGroundingRead = requiresGroundingReadBeforeDone(
+      this.originalQuery,
+    );
+    const hasEnoughGrounding = needsGroundingRead
+      ? this.hasExplicitPageRead
+      : this.hasReadPage;
+    if (hasEnoughGrounding || (!this.taskId && !needsGroundingRead)) {
       return false;
     }
 
@@ -1354,15 +1359,13 @@ export class AgentLoop {
       return false;
     }
 
-    const needsGroundingRead = requiresGroundingReadBeforeDone(
-      this.originalQuery,
-    );
     this.log.warn(
       "agent",
       "DONE rejected: read_page never called on substantive page",
       {
         turn: this.turnCount,
         taskId: this.taskId,
+        hasExplicitPageRead: this.hasExplicitPageRead,
         requiresGroundingReadBeforeDone: needsGroundingRead,
         elementCount,
         visibleLen,

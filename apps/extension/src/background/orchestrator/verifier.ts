@@ -206,6 +206,30 @@ function hasExplicitCompletionEvidence(text: string): boolean {
   return EXPLICIT_COMPLETION_MARKERS.some((pattern) => pattern.test(text));
 }
 
+function isClarificationNeededOutcome(text: string): boolean {
+  const mentionsChoiceKind =
+    /\b(?:workspace|account|project|environment|tenant|record|option|item|choice)\b/i.test(
+      text,
+    );
+  const asksForUserClarification =
+    /\b(?:need|needs|requires?|must|should)\b[\s\S]{0,80}\b(?:clarification|context|confirmation|user input|user confirmation)\b/i.test(
+      text,
+    ) ||
+    /\b(?:ask|confirm with|check with)\s+(?:the\s+)?user\b[\s\S]{0,120}\b(?:which|what|before|choose|select|open|use)\b/i.test(
+      text,
+    );
+  const identifiesMissingChoice =
+    /\b(?:correct|right|appropriate|intended)\s+(?:workspace|account|project|environment|tenant|record|option|item|choice)\b[\s\S]{0,120}\b(?:not specified|unspecified|unknown|unclear|ambiguous|not provided)\b/i.test(
+      text,
+    );
+
+  return (
+    mentionsChoiceKind &&
+    asksForUserClarification &&
+    identifiesMissingChoice
+  );
+}
+
 function evidenceConfidenceRank(value: EvidenceEvent["confidence"]): number {
   if (value === "high") return 3;
   if (value === "medium") return 2;
@@ -260,6 +284,18 @@ export function programmaticVerify(
 ): NodeVerificationResult | null {
   const text = input.output.trim().toLowerCase();
   if (!text) return null;
+
+  if (
+    input.executorOutcome === "completed" &&
+    isClarificationNeededOutcome(input.output)
+  ) {
+    return {
+      decision: "accept",
+      reason:
+        "Executor correctly deferred an ambiguous choice that requires user clarification.",
+      confidence: 0.82,
+    };
+  }
 
   const evidenceSufficiency = validateEvidenceSufficiency(
     input.requiredEvidenceTypes,

@@ -271,6 +271,26 @@ describe("assessSamePageAnchorClick", () => {
         isVisible: true,
         isDisabled: false,
       },
+      {
+        tag: 13,
+        tagName: "a",
+        role: "link",
+        text: "Placeholder",
+        attributes: { href: "#" },
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+      {
+        tag: 14,
+        tagName: "a",
+        role: "button",
+        text: "Toggle details",
+        attributes: { href: "#" },
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
     ],
   } as any;
 
@@ -305,6 +325,31 @@ describe("assessSamePageAnchorClick", () => {
       assessSamePageAnchorClick({
         toolName: ToolName.CLICK_ELEMENT,
         args: { id: 11 },
+        snapshot,
+        currentUrl: "http://127.0.0.1:50813/form",
+      }),
+    ).toEqual({ error: null, targetUrl: null });
+  });
+
+  it("blocks placeholder hash links that only resolve to the current page", () => {
+    const decision = assessSamePageAnchorClick({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 13 },
+      snapshot,
+      currentUrl: "http://127.0.0.1:50813/form",
+    });
+
+    expect(decision).toEqual({
+      error: expect.stringContaining("link to the current page"),
+      targetUrl: "http://127.0.0.1:50813/form#",
+    });
+  });
+
+  it("allows placeholder hash anchors that are exposed as buttons", () => {
+    expect(
+      assessSamePageAnchorClick({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 14 },
         snapshot,
         currentUrl: "http://127.0.0.1:50813/form",
       }),

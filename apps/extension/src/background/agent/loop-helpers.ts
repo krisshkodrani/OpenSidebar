@@ -1131,7 +1131,7 @@ function resolveSamePageAnchorTarget(params: {
 
   const tagName = element.tagName.toLowerCase();
   const href = element.attributes?.href?.trim();
-  if (tagName !== "a" || !href || href.startsWith("#")) return null;
+  if (tagName !== "a" || !href) return null;
 
   let current: URL;
   let target: URL;
@@ -1142,6 +1142,19 @@ function resolveSamePageAnchorTarget(params: {
     return null;
   }
 
+  if (href.startsWith("#")) {
+    if (target.hash) return null;
+    const role = String(
+      element.role ?? element.attributes?.role ?? "",
+    ).toLowerCase();
+    if (
+      role === "button" ||
+      element.attributes?.["aria-haspopup"] != null ||
+      element.attributes?.["aria-expanded"] != null
+    ) {
+      return null;
+    }
+  }
   if (target.hash) return null;
 
   const currentPage = `${current.origin}${current.pathname}${current.search}`;
@@ -2070,6 +2083,8 @@ export function requiresGroundingReadBeforeDone(query: string): boolean {
     /\breport (?:on|about) (?:this|the) page\b/,
     /\breview (?:this|the) page\b/,
     /\bextract\b.+\b(page|article|post|document|readme|content)\b/,
+    /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\b(?:source|reference|citation)\b.{0,50}\b(?:referenced|cited|cites?)\b.{0,120}\b(?:article|document|page|post|readme)\b/,
+    /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\bfootnote\b.{0,120}\b(?:article|document|page|post|readme)\b/,
     /\bmain points?\b/,
     /\bkey points?\b/,
     /\bheadlines?\b/,
