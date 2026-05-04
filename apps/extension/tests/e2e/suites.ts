@@ -2,7 +2,7 @@ export type E2EDefaultSuiteName =
   | "smoke"
   | "interaction-regression"
   | "runtime-regression";
-export type E2EFocusSuiteName = "nightly-legacy";
+export type E2EFocusSuiteName = "nightly-legacy" | "overlay-harness";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
@@ -49,6 +49,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "date-picker.test.ts",
     "faq-accordion.test.ts",
   ],
+  "overlay-harness": ["overlay-harness.test.ts"],
 };
 
 export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
@@ -59,6 +60,7 @@ export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
 
 export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "nightly-legacy",
+  "overlay-harness",
 ];
 
 export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [
