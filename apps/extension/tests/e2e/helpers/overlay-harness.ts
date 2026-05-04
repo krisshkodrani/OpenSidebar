@@ -520,28 +520,29 @@ export async function createOverlayHarnessRunner(
     },
 
     async clickOverlayButton(ariaLabel: string) {
-      await page.waitForFunction(
+      const buttonHandle = await page.waitForFunction(
         (label) => {
           const root = document.getElementById("opensidebar-harness-host")
             ?.shadowRoot;
-          return Array.from(root?.querySelectorAll("button") ?? []).some(
-            (button) => button.getAttribute("aria-label") === label,
+          return (
+            Array.from(root?.querySelectorAll("button") ?? []).find(
+              (button) => button.getAttribute("aria-label") === label,
+            ) ?? false
           );
         },
         {},
         ariaLabel,
       );
-      await page.evaluate((label) => {
-        const root = document.getElementById("opensidebar-harness-host")
-          ?.shadowRoot;
-        const button = Array.from(root?.querySelectorAll("button") ?? []).find(
-          (candidate) => candidate.getAttribute("aria-label") === label,
-        ) as HTMLButtonElement | undefined;
-        if (!button) {
-          throw new Error(`Overlay button was not found: ${label}`);
-        }
-        button.click();
-      }, ariaLabel);
+      const button = buttonHandle.asElement();
+      if (!button) {
+        await buttonHandle.dispose();
+        throw new Error(`Overlay button was not found: ${ariaLabel}`);
+      }
+      try {
+        await button.click();
+      } finally {
+        await button.dispose();
+      }
     },
 
     async sendUiMessage(message: unknown) {
@@ -653,6 +654,15 @@ export async function createOverlayHarnessRunner(
     },
 
     async close() {
+      await page
+        .evaluate(() => {
+          window.__overlayFakeBackground?.dispose();
+          delete window.__overlayFakeBackground;
+          delete (window as Window & { __overlaySmoke?: unknown })
+            .__overlaySmoke;
+          delete window.__opensidebarOverlayConfig;
+        })
+        .catch(() => {});
       await page.close().catch(() => {});
       await browser.close().catch(() => {});
       await staticServer.close().catch(() => {});
