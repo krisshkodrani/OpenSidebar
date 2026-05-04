@@ -70,9 +70,14 @@ import {
 } from "../../src/background/orchestrator/planner";
 import {
     getLoadedSkillContract,
+    getSkillDescriptor,
+    getSkillPack,
     getSkillToolPolicy,
     getSkillToolSuppressionPolicy,
     KeywordSkillMatcher,
+    listDefaultEnabledSkillPackIds,
+    listSkillDescriptors,
+    listSkillPacks,
     resolveSkillToolProfile,
     selectPrimarySkill,
 } from "../../src/background/orchestrator/skills";
@@ -1897,6 +1902,89 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 });
 
 describe("selectPrimarySkill", () => {
+    test("keeps communication skills in a default-enabled catalog pack", () => {
+        expect(listSkillPacks().map((pack) => pack.id)).toContain(
+            "communication-workflows",
+        );
+        expect(listDefaultEnabledSkillPackIds()).toContain(
+            "communication-workflows",
+        );
+        expect(getSkillPack("communication-workflows")?.skillIds).toContain(
+            "email-reply-careful",
+        );
+        expect(listSkillDescriptors().map((skill) => skill.id)).toContain(
+            "email-reply-careful",
+        );
+        expect(getLoadedSkillContract("email-reply-careful")).toBeTruthy();
+        expect(getSkillToolPolicy("email-reply-careful")).toBeTruthy();
+        expect(
+            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
+                (skill) => skill.id,
+            ),
+        ).not.toContain("email-reply-careful");
+        expect(
+            getLoadedSkillContract("email-reply-careful", {
+                enabledSkillPackIds: [],
+            }),
+        ).toBeNull();
+        expect(
+            getSkillToolPolicy("email-reply-careful", {
+                enabledSkillPackIds: [],
+            }),
+        ).toBeNull();
+    });
+
+    test("returns cloned skill descriptors from catalog lookup", () => {
+        const descriptor = getSkillDescriptor("email-reply-careful");
+        expect(descriptor).toBeDefined();
+
+        descriptor?.tags.push("mutated");
+
+        expect(getSkillDescriptor("email-reply-careful")?.tags).not.toContain(
+            "mutated",
+        );
+    });
+
+    test("respects disabled skill packs in keyword matcher selection", () => {
+        const input = {
+            query:
+                "Reply to David's email confirming Friday at 10 AM for the Q3 strategy review.",
+            objective: "Read David's email and send the requested reply",
+            successCriteria: "The reply is sent to David with the requested confirmation",
+            pageTitle: "Inbox",
+        };
+
+        expect(new KeywordSkillMatcher().match(input)?.id).toBe(
+            "email-reply-careful",
+        );
+        expect(
+            new KeywordSkillMatcher().match({
+                ...input,
+                enabledSkillPackIds: [],
+            })?.id,
+        ).not.toBe("email-reply-careful");
+    });
+
+    test("falls through to an enabled skill when a packed match is disabled", () => {
+        const input = {
+            query:
+                "Reply to the email thread message confirming Friday at 10 AM for the Q3 strategy review.",
+            objective: "Post the requested confirmation in the message thread",
+            successCriteria: "The reply is posted in the thread with the requested confirmation",
+            pageTitle: "Team thread",
+        };
+
+        expect(new KeywordSkillMatcher().match(input)?.id).toBe(
+            "email-reply-careful",
+        );
+        expect(
+            new KeywordSkillMatcher().match({
+                ...input,
+                enabledSkillPackIds: [],
+            })?.id,
+        ).toBe("thread-message-careful");
+    });
+
     test("matches workflows through the keyword matcher boundary", () => {
         const input = {
             query: "Search the knowledge base and answer what users should do before resetting MFA.",

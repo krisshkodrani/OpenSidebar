@@ -26,6 +26,19 @@ export interface SkillDescriptor {
   atomic?: boolean;
   requiredEvidenceTypes?: EvidenceEventType[];
   notes?: string[];
+  packId?: string;
+}
+
+export interface SkillPack {
+  id: string;
+  name: string;
+  description: string;
+  enabledByDefault: boolean;
+  skillIds: string[];
+}
+
+export interface SkillCatalogOptions {
+  enabledSkillPackIds?: readonly string[];
 }
 
 export interface SkillToolPolicy {
@@ -49,6 +62,7 @@ export interface SkillMatcherInput {
   successCriteria?: string;
   pageTitle?: string;
   pageUrl?: string;
+  enabledSkillPackIds?: readonly string[];
 }
 
 export interface SkillMatcher {
@@ -184,6 +198,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     description:
       "Read an email, extract the reply requirements, preserve language and tone context, then draft or send only after verifying the recipient and content.",
     tags: ["workflow", "email", "communication", "composition", "safety"],
+    packId: "communication-workflows",
     triggers: [
       "reply to email",
       "respond to mail",
@@ -920,6 +935,17 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Prefer the page's own back or return control over browser history when the detail view appears in-place.",
       "For recommendation or best-match tasks, treat the visible listings as the review set unless the user narrows the scope.",
     ],
+  },
+];
+
+const BUILT_IN_SKILL_PACKS: SkillPack[] = [
+  {
+    id: "communication-workflows",
+    name: "Communication Workflows",
+    description:
+      "Default communication skills for careful email and message composition workflows.",
+    enabledByDefault: true,
+    skillIds: ["email-reply-careful"],
   },
 ];
 
@@ -2295,19 +2321,98 @@ function buildCorpus(parts: Array<string | undefined>): string {
     .toLowerCase();
 }
 
-export function listSkillDescriptors(): SkillDescriptor[] {
-  return SKILL_CATALOG.map((skill) => ({ ...skill }));
+function cloneSkillPack(pack: SkillPack): SkillPack {
+  return {
+    ...pack,
+    skillIds: [...pack.skillIds],
+  };
 }
 
-export function getSkillDescriptor(id: string): SkillDescriptor | undefined {
-  return SKILL_CATALOG.find((skill) => skill.id === id);
+function cloneSkillDescriptor(skill: SkillDescriptor): SkillDescriptor {
+  return {
+    ...skill,
+    tags: [...skill.tags],
+    triggers: [...skill.triggers],
+    preferredTools: skill.preferredTools
+      ? [...skill.preferredTools]
+      : undefined,
+    discouragedTools: skill.discouragedTools
+      ? [...skill.discouragedTools]
+      : undefined,
+    capabilityNeeds: skill.capabilityNeeds
+      ? [...skill.capabilityNeeds]
+      : undefined,
+    requiredEvidenceTypes: skill.requiredEvidenceTypes
+      ? [...skill.requiredEvidenceTypes]
+      : undefined,
+    notes: skill.notes ? [...skill.notes] : undefined,
+  };
+}
+
+function resolveEnabledSkillPackIds(
+  options?: SkillCatalogOptions,
+): Set<string> | null {
+  if (!options?.enabledSkillPackIds) return null;
+  return new Set(options.enabledSkillPackIds);
+}
+
+function isSkillDescriptorEnabled(
+  skill: SkillDescriptor,
+  options?: SkillCatalogOptions,
+): boolean {
+  if (!skill.packId) return true;
+  const enabledSkillPackIds = resolveEnabledSkillPackIds(options);
+  if (!enabledSkillPackIds) return true;
+  return enabledSkillPackIds.has(skill.packId);
+}
+
+function selectEnabledSkill(
+  input: SkillCatalogOptions,
+  id: string,
+  reason: string,
+): SkillSelection | null {
+  if (!getSkillDescriptor(id, input)) return null;
+  return { id, reason };
+}
+
+export function listSkillPacks(): SkillPack[] {
+  return BUILT_IN_SKILL_PACKS.map(cloneSkillPack);
+}
+
+export function listDefaultEnabledSkillPackIds(): string[] {
+  return BUILT_IN_SKILL_PACKS.filter((pack) => pack.enabledByDefault).map(
+    (pack) => pack.id,
+  );
+}
+
+export function getSkillPack(id: string): SkillPack | undefined {
+  const pack = BUILT_IN_SKILL_PACKS.find((candidate) => candidate.id === id);
+  return pack ? cloneSkillPack(pack) : undefined;
+}
+
+export function listSkillDescriptors(
+  options?: SkillCatalogOptions,
+): SkillDescriptor[] {
+  return SKILL_CATALOG.filter((skill) =>
+    isSkillDescriptorEnabled(skill, options),
+  ).map(cloneSkillDescriptor);
+}
+
+export function getSkillDescriptor(
+  id: string,
+  options?: SkillCatalogOptions,
+): SkillDescriptor | undefined {
+  const skill = SKILL_CATALOG.find((candidate) => candidate.id === id);
+  if (!skill || !isSkillDescriptorEnabled(skill, options)) return undefined;
+  return cloneSkillDescriptor(skill);
 }
 
 export function getLoadedSkillContract(
   id?: string,
+  options?: SkillCatalogOptions,
 ): LoadedSkillContract | null {
   if (!id) return null;
-  const descriptor = getSkillDescriptor(id);
+  const descriptor = getSkillDescriptor(id, options);
   const body = SKILL_BODIES[id];
   if (!descriptor || !body) return null;
   return {
@@ -2326,8 +2431,11 @@ function normalizeSkillTools(tools?: string[]): ToolName[] {
   );
 }
 
-export function getSkillToolPolicy(id?: string): SkillToolPolicy | null {
-  const descriptor = getSkillDescriptor(id || "");
+export function getSkillToolPolicy(
+  id?: string,
+  options?: SkillCatalogOptions,
+): SkillToolPolicy | null {
+  const descriptor = getSkillDescriptor(id || "", options);
   if (!descriptor) return null;
   return {
     preferredTools: normalizeSkillTools(descriptor.preferredTools),
@@ -2393,8 +2501,9 @@ export function resolveSkillToolProfile(
   objective: string,
   successCriteria: string,
   currentProfile?: ToolProfile,
+  options?: SkillCatalogOptions,
 ): ToolProfile | undefined {
-  const descriptor = getSkillDescriptor(id || "");
+  const descriptor = getSkillDescriptor(id || "", options);
   if (!descriptor) return currentProfile;
 
   const text = `${objective}\n${successCriteria}`;
@@ -2588,8 +2697,10 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
 
 export function getSkillToolSuppressionPolicy(
   id?: string,
+  options?: SkillCatalogOptions,
 ): SkillToolSuppressionPolicy | null {
   if (!id) return null;
+  if (!getSkillDescriptor(id, options)) return null;
   return SKILL_TOOL_SUPPRESSION_POLICIES[id] ?? null;
 }
 
@@ -2675,19 +2786,21 @@ function selectPrimarySkillWithKeywordMatcher(
     !listSortPattern.test(corpus) &&
     !catalogOrderPattern.test(corpus)
   ) {
-    return {
-      id: "servicenow-record-form",
-      reason:
-        "Task contains explicit ServiceNow record field/value pairs and should use deterministic form configuration and submit evidence.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "servicenow-record-form",
+      "Task contains explicit ServiceNow record field/value pairs and should use deterministic form configuration and submit evidence.",
+    );
+    if (selection) return selection;
   }
 
   if (jobApplicationPattern.test(corpus)) {
-    return {
-      id: "job-application-assistant",
-      reason:
-        "Task is a job application workflow and should prepare, verify, and approval-gate final submission.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "job-application-assistant",
+      "Task is a job application workflow and should prepare, verify, and approval-gate final submission.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2696,27 +2809,30 @@ function selectPrimarySkillWithKeywordMatcher(
       corpus,
     )
   ) {
-    return {
-      id: "catalog-order-workflow",
-      reason:
-        "Task requires configuring and ordering a catalog item through request or order confirmation.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "catalog-order-workflow",
+      "Task requires configuring and ordering a catalog item through request or order confirmation.",
+    );
+    if (selection) return selection;
   }
 
   if (consequentialActionConsentPattern.test(corpus)) {
-    return {
-      id: "consequential-action-consent",
-      reason:
-        "Task mentions approval, confirmation, prepare-only, or unclear final-action consent and should treat final actions as approval-gated.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "consequential-action-consent",
+      "Task mentions approval, confirmation, prepare-only, or unclear final-action consent and should treat final actions as approval-gated.",
+    );
+    if (selection) return selection;
   }
 
   if (chartValuePattern.test(corpus) && chartValueIntentPattern.test(corpus)) {
-    return {
-      id: "chart-value-extraction",
-      reason:
-        "Task asks for a concrete value from a chart or dashboard and should use structured chart evidence before answering.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "chart-value-extraction",
+      "Task asks for a concrete value from a chart or dashboard and should use structured chart evidence before answering.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2725,11 +2841,12 @@ function selectPrimarySkillWithKeywordMatcher(
       corpus,
     )
   ) {
-    return {
-      id: "list-filter-workflow",
-      reason:
-        "Task requires applying a list or table filter and verifying the applied filtered state.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "list-filter-workflow",
+      "Task requires applying a list or table filter and verifying the applied filtered state.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2738,11 +2855,12 @@ function selectPrimarySkillWithKeywordMatcher(
       corpus,
     )
   ) {
-    return {
-      id: "list-sort-workflow",
-      reason:
-        "Task requires sorting a list or table and verifying the resulting sort state.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "list-sort-workflow",
+      "Task requires sorting a list or table and verifying the resulting sort state.",
+    );
+    if (selection) return selection;
   }
 
 
@@ -2752,33 +2870,36 @@ function selectPrimarySkillWithKeywordMatcher(
       corpus,
     )
   ) {
-    return {
-      id: "search-answer-extraction",
-      reason:
-        "Task requires searching or reading a knowledge source and returning the requested answer, not just opening a result.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "search-answer-extraction",
+      "Task requires searching or reading a knowledge source and returning the requested answer, not just opening a result.",
+    );
+    if (selection) return selection;
   }
 
   if (
     serviceNowModuleNavigationPattern.test(corpus) &&
     /\b(module|application navigator)\b/i.test(corpus)
   ) {
-    return {
-      id: "servicenow-module-navigation",
-      reason:
-        "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "servicenow-module-navigation",
+      "Task requires opening a ServiceNow application module and should resolve the module target directly from ServiceNow metadata.",
+    );
+    if (selection) return selection;
   }
 
   if (
     paginatedDataSurfacePattern.test(corpus) &&
     tableAggregateIntentPattern.test(corpus)
   ) {
-    return {
-      id: "paginated-table-scan",
-      reason:
-        "Task asks for an aggregate value from a table, directory, or paginated data surface and needs exhaustive row coverage before answering.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "paginated-table-scan",
+      "Task asks for an aggregate value from a table, directory, or paginated data surface and needs exhaustive row coverage before answering.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2788,62 +2909,69 @@ function selectPrimarySkillWithKeywordMatcher(
       !currentStepLooksLikeFormFill &&
       !currentStepNeedsTransactionalCheck)
   ) {
-    return {
-      id: "modal-overlay-recovery",
-      reason:
-        "Task requires dismissing blocking overlays before the underlying content is accessible.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "modal-overlay-recovery",
+      "Task requires dismissing blocking overlays before the underlying content is accessible.",
+    );
+    if (selection) return selection;
   }
 
   if (
     hoverRevealPattern.test(corpus) &&
     /\b(menu|tooltip|reveal|hover|dropdown|flyout)\b/i.test(corpus)
   ) {
-    return {
-      id: "hover-reveal-navigation",
-      reason:
-        "Task depends on revealing a hidden menu or tooltip through hover before acting.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "hover-reveal-navigation",
+      "Task depends on revealing a hidden menu or tooltip through hover before acting.",
+    );
+    if (selection) return selection;
   }
 
   if (currentStepLooksLikeInlineEdit) {
-    return {
-      id: "inline-edit-surface",
-      reason:
-        "Current step edits a value directly inside an inline editor, grid cell, table row, or rename surface.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "inline-edit-surface",
+      "Current step edits a value directly inside an inline editor, grid cell, table row, or rename surface.",
+    );
+    if (selection) return selection;
   }
 
   if (currentStepLooksLikeContinuationRevision) {
-    return {
-      id: "continuation-edit",
-      reason:
-        "Task requests revising prior work while preserving earlier intent.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "continuation-edit",
+      "Task requests revising prior work while preserving earlier intent.",
+    );
+    if (selection) return selection;
   }
 
   if (emailReplyPattern.test(corpus)) {
-    return {
-      id: "email-reply-careful",
-      reason:
-        "Task requires drafting or sending an email reply with recipient, source context, language, and tone checks.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "email-reply-careful",
+      "Task requires drafting or sending an email reply with recipient, source context, language, and tone checks.",
+    );
+    if (selection) return selection;
   }
 
   if (threadMessagePattern.test(corpus)) {
-    return {
-      id: "thread-message-careful",
-      reason:
-        "Task requires posting a grounded reply in a message or thread while preserving audience, language, and tone context.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "thread-message-careful",
+      "Task requires posting a grounded reply in a message or thread while preserving audience, language, and tone context.",
+    );
+    if (selection) return selection;
   }
 
   if (crmTicketPattern.test(corpus)) {
-    return {
-      id: "crm-ticket-update",
-      reason:
-        "Task requires updating a CRM or support ticket record after reading case context and verifying field or note changes.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "crm-ticket-update",
+      "Task requires updating a CRM or support ticket record after reading case context and verifying field or note changes.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2852,11 +2980,12 @@ function selectPrimarySkillWithKeywordMatcher(
     !gridEditPattern.test(stepCorpus) &&
     !crmTicketPattern.test(corpus)
   ) {
-    return {
-      id: "continuation-edit",
-      reason:
-        "Task requests revising prior work while preserving earlier intent.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "continuation-edit",
+      "Task requests revising prior work while preserving earlier intent.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2867,19 +2996,21 @@ function selectPrimarySkillWithKeywordMatcher(
       /\b(buy|purchase)\b/i.test(corpus) &&
       /\b(check off|mark .* done|checkbox)\b/i.test(corpus))
   ) {
-    return {
-      id: "multi-tab-procurement-loop",
-      reason:
-        "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "multi-tab-procurement-loop",
+      "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.",
+    );
+    if (selection) return selection;
   }
 
   if (budgetPattern.test(corpus)) {
-    return {
-      id: "budget-aware-execution",
-      reason:
-        "Task context explicitly calls for conserving remaining turns and avoiding blind retries.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "budget-aware-execution",
+      "Task context explicitly calls for conserving remaining turns and avoiding blind retries.",
+    );
+    if (selection) return selection;
   }
 
   const explicitListDetailLoop =
@@ -2893,49 +3024,56 @@ function selectPrimarySkillWithKeywordMatcher(
       corpus,
     );
   if (explicitListDetailLoop || naturalListDetailRecommendation) {
-    return {
-      id: "list-detail-review-loop",
-      reason: explicitListDetailLoop
+    const selection = selectEnabledSkill(
+      input,
+      "list-detail-review-loop",
+      explicitListDetailLoop
         ? "Task requires reviewing multiple visible list items by opening each detail view and returning to the list in sequence."
         : "Task requires reviewing visible list items and grounding a recommendation in item-level detail facts.",
-    };
+    );
+    if (selection) return selection;
   }
 
   if (
     paginatedDataSurfacePattern.test(corpus) &&
     paginatedRecordLookupIntentPattern.test(corpus)
   ) {
-    return {
-      id: "paginated-record-lookup",
-      reason:
-        "Task asks for a specific record or item from a paginated, searchable, or list-like data surface and should verify the exact target before extracting the requested field.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "paginated-record-lookup",
+      "Task asks for a specific record or item from a paginated, searchable, or list-like data surface and should verify the exact target before extracting the requested field.",
+    );
+    if (selection) return selection;
   }
 
   if (comparePattern.test(corpus)) {
-    return {
-      id: "cross-tab-compare",
-      reason: "Comparison-oriented task spans multiple tabs or pages.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "cross-tab-compare",
+      "Comparison-oriented task spans multiple tabs or pages.",
+    );
+    if (selection) return selection;
   }
 
   if (
     navigateReturnPattern.test(corpus) &&
     /\b(return|come back|go back|round.?trip|then)\b/i.test(corpus)
   ) {
-    return {
-      id: "navigate-read-return",
-      reason:
-        "Task requires navigating to a target page, extracting information, and returning.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "navigate-read-return",
+      "Task requires navigating to a target page, extracting information, and returning.",
+    );
+    if (selection) return selection;
   }
 
   if (configuratorPattern.test(stepCorpus)) {
-    return {
-      id: "structured-form-fill",
-      reason:
-        "Current step configures product options and must verify the derived total or summary before completion.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "structured-form-fill",
+      "Current step configures product options and must verify the derived total or summary before completion.",
+    );
+    if (selection) return selection;
   }
 
   if (
@@ -2944,43 +3082,48 @@ function selectPrimarySkillWithKeywordMatcher(
       stepCorpus,
     )
   ) {
-    return {
-      id: "structured-form-fill",
-      reason:
-        "Current step requires filling form fields from saved profile data before submission.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "structured-form-fill",
+      "Current step requires filling form fields from saved profile data before submission.",
+    );
+    if (selection) return selection;
   }
 
   if (currentStepNeedsTransactionalCheck) {
-    return {
-      id: "transactional-act-check-act",
-      reason:
-        "Current step requires an action followed by explicit intermediate verification.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "transactional-act-check-act",
+      "Current step requires an action followed by explicit intermediate verification.",
+    );
+    if (selection) return selection;
   }
 
   if (cartPattern.test(stepCorpus) || cartPattern.test(corpus)) {
-    return {
-      id: "cart-modify-checkout",
-      reason:
-        "Task modifies an in-progress shopping or checkout state before completion.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "cart-modify-checkout",
+      "Task modifies an in-progress shopping or checkout state before completion.",
+    );
+    if (selection) return selection;
   }
 
   if (currentStepLooksLikeFormFill) {
-    return {
-      id: "structured-form-fill",
-      reason:
-        "Task requires disciplined multi-field form entry before submission.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "structured-form-fill",
+      "Task requires disciplined multi-field form entry before submission.",
+    );
+    if (selection) return selection;
   }
 
   if (transactionPattern.test(corpus)) {
-    return {
-      id: "transactional-act-check-act",
-      reason:
-        "Task requires an action followed by explicit intermediate verification.",
-    };
+    const selection = selectEnabledSkill(
+      input,
+      "transactional-act-check-act",
+      "Task requires an action followed by explicit intermediate verification.",
+    );
+    if (selection) return selection;
   }
 
   return null;
