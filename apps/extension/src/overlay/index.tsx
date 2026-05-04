@@ -9,6 +9,7 @@ import {
 import { createOpenSidebarOverlayHost } from "./host";
 import {
   createOverlayUiRuntimeHarness,
+  type OverlayUiRuntimeOptions,
   type OverlayUiRuntimeHarness,
 } from "./runtime";
 
@@ -19,6 +20,7 @@ export interface OpenSidebarOverlayInstance {
 export interface MountOpenSidebarOverlayOptions {
   runtimePort?: UiRuntimePort;
   runtimeHarness?: OverlayUiRuntimeHarness;
+  runtimeOptions?: OverlayUiRuntimeOptions;
   sidepanelCss?: string;
 }
 
@@ -31,7 +33,7 @@ export function mountOpenSidebarOverlay(
   let disposing = false;
   let runtimeHarness = options.runtimeHarness ?? null;
   if (!options.runtimePort && !runtimeHarness) {
-    runtimeHarness = createOverlayUiRuntimeHarness();
+    runtimeHarness = createOverlayUiRuntimeHarness(options.runtimeOptions);
   }
   const runtimePort = options.runtimePort ?? runtimeHarness?.port;
   if (!runtimePort) {
@@ -79,15 +81,19 @@ export function mountOpenSidebarOverlay(
 
 function mountWhenReady(): void {
   if (typeof document === "undefined") return;
+  const readOptions = () =>
+    typeof window === "undefined"
+      ? undefined
+      : window.__opensidebarOverlayConfig;
   if (document.readyState === "loading") {
     document.addEventListener(
       "DOMContentLoaded",
-      () => mountOpenSidebarOverlay(),
+      () => mountOpenSidebarOverlay(readOptions()),
       { once: true },
     );
     return;
   }
-  mountOpenSidebarOverlay();
+  mountOpenSidebarOverlay(readOptions());
 }
 
 declare global {
@@ -96,6 +102,10 @@ declare global {
       mount: typeof mountOpenSidebarOverlay;
       dispose: () => void;
     };
+    __opensidebarOverlayConfig?: Pick<
+      MountOpenSidebarOverlayOptions,
+      "runtimeOptions" | "sidepanelCss"
+    >;
     __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness;
   }
 }

@@ -1,21 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   createOverlayHarnessRunner,
+  type OverlayHarnessRunnerOptions,
   type OverlayHarnessRunner,
 } from "./helpers/overlay-harness";
 
 describe("Overlay harness browser injection", () => {
-  let runner: OverlayHarnessRunner;
-
-  beforeEach(async () => {
-    runner = await createOverlayHarnessRunner();
-  }, 60_000);
+  let runner: OverlayHarnessRunner | null = null;
 
   afterEach(async () => {
     await runner?.close().catch(() => {});
+    runner = null;
   });
 
+  async function setupRunner(
+    options?: OverlayHarnessRunnerOptions,
+  ): Promise<OverlayHarnessRunner> {
+    runner = await createOverlayHarnessRunner(options);
+    return runner;
+  }
+
   it("injects the built overlay bundle and round-trips messages through browser events", async () => {
+    const runner = await setupRunner();
     await runner.inject();
     const mounted = await runner.getMountState();
     expect(mounted).toEqual({
@@ -75,6 +81,7 @@ describe("Overlay harness browser injection", () => {
   }, 60_000);
 
   it("drives visible overlay state transitions with a fake background controller", async () => {
+    const runner = await setupRunner();
     await runner.inject();
     await runner.startMessageCapture();
     await runner.startFakeBackgroundController();
@@ -120,6 +127,7 @@ describe("Overlay harness browser injection", () => {
   }, 60_000);
 
   it("round-trips rendered pause and resume controls through the fake background", async () => {
+    const runner = await setupRunner();
     await runner.inject();
     await runner.startMessageCapture();
     await runner.startFakeBackgroundController();
@@ -157,6 +165,62 @@ describe("Overlay harness browser injection", () => {
     );
     expect(fakeBackground.emittedTypes).toEqual(
       expect.arrayContaining(["AGENT_STATUS"]),
+    );
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
+
+  it("starts an idle task and completes it through the fake background", async () => {
+    const runner = await setupRunner({
+      runtimeOptions: {
+        storage: {
+          local: {
+            fireworksApiKey_local: "fake-fireworks-key",
+          },
+        },
+      },
+    });
+    await runner.inject();
+    await runner.waitForOverlayText("Hi! What can I help with?");
+    await runner.startMessageCapture();
+    await runner.startFakeBackgroundController();
+
+    await runner.sendPrimaryMessageThroughUi("Summarize the generic page.");
+    await runner.waitForFakeBackgroundHandled("USER_CHAT");
+    await runner.waitForOverlayText("Summarize the generic page.");
+    await runner.waitForOverlayText(
+      "Fake overlay response: Summarize the generic page.",
+    );
+    await runner.waitForOverlayText("Task completed");
+
+    const capture = await runner.readMessageCapture();
+    const taskMessage = capture.outboundMessages.find(
+      (message): message is {
+        type: string;
+        source: string;
+        payload: { text?: string; isFeedback?: boolean };
+      } =>
+        Boolean(
+          message &&
+            typeof message === "object" &&
+            (message as { type?: unknown }).type === "USER_CHAT" &&
+            (message as { payload?: { text?: unknown } }).payload?.text ===
+              "Summarize the generic page.",
+        ),
+    );
+    expect(taskMessage).toMatchObject({
+      type: "USER_CHAT",
+      source: "ui",
+      payload: {
+        text: "Summarize the generic page.",
+      },
+    });
+    expect(taskMessage?.payload.isFeedback).toBeUndefined();
+    expect(capture.inboundTypes).toEqual(
+      expect.arrayContaining([
+        "AGENT_STATUS",
+        "STREAM_CHUNK",
+        "TASK_COMPLETION",
+      ]),
     );
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
