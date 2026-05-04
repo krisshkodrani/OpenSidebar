@@ -298,6 +298,7 @@ function buildExecutorSkillSection(node: TaskNode): string[] {
       "Skill operating brief:",
       "- Use previously gathered step results and notes as the primary evidence source for the comparison.",
       "- Synthesize only after every required comparison target has a fact set in prior completed results or fresh grounded evidence.",
+      "- Treat visible page tabs such as Overview or Reports as in-page controls, not browser tabs; use browser tab tools only when the user explicitly means separate browser tabs.",
       "- Avoid browser-history navigation or page hopping unless a specific target is still missing evidence.",
       "- If one target remains unread, gather only that missing evidence and then compare.",
       "",

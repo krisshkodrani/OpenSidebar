@@ -1,15 +1,20 @@
 import { logger } from "../../utils";
 
-/** Returns true if the tab exists and has a usable (http/https) URL. */
+/** Returns true if a tab URL can be operated on by page/content tools. */
+export function isUsableTabUrl(url?: string | null): boolean {
+  if (!url || url === "about:blank" || url === "about:newtab") return false;
+  if (url.startsWith("chrome://") || url.startsWith("chrome-extension://")) {
+    return false;
+  }
+  return true;
+}
+
+/** Returns true if the tab exists and has a usable URL. */
 export async function isUsableTab(tabId: number): Promise<boolean> {
   if (!tabId || tabId <= 0) return false;
   try {
     const tab = await chrome.tabs.get(tabId);
-    const url = tab.url ?? "";
-    if (!url || url === "about:blank" || url === "about:newtab") return false;
-    if (url.startsWith("chrome://") || url.startsWith("chrome-extension://"))
-      return false;
-    return true;
+    return isUsableTabUrl(tab.url ?? null);
   } catch {
     return false;
   }

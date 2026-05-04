@@ -2,12 +2,50 @@ import { AgentStatus, AgentStep, ToolCall, ToolName } from "../../types";
 import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
+import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { formatStepLabel } from "./step-labels";
 import { ToolResultCache, type CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
 import { ESCALATION_REFLECTION } from "./loop-prompts";
 import { extractDiscoveredTagIds, getSnapshotFingerprint } from "./loop-helpers";
+
+function getTabUrl(tab: chrome.tabs.Tab): string {
+  return tab.url || tab.pendingUrl || "";
+}
+
+function isControllableTab(tab: chrome.tabs.Tab): boolean {
+  return isUsableTabUrl(getTabUrl(tab));
+}
+
+function formatTabLine(tab: chrome.tabs.Tab, currentTabId: number): string {
+  return `Tab ${tab.id}: "${tab.title || "(untitled)"}" - ${getTabUrl(tab) || "about:blank"}${tab.id === currentTabId ? " [current]" : ""}`;
+}
+
+function formatTabListResult(
+  tabs: chrome.tabs.Tab[],
+  currentTabId: number,
+  emptyMessage: string,
+): string[] {
+  const controllableTabs = tabs.filter(isControllableTab);
+  const omittedCount = tabs.length - controllableTabs.length;
+
+  if (controllableTabs.length === 0) {
+    return omittedCount > 0
+      ? [
+          `${emptyMessage} Internal browser or extension tabs were omitted because page tools cannot run there.`,
+        ]
+      : [emptyMessage];
+  }
+
+  const lines = controllableTabs.map((tab) => formatTabLine(tab, currentTabId));
+  if (omittedCount > 0) {
+    lines.push(
+      `Note: ${omittedCount} internal browser/extension tab${omittedCount === 1 ? "" : "s"} omitted because page tools cannot run there.`,
+    );
+  }
+  return lines;
+}
 
 export interface AgentLoopToolHandlerHost {
   checkNavigateGuard(url: string): string | null;
@@ -457,17 +495,19 @@ export async function handleListTabsToolCall(loop: AgentLoopToolHandlerHost,
     if (tabs.length === 0) {
       tabLines = ["No open tabs in this workspace."];
     } else {
-      tabLines = tabs.map(
-        (t) =>
-          `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+      tabLines = formatTabListResult(
+        tabs,
+        tabId,
+        "No controllable web tabs in this workspace.",
       );
     }
   } else {
     // No workspace - show all tabs (fallback)
     const allTabs = await chrome.tabs.query({});
-    tabLines = allTabs.map(
-      (t: any) =>
-        `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.id === tabId ? " [current]" : ""}`,
+    tabLines = formatTabListResult(
+      allTabs,
+      tabId,
+      "No controllable web tabs are open.",
     );
   }
   loop.context.addMessage({
@@ -546,6 +586,29 @@ export async function handleSwitchTabToolCall(loop: AgentLoopToolHandlerHost,
   }
 
   try {
+    const targetTab = await chrome.tabs.get(targetTabId);
+    if (!isControllableTab(targetTab)) {
+      const targetUrl = getTabUrl(targetTab) || "about:blank";
+      loop.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content:
+          `Error: Cannot switch to tab ${targetTabId} (${targetUrl}) for this web task. ` +
+          "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead.",
+      });
+      loop.log.warn("agent", "switch_tab blocked - unsupported internal tab", {
+        turn: loop.turnCount,
+        targetTabId,
+        targetUrl,
+      });
+      loop.traceRecorder?.recordEvent("unsupported_tab_switch_blocked", {
+        tool: ToolName.SWITCH_TAB,
+        targetTabId,
+        targetUrl,
+      });
+      return { tabId, prevElementCount };
+    }
+
     await chrome.tabs.update(targetTabId, { active: true });
     tabId = targetTabId;
 
