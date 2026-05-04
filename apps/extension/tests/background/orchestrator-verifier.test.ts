@@ -60,6 +60,30 @@ describe("Orchestrator verifier fallback", () => {
     expect(decision.reason).toContain("answer-aligned");
   });
 
+  test("accepts completed clarification-needed outcomes for ambiguous choices", () => {
+    const decision = programmaticVerify({
+      output:
+        "I need clarification before proceeding: the correct workspace is not specified, and the page says to ask the user which workspace to open before clicking either option.",
+      objective: "Open the workspace I should use for this project",
+      successCriteria: "The correct workspace is opened or the missing choice is clarified",
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.decision).toBe("accept");
+    expect(decision?.reason).toContain("deferred an ambiguous choice");
+  });
+
+  test("does not accept generic clarification text without a missing choice", () => {
+    const decision = programmaticVerify({
+      output: "I need clarification before proceeding, but I cannot complete the task.",
+      objective: "Summarize this page",
+      successCriteria: "The page is summarized",
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.decision).not.toBe("accept");
+  });
+
   test("does not retry completed checkout-style steps without deterministic evidence", () => {
     const decision = deriveVerifierFallbackDecision({
       taskQuery: "Complete checkout",

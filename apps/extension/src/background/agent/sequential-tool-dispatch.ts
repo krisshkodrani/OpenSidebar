@@ -3,6 +3,7 @@ import {
   hasRecentExactTextFieldRead,
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
+import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -582,6 +583,30 @@ export async function executeSequentialToolCalls(
           tool: toolName,
           id: args.id,
           explicitValue: textEntryClickGuard.explicitValue,
+          mode: "sequential",
+        });
+        continue;
+      }
+
+      const ambiguousChoiceGuard = assessAmbiguousChoiceClickGuard({
+        toolName,
+        args,
+        snapshot,
+        originalQuery: this.originalQuery,
+        activeObjective,
+      });
+      if (ambiguousChoiceGuard.blockReason) {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: ambiguousChoiceGuard.blockReason,
+        });
+        this.log.warn("agent", "Ambiguous choice click blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          targetLabel: ambiguousChoiceGuard.targetLabel,
+          choiceKind: ambiguousChoiceGuard.choiceKind,
           mode: "sequential",
         });
         continue;

@@ -4,6 +4,7 @@ import {
   hasRecentExactTextFieldRead,
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
+import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
   assessListDetailWorkflow,
@@ -442,6 +443,29 @@ export async function executeParallelToolCalls(
             error: textEntryClickGuard.blockReason,
           };
         }
+
+        const ambiguousChoiceGuard = assessAmbiguousChoiceClickGuard({
+          toolName,
+          args,
+          snapshot,
+          originalQuery: host.originalQuery,
+          activeObjective,
+        });
+        if (ambiguousChoiceGuard.blockReason) {
+          host.log.warn("agent", "Ambiguous choice click blocked", {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            targetLabel: ambiguousChoiceGuard.targetLabel,
+            choiceKind: ambiguousChoiceGuard.choiceKind,
+            mode: "parallel",
+          });
+          return {
+            toolCall,
+            result: null,
+            error: ambiguousChoiceGuard.blockReason,
+          };
+        }
       }
 
       if (shouldCheckWorkflowTabRedirect(toolName)) {
@@ -572,6 +596,9 @@ export async function executeParallelToolCalls(
           toolName === ToolName.XRAY_PAGE
         ) {
           host.hasReadPage = true;
+        }
+        if (toolName === ToolName.READ_PAGE) {
+          host.hasExplicitPageRead = true;
         }
 
         storeSuccessfulToolResult(host, { toolName, args, result, cacheType });

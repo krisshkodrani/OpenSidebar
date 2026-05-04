@@ -56,6 +56,7 @@ export interface AgentLoopToolHandlerHost {
   escalateModel(): void;
   executeToolCall(toolCall: ToolCall, tabId: number): Promise<string>;
   getWorkspaceTabIds(): Promise<number[] | null>;
+  hasExplicitPageRead: boolean;
   hasReadPage: boolean;
   lastDomStep: AgentStep | null;
   llm: any;
@@ -970,6 +971,7 @@ export async function handleGenericSequentialToolCall(
     loop.hasReadPage = true;
   }
   if (toolName === ToolName.READ_PAGE) {
+    loop.hasExplicitPageRead = true;
     const aggregateNote = loop.updateMoneyTableAggregate(result);
     if (aggregateNote) {
       result = `${result}\n\n${aggregateNote}`;

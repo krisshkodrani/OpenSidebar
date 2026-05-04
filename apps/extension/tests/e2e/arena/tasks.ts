@@ -10,6 +10,7 @@ export interface ArenaTask {
   id: string;
   title: string;
   tier: ArenaTier;
+  /** Relative to apps/extension/tests/e2e; may be a focused spec or fixture route source. */
   sourceFile: string;
   sourceCase: string;
   startRoute: string;
@@ -29,7 +30,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "support-ticket.triage-timeout-export",
     title: "Triage Support Ticket",
     tier: "easy",
-    sourceFile: "support-ticket.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/support-ticket.tsx",
     sourceCase: "reads ticket, changes status, and adds internal comment",
     startRoute: "/support-ticket",
     prompt:
@@ -46,7 +47,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "multi-step-form.enterprise-request",
     title: "Complete Enterprise Request",
     tier: "easy",
-    sourceFile: "multi-step-form.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/form.tsx",
     sourceCase: "agent completes a 3-step wizard with conditional fields",
     startRoute: "/form",
     prompt:
@@ -63,7 +64,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "data-table.find-diana-salary",
     title: "Find Employee Salary",
     tier: "easy",
-    sourceFile: "data-table.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/data-table.tsx",
     sourceCase: "agent navigates paginated table to find employee and extract salary",
     startRoute: "/data-table",
     prompt: "Search for Diana in the employee directory and tell me her salary.",
@@ -79,11 +80,11 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "article-research.footnote-source",
     title: "Find Article Source",
     tier: "medium",
-    sourceFile: "article-research.test.ts",
-    sourceCase: "agent scrolls to find a footnote source and reports it",
+    sourceFile: "fixtures/online-shop-pro/src/routes/article.tsx",
+    sourceCase: "agent scrolls to find the Footnote 2 source and reports it",
     startRoute: "/article",
     prompt:
-      "Find the source referenced by the footnote in the article and tell me what source it cites.",
+      "Find the source referenced by Footnote 2 in the article and tell me what source it cites.",
     maxTurns: 12,
     timeoutMs: 120_000,
     tags: ["research", "evidence", "scrolling", "final-answer", "workarena-category:information_retrieval"],
@@ -96,7 +97,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "tab-management.dashboard-metrics",
     title: "Compare Dashboard Metrics",
     tier: "medium",
-    sourceFile: "tab-management.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/dashboard-sales.tsx",
     sourceCase: "collects data from multiple dashboard tabs",
     startRoute: "/dashboard-sales",
     prompt:
@@ -116,7 +117,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "procurement.complete-first-two",
     title: "Complete Procurement Items",
     tier: "hard",
-    sourceFile: "procurement-list.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/procurement-list.tsx",
     sourceCase: "processes procurement list across multiple tabs",
     startRoute: "/procurement",
     prompt:
@@ -136,7 +137,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "job-board.recommend-best-matches",
     title: "Recommend Job Matches",
     tier: "hard",
-    sourceFile: "job-board.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/job-board.tsx",
     sourceCase: "reviews all job listings and recommends best matches for profile",
     startRoute: "/job-board",
     prompt:
@@ -162,7 +163,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "online-shop.boundary-checkout",
     title: "Complete Checkout With Planning Boundaries",
     tier: "hard",
-    sourceFile: "online-shop-boundaries.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/shop.tsx",
     sourceCase: "advances shopping steps without done() rejection churn",
     startRoute: "/shop",
     prompt:
@@ -181,7 +182,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.crm-ticket-escalation",
     title: "Escalate Ticket With Account Context",
     tier: "hard",
-    sourceFile: "support-ticket.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/support-ticket.tsx",
     sourceCase: "reads ticket, changes status, and adds internal comment",
     startRoute: "/support-ticket",
     prompt:
@@ -198,7 +199,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.email-meeting-reply",
     title: "Reply To Meeting Request",
     tier: "hard",
-    sourceFile: "email-compose.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/email-compose.tsx",
     sourceCase: "agent reads email, composes contextual reply, and sends it",
     startRoute: "/email-compose",
     prompt:
@@ -215,7 +216,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.chat-release-coordination",
     title: "Answer Release Coordination Thread",
     tier: "hard",
-    sourceFile: "team-chat.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/team-chat.tsx",
     sourceCase: "agent reads thread context and posts a grounded reply",
     startRoute: "/team-chat",
     prompt:
@@ -232,7 +233,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.messaging-cost-plan-reply",
     title: "Reply With Migration Report Plan",
     tier: "hard",
-    sourceFile: "messaging-thread.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/messaging-thread.tsx",
     sourceCase: "agent reads message thread and sends a contextual reply",
     startRoute: "/messaging-thread",
     prompt:
@@ -249,7 +250,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.kanban-docs-ci-priority",
     title: "Prioritize Release Board Cards",
     tier: "hard",
-    sourceFile: "kanban.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/kanban.tsx",
     sourceCase: "agent moves cards on a kanban board",
     startRoute: "/kanban",
     prompt:
@@ -266,7 +267,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-gap.document-footnote-brief",
     title: "Prepare Document Research Brief",
     tier: "hard",
-    sourceFile: "article-research.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/article.tsx",
     sourceCase: "agent scrolls to find a footnote source and reports it",
     startRoute: "/article",
     prompt:
@@ -307,7 +308,7 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     id: "workarena-category.highest-salary-analysis",
     title: "Analyze Employee Salary Records",
     tier: "hard",
-    sourceFile: "data-table.test.ts",
+    sourceFile: "fixtures/online-shop-pro/src/routes/data-table.tsx",
     sourceCase: "agent navigates paginated table and compares records",
     startRoute: "/data-table",
     prompt:

@@ -42,7 +42,7 @@ import VisualCanvas from "./routes/visual-canvas";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
-  { path: "/article", label: "Article", title: "The Lost Expedition of 1924", component: Article },
+  { path: "/article", label: "Article", title: "The Complete Guide to Remote Work Best Practices", component: Article },
   { path: "/navigation", label: "Navigation", title: "Navigation Challenge", component: Navigation },
   { path: "/dashboard", label: "Dashboard", title: "Admin Dashboard", component: Dashboard },
   { path: "/shop", label: "Shop", title: "Northstar Outfitters - Performance Running", component: Shop },
