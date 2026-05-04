@@ -122,9 +122,17 @@ export function resolvePerceptionRuntimeModeDecision(
     signals.push("sparse_spa_dom");
   }
 
+  if (signals.length > 0) {
+    return {
+      mode: "unified_vl",
+      reason: signals[0],
+      signals,
+    };
+  }
+
   return {
-    mode: "unified_vl",
-    reason: signals[0] ?? "auto_default_unified_vl",
+    mode: "structured",
+    reason: "dom_signals_sufficient",
     signals,
   };
 }
