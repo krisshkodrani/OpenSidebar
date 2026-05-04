@@ -97,8 +97,7 @@ export default function ErrorScenarios() {
         <div className="card">
           <h2>Impossible Task</h2>
           <p>
-            There is no "Generate Report" button on this page. The agent
-            should recognize this and stop gracefully.
+            This card does not include any report generation controls.
           </p>
           <div id="report-status" className="hidden" />
         </div>

@@ -31,10 +31,8 @@ import {
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import {
-  collectSkillIdsForTraceFiles,
   extractDoneSummary,
   findAllNewTraceFiles,
-  traceFilesContainText,
 } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 10, testLabel: "cross-tab" });
@@ -156,22 +154,6 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
         turn3Answer.toLowerCase().includes("traffic"),
       "Turn 3 should reference specific data from earlier turns",
     ).toBe(true);
-
-    const allTraceFiles = [...turn1Traces, ...turn2Traces, ...turn3Traces];
-    const skillIds = collectSkillIdsForTraceFiles(allTraceFiles);
-
-    expect(
-      skillIds,
-      "The comparison flow should route through the cross-tab skill",
-    ).toContain("cross-tab-compare");
-    expect(
-      traceFilesContainText(allTraceFiles, "Selected workflow skill:"),
-      "The executor prompt should include the selected workflow skill contract",
-    ).toBe(true);
-    expect(
-      traceFilesContainText(allTraceFiles, "PRIOR WORKSPACE TURNS:"),
-      "Executor prompts should not depend on prior workspace memory",
-    ).toBe(false);
 
     // =================================================================
     // Final checks

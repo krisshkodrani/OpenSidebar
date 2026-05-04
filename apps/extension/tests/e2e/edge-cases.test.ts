@@ -22,8 +22,10 @@ import {
   navigateAndWait,
   sendUserChat,
   waitForOutcome,
+  waitForTaskCompletion,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
+import { extractDoneSummary } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 20, testLabel: "edge-cases" });
 
@@ -76,32 +78,38 @@ describe.skipIf(!h.apiKey)("E2E: Edge Cases", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = "Generate a report and submit it. If the button doesn't exist, let me know.";
+    const prompt = "Generate a report and submit it. If that is not possible on this page, tell me why.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
-    const outcome = await waitForOutcome(
-      h.page,
-      h.ctx.serviceWorker,
-      async () => null,
-      120_000,
-      workspaceId,
-    );
+    const outcome = await waitForTaskCompletion(h.ctx, 120_000, workspaceId);
 
-    await h.printTraceSummary();
+    const { traceFiles } = await h.printTraceSummary(workspaceId);
 
-    const reportStatus = await h.page.evaluate(() => {
+    const reportStatusHidden = await h.page.evaluate(() => {
       const el = document.getElementById("report-status");
       return el?.classList.contains("hidden") ?? true;
     });
+    const completion = [...outcome.events]
+      .reverse()
+      .find((event: any) => event.type === "TASK_COMPLETION");
+    const summary = String(
+      completion?.payload?.summary || extractDoneSummary(traceFiles),
+    );
 
     console.log(
-      `[e2e] Impossible task outcome: ${outcome.reason} (report-status hidden: ${reportStatus})`,
+      `[e2e] Impossible task outcome: ${outcome.reason} (report-status hidden: ${reportStatusHidden})`,
     );
+    expect(outcome.ok, outcome.reason).toBe(true);
     expect(
-      ["timeout", "done", "agent_error"].some(
-        (r) => outcome.reason.startsWith(r) || outcome.reason === r,
-      ),
+      reportStatusHidden,
+      "Impossible report task must not create a report side effect",
+    ).toBe(true);
+    const unavailablePattern =
+      /(cannot|can't|couldn't|unable|not possible|not available|unavailable|does not (?:exist|include)|doesn't (?:exist|include)|no .*button|no .*control|missing)/i;
+    expect(
+      unavailablePattern.test(summary),
+      `Agent must explicitly report that the report action is unavailable. Got: ${summary}`,
     ).toBe(true);
   }, 180_000);
 });

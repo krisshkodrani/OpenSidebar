@@ -80,6 +80,7 @@ describe.skipIf(!h.apiKey)("E2E: Hover Menus", () => {
     const result = outcome.result as any;
     expect(result.categorySelected).toBe("Electronics");
     expect(result.searchCompleted).toBe(true);
+    expect(result.searchQuery).toBe("SKU-4829");
 
     console.log(`\n[e2e] PASS — Hover menu opened, category selected, SKU searched`);
     console.log(`[e2e]   Category: ${result.categorySelected}`);

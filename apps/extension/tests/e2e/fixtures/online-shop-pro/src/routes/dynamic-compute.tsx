@@ -5,16 +5,15 @@ import { useState } from "react";
  * can only be extracted via JavaScript (data attributes, computed
  * styles, localStorage, or programmatic DOM queries).
  *
- * The page shows a product configurator with visible options,
- * but the final computed price is only available via a data attribute
- * and a JS function — not displayed in the DOM text.
+ * The page shows visible options and a visible computed price, while
+ * also exposing the computed total through data attributes/window state.
  */
 export default function DynamicCompute() {
   const [size, setSize] = useState("medium");
   const [color, setColor] = useState("black");
   const [engraving, setEngraving] = useState(false);
 
-  // Price logic stored in data attributes, not visible text
+  // Price logic is exposed through data attributes for verification.
   const basePrice = 75;
   const sizeMultiplier = size === "small" ? 0.8 : size === "large" ? 1.3 : 1.0;
   const engravingCost = engraving ? 15 : 0;

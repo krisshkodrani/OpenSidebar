@@ -48,7 +48,7 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_DURABLE_E2E)(
     afterEach(() => h.afterEachHook("structured-progress-resume"));
 
     it("shows structured progress in durable run detail and resumes a synthesis step from recovered facts", async () => {
-      await navigateAndWait(h.page, getFixtureUrl("article"));
+      await navigateAndWait(h.page, getFixtureUrl("job-board"));
       await h.page.bringToFront();
 
       const tabId = await getActiveTabId(h.ctx.serviceWorker);

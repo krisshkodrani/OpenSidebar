@@ -23,7 +23,7 @@ export default function DatePicker() {
   const [name, setName] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
-  // Target: June 15, 2026
+  // Expected date for e2e verification.
   const TARGET_DATE = "2026-06-15";
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
@@ -75,7 +75,7 @@ export default function DatePicker() {
     <div className="fixture-static" style={{ minHeight: "100vh" }}>
       <div className="header">
         <h1>Booking Form</h1>
-        <p>Select a date using the calendar picker. Target: June 15, 2026.</p>
+        <p>Select a date using the calendar picker.</p>
       </div>
 
       <div
