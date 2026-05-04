@@ -8,8 +8,12 @@
  * Background code calls `waitForContentScriptReady(tabId)` instead of sleeping.
  */
 
-import { MessageSource, RuntimeMessage } from "../../types";
+import { MessageSource } from "../../types";
 import { logger } from "../../utils";
+import {
+  chromeContentBridgePort,
+  type ContentBridgePort,
+} from "../environment";
 
 /** Set of tab IDs whose content scripts have reported ready */
 const readyTabs = new Set<number>();
@@ -21,33 +25,31 @@ const waiters = new Map<number, Array<() => void>>();
  * Register the CONTENT_SCRIPT_READY listener.
  * Call once from background.ts during initialization.
  */
-export function registerContentScriptReadyListener(): void {
-  chrome.runtime.onMessage.addListener((message: RuntimeMessage, sender) => {
-    if (message.type === "CONTENT_SCRIPT_READY" && sender.tab?.id) {
-      const tabId = sender.tab.id;
-      readyTabs.add(tabId);
-      logger.debug("system", "Content script ready", { tabId });
+export function registerContentScriptReadyListener(
+  bridgePort: ContentBridgePort = chromeContentBridgePort,
+): void {
+  bridgePort.onContentScriptReady((tabId) => {
+    readyTabs.add(tabId);
+    logger.debug("system", "Content script ready", { tabId });
 
-      // Resolve any pending waiters
-      const pending = waiters.get(tabId);
-      if (pending) {
-        for (const resolve of pending) resolve();
-        waiters.delete(tabId);
-      }
+    // Resolve any pending waiters
+    const pending = waiters.get(tabId);
+    if (pending) {
+      for (const resolve of pending) resolve();
+      waiters.delete(tabId);
     }
-    // Don't return true — this is fire-and-forget
   });
 
   // Clean up when tabs are removed
-  chrome.tabs.onRemoved.addListener((tabId) => {
+  bridgePort.onTabRemoved((tabId) => {
     readyTabs.delete(tabId);
     waiters.delete(tabId);
   });
 
   // Clear readiness on navigation (content script will re-announce)
-  chrome.webNavigation?.onBeforeNavigate.addListener((details) => {
-    if (details.frameId === 0) {
-      readyTabs.delete(details.tabId);
+  bridgePort.onBeforeNavigate((tabId, frameId) => {
+    if (frameId === 0) {
+      readyTabs.delete(tabId);
     }
   });
 }
@@ -62,6 +64,7 @@ export function registerContentScriptReadyListener(): void {
 export function waitForContentScriptReady(
   tabId: number,
   timeoutMs = 2000,
+  bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<void> {
   if (readyTabs.has(tabId)) return Promise.resolve();
 
@@ -101,7 +104,7 @@ export function waitForContentScriptReady(
       async () => {
         if (resolved) return;
         try {
-          await chrome.tabs.sendMessage(tabId, {
+          await bridgePort.sendMessage(tabId, {
             type: "DOM_READY_PROBE",
             requestId: crypto.randomUUID(),
             source: MessageSource.BACKGROUND,
@@ -111,7 +114,7 @@ export function waitForContentScriptReady(
           readyTabs.add(tabId);
           done();
         } catch {
-          // Content script not ready yet — keep waiting
+          // Content script not ready yet - keep waiting
         }
       },
       Math.min(timeoutMs / 2, 500),
@@ -126,9 +129,10 @@ export function waitForContentScriptReady(
 export async function probeContentScript(
   tabId: number,
   timeoutMs = 100,
+  bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<boolean> {
   try {
-    await chrome.tabs.sendMessage(tabId, {
+    await bridgePort.sendMessage(tabId, {
       type: "DOM_READY_PROBE",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
@@ -150,10 +154,13 @@ export async function probeContentScript(
 export async function waitForDomReady(
   tabId: number,
   options: { timeoutMs?: number; waitForElements?: boolean } = {},
+  bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<{ waitedMs: number; elementCount: number }> {
   const { timeoutMs = 150, waitForElements = false } = options;
   try {
-    const response = await chrome.tabs.sendMessage(tabId, {
+    const response = await bridgePort.sendMessage<{
+      payload?: { waitedMs: number; elementCount: number };
+    }>(tabId, {
       type: "DOM_READY_PROBE",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
@@ -161,7 +168,7 @@ export async function waitForDomReady(
     });
     return response?.payload ?? { waitedMs: 0, elementCount: 0 };
   } catch {
-    // Content script not available — return immediately
+    // Content script not available - return immediately
     return { waitedMs: 0, elementCount: 0 };
   }
 }
@@ -178,7 +185,7 @@ export function isTabReady(tabId: number): boolean {
 
 /**
  * Ensure the content script is injected and ready on a tab.
- * Re-injects via chrome.scripting.executeScript if not already ready,
+ * Re-injects via the content bridge if not already ready,
  * then waits for the CONTENT_SCRIPT_READY signal.
  *
  * Handles Service Worker restarts where existing tabs lose their
@@ -187,11 +194,13 @@ export function isTabReady(tabId: number): boolean {
 export async function ensureContentScript(
   tabId: number,
   timeoutMs = 5000,
+  bridgePort: ContentBridgePort = chromeContentBridgePort,
 ): Promise<boolean> {
   if (readyTabs.has(tabId)) {
     const stillResponsive = await probeContentScript(
       tabId,
       Math.min(150, timeoutMs),
+      bridgePort,
     );
     if (stillResponsive) return true;
     readyTabs.delete(tabId);
@@ -199,21 +208,17 @@ export async function ensureContentScript(
 
   // Attempt to re-inject the content script
   try {
-    const manifest = chrome.runtime.getManifest();
-    const contentScriptFiles = manifest.content_scripts?.[0]?.js;
+    const contentScriptFiles = bridgePort.getContentScriptFiles();
     if (contentScriptFiles?.length) {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: contentScriptFiles,
-      });
+      await bridgePort.executeContentScripts(tabId, contentScriptFiles);
     }
   } catch {
-    // May fail on chrome:// pages or if already injected — that's fine
+    // May fail on chrome:// pages or if already injected - that's fine
   }
 
   // Wait for the content script to signal ready
-  await waitForContentScriptReady(tabId, timeoutMs);
+  await waitForContentScriptReady(tabId, timeoutMs, bridgePort);
   if (readyTabs.has(tabId)) return true;
 
-  return probeContentScript(tabId, Math.min(250, timeoutMs));
+  return probeContentScript(tabId, Math.min(250, timeoutMs), bridgePort);
 }

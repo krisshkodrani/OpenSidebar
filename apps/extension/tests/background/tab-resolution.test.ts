@@ -3,6 +3,7 @@ import {
   isUsableTab,
   resolveValidTabId,
 } from "../../src/background/infrastructure/tab-resolution";
+import type { BrowserPagePort } from "../../src/background/environment";
 
 // Mock workspace manager
 function mockWsManager(tabIds: number[] = []) {
@@ -10,6 +11,22 @@ function mockWsManager(tabIds: number[] = []) {
     getWorkspaceById: vi.fn().mockResolvedValue(
       tabIds.length > 0 ? { tabIds } : null,
     ),
+  };
+}
+
+function mockPagePort(tabs: Record<number, { url?: string }>): BrowserPagePort {
+  return {
+    getTab: vi.fn(async (tabId: number) => {
+      const tab = tabs[tabId];
+      if (!tab) throw new Error("Unknown tab");
+      return { id: tabId, ...tab };
+    }),
+    queryTabs: vi.fn(async () => []),
+    updateTab: vi.fn(),
+    createTab: vi.fn(),
+    removeTab: vi.fn(),
+    reloadTab: vi.fn(),
+    captureVisibleTab: vi.fn(),
   };
 }
 
@@ -69,6 +86,17 @@ describe("isUsableTab", () => {
   it("returns false when chrome.tabs.get throws", async () => {
     vi.spyOn(chrome.tabs, "get").mockRejectedValue(new Error("No tab"));
     expect(await isUsableTab(99)).toBe(false);
+  });
+
+  it("can use an injected page port instead of global Chrome tabs", async () => {
+    const getSpy = vi.spyOn(chrome.tabs, "get");
+    const pagePort = mockPagePort({
+      15: { url: "https://adapter.example" },
+    });
+
+    expect(await isUsableTab(15, pagePort)).toBe(true);
+    expect(pagePort.getTab).toHaveBeenCalledWith(15);
+    expect(getSpy).not.toHaveBeenCalled();
   });
 });
 

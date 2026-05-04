@@ -1,4 +1,8 @@
 import { logger } from "@/utils";
+import {
+  chromeBrowserPagePort,
+  type BrowserPagePort,
+} from "../environment";
 
 interface ScreenshotOptions {
   format: "jpeg" | "png";
@@ -10,9 +14,12 @@ interface ScreenshotOptions {
  * `captureVisibleTab` captures whatever is on screen — if the agent's tab
  * isn't active, the result is a wrong page or a black frame.
  */
-export async function isTabActive(tabId: number): Promise<boolean> {
+export async function isTabActive(
+  tabId: number,
+  pagePort: BrowserPagePort = chromeBrowserPagePort,
+): Promise<boolean> {
   try {
-    const tab = await chrome.tabs.get(tabId);
+    const tab = await pagePort.getTab(tabId);
     return tab.active === true;
   } catch {
     return false;
@@ -29,9 +36,10 @@ export async function takeScreenshotWithTags(
     format: "jpeg",
     quality: 80,
   },
+  pagePort: BrowserPagePort = chromeBrowserPagePort,
 ): Promise<{ dataUrl: string; success: boolean; error?: string }> {
   try {
-    const tab = await chrome.tabs.get(tabId);
+    const tab = await pagePort.getTab(tabId);
     if (!tab.active) {
       return {
         dataUrl: "",
@@ -39,7 +47,14 @@ export async function takeScreenshotWithTags(
         error: "Tab is not active (screenshot would capture wrong tab)",
       };
     }
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+    if (tab.windowId == null) {
+      return {
+        dataUrl: "",
+        success: false,
+        error: "Tab window is unavailable",
+      };
+    }
+    const dataUrl = await pagePort.captureVisibleTab(tab.windowId, {
       format: options.format,
       quality: options.quality,
     });
