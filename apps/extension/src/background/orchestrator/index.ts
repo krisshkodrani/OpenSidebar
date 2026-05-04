@@ -609,7 +609,7 @@ const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
 const NAVIGATE_READ_RETURN_SKILL_ID = "navigate-read-return";
-const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const EXHAUSTIVE_REVIEW_MIN_NODES_FOR_BUDGET_BUMP = 8;
 const EXHAUSTIVE_REVIEW_MAX_TOTAL_TOKENS = 1_600_000;
 
@@ -1466,7 +1466,7 @@ export class Orchestrator {
     const shouldCapture =
       node.selectedSkillId === LIST_DETAIL_REVIEW_SKILL_ID ||
       node.selectedSkillId === NAVIGATE_READ_RETURN_SKILL_ID ||
-      node.selectedSkillId === MULTI_TAB_PROCUREMENT_SKILL_ID;
+      node.selectedSkillId === MULTI_TAB_CHECKLIST_SKILL_ID;
     if (!shouldCapture || compactResultSummary.length === 0) return;
     this.setStructuredProgressEntry(task, {
       key: "extracted-facts",

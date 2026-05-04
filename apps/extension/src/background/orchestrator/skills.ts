@@ -792,17 +792,17 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
-    id: "multi-tab-procurement-loop",
-    name: "Multi-Tab Procurement Loop",
+    id: "multi-tab-checklist-workflow",
+    name: "Multi-Tab Checklist Workflow",
     description:
-      "Work through a checklist that requires opening store pages in new tabs, completing a purchase, returning to the source tab, and marking the completed item before repeating.",
+      "Work through a source list or checklist where each item requires opening a target page in another tab, completing or extracting item-specific work, returning to the source tab, and recording progress before repeating.",
     packId: "procurement-workflows",
-    tags: ["workflow", "procurement", "tabs", "shopping", "checklist"],
+    tags: ["workflow", "tabs", "checklist", "multi-tab", "review"],
     triggers: [
-      "procurement list",
-      "open each store in a new tab",
-      "purchase the item then check it off",
-      "buy from multiple stores and return to the list",
+      "open each item in a new tab",
+      "open links in separate tabs then return to the list",
+      "review checklist items across tabs and mark them done",
+      "procurement list store tabs",
     ],
     maturity: "candidate",
     preferredTools: [
@@ -818,9 +818,9 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     contextScope: "workspace",
     verifierMode: "hybrid",
     notes: [
-      "Use the checklist row as the source of truth for the target item, store, and quantity.",
-      "Return to the source checklist tab only after the purchase is actually confirmed.",
-      "If the checklist counter increases after marking the row complete, treat that as authoritative completion evidence instead of probing checkbox internals.",
+      "Use the source row or checklist item as the source of truth for the target page and item-specific objective.",
+      "Open or reuse a target tab, complete the target work, record compact evidence in notes, then switch back to the source tab.",
+      "Mark or record source progress only after the target tab work is actually completed or the required evidence is captured.",
     ],
   },
   {
@@ -950,11 +950,11 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
   },
   {
     id: "procurement-workflows",
-    name: "Procurement Workflows",
+    name: "Multi-Tab Workflows",
     description:
-      "Default checklist procurement skills for tabbed store-purchase workflows.",
+      "Default checklist skills for source-list workflows that intentionally span multiple tabs.",
     enabledByDefault: true,
-    skillIds: ["multi-tab-procurement-loop"],
+    skillIds: ["multi-tab-checklist-workflow"],
   },
 ];
 
@@ -2002,62 +2002,62 @@ const SKILL_BODIES: Record<
       ],
     },
   },
-  "multi-tab-procurement-loop": {
+  "multi-tab-checklist-workflow": {
     procedureMarkdown: [
-      "1. Start on the checklist tab and identify the next requested row to fulfill.",
-      "2. Capture the target item, store, quantity, and any budget constraint from that row before leaving it.",
-      "3. Open the matching store page in a new tab and switch into that tab directly.",
-      "4. On the store page, buy only the requested item and quantity instead of browsing unrelated products.",
-      "5. As soon as the purchase is confirmed, store the essential completion facts in notes before leaving the store tab.",
-      "6. Switch back to the original checklist tab and mark only the completed row as done.",
-      "7. Repeat the same bounded loop for the next requested row.",
-      "8. Call done only after every requested checklist row is marked complete on the source page.",
+      "1. Start on the source list or checklist tab and identify the next requested item to process.",
+      "2. Capture the item label, target link/page, requested action, and any constraints before leaving the source tab.",
+      "3. Open or reuse the matching target page in another tab and switch into that tab directly.",
+      "4. Complete the target-tab work for only that source item: purchase, review, extract, compare, or capture the requested evidence.",
+      "5. Store compact completion facts in notes before leaving the target tab.",
+      "6. Switch back to the original source tab and mark or record only that completed item before moving on.",
+      "7. Repeat the bounded loop for the next requested source item.",
+      "8. Call done only after every requested source item has target-tab evidence and the source page reflects the required progress.",
     ].join("\n"),
     requiredEvidence: [
-      "The checklist row identifying the requested item and store",
-      "Evidence that the matching store page was opened in a new tab",
-      "Visible order or purchase confirmation for each completed item",
-      "Evidence that the completed checklist row was marked done after returning",
+      "The source list or checklist item identifying the target page and requested action",
+      "Evidence that the matching target page was opened or reused in another tab",
+      "Target-tab evidence for each completed item",
+      "Evidence that the source item was marked, recorded, or otherwise accounted for after returning",
     ],
     commonFailures: [
       {
         signal:
-          "browsing or comparing unrelated products after the target item is already visible",
+          "browsing unrelated target pages after the requested item evidence is already visible",
         recovery:
-          "buy the requested item immediately and stop exploratory shopping behavior",
+          "complete the requested item immediately and stop exploratory tab opening",
       },
       {
         signal:
-          "returning to the checklist before purchase confirmation exists",
+          "returning to the source list before target-tab evidence exists",
         recovery:
-          "stay on the store tab until the purchase is visibly confirmed, then return",
+          "stay on the target tab until the item work is visibly complete or the requested evidence is captured, then return",
       },
       {
         signal:
-          "using browser-history navigation between source and store tabs",
+          "using browser-history navigation between source and target tabs",
         recovery:
-          "use create_tab and switch_tab so the source checklist tab remains stable",
+          "use create_tab and switch_tab so the source list tab remains stable",
       },
     ],
     executionContract: {
       sequencing: [
-        "Read the checklist row, open the matching store in a new tab, complete the purchase, switch back, then mark the row done.",
-        "Do not start the next row until the current row is either confirmed complete or explicitly blocked.",
+        "Read the source item, open or reuse the matching target page in another tab, complete or extract the target work, switch back, then mark or record the source item.",
+        "Do not start the next item until the current item is either confirmed complete, recorded with evidence, or explicitly blocked.",
       ],
       toolDiscipline: [
         "Prefer create_tab and switch_tab over browser-history navigation.",
-        "Reuse the known checklist tab and created store-tab IDs instead of repeatedly rediscovering tabs when they are already known.",
-        "Prefer visible purchase controls over exploratory reads once the correct product is on screen.",
-        "Treat a checklist completion counter or row-complete state as stronger evidence than checkbox attribute inspection.",
-        "Use update_notes only for compact completion facts such as item, store, and order number.",
+        "Reuse the known source tab and created target-tab IDs instead of repeatedly rediscovering tabs when they are already known.",
+        "Prefer visible target-work controls or content over exploratory reads once the correct target page is on screen.",
+        "Treat a source completion counter, reviewed marker, or row-complete state as stronger evidence than hidden attribute inspection.",
+        "Use update_notes only for compact completion facts such as item, target page, extracted fact, or confirmation number.",
       ],
       completionChecks: [
-        "A visible order or purchase confirmation exists before leaving the store tab.",
-        "The corresponding checklist row is visibly marked complete after returning to the source tab.",
+        "Target-tab evidence exists before leaving the target tab.",
+        "The corresponding source item is visibly marked, recorded, or accounted for after returning to the source tab.",
       ],
       failureRecovery: [
-        "If the wrong store tab is active, switch back to the checklist tab, re-read the target row, and reopen the correct store.",
-        "If the purchase confirmation is unclear, re-read the current store page instead of opening a new path.",
+        "If the wrong target tab is active, switch back to the source tab, re-read the item, and open or switch to the correct target page.",
+        "If target evidence is unclear, re-read the current target page instead of opening a new path.",
       ],
     },
   },
@@ -2318,6 +2318,14 @@ const procurementLoopPattern =
   /\b(procurement|purchase|buy)\b[\s\S]{0,160}\b(new tab|another tab|each store|store page|store link)\b[\s\S]{0,160}\b(check (?:it|them) off|mark (?:it|them) done|come back and check|return and check|checkbox)\b/i;
 const naturalProcurementChecklistPattern =
   /\b(?:buy|purchase|procure)\b[\s\S]{0,120}\b(?:first\s+\w+|first\s+\d+|\d+)\s+items?\b[\s\S]{0,120}\bprocurement\s+list\b[\s\S]{0,120}\b(?:mark|check)\s+(?:them|items?|rows?)\s+(?:complete|done|off)\b/i;
+const explicitTabIntentPattern =
+  /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bopen\b[\s\S]{0,60}\b(?:tabs?|new windows?)\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i;
+const sourceListLoopPattern =
+  /\b(?:source\s+)?(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job listings?|research links?)\b/i;
+const sourceProgressPattern =
+  /\b(?:return|come back|switch back|go back)\b[\s\S]{0,120}\b(?:source|list|checklist|board|page|tab)\b|\b(?:mark|check|record|note)\b[\s\S]{0,80}\b(?:done|complete|reviewed|finished|progress|each|item|row|article)\b/i;
+const repeatedItemPattern =
+  /\b(?:first\s+\w+|first\s+\d+|\d+|two|three|four|five|six|seven|eight|nine|ten|all|each|every)\s+(?:items?|rows?|links?|listings?|articles?|dashboards?|dashboard\s+tabs?|reports?|jobs?)\b/i;
 const overlayRecoveryPattern =
   /\b(close .* (?:banner|popup|modal|overlay|dialog)|dismiss .* (?:popup|modal|overlay|banner)|cookie (?:banner|consent|popup)|newsletter (?:popup|modal)|can'?t see the page|blocking (?:modal|overlay|popup)|popups? (?:blocking|covering|obscuring)|clear (?:the )?(?:popup|modal|overlay)s?)\b/i;
 
@@ -2609,7 +2617,7 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
       ToolName.UPDATE_NOTES,
     ],
   },
-  "multi-tab-procurement-loop": {
+  "multi-tab-checklist-workflow": {
     temporarilySuppressedTools: [
       ToolName.NAVIGATE,
       ToolName.GO_BACK,
@@ -2787,6 +2795,17 @@ function selectPrimarySkillWithKeywordMatcher(
     configuratorPattern.test(stepCorpus);
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
+  const matchesMultiTabChecklistWorkflow =
+    naturalProcurementChecklistPattern.test(corpus) ||
+    procurementLoopPattern.test(corpus) ||
+    (/\b(procurement list|store)\b/i.test(corpus) &&
+      /\b(new tab|another tab)\b/i.test(corpus) &&
+      /\b(buy|purchase)\b/i.test(corpus) &&
+      /\b(check off|mark .* done|checkbox)\b/i.test(corpus)) ||
+    (explicitTabIntentPattern.test(corpus) &&
+      sourceListLoopPattern.test(corpus) &&
+      repeatedItemPattern.test(corpus) &&
+      sourceProgressPattern.test(corpus));
 
   if (
     fieldValueRecordFormPattern.test(corpus) &&
@@ -2872,6 +2891,14 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
+  if (matchesMultiTabChecklistWorkflow) {
+    const selection = selectEnabledSkill(
+      input,
+      "multi-tab-checklist-workflow",
+      "Task requires repeating a source-list workflow across tabs: open or reuse a target tab, complete or capture item evidence, return to the source, and record progress.",
+    );
+    if (selection) return selection;
+  }
 
   if (
     searchAnswerPattern.test(corpus) &&
@@ -2993,22 +3020,6 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "continuation-edit",
       "Task requests revising prior work while preserving earlier intent.",
-    );
-    if (selection) return selection;
-  }
-
-  if (
-    naturalProcurementChecklistPattern.test(corpus) ||
-    procurementLoopPattern.test(corpus) ||
-    (/\b(procurement list|store)\b/i.test(corpus) &&
-      /\b(new tab|another tab)\b/i.test(corpus) &&
-      /\b(buy|purchase)\b/i.test(corpus) &&
-      /\b(check off|mark .* done|checkbox)\b/i.test(corpus))
-  ) {
-    const selection = selectEnabledSkill(
-      input,
-      "multi-tab-procurement-loop",
-      "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.",
     );
     if (selection) return selection;
   }

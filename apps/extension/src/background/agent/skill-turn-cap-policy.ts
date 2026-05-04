@@ -1,5 +1,5 @@
 const SKILL_TURN_CAPS: Record<string, number> = {
-  "multi-tab-procurement-loop": 45,
+  "multi-tab-checklist-workflow": 45,
   "list-detail-review-loop": 45,
   "paginated-table-scan": 55,
   "paginated-record-lookup": 35,

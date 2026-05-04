@@ -15,7 +15,7 @@ describe("workflow tab controller", () => {
 
   test("procurement loop redirects back to an existing checklist tab", () => {
     const decision = evaluateWorkflowTabRedirect({
-      skillId: "multi-tab-procurement-loop",
+      skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.CLICK_ELEMENT,
       currentTabId: 22,
       currentUrl: "https://fixture.test/procurement?store=pegasus",
@@ -27,7 +27,7 @@ describe("workflow tab controller", () => {
     });
 
     expect(decision).toEqual({
-      controllerId: "multi-tab-procurement-loop",
+      controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
         'The original procurement checklist is already open as tab 11. Use switch_tab({"tabId": 11}) to return there instead of interacting with an in-page Procurement link.',
@@ -36,7 +36,7 @@ describe("workflow tab controller", () => {
 
   test("procurement loop redirects to an existing matching store tab", () => {
     const decision = evaluateWorkflowTabRedirect({
-      skillId: "multi-tab-procurement-loop",
+      skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.CREATE_TAB,
       currentTabId: 11,
       currentUrl: "https://fixture.test/procurement",
@@ -48,7 +48,7 @@ describe("workflow tab controller", () => {
     });
 
     expect(decision).toEqual({
-      controllerId: "multi-tab-procurement-loop",
+      controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
         'The nimbus store is already open as tab 33. Use switch_tab({"tabId": 33}) instead of reopening or context-clicking the same store page.',
@@ -57,7 +57,7 @@ describe("workflow tab controller", () => {
 
   test("procurement loop blocks right-click escape on an already open store link", () => {
     const decision = evaluateWorkflowTabRedirect({
-      skillId: "multi-tab-procurement-loop",
+      skillId: "multi-tab-checklist-workflow",
       toolName: ToolName.RIGHT_CLICK,
       currentTabId: 11,
       currentUrl: "https://fixture.test/procurement",
@@ -69,10 +69,52 @@ describe("workflow tab controller", () => {
     });
 
     expect(decision).toEqual({
-      controllerId: "multi-tab-procurement-loop",
+      controllerId: "multi-tab-checklist-workflow",
       traceEvent: "workflow_tab_redirect",
       message:
         'The nimbus store is already open as tab 33. Use switch_tab({"tabId": 33}) instead of reopening or context-clicking the same store page.',
+    });
+  });
+
+  test("multi-tab checklist workflow reuses an already open generic target tab", () => {
+    const decision = evaluateWorkflowTabRedirect({
+      skillId: "multi-tab-checklist-workflow",
+      toolName: ToolName.CREATE_TAB,
+      currentTabId: 11,
+      currentUrl: "https://fixture.test/jobs",
+      targetUrl: "https://fixture.test/jobs/senior-frontend",
+      workspaceTabs: [
+        { id: 11, url: "https://fixture.test/jobs" },
+        { id: 44, url: "https://fixture.test/jobs/senior-frontend" },
+      ],
+    });
+
+    expect(decision).toEqual({
+      controllerId: "multi-tab-checklist-workflow",
+      traceEvent: "workflow_tab_redirect",
+      message:
+        'This checklist target page is already open as tab 44. Use switch_tab({"tabId": 44}) to reuse it instead of opening a duplicate tab.',
+    });
+  });
+
+  test("multi-tab checklist workflow does not treat non-procurement store params as procurement tabs", () => {
+    const decision = evaluateWorkflowTabRedirect({
+      skillId: "multi-tab-checklist-workflow",
+      toolName: ToolName.CLICK_ELEMENT,
+      currentTabId: 22,
+      currentUrl: "https://fixture.test/vendors?store=pegasus",
+      targetUrl: "https://fixture.test/vendors",
+      workspaceTabs: [
+        { id: 11, url: "https://fixture.test/vendors" },
+        { id: 22, url: "https://fixture.test/vendors?store=pegasus" },
+      ],
+    });
+
+    expect(decision).toEqual({
+      controllerId: "multi-tab-checklist-workflow",
+      traceEvent: "workflow_tab_redirect",
+      message:
+        'This checklist target page is already open as tab 11. Use switch_tab({"tabId": 11}) to reuse it instead of opening a duplicate tab.',
     });
   });
 

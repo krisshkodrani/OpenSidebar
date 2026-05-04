@@ -115,7 +115,7 @@ export async function executeParallelToolCalls(
           args,
           snapshot: host.context.getSnapshot(),
         }) ||
-        (host.selectedSkillId === "multi-tab-procurement-loop" &&
+        (host.selectedSkillId === "multi-tab-checklist-workflow" &&
           toolName === ToolName.SWITCH_TAB);
       const repeatDecision = assessRepeatAction({
         toolName,

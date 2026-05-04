@@ -143,7 +143,7 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
   });
 
-  test("multi-tab-procurement-loop suppresses history navigation while keeping tab workflow tools", () => {
+  test("multi-tab-checklist-workflow suppresses history navigation while keeping tab workflow tools", () => {
     const node = makeNode(
       [
         ToolName.READ_PAGE,
@@ -161,22 +161,22 @@ describe("Orchestrator role contracts", () => {
         ToolName.CLICK_COORDINATES,
       ],
       {
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
       },
     );
     const contract = buildRoleExecutionContract("executor", baseSettings, node);
 
-      expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.GO_BACK)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.READ_ELEMENT)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.LIST_TABS)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.XRAY_PAGE)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
-      expect(contract.allowedTools.includes(ToolName.CREATE_TAB)).toBe(true);
-      expect(contract.allowedTools.includes(ToolName.SWITCH_TAB)).toBe(true);
-      expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
-      expect(contract.allowedTools.includes(ToolName.SET_CHECKBOX)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.GO_BACK)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.READ_ELEMENT)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.LIST_TABS)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.INSPECT_HIDDEN)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.XRAY_PAGE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CREATE_TAB)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.SWITCH_TAB)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.SET_CHECKBOX)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
   });

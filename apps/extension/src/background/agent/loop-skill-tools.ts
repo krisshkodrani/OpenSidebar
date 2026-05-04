@@ -336,8 +336,8 @@ export function isSkillOwnedListDetailReview(
   );
 }
 
-export function isSkillOwnedProcurementLoop(
+export function isSkillOwnedMultiTabChecklistLoop(
   loop: AgentLoopSkillToolsHost,
 ): boolean {
-  return loop.selectedSkillId === "multi-tab-procurement-loop";
+  return loop.selectedSkillId === "multi-tab-checklist-workflow";
 }
