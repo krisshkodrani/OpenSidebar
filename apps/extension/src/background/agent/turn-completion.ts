@@ -114,7 +114,6 @@ export async function completeTurnWithRetries(
     };
 
     try {
-      deps.recordPromptImageUsage?.(messages);
       response = await deps.llm.completeStream(
         {
           messages,
@@ -316,6 +315,9 @@ export async function completeTurnWithRetries(
   if (turnRetryCount > 0) {
     messages = removeTurnRetryDiagnosticMessages(messages);
   }
+  // Session image metrics intentionally summarize the final completed turn,
+  // not each retry attempt. Provider-reported token totals follow the same path.
+  deps.recordPromptImageUsage?.(messages);
 
   return {
     kind: "response",
