@@ -11,6 +11,7 @@ import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { formatStepLabel } from "../../background/agent/step-labels";
+import { uiRuntime } from "../runtime";
 
 function describeRisk(toolName: string): string {
   if (/submit|delete|close|download|upload|cookie|navigate/i.test(toolName)) {
@@ -73,7 +74,7 @@ export function ApprovalOverlay() {
     async (approved: boolean) => {
       if (!pendingApproval) return;
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "APPROVAL_RESPONSE",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,

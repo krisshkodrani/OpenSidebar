@@ -1,5 +1,6 @@
 import { SavedPrompt } from "../types";
 import { getPromptTemplate } from "../prompts";
+import { uiRuntime } from "./runtime";
 
 const STORAGE_KEY = "opensidebar:savedPrompts";
 const SEEDED_KEY = "opensidebar:savedPromptsSeeded";
@@ -25,7 +26,7 @@ const DEFAULT_PROMPTS: Omit<SavedPrompt, "id" | "createdAt" | "updatedAt">[] = [
 ];
 
 export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
-  const result = await chrome.storage.local.get([
+  const result = await uiRuntime.storage.local.get([
     STORAGE_KEY,
     SEEDED_KEY,
     VERSION_KEY,
@@ -41,7 +42,7 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
       createdAt: now,
       updatedAt: now,
     }));
-    await chrome.storage.local.set({
+    await uiRuntime.storage.local.set({
       [STORAGE_KEY]: seeded,
       [SEEDED_KEY]: true,
       [VERSION_KEY]: CURRENT_PROMPTS_VERSION,
@@ -62,7 +63,7 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
       next = next.filter((p) => p.title !== "Browser Navigation Challenge");
     }
 
-    await chrome.storage.local.set({
+    await uiRuntime.storage.local.set({
       [STORAGE_KEY]: next,
       [VERSION_KEY]: CURRENT_PROMPTS_VERSION,
     });
@@ -73,7 +74,7 @@ export async function loadSavedPrompts(): Promise<SavedPrompt[]> {
 }
 
 function persist(prompts: SavedPrompt[]): Promise<void> {
-  return chrome.storage.local.set({ [STORAGE_KEY]: prompts });
+  return uiRuntime.storage.local.set({ [STORAGE_KEY]: prompts });
 }
 
 export async function addSavedPrompt(

@@ -10,6 +10,24 @@ export const RECORD_SKILL_INTRO_DISMISSED_KEY =
 
 const MAX_EVENTS_FOR_DRAFT = 18;
 
+export interface WebsiteSkillsStorageArea {
+  get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+  set(items: Record<string, unknown>): Promise<void>;
+}
+
+function chromeWebsiteSkillsStorage(): WebsiteSkillsStorageArea {
+  return {
+    get(keys) {
+      return chrome.storage.local.get(keys as any) as unknown as Promise<
+        Record<string, unknown>
+      >;
+    },
+    async set(items) {
+      await chrome.storage.local.set(items);
+    },
+  };
+}
+
 export function classifyValueKind(
   value: string,
   inputType?: string | null,
@@ -66,8 +84,10 @@ export function withTimelineText(
   };
 }
 
-export async function loadUserWebsiteSkills(): Promise<UserWebsiteSkill[]> {
-  const result = await chrome.storage.local.get(WEBSITE_SKILLS_STORAGE_KEY);
+export async function loadUserWebsiteSkills(
+  storage: WebsiteSkillsStorageArea = chromeWebsiteSkillsStorage(),
+): Promise<UserWebsiteSkill[]> {
+  const result = await storage.get(WEBSITE_SKILLS_STORAGE_KEY);
   const raw = result[WEBSITE_SKILLS_STORAGE_KEY];
   if (!Array.isArray(raw)) return [];
   return raw.filter(isUserWebsiteSkill);
@@ -76,8 +96,9 @@ export async function loadUserWebsiteSkills(): Promise<UserWebsiteSkill[]> {
 export async function saveUserWebsiteSkill(
   draft: UserWebsiteSkillDraft,
   enabled = true,
+  storage: WebsiteSkillsStorageArea = chromeWebsiteSkillsStorage(),
 ): Promise<UserWebsiteSkill> {
-  const skills = await loadUserWebsiteSkills();
+  const skills = await loadUserWebsiteSkills(storage);
   const now = Date.now();
   const skill: UserWebsiteSkill = {
     ...draft,
@@ -86,7 +107,7 @@ export async function saveUserWebsiteSkill(
     createdAt: draft.createdAt || now,
   };
   const next = [skill, ...skills.filter((existing) => existing.id !== skill.id)];
-  await chrome.storage.local.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
+  await storage.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
   return skill;
 }
 
@@ -105,8 +126,9 @@ export async function updateUserWebsiteSkill(
       | "enabled"
     >
   >,
+  storage: WebsiteSkillsStorageArea = chromeWebsiteSkillsStorage(),
 ): Promise<UserWebsiteSkill[]> {
-  const skills = await loadUserWebsiteSkills();
+  const skills = await loadUserWebsiteSkills(storage);
   const now = Date.now();
   const next = skills.map((skill) =>
     skill.id === id
@@ -117,15 +139,18 @@ export async function updateUserWebsiteSkill(
         }
       : skill,
   );
-  await chrome.storage.local.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
+  await storage.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
   return next;
 }
 
 export async function deleteUserWebsiteSkill(
   id: string,
+  storage: WebsiteSkillsStorageArea = chromeWebsiteSkillsStorage(),
 ): Promise<UserWebsiteSkill[]> {
-  const next = (await loadUserWebsiteSkills()).filter((skill) => skill.id !== id);
-  await chrome.storage.local.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
+  const next = (await loadUserWebsiteSkills(storage)).filter(
+    (skill) => skill.id !== id,
+  );
+  await storage.set({ [WEBSITE_SKILLS_STORAGE_KEY]: next });
   return next;
 }
 

@@ -1,6 +1,7 @@
 import type { UserSettings } from "../../types";
 import { logger } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
+import { uiRuntime } from "../runtime";
 import type { SettingsSlice, SliceCreator } from "./types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -31,7 +32,7 @@ export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({
 
   loadSettingsFromStorage: async () => {
     try {
-      const loaded = await loadSettings();
+      const loaded = await loadSettings(uiRuntime.storage);
       if (loaded) {
         set((state) => {
           state.settings = { ...DEFAULT_SETTINGS, ...loaded };

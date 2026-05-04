@@ -22,11 +22,61 @@ const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
 const LOCAL_KIMI_KEY = "kimiApiKey_local";
 const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
 
+export type SettingsStorageKeys =
+  | string
+  | string[]
+  | Record<string, unknown>
+  | null
+  | undefined;
+
+export interface SettingsStorageArea {
+  get(keys?: SettingsStorageKeys): Promise<Record<string, unknown>>;
+  set(items: Record<string, unknown>): Promise<void>;
+  remove(keys: string | string[]): Promise<void>;
+}
+
+export interface SettingsStorageBackend {
+  local: SettingsStorageArea;
+  sync: SettingsStorageArea;
+  session: SettingsStorageArea;
+}
+
+function chromeStorageArea(
+  areaName: "local" | "sync" | "session",
+): SettingsStorageArea {
+  return {
+    get(keys) {
+      return chrome.storage[areaName].get(keys as any) as unknown as Promise<
+        Record<string, unknown>
+      >;
+    },
+    async set(items) {
+      await chrome.storage[areaName].set(items);
+    },
+    async remove(keys) {
+      const area = chrome.storage[areaName] as any;
+      const remove = area.remove;
+      if (typeof remove === "function") {
+        await remove.call(area, keys);
+      }
+    },
+  };
+}
+
+export const chromeSettingsStorage: SettingsStorageBackend = {
+  local: chromeStorageArea("local"),
+  sync: chromeStorageArea("sync"),
+  session: chromeStorageArea("session"),
+};
+
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
  * All API keys are credentials — never sync them.
  */
-export async function saveSettings(settings: UserSettings): Promise<void> {
+export async function saveSettings(
+  settings: UserSettings,
+  storage: SettingsStorageBackend = chromeSettingsStorage,
+): Promise<void> {
   const normalized: UserSettings = {
     ...settings,
     providerMode: settings.providerMode ?? "fireworks",
@@ -54,7 +104,7 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
     ...rest
   } = normalized;
   await Promise.all([
-    chrome.storage.local.set({
+    storage.local.set({
       [LOCAL_KEY]: openRouterApiKey,
       [LOCAL_OPENAI_KEY]: openaiApiKey ?? "",
       [LOCAL_GROQ_KEY]: groqApiKey ?? "",
@@ -64,19 +114,21 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
       [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
       [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
     }),
-    chrome.storage.sync.set({ [SYNC_KEY]: rest }),
+    storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
-    chrome.storage.session.remove(SESSION_KEY).catch(() => {}),
+    storage.session.remove(SESSION_KEY).catch(() => {}),
   ]);
 }
 
 /**
  * Load settings: merge API key from session storage with settings from sync storage.
  */
-export async function loadSettings(): Promise<UserSettings | null> {
+export async function loadSettings(
+  storage: SettingsStorageBackend = chromeSettingsStorage,
+): Promise<UserSettings | null> {
   const [syncResult, localResult, sessionResult] = await Promise.all([
-    chrome.storage.sync.get(SYNC_KEY),
-    chrome.storage.local.get([
+    storage.sync.get(SYNC_KEY),
+    storage.local.get([
       LOCAL_KEY,
       LOCAL_OPENAI_KEY,
       LOCAL_GROQ_KEY,
@@ -87,9 +139,7 @@ export async function loadSettings(): Promise<UserSettings | null> {
       LOCAL_XIAOMI_KEY,
     ]),
     // Check legacy session key for migration
-    chrome.storage.session
-      .get(SESSION_KEY)
-      .catch(() => ({}) as Record<string, unknown>),
+    storage.session.get(SESSION_KEY).catch(() => ({}) as Record<string, unknown>),
   ]);
   const syncSettings = syncResult[SYNC_KEY];
   // Prefer local, fall back to legacy session key
@@ -188,16 +238,18 @@ export async function loadSettings(): Promise<UserSettings | null> {
 /**
  * Load only the API key (fast path for background consumers that already have settings).
  */
-export async function loadApiKey(): Promise<string> {
-  const result = await chrome.storage.local.get(LOCAL_KEY);
+export async function loadApiKey(
+  storage: SettingsStorageBackend = chromeSettingsStorage,
+): Promise<string> {
+  const result = await storage.local.get(LOCAL_KEY);
   if (result[LOCAL_KEY]) return result[LOCAL_KEY] as string;
   // Migrate from legacy session storage
   try {
-    const legacy = await chrome.storage.session.get(SESSION_KEY);
+    const legacy = await storage.session.get(SESSION_KEY);
     if (legacy[SESSION_KEY]) {
       const key = legacy[SESSION_KEY] as string;
-      await chrome.storage.local.set({ [LOCAL_KEY]: key });
-      await chrome.storage.session.remove(SESSION_KEY);
+      await storage.local.set({ [LOCAL_KEY]: key });
+      await storage.session.remove(SESSION_KEY);
       return key;
     }
   } catch {

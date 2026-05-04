@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowRight, SkipForward, Square } from "lucide-react";
 import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 
 function describeLocation(url: string): string {
   try {
@@ -41,7 +42,7 @@ export function StalledRecoveryCard() {
   const skipStep = useCallback(async () => {
     if (!taskProgress) return;
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "SKIP_SUBTASK",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
@@ -56,7 +57,7 @@ export function StalledRecoveryCard() {
 
   const stopAgent = useCallback(async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,

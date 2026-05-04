@@ -15,6 +15,7 @@ import {
   XIAOMI_MODEL_PLANNER,
 } from "../../background/llm/client";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
+import { uiRuntime } from "../runtime";
 import {
   getProviderModelCatalogNote,
   getProviderModelOptions,
@@ -206,7 +207,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   };
 
   const handleExportLogs = async () => {
-    const blobUrl = await storageLogger.exportAsJsonl();
+    const blobUrl = await storageLogger.exportAsJsonl(uiRuntime.storage.local);
     const a = document.createElement("a");
     a.href = blobUrl;
     a.download = "opensidebar-logs.jsonl";
@@ -215,34 +216,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   };
 
   const requestBrowserNotificationPermission = async (): Promise<boolean> => {
-    const permissions = chrome.permissions as
-      | {
-          request?: (
-            permissions: { permissions: string[] },
-            callback?: (granted: boolean) => void,
-          ) => Promise<boolean> | void;
-        }
-      | undefined;
-    if (!permissions?.request) return false;
-    const requestPermission = permissions.request;
-
-    return await new Promise<boolean>((resolve) => {
-      try {
-        const result = requestPermission(
-          { permissions: ["notifications"] },
-          (granted) => resolve(Boolean(granted)),
-        );
-        if (result && typeof result.then === "function") {
-          result
-            .then((granted) => resolve(Boolean(granted)))
-            .catch(() => {
-              resolve(false);
-            });
-        }
-      } catch {
-        resolve(false);
-      }
-    });
+    return uiRuntime.requestPermissions(["notifications"]);
   };
 
   const handleBrowserNotificationToggle = async (checked: boolean) => {
@@ -279,8 +253,8 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     };
 
     try {
-      await saveSettings(nextState);
-      const persisted = await loadSettings();
+      await saveSettings(nextState, uiRuntime.storage);
+      const persisted = await loadSettings(uiRuntime.storage);
       updateSettings(persisted ?? nextState);
       setIsDirty(false);
 
@@ -307,12 +281,15 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   ) => {
     setDataControlStatus("Applying...");
     try {
-      const res = (await chrome.runtime.sendMessage({
+      const res = await uiRuntime.sendMessage<{
+        ok?: boolean;
+        detail?: string;
+      }>({
         type: "DATA_CONTROL_REQUEST",
         requestId: crypto.randomUUID(),
         source: "sidepanel",
         payload: { action },
-      })) as { ok?: boolean; detail?: string } | undefined;
+      });
 
       const ok = Boolean(res?.ok);
       const detail = res?.detail || (ok ? "Done." : "Action failed.");

@@ -1,5 +1,6 @@
 import React from "react";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 
 interface Props {
   children: React.ReactNode;
@@ -37,13 +38,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
     try {
       // Clear chat messages to remove the problematic data
       const keys: string[] = [];
-      chrome.storage.local.get(null).then((data) => {
+      uiRuntime.storage.local.get(null).then((data) => {
         for (const k of Object.keys(data)) {
           if (k === "chatMessages" || k.startsWith("chatMessages:")) {
             keys.push(k);
           }
         }
-        if (keys.length > 0) chrome.storage.local.remove(keys);
+        if (keys.length > 0) void uiRuntime.storage.local.remove(keys);
       });
     } catch {
       // Best-effort cleanup

@@ -1,6 +1,7 @@
 ﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
+import { uiRuntime, type UiRuntimeKeepalivePort } from "./runtime";
 
 type StoreApi = typeof useStore;
 
@@ -262,11 +263,11 @@ export function initializeBridge(
     }
   };
 
-  chrome.runtime.onMessage.addListener(listener);
+  const unsubscribeMessages = uiRuntime.subscribeMessages(listener);
 
   // Long-lived port to detect SW crashes. When the SW terminates, the port
   // disconnects and we reset stuck agent state so the user isn't locked out.
-  let port: chrome.runtime.Port | null = null;
+  let port: UiRuntimeKeepalivePort | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectDelay = 1000;
   const MAX_RECONNECT_DELAY = 30_000;
@@ -275,21 +276,7 @@ export function initializeBridge(
   function connectPort() {
     if (tornDown) return;
     try {
-      port = chrome.runtime.connect({ name: "sidepanel-keepalive" });
-      reconnectDelay = 1000; // reset backoff on successful connect
-      // Re-sync agent status after reconnect (SW may still be running a task)
-      const wsId = store.getState().activeWorkspaceId;
-      if (wsId) {
-        chrome.runtime
-          .sendMessage({
-            type: "WORKSPACE_SYNC",
-            requestId: crypto.randomUUID(),
-            source: MessageSource.SIDEPANEL,
-            payload: { workspaceId: wsId },
-          })
-          .catch(() => {});
-      }
-      port.onDisconnect.addListener(() => {
+      port = uiRuntime.connectKeepalive("sidepanel-keepalive", () => {
         port = null;
         if (tornDown) return;
         const state = store.getState();
@@ -314,6 +301,19 @@ export function initializeBridge(
         }, reconnectDelay);
         reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
       });
+      reconnectDelay = 1000; // reset backoff on successful connect
+      // Re-sync agent status after reconnect (SW may still be running a task)
+      const wsId = store.getState().activeWorkspaceId;
+      if (wsId) {
+        uiRuntime
+          .sendMessage({
+            type: "WORKSPACE_SYNC",
+            requestId: crypto.randomUUID(),
+            source: MessageSource.SIDEPANEL,
+            payload: { workspaceId: wsId },
+          })
+          .catch(() => {});
+      }
     } catch {
       // Extension context invalidated — side panel is closing
       return;
@@ -324,7 +324,7 @@ export function initializeBridge(
 
   return () => {
     tornDown = true;
-    chrome.runtime.onMessage.removeListener(listener);
+    unsubscribeMessages();
     if (reconnectTimer != null) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
