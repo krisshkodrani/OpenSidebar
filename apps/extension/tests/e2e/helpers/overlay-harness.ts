@@ -21,7 +21,21 @@ interface StaticServerHandle {
 
 type OverlayHarnessStorageArea = "local" | "sync" | "session";
 
+export interface OverlayHarnessRuntimeTab {
+  id?: number;
+  url?: string;
+  title?: string;
+  active?: boolean;
+  windowId?: number;
+}
+
+export interface OverlayHarnessRuntimeWindow {
+  id?: number;
+}
+
 export interface OverlayHarnessRuntimeOptions {
+  tab?: OverlayHarnessRuntimeTab;
+  window?: OverlayHarnessRuntimeWindow;
   storage?: Partial<Record<OverlayHarnessStorageArea, Record<string, unknown>>>;
 }
 
@@ -40,6 +54,12 @@ export interface OverlayHarnessMessageCapture {
   outboundTypes: string[];
   outboundMessages: unknown[];
   inboundTypes: string[];
+}
+
+export interface OverlayHarnessRuntimeSnapshot {
+  activeTab: OverlayHarnessRuntimeTab | null;
+  currentWindow: OverlayHarnessRuntimeWindow | null;
+  storage: Record<OverlayHarnessStorageArea, Record<string, unknown>>;
 }
 
 export interface OverlayFakeBackgroundOptions {
@@ -63,6 +83,7 @@ export interface OverlayHarnessRunner {
   pageErrors: string[];
   inject(): Promise<void>;
   getMountState(): Promise<OverlayHarnessMountState>;
+  readRuntimeSnapshot(): Promise<OverlayHarnessRuntimeSnapshot>;
   startMessageCapture(): Promise<void>;
   startFakeBackgroundController(
     options?: OverlayFakeBackgroundOptions,
@@ -247,6 +268,22 @@ export async function createOverlayHarnessRunner(
           hasShadowRoot: Boolean(host?.shadowRoot),
           hasRoot: Boolean(root),
           runtimeSource: window.__opensidebarOverlayRuntime?.port.source,
+        };
+      });
+    },
+
+    async readRuntimeSnapshot() {
+      return page.evaluate(async () => {
+        const runtime = window.__opensidebarOverlayRuntime;
+        if (!runtime) throw new Error("Overlay runtime was not mounted.");
+        return {
+          activeTab: await runtime.port.getActiveTab(),
+          currentWindow: await runtime.port.getCurrentWindow(),
+          storage: {
+            local: runtime.getStorageSnapshot("local"),
+            sync: runtime.getStorageSnapshot("sync"),
+            session: runtime.getStorageSnapshot("session"),
+          },
         };
       });
     },
