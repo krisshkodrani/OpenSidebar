@@ -587,6 +587,8 @@ export function emptySessionMetrics(): SessionMetrics {
     llmCallCount: 0,
     visionCallCount: 0,
     cachedVisionCallCount: 0,
+    totalImagePromptTokenEstimate: 0,
+    imagePromptCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
@@ -610,7 +612,12 @@ export function sanitizeSessionMetrics(
     if (typeof value !== "number" || Number.isNaN(value) || value < 0)
       return null;
   }
-  for (const key of ["visionCallCount", "cachedVisionCallCount"] as const) {
+  for (const key of [
+    "visionCallCount",
+    "cachedVisionCallCount",
+    "totalImagePromptTokenEstimate",
+    "imagePromptCount",
+  ] as const) {
     const value = raw[key];
     if (
       value !== undefined &&
@@ -629,6 +636,8 @@ export function sanitizeSessionMetrics(
       const calls = entry.calls;
       const actualCost = entry.actualCost;
       const estimatedCost = entry.estimatedCost;
+      const imagePromptTokenEstimate = entry.imagePromptTokenEstimate;
+      const imagePromptCount = entry.imagePromptCount;
       const costMode = entry.costMode;
       if (
         typeof promptTokens !== "number" ||
@@ -651,6 +660,22 @@ export function sanitizeSessionMetrics(
         (typeof estimatedCost !== "number" ||
           Number.isNaN(estimatedCost) ||
           estimatedCost < 0)
+      ) {
+        return null;
+      }
+      if (
+        imagePromptTokenEstimate !== undefined &&
+        (typeof imagePromptTokenEstimate !== "number" ||
+          Number.isNaN(imagePromptTokenEstimate) ||
+          imagePromptTokenEstimate < 0)
+      ) {
+        return null;
+      }
+      if (
+        imagePromptCount !== undefined &&
+        (typeof imagePromptCount !== "number" ||
+          Number.isNaN(imagePromptCount) ||
+          imagePromptCount < 0)
       ) {
         return null;
       }
@@ -678,6 +703,9 @@ export function sanitizeSessionMetrics(
       modelBreakdown[model] = {
         promptTokens,
         completionTokens,
+        imagePromptTokenEstimate:
+          (imagePromptTokenEstimate as number | undefined) ?? 0,
+        imagePromptCount: (imagePromptCount as number | undefined) ?? 0,
         cost,
         actualCost: normalizedActualCost,
         estimatedCost: normalizedEstimatedCost,
@@ -724,6 +752,18 @@ export function sanitizeSessionMetrics(
     raw.cachedVisionCallCount >= 0
       ? raw.cachedVisionCallCount
       : 0;
+  const totalImagePromptTokenEstimate =
+    typeof raw.totalImagePromptTokenEstimate === "number" &&
+    !Number.isNaN(raw.totalImagePromptTokenEstimate) &&
+    raw.totalImagePromptTokenEstimate >= 0
+      ? raw.totalImagePromptTokenEstimate
+      : 0;
+  const imagePromptCount =
+    typeof raw.imagePromptCount === "number" &&
+    !Number.isNaN(raw.imagePromptCount) &&
+    raw.imagePromptCount >= 0
+      ? raw.imagePromptCount
+      : 0;
   let perceptionModeDecision: SessionMetrics["perceptionModeDecision"];
   if (raw.perceptionModeDecision !== undefined) {
     if (!isRecord(raw.perceptionModeDecision)) return null;
@@ -758,6 +798,8 @@ export function sanitizeSessionMetrics(
     llmCallCount: raw.llmCallCount as number,
     visionCallCount,
     cachedVisionCallCount,
+    totalImagePromptTokenEstimate,
+    imagePromptCount,
     perceptionModeDecision,
     totalCachedTokens: raw.totalCachedTokens as number,
     modelBreakdown,
@@ -817,6 +859,11 @@ export function mergeSessionMetrics(
   target.cachedVisionCallCount =
     (target.cachedVisionCallCount ?? 0) +
     (incoming.cachedVisionCallCount ?? 0);
+  target.totalImagePromptTokenEstimate =
+    (target.totalImagePromptTokenEstimate ?? 0) +
+    (incoming.totalImagePromptTokenEstimate ?? 0);
+  target.imagePromptCount =
+    (target.imagePromptCount ?? 0) + (incoming.imagePromptCount ?? 0);
   if (incoming.perceptionModeDecision) {
     target.perceptionModeDecision = {
       mode: incoming.perceptionModeDecision.mode,
@@ -832,11 +879,18 @@ export function mergeSessionMetrics(
       cost: 0,
       actualCost: 0,
       estimatedCost: 0,
+      imagePromptTokenEstimate: 0,
+      imagePromptCount: 0,
       costMode: "none",
       calls: 0,
     };
     existing.promptTokens += metrics.promptTokens;
     existing.completionTokens += metrics.completionTokens;
+    existing.imagePromptTokenEstimate =
+      (existing.imagePromptTokenEstimate ?? 0) +
+      (metrics.imagePromptTokenEstimate ?? 0);
+    existing.imagePromptCount =
+      (existing.imagePromptCount ?? 0) + (metrics.imagePromptCount ?? 0);
     existing.cost += metrics.cost;
     existing.actualCost =
       (existing.actualCost ?? 0) + (metrics.actualCost ?? 0);

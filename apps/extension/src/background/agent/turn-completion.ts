@@ -57,6 +57,7 @@ export type TurnCompletionDeps = {
   statusHandler: (status: AgentStatus, message: string) => void;
   getMetrics: () => SessionMetrics;
   invalidatePerceptionCache: () => void;
+  recordPromptImageUsage?: (messages: LLMMessage[]) => void;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -113,6 +114,7 @@ export async function completeTurnWithRetries(
     };
 
     try {
+      deps.recordPromptImageUsage?.(messages);
       response = await deps.llm.completeStream(
         {
           messages,
