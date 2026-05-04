@@ -1,4 +1,7 @@
-import type { UserSettings } from "../../types";
+import {
+  DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+  type UserSettings,
+} from "../../types";
 import { logger } from "../../utils";
 import { loadSettings } from "../../utils/settings-storage";
 import { uiRuntime } from "../runtime";
@@ -8,6 +11,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
   providerMode: "fireworks",
   perceptionMode: "auto",
+  maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   laneTopologyMode: "full",
   maxTurns: 100,
   theme: "system",

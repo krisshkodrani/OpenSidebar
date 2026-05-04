@@ -5,7 +5,10 @@
  * All other settings → chrome.storage.sync (cross-device sync)
  */
 
-import type { UserSettings } from "../types";
+import {
+  DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+  type UserSettings,
+} from "../types";
 import {
   isExecutorModelAllowed,
   type ProviderMode,
@@ -69,6 +72,18 @@ export const chromeSettingsStorage: SettingsStorageBackend = {
   session: chromeStorageArea("session"),
 };
 
+export function normalizeMaxImagePromptTokenEstimate(value: unknown): number {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(numericValue) && numericValue >= 0
+    ? Math.floor(numericValue)
+    : DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE;
+}
+
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
  * All API keys are credentials — never sync them.
@@ -81,6 +96,9 @@ export async function saveSettings(
     ...settings,
     providerMode: settings.providerMode ?? "fireworks",
     perceptionMode: settings.perceptionMode ?? "auto",
+    maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
+      settings.maxImagePromptTokenEstimate,
+    ),
   };
   if (
     normalized.executorModel &&
@@ -205,6 +223,9 @@ export async function loadSettings(
   // unified VL only when page or task signals indicate vision is useful.
   if (!raw.perceptionMode) raw.perceptionMode = "auto";
   delete raw.useVLExecutor;
+  raw.maxImagePromptTokenEstimate = normalizeMaxImagePromptTokenEstimate(
+    raw.maxImagePromptTokenEstimate,
+  );
 
   if (
     typeof raw.executorModel === "string" &&
