@@ -38,6 +38,7 @@ import JobBoard from "./routes/job-board";
 import JobApplication from "./routes/job-application";
 import WorkspaceChoice from "./routes/workspace-choice";
 import SessionStateProbe from "./routes/session-state";
+import VisualCanvas from "./routes/visual-canvas";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -76,6 +77,7 @@ const routes = [
   { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication },
   { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
   { path: "/session-state", label: "Session", title: "Session State Probe", component: SessionStateProbe },
+  { path: "/visual-canvas", label: "Canvas", title: "Visual Canvas Report", component: VisualCanvas },
 ];
 
 function Layout({ children, currentPath }) {
