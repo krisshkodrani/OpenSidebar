@@ -39,25 +39,82 @@ body {
   font-weight: 700;
   color: #94a3b8;
 }
-.fixture-links {
-  display: flex;
-  gap: 8px;
+.fixture-menu {
+  position: relative;
 }
-.fixture-links a {
+.fixture-menu summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 164px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #1e293b;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.fixture-menu summary::-webkit-details-marker {
+  display: none;
+}
+.fixture-menu summary:hover,
+.fixture-menu[open] summary {
+  border-color: #475569;
+  background: #273449;
+}
+.fixture-menu-caret {
+  margin-left: auto;
   color: #94a3b8;
+  font-size: 12px;
+}
+.fixture-menu[open] .fixture-menu-caret {
+  transform: rotate(180deg);
+}
+.fixture-menu-panel {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 4px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 72px));
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
+}
+.fixture-menu-panel a {
+  display: grid;
+  gap: 2px;
+  color: #cbd5e1;
   text-decoration: none;
   font-size: 13px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  transition: all 0.15s;
+  padding: 9px 10px;
+  border-radius: 7px;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
-.fixture-links a:hover {
+.fixture-menu-panel a:hover {
   color: #f8fafc;
   background: #1e293b;
 }
-.fixture-links a.active {
+.fixture-menu-panel a.active {
   color: #f8fafc;
-  background: #3b82f6;
+  background: #2563eb;
+}
+.fixture-menu-panel small {
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 /* Top bar */
@@ -605,6 +662,18 @@ body {
   }
 }
 @media (max-width: 768px) {
+  .fixture-nav {
+    padding: 0 16px;
+  }
+  .fixture-logo {
+    font-size: 13px;
+  }
+  .fixture-menu summary {
+    min-width: 132px;
+  }
+  .fixture-menu-panel {
+    grid-template-columns: 1fr;
+  }
   .content {
     grid-template-columns: 1fr;
   }

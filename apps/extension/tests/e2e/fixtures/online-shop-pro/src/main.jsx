@@ -81,26 +81,32 @@ const routes = [
 ];
 
 function Layout({ children, currentPath }) {
-  const navigate = (path) => {
-    window.location.href = path;
-  };
+  const currentRoute = routes.find((route) => route.path === currentPath);
 
   return (
     <>
       <div className="fixture-nav">
         <div className="fixture-nav-inner">
           <span className="fixture-logo">OpenSidebar Fixtures</span>
-          <div className="fixture-links">
-            {routes.map((route) => (
-              <a
-                key={route.path}
-                href={route.path}
-                className={currentPath === route.path ? "active" : ""}
-              >
-                {route.label}
-              </a>
-            ))}
-          </div>
+          <details className="fixture-menu">
+            <summary aria-label="Open fixture navigation">
+              <span>{currentRoute?.label || "Fixtures"}</span>
+              <span className="fixture-menu-caret">▾</span>
+            </summary>
+            <nav className="fixture-menu-panel" aria-label="Fixture pages">
+              {routes.map((route) => (
+                <a
+                  key={route.path}
+                  href={route.path}
+                  className={currentPath === route.path ? "active" : ""}
+                  aria-current={currentPath === route.path ? "page" : undefined}
+                >
+                  <span>{route.label}</span>
+                  <small>{route.title}</small>
+                </a>
+              ))}
+            </nav>
+          </details>
         </div>
       </div>
       {children}
