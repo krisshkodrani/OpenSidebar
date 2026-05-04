@@ -32,6 +32,18 @@ export interface OverlayHarnessMessageCapture {
   inboundTypes: string[];
 }
 
+export interface OverlayFakeBackgroundOptions {
+  responseText?: string;
+  thinkingDetail?: string;
+  doneDetail?: string;
+}
+
+export interface OverlayFakeBackgroundState {
+  handledTypes: string[];
+  emittedTypes: string[];
+  lastUserText?: string;
+}
+
 export interface OverlayHarnessRunner {
   page: Page;
   browser: Browser;
@@ -39,6 +51,12 @@ export interface OverlayHarnessRunner {
   inject(): Promise<void>;
   getMountState(): Promise<OverlayHarnessMountState>;
   startMessageCapture(): Promise<void>;
+  startFakeBackgroundController(
+    options?: OverlayFakeBackgroundOptions,
+  ): Promise<void>;
+  readFakeBackgroundState(): Promise<OverlayFakeBackgroundState>;
+  waitForFakeBackgroundHandled(type: string): Promise<void>;
+  waitForOverlayText(text: string): Promise<void>;
   sendUiMessage(message: unknown): Promise<void>;
   emitRuntimeMessage(message: unknown): Promise<void>;
   sendFeedbackThroughUi(text: string): Promise<void>;
@@ -233,6 +251,162 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
       });
     },
 
+    async startFakeBackgroundController(options = {}) {
+      await page.evaluate((controllerOptions) => {
+        window.__overlayFakeBackground?.dispose();
+
+        const state: OverlayFakeBackgroundState = {
+          handledTypes: [],
+          emittedTypes: [],
+        };
+        let nextSequence = 0;
+
+        const emitBackgroundMessage = (message: unknown) => {
+          const type =
+            message && typeof message === "object"
+              ? (message as { type?: unknown }).type
+              : undefined;
+          if (typeof type === "string") {
+            state.emittedTypes.push(type);
+          }
+          window.dispatchEvent(
+            new CustomEvent("opensidebar:overlay:receive-message", {
+              detail: { message },
+            }),
+          );
+        };
+
+        const onUiMessage = (event: Event) => {
+          const message = (
+            event as CustomEvent<{
+              message?: {
+                type?: string;
+                payload?: { text?: string; workspaceId?: string | null };
+                workspaceId?: string | null;
+              };
+            }>
+          ).detail?.message;
+          if (!message?.type) return;
+
+          state.handledTypes.push(message.type);
+          if (message.type !== "USER_CHAT") return;
+
+          const userText = message.payload?.text ?? "";
+          state.lastUserText = userText;
+          const sequence = ++nextSequence;
+          const workspaceId =
+            message.workspaceId ?? message.payload?.workspaceId ?? null;
+          const responseText =
+            controllerOptions.responseText ??
+            `Fake overlay response: ${userText}`;
+          const thinkingDetail =
+            controllerOptions.thinkingDetail ??
+            "Fake background processing feedback";
+          const doneDetail =
+            controllerOptions.doneDetail ?? "Fake background complete";
+
+          queueMicrotask(() => {
+            emitBackgroundMessage({
+              type: "AGENT_STATUS",
+              source: "background",
+              requestId: `overlay-fake-status-${sequence}`,
+              workspaceId,
+              payload: { status: "THINKING", detail: thinkingDetail },
+            });
+            emitBackgroundMessage({
+              type: "STREAM_CHUNK",
+              source: "background",
+              requestId: `overlay-fake-stream-${sequence}`,
+              workspaceId,
+              payload: { delta: responseText, done: false },
+            });
+            emitBackgroundMessage({
+              type: "STREAM_CHUNK",
+              source: "background",
+              requestId: `overlay-fake-stream-done-${sequence}`,
+              workspaceId,
+              payload: { delta: "", done: true },
+            });
+            emitBackgroundMessage({
+              type: "TASK_COMPLETION",
+              source: "background",
+              requestId: `overlay-fake-completion-${sequence}`,
+              workspaceId,
+              payload: {
+                taskId: `overlay-fake-task-${sequence}`,
+                status: "completed",
+                totalTurnsUsed: 1,
+                totalTimeMs: 1,
+                summary: responseText,
+                subtaskResults: [
+                  {
+                    description: userText || "Overlay feedback",
+                    status: "completed",
+                    turnsUsed: 1,
+                    result: responseText,
+                  },
+                ],
+                urlHistory: [window.location.href],
+              },
+            });
+            emitBackgroundMessage({
+              type: "AGENT_STATUS",
+              source: "background",
+              requestId: `overlay-fake-idle-${sequence}`,
+              workspaceId,
+              payload: { status: "IDLE", detail: doneDetail },
+            });
+          });
+        };
+
+        window.addEventListener("opensidebar:overlay:send-message", onUiMessage);
+        window.__overlayFakeBackground = {
+          state,
+          dispose() {
+            window.removeEventListener(
+              "opensidebar:overlay:send-message",
+              onUiMessage,
+            );
+          },
+        };
+      }, options);
+    },
+
+    readFakeBackgroundState() {
+      return page.evaluate(() => {
+        const state = window.__overlayFakeBackground?.state;
+        if (!state) {
+          throw new Error("Overlay fake background controller was not started.");
+        }
+        return state;
+      });
+    },
+
+    async waitForFakeBackgroundHandled(type: string) {
+      await page.waitForFunction(
+        (expectedType) =>
+          Boolean(
+            window.__overlayFakeBackground?.state.handledTypes.includes(
+              expectedType,
+            ),
+          ),
+        {},
+        type,
+      );
+    },
+
+    async waitForOverlayText(text: string) {
+      await page.waitForFunction(
+        (expectedText) => {
+          const root = document.getElementById("opensidebar-harness-host")
+            ?.shadowRoot;
+          return Boolean(root?.textContent?.includes(expectedText));
+        },
+        {},
+        text,
+      );
+    },
+
     async sendUiMessage(message: unknown) {
       await page.evaluate(async (uiMessage) => {
         const runtime = window.__opensidebarOverlayRuntime;
@@ -310,5 +484,9 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
 declare global {
   interface Window {
     __overlaySmoke: OverlayHarnessMessageCapture;
+    __overlayFakeBackground?: {
+      state: OverlayFakeBackgroundState;
+      dispose(): void;
+    };
   }
 }

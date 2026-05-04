@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createOverlayHarnessRunner,
   type OverlayHarnessRunner,
@@ -7,11 +7,11 @@ import {
 describe("Overlay harness browser injection", () => {
   let runner: OverlayHarnessRunner;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     runner = await createOverlayHarnessRunner();
   }, 60_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     await runner?.close().catch(() => {});
   });
 
@@ -71,6 +71,51 @@ describe("Overlay harness browser injection", () => {
         isFeedback: true,
       },
     });
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
+
+  it("drives visible overlay state transitions with a fake background controller", async () => {
+    await runner.inject();
+    await runner.startMessageCapture();
+    await runner.startFakeBackgroundController();
+
+    await runner.emitRuntimeMessage({
+      type: "AGENT_STATUS",
+      source: "background",
+      requestId: "overlay-fake-ready",
+      payload: {
+        status: "THINKING",
+        detail: "Fake background ready for feedback",
+      },
+    });
+    await runner.waitForOverlayText("Fake background ready for feedback");
+
+    await runner.sendFeedbackThroughUi("Use the visible heading.");
+    await runner.waitForFakeBackgroundHandled("USER_CHAT");
+    await runner.waitForOverlayText(
+      "Fake overlay response: Use the visible heading.",
+    );
+    await runner.waitForOverlayText("Task completed");
+
+    const capture = await runner.readMessageCapture();
+    expect(capture.inboundTypes).toEqual(
+      expect.arrayContaining([
+        "AGENT_STATUS",
+        "STREAM_CHUNK",
+        "TASK_COMPLETION",
+      ]),
+    );
+
+    const fakeBackground = await runner.readFakeBackgroundState();
+    expect(fakeBackground.handledTypes).toContain("USER_CHAT");
+    expect(fakeBackground.emittedTypes).toEqual(
+      expect.arrayContaining([
+        "AGENT_STATUS",
+        "STREAM_CHUNK",
+        "TASK_COMPLETION",
+      ]),
+    );
+    expect(fakeBackground.lastUserText).toBe("Use the visible heading.");
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
 });
