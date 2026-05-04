@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { Loader2, Pause, Play, Square, AlertTriangle } from "lucide-react";
-import { AgentStatus, MessageSource, SessionMetrics } from "../../types";
+import { AgentStatus, SessionMetrics } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
@@ -201,7 +201,7 @@ export function PrimaryTaskRail() {
       await uiRuntime.sendMessage({
         type: "PAUSE_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (error) {
@@ -214,7 +214,7 @@ export function PrimaryTaskRail() {
       await uiRuntime.sendMessage({
         type: "RESUME_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (error) {
@@ -227,7 +227,7 @@ export function PrimaryTaskRail() {
       await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (error) {

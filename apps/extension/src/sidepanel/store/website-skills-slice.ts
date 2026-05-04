@@ -3,7 +3,7 @@ import {
   RECORD_SKILL_INTRO_DISMISSED_KEY,
   updateUserWebsiteSkill,
 } from "../../utils/website-skills";
-import { MessageSource, UserWebsiteSkillDraft } from "../../types";
+import { UserWebsiteSkillDraft } from "../../types";
 import { uiRuntime } from "../runtime";
 import type { SliceCreator, WebsiteSkillsSlice } from "./types";
 
@@ -11,7 +11,7 @@ function message<T>(type: string, payload: Record<string, unknown> = {}): Promis
   return uiRuntime.sendMessage({
     type,
     requestId: crypto.randomUUID(),
-    source: MessageSource.SIDEPANEL,
+    source: uiRuntime.source,
     payload,
   });
 }

@@ -9,7 +9,6 @@ import {
 import { useStore } from "../store";
 import { PlanStepIcon } from "./PlanStepIcon";
 import { buildRecoveryHint, derivePlanRows } from "../plan-board-view";
-import { MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
 
@@ -133,7 +132,7 @@ export function PlanStrip({
         await uiRuntime.sendMessage({
           type: "PLAN_CONFIRMATION_RESPONSE",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           workspaceId: activeWorkspaceId,
           payload: {
             confirmationId: pendingPlan.confirmationId,
@@ -165,7 +164,7 @@ export function PlanStrip({
       await uiRuntime.sendMessage({
         type: "SKIP_SUBTASK",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         workspaceId: activeWorkspaceId,
         payload: { taskId: taskProgress.taskId },
       });

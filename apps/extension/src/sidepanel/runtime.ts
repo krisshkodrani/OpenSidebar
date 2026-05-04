@@ -1,4 +1,4 @@
-import type { RuntimeMessage } from "../types";
+import { MessageSource, type RuntimeMessage } from "../types";
 
 export interface UiRuntimeTab {
   id?: number;
@@ -41,6 +41,7 @@ export interface UiRuntimeStorage {
 }
 
 export interface UiRuntimePort {
+  source: MessageSource.SIDEPANEL | MessageSource.UI;
   getUrl(path: string): string;
   sendMessage<TResponse = unknown>(message: unknown): Promise<TResponse>;
   subscribeMessages(listener: (message: RuntimeMessage) => void): () => void;
@@ -93,6 +94,8 @@ function chromeStorageArea(
 }
 
 export const chromeUiRuntimePort: UiRuntimePort = {
+  source: MessageSource.SIDEPANEL,
+
   getUrl(path) {
     if (
       typeof chrome !== "undefined" &&

@@ -1,4 +1,4 @@
-import type { RuntimeMessage } from "../types";
+import { MessageSource, type RuntimeMessage } from "../types";
 import type {
   UiRuntimeActiveTabInfo,
   UiRuntimePort,
@@ -141,6 +141,8 @@ export function createOverlayUiRuntimeHarness(
   };
 
   const port: UiRuntimePort = {
+    source: MessageSource.UI,
+
     getUrl(path) {
       return path;
     },

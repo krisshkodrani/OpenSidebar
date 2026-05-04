@@ -1,7 +1,7 @@
 import React, { useCallback } from "react";
 import { Loader2, Pause, Play } from "lucide-react";
 import { useStore } from "../store";
-import { AgentStatus, MessageSource, SessionMetrics } from "../../types";
+import { AgentStatus, SessionMetrics } from "../../types";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
 
@@ -103,7 +103,7 @@ export function StatusLine() {
       await uiRuntime.sendMessage({
         type: "PAUSE_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (e) {
@@ -116,7 +116,7 @@ export function StatusLine() {
       await uiRuntime.sendMessage({
         type: "RESUME_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (e) {

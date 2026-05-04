@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { HelpCircle } from "lucide-react";
-import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
@@ -49,7 +48,7 @@ export function ClarificationOverlay() {
         await uiRuntime.sendMessage({
           type: "CLARIFICATION_RESPONSE",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           workspaceId: useStore.getState().activeWorkspaceId,
           payload: {
             clarificationId: pending.clarificationId,
