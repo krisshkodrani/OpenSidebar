@@ -19,6 +19,16 @@ interface StaticServerHandle {
   close(): Promise<void>;
 }
 
+type OverlayHarnessStorageArea = "local" | "sync" | "session";
+
+export interface OverlayHarnessRuntimeOptions {
+  storage?: Partial<Record<OverlayHarnessStorageArea, Record<string, unknown>>>;
+}
+
+export interface OverlayHarnessRunnerOptions {
+  runtimeOptions?: OverlayHarnessRuntimeOptions;
+}
+
 export interface OverlayHarnessMountState {
   hasHost: boolean;
   hasShadowRoot: boolean;
@@ -63,6 +73,7 @@ export interface OverlayHarnessRunner {
   clickOverlayButton(ariaLabel: string): Promise<void>;
   sendUiMessage(message: unknown): Promise<void>;
   emitRuntimeMessage(message: unknown): Promise<void>;
+  sendPrimaryMessageThroughUi(text: string): Promise<void>;
   sendFeedbackThroughUi(text: string): Promise<void>;
   readMessageCapture(): Promise<OverlayHarnessMessageCapture>;
   close(): Promise<void>;
@@ -178,7 +189,9 @@ async function injectModule(page: Page, scriptUrl: string): Promise<void> {
   );
 }
 
-export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner> {
+export async function createOverlayHarnessRunner(
+  options: OverlayHarnessRunnerOptions = {},
+): Promise<OverlayHarnessRunner> {
   const overlayBundlePath = await readOverlayBundlePath();
   const staticServer = await startDistServer();
   let browser: Browser | null = null;
@@ -214,6 +227,11 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
       await page.goto(`${staticServer.origin}/overlay-smoke`, {
         waitUntil: "domcontentloaded",
       });
+      if (options.runtimeOptions) {
+        await page.evaluate((runtimeOptions) => {
+          window.__opensidebarOverlayConfig = { runtimeOptions };
+        }, options.runtimeOptions);
+      }
       await injectModule(page, `${staticServer.origin}/${overlayBundlePath}`);
       await page.waitForSelector("#opensidebar-harness-host", {
         timeout: 15_000,
@@ -505,6 +523,48 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
           }),
         );
       }, message);
+    },
+
+    async sendPrimaryMessageThroughUi(text: string) {
+      await page.waitForFunction(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        return Boolean(
+          root?.querySelector('textarea[placeholder="What can I help with?"]'),
+        );
+      });
+      await page.evaluate((value) => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        const textarea = root?.querySelector(
+          'textarea[placeholder="What can I help with?"]',
+        ) as HTMLTextAreaElement | null;
+        if (!textarea) {
+          throw new Error("Overlay primary textarea was not found.");
+        }
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(textarea, value);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      }, text);
+      await page.waitForFunction(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        return Boolean(root?.querySelector('button[aria-label="Send message"]'));
+      });
+      await page.evaluate(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        const button = root?.querySelector(
+          'button[aria-label="Send message"]',
+        ) as HTMLButtonElement | null;
+        if (!button) {
+          throw new Error("Overlay send message button was not found.");
+        }
+        button.click();
+      });
     },
 
     async sendFeedbackThroughUi(text: string) {
