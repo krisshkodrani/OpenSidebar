@@ -25,6 +25,9 @@ export interface PerceptionRuntimeModeDecisionArgs
   useVLExecutor?: boolean;
   providerMode?: ProviderMode;
   taskText?: string;
+  imagePromptTokensUsed?: number;
+  maxImagePromptTokens?: number;
+  nextImagePromptTokenEstimate?: number;
 }
 
 const VISUAL_TASK_PATTERN =
@@ -34,6 +37,21 @@ const SPARSE_TEXT_LENGTH_THRESHOLD = 500;
 const SPARSE_DOM_ELEMENT_THRESHOLD = 3;
 const SPARSE_SPA_ELEMENT_THRESHOLD = 5;
 const SPARSE_SPA_VISIBLE_TEXT_THRESHOLD = 300;
+
+function isImageBudgetExhausted(
+  args: PerceptionRuntimeModeDecisionArgs,
+): boolean {
+  if (
+    typeof args.maxImagePromptTokens !== "number" ||
+    typeof args.nextImagePromptTokenEstimate !== "number"
+  ) {
+    return false;
+  }
+  return (
+    (args.imagePromptTokensUsed ?? 0) + args.nextImagePromptTokenEstimate >
+    args.maxImagePromptTokens
+  );
+}
 
 export function extractPerceptionPageSignals(
   snapshot?: Pick<
@@ -123,6 +141,13 @@ export function resolvePerceptionRuntimeModeDecision(
   }
 
   if (signals.length > 0) {
+    if (isImageBudgetExhausted(args)) {
+      return {
+        mode: "structured",
+        reason: "image_budget_exhausted",
+        signals: [...signals, "image_budget_exhausted"],
+      };
+    }
     return {
       mode: "unified_vl",
       reason: signals[0],

@@ -37,6 +37,36 @@ describe("perception mode resolution", () => {
     });
   });
 
+  test("auto falls back to structured mode when image budget is exhausted", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        taskText: "Read the chart and tell me the highest value",
+        elementCount: 20,
+        pageTextLength: 2000,
+        imagePromptTokensUsed: 1_000,
+        maxImagePromptTokens: 1_500,
+        nextImagePromptTokenEstimate: 765,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "image_budget_exhausted",
+      signals: ["visual_task_text", "image_budget_exhausted"],
+    });
+  });
+
+  test("explicit unified VL override is not downgraded by auto image budget", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "unified_vl",
+        taskText: "Read the chart",
+        imagePromptTokensUsed: 1_000,
+        maxImagePromptTokens: 1_500,
+        nextImagePromptTokenEstimate: 765,
+      }),
+    ).toBe("unified_vl");
+  });
+
   test("auto selects unified VL for sparse DOM", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({

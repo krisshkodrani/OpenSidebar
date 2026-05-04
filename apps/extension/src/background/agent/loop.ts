@@ -105,6 +105,7 @@ export {
 import { isPaginationNavigationClick } from "./action-exemption-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import {
+  canSpendImagePromptBudget,
   emptySessionMetrics,
   estimateImagePromptUsage,
   imagePromptUsageForCount,
@@ -114,6 +115,7 @@ import {
   recordPerceptionModeDecision,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
+  resolveImagePromptTokenBudget,
 } from "./agent-telemetry";
 import {
   approvalRequestMessage,
@@ -442,6 +444,7 @@ export class AgentLoop {
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
   private useVLExecutorOption?: boolean;
+  private maxImagePromptTokenEstimate?: number;
   private providerModeOption?:
     | "openrouter"
     | "openrouter-groq"
@@ -587,6 +590,35 @@ export class AgentLoop {
     recordImagePromptUsage(this.metrics, estimateImagePromptUsage(messages));
   }
 
+  private imagePromptBudgetAllows(imageCount: number): boolean {
+    return canSpendImagePromptBudget(
+      this.metrics,
+      imagePromptUsageForCount(imageCount),
+      this.maxImagePromptTokenEstimate,
+    );
+  }
+
+  private recordImagePromptBudgetExhausted(
+    imageCount: number,
+    source: string,
+  ): void {
+    const requested = imagePromptUsageForCount(imageCount);
+    const used = this.metrics.totalImagePromptTokenEstimate ?? 0;
+    const max = resolveImagePromptTokenBudget(
+      this.maxImagePromptTokenEstimate,
+    );
+    const detail = {
+      source,
+      requestedImages: imageCount,
+      requestedTokenEstimate: requested.estimatedTokens,
+      usedTokenEstimate: used,
+      maxTokenEstimate: max,
+      remainingTokenEstimate: Math.max(0, max - used),
+    };
+    this.traceRecorder?.recordEvent("image_prompt_budget_exhausted", detail);
+    this.log.info("agent", "Image prompt budget exhausted", detail);
+  }
+
   /** Get the current accumulated metrics snapshot */
   public getMetrics(): SessionMetrics {
     return sessionMetricsSnapshot({
@@ -693,6 +725,7 @@ export class AgentLoop {
       xiaomiApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
+      maxImagePromptTokenEstimate?: number;
       useVLExecutor?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
@@ -703,6 +736,7 @@ export class AgentLoop {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.perceptionModeOption = options?.perceptionMode;
     this.useVLExecutorOption = options?.useVLExecutor;
+    this.maxImagePromptTokenEstimate = options?.maxImagePromptTokenEstimate;
     this.providerModeOption = options?.providerMode;
     // Initial observation path. start() refines auto mode once task/page
     // signals are available from the initial snapshot.
@@ -2727,6 +2761,13 @@ export class AgentLoop {
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       taskText: initialUserText ?? "",
+      imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
+      maxImagePromptTokens: resolveImagePromptTokenBudget(
+        this.maxImagePromptTokenEstimate,
+      ),
+      // Conservative high-detail estimate; the final runtime gates enforce the
+      // same cap before any screenshot-backed prompt is sent.
+      nextImagePromptTokenEstimate: imagePromptUsageForCount(1).estimatedTokens,
       ...extractPerceptionPageSignals(snapshot),
     });
     this.useVLExecutor = perceptionDecision.mode === "unified_vl";
@@ -2778,7 +2819,11 @@ export class AgentLoop {
         this.hasReadPage = true;
       }
 
-      if (this.useVLExecutor && warmupScreenshot) {
+      if (
+        this.useVLExecutor &&
+        warmupScreenshot &&
+        this.imagePromptBudgetAllows(1)
+      ) {
         // VL mode: use warmup screenshot directly — skip VLM call
         this.context.setScreenshotForExecutor(warmupScreenshot);
         this.context.setPageInterpretation(null);
@@ -2803,6 +2848,11 @@ export class AgentLoop {
           "VL mode: using warmup screenshot (skipped VLM)",
           { tabId },
         );
+      } else if (this.useVLExecutor && warmupScreenshot && !warmupPerception) {
+        this.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
+        this.context.setScreenshotForExecutor(null);
+        this.context.setPageInterpretation(null);
+        this.perception.setScreenshotUrl(null);
       } else if (warmupPerception) {
         // Use pre-computed perception — hydrate PerceptionAgent with warmup result
         const warmupFingerprint = computeSnapshotFingerprint(snapshot);
@@ -3533,10 +3583,15 @@ export class AgentLoop {
       if (dataUrl) {
         this.perception.setScreenshotUrl(dataUrl);
       }
+      const primaryImageBudgetAllowed =
+        !dataUrl || this.imagePromptBudgetAllows(1);
+      if (dataUrl && !primaryImageBudgetAllowed) {
+        this.recordImagePromptBudgetExhausted(1, "structured_perception");
+      }
 
       // No screenshot available — use element-only fallback
       // instead of calling VLM with an invalid image URL.
-      if (!dataUrl) {
+      if (!dataUrl || !primaryImageBudgetAllowed) {
         if (isFirstPerception) {
           this.perception.markPanoramicDone();
         }
@@ -3564,12 +3619,14 @@ export class AgentLoop {
           {
             ...result,
             source: "fallback",
-            fallbackReason:
-              screenshotStatus === "capture_failed"
+            fallbackReason: !primaryImageBudgetAllowed
+              ? "image_budget_exhausted"
+              : screenshotStatus === "capture_failed"
                 ? "capture_failed"
                 : "screenshot_unavailable",
-            screenshotStatus:
-              screenshotStatus === "capture_failed"
+            screenshotStatus: !primaryImageBudgetAllowed
+              ? "not_requested"
+              : screenshotStatus === "capture_failed"
                 ? "capture_failed"
                 : "missing",
           },
@@ -3578,7 +3635,9 @@ export class AgentLoop {
         );
         this.log.info(
           "agent",
-          "Perception: screenshot unavailable, using element-only mode",
+          !primaryImageBudgetAllowed
+            ? "Perception: image prompt budget exhausted, using element-only mode"
+            : "Perception: screenshot unavailable, using element-only mode",
           { tabId, url: snapshot.url },
         );
       } else {
@@ -3606,6 +3665,18 @@ export class AgentLoop {
           } else {
             panoramicScreenshots = undefined;
           }
+        }
+        const imageCount = 1 + (panoramicScreenshots?.length ?? 0);
+        if (
+          panoramicScreenshots &&
+          panoramicScreenshots.length > 0 &&
+          !this.imagePromptBudgetAllows(imageCount)
+        ) {
+          this.recordImagePromptBudgetExhausted(
+            imageCount,
+            "structured_panoramic_perception",
+          );
+          panoramicScreenshots = undefined;
         }
 
         // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
@@ -3776,6 +3847,28 @@ export class AgentLoop {
     if (!snapshot) {
       this.context.setScreenshotForExecutor(null);
       this.context.setPageInterpretation(null);
+      return;
+    }
+    if (!this.imagePromptBudgetAllows(1)) {
+      this.recordImagePromptBudgetExhausted(1, "vl_executor_screenshot");
+      this.context.setScreenshotForExecutor(null);
+      this.context.setPageInterpretation(null);
+      this.perception.setScreenshotUrl(null);
+      this.traceRecorder?.recordPerception(
+        {
+          interpretation:
+            "[VL mode] Screenshot omitted because the image prompt budget is exhausted.",
+          model: "none (image budget)",
+          durationMs: 0,
+          cached: false,
+          mode: "element_only",
+          source: "fallback",
+          freshnessReason: "dom_fallback",
+          fallbackReason: "image_budget_exhausted",
+          screenshotStatus: "not_requested",
+        },
+        undefined,
+      );
       return;
     }
     try {
