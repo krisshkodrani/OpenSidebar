@@ -6,9 +6,14 @@ import type {
   PerceptionRuntimeMode,
   UserSettings,
 } from "../../types";
+import { DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE } from "../../types";
 import { getDefaultExecutorModel } from "../../utils/executor-model-policy";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
-import { loadSettings, saveSettings } from "../../utils/settings-storage";
+import {
+  loadSettings,
+  normalizeMaxImagePromptTokenEstimate,
+  saveSettings,
+} from "../../utils/settings-storage";
 import { storageLogger } from "../../utils/storage-logger";
 import {
   MODEL_PLANNER,
@@ -298,6 +303,9 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     const nextState: UserSettings = {
       ...formState,
       providerMode: formState.providerMode ?? "fireworks",
+      maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
+        formState.maxImagePromptTokenEstimate,
+      ),
       siteAccessBlocklist: blocklist,
     };
 
@@ -1061,6 +1069,36 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                     Vision-only interaction is not exposed yet; visual tasks
                     still keep DOM references for safer tool use.
                   </p>
+                  <div className="flex items-center justify-between gap-3 pt-2">
+                    <div>
+                      <label className="text-sm font-medium dark:text-warm-300">
+                        Image budget
+                      </label>
+                      <p className="text-xs text-warm-400 dark:text-warm-500">
+                        Estimated image tokens per session
+                      </p>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={
+                        formState.maxImagePromptTokenEstimate ??
+                        DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value.trim();
+                        const next = Number(raw);
+                        handleChange(
+                          "maxImagePromptTokenEstimate",
+                          raw && Number.isFinite(next) && next >= 0
+                            ? next
+                            : undefined,
+                        );
+                      }}
+                      className={`${inputCls} w-28 text-right`}
+                    />
+                  </div>
                 </div>
 
                 {/* Nitro toggle — OpenRouter modes only */}

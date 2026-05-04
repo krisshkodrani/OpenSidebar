@@ -1,4 +1,9 @@
-import { Citation, SessionMetrics, ToolName } from "../../types";
+import {
+  Citation,
+  DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+  SessionMetrics,
+  ToolName,
+} from "../../types";
 import type { PerceptionRuntimeModeDecision } from "../../utils/perception-mode";
 import { estimateCostUsd } from "../llm/pricing";
 import {
@@ -22,7 +27,6 @@ const LOW_DETAIL_IMAGE_TOKENS = 85;
 // Prompt assembly does not retain image dimensions, so high/auto screenshots
 // use a conservative fixed viewport estimate instead of pretending precision.
 const HIGH_DETAIL_IMAGE_TOKENS = 765;
-export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 
 export function emptySessionMetrics(): SessionMetrics {
   return {

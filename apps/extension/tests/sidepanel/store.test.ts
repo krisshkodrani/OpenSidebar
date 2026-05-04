@@ -1,7 +1,10 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import "../setup";
 import { useStore } from "../../src/sidepanel/store";
-import { AgentStatus } from "../../src/types";
+import {
+    AgentStatus,
+    DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+} from "../../src/types";
 
 describe("SidePanel Store", () => {
     beforeEach(() => {
@@ -43,6 +46,8 @@ describe("SidePanel Store", () => {
             settings: {
                 openRouterApiKey: "",
                 providerMode: "fireworks",
+                maxImagePromptTokenEstimate:
+                    DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
                 maxTurns: 30,
                 theme: "system",
                 showSessionMetrics: false,
@@ -121,6 +126,9 @@ describe("SidePanel Store", () => {
         const settings = useStore.getState().settings;
         expect(settings.openRouterApiKey).toBe("");
         expect(settings.maxTurns).toBe(30);
+        expect(settings.maxImagePromptTokenEstimate).toBe(
+            DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+        );
         expect(settings.requireApprovals).toBe(true);
     });
 
