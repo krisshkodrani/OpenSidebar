@@ -3,6 +3,7 @@ import { HelpCircle } from "lucide-react";
 import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 
 export function ClarificationOverlay() {
   const pending = useStore((s) => s.pendingClarification);
@@ -45,7 +46,7 @@ export function ClarificationOverlay() {
     async (text: string) => {
       if (!pending || !text.trim()) return;
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "CLARIFICATION_RESPONSE",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,

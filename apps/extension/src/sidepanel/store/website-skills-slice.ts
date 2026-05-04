@@ -4,10 +4,11 @@ import {
   updateUserWebsiteSkill,
 } from "../../utils/website-skills";
 import { MessageSource, UserWebsiteSkillDraft } from "../../types";
+import { uiRuntime } from "../runtime";
 import type { SliceCreator, WebsiteSkillsSlice } from "./types";
 
 function message<T>(type: string, payload: Record<string, unknown> = {}): Promise<T> {
-  return chrome.runtime.sendMessage({
+  return uiRuntime.sendMessage({
     type,
     requestId: crypto.randomUUID(),
     source: MessageSource.SIDEPANEL,
@@ -28,7 +29,7 @@ export const createWebsiteSkillsSlice: SliceCreator<WebsiteSkillsSlice> = (
   loadUserWebsiteSkills: async () => {
     try {
       const [intro, response] = await Promise.all([
-        chrome.storage.local.get(RECORD_SKILL_INTRO_DISMISSED_KEY),
+        uiRuntime.storage.local.get(RECORD_SKILL_INTRO_DISMISSED_KEY),
         message<{ ok: boolean; skills?: WebsiteSkillsSlice["userWebsiteSkills"] }>(
           "USER_SKILL_LIST",
         ),
@@ -109,7 +110,11 @@ export const createWebsiteSkillsSlice: SliceCreator<WebsiteSkillsSlice> = (
 
   updateUserWebsiteSkillLocal: async (id, updates) => {
     try {
-      const skills = await updateUserWebsiteSkill(id, updates);
+      const skills = await updateUserWebsiteSkill(
+        id,
+        updates,
+        uiRuntime.storage.local,
+      );
       set((state) => {
         state.userWebsiteSkills = skills;
       });
@@ -133,7 +138,7 @@ export const createWebsiteSkillsSlice: SliceCreator<WebsiteSkillsSlice> = (
   },
 
   setRecordSkillIntroDismissed: async (dismissed) => {
-    await chrome.storage.local.set({
+    await uiRuntime.storage.local.set({
       [RECORD_SKILL_INTRO_DISMISSED_KEY]: dismissed,
     });
     set((state) => {

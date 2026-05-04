@@ -11,6 +11,7 @@ import { PlanStepIcon } from "./PlanStepIcon";
 import { buildRecoveryHint, derivePlanRows } from "../plan-board-view";
 import { MessageSource } from "../../types";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 
 // --- Segmented progress bar for collapsed bar ---
 
@@ -129,7 +130,7 @@ export function PlanStrip({
     async (decision: "approve" | "cancel") => {
       if (!pendingPlan) return;
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "PLAN_CONFIRMATION_RESPONSE",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,
@@ -161,7 +162,7 @@ export function PlanStrip({
   const skipCurrentSubtask = useCallback(async () => {
     if (!taskProgress) return;
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "SKIP_SUBTASK",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,

@@ -20,6 +20,11 @@ export interface StorageLogEntry {
   data?: Record<string, unknown>;
 }
 
+export interface StorageLoggerStorageArea {
+  get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+  remove(keys: string | string[]): Promise<void>;
+}
+
 const STORAGE_KEY = "opensidebar_logs";
 const MAX_ENTRIES = 2000;
 const FLUSH_INTERVAL = 5000;
@@ -174,11 +179,15 @@ class StorageLogger {
   /**
    * Get all stored log entries
    */
-  async getAll(): Promise<StorageLogEntry[]> {
-    if (!this.isAvailable()) return [];
+  async getAll(
+    storage: StorageLoggerStorageArea | null = null,
+  ): Promise<StorageLogEntry[]> {
+    if (!storage && !this.isAvailable()) return [];
 
     try {
-      const result = await chrome.storage.local.get(STORAGE_KEY);
+      const result = storage
+        ? await storage.get(STORAGE_KEY)
+        : await chrome.storage.local.get(STORAGE_KEY);
       return result[STORAGE_KEY] || [];
     } catch {
       return [];
@@ -188,11 +197,15 @@ class StorageLogger {
   /**
    * Clear all stored logs
    */
-  async clear(): Promise<void> {
-    if (!this.isAvailable()) return;
+  async clear(storage: StorageLoggerStorageArea | null = null): Promise<void> {
+    if (!storage && !this.isAvailable()) return;
 
     try {
-      await chrome.storage.local.remove(STORAGE_KEY);
+      if (storage) {
+        await storage.remove(STORAGE_KEY);
+      } else {
+        await chrome.storage.local.remove(STORAGE_KEY);
+      }
     } catch {
       // ignore
     }
@@ -201,8 +214,10 @@ class StorageLogger {
   /**
    * Export logs as a downloadable JSONL blob URL
    */
-  async exportAsJsonl(): Promise<string> {
-    const entries = await this.getAll();
+  async exportAsJsonl(
+    storage: StorageLoggerStorageArea | null = null,
+  ): Promise<string> {
+    const entries = await this.getAll(storage);
     const lines = entries.map((e) => JSON.stringify(e)).join("\n");
     const blob = new Blob([lines], { type: "application/x-ndjson" });
     return URL.createObjectURL(blob);

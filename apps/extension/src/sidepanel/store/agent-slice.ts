@@ -1,5 +1,6 @@
 import { AgentStatus } from "../../types";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 import type { AgentSlice, SliceCreator, Store } from "./types";
 
 // ── Per-workspace agent state persistence ──
@@ -17,7 +18,7 @@ interface PersistedAgentState {
   detail: string;
 }
 
-/** Write agent state to chrome.storage.local (fire-and-forget). */
+/** Write agent state to local UI storage (fire-and-forget). */
 function persistAgentState(get: () => Store) {
   const wsId = get().activeWorkspaceId;
   if (wsId == null) return;
@@ -26,7 +27,7 @@ function persistAgentState(get: () => Store) {
     status: get().agentStatus,
     detail: get().statusDetail,
   };
-  chrome.storage.local.set({ [agentStateKey(wsId)]: data }).catch(() => {});
+  uiRuntime.storage.local.set({ [agentStateKey(wsId)]: data }).catch(() => {});
 }
 
 export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
@@ -68,7 +69,7 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
     if (wsId == null) return;
     try {
       const key = agentStateKey(wsId);
-      const result = await chrome.storage.local.get(key);
+      const result = await uiRuntime.storage.local.get(key);
       const stored = result[key] as PersistedAgentState | undefined;
       if (stored) {
         set((state) => {

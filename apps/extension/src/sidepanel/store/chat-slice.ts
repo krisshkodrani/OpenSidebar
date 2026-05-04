@@ -1,6 +1,7 @@
 import type { ChatEntry, Citation } from "../../types";
 import { logger } from "../../utils";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
+import { uiRuntime } from "../runtime";
 import type { ChatSlice, SliceCreator } from "./types";
 
 /** Strip screenshotUrl from steps before persisting (each is ~100KB base64). */
@@ -34,7 +35,7 @@ function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
         ? messages.slice(-MAX_PERSISTED_MESSAGES)
         : messages;
     const toSave = stripScreenshots(trimmed);
-    chrome.storage.local.set({ [key]: toSave }).catch(() => {});
+    uiRuntime.storage.local.set({ [key]: toSave }).catch(() => {});
   }, 300);
 }
 
@@ -52,7 +53,7 @@ export function flushPersist(messages: ChatEntry[], wsId: string | null) {
       ? messages.slice(-MAX_PERSISTED_MESSAGES)
       : messages;
   const toSave = stripScreenshots(trimmed);
-  chrome.storage.local.set({ [key]: toSave }).catch(() => {});
+  uiRuntime.storage.local.set({ [key]: toSave }).catch(() => {});
 }
 
 export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
@@ -264,8 +265,8 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       const wsId = get().activeWorkspaceId;
       if (wsId != null) {
         const key = chatStorageKey(wsId);
-        chrome.storage.local.set({ [key]: [] }).catch(() => {});
-        chrome.runtime
+        uiRuntime.storage.local.set({ [key]: [] }).catch(() => {});
+        uiRuntime
           .sendMessage({
             type: "DATA_CONTROL_REQUEST",
             requestId: crypto.randomUUID(),
@@ -282,7 +283,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       const wsId = get().activeWorkspaceId;
       if (wsId == null) return;
       const key = chatStorageKey(wsId);
-      const result = await chrome.storage.local.get(key);
+      const result = await uiRuntime.storage.local.get(key);
       if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
         const stored = (result[key] as ChatEntry[]).map((msg) =>
           msg.isStreaming ? { ...msg, isStreaming: false } : msg,

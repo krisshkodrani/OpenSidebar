@@ -3,6 +3,7 @@ import { Loader2, Pause, Play, Square, AlertTriangle } from "lucide-react";
 import { AgentStatus, MessageSource, SessionMetrics } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
+import { uiRuntime } from "../runtime";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -197,7 +198,7 @@ export function PrimaryTaskRail() {
 
   const handlePause = useCallback(async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "PAUSE_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
@@ -210,7 +211,7 @@ export function PrimaryTaskRail() {
 
   const handleResume = useCallback(async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "RESUME_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,
@@ -223,7 +224,7 @@ export function PrimaryTaskRail() {
 
   const handleStop = useCallback(async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,

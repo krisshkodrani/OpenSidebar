@@ -4,7 +4,7 @@
  * React 18 + Tailwind CSS UI rendered in Chrome's side panel.
  * Handles user input, displays agent responses, and shows status updates.
  *
- * Communication: Receives messages from background via chrome.runtime.onMessage
+ * Communication: Receives messages from background via the UI runtime port
  * State: Managed via Zustand store
  */
 
@@ -21,6 +21,7 @@ import { logger } from "../utils";
 import { speakText } from "./hooks/useTextToSpeech";
 import { useStore } from "./store";
 import { initializeBridge } from "./bridge";
+import { uiRuntime } from "./runtime";
 import {
   Header,
   MessageBubble,
@@ -148,14 +149,7 @@ export default function App() {
     null,
   );
   const splashLogoUrl = useMemo(() => {
-    if (
-      typeof chrome !== "undefined" &&
-      typeof chrome.runtime?.getURL === "function"
-    ) {
-      return chrome.runtime.getURL("public/icons/icon-128.png");
-    }
-
-    return "public/icons/icon-128.png";
+    return uiRuntime.getUrl("public/icons/icon-128.png");
   }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -196,17 +190,15 @@ export default function App() {
 
       // 2. Resolve active workspace from current tab
       try {
-        const [tab] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
+        const tab = await uiRuntime.getActiveTab();
         if (tab?.id) {
-          // Look up workspace from chrome.storage.local (persisted by WorkspaceManager)
-          const stored = await chrome.storage.local.get(
+          // Look up workspace from UI runtime storage (persisted by WorkspaceManager)
+          const stored = await uiRuntime.storage.local.get(
             "opensidebar:workspaces",
           );
-          const workspaces: Workspace[] =
-            stored["opensidebar:workspaces"] || [];
+          const workspaces =
+            (stored["opensidebar:workspaces"] as Workspace[] | undefined) ||
+            [];
           const ws = workspaces.find((w) => w.tabIds.includes(tab.id!));
           if (ws) {
             useStore.getState().setActiveWorkspaceId(ws.id);
@@ -215,7 +207,7 @@ export default function App() {
           // 3. Notify background that panel is open â€” response carries workspace ID
           //    (workspace may be created by background if this is a first open)
           try {
-            const resp = await chrome.runtime.sendMessage({
+            const resp = await uiRuntime.sendMessage<{ workspaceId?: string }>({
               type: "SIDE_PANEL_OPENED",
               requestId: crypto.randomUUID(),
               source: MessageSource.SIDEPANEL,
@@ -248,10 +240,7 @@ export default function App() {
   const beginSkillRecording = useCallback(async () => {
     let activeTabId = 0;
     try {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
+      const tab = await uiRuntime.getActiveTab();
       if (tab?.id) activeTabId = tab.id;
     } catch (e) {
       logger.warn("ui", "Failed to get active tab for skill recording", {
@@ -293,13 +282,8 @@ export default function App() {
       try {
         const tab =
           tabId != null
-            ? await chrome.tabs.get(tabId)
-            : (
-                await chrome.tabs.query({
-                  active: true,
-                  currentWindow: true,
-                })
-              )[0];
+            ? await uiRuntime.getTab(tabId)
+            : await uiRuntime.getActiveTab();
         const url = tab?.url ?? "";
         const blocked = getBlockedRuleForUrl(url, settings);
         setBlockedSiteWarning(
@@ -314,17 +298,20 @@ export default function App() {
 
     void refreshBlockedWarning();
 
-    const listener = async (activeInfo: chrome.tabs.TabActiveInfo) => {
+    const listener = async (activeInfo: { tabId: number }) => {
       try {
-        const stored = await chrome.storage.local.get("opensidebar:workspaces");
-        const workspaces: Workspace[] = stored["opensidebar:workspaces"] || [];
+        const stored = await uiRuntime.storage.local.get(
+          "opensidebar:workspaces",
+        );
+        const workspaces =
+          (stored["opensidebar:workspaces"] as Workspace[] | undefined) || [];
         const ws = workspaces.find((w) => w.tabIds.includes(activeInfo.tabId));
         const newWsId = ws?.id ?? null;
         const currentWsId = useStore.getState().activeWorkspaceId;
         if (newWsId !== currentWsId && newWsId != null) {
           useStore.getState().setActiveWorkspaceId(newWsId);
           // Ask background to re-broadcast current state for this workspace
-          chrome.runtime
+          uiRuntime
             .sendMessage({
               type: "WORKSPACE_SYNC",
               requestId: crypto.randomUUID(),
@@ -341,8 +328,7 @@ export default function App() {
       }
     };
 
-    chrome.tabs.onActivated.addListener(listener);
-    return () => chrome.tabs.onActivated.removeListener(listener);
+    return uiRuntime.onActiveTabChanged(listener);
   }, [settings]);
 
   // Visibility resync â€” recover state when panel becomes visible again
@@ -355,7 +341,7 @@ export default function App() {
       loadMessagesFromStorage();
       // Ask background to re-broadcast current status
       if (wsId) {
-        chrome.runtime
+        uiRuntime
           .sendMessage({
             type: "WORKSPACE_SYNC",
             requestId: crypto.randomUUID(),
@@ -388,8 +374,8 @@ export default function App() {
         }, 30000);
       },
       onClose: (windowId) => {
-        chrome.windows.getCurrent().then((currentWindow) => {
-          if (currentWindow.id === windowId) {
+        uiRuntime.getCurrentWindow().then((currentWindow) => {
+          if (currentWindow?.id === windowId) {
             logger.info("ui", "Panel close requested, flushing and closing", {
               windowId,
             });
@@ -542,10 +528,7 @@ export default function App() {
       // Get current tab
       let activeTabId = 0;
       try {
-        const [tab] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
+        const tab = await uiRuntime.getActiveTab();
         if (tab?.id) activeTabId = tab.id;
       } catch (e) {
         logger.warn("ui", "Failed to get active tab", { error: e });
@@ -553,7 +536,7 @@ export default function App() {
 
       // Send to service worker
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "USER_CHAT",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,
@@ -591,7 +574,7 @@ export default function App() {
       });
 
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "USER_CHAT",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,
@@ -612,7 +595,7 @@ export default function App() {
 
   const handleStop = useCallback(async () => {
     try {
-      await chrome.runtime.sendMessage({
+      await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
         source: MessageSource.SIDEPANEL,

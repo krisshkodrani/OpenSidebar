@@ -3,6 +3,7 @@ import { AlertOctagon } from "lucide-react";
 import { EscalationOptionId, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { useStore } from "../store";
+import { uiRuntime } from "../runtime";
 
 export function EscalationOverlay() {
   const pendingEscalation = useStore((s) => s.pendingEscalation);
@@ -12,7 +13,7 @@ export function EscalationOverlay() {
     async (optionId: EscalationOptionId, rerouteObjective?: string) => {
       if (!pendingEscalation) return;
       try {
-        await chrome.runtime.sendMessage({
+        await uiRuntime.sendMessage({
           type: "ESCALATION_DECISION",
           requestId: crypto.randomUUID(),
           source: MessageSource.SIDEPANEL,

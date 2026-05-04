@@ -10,6 +10,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { transcribeAudio } from "../../background/llm/audio";
+import { uiRuntime } from "../runtime";
 
 const MAX_RECORDING_MS = 120_000; // 2 minutes - prevents oversized blobs
 const RECORDING_MIME_TYPES = [
@@ -67,8 +68,8 @@ export function useSpeechToText(
       }
       // state === "prompt" — need to open request page in a new tab
       // sidePanel can't show the permission prompt
-      const micUrl = chrome.runtime.getURL("public/request-mic.html");
-      await chrome.tabs.create({ url: micUrl, active: true });
+      const micUrl = uiRuntime.getUrl("public/request-mic.html");
+      await uiRuntime.createTab(micUrl, { active: true });
       // Wait for permission to be granted (poll up to 30s)
       for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 500));

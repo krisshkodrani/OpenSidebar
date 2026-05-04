@@ -23,6 +23,7 @@ import {
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
 import { useSpeechToText } from "../hooks/useSpeechToText";
+import { uiRuntime } from "../runtime";
 
 export function InputArea({
   onSend,
@@ -68,7 +69,7 @@ export function InputArea({
     (mode: InteractionMode) => {
       const next = applyInteractionMode(settings, mode);
       updateSettings(next);
-      void saveSettings(next);
+      void saveSettings(next, uiRuntime.storage);
     },
     [settings, updateSettings],
   );
