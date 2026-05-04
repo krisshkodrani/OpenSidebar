@@ -3532,6 +3532,7 @@ export class Orchestrator {
           structured: true,
           isSingleNode: buildResult.isSingleNode,
           difficulty: buildResult.difficulty,
+          laneTopologyMode: laneTopology.mode,
           skills: nodes
             .filter((node) => node.selectedSkillId)
             .map((node) => ({
@@ -3579,6 +3580,7 @@ export class Orchestrator {
           nodeCount: 1,
           structured: false,
           fallback: true,
+          laneTopologyMode: laneTopology.mode,
           skills: nodes
             .filter((node) => node.selectedSkillId)
             .map((node) => ({

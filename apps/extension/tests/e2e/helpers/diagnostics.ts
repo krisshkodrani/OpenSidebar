@@ -197,6 +197,14 @@ interface RunTraceEventRecord {
   data?: Record<string, unknown>;
 }
 
+export interface RunTraceEvent {
+  traceKind?: string;
+  runId?: string;
+  type?: string;
+  role?: string;
+  data?: Record<string, unknown>;
+}
+
 export interface SkillTraceSummary {
   runId: string;
   skillIds: string[];
@@ -471,6 +479,26 @@ export function readRunCompletionForTraceFiles(
   }
 
   return null;
+}
+
+export function readRunTraceEventsForTraceFile(
+  traceFilePath: string,
+): RunTraceEvent[] {
+  const runId = extractRunIdFromTraceFile(traceFilePath);
+  if (!runId || !existsSync(RUN_TRACE_DIR)) return [];
+  const runTracePath = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+  if (!existsSync(runTracePath)) return [];
+
+  try {
+    return readFileSync(runTracePath, "utf-8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as RunTraceEvent)
+      .filter((entry) => entry.traceKind === "orchestrator.run.event");
+  } catch {
+    return [];
+  }
 }
 
 export function readSkillSummaryForRun(runId: string): SkillTraceSummary | null {
