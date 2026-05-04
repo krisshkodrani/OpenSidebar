@@ -197,7 +197,7 @@ export const SWITCH_TAB_DEF: ToolDefinition = {
   function: {
     name: ToolName.SWITCH_TAB,
     description:
-      "Switch to another tab in this workspace. All subsequent tool calls will run on this tab until you switch again.",
+      "Switch to another controllable web tab in this workspace. Cannot switch to browser, extension, blank, or internal pages. All subsequent tool calls will run on this tab until you switch again.",
     parameters: {
       type: "object",
       properties: {
@@ -575,7 +575,7 @@ export const LIST_TABS_DEF: ToolDefinition = {
   function: {
     name: ToolName.LIST_TABS,
     description:
-      "List open tabs in this workspace with their IDs, titles, and URLs.",
+      "List controllable web tabs in this workspace with their IDs, titles, and URLs. Browser, extension, blank, and internal pages are omitted because page tools cannot run there.",
     parameters: {
       type: "object",
       properties: {},

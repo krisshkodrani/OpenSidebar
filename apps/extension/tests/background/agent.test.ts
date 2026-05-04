@@ -4305,7 +4305,15 @@ describe("Workspace-scoped tab operations", () => {
     mockWorkspace(testWorkspace);
 
     // Spy on chrome.tabs.sendMessage to verify snapshot refresh targets new tab
+    const originalGet = chrome.tabs.get;
     const originalSendMessage = chrome.tabs.sendMessage;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => ({
+      id,
+      title: `Tab ${id}`,
+      url: `https://example.com/${id}`,
+      active: id === 123,
+      groupId: 1,
+    }));
     const sendMessageSpy = vi.fn(async () => ({
       payload: { result: "ok", success: true },
     }));
@@ -4331,7 +4339,44 @@ describe("Workspace-scoped tab operations", () => {
     const targetedNewTab = snapshotCalls.some((c: any) => c[0] === 789);
     expect(targetedNewTab).toBe(true);
 
+    (chrome.tabs as any).get = originalGet;
     (chrome.tabs as any).sendMessage = originalSendMessage;
+  });
+
+  test("switch_tab rejects internal extension tabs in workspace", async () => {
+    mockWorkspace(testWorkspace);
+
+    const originalGet = chrome.tabs.get;
+    const originalUpdate = chrome.tabs.update;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => ({
+      id,
+      title: id === 789 ? "E2E Helper" : `Tab ${id}`,
+      url:
+        id === 789
+          ? "chrome-extension://abc123/e2e-helper.html"
+          : `https://example.com/${id}`,
+      active: id === 123,
+      groupId: 1,
+    }));
+    const updateSpy = vi.fn();
+    (chrome.tabs as any).update = updateSpy;
+
+    setupLLMSequence([makeToolCall("tc_switch", "switch_tab", { tabId: 789 })]);
+
+    const agent = createAgent("ws-1");
+    await agent.start("Switch to tab 789", 123);
+
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_switch",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Cannot switch to tab 789");
+    expect(toolResult.content).toContain("chrome-extension://abc123/e2e-helper.html");
+    expect(updateSpy).not.toHaveBeenCalled();
+
+    (chrome.tabs as any).get = originalGet;
+    (chrome.tabs as any).update = originalUpdate;
   });
 
   test("close_tab rejects tabs outside workspace", async () => {
@@ -4393,6 +4438,47 @@ describe("Workspace-scoped tab operations", () => {
     expect(toolResult.content).toContain("Tab 789");
     // Should NOT contain tabs outside the workspace
     expect(toolResult.content).not.toContain("Tab 456");
+
+    (chrome.tabs as any).get = originalGet;
+  });
+
+  test("list_tabs omits internal browser and extension tabs", async () => {
+    mockWorkspace({
+      ...testWorkspace,
+      tabIds: [123, 789, 790],
+    });
+
+    const originalGet = chrome.tabs.get;
+    (chrome.tabs as any).get = vi.fn(async (id: number) => ({
+      id,
+      title:
+        id === 789 ? "E2E Helper" : id === 790 ? "Extensions" : `Tab ${id}`,
+      url:
+        id === 789
+          ? "chrome-extension://abc123/e2e-helper.html"
+          : id === 790
+            ? "chrome://extensions"
+            : `https://example.com/${id}`,
+      active: id === 123,
+      groupId: 1,
+    }));
+
+    setupLLMSequence([makeToolCall("tc_list", "list_tabs", {})]);
+
+    const agent = createAgent("ws-1");
+    await agent.start("List tabs", 123);
+
+    const msgs = mockCompleteStream.mock.calls[1][0].messages;
+    const toolResult = msgs.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc_list",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult.content).toContain("Tab 123");
+    expect(toolResult.content).not.toContain("Tab 789");
+    expect(toolResult.content).not.toContain("Tab 790");
+    expect(toolResult.content).toContain(
+      "internal browser/extension tabs omitted",
+    );
 
     (chrome.tabs as any).get = originalGet;
   });

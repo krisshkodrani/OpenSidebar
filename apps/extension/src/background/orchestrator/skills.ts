@@ -706,6 +706,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Gather all required facts before synthesizing.",
       "Do not use for single-page configurators, ordinary report-tab navigation, inline edits, or list-review recommendations.",
+      "Use list_tabs/switch_tab only for explicit browser-tab work. For in-page tabs such as Overview or Reports, use the visible page controls or previously gathered step results.",
+      "When prior completed steps already contain the facts needed for the comparison, synthesize from that evidence before navigating or switching tabs.",
     ],
   },
   {

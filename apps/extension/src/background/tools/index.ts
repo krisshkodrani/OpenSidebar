@@ -11,6 +11,7 @@ import {
   resolveProfileFields,
   resolveProfileFile,
 } from "../infrastructure/backend-client";
+import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { workspaceManager } from "../workspaces/manager";
 import {
   clearTabReady,
@@ -77,6 +78,34 @@ import {
 export * from "./registry";
 export * from "./definitions";
 export * from "./bridge";
+
+function getTabUrl(tab: chrome.tabs.Tab): string {
+  return tab.url || tab.pendingUrl || "";
+}
+
+function formatControllableTabLines(tabs: chrome.tabs.Tab[]): string[] {
+  const controllableTabs = tabs.filter((tab) => isUsableTabUrl(getTabUrl(tab)));
+  const omittedCount = tabs.length - controllableTabs.length;
+
+  if (controllableTabs.length === 0) {
+    return omittedCount > 0
+      ? [
+          "No controllable web tabs are open. Internal browser or extension tabs were omitted because page tools cannot run there.",
+        ]
+      : ["No open tabs."];
+  }
+
+  const lines = controllableTabs.map(
+    (tab) =>
+      `Tab ${tab.id}: "${tab.title || "(untitled)"}" - ${getTabUrl(tab) || "about:blank"}${tab.active ? " [active]" : ""}`,
+  );
+  if (omittedCount > 0) {
+    lines.push(
+      `Note: ${omittedCount} internal browser/extension tab${omittedCount === 1 ? "" : "s"} omitted because page tools cannot run there.`,
+    );
+  }
+  return lines;
+}
 
 async function getAllowedNavigationOrigins(): Promise<string[]> {
   try {
@@ -3123,6 +3152,14 @@ export function registerTools() {
     const targetTabId = args.tabId as number;
     logger.info("tools", "switch_tab", { targetTabId });
     try {
+      const targetTab = await chrome.tabs.get(targetTabId);
+      const targetUrl = getTabUrl(targetTab);
+      if (!isUsableTabUrl(targetUrl)) {
+        return (
+          `Error: Cannot switch to tab ${targetTabId} (${targetUrl || "about:blank"}) for this web task. ` +
+          "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead."
+        );
+      }
       await chrome.tabs.update(targetTabId, { active: true });
       return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
     } catch (e: any) {
@@ -3305,12 +3342,7 @@ export function registerTools() {
   toolRegistry.register(ToolName.LIST_TABS, LIST_TABS_DEF, async () => {
     const tabs = await chrome.tabs.query({});
     logger.info("tools", "list_tabs", { count: tabs.length });
-    if (tabs.length === 0) return "No open tabs.";
-    const lines = tabs.map(
-      (t: chrome.tabs.Tab) =>
-        `Tab ${t.id}: "${t.title || "(untitled)"}" — ${t.url || "about:blank"}${t.active ? " [active]" : ""}`,
-    );
-    return lines.join("\n");
+    return formatControllableTabLines(tabs).join("\n");
   });
 
   toolRegistry.register(
