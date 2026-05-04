@@ -237,6 +237,7 @@ function isAutocompleteLikeElement(
   const semanticAttributeBlob = [
     element.text,
     attrs["aria-label"],
+    attrs.label,
     attrs.placeholder,
     attrs["aria-controls"],
     attrs["aria-haspopup"],
@@ -260,7 +261,7 @@ function isAutocompleteLikeElement(
     /listbox|option|suggest|dropdown/.test(
       String(attrs["aria-controls"] || ""),
     ) ||
-    /\b(suggest|suggestions|autocomplete|typeahead|start typing|search and select|search\/select)\b/.test(
+    /\b(suggest|suggestions|autocomplete|typeahead|start typing|type to search|search and select|search\/select)\b/.test(
       semanticAttributeBlob,
     ) ||
     /\b(combobox|autocomplete|typeahead|suggest)\b/.test(identifierBlob)
@@ -274,6 +275,181 @@ function indicatesAutocompleteSelectionIntent(objectiveText: string): boolean {
   return /\b(suggestion|suggestions|autocomplete|typeahead|dropdown)\b/.test(
     objective,
   );
+}
+
+function elementLiveValue(
+  element: DomSnapshot["elements"][number],
+): string {
+  return normalizeGuardText(element.attributes.value || element.text);
+}
+
+function snapshotSelectionConfirmationText(snapshot: DomSnapshot): string {
+  const elementText = snapshot.elements
+    .filter((element) => !isTextLikeInputElement(element))
+    .map((element) => element.text)
+    .filter(Boolean)
+    .join(" ");
+  return [
+    snapshot.pageContent,
+    snapshot.visibleContent,
+    elementText,
+  ]
+    .filter(Boolean)
+    .map((value) => normalizeGuardText(value))
+    .join(" ");
+}
+
+function extractQuotedTaskValues(text: string): string[] {
+  return [
+    ...new Set(
+      [...text.matchAll(/["']([^"']{3,120})["']/g)]
+        .map((match) => normalizeGuardText(match[1]))
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function valueMatchesRequestedTaskText(value: string, taskText: string): boolean {
+  const normalizedTask = normalizeGuardText(taskText);
+  if (!normalizedTask || !value) return false;
+
+  const quotedValues = extractQuotedTaskValues(taskText);
+  if (quotedValues.length > 0) {
+    return quotedValues.includes(value);
+  }
+
+  return (
+    normalizedTask.includes(value) &&
+    (value.includes(" ") || value.length >= 8)
+  );
+}
+
+function isSuggestionLikeElement(
+  element: DomSnapshot["elements"][number],
+): boolean {
+  if (element.isVisible === false || element.isDisabled) return false;
+  if (isTextLikeInputElement(element)) return false;
+
+  const tagName = normalizeGuardText(element.tagName);
+  const role = normalizeGuardText(element.role);
+  const attributeText = [
+    element.attributes.id,
+    element.attributes.name,
+    element.attributes["aria-label"],
+    element.attributes.role,
+    element.attributes.class,
+  ]
+    .map((value) => normalizeGuardText(value))
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    ["li", "option"].includes(tagName) ||
+    /\b(li|option|listitem|menuitem)\b/.test(role) ||
+    /\b(option|suggest|dropdown|typeahead|autocomplete)\b/.test(attributeText)
+  );
+}
+
+function hasAutocompleteDoneGuardContext(params: {
+  input: DomSnapshot["elements"][number];
+  snapshot: DomSnapshot;
+}): boolean {
+  const pageText = normalizeGuardText(
+    [
+      params.snapshot.title,
+      params.snapshot.url,
+      params.snapshot.pageContent,
+      params.snapshot.visibleContent,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return (
+    isAutocompleteLikeElement(params.input) ||
+    /\b(autocomplete|typeahead|suggestion|suggestions|dropdown)\b/.test(
+      pageText,
+    )
+  );
+}
+
+function hasSelectionConfirmation(snapshot: DomSnapshot, value: string): boolean {
+  const text = snapshotSelectionConfirmationText(snapshot);
+  return [
+    `selected: ${value}`,
+    `selected ${value}`,
+    `chosen: ${value}`,
+    `chosen ${value}`,
+  ].some((phrase) => text.includes(phrase));
+}
+
+export interface AutocompleteSuggestionDoneRejection {
+  reason: string;
+  inputTag: number;
+  suggestionTag: number;
+  value: string;
+}
+
+export function getAutocompleteSuggestionDoneRejection(params: {
+  snapshot: DomSnapshot | null | undefined;
+  originalQuery: string;
+  activeObjective?: string;
+  successCriteria?: string;
+  summary?: string;
+}): AutocompleteSuggestionDoneRejection | null {
+  const snapshot = params.snapshot;
+  if (!snapshot) return null;
+
+  const taskText = [
+    params.originalQuery,
+    params.activeObjective,
+    params.successCriteria,
+    params.summary,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const visibleInputs = snapshot.elements.filter(
+    (element) =>
+      element.isVisible !== false &&
+      !element.isDisabled &&
+      isTextLikeInputElement(element) &&
+      elementLiveValue(element).length >= 3,
+  );
+  if (visibleInputs.length === 0) return null;
+
+  const visibleSuggestions = snapshot.elements.filter(isSuggestionLikeElement);
+  if (visibleSuggestions.length === 0) return null;
+
+  for (const input of visibleInputs) {
+    const value = elementLiveValue(input);
+    if (!valueMatchesRequestedTaskText(value, taskText)) continue;
+    if (
+      !hasAutocompleteDoneGuardContext({
+        input,
+        snapshot,
+      })
+    ) {
+      continue;
+    }
+    if (hasSelectionConfirmation(snapshot, value)) continue;
+
+    const matchingSuggestion = visibleSuggestions.find(
+      (element) =>
+        element.tag !== input.tag && normalizeGuardText(element.text) === value,
+    );
+    if (!matchingSuggestion) continue;
+
+    return {
+      inputTag: input.tag,
+      suggestionTag: matchingSuggestion.tag,
+      value,
+      reason:
+        `A matching autocomplete suggestion "${matchingSuggestion.text.trim()}" is still visible as ` +
+        `[${matchingSuggestion.tag}], but it has not been selected. Click the matching suggestion ` +
+        "before calling done(); typing the text into the input alone may not register the selection.",
+    };
+  }
+
+  return null;
 }
 
 function buildAutocompletePrefix(text: string): string {

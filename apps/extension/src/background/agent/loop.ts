@@ -70,6 +70,7 @@ import type { TurnCheckpoint } from "./checkpoint-types";
 import { MutationLedger } from "./mutation-ledger";
 import { type MoneyTableAggregate } from "./money-table-aggregate";
 import {
+  getAutocompleteSuggestionDoneRejection,
   isTextLikeInputElement,
   normalizeGuardText,
 } from "./text-entry-guards";
@@ -1823,11 +1824,74 @@ export class AgentLoop {
       }
     }
 
+    if (this.rejectDoneForPendingAutocompleteSuggestion(toolCallId, summary)) {
+      return false;
+    }
+
     if (this.rejectDoneForMissingRequiredEvidence(toolCallId)) {
       return false;
     }
 
     this.acceptDoneToolCall(summary, toolCallId);
+    return true;
+  }
+
+  private rejectDoneForPendingAutocompleteSuggestion(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const activePlanIdx =
+      this.planSubtasks.length > 0
+        ? this.planSubtasks.findIndex((s) => s.status === "running")
+        : -1;
+    const effectivePlanIdx =
+      activePlanIdx >= 0
+        ? activePlanIdx
+        : Math.min(
+            this.planSubtasks.filter((s) => s.status === "completed").length,
+            this.planSubtasks.length - 1,
+          );
+    const activeObjective =
+      effectivePlanIdx >= 0
+        ? this.planSubtasks[effectivePlanIdx]?.description
+        : undefined;
+    const successCriteria =
+      effectivePlanIdx >= 0
+        ? this.planSteps[effectivePlanIdx]?.successCriteria
+        : undefined;
+    const rejection = getAutocompleteSuggestionDoneRejection({
+      snapshot: this.context.getSnapshot(),
+      originalQuery: this.originalQuery,
+      activeObjective,
+      successCriteria,
+      summary,
+    });
+    if (!rejection) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: autocomplete suggestion pending", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      inputTag: rejection.inputTag,
+      suggestionTag: rejection.suggestionTag,
+      value: rejection.value,
+    });
+    this.traceRecorder?.recordEvent(
+      "done_rejected_autocomplete_suggestion_pending",
+      {
+        rejections: this.doneRejections,
+        inputTag: rejection.inputTag,
+        suggestionTag: rejection.suggestionTag,
+        value: rejection.value,
+      },
+    );
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${rejection.reason}\n\n` +
+        `YOUR NEXT ACTION: click_element({"id": ${rejection.suggestionTag}}), then verify the selected value is visible.`,
+    });
     return true;
   }
 

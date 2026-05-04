@@ -5,6 +5,7 @@ import {
   assessAutocompleteTextRewrite,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
+  getAutocompleteSuggestionDoneRejection,
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "../../src/background/agent/text-entry-guards";
@@ -21,6 +22,19 @@ function element(
     attributes: {},
     ...overrides,
   } as DomSnapshot["elements"][number];
+}
+
+function snapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Autocomplete & Typeahead",
+    url: "https://example.test/autocomplete",
+    elements: [],
+    visibleContent: "",
+    pageContent: "",
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  } as DomSnapshot;
 }
 
 describe("text entry guards", () => {
@@ -187,5 +201,97 @@ describe("text entry guards", () => {
         typedText: "Acme Corporation",
       }),
     ).toBeNull();
+  });
+
+  test("rejects done when a requested autocomplete suggestion is still visible", () => {
+    const result = getAutocompleteSuggestionDoneRejection({
+      snapshot: snapshot({
+        elements: [
+          element({
+            tag: 2,
+            attributes: {
+              id: "product-input",
+              label: "Search Products",
+              value: "Laptop Stand",
+            },
+          }),
+          element({
+            tag: 43,
+            tagName: "li",
+            role: "li",
+            text: "Laptop Stand",
+          }),
+        ],
+      }),
+      originalQuery:
+        "Fill the address from suggestions, and search for 'Laptop Stand' in the product search.",
+      activeObjective:
+        "Type 'Laptop Stand' into the product search field and submit the search",
+      successCriteria:
+        "Product search field contains 'Laptop Stand' and search submitted state is visible",
+      summary: "The product search field contains Laptop Stand.",
+    });
+
+    expect(result).toMatchObject({
+      inputTag: 2,
+      suggestionTag: 43,
+      value: "laptop stand",
+    });
+    expect(result?.reason).toContain("has not been selected");
+  });
+
+  test("allows done when the autocomplete selection is already confirmed", () => {
+    const result = getAutocompleteSuggestionDoneRejection({
+      snapshot: snapshot({
+        visibleContent: "Selected: Laptop Stand",
+        elements: [
+          element({
+            tag: 2,
+            attributes: {
+              id: "product-input",
+              label: "Search Products",
+              value: "Laptop Stand",
+            },
+          }),
+          element({
+            tag: 43,
+            tagName: "li",
+            role: "li",
+            text: "Laptop Stand",
+          }),
+        ],
+      }),
+      originalQuery: "Search for 'Laptop Stand' in the product search.",
+    });
+
+    expect(result).toBeNull();
+  });
+
+  test("does not reject ordinary search results without autocomplete context", () => {
+    const result = getAutocompleteSuggestionDoneRejection({
+      snapshot: snapshot({
+        title: "Product Search",
+        url: "https://example.test/search",
+        elements: [
+          element({
+            tag: 2,
+            attributes: {
+              id: "product-search",
+              label: "Search Products",
+              value: "Laptop Stand",
+            },
+          }),
+          element({
+            tag: 43,
+            tagName: "li",
+            role: "li",
+            text: "Laptop Stand",
+          }),
+        ],
+      }),
+      originalQuery: "Search for 'Laptop Stand' in the product search.",
+    });
+
+    expect(result).toBeNull();
   });
 });
