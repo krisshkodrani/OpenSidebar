@@ -1,4 +1,5 @@
 import {
+  DEFAULT_ENABLED_SKILL_PACK_IDS,
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
 } from "../../types";
@@ -12,6 +13,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   providerMode: "fireworks",
   perceptionMode: "auto",
   maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+  enabledSkillPackIds: [...DEFAULT_ENABLED_SKILL_PACK_IDS],
   laneTopologyMode: "full",
   maxTurns: 100,
   theme: "system",

@@ -175,6 +175,8 @@ export interface OrchestratorTask {
     difficulty: Difficulty;
   };
   laneTopologyMode?: LaneTopologyMode;
+  /** Enabled optional skill packs captured at task start for planner/replan consistency. */
+  enabledSkillPackIds?: string[];
   /** Internal: tracks whether onStreamChunk forwarded non-empty content (for dedup) */
   _streamHasContent?: boolean;
   /** Tab IDs created by the orchestrator for worker nodes (cleaned up on task end) */

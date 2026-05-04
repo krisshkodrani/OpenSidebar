@@ -431,6 +431,7 @@ export class AgentLoop {
   private turnCount = 0;
   /** Original user query that started this loop */
   private originalQuery = "";
+  public readonly enabledSkillPackIds?: string[];
   private moneyTableAggregate: MoneyTableAggregate | null = null;
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
@@ -691,6 +692,7 @@ export class AgentLoop {
       runId?: string | null;
       correlationId?: string | null;
       selectedSkillId?: string | null;
+      enabledSkillPackIds?: string[];
       suppressUiBroadcast?: boolean;
       /** Called for STREAM_CHUNK even when suppressUiBroadcast is true.
        *  Allows orchestrator to forward content for single-node tasks. */
@@ -758,6 +760,9 @@ export class AgentLoop {
     this.runId = options?.runId ?? null;
     this.correlationId = options?.correlationId ?? this.runId ?? null;
     this.selectedSkillId = options?.selectedSkillId ?? null;
+    this.enabledSkillPackIds = options?.enabledSkillPackIds
+      ? [...options.enabledSkillPackIds]
+      : undefined;
     this.suppressUiBroadcast = options?.suppressUiBroadcast ?? false;
     this.onStreamChunk = options?.onStreamChunk ?? null;
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
@@ -4385,7 +4390,9 @@ export class AgentLoop {
 
   private getMissingRequiredEvidenceTypes(): string[] {
     const required =
-      getLoadedSkillContract(this.selectedSkillId ?? undefined)
+      getLoadedSkillContract(this.selectedSkillId ?? undefined, {
+        enabledSkillPackIds: this.enabledSkillPackIds,
+      })
         ?.requiredEvidenceTypes ?? [];
     if (required.length === 0) return [];
     const evidence = this.evidenceAccumulator.toArray();
@@ -4789,7 +4796,9 @@ export class AgentLoop {
   private async maybeRunAtomicSkillController(
     tabId: number,
   ): Promise<LoopResult | null> {
-    const contract = getLoadedSkillContract(this.selectedSkillId ?? undefined);
+    const contract = getLoadedSkillContract(this.selectedSkillId ?? undefined, {
+      enabledSkillPackIds: this.enabledSkillPackIds,
+    });
     if (!contract?.atomic) return null;
     if (this.getMissingRequiredEvidenceTypes().length === 0) return null;
 

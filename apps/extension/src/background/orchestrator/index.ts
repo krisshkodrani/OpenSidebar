@@ -3375,6 +3375,9 @@ export class Orchestrator {
       },
       tabCoordination: createTaskTabCoordination(input.tabId),
       laneTopologyMode: laneTopology.mode,
+      enabledSkillPackIds: input.settings.enabledSkillPackIds
+        ? [...input.settings.enabledSkillPackIds]
+        : undefined,
     };
     try {
       const rootTab = await chrome.tabs.get(input.tabId);
@@ -3501,6 +3504,9 @@ export class Orchestrator {
         input.openRouterApiKey,
         modelOverrides,
       );
+      const skillCatalogOptions = {
+        enabledSkillPackIds: task.enabledSkillPackIds,
+      };
       this.attachPlannerUsageTrace(planner, task, () => "plan_decomposition");
       const tab = await chrome.tabs.get(input.tabId);
       const buildResult = await this.runInLane(task, "planner", async () =>
@@ -3508,6 +3514,7 @@ export class Orchestrator {
           plannerQuery,
           tab.title || "Untitled",
           tab.url || "",
+          skillCatalogOptions,
         ),
       );
       nodes = buildResult.nodes;
@@ -3726,6 +3733,7 @@ export class Orchestrator {
             revisedQuery,
             tab.title || "Untitled",
             tab.url || "",
+            { enabledSkillPackIds: task.enabledSkillPackIds },
           );
           if (replanResult.nodes.length > 0) {
             task.nodes = replanResult.nodes;
@@ -4214,6 +4222,7 @@ export class Orchestrator {
           runId: task.runId || task.id,
           correlationId: task.runId || task.id,
           selectedSkillId: node.selectedSkillId,
+          enabledSkillPackIds: task.enabledSkillPackIds,
           suppressUiBroadcast: true,
           // For single-node tasks, forward clean content to the side panel.
           // Suppresses intermediate text deltas (raw reasoning/JSON) — the user
@@ -4588,6 +4597,7 @@ export class Orchestrator {
             }
             const requiredEvidenceTypes = getLoadedSkillContract(
               node.selectedSkillId,
+              { enabledSkillPackIds: task.enabledSkillPackIds },
             )?.requiredEvidenceTypes;
             const programmaticResult = programmaticVerify({
               output: result.summary,
@@ -4851,6 +4861,7 @@ export class Orchestrator {
                           snapshot?.title || "",
                           snapshot?.url || "",
                           replanReason,
+                          { enabledSkillPackIds: task.enabledSkillPackIds },
                         ),
                     );
                     if (expandedNodes && expandedNodes.length > 0) {
@@ -6222,7 +6233,13 @@ export class Orchestrator {
     let newNodes: TaskNode[] | null = null;
     try {
       newNodes = await this.runInLane(task, "planner", async () =>
-        replanner.planNextHorizon(task.query, summary, pageTitle, pageUrl),
+        replanner.planNextHorizon(
+          task.query,
+          summary,
+          pageTitle,
+          pageUrl,
+          { enabledSkillPackIds: task.enabledSkillPackIds },
+        ),
       );
     } catch (error: any) {
       logger.warn("orchestrator", "Horizon expansion planner call failed", {

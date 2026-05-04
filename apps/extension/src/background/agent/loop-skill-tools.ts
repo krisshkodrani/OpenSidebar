@@ -42,6 +42,7 @@ export interface AgentLoopSkillToolsHost {
     toolProfile?: string;
   }>;
   selectedSkillId: string | null;
+  enabledSkillPackIds?: string[];
   traceRecorder?: {
     recordEvent(name: string, data?: unknown): void;
   };
@@ -52,7 +53,9 @@ export interface AgentLoopSkillToolsHost {
 export function getActiveSkillToolPolicy(
   loop: AgentLoopSkillToolsHost,
 ): SkillToolPolicy | null {
-  return getSkillToolPolicy(loop.selectedSkillId ?? undefined);
+  return getSkillToolPolicy(loop.selectedSkillId ?? undefined, {
+    enabledSkillPackIds: loop.enabledSkillPackIds,
+  });
 }
 
 export function classifySkillToolPreference(
@@ -144,6 +147,7 @@ export function applySkillToolSuppression(
 ): ToolDefinition[] {
   const policy = getSkillToolSuppressionPolicy(
     loop.selectedSkillId ?? undefined,
+    { enabledSkillPackIds: loop.enabledSkillPackIds },
   );
   if (!policy) return tools;
 
@@ -220,6 +224,7 @@ export function applyToolProfile(
     currentSubtask?.description ?? loop.originalQuery,
     loop.planSteps[currentSubtaskIndex]?.successCriteria || "",
     explicitProfile ?? inferredProfile,
+    { enabledSkillPackIds: loop.enabledSkillPackIds },
   );
   if (activeProfile) {
     if (loop.turnsOnCurrentStep >= loop.limits.stepWarnTurns) {
@@ -306,6 +311,7 @@ export function getActiveToolProfileForStep(
       subtask.description,
       loop.planSteps[stepIndex]?.successCriteria || "",
       explicitProfile as ToolProfile,
+      { enabledSkillPackIds: loop.enabledSkillPackIds },
     );
   }
   const inferredProfile = inferToolProfileForStep(
@@ -317,6 +323,7 @@ export function getActiveToolProfileForStep(
     subtask.description,
     loop.planSteps[stepIndex]?.successCriteria || "",
     inferredProfile,
+    { enabledSkillPackIds: loop.enabledSkillPackIds },
   );
 }
 
