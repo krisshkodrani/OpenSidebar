@@ -1407,7 +1407,7 @@ describe("AgentLoop", () => {
         onStep: vi.fn(),
       },
       {
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
         maxTurns: 60,
       },
     );
@@ -2767,7 +2767,7 @@ Showing 6-10 of 50`,
         onStep: vi.fn(),
       },
       {
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
       },
     );
     const replanFrom = vi.fn();
@@ -2801,7 +2801,7 @@ Showing 6-10 of 50`,
     expect(recordEvent).toHaveBeenCalledWith(
       "plan_replan_skipped_skill_owned_loop",
       expect.objectContaining({
-        skillId: "multi-tab-procurement-loop",
+        skillId: "multi-tab-checklist-workflow",
       }),
     );
   });
@@ -3566,7 +3566,7 @@ Showing 6-10 of 50`,
       snapshotText:
         "Procurement List shows 1 of 3 items completed after returning from the store tab.",
     });
-    (agent as any).selectedSkillId = "multi-tab-procurement-loop";
+    (agent as any).selectedSkillId = "multi-tab-checklist-workflow";
     (agent as any).originalQuery =
       "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.";
 
@@ -3588,7 +3588,7 @@ Showing 6-10 of 50`,
         onStep: vi.fn(),
       },
       {
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
       },
     );
     (agent as any).originalQuery =
@@ -3640,7 +3640,7 @@ Showing 6-10 of 50`,
       },
       {
         workspaceId: "ws-1",
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
       },
     );
 
@@ -3718,7 +3718,7 @@ Showing 6-10 of 50`,
       },
       {
         workspaceId: "ws-1",
-        selectedSkillId: "multi-tab-procurement-loop",
+        selectedSkillId: "multi-tab-checklist-workflow",
       },
     );
 

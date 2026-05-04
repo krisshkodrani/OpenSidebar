@@ -21,7 +21,7 @@ const MIN_ASSUMPTION_TOKEN_LEN = 4;
 const MAX_ORIGINAL_QUERY_EXCERPT = 420;
 const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
 const CROSS_TAB_COMPARE_SKILL_ID = "cross-tab-compare";
-const MULTI_TAB_PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const MAX_RESULT_LEN = 500;
 const MAX_COMPACT_LIST_DETAIL_RESULT_LEN = 220;
 const MAX_PROGRESS_LIST_ITEMS = 4;
@@ -251,7 +251,7 @@ function buildExecutorSkillSection(node: TaskNode): string[] {
   const loadedSkill = getLoadedSkillContract(node.selectedSkillId);
   if (!loadedSkill) return [];
 
-  if (loadedSkill.id === MULTI_TAB_PROCUREMENT_SKILL_ID) {
+  if (loadedSkill.id === MULTI_TAB_CHECKLIST_SKILL_ID) {
     return [
       "Selected workflow skill:",
       `- ${loadedSkill.id}: ${loadedSkill.description}`,
@@ -259,12 +259,12 @@ function buildExecutorSkillSection(node: TaskNode): string[] {
         ? [`- Why selected: ${normalizeNote(node.selectedSkillReason)}`]
         : []),
       "Skill operating brief:",
-      "- Re-read the checklist row only long enough to confirm the target item, store, and quantity.",
-      "- Open the matching store in a new tab, switch into it, and buy only the requested item.",
-      "- Once a visible order confirmation exists, store only compact completion facts such as item, store, and order number.",
-      "- Switch back to the source checklist tab and mark only the completed row before moving on.",
-      "- If the checklist counter increases after you mark the row complete, treat that plus the earlier order confirmation as sufficient evidence instead of probing checkbox attributes or rediscovering tabs.",
-      "- Avoid browser-history navigation while the checklist and store tabs are both available.",
+      "- Re-read the source item only long enough to confirm the target page, requested action, and constraints.",
+      "- Open or reuse the matching target page in another tab, switch into it, and complete only that source item's work.",
+      "- Once target-tab evidence exists, store only compact completion facts such as item, target page, extracted fact, or confirmation number.",
+      "- Switch back to the source tab and mark or record only the completed item before moving on.",
+      "- Treat source-page progress markers, reviewed badges, counters, or row-complete state as sufficient evidence when they reflect the completed target work.",
+      "- Avoid browser-history navigation while the source and target tabs are both available.",
       "",
     ];
   }

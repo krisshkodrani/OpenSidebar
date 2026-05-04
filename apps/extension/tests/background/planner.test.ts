@@ -1840,7 +1840,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillReason).toContain("item-level detail facts");
     });
 
-    test("selects multi-tab-procurement-loop for repeated tabbed procurement workflows", async () => {
+    test("selects multi-tab-checklist-workflow for repeated tabbed procurement workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Open the first store in a new tab", "Purchase the first item", "Return and check it off"]}',
@@ -1856,14 +1856,14 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
 
         expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-procurement-loop");
-        expect(result.nodes[0].selectedSkillReason).toContain("checklist workflow");
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
+        expect(result.nodes[0].selectedSkillReason).toContain("source-list workflow");
         expect(result.nodes[0].description).toMatch(/open the first store in a new tab/i);
         expect(result.nodes[0].description).toMatch(/purchase the first item/i);
         expect(result.nodes[0].description).toMatch(/return and check it off/i);
     });
 
-    test("selects multi-tab-procurement-loop for natural procurement checklist requests", async () => {
+    test("selects multi-tab-checklist-workflow for natural procurement checklist requests", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
             content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Buy the first procurement item", "Buy the second procurement item", "Mark both complete"]}',
@@ -1879,9 +1879,9 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
 
         expect(result.nodes).toHaveLength(1);
-        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-procurement-loop");
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
         expect(result.nodes[0].description).toMatch(/Buy the first two items/i);
-        expect(result.nodes[0].successCriteria).toMatch(/marked complete/i);
+        expect(result.nodes[0].successCriteria).toMatch(/marked, recorded/i);
     });
 
     test("does not collapse procurement workflows when the procurement pack is disabled", async () => {
@@ -1902,8 +1902,93 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 
         expect(result.nodes.length).toBeGreaterThan(1);
         expect(result.nodes.map((node) => node.selectedSkillId)).not.toContain(
-            "multi-tab-procurement-loop",
+            "multi-tab-checklist-workflow",
         );
+    });
+
+    test("selects multi-tab-checklist-workflow for job listings reviewed in separate tabs", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                subtasks: [
+                    "Open the first job listing in a separate tab",
+                    "Review the first job detail and record it as reviewed",
+                    "Return to the job board and continue with the next listing",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Open the first three job listings in separate tabs, review each detail page, then return to the job board and record each listing as reviewed before recommending the best match for a remote React and TypeScript frontend profile.",
+            "TechJobs Board",
+            "https://example.com/job-board",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
+        expect(result.nodes[0].description).toMatch(/separate tab/i);
+        expect(result.nodes[0].successCriteria).toMatch(/source-list item/i);
+    });
+
+    test("selects multi-tab-checklist-workflow for dashboard report collection", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                subtasks: [
+                    "Open the Sales dashboard link in a new tab",
+                    "Read the KPI summary and record it",
+                    "Return to the dashboard index before opening Support",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Open the Sales, Support, and Operations dashboard links in separate tabs, read the KPI summary from each dashboard, then return to the source dashboard list and record each dashboard reviewed before telling me which one needs attention most.",
+            "Dashboard Index",
+            "https://example.com/dashboards",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
+        expect(result.nodes[0].description).toMatch(/Sales dashboard/i);
+    });
+
+    test("selects multi-tab-checklist-workflow for research checklist reviews", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                subtasks: [
+                    "Open the first research article in a new tab",
+                    "Capture the main claim and mark the article reviewed",
+                    "Switch back to the research checklist",
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "For the first four research links, open each article in a new tab, capture the main claim, switch back to the source research checklist, and mark each article reviewed.",
+            "Research Checklist",
+            "https://example.com/research",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("multi-tab-checklist-workflow");
+        expect(result.nodes[0].description).toMatch(/research article/i);
     });
 
     test("selects budget-aware-execution when the task explicitly mentions turn budget pressure", async () => {
@@ -1970,13 +2055,13 @@ describe("selectPrimarySkill", () => {
             "procurement-workflows",
         );
         expect(getSkillPack("procurement-workflows")?.skillIds).toContain(
-            "multi-tab-procurement-loop",
+            "multi-tab-checklist-workflow",
         );
         expect(listSkillDescriptors().map((skill) => skill.id)).toContain(
-            "multi-tab-procurement-loop",
+            "multi-tab-checklist-workflow",
         );
-        expect(getLoadedSkillContract("multi-tab-procurement-loop")).toBeTruthy();
-        expect(getSkillToolPolicy("multi-tab-procurement-loop")).toBeTruthy();
+        expect(getLoadedSkillContract("multi-tab-checklist-workflow")).toBeTruthy();
+        expect(getSkillToolPolicy("multi-tab-checklist-workflow")).toBeTruthy();
         expect(
             listSkillDescriptors({ enabledSkillPackIds: [] }).map(
                 (skill) => skill.id,
@@ -1986,14 +2071,14 @@ describe("selectPrimarySkill", () => {
             listSkillDescriptors({ enabledSkillPackIds: [] }).map(
                 (skill) => skill.id,
             ),
-        ).not.toContain("multi-tab-procurement-loop");
+        ).not.toContain("multi-tab-checklist-workflow");
         expect(
             getLoadedSkillContract("email-reply-careful", {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
         expect(
-            getLoadedSkillContract("multi-tab-procurement-loop", {
+            getLoadedSkillContract("multi-tab-checklist-workflow", {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
@@ -2003,7 +2088,7 @@ describe("selectPrimarySkill", () => {
             }),
         ).toBeNull();
         expect(
-            getSkillToolPolicy("multi-tab-procurement-loop", {
+            getSkillToolPolicy("multi-tab-checklist-workflow", {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
@@ -2660,13 +2745,13 @@ describe("selectPrimarySkill", () => {
             successCriteria: "The purchased row is checked off on the procurement list",
         };
 
-        expect(selectPrimarySkill(input)?.id).toBe("multi-tab-procurement-loop");
+        expect(selectPrimarySkill(input)?.id).toBe("multi-tab-checklist-workflow");
         expect(
             selectPrimarySkill({
                 ...input,
                 enabledSkillPackIds: ["procurement-workflows"],
             })?.id,
-        ).toBe("multi-tab-procurement-loop");
+        ).toBe("multi-tab-checklist-workflow");
     });
 
     test("matches natural procurement checklist workflows without tab wording", () => {
@@ -2676,7 +2761,70 @@ describe("selectPrimarySkill", () => {
                 objective: "Complete the requested procurement list items",
                 successCriteria: "The first two rows are marked complete on the procurement list",
             })?.id,
-        ).toBe("multi-tab-procurement-loop");
+        ).toBe("multi-tab-checklist-workflow");
+    });
+
+    test("matches generic multi-tab checklist workflow cases", () => {
+        const cases = [
+            {
+                query:
+                    "Open the first three job listings in separate tabs, review each detail page, then return to the job board and record each listing as reviewed before recommending the best match.",
+                objective: "Review the first three job listings across separate tabs",
+                successCriteria:
+                    "Each listing is recorded as reviewed on the job board before the recommendation",
+            },
+            {
+                query:
+                    "Open the Sales, Support, and Operations dashboard links in separate tabs, read the KPI summary from each, then return to the source dashboard list and record each dashboard reviewed.",
+                objective: "Collect KPI summaries from three dashboard tabs",
+                successCriteria:
+                    "Sales, Support, and Operations are each recorded as reviewed on the dashboard list",
+            },
+            {
+                query:
+                    "For the first four research links, open each article in a new tab, capture the main claim, switch back to the source research checklist, and mark each article reviewed.",
+                objective: "Review four research articles across new tabs",
+                successCriteria:
+                    "Each article's main claim is captured and each source row is marked reviewed",
+            },
+        ];
+
+        for (const input of cases) {
+            expect(selectPrimarySkill(input)?.id).toBe(
+                "multi-tab-checklist-workflow",
+            );
+        }
+    });
+
+    test("does not overmatch list, checklist, or comparison tasks without source-tab progress", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Review the job listings and recommend the best matches for my frontend profile.",
+                objective:
+                    "Read all job listings on the TechJobs Board page and recommend matches",
+                successCriteria:
+                    "Best job recommendations are grounded in reviewed listing details",
+                pageTitle: "TechJobs Board",
+                pageUrl: "https://example.com/job-board",
+            })?.id,
+        ).toBe("list-detail-review-loop");
+
+        expect(
+            selectPrimarySkill({
+                query: "Go through this checklist and tell me which items are incomplete.",
+                objective: "Review checklist state on the current page",
+                successCriteria: "Incomplete checklist items are reported",
+            })?.id,
+        ).not.toBe("multi-tab-checklist-workflow");
+
+        expect(
+            selectPrimarySkill({
+                query: "Open the Overview and Reports tabs and compare the totals.",
+                objective: "Compare totals across two tabs",
+                successCriteria: "Answer is based on both tabs",
+            })?.id,
+        ).toBe("cross-tab-compare");
     });
 });
 

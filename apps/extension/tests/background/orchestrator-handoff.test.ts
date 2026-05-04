@@ -157,23 +157,23 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).not.toContain("Skill evidence requirements:");
   });
 
-  test("uses compact skill guidance for multi-tab procurement loops", () => {
+  test("uses compact skill guidance for multi-tab checklist workflows", () => {
     const node = makeNode([]);
     node.description = "Buy the first procurement item and mark it complete";
     node.successCriteria = "Purchase confirmed and the checklist row is checked off";
-    node.selectedSkillId = "multi-tab-procurement-loop";
+    node.selectedSkillId = "multi-tab-checklist-workflow";
     node.selectedSkillReason =
       "Task requires repeating a checklist workflow across store tabs: open, purchase, return, and mark complete.";
 
     const instruction = buildExecutorInstruction(node);
 
     expect(instruction).toContain("Selected workflow skill:");
-    expect(instruction).toContain("multi-tab-procurement-loop");
+    expect(instruction).toContain("multi-tab-checklist-workflow");
     expect(instruction).toContain("Skill operating brief:");
-    expect(instruction).toContain("Open the matching store in a new tab");
-    expect(instruction).toContain("Switch back to the source checklist tab and mark only the completed row");
+    expect(instruction).toContain("Open or reuse the matching target page in another tab");
+    expect(instruction).toContain("Switch back to the source tab and mark or record only the completed item");
     expect(instruction).toContain(
-      "treat that plus the earlier order confirmation as sufficient evidence",
+      "Treat source-page progress markers, reviewed badges, counters, or row-complete state as sufficient evidence",
     );
     expect(instruction).not.toContain("Skill procedure:");
   });

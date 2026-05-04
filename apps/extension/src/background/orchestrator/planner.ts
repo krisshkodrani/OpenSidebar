@@ -141,7 +141,7 @@ interface DecompositionStep {
   toolProfile?: ToolProfile;
 }
 
-const PROCUREMENT_SKILL_ID = "multi-tab-procurement-loop";
+const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "chart-value-extraction",
@@ -167,34 +167,42 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function isProcurementOpenNode(node: TaskNode): boolean {
+function isMultiTabChecklistOpenNode(node: TaskNode): boolean {
   return (
-    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
+    node.selectedSkillId === MULTI_TAB_CHECKLIST_SKILL_ID &&
     /\bopen\b/i.test(node.description) &&
-    /\bnew tab\b/i.test(node.description)
+    /\b(?:new|separate|another)\s+tab\b/i.test(node.description)
   );
 }
 
-function isProcurementPurchaseNode(node: TaskNode): boolean {
+function isMultiTabChecklistTargetNode(node: TaskNode): boolean {
   return (
-    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
-    /\b(purchase|buy)\b/i.test(node.description)
+    node.selectedSkillId === MULTI_TAB_CHECKLIST_SKILL_ID &&
+    /\b(purchase|buy|review|read|capture|extract|inspect|compare|summarize)\b/i.test(
+      node.description,
+    )
   );
 }
 
-function isProcurementReturnNode(node: TaskNode): boolean {
+function isMultiTabChecklistReturnNode(node: TaskNode): boolean {
   return (
-    node.selectedSkillId === PROCUREMENT_SKILL_ID &&
-    /\b(check off|mark .* done|return)\b/i.test(node.description)
+    node.selectedSkillId === MULTI_TAB_CHECKLIST_SKILL_ID &&
+    /\b(check off|mark .* done|mark .* complete|mark .* reviewed|record .* reviewed|return|switch back|come back)\b/i.test(
+      node.description,
+    )
   );
 }
 
-function isSkillOwnedProcurementLoopRequest(
+function isSkillOwnedMultiTabChecklistRequest(
   query: string,
   nodes: TaskNode[],
 ): boolean {
   if (nodes.length < 2) return false;
-  if (!nodes.every((node) => node.selectedSkillId === PROCUREMENT_SKILL_ID)) {
+  if (
+    !nodes.every(
+      (node) => node.selectedSkillId === MULTI_TAB_CHECKLIST_SKILL_ID,
+    )
+  ) {
     return false;
   }
 
@@ -208,24 +216,46 @@ function isSkillOwnedProcurementLoopRequest(
     /\bprocurement\s+list\b/i.test(corpus) ||
     /\b(?:store|stores|store\s+page|store\s+link)\b/i.test(corpus);
   const hasPurchaseIntent = /\b(?:buy|purchase|procure|order)\b/i.test(corpus);
+  const hasExplicitTabIntent =
+    /\b(?:new|separate|another|other|multiple)\s+tabs?\b|\bswitch\b[\s\S]{0,40}\btabs?\b|\bacross\s+tabs?\b/i.test(
+      corpus,
+    );
+  const hasSourceSurface =
+    /\b(?:list|checklist|rows?|items?|links?|listings?|articles?|dashboards?|reports?|job board|research)\b/i.test(
+      corpus,
+    );
   const hasMultipleItems =
     /\bfirst\s+(?:\w+|\d+)\s+items?\b/i.test(corpus) ||
+    /\bfirst\s+(?:\w+|\d+)\s+(?:links?|listings?|articles?|dashboards?|reports?|jobs?)\b/i.test(
+      corpus,
+    ) ||
+    /\b(?:two|three|four|five|six|seven|eight|nine|ten)\s+(?:items?|links?|listings?|articles?|dashboards?|dashboard\s+tabs?|reports?|jobs?)\b/i.test(
+      corpus,
+    ) ||
     /\b\d+\s+items?\b/i.test(corpus) ||
+    /\b\d+\s+(?:links?|listings?|articles?|dashboards?|reports?|jobs?)\b/i.test(
+      corpus,
+    ) ||
     /\b(?:both|each)\b/i.test(corpus);
   const hasReturnOrMarkIntent =
     /\b(?:mark|check)\b[\s\S]{0,80}\b(?:complete|done|off)\b/i.test(corpus) ||
+    /\b(?:mark|record|note)\b[\s\S]{0,80}\b(?:reviewed|captured|complete|done)\b/i.test(
+      corpus,
+    ) ||
     /\bcheckbox\b/i.test(corpus) ||
-    /\breturn\b[\s\S]{0,80}\b(?:mark|check)\b/i.test(corpus);
+    /\b(?:return|switch back|come back)\b[\s\S]{0,80}\b(?:mark|check|record|source|list|board)\b/i.test(
+      corpus,
+    );
 
   return (
-    hasProcurementSurface &&
-    hasPurchaseIntent &&
+    ((hasProcurementSurface && hasPurchaseIntent) ||
+      (hasExplicitTabIntent && hasSourceSurface)) &&
     hasMultipleItems &&
     hasReturnOrMarkIntent
   );
 }
 
-function collapseAllProcurementLoopNodes(
+function collapseAllMultiTabChecklistNodes(
   query: string,
   nodes: TaskNode[],
 ): TaskNode[] {
@@ -235,13 +265,13 @@ function collapseAllProcurementLoopNodes(
       ...firstNode,
       description: compactText(
         [
-          `Complete the procurement checklist workflow for the original request: ${query}`,
+          `Complete the multi-tab checklist workflow for the original request: ${query}`,
           ...nodes.map((node) => node.description),
         ].join(" "),
       ),
       successCriteria: compactText(
         [
-          "The requested procurement list items are purchased in their required quantities and marked complete on the procurement list.",
+          "Each requested source-list item has matching target-tab evidence and is marked, recorded, or otherwise accounted for on the source page.",
           ...nodes.map((node) => node.successCriteria),
         ].join(" "),
       ),
@@ -332,12 +362,12 @@ function collapsePaginatedAggregateScanNodes(
   ];
 }
 
-function collapseProcurementLoopNodes(
+function collapseMultiTabChecklistNodes(
   nodes: TaskNode[],
   query: string,
 ): TaskNode[] {
-  if (isSkillOwnedProcurementLoopRequest(query, nodes)) {
-    return collapseAllProcurementLoopNodes(query, nodes);
+  if (isSkillOwnedMultiTabChecklistRequest(query, nodes)) {
+    return collapseAllMultiTabChecklistNodes(query, nodes);
   }
 
   if (nodes.length < 3 || nodes.length % 3 !== 0) return nodes;
@@ -350,9 +380,9 @@ function collapseProcurementLoopNodes(
       !openNode ||
       !purchaseNode ||
       !returnNode ||
-      !isProcurementOpenNode(openNode) ||
-      !isProcurementPurchaseNode(purchaseNode) ||
-      !isProcurementReturnNode(returnNode)
+      !isMultiTabChecklistOpenNode(openNode) ||
+      !isMultiTabChecklistTargetNode(purchaseNode) ||
+      !isMultiTabChecklistReturnNode(returnNode)
     ) {
       return nodes;
     }
@@ -823,12 +853,15 @@ export class OrchestratorPlanner {
       );
     }
 
-    const collapsedProcurementNodes = collapseProcurementLoopNodes(nodes, query);
-    if (collapsedProcurementNodes !== nodes) {
-      nodes = collapsedProcurementNodes;
+    const collapsedMultiTabNodes = collapseMultiTabChecklistNodes(
+      nodes,
+      query,
+    );
+    if (collapsedMultiTabNodes !== nodes) {
+      nodes = collapsedMultiTabNodes;
       logger.info(
         "orchestrator",
-        "Collapsed procurement micro-steps into skill-owned loop nodes",
+        "Collapsed multi-tab checklist micro-steps into skill-owned loop nodes",
         { count: nodes.length },
       );
     }

@@ -208,7 +208,7 @@ export async function executeSequentialToolCalls(
         args,
         snapshot: this.context.getSnapshot(),
       }) ||
-      (this.selectedSkillId === "multi-tab-procurement-loop" &&
+      (this.selectedSkillId === "multi-tab-checklist-workflow" &&
         toolName === ToolName.SWITCH_TAB);
     const repeatDecision = assessRepeatAction({
       toolName,

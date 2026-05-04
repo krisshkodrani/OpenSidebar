@@ -249,7 +249,7 @@ import {
   getActiveSkillToolPolicy,
   getActiveToolProfileForStep,
   isSkillOwnedListDetailReview,
-  isSkillOwnedProcurementLoop,
+  isSkillOwnedMultiTabChecklistLoop,
   recordSkillToolSelection,
   type AgentLoopSkillToolsHost,
 } from "./loop-skill-tools";
@@ -3136,7 +3136,7 @@ export class AgentLoop {
 
   private shouldBlockTabManagementTools(): boolean {
     if (userExplicitlyRequestedTabManagement(this.originalQuery)) return false;
-    if (this.selectedSkillId === "multi-tab-procurement-loop") return false;
+    if (this.selectedSkillId === "multi-tab-checklist-workflow") return false;
     if (this.planRequiresTabManagement) return false;
     return true;
   }
@@ -3953,8 +3953,8 @@ export class AgentLoop {
     );
   }
 
-  private isSkillOwnedProcurementLoop(): boolean {
-    return isSkillOwnedProcurementLoop(
+  private isSkillOwnedMultiTabChecklistLoop(): boolean {
+    return isSkillOwnedMultiTabChecklistLoop(
       this as unknown as AgentLoopSkillToolsHost,
     );
   }
@@ -3968,7 +3968,7 @@ export class AgentLoop {
   ): Promise<PlanMonitorResult | null> {
     if (
       this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedProcurementLoop()
+      this.isSkillOwnedMultiTabChecklistLoop()
     ) {
       return null;
     }
@@ -4021,7 +4021,7 @@ export class AgentLoop {
   ): Promise<void> {
     if (
       this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedProcurementLoop()
+      this.isSkillOwnedMultiTabChecklistLoop()
     ) {
       this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
         turn: this.turnCount,
@@ -4139,7 +4139,7 @@ export class AgentLoop {
   ): Promise<boolean> {
     if (
       this.isSkillOwnedListDetailReview() ||
-      this.isSkillOwnedProcurementLoop()
+      this.isSkillOwnedMultiTabChecklistLoop()
     ) {
       this.traceRecorder?.recordEvent("plan_replan_skipped_skill_owned_loop", {
         turn: this.turnCount,
@@ -5559,26 +5559,30 @@ export class AgentLoop {
         snapshotText,
       );
 
-    const procurementIntent =
-      this.selectedSkillId === "multi-tab-procurement-loop" ||
-      /\b(procurement|purchase|buy)\b/i.test(taskContext);
-    if (procurementIntent) {
-      const summaryShowsPurchase =
-        /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order)\b/i.test(
+    const multiTabChecklistIntent =
+      this.selectedSkillId === "multi-tab-checklist-workflow" ||
+      /\b(procurement|purchase|buy|checklist|source list|separate tabs?|new tabs?)\b/i.test(
+        taskContext,
+      );
+    if (multiTabChecklistIntent) {
+      const summaryShowsTargetWork =
+        /\b(purchase|purchased|order|ordered|confirmed|bought|place(?:d)? order|reviewed|captured|extracted|recorded)\b/i.test(
           summaryText,
         );
-      const summaryShowsChecklistReturn =
-        /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete)|returned? to .* (?:list|checklist|procurement)|back on .* (?:list|checklist|procurement))\b/i.test(
+      const summaryShowsSourceReturn =
+        /\b(check(?:ed|ing)? off|mark(?:ed|ing)? .* (?:done|complete|reviewed)|record(?:ed|ing)? .* reviewed|returned? to .* (?:list|checklist|procurement|board|source)|back on .* (?:list|checklist|procurement|board|source))\b/i.test(
           summaryText,
         );
-      const checklistLooksComplete =
+      const sourceLooksComplete =
         /\b\d+\s+of\s+\d+\s+items?\s+completed\b/i.test(snapshotText) ||
-        /\b(mark .* as done|all items procured)\b/i.test(snapshotText);
+        /\b(mark .* as done|all items procured|viewed|reviewed|completed)\b/i.test(
+          snapshotText,
+        );
 
       if (
-        summaryShowsPurchase &&
-        summaryShowsChecklistReturn &&
-        checklistLooksComplete
+        summaryShowsTargetWork &&
+        summaryShowsSourceReturn &&
+        sourceLooksComplete
       ) {
         return true;
       }

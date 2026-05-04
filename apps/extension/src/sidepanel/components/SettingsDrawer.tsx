@@ -100,8 +100,8 @@ const SKILL_PACK_OPTIONS = [
   },
   {
     id: "procurement-workflows",
-    label: "Procurement workflows",
-    description: "Tabbed store purchasing and checklist completion guidance.",
+    label: "Multi-tab workflows",
+    description: "Checklist and source-list tasks that intentionally span tabs.",
   },
 ];
 
