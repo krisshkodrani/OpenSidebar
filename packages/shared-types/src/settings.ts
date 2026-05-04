@@ -10,6 +10,7 @@ export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
 export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
 export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
+export const DEFAULT_ENABLED_SKILL_PACK_IDS = ["communication-workflows"];
 
 export type TTSStylePreset =
   | "neutral"
@@ -72,6 +73,8 @@ export interface UserSettings {
   requirePlanConfirmation?: boolean;
   /** Orchestrator lane topology. Defaults to full planner/executor/verifier topology. */
   laneTopologyMode?: LaneTopologyMode;
+  /** Enabled optional built-in skill packs. Defaults to DEFAULT_ENABLED_SKILL_PACK_IDS. */
+  enabledSkillPackIds?: string[];
   /** Override executor model. Must support screenshots and tool calling. */
   executorModel?: string;
   /** Override planner model. */

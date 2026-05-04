@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import "../setup";
-import { DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE } from "../../src/types";
+import {
+  DEFAULT_ENABLED_SKILL_PACK_IDS,
+  DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+} from "../../src/types";
 import {
   loadSettings,
+  normalizeEnabledSkillPackIds,
   normalizeMaxImagePromptTokenEstimate,
   saveSettings,
 } from "../../src/utils/settings-storage";
@@ -132,8 +136,77 @@ describe("settings storage", () => {
         providerMode: "fireworks",
         perceptionMode: "auto",
         maxImagePromptTokenEstimate: DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+        enabledSkillPackIds: DEFAULT_ENABLED_SKILL_PACK_IDS,
       }),
     });
+  });
+
+  test("normalizes enabled skill pack ids on save and load", async () => {
+    expect(normalizeEnabledSkillPackIds(undefined)).toEqual(
+      DEFAULT_ENABLED_SKILL_PACK_IDS,
+    );
+    expect(
+      normalizeEnabledSkillPackIds([
+        "communication-workflows",
+        "communication-workflows",
+        "",
+        123,
+        "custom-pack",
+      ]),
+    ).toEqual(["communication-workflows", "custom-pack"]);
+
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.set = vi.fn(async () => {}) as any;
+    chrome.storage.session.remove = vi.fn(async () => {}) as any;
+
+    await saveSettings({
+      openRouterApiKey: "",
+      fireworksApiKey: "fw-test",
+      maxTurns: 100,
+      theme: "system",
+      showSessionMetrics: true,
+      requireApprovals: true,
+      allowNavigation: true,
+      enabledSkillPackIds: [
+        "communication-workflows",
+        "communication-workflows",
+        "custom-pack",
+      ],
+    });
+
+    expect(syncSet.mock.calls[0]?.[0]?.userSettings).toMatchObject({
+      enabledSkillPackIds: ["communication-workflows", "custom-pack"],
+    });
+
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "fireworks",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+        enabledSkillPackIds: ["", "communication-workflows", 42],
+      },
+    })) as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      openRouterApiKey_local: "",
+      openaiApiKey_local: "",
+      groqApiKey_local: "",
+      geminiApiKey_local: "",
+      fireworksApiKey_local: "fw-test",
+      deepseekApiKey_local: "",
+      kimiApiKey_local: "",
+      xiaomiApiKey_local: "",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.enabledSkillPackIds).toEqual([
+      "communication-workflows",
+    ]);
   });
 
   test("normalizes invalid image prompt budgets on save and load", async () => {

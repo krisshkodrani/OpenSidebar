@@ -1311,6 +1311,30 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toBe("Summarize this page");
     });
 
+    test("applies enabled skill pack options during initial node construction", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": false, "difficulty": "simple"}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const query =
+            "Reply to David's email confirming Friday at 10 AM for the Q3 strategy review.";
+        const planner = new OrchestratorPlanner("test-key");
+
+        const defaultResult = await planner.buildNodes(query, "Inbox", "https://mail.example/inbox");
+        const disabledResult = await planner.buildNodes(
+            query,
+            "Inbox",
+            "https://mail.example/inbox",
+            { enabledSkillPackIds: [] },
+        );
+
+        expect(defaultResult.nodes[0].selectedSkillId).toBe("email-reply-careful");
+        expect(disabledResult.nodes[0].selectedSkillId).not.toBe("email-reply-careful");
+    });
+
     test("returns isSingleNode=false for multi-step task", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

@@ -6,7 +6,10 @@ import type {
   PerceptionRuntimeMode,
   UserSettings,
 } from "../../types";
-import { DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE } from "../../types";
+import {
+  DEFAULT_ENABLED_SKILL_PACK_IDS,
+  DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+} from "../../types";
 import { getDefaultExecutorModel } from "../../utils/executor-model-policy";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import {
@@ -86,6 +89,14 @@ const PERCEPTION_MODE_OPTIONS: {
     value: "structured",
     label: "Text only",
     description: "Use DOM text and element data without executor screenshots.",
+  },
+];
+
+const SKILL_PACK_OPTIONS = [
+  {
+    id: "communication-workflows",
+    label: "Communication workflows",
+    description: "Careful email reply and message composition guidance.",
   },
 ];
 
@@ -255,6 +266,20 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
   const handleChange = (key: keyof UserSettings, value: any) => {
     setFormState((prev) => {
       const next = { ...prev, [key]: value };
+      setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
+      return next;
+    });
+  };
+
+  const handleSkillPackToggle = (packId: string, checked: boolean) => {
+    setFormState((prev) => {
+      const current = prev.enabledSkillPackIds ?? DEFAULT_ENABLED_SKILL_PACK_IDS;
+      const nextPackIds = checked
+        ? current.includes(packId)
+          ? current
+          : [...current, packId]
+        : current.filter((id) => id !== packId);
+      const next = { ...prev, enabledSkillPackIds: nextPackIds };
       setIsDirty(JSON.stringify(next) !== JSON.stringify(settings));
       return next;
     });
@@ -561,6 +586,48 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       )?.description
                     }
                   </p>
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Skill packs
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Optional workflow guidance used by the planner.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {SKILL_PACK_OPTIONS.map((pack) => {
+                      const enabledIds =
+                        formState.enabledSkillPackIds ??
+                        DEFAULT_ENABLED_SKILL_PACK_IDS;
+                      const checked = enabledIds.includes(pack.id);
+                      return (
+                        <label
+                          key={pack.id}
+                          className="flex items-start gap-3 rounded-md border border-warm-200 dark:border-warm-800 px-3 py-2"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              handleSkillPackToggle(pack.id, e.target.checked)
+                            }
+                            className="mt-0.5 w-4 h-4 text-primary-600 rounded"
+                          />
+                          <span>
+                            <span className="block text-sm font-medium dark:text-warm-300">
+                              {pack.label}
+                            </span>
+                            <span className="block text-xs text-warm-400 dark:text-warm-500">
+                              {pack.description}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">

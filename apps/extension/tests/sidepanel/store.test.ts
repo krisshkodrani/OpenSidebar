@@ -3,6 +3,7 @@ import "../setup";
 import { useStore } from "../../src/sidepanel/store";
 import {
     AgentStatus,
+    DEFAULT_ENABLED_SKILL_PACK_IDS,
     DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
 } from "../../src/types";
 
@@ -48,6 +49,7 @@ describe("SidePanel Store", () => {
                 providerMode: "fireworks",
                 maxImagePromptTokenEstimate:
                     DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+                enabledSkillPackIds: [...DEFAULT_ENABLED_SKILL_PACK_IDS],
                 maxTurns: 30,
                 theme: "system",
                 showSessionMetrics: false,
@@ -128,6 +130,9 @@ describe("SidePanel Store", () => {
         expect(settings.maxTurns).toBe(30);
         expect(settings.maxImagePromptTokenEstimate).toBe(
             DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
+        );
+        expect(settings.enabledSkillPackIds).toEqual(
+            DEFAULT_ENABLED_SKILL_PACK_IDS,
         );
         expect(settings.requireApprovals).toBe(true);
     });

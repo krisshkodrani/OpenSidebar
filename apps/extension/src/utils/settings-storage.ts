@@ -6,6 +6,7 @@
  */
 
 import {
+  DEFAULT_ENABLED_SKILL_PACK_IDS,
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
 } from "../types";
@@ -84,6 +85,18 @@ export function normalizeMaxImagePromptTokenEstimate(value: unknown): number {
     : DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE;
 }
 
+export function normalizeEnabledSkillPackIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_ENABLED_SKILL_PACK_IDS];
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || normalized.includes(id)) continue;
+    normalized.push(id);
+  }
+  return normalized;
+}
+
 /**
  * Save settings: API keys to local storage, everything else to sync storage.
  * All API keys are credentials — never sync them.
@@ -98,6 +111,9 @@ export async function saveSettings(
     perceptionMode: settings.perceptionMode ?? "auto",
     maxImagePromptTokenEstimate: normalizeMaxImagePromptTokenEstimate(
       settings.maxImagePromptTokenEstimate,
+    ),
+    enabledSkillPackIds: normalizeEnabledSkillPackIds(
+      settings.enabledSkillPackIds,
     ),
   };
   if (
@@ -225,6 +241,9 @@ export async function loadSettings(
   delete raw.useVLExecutor;
   raw.maxImagePromptTokenEstimate = normalizeMaxImagePromptTokenEstimate(
     raw.maxImagePromptTokenEstimate,
+  );
+  raw.enabledSkillPackIds = normalizeEnabledSkillPackIds(
+    raw.enabledSkillPackIds,
   );
 
   if (

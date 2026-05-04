@@ -13,7 +13,11 @@ import {
   synthesizePlanFromTaskContract,
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
-import { getSkillDescriptor, selectPrimarySkill } from "./skills";
+import {
+  getSkillDescriptor,
+  selectPrimarySkill,
+  type SkillCatalogOptions,
+} from "./skills";
 
 const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.CLICK_ELEMENT,
@@ -416,6 +420,7 @@ function collapseSkillOwnedWorkflowNodes(
   query: string,
   pageTitle?: string,
   pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
   if (nodes.length < 2) return nodes;
 
@@ -425,9 +430,13 @@ function collapseSkillOwnedWorkflowNodes(
     successCriteria: query,
     pageTitle,
     pageUrl,
+    ...skillCatalogOptions,
   });
   if (!selection) return nodes;
-  const selectedDescriptor = getSkillDescriptor(selection.id);
+  const selectedDescriptor = getSkillDescriptor(
+    selection.id,
+    skillCatalogOptions,
+  );
   if (!selectedDescriptor?.atomic && !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) {
     return nodes;
   }
@@ -591,6 +600,7 @@ function stepsToNodes(
   phase: "planned" | "planner_replan" = "planned",
   pageTitle?: string,
   pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
   const nodeIds = steps.map(() => crypto.randomUUID());
   const rawAssignments: PlannerAssignment[] = steps.map((step, index) => ({
@@ -634,6 +644,7 @@ function stepsToNodes(
         successCriteria: assignment.successCriteria,
         pageTitle,
         pageUrl,
+        ...skillCatalogOptions,
       });
       return selection
         ? {
@@ -675,12 +686,20 @@ export function buildFallbackNodes(
   phase: "planned" | "planner_replan" = "planned",
   pageTitle?: string,
   pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
   const fallbackSteps =
     synthesizeBatchedExhaustivePlan(query) ||
     synthesizePlanFromTaskContract(query) ||
     [buildSingleFallbackStep(query)];
-  return stepsToNodes(query, fallbackSteps, phase, pageTitle, pageUrl);
+  return stepsToNodes(
+    query,
+    fallbackSteps,
+    phase,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+  );
 }
 
 export function buildDirectExecutionNodes(
@@ -688,6 +707,7 @@ export function buildDirectExecutionNodes(
   phase: "planned" | "planner_replan" = "planned",
   pageTitle?: string,
   pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
   return stepsToNodes(
     query,
@@ -695,6 +715,7 @@ export function buildDirectExecutionNodes(
     phase,
     pageTitle,
     pageUrl,
+    skillCatalogOptions,
   );
 }
 
@@ -715,6 +736,7 @@ export class OrchestratorPlanner {
     query: string,
     pageTitle: string,
     pageUrl: string,
+    skillCatalogOptions?: SkillCatalogOptions,
     signal?: AbortSignal,
   ): Promise<BuildNodesResult> {
     const decomposition = await this.planner.decompose(
@@ -744,6 +766,7 @@ export class OrchestratorPlanner {
         "planned",
         pageTitle,
         pageUrl,
+        skillCatalogOptions,
       );
       logger.info(
         "orchestrator",
@@ -760,6 +783,7 @@ export class OrchestratorPlanner {
         "planned",
         pageTitle,
         pageUrl,
+        skillCatalogOptions,
       );
       logger.info(
         "orchestrator",
@@ -787,9 +811,16 @@ export class OrchestratorPlanner {
         "planned",
         pageTitle,
         pageUrl,
+        skillCatalogOptions,
       );
     } else {
-      nodes = buildFallbackNodes(query, "planned", pageTitle, pageUrl);
+      nodes = buildFallbackNodes(
+        query,
+        "planned",
+        pageTitle,
+        pageUrl,
+        skillCatalogOptions,
+      );
     }
 
     const collapsedProcurementNodes = collapseProcurementLoopNodes(nodes, query);
@@ -817,6 +848,7 @@ export class OrchestratorPlanner {
       query,
       pageTitle,
       pageUrl,
+      skillCatalogOptions,
     );
     if (collapsedSkillOwnedWorkflowNodes !== nodes) {
       nodes = collapsedSkillOwnedWorkflowNodes;
@@ -839,7 +871,10 @@ export class OrchestratorPlanner {
       nodes.length === 1 &&
         nodes[0]?.selectedSkillId &&
         (SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId) ||
-          getSkillDescriptor(nodes[0].selectedSkillId)?.atomic),
+          getSkillDescriptor(
+            nodes[0].selectedSkillId,
+            skillCatalogOptions,
+          )?.atomic),
     );
     const isSingleNode =
       nodes.length === 1 &&
@@ -855,12 +890,13 @@ export class OrchestratorPlanner {
     pageTitle: string,
     pageUrl: string,
     reason: string,
+    skillCatalogOptions?: SkillCatalogOptions,
     signal?: AbortSignal,
   ): Promise<TaskNode[] | null> {
     if (
       node.selectedSkillId &&
       (SKILL_OWNED_WORKFLOW_IDS.has(node.selectedSkillId) ||
-        getSkillDescriptor(node.selectedSkillId)?.atomic)
+        getSkillDescriptor(node.selectedSkillId, skillCatalogOptions)?.atomic)
     ) {
       logger.info(
         "orchestrator",
@@ -896,6 +932,7 @@ export class OrchestratorPlanner {
         successCriteria: step.successCriteria,
         pageTitle,
         pageUrl,
+        ...skillCatalogOptions,
       });
       const explicitDependencies = (step.dependencies || [])
         .filter(
@@ -957,6 +994,7 @@ export class OrchestratorPlanner {
     completedSummary: string,
     pageTitle: string,
     pageUrl: string,
+    skillCatalogOptions?: SkillCatalogOptions,
     signal?: AbortSignal,
   ): Promise<TaskNode[] | null> {
     const horizonQuery = [
@@ -997,6 +1035,7 @@ export class OrchestratorPlanner {
       "planned",
       pageTitle,
       pageUrl,
+      skillCatalogOptions,
     );
 
     logger.info("orchestrator", "Planner produced horizon expansion nodes", {
