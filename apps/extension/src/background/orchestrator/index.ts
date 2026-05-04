@@ -79,6 +79,7 @@ import {
   selectResumeOwnedTab,
   touchTaskTab,
 } from "./tab-coordination";
+import { buildTabCoordinationTraceData as buildTaskTabCoordinationTraceData } from "./tab-coordination-trace";
 import {
   NodeVerificationResult,
   OrchestratorVerifier,
@@ -812,30 +813,7 @@ export class Orchestrator {
     task: OrchestratorTask,
     detail: Record<string, unknown> = {},
   ): Record<string, unknown> {
-    const coordination = task.tabCoordination;
-    const ownedTabs = coordination?.ownedTabs ?? [];
-    const activeOwnedTabs = ownedTabs.filter(
-      (entry) => entry.releasedAt == null,
-    );
-    return {
-      taskId: task.id,
-      workspaceId: task.workspaceId,
-      rootTabId: task.rootTabId,
-      rootTabUrl: task.rootTabUrl ?? null,
-      primaryTabId: coordination?.primaryTabId ?? task.rootTabId,
-      lastReboundTabId: coordination?.lastReboundTabId ?? null,
-      ownedTabCount: activeOwnedTabs.length,
-      nodeBindingCount: coordination
-        ? Object.keys(coordination.nodeBindings).length
-        : 0,
-      ownedTabs: activeOwnedTabs.map((entry) => ({
-        tabId: entry.tabId,
-        role: entry.role,
-        createdByTask: entry.createdByTask,
-        lastKnownUrl: entry.lastKnownUrl ?? null,
-      })),
-      ...detail,
-    };
+    return buildTaskTabCoordinationTraceData(task, detail);
   }
 
   private emitTabCoordinationState(
