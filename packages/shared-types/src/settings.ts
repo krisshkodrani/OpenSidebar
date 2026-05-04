@@ -88,6 +88,12 @@ export interface UserSettings {
    * - `structured`: DOM text and element data; screenshots are not sent directly to the executor
    */
   perceptionMode?: PerceptionRuntimeMode;
+  /**
+   * Maximum estimated image prompt tokens per agent session.
+   * Uses conservative high-detail screenshot estimates; auto perception falls
+   * back to structured DOM mode when this budget is exhausted.
+   */
+  maxImagePromptTokenEstimate?: number;
   /** @deprecated Use `perceptionMode` instead. */
   /** Legacy unified executor toggle. Ignored during settings migration. */
   useVLExecutor?: boolean;

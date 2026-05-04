@@ -65,7 +65,8 @@ export type TracePerceptionFallbackReason =
   | "no_api_key"
   | "timeout"
   | "provider_exhausted"
-  | "empty_response";
+  | "empty_response"
+  | "image_budget_exhausted";
 
 export type TracePerceptionScreenshotStatus =
   | "captured"

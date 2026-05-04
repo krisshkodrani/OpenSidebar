@@ -4290,6 +4290,8 @@ export class Orchestrator {
           xiaomiApiKey: input.settings.xiaomiApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
+          maxImagePromptTokenEstimate:
+            input.settings.maxImagePromptTokenEstimate,
           useVLExecutor: input.settings.useVLExecutor,
           // Durable turn checkpoint: injected by orchestrator on SW restart recovery
           turnCheckpoint: validatedTurnCheckpoint,

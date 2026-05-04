@@ -22,6 +22,7 @@ const LOW_DETAIL_IMAGE_TOKENS = 85;
 // Prompt assembly does not retain image dimensions, so high/auto screenshots
 // use a conservative fixed viewport estimate instead of pretending precision.
 const HIGH_DETAIL_IMAGE_TOKENS = 765;
+export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 
 export function emptySessionMetrics(): SessionMetrics {
   return {
@@ -94,6 +95,8 @@ export function imagePromptUsageForCount(imageCount: number): ImagePromptUsage {
   };
 }
 
+// Budget enforcement intentionally uses the same conservative high-detail
+// estimate as aggregate telemetry so configured caps are never overspent.
 export function recordImagePromptUsage(
   metrics: SessionMetrics,
   usage: ImagePromptUsage,
@@ -102,6 +105,40 @@ export function recordImagePromptUsage(
   metrics.imagePromptCount = (metrics.imagePromptCount ?? 0) + usage.imageCount;
   metrics.totalImagePromptTokenEstimate =
     (metrics.totalImagePromptTokenEstimate ?? 0) + usage.estimatedTokens;
+}
+
+export function resolveImagePromptTokenBudget(
+  maxImagePromptTokenEstimate?: number,
+): number {
+  if (
+    typeof maxImagePromptTokenEstimate === "number" &&
+    Number.isFinite(maxImagePromptTokenEstimate) &&
+    maxImagePromptTokenEstimate >= 0
+  ) {
+    return maxImagePromptTokenEstimate;
+  }
+  return DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE;
+}
+
+export function remainingImagePromptTokenBudget(
+  metrics: Pick<SessionMetrics, "totalImagePromptTokenEstimate">,
+  maxImagePromptTokenEstimate?: number,
+): number {
+  const max = resolveImagePromptTokenBudget(maxImagePromptTokenEstimate);
+  const used = Math.max(0, metrics.totalImagePromptTokenEstimate ?? 0);
+  return Math.max(0, max - used);
+}
+
+export function canSpendImagePromptBudget(
+  metrics: Pick<SessionMetrics, "totalImagePromptTokenEstimate">,
+  usage: ImagePromptUsage,
+  maxImagePromptTokenEstimate?: number,
+): boolean {
+  if (usage.estimatedTokens <= 0) return true;
+  return (
+    usage.estimatedTokens <=
+    remainingImagePromptTokenBudget(metrics, maxImagePromptTokenEstimate)
+  );
 }
 
 function deriveCostMode(actualCost: number, estimatedCost: number): CostMode {

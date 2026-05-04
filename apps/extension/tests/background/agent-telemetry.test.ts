@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  canSpendImagePromptBudget,
   emptySessionMetrics,
   estimateImagePromptUsage,
   imagePromptUsageForCount,
@@ -92,5 +93,17 @@ describe("agent telemetry", () => {
       reason: "visual_task_text",
       signals: ["visual_task_text"],
     });
+  });
+
+  test("checks image prompt budget against estimated prompt tokens", () => {
+    const metrics = emptySessionMetrics();
+    recordImagePromptUsage(metrics, imagePromptUsageForCount(2));
+
+    expect(
+      canSpendImagePromptBudget(metrics, imagePromptUsageForCount(1), 2_500),
+    ).toBe(true);
+    expect(
+      canSpendImagePromptBudget(metrics, imagePromptUsageForCount(2), 2_500),
+    ).toBe(false);
   });
 });
