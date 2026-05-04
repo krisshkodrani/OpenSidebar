@@ -86,6 +86,8 @@ function validSessionMetrics() {
     llmCallCount: 3,
     visionCallCount: 1,
     cachedVisionCallCount: 2,
+    totalImagePromptTokenEstimate: 765,
+    imagePromptCount: 1,
     perceptionModeDecision: {
       mode: "unified_vl",
       reason: "visual_task_text",
@@ -562,9 +564,13 @@ describe("sanitizeSessionMetrics", () => {
     const metrics = validSessionMetrics();
     delete (metrics as any).visionCallCount;
     delete (metrics as any).cachedVisionCallCount;
+    delete (metrics as any).totalImagePromptTokenEstimate;
+    delete (metrics as any).imagePromptCount;
     const result = sanitizeSessionMetrics(metrics);
     expect(result!.visionCallCount).toBe(0);
     expect(result!.cachedVisionCallCount).toBe(0);
+    expect(result!.totalImagePromptTokenEstimate).toBe(0);
+    expect(result!.imagePromptCount).toBe(0);
   });
 
   test("rejects invalid optional vision counters", () => {
@@ -572,6 +578,21 @@ describe("sanitizeSessionMetrics", () => {
       sanitizeSessionMetrics({
         ...validSessionMetrics(),
         visionCallCount: -1,
+      }),
+    ).toBeNull();
+  });
+
+  test("rejects invalid image prompt estimates", () => {
+    expect(
+      sanitizeSessionMetrics({
+        ...validSessionMetrics(),
+        totalImagePromptTokenEstimate: -1,
+      }),
+    ).toBeNull();
+    expect(
+      sanitizeSessionMetrics({
+        ...validSessionMetrics(),
+        imagePromptCount: NaN,
       }),
     ).toBeNull();
   });
@@ -662,6 +683,8 @@ describe("mergeSessionMetrics", () => {
     target.totalTokens = 100;
     target.llmCallCount = 2;
     target.visionCallCount = 1;
+    target.totalImagePromptTokenEstimate = 85;
+    target.imagePromptCount = 1;
     target.perceptionModeDecision = {
       mode: "structured",
       reason: "dom_signals_sufficient",
@@ -672,6 +695,8 @@ describe("mergeSessionMetrics", () => {
     incoming.totalTokens = 50;
     incoming.llmCallCount = 1;
     incoming.cachedVisionCallCount = 2;
+    incoming.totalImagePromptTokenEstimate = 765;
+    incoming.imagePromptCount = 1;
     incoming.perceptionModeDecision = {
       mode: "unified_vl",
       reason: "canvas_present",
@@ -683,6 +708,8 @@ describe("mergeSessionMetrics", () => {
     expect(result.llmCallCount).toBe(3);
     expect(result.visionCallCount).toBe(1);
     expect(result.cachedVisionCallCount).toBe(2);
+    expect(result.totalImagePromptTokenEstimate).toBe(850);
+    expect(result.imagePromptCount).toBe(2);
     expect(result.perceptionModeDecision).toEqual({
       mode: "unified_vl",
       reason: "canvas_present",

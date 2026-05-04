@@ -1,9 +1,27 @@
 import { Citation, SessionMetrics, ToolName } from "../../types";
 import type { PerceptionRuntimeModeDecision } from "../../utils/perception-mode";
 import { estimateCostUsd } from "../llm/pricing";
-import { CompletionResponse, ProviderConfig, TokenUsage } from "../llm/types";
+import {
+  CompletionResponse,
+  LLMMessage,
+  ProviderConfig,
+  TokenUsage,
+} from "../llm/types";
 
 type CostMode = "none" | "actual" | "estimated" | "mixed";
+
+export type ImagePromptUsage = {
+  imageCount: number;
+  lowDetailCount: number;
+  highDetailCount: number;
+  autoDetailCount: number;
+  estimatedTokens: number;
+};
+
+const LOW_DETAIL_IMAGE_TOKENS = 85;
+// Prompt assembly does not retain image dimensions, so high/auto screenshots
+// use a conservative fixed viewport estimate instead of pretending precision.
+const HIGH_DETAIL_IMAGE_TOKENS = 765;
 
 export function emptySessionMetrics(): SessionMetrics {
   return {
@@ -19,9 +37,71 @@ export function emptySessionMetrics(): SessionMetrics {
     llmCallCount: 0,
     visionCallCount: 0,
     cachedVisionCallCount: 0,
+    totalImagePromptTokenEstimate: 0,
+    imagePromptCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
+}
+
+function emptyImagePromptUsage(): ImagePromptUsage {
+  return {
+    imageCount: 0,
+    lowDetailCount: 0,
+    highDetailCount: 0,
+    autoDetailCount: 0,
+    estimatedTokens: 0,
+  };
+}
+
+function estimateImageTokens(
+  detail: "low" | "high" | "auto" | undefined,
+): number {
+  return detail === "low" ? LOW_DETAIL_IMAGE_TOKENS : HIGH_DETAIL_IMAGE_TOKENS;
+}
+
+export function estimateImagePromptUsage(
+  messages: LLMMessage[],
+): ImagePromptUsage {
+  const usage = emptyImagePromptUsage();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) continue;
+    for (const part of message.content) {
+      if (part.type !== "image_url") continue;
+      const detail = part.image_url.detail;
+      usage.imageCount += 1;
+      usage.estimatedTokens += estimateImageTokens(detail);
+      if (detail === "low") {
+        usage.lowDetailCount += 1;
+      } else if (detail === "high") {
+        usage.highDetailCount += 1;
+      } else {
+        usage.autoDetailCount += 1;
+      }
+    }
+  }
+  return usage;
+}
+
+export function imagePromptUsageForCount(imageCount: number): ImagePromptUsage {
+  if (imageCount <= 0) return emptyImagePromptUsage();
+  return {
+    imageCount,
+    lowDetailCount: 0,
+    highDetailCount: 0,
+    autoDetailCount: imageCount,
+    estimatedTokens: imageCount * HIGH_DETAIL_IMAGE_TOKENS,
+  };
+}
+
+export function recordImagePromptUsage(
+  metrics: SessionMetrics,
+  usage: ImagePromptUsage,
+): void {
+  if (usage.imageCount <= 0 || usage.estimatedTokens <= 0) return;
+  metrics.imagePromptCount = (metrics.imagePromptCount ?? 0) + usage.imageCount;
+  metrics.totalImagePromptTokenEstimate =
+    (metrics.totalImagePromptTokenEstimate ?? 0) + usage.estimatedTokens;
 }
 
 function deriveCostMode(actualCost: number, estimatedCost: number): CostMode {
@@ -124,9 +204,13 @@ export function recordVisionTelemetryUsage(args: {
   llmMs: number;
   model: string;
   providerId: ProviderConfig["providerId"];
+  imagePrompt?: ImagePromptUsage;
 }): void {
   const { metrics, usage, llmMs, model, providerId } = args;
   metrics.visionCallCount = (metrics.visionCallCount ?? 0) + 1;
+  if (args.imagePrompt) {
+    recordImagePromptUsage(metrics, args.imagePrompt);
+  }
   metrics.totalPromptTokens += usage.prompt_tokens;
   metrics.totalCompletionTokens += usage.completion_tokens;
   metrics.totalTokens += usage.total_tokens;

@@ -208,7 +208,16 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
           </>
         )}
         <span className="text-warm-300 dark:text-warm-600">Â·</span>
-        <span>Total {formatTimeCompact(metrics.totalSessionTimeMs)}</span>
+        <span>
+          Total {formatTimeCompact(metrics.totalSessionTimeMs)}
+          {(metrics.imagePromptCount ?? 0) > 0
+            ? `, Images ${metrics.imagePromptCount}${
+                (metrics.totalImagePromptTokenEstimate ?? 0) > 0
+                  ? ` (~${formatTokensCompact(metrics.totalImagePromptTokenEstimate ?? 0)} tok)`
+                  : ""
+              }`
+            : ""}
+        </span>
       </div>
       {perceptionDecision && (
         <div>

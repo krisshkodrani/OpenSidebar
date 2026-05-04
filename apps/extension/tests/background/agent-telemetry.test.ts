@@ -1,7 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   emptySessionMetrics,
+  estimateImagePromptUsage,
+  imagePromptUsageForCount,
   recordCachedVisionTelemetryUse,
+  recordImagePromptUsage,
   recordPerceptionModeDecision,
   recordVisionTelemetryUsage,
 } from "../../src/background/agent/agent-telemetry";
@@ -20,13 +23,59 @@ describe("agent telemetry", () => {
       llmMs: 250,
       model: "accounts/fireworks/routers/kimi-k2p5-turbo",
       providerId: "fireworks",
+      imagePrompt: imagePromptUsageForCount(1),
     });
     recordCachedVisionTelemetryUse(metrics);
 
     expect(metrics.visionCallCount).toBe(1);
     expect(metrics.cachedVisionCallCount).toBe(1);
     expect(metrics.llmCallCount).toBe(1);
+    expect(metrics.imagePromptCount).toBe(1);
+    expect(metrics.totalImagePromptTokenEstimate).toBe(765);
     expect(metrics.totalTokens).toBe(120);
+  });
+
+  test("estimates image prompt tokens from LLM image parts", () => {
+    const usage = estimateImagePromptUsage([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Look at this page." },
+          {
+            type: "image_url",
+            image_url: {
+              url: "data:image/jpeg;base64,AAA",
+              detail: "low",
+            },
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: "data:image/jpeg;base64,BBB",
+              detail: "high",
+            },
+          },
+        ],
+      },
+    ]);
+
+    expect(usage).toEqual({
+      imageCount: 2,
+      lowDetailCount: 1,
+      highDetailCount: 1,
+      autoDetailCount: 0,
+      estimatedTokens: 850,
+    });
+  });
+
+  test("records estimated image prompt tokens separately from provider totals", () => {
+    const metrics = emptySessionMetrics();
+
+    recordImagePromptUsage(metrics, imagePromptUsageForCount(2));
+
+    expect(metrics.imagePromptCount).toBe(2);
+    expect(metrics.totalImagePromptTokenEstimate).toBe(1530);
+    expect(metrics.totalTokens).toBe(0);
   });
 
   test("records perception mode decisions defensively", () => {

@@ -41,7 +41,12 @@ import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
 import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
-import { CompletionResponse, ProviderConfig, TokenUsage } from "../llm/types";
+import {
+  CompletionResponse,
+  LLMMessage,
+  ProviderConfig,
+  TokenUsage,
+} from "../llm/types";
 import {
   formatStepLabel,
   buildElementResolver,
@@ -101,8 +106,11 @@ import { isPaginationNavigationClick } from "./action-exemption-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import {
   emptySessionMetrics,
+  estimateImagePromptUsage,
+  imagePromptUsageForCount,
   recordCachedVisionTelemetryUse,
   recordCompletionUsage,
+  recordImagePromptUsage,
   recordPerceptionModeDecision,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
@@ -562,6 +570,7 @@ export class AgentLoop {
     llmMs: number,
     model: string,
     providerId: ProviderConfig["providerId"] = "openrouter",
+    imageCount = 0,
   ): void {
     recordVisionTelemetryUsage({
       metrics: this.metrics,
@@ -569,7 +578,13 @@ export class AgentLoop {
       llmMs,
       model,
       providerId,
+      imagePrompt: imagePromptUsageForCount(imageCount),
     });
+  }
+
+  /** Record estimated image prompt tokens for direct screenshot-backed LLM calls. */
+  private recordPromptImageUsage(messages: LLMMessage[]): void {
+    recordImagePromptUsage(this.metrics, estimateImagePromptUsage(messages));
   }
 
   /** Get the current accumulated metrics snapshot */
@@ -3638,6 +3653,7 @@ export class AgentLoop {
             result.durationMs,
             result.model,
             result.providerId as ProviderConfig["providerId"] | undefined,
+            1 + (panoramicScreenshots?.length ?? 0),
           );
         } else if (result.cached) {
           this.recordCachedVisionUsage();
@@ -5936,6 +5952,8 @@ export class AgentLoop {
         statusHandler: (status, message) => this.statusHandler(status, message),
         getMetrics: () => this.getMetrics(),
         invalidatePerceptionCache: () => this.perception.invalidateCache(),
+        recordPromptImageUsage: (promptMessages) =>
+          this.recordPromptImageUsage(promptMessages),
       });
       if (turnCompletion.kind === "early_result") {
         return turnCompletion.result;
