@@ -176,6 +176,24 @@ describe("tab coordination", () => {
     });
   });
 
+  test("selectResumeOwnedTab accepts the durable root tab when it is the preferred live tab", () => {
+    const selected = selectResumeOwnedTab(
+      {
+        rootTabId: 100,
+        rootTabUrl: null,
+        tabCoordination: undefined,
+      },
+      [{ id: 100, url: "https://example.com/list" }],
+      100,
+    );
+
+    expect(selected).toEqual({
+      status: "safe",
+      tabId: 100,
+      reason: "Recovered onto the previously preferred task tab.",
+    });
+  });
+
   test("selectResumeOwnedTab rejects ambiguous exact URL matches", () => {
     const selected = selectResumeOwnedTab(
       {

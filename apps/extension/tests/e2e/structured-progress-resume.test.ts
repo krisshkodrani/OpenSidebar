@@ -130,19 +130,6 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_DURABLE_E2E)(
 
       const viewer = await openTraceViewerPage(h.ctx);
       await viewer.waitForFunction(
-        () =>
-          Array.from(document.querySelectorAll("button")).some(
-            (candidate) => candidate.textContent?.trim().toLowerCase() === "runs",
-          ),
-      );
-      await viewer.evaluate(() => {
-        const runsTab = Array.from(document.querySelectorAll("button")).find(
-          (candidate) => candidate.textContent?.trim().toLowerCase() === "runs",
-        ) as HTMLButtonElement | undefined;
-        runsTab?.click();
-      });
-
-      await viewer.waitForFunction(
         (expectedWorkspaceId) => document.body.innerText.includes(expectedWorkspaceId),
         {},
         workspaceId,
@@ -152,8 +139,31 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_DURABLE_E2E)(
         const runButton = Array.from(document.querySelectorAll("button")).find(
           (candidate) => candidate.textContent?.includes(expectedWorkspaceId),
         ) as HTMLButtonElement | undefined;
-        runButton?.click();
+        if (!runButton) {
+          throw new Error(`Durable run button not found for ${expectedWorkspaceId}`);
+        }
+        runButton.click();
       }, workspaceId);
+      await viewer.waitForFunction(() => {
+        const text = document.body.innerText.toLowerCase();
+        return (
+          text.includes("structured progress") &&
+          text.includes("senior frontend engineer") &&
+          text.includes("user preference")
+        );
+      });
+      await viewer.evaluate(() => {
+        const resumeButton = Array.from(document.querySelectorAll("button")).find(
+          (candidate) => candidate.textContent?.trim() === "Request resume",
+        ) as HTMLButtonElement | undefined;
+        if (!resumeButton) {
+          throw new Error("Request resume button not found");
+        }
+        resumeButton.click();
+      });
+      await viewer.waitForFunction(() =>
+        document.body.innerText.toLowerCase().includes("resume requested"),
+      );
       await viewer.close();
 
       await restartExtensionAndMonitor(h.ctx);

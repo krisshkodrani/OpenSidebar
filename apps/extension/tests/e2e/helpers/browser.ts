@@ -27,7 +27,7 @@ export interface ExtensionContext {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
 const HELPER_PATH = "/e2e-helper.html";
-const TRACE_VIEWER_PATH = "/src/trace-viewer/index.html";
+const TRACE_VIEWER_URL = "http://127.0.0.1:7589/viewer";
 const HEADLESS_VIEWPORT = { width: 1365, height: 900 } as const;
 
 function shouldRunHeadless(): boolean {
@@ -201,10 +201,7 @@ export async function openTraceViewerPage(
   hash: string = "#view=backend",
 ): Promise<Page> {
   const page = await createBrowserPage(ctx.browser);
-  await page.goto(
-    `chrome-extension://${ctx.extensionId}${TRACE_VIEWER_PATH}${hash}`,
-    { waitUntil: "domcontentloaded" },
-  );
+  await page.goto(`${TRACE_VIEWER_URL}${hash}`, { waitUntil: "domcontentloaded" });
   return page;
 }
 
