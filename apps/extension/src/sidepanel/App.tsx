@@ -52,6 +52,23 @@ const SUGGESTED_ACTIONS = [
   "Help me complete this task",
 ];
 
+function getLaneTopologyBadge(mode = "full"): string | null {
+  if (mode === "simple") return "Fast";
+  if (mode === "standard") return "Balanced";
+  return null;
+}
+
+function getHeaderModeBadge(settings: {
+  requireApprovals: boolean;
+  requirePlanConfirmation?: boolean;
+  laneTopologyMode?: string;
+}): string | null {
+  return (
+    getLaneTopologyBadge(settings.laneTopologyMode) ??
+    getInteractionModeBadge(getInteractionMode(settings))
+  );
+}
+
 export interface AppProps {
   themeRoot?: HTMLElement | null;
 }
@@ -654,7 +671,7 @@ export default function App({ themeRoot }: AppProps = {}) {
           }}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
           onRecordSkill={handleRecordSkill}
-          modeBadgeLabel={getInteractionModeBadge(getInteractionMode(settings))}
+          modeBadgeLabel={getHeaderModeBadge(settings)}
           recordingActive={skillRecordingStatus === "recording"}
         />
 

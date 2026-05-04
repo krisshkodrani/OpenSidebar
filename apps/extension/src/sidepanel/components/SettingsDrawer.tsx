@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
-import { UserSettings } from "../../types";
+import type { LaneTopologyMode, UserSettings } from "../../types";
 import { getDefaultExecutorModel } from "../../utils/executor-model-policy";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { loadSettings, saveSettings } from "../../utils/settings-storage";
@@ -34,6 +34,28 @@ const FOCUSABLE_SELECTOR =
 const MAX_TURNS_PRESETS = [30, 50, 100, 200, 500];
 
 type SettingsTab = "general" | "models" | "voice";
+
+const LANE_TOPOLOGY_OPTIONS: {
+  value: LaneTopologyMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "full",
+    label: "Reliable",
+    description: "Planner, executor, and verifier for highest correctness.",
+  },
+  {
+    value: "standard",
+    label: "Balanced",
+    description: "Planner and executor without final verification.",
+  },
+  {
+    value: "simple",
+    label: "Fast",
+    description: "Single executor lane for simple read-only tasks.",
+  },
+];
 
 const OPENAI_TTS_VOICES = [
   { value: "nova", label: "Nova" },
@@ -464,6 +486,46 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-sm font-medium dark:text-warm-300">
+                      Execution mode
+                    </label>
+                    <p className="text-xs text-warm-400 dark:text-warm-500">
+                      Choose how much planning and verification the agent uses.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 rounded-lg bg-warm-100 dark:bg-warm-800 p-1">
+                    {LANE_TOPOLOGY_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          handleChange("laneTopologyMode", option.value)
+                        }
+                        title={option.description}
+                        className={`min-h-8 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                          (formState.laneTopologyMode ?? "full") ===
+                          option.value
+                            ? "bg-warm-50 text-primary-700 shadow-sm dark:bg-warm-900 dark:text-primary-300"
+                            : "text-warm-500 hover:text-warm-700 dark:text-warm-400 dark:hover:text-warm-200"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-warm-400 dark:text-warm-500">
+                    {
+                      LANE_TOPOLOGY_OPTIONS.find(
+                        (option) =>
+                          option.value ===
+                          (formState.laneTopologyMode ?? "full"),
+                      )?.description
+                    }
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between">

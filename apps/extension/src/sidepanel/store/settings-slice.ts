@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   openRouterApiKey: "",
   providerMode: "fireworks",
   perceptionMode: "auto",
+  laneTopologyMode: "full",
   maxTurns: 100,
   theme: "system",
   showSessionMetrics: true,
