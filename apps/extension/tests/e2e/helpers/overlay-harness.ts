@@ -3,6 +3,10 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  createPuppeteerOverlayBrowserPagePort,
+  type OverlayRunnerBrowserPagePort,
+} from "./overlay-page-port";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
@@ -79,6 +83,7 @@ export interface OverlayFakeBackgroundState {
 
 export interface OverlayHarnessRunner {
   page: Page;
+  browserPage: OverlayRunnerBrowserPagePort;
   browser: Browser;
   pageErrors: string[];
   inject(): Promise<void>;
@@ -194,8 +199,11 @@ async function startDistServer(): Promise<StaticServerHandle> {
   };
 }
 
-async function injectModule(page: Page, scriptUrl: string): Promise<void> {
-  await page.evaluate(
+async function injectModule(
+  browserPage: OverlayRunnerBrowserPagePort,
+  scriptUrl: string,
+): Promise<void> {
+  await browserPage.evaluate(
     (url) =>
       new Promise<void>((resolve, reject) => {
         const script = document.createElement("script");
@@ -238,9 +246,11 @@ export async function createOverlayHarnessRunner(
   }
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  const browserPage = createPuppeteerOverlayBrowserPagePort(page);
 
   return {
     page,
+    browserPage,
     browser,
     pageErrors,
 
@@ -249,18 +259,21 @@ export async function createOverlayHarnessRunner(
         waitUntil: "domcontentloaded",
       });
       if (options.runtimeOptions) {
-        await page.evaluate((runtimeOptions) => {
+        await browserPage.evaluate((runtimeOptions) => {
           window.__opensidebarOverlayConfig = { runtimeOptions };
         }, options.runtimeOptions);
       }
-      await injectModule(page, `${staticServer.origin}/${overlayBundlePath}`);
-      await page.waitForSelector("#opensidebar-harness-host", {
+      await injectModule(
+        browserPage,
+        `${staticServer.origin}/${overlayBundlePath}`,
+      );
+      await browserPage.waitForSelector("#opensidebar-harness-host", {
         timeout: 15_000,
       });
     },
 
     getMountState() {
-      return page.evaluate(() => {
+      return browserPage.evaluate(() => {
         const host = document.getElementById("opensidebar-harness-host");
         const root = host?.shadowRoot?.getElementById("root");
         return {
@@ -273,7 +286,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async readRuntimeSnapshot() {
-      return page.evaluate(async () => {
+      return browserPage.evaluate(async () => {
         const runtime = window.__opensidebarOverlayRuntime;
         if (!runtime) throw new Error("Overlay runtime was not mounted.");
         return {
@@ -289,7 +302,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async startMessageCapture() {
-      await page.evaluate(() => {
+      await browserPage.evaluate(() => {
         window.__overlaySmoke = {
           outboundTypes: [],
           outboundMessages: [],
@@ -311,7 +324,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async startFakeBackgroundController(options = {}) {
-      await page.evaluate((controllerOptions) => {
+      await browserPage.evaluate((controllerOptions) => {
         window.__overlayFakeBackground?.dispose();
 
         const state: OverlayFakeBackgroundState = {
@@ -485,7 +498,7 @@ export async function createOverlayHarnessRunner(
     },
 
     readFakeBackgroundState() {
-      return page.evaluate(() => {
+      return browserPage.evaluate(() => {
         const state = window.__overlayFakeBackground?.state;
         if (!state) {
           throw new Error("Overlay fake background controller was not started.");
@@ -495,7 +508,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async waitForFakeBackgroundHandled(type: string) {
-      await page.waitForFunction(
+      await browserPage.waitForFunction(
         (expectedType) =>
           Boolean(
             window.__overlayFakeBackground?.state.handledTypes.includes(
@@ -508,7 +521,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async waitForOverlayText(text: string) {
-      await page.waitForFunction(
+      await browserPage.waitForFunction(
         (expectedText) => {
           const root = document.getElementById("opensidebar-harness-host")
             ?.shadowRoot;
@@ -546,7 +559,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async sendUiMessage(message: unknown) {
-      await page.evaluate(async (uiMessage) => {
+      await browserPage.evaluate(async (uiMessage) => {
         const runtime = window.__opensidebarOverlayRuntime;
         if (!runtime) throw new Error("Overlay runtime was not mounted.");
         await runtime.port.sendMessage(uiMessage);
@@ -554,7 +567,7 @@ export async function createOverlayHarnessRunner(
     },
 
     async emitRuntimeMessage(message: unknown) {
-      await page.evaluate((runtimeMessage) => {
+      await browserPage.evaluate((runtimeMessage) => {
         window.dispatchEvent(
           new CustomEvent("opensidebar:overlay:receive-message", {
             detail: { message: runtimeMessage },
@@ -564,14 +577,14 @@ export async function createOverlayHarnessRunner(
     },
 
     async sendPrimaryMessageThroughUi(text: string) {
-      await page.waitForFunction(() => {
+      await browserPage.waitForFunction(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         return Boolean(
           root?.querySelector('textarea[placeholder="What can I help with?"]'),
         );
       });
-      await page.evaluate((value) => {
+      await browserPage.evaluate((value) => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         const textarea = root?.querySelector(
@@ -587,12 +600,12 @@ export async function createOverlayHarnessRunner(
         valueSetter?.call(textarea, value);
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
       }, text);
-      await page.waitForFunction(() => {
+      await browserPage.waitForFunction(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         return Boolean(root?.querySelector('button[aria-label="Send message"]'));
       });
-      await page.evaluate(() => {
+      await browserPage.evaluate(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         const button = root?.querySelector(
@@ -606,14 +619,14 @@ export async function createOverlayHarnessRunner(
     },
 
     async sendFeedbackThroughUi(text: string) {
-      await page.waitForFunction(() => {
+      await browserPage.waitForFunction(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         return Boolean(
           root?.querySelector('textarea[placeholder="Guide the agent..."]'),
         );
       });
-      await page.evaluate((value) => {
+      await browserPage.evaluate((value) => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         const textarea = root?.querySelector(
@@ -629,14 +642,14 @@ export async function createOverlayHarnessRunner(
         valueSetter?.call(textarea, value);
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
       }, text);
-      await page.waitForFunction(() => {
+      await browserPage.waitForFunction(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         return Boolean(
           root?.querySelector('button[aria-label="Send guidance"]'),
         );
       });
-      await page.evaluate(() => {
+      await browserPage.evaluate(() => {
         const root = document.getElementById("opensidebar-harness-host")
           ?.shadowRoot;
         const button = root?.querySelector(
@@ -650,11 +663,11 @@ export async function createOverlayHarnessRunner(
     },
 
     readMessageCapture() {
-      return page.evaluate(() => window.__overlaySmoke);
+      return browserPage.evaluate(() => window.__overlaySmoke);
     },
 
     async close() {
-      await page
+      await browserPage
         .evaluate(() => {
           window.__overlayFakeBackground?.dispose();
           delete window.__overlayFakeBackground;

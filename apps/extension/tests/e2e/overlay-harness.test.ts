@@ -275,4 +275,28 @@ describe("Overlay harness browser injection", () => {
     );
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
+
+  it("exposes generic page facts through the runner browser-page port", async () => {
+    const runner = await setupRunner();
+    await runner.inject();
+
+    await expect(runner.browserPage.getUrl()).resolves.toContain(
+      "/overlay-smoke",
+    );
+    await expect(runner.browserPage.getTitle()).resolves.toBe(
+      "Overlay Harness Smoke",
+    );
+    await expect(
+      runner.browserPage.evaluate(
+        () => document.querySelector("h1")?.textContent,
+      ),
+    ).resolves.toBe("Generic page");
+
+    const screenshot = await runner.browserPage.screenshot();
+    expect(screenshot.byteLength).toBeGreaterThan(8);
+    expect(Array.from(screenshot.slice(0, 8))).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
 });
