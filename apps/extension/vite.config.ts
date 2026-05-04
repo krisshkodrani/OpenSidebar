@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 750,
       rollupOptions: {
         input: {
+          "overlay-harness": path.resolve(__dirname, "src/overlay/index.tsx"),
           "trace-viewer": path.resolve(
             __dirname,
             "src/trace-viewer/index.html",

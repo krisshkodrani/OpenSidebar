@@ -1,0 +1,110 @@
+import React from "react";
+import { createRoot, type Root } from "react-dom/client";
+import App from "../sidepanel/App";
+import sidepanelCss from "../sidepanel/index.css?inline";
+import {
+  setUiRuntimePortForTesting,
+  type UiRuntimePort,
+} from "../sidepanel/runtime";
+import { createOpenSidebarOverlayHost } from "./host";
+import {
+  createOverlayUiRuntimeHarness,
+  type OverlayUiRuntimeHarness,
+} from "./runtime";
+
+export interface OpenSidebarOverlayInstance {
+  dispose(): void;
+}
+
+export interface MountOpenSidebarOverlayOptions {
+  runtimePort?: UiRuntimePort;
+  runtimeHarness?: OverlayUiRuntimeHarness;
+  sidepanelCss?: string;
+}
+
+let activeInstance: OpenSidebarOverlayInstance | null = null;
+
+export function mountOpenSidebarOverlay(
+  options: MountOpenSidebarOverlayOptions = {},
+): OpenSidebarOverlayInstance {
+  activeInstance?.dispose();
+  let disposing = false;
+  let runtimeHarness = options.runtimeHarness ?? null;
+  if (!options.runtimePort && !runtimeHarness) {
+    runtimeHarness = createOverlayUiRuntimeHarness();
+  }
+  const runtimePort = options.runtimePort ?? runtimeHarness?.port;
+  if (!runtimePort) {
+    throw new Error("OpenSidebar overlay runtime port was not created.");
+  }
+  const overlayHost = createOpenSidebarOverlayHost({
+    sidepanelCss: options.sidepanelCss ?? sidepanelCss,
+    onClose: () => {
+      if (!disposing) activeInstance?.dispose();
+    },
+  });
+  const restoreRuntime = setUiRuntimePortForTesting(runtimePort);
+  if (runtimeHarness && typeof window !== "undefined") {
+    window.__opensidebarOverlayRuntime = runtimeHarness;
+  }
+  const root: Root = createRoot(overlayHost.mountElement);
+  root.render(
+    <React.StrictMode>
+      <App themeRoot={overlayHost.themeRoot} />
+    </React.StrictMode>,
+  );
+
+  activeInstance = {
+    dispose() {
+      if (disposing) return;
+      disposing = true;
+      root.unmount();
+      restoreRuntime();
+      overlayHost.dispose();
+      if (
+        runtimeHarness &&
+        typeof window !== "undefined" &&
+        window.__opensidebarOverlayRuntime === runtimeHarness
+      ) {
+        delete window.__opensidebarOverlayRuntime;
+      }
+      if (activeInstance === this) {
+        activeInstance = null;
+      }
+    },
+  };
+  return activeInstance;
+}
+
+function mountWhenReady(): void {
+  if (typeof document === "undefined") return;
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => mountOpenSidebarOverlay(),
+      { once: true },
+    );
+    return;
+  }
+  mountOpenSidebarOverlay();
+}
+
+declare global {
+  interface Window {
+    __opensidebarOverlay?: {
+      mount: typeof mountOpenSidebarOverlay;
+      dispose: () => void;
+    };
+    __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.__opensidebarOverlay = {
+    mount: mountOpenSidebarOverlay,
+    dispose() {
+      activeInstance?.dispose();
+    },
+  };
+  mountWhenReady();
+}
