@@ -20,10 +20,7 @@ import {
 } from "../../utils/perception-mode";
 import { LLMClient } from "../llm";
 import { toolRegistry } from "../tools";
-import {
-  DOM_MODIFYING_TOOLS,
-  resolveToolProfile,
-} from "../tools/metadata";
+import { resolveToolProfile } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
@@ -32,10 +29,7 @@ import {
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
 import { workspaceManager } from "../workspaces/manager";
-import {
-  ContextManager,
-  summarizeCausalChain,
-} from "./context";
+import { ContextManager, summarizeCausalChain } from "./context";
 import {
   assessDoneSummary,
   assessWorkflowDoneGuard,
@@ -47,21 +41,13 @@ import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
 import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
-import {
-  CompletionResponse,
-  ProviderConfig,
-  TokenUsage,
-} from "../llm/types";
+import { CompletionResponse, ProviderConfig, TokenUsage } from "../llm/types";
 import {
   formatStepLabel,
   buildElementResolver,
   ElementResolver,
 } from "./step-labels";
-import {
-  TaskPlanner,
-  PlanStep,
-  PlanMonitorResult,
-} from "./planner";
+import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
@@ -70,10 +56,7 @@ import { prepareLlmTurnRequest } from "./loop-turn-preparation";
 import { processLlmTurnResponse } from "./loop-response-processing";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
-import {
-  PendingInteractionYield,
-  runStartExecution,
-} from "./start-result";
+import { PendingInteractionYield, runStartExecution } from "./start-result";
 import { finalizeStartResult } from "./start-finalization";
 import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
@@ -85,23 +68,16 @@ import {
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { MutationLedger } from "./mutation-ledger";
+import { type MoneyTableAggregate } from "./money-table-aggregate";
 import {
-  type MoneyTableAggregate,
-} from "./money-table-aggregate";
-import {
-  assessInlineEditTextEntryRetarget,
-  assessAutocompleteTextRewrite,
-  assessTextEntryClickGuard,
   isTextLikeInputElement,
   normalizeGuardText,
-  validateTextEntryTarget,
 } from "./text-entry-guards";
 export {
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
 } from "./text-entry-guards";
 import {
-  assessListDetailWorkflow,
   countVisibleListDetailActions,
   getListDetailDoneRejection,
   getListDetailReturnControl,
@@ -120,16 +96,7 @@ export {
   isListDetailReturnControlRepeatExempt,
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
-import {
-  hasRecentExactTextFieldRead,
-  isFinalCommunicationClick,
-  isPaginationNavigationClick,
-} from "./action-exemption-policy";
-import {
-  actionMemoryKey,
-  assessRepeatAction,
-  rememberRepeatAction,
-} from "./repeat-action-policy";
+import { isPaginationNavigationClick } from "./action-exemption-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
 import {
   emptySessionMetrics,
@@ -188,7 +155,6 @@ import {
   TOOL_CACHE,
   ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
-  INVESTIGATION_TOOLS,
   INVESTIGATION_EXTENSION,
   MAX_ORIENTATION_TURNS,
   EXPLORATION_BUDGET,
@@ -203,24 +169,13 @@ import type {
   PendingClarificationInteraction,
   PendingUserInteraction,
 } from "./loop-types";
-import {
-  getLoadedSkillContract,
-} from "../orchestrator/skills";
-import {
-  evaluateWorkflowTabRedirect,
-  shouldCheckWorkflowTabRedirect,
-} from "./workflow-tab-controller";
+import { getLoadedSkillContract } from "../orchestrator/skills";
+import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
-  assessElementIdPreDispatch,
-  assessFailedActionRepeat,
-  assessPreflightElement,
-  assessRedundantSuccessBlock,
   assessDeadEndPattern,
-  assessReadElementSameIdNudge,
   assessSameUrlForcedEscalation,
   assessStepDurationWatchdog,
-  assessToolCacheHit,
   buildFailureBrief,
   buildHandoffBriefing,
   buildSubgoalAttempt,
@@ -270,22 +225,6 @@ import {
   TEXT_ONLY_CORRECTION,
 } from "./loop-prompts";
 import {
-  handleCloseTabToolCall,
-  handleCreateTabToolCall,
-  handleEscalateToolCall,
-  handleGenericSequentialToolCall,
-  handleListTabsToolCall,
-  handleNavigateGuardToolCall,
-  recordFailedToolExecution,
-  recordSuccessfulToolExecution,
-  handleSwitchTabToolCall,
-  storeSuccessfulToolResult,
-  handleUpdateNotesToolCall,
-  handleWaitToolCall,
-  type AgentLoopToolHandlerHost,
-  type GenericSequentialToolCallParams,
-} from "./loop-tool-handlers";
-import {
   advanceCompletedSubtasks,
   completeRemainingSubtasks,
   completeSingleSubtask,
@@ -313,26 +252,27 @@ import {
   updateMoneyTableAggregateFromSnapshot,
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
-import {
-  resolveToolApprovalRequest,
-  TOOL_APPROVAL_DENIED_MESSAGE,
-} from "./approval-enforcement";
-import {
-  buildApprovalBypassedStep,
-  getPreToolDeniedReason,
-  getPreToolDeniedMessage,
-  shouldReportApprovalBypass,
-} from "./sequential-pre-tool-gate";
-import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import { assessConsequentialActionApproval } from "./consequential-action-policy";
 import {
   addParallelToolResultsToContext,
-  collectTrailingToolResultMessages,
   handleParallelVerificationGate,
-  handleSequentialVerificationGate,
   type ParallelToolExecutionResult,
 } from "./parallel-tool-execution";
+import {
+  executeParallelToolCalls,
+  type ParallelToolDispatchHost,
+} from "./parallel-tool-dispatch";
+import {
+  executeSequentialToolCalls,
+  type SequentialToolDispatchOutput,
+  type SequentialToolDispatchHost,
+} from "./sequential-tool-dispatch";
+import { collectTurnToolOutcomeRecords } from "./turn-tool-outcomes";
+import {
+  refreshPostToolSnapshot,
+  type PostToolSnapshotRefreshHost,
+} from "./post-tool-snapshot-refresh";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -608,7 +548,8 @@ export class AgentLoop {
       metrics: this.metrics,
       response,
       llmMs,
-      currentProvider: this.llm.getCurrentProvider() as ProviderConfig["providerId"],
+      currentProvider:
+        this.llm.getCurrentProvider() as ProviderConfig["providerId"],
       currentModel: this.llm.getCurrentModel(),
       onCacheHit: (cacheHit) => this.log.debug("agent", "Cache hit", cacheHit),
     });
@@ -1137,9 +1078,7 @@ export class AgentLoop {
    * requestId, and source. Fire-and-forget (errors are silenced).
    * Automatically attaches collected citations to STREAM_CHUNK done=true messages.
    */
-  private broadcast(
-    msg: BroadcastMessage,
-  ): void {
+  private broadcast(msg: BroadcastMessage): void {
     if (this.suppressUiBroadcast) {
       forwardSuppressedStreamChunk(msg, this.onStreamChunk ?? undefined);
       return;
@@ -1205,10 +1144,7 @@ export class AgentLoop {
           });
         },
         recordVerificationGate: (data) => {
-          this.traceRecorder?.recordEvent(
-            "verification_gate_triggered",
-            data,
-          );
+          this.traceRecorder?.recordEvent("verification_gate_triggered", data);
         },
       },
     });
@@ -1316,10 +1252,7 @@ export class AgentLoop {
     toolCallId: string,
     summary: string,
   ): boolean {
-    if (
-      this.turnCount > 2 ||
-      !isDoneSummaryAskingClarification(summary)
-    ) {
+    if (this.turnCount > 2 || !isDoneSummaryAskingClarification(summary)) {
       return false;
     }
 
@@ -1361,11 +1294,7 @@ export class AgentLoop {
 
     const snap = this.context.getSnapshot();
     const elementCount = snap?.elements?.length ?? 0;
-    const visibleLen = (
-      snap?.visibleContent ||
-      snap?.pageContent ||
-      ""
-    ).length;
+    const visibleLen = (snap?.visibleContent || snap?.pageContent || "").length;
     if (elementCount <= 5 || visibleLen <= 100) {
       return false;
     }
@@ -1398,10 +1327,7 @@ export class AgentLoop {
         "Do NOT summarize from the page title or URL alone.",
     });
     if (needsGroundingRead) {
-      await this.forceGroundingRefresh(
-        tabId,
-        "done_before_grounding_read",
-      );
+      await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
       this.context.addMessage({
         role: "user",
         content:
@@ -1612,10 +1538,11 @@ export class AgentLoop {
       !isPendingAsyncChangeSatisfied({
         snapshot: this.context.getSnapshot(),
         expectedTokens: activeAsyncExpectation.expectedTokens,
-        baselineLoadingKeywords:
-          activeAsyncExpectation.baselineLoadingKeywords,
+        baselineLoadingKeywords: activeAsyncExpectation.baselineLoadingKeywords,
       }) &&
-      !this.hasRecentToolEvidenceForTokens(activeAsyncExpectation.expectedTokens)
+      !this.hasRecentToolEvidenceForTokens(
+        activeAsyncExpectation.expectedTokens,
+      )
     ) {
       shouldReject = true;
       rejectReason = `The last action likely triggered delayed page content, but the expected result is not visible yet. ${activeAsyncExpectation.reason} Wait for the update and verify it before ending the task.`;
@@ -1759,7 +1686,10 @@ export class AgentLoop {
         successCriteria: this.planSteps[effectiveCurrentIdx]?.successCriteria,
         snapshot: this.context.getSnapshot(),
       });
-      const autoAdvanceCap = Math.max(2, Math.ceil(this.planSubtasks.length / 2));
+      const autoAdvanceCap = Math.max(
+        2,
+        Math.ceil(this.planSubtasks.length / 2),
+      );
       const rateLimited = this.consecutiveAutoAdvances >= autoAdvanceCap;
 
       const coherence = checkSummaryStepCoherence({
@@ -2073,9 +2003,7 @@ export class AgentLoop {
     return true;
   }
 
-  private rejectDoneForIncompleteListDetailReview(
-    toolCallId: string,
-  ): boolean {
+  private rejectDoneForIncompleteListDetailReview(toolCallId: string): boolean {
     const latestListDetailActionCount = countVisibleListDetailActions(
       this.context.getSnapshot(),
     );
@@ -2889,7 +2817,8 @@ export class AgentLoop {
       context: this.context,
       planner: this.planner,
       abortSignal: this.abortController!.signal,
-      perceptionInterpretation: this.perception.getInterpretation() ?? undefined,
+      perceptionInterpretation:
+        this.perception.getInterpretation() ?? undefined,
       log: this.log,
       traceRecorder: this.traceRecorder,
       stepHandler: (step, update) => this.stepHandler(step, update),
@@ -2911,8 +2840,7 @@ export class AgentLoop {
     this.taskStartTime = runtimePlanState.taskStartTime;
     this.planSubtasks = runtimePlanState.planSubtasks;
     this.planSteps = runtimePlanState.planSteps;
-    this.planRequiresTabManagement =
-      runtimePlanState.planRequiresTabManagement;
+    this.planRequiresTabManagement = runtimePlanState.planRequiresTabManagement;
 
     this.statusHandler(AgentStatus.THINKING, "Analyzing...");
 
@@ -2932,7 +2860,8 @@ export class AgentLoop {
 
     const result = await runStartExecution({
       run: async () => {
-        const controllerResult = await this.maybeRunAtomicSkillController(tabId);
+        const controllerResult =
+          await this.maybeRunAtomicSkillController(tabId);
         return controllerResult ?? (await this.loop(tabId));
       },
       getTurnCount: () => this.turnCount,
@@ -4706,7 +4635,11 @@ export class AgentLoop {
 
     const args: Record<string, unknown> =
       preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM
-        ? { fields, submit: this.hasTrustedServiceNowSubmitIntent(), submitButton: "Submit" }
+        ? {
+            fields,
+            submit: this.hasTrustedServiceNowSubmitIntent(),
+            submitButton: "Submit",
+          }
         : {};
 
     this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
@@ -4765,7 +4698,8 @@ export class AgentLoop {
     const summary =
       this.evidenceAccumulator
         .getByType("record_identity_observed")
-        .at(-1)?.detail?.recordNumber?.toString() ||
+        .at(-1)
+        ?.detail?.recordNumber?.toString() ||
       result.split("\n").find((line) => /submitted|configured/i.test(line)) ||
       `${contract.name} completed with required evidence.`;
     const finalSummary = /completed|submitted|configured/i.test(summary)
@@ -4820,9 +4754,7 @@ export class AgentLoop {
     this.traceRecorder?.recordEvent(params.eventName, {
       turn: this.turnCount,
       trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
-      fieldCount: Array.isArray(traceArgs.fields)
-        ? traceArgs.fields.length
-        : 0,
+      fieldCount: Array.isArray(traceArgs.fields) ? traceArgs.fields.length : 0,
       submit: traceArgs.submit === true,
     });
 
@@ -4950,11 +4882,14 @@ export class AgentLoop {
         toolResult: fill.result,
       });
       if (!fill.ok || !fillSignal) {
-        this.traceRecorder?.recordEvent("servicenow_record_controller_deferred", {
-          turn: this.turnCount,
-          phase: "fill",
-          reason: fill.ok ? "untrusted_fill_result" : "tool_error",
-        });
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_deferred",
+          {
+            turn: this.turnCount,
+            phase: "fill",
+            reason: fill.ok ? "untrusted_fill_result" : "tool_error",
+          },
+        );
         this.context.addMessage({
           role: "user",
           content:
@@ -5030,17 +4965,22 @@ export class AgentLoop {
             "servicenow_record_controller_submit_retry_abandoned",
             {
               turn: this.turnCount,
-              reason: refill.ok ? "untrusted_refill_result" : "refill_tool_error",
+              reason: refill.ok
+                ? "untrusted_refill_result"
+                : "refill_tool_error",
             },
           );
         }
       }
       if (!submit.ok || !completion) {
-        this.traceRecorder?.recordEvent("servicenow_record_controller_deferred", {
-          turn: this.turnCount,
-          phase: "submit",
-          reason: submit.ok ? "untrusted_submit_result" : "tool_error",
-        });
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_deferred",
+          {
+            turn: this.turnCount,
+            phase: "submit",
+            reason: submit.ok ? "untrusted_submit_result" : "tool_error",
+          },
+        );
         this.context.addMessage({
           role: "user",
           content:
@@ -5051,10 +4991,13 @@ export class AgentLoop {
 
       const summary = completion.finalSummary;
       this.completeTaskResult(summary);
-      this.traceRecorder?.recordEvent("servicenow_record_controller_completed", {
-        turn: this.turnCount,
-        summary,
-      });
+      this.traceRecorder?.recordEvent(
+        "servicenow_record_controller_completed",
+        {
+          turn: this.turnCount,
+          summary,
+        },
+      );
 
       return {
         outcome: "completed",
@@ -5926,8 +5869,7 @@ export class AgentLoop {
         broadcast: (message) => this.broadcast(message),
         stepHandler: (step, replace) => this.stepHandler(step, replace),
         finishStream: () => this.finishStream(),
-        statusHandler: (status, message) =>
-          this.statusHandler(status, message),
+        statusHandler: (status, message) => this.statusHandler(status, message),
         getMetrics: () => this.getMetrics(),
         invalidatePerceptionCache: () => this.perception.invalidateCache(),
       });
@@ -5937,8 +5879,7 @@ export class AgentLoop {
       const response = turnCompletion.response;
       messages = turnCompletion.messages;
       const llmMs = turnCompletion.llmMs;
-      const hallucinationDetected =
-        turnCompletion.synthesizedFromHallucination;
+      const hallucinationDetected = turnCompletion.synthesizedFromHallucination;
 
       const processedResponse = await processLlmTurnResponse({
         response,
@@ -5953,8 +5894,7 @@ export class AgentLoop {
         broadcastMetrics: () => this.broadcastMetrics(),
         broadcast: (message) => this.broadcast(message),
         finishStream: () => this.finishStream(),
-        statusHandler: (status, message) =>
-          this.statusHandler(status, message),
+        statusHandler: (status, message) => this.statusHandler(status, message),
         stepHandler: (step, replace) => this.stepHandler(step, replace),
         getMetrics: () => this.getMetrics(),
       });
@@ -6007,8 +5947,7 @@ export class AgentLoop {
           rewriteListDetailWorkflowToolCall: (toolCall, mode) =>
             this.rewriteListDetailWorkflowToolCall(toolCall, mode),
         });
-        consecutiveBlindToolTurns =
-          toolCallSetup.consecutiveBlindToolTurns;
+        consecutiveBlindToolTurns = toolCallSetup.consecutiveBlindToolTurns;
 
         if (toolCallSetup.allCallsBlocked) {
           continue; // All tool calls blocked - retry
@@ -6019,1245 +5958,94 @@ export class AgentLoop {
         if (canParallelize) {
           this.throwIfGracefulStopRequested();
           // PARALLEL EXECUTION
-          const results = await Promise.all(
-            response.tool_calls.map(async (toolCall) => {
-              const toolName = toolCall.function.name as ToolName;
-              const rawArgsKey = toolCall.function.arguments.slice(0, 100);
-              let args: Record<string, unknown> = {};
-              try {
-                args = JSON.parse(toolCall.function.arguments);
-              } catch {
-                // Registry will handle parse error on execute
-              }
-              const argsKey = actionMemoryKey(
-                toolName,
-                args,
-                rawArgsKey,
-                this.context.getSnapshot(),
-              );
-              this.recordSkillToolSelection(toolName, "parallel");
-
-              const repeatActionExempt =
-                isListDetailReturnControlRepeatExempt({
-                  selectedSkillId: this.selectedSkillId,
-                  toolName,
-                  args,
-                  snapshot: this.context.getSnapshot(),
-                }) ||
-                (this.selectedSkillId === "multi-tab-procurement-loop" &&
-                  toolName === ToolName.SWITCH_TAB);
-              const repeatDecision = assessRepeatAction({
-                toolName,
-                argsKey,
-                recentToolCalls,
-                isExempt: repeatActionExempt,
-                allowFinalClickBypass: () =>
-                  !verifiedFinalClickBypassKeys.has(argsKey) &&
-                  hasRecentExactTextFieldRead(this.context.getMessages()) &&
-                  isFinalCommunicationClick({
-                    selectedSkillId: this.selectedSkillId,
-                    toolName,
-                    args,
-                    snapshot: this.context.getSnapshot(),
-                    originalQuery: this.originalQuery,
-                  }),
-              });
-              if (repeatDecision.action === "allow_final_click_bypass") {
-                verifiedFinalClickBypassKeys.add(argsKey);
-                this.log.info(
-                  "agent",
-                  "Repeat final communication click allowed after exact draft read",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    mode: "parallel",
-                  },
-                );
-                this.traceRecorder?.recordEvent(
-                  "repeat_final_click_allowed",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    mode: "parallel",
-                  },
-                );
-              } else if (repeatDecision.action === "block") {
-                this.log.warn("agent", "Repeat action blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  repeatCount: repeatDecision.repeatCount,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent("repeat_action_blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  repeatCount: repeatDecision.repeatCount,
-                  mode: "parallel",
-                });
-                return { toolCall, result: repeatDecision.message, error: null };
-              }
-              if (repeatDecision.action !== "skip_tracking") {
-                rememberRepeatAction(
-                  recentToolCalls,
-                  toolName,
-                  argsKey,
-                  REPEAT_ACTION_WINDOW,
-                );
-              }
-
-              const readElementNudge = assessReadElementSameIdNudge({
-                toolName,
-                args,
-                state: {
-                  lastReadElementId,
-                  consecutiveReadElementSameId,
-                },
-              });
-              lastReadElementId = readElementNudge.state.lastReadElementId;
-              consecutiveReadElementSameId =
-                readElementNudge.state.consecutiveReadElementSameId;
-              if (readElementNudge.nudge) {
-                this.log.warn("agent", "read_element same-ID nudge", {
-                  turn: this.turnCount,
-                  elementId: readElementNudge.nudge.elementId,
-                  consecutive: readElementNudge.nudge.consecutive,
-                });
-                this.traceRecorder?.recordEvent(
-                  "read_element_same_id_nudge",
-                  {
-                    elementId: readElementNudge.nudge.elementId,
-                    consecutive: readElementNudge.nudge.consecutive,
-                  },
-                );
-                return {
-                  toolCall,
-                  result: readElementNudge.nudge.message,
-                  error: null,
-                };
-              }
-
-              // Failed-action memory: block exact repeat of a previously failed tool call
-              const failedActionRepeat = assessFailedActionRepeat({
-                blockedActions,
-                tool: toolName,
-                argsKey,
-              });
-              if (failedActionRepeat) {
-                this.log.warn("agent", "Failed-action repeat blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  priorTurn: failedActionRepeat.priorTurn,
-                  mode: "parallel",
-                });
-                return {
-                  toolCall,
-                  result: null,
-                  error: failedActionRepeat.message,
-                };
-              }
-
-              const cacheLookup = assessToolCacheHit({
-                toolName,
-                args,
-                snapshot: this.context.getSnapshot(),
-                toolCache: this.toolCache,
-              });
-              const cacheType = cacheLookup.cacheType;
-              if (cacheLookup.cachedResult !== null) {
-                this.log.info("agent", "Tool cache hit", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent("tool_cache_hit", {
-                  tool: toolName,
-                  mode: "parallel",
-                });
-                return {
-                  toolCall,
-                  result: cacheLookup.cachedResult,
-                  error: null,
-                };
-              }
-
-              const redundantSuccessBlock = assessRedundantSuccessBlock({
-                recentSuccesses,
-                toolName,
-                argsKey,
-                snapshot: this.context.getSnapshot(),
-                blockThreshold: TOOL_CACHE.BLOCK_THRESHOLD,
-              });
-              if (redundantSuccessBlock) {
-                this.log.info("agent", "Redundant action blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  count: redundantSuccessBlock.count,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                  tool: toolName,
-                  count: redundantSuccessBlock.count,
-                  mode: "parallel",
-                });
-                return {
-                  toolCall,
-                  result: redundantSuccessBlock.result,
-                  error: null,
-                };
-              }
-
-              const idPreDispatch = assessElementIdPreDispatch({
-                toolName,
-                args,
-                snapshot: this.context.getSnapshot(),
-                discoveredIds: discoveredTagIds,
-                currentUrl: this.context.getCurrentUrl(),
-              });
-              if (idPreDispatch.error) {
-                this.log.warn("agent", "Invalid element ID pre-dispatch", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  args: idPreDispatch.logArgs,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent(
-                  "grounding_mismatch",
-                  idPreDispatch.traceData
-                    ? {
-                        turn: this.turnCount,
-                        ...idPreDispatch.traceData,
-                        mode: "parallel",
-                      }
-                    : {},
-                );
-                return {
-                  toolCall,
-                  result: null,
-                  error: idPreDispatch.error,
-                };
-              }
-
-              const preflight = assessPreflightElement({
-                toolName,
-                args,
-                snapshot: this.context.getSnapshot(),
-              });
-              if (preflight.error) {
-                this.log.warn("agent", "Preflight check failed", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  reason: preflight.error,
-                  mode: "parallel",
-                });
-                return { toolCall, result: null, error: preflight.error };
-              }
-
-              const currentSnapshot = this.context.getSnapshot();
-              const listDetailWorkflow = assessListDetailWorkflow({
-                selectedSkillId: this.selectedSkillId,
-                query: this.originalQuery,
-                toolName,
-                args,
-                snapshot: currentSnapshot,
-                reviewedTargets: this.listDetailReviewedTargets,
-                openedTargets: this.listDetailOpenedTargets,
-                previousVisibleDetailActionCount:
-                  this.listDetailVisibleActionCount,
-              });
-              this.listDetailVisibleActionCount =
-                listDetailWorkflow.visibleDetailActionCount;
-              if (listDetailWorkflow.block) {
-                this.log.warn("agent", "List-detail workflow tool blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "parallel",
-                });
-                this.traceRecorder?.recordEvent(
-                  "list_detail_workflow_tool_blocked",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    mode: "parallel",
-                    openedDetailCount: this.listDetailOpenedTargets.size,
-                    reviewedDetailCount: this.listDetailReviewedTargets.size,
-                    visibleDetailActionCount: this.listDetailVisibleActionCount,
-                  },
-                );
-                return {
-                  toolCall,
-                  result: listDetailWorkflow.block,
-                  error: null,
-                };
-              }
-
-              if (
-                toolName === ToolName.TYPE_TEXT &&
-                typeof args.id === "number" &&
-                typeof args.text === "string"
-              ) {
-                const planStatus = this.context.getPlanStatusRaw();
-                const currentStepIndex = planStatus?.currentIndex ?? -1;
-                const inlineRetarget = assessInlineEditTextEntryRetarget({
-                  activeToolProfile:
-                    this.getActiveToolProfileForStep(currentStepIndex),
-                  snapshot: this.context.getSnapshot(),
-                  targetId: args.id,
-                });
-                if (inlineRetarget) {
-                  args.id = inlineRetarget.retargetedId;
-                  toolCall.function.arguments = JSON.stringify(args);
-                  this.context.addMessage({
-                    role: "user",
-                    content: inlineRetarget.reason,
-                  });
-                }
-                const snapshot = this.context.getSnapshot();
-                const target = snapshot?.elements.find(
-                  (el) => el.tag === args.id,
-                );
-                const activeObjective =
-                  planStatus?.subtasks[currentStepIndex]?.description ??
-                  this.originalQuery;
-                const targetError = validateTextEntryTarget(
-                  activeObjective,
-                  target,
-                  args.text,
-                );
-                if (targetError) {
-                  this.log.warn("agent", "Text entry target blocked", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    id: args.id,
-                    mode: "parallel",
-                  });
-                  return { toolCall, result: null, error: targetError };
-                }
-              }
-
-              if (
-                toolName === ToolName.CLICK_ELEMENT &&
-                typeof args.id === "number"
-              ) {
-                const snapshot = this.context.getSnapshot();
-                const target = snapshot?.elements.find(
-                  (el) => el.tag === args.id,
-                );
-                const planStatus = this.context.getPlanStatusRaw();
-                const activeObjective =
-                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
-                  this.originalQuery;
-                const textEntryClickGuard = assessTextEntryClickGuard({
-                  objectiveText: activeObjective,
-                  element: target,
-                  targetId: args.id,
-                });
-                if (textEntryClickGuard.blockReason) {
-                  this.log.warn("agent", "Text entry click blocked", {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    id: args.id,
-                    explicitValue: textEntryClickGuard.explicitValue,
-                    mode: "parallel",
-                  });
-                  return {
-                    toolCall,
-                    result: null,
-                    error: textEntryClickGuard.blockReason,
-                  };
-                }
-              }
-
-              if (shouldCheckWorkflowTabRedirect(toolName)) {
-                const workflowRedirect = await this.getWorkflowTabToolRedirect({
-                  toolName,
-                  args,
-                  currentTabId: tabId,
-                });
-                if (workflowRedirect) {
-                  this.log.info(
-                    "agent",
-                    "Workflow tab controller redirected tool call",
-                    {
-                      turn: this.turnCount,
-                      tool: toolName,
-                      mode: "parallel",
-                      skillId: this.selectedSkillId,
-                    },
-                  );
-                  return {
-                    toolCall,
-                    result: workflowRedirect,
-                    error: null,
-                  };
-                }
-              }
-
-              let autocompleteRewriteReason: string | null = null;
-              if (toolName === ToolName.TYPE_TEXT && args.id != null) {
-                const snapshot = this.context.getSnapshot();
-                const targetId = Number(args.id);
-                const target = Number.isFinite(targetId)
-                  ? snapshot?.elements.find((el) => el.tag === targetId)
-                  : null;
-                const planStatus = this.context.getPlanStatusRaw();
-                const activeObjective =
-                  planStatus?.subtasks[planStatus.currentIndex]?.description ??
-                  this.originalQuery;
-                const rewrite = assessAutocompleteTextRewrite({
-                  objectiveText: activeObjective,
-                  originalQuery: this.originalQuery,
-                  element: target,
-                  args,
-                });
-                if (rewrite) {
-                  args.text = rewrite.rewrittenText;
-                  toolCall.function.arguments = JSON.stringify(args);
-                  autocompleteRewriteReason = rewrite.reason;
-                }
-              }
-
-              const preDecision = this.middleware.evaluatePreTool(
-                toolName,
-                args,
-                this.turnCount,
-              );
-
-              const toolStep: AgentStep = {
-                id: crypto.randomUUID(),
-                type: "tool",
-                label: formatStepLabel(toolName, args, this.elementResolver),
-                detail: JSON.stringify(args),
-                toolName,
-                status: "running",
-                timestamp: Date.now(),
-              };
-              this.stepHandler(toolStep, false);
-
-              if (!preDecision.allowed) {
-                const deniedReason = getPreToolDeniedReason(
-                  preDecision,
-                  `Tool ${toolName} denied by middleware`,
-                );
-                const toolMs = Date.now() - toolStep.timestamp;
-                this.stepHandler(
-                  {
-                    ...toolStep,
-                    status: "error",
-                    durationMs: toolMs,
-                    errorMessage: deniedReason,
-                  },
-                  true,
-                );
-                return {
-                  toolCall,
-                  result: null,
-                  error: deniedReason,
-                };
-              }
-
-              try {
-                const preActionSnapshot = this.context.getSnapshot();
-                let result = await this.executeToolCall(toolCall, tabId);
-                if (autocompleteRewriteReason) {
-                  result = `${result}\n${autocompleteRewriteReason}`;
-                }
-                this.trackListDetailToolSuccess(
-                  toolName,
-                  args,
-                  preActionSnapshot,
-                );
-                const toolMs = recordSuccessfulToolExecution(
-                  this as unknown as AgentLoopToolHandlerHost,
-                  {
-                    toolCall,
-                    toolName,
-                    args,
-                    result,
-                    toolStep,
-                    preDecision,
-                    discoveredTagIds,
-                    llmIntention,
-                    mode: "parallel",
-                  },
-                );
-
-                if (
-                  DOM_MODIFYING_TOOLS.has(toolName) &&
-                  !result.includes("Click intercepted")
-                ) {
-                  domModified = true;
-                  if (toolName !== ToolName.READ_PAGE) {
-                    visuallyModified = true;
-                    lastDomAffectingToolName = toolName;
-                  }
-                  this.lastDomStep = {
-                    ...toolStep,
-                    status: "done",
-                    durationMs: toolMs,
-                  };
-                }
-
-                // Track read_page / xray_page for done() content verification guard
-                if (
-                  toolName === ToolName.READ_PAGE ||
-                  toolName === ToolName.XRAY_PAGE
-                ) {
-                  this.hasReadPage = true;
-                }
-
-                storeSuccessfulToolResult(
-                  this as unknown as AgentLoopToolHandlerHost,
-                  { toolName, args, result, cacheType },
-                );
-
-                // Track investigation tools during orientation for adaptive tier allocation
-                if (orientationPhase && INVESTIGATION_TOOLS.has(toolName)) {
-                  orientationToolsUsed.add(toolName);
-                }
-
-                return { toolCall, result, error: null };
-              } catch (toolError: any) {
-                if (toolError.name === "AbortError") throw toolError;
-                const errorMsg = toolError.message || String(toolError);
-                recordFailedToolExecution(
-                  this as unknown as AgentLoopToolHandlerHost,
-                  {
-                    toolCall,
-                    toolName,
-                    args,
-                    errorMsg,
-                    toolStep,
-                    preDecision,
-                    llmIntention,
-                    mode: "parallel",
-                  },
-                );
-                return { toolCall, result: null, error: errorMsg };
-              }
-            }),
-          );
-
-          this.finalizeParallelToolResults(results);
-        } else {
-          // SEQUENTIAL EXECUTION (has sequential tools or single tool)
-          for (const toolCall of response.tool_calls) {
-            if (!this.isRunning) break;
-            this.throwIfGracefulStopRequested();
-
-            // Parse args for risk classification and done detection
-            const toolName = toolCall.function.name as ToolName;
-            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
-            let args: Record<string, unknown> = {};
-            try {
-              args = JSON.parse(toolCall.function.arguments);
-            } catch {
-              // Registry will handle parse error on execute
-            }
-            const argsKey = actionMemoryKey(
-              toolName,
-              args,
-              rawArgsKey,
-              this.context.getSnapshot(),
-            );
-            this.recordSkillToolSelection(toolName, "sequential");
-
-            const repeatActionExempt =
-              isListDetailReturnControlRepeatExempt({
-                selectedSkillId: this.selectedSkillId,
-                toolName,
-                args,
-                snapshot: this.context.getSnapshot(),
-              }) ||
-              (this.selectedSkillId === "multi-tab-procurement-loop" &&
-                toolName === ToolName.SWITCH_TAB);
-            const repeatDecision = assessRepeatAction({
-              toolName,
-              argsKey,
-              recentToolCalls,
-              isExempt: repeatActionExempt,
-              allowFinalClickBypass: () =>
-                !verifiedFinalClickBypassKeys.has(argsKey) &&
-                hasRecentExactTextFieldRead(this.context.getMessages()) &&
-                isFinalCommunicationClick({
-                  selectedSkillId: this.selectedSkillId,
-                  toolName,
-                  args,
-                  snapshot: this.context.getSnapshot(),
-                  originalQuery: this.originalQuery,
-                }),
-            });
-            if (repeatDecision.action === "allow_final_click_bypass") {
-              verifiedFinalClickBypassKeys.add(argsKey);
-              this.log.info(
-                "agent",
-                "Repeat final communication click allowed after exact draft read",
-                {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "sequential",
-                },
-              );
-              this.traceRecorder?.recordEvent(
-                "repeat_final_click_allowed",
-                {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "sequential",
-                },
-              );
-            } else if (repeatDecision.action === "block") {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: repeatDecision.message,
-              });
-              this.log.warn("agent", "Repeat action blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                repeatCount: repeatDecision.repeatCount,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent("repeat_action_blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                repeatCount: repeatDecision.repeatCount,
-                mode: "sequential",
-              });
-              continue;
-            }
-            if (repeatDecision.action !== "skip_tracking") {
-              rememberRepeatAction(
-                recentToolCalls,
-                toolName,
-                argsKey,
-                REPEAT_ACTION_WINDOW,
-              );
-            }
-
-            const readElementNudge = assessReadElementSameIdNudge({
-              toolName,
-              args,
+          const parallelDispatch = await executeParallelToolCalls(
+            this as unknown as ParallelToolDispatchHost,
+            {
+              toolCalls: response.tool_calls,
+              tabId,
+              repeatActionWindow: REPEAT_ACTION_WINDOW,
+              llmIntention,
               state: {
+                recentToolCalls,
+                verifiedFinalClickBypassKeys,
                 lastReadElementId,
                 consecutiveReadElementSameId,
-              },
-            });
-            lastReadElementId = readElementNudge.state.lastReadElementId;
-            consecutiveReadElementSameId =
-              readElementNudge.state.consecutiveReadElementSameId;
-            if (readElementNudge.nudge) {
-              this.log.warn("agent", "read_element same-ID nudge", {
-                turn: this.turnCount,
-                elementId: readElementNudge.nudge.elementId,
-                consecutive: readElementNudge.nudge.consecutive,
-              });
-              this.traceRecorder?.recordEvent("read_element_same_id_nudge", {
-                elementId: readElementNudge.nudge.elementId,
-                consecutive: readElementNudge.nudge.consecutive,
-              });
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: readElementNudge.nudge.message,
-              });
-              continue;
-            }
-
-            // Failed-action memory: block exact repeat of a previously failed tool call
-            const failedActionRepeat = assessFailedActionRepeat({
-              blockedActions,
-              tool: toolName,
-              argsKey,
-            });
-            if (failedActionRepeat) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: failedActionRepeat.message,
-              });
-              this.log.warn("agent", "Failed-action repeat blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                priorTurn: failedActionRepeat.priorTurn,
-                mode: "sequential",
-              });
-              continue;
-            }
-
-            const cacheLookup = assessToolCacheHit({
-              toolName,
-              args,
-              snapshot: this.context.getSnapshot(),
-              toolCache: this.toolCache,
-            });
-            const cacheType = cacheLookup.cacheType;
-            if (cacheLookup.cachedResult !== null) {
-              this.log.info("agent", "Tool cache hit", {
-                turn: this.turnCount,
-                tool: toolName,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent("tool_cache_hit", {
-                tool: toolName,
-                mode: "sequential",
-              });
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: cacheLookup.cachedResult,
-              });
-              continue;
-            }
-
-            const redundantSuccessBlock = assessRedundantSuccessBlock({
-              recentSuccesses,
-              toolName,
-              argsKey,
-              snapshot: this.context.getSnapshot(),
-              blockThreshold: TOOL_CACHE.BLOCK_THRESHOLD,
-            });
-            if (redundantSuccessBlock) {
-              this.log.info("agent", "Redundant action blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                count: redundantSuccessBlock.count,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent("redundant_action_blocked", {
-                tool: toolName,
-                count: redundantSuccessBlock.count,
-                mode: "sequential",
-              });
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: redundantSuccessBlock.result,
-              });
-              continue;
-            }
-
-            const idPreDispatch = assessElementIdPreDispatch({
-              toolName,
-              args,
-              snapshot: this.context.getSnapshot(),
-              discoveredIds: discoveredTagIds,
-              currentUrl: this.context.getCurrentUrl(),
-            });
-            if (idPreDispatch.error) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: idPreDispatch.error,
-              });
-              this.log.warn("agent", "Invalid element ID pre-dispatch", {
-                turn: this.turnCount,
-                tool: toolName,
-                args: idPreDispatch.logArgs,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent(
-                "grounding_mismatch",
-                idPreDispatch.traceData
-                  ? {
-                      turn: this.turnCount,
-                      ...idPreDispatch.traceData,
-                      mode: "sequential",
-                    }
-                  : {},
-              );
-              continue;
-            }
-
-            const preflight = assessPreflightElement({
-              toolName,
-              args,
-              snapshot: this.context.getSnapshot(),
-            });
-            if (preflight.error) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: preflight.error,
-              });
-              this.log.warn("agent", "Preflight check failed", {
-                turn: this.turnCount,
-                tool: toolName,
-                reason: preflight.error,
-                mode: "sequential",
-              });
-              continue;
-            }
-            if (preflight.warning) {
-              // Soft warning: inject as context but don't block execution
-              this.context.addMessage({
-                role: "user",
-                content: preflight.warning,
-              });
-            }
-
-            const currentSnapshot = this.context.getSnapshot();
-            const listDetailWorkflow = assessListDetailWorkflow({
-              selectedSkillId: this.selectedSkillId,
-              query: this.originalQuery,
-              toolName,
-              args,
-              snapshot: currentSnapshot,
-              reviewedTargets: this.listDetailReviewedTargets,
-              openedTargets: this.listDetailOpenedTargets,
-              previousVisibleDetailActionCount:
-                this.listDetailVisibleActionCount,
-            });
-            this.listDetailVisibleActionCount =
-              listDetailWorkflow.visibleDetailActionCount;
-            if (listDetailWorkflow.block) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: listDetailWorkflow.block,
-              });
-              this.log.warn("agent", "List-detail workflow tool blocked", {
-                turn: this.turnCount,
-                tool: toolName,
-                mode: "sequential",
-              });
-              this.traceRecorder?.recordEvent(
-                "list_detail_workflow_tool_blocked",
-                {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  mode: "sequential",
-                  openedDetailCount: this.listDetailOpenedTargets.size,
-                  reviewedDetailCount: this.listDetailReviewedTargets.size,
-                  visibleDetailActionCount: this.listDetailVisibleActionCount,
-                },
-              );
-              continue;
-            }
-
-            const planStatus = this.context.getPlanStatusRaw();
-            const currentStepIndex = planStatus?.currentIndex ?? -1;
-            const inlineVerificationBlock =
-              this.getPendingInlineEditVerificationBlock(
-                toolName,
-                currentStepIndex,
-              );
-            if (inlineVerificationBlock) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: inlineVerificationBlock,
-              });
-              this.log.warn("agent", "Inline edit verification required", {
-                turn: this.turnCount,
-                tool: toolName,
-                step: currentStepIndex,
-                mode: "sequential",
-              });
-              continue;
-            }
-
-            if (
-              toolName === ToolName.TYPE_TEXT &&
-              typeof args.id === "number" &&
-              typeof args.text === "string"
-            ) {
-              const planStatus = this.context.getPlanStatusRaw();
-              const inlineRetarget = assessInlineEditTextEntryRetarget({
-                activeToolProfile:
-                  this.getActiveToolProfileForStep(currentStepIndex),
-                snapshot: this.context.getSnapshot(),
-                targetId: args.id,
-              });
-              if (inlineRetarget) {
-                args.id = inlineRetarget.retargetedId;
-                toolCall.function.arguments = JSON.stringify(args);
-                this.context.addMessage({
-                  role: "user",
-                  content: inlineRetarget.reason,
-                });
-              }
-              const snapshot = this.context.getSnapshot();
-              const target = snapshot?.elements.find(
-                (el) => el.tag === args.id,
-              );
-              const activeObjective =
-                planStatus?.subtasks[currentStepIndex]?.description ??
-                this.originalQuery;
-              const targetError = validateTextEntryTarget(
-                activeObjective,
-                target,
-                args.text,
-              );
-              if (targetError) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: targetError,
-                });
-                this.log.warn("agent", "Text entry target blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  id: args.id,
-                  mode: "sequential",
-                });
-                continue;
-              }
-            }
-
-            if (
-              toolName === ToolName.CLICK_ELEMENT &&
-              typeof args.id === "number"
-            ) {
-              const snapshot = this.context.getSnapshot();
-              const target = snapshot?.elements.find(
-                (el) => el.tag === args.id,
-              );
-              const planStatus = this.context.getPlanStatusRaw();
-              const activeObjective =
-                planStatus?.subtasks[planStatus.currentIndex]?.description ??
-                this.originalQuery;
-              const textEntryClickGuard = assessTextEntryClickGuard({
-                objectiveText: activeObjective,
-                element: target,
-                targetId: args.id,
-              });
-              if (textEntryClickGuard.blockReason) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: textEntryClickGuard.blockReason,
-                });
-                this.log.warn("agent", "Text entry click blocked", {
-                  turn: this.turnCount,
-                  tool: toolName,
-                  id: args.id,
-                  explicitValue: textEntryClickGuard.explicitValue,
-                  mode: "sequential",
-                });
-                continue;
-              }
-            }
-
-            if (shouldCheckWorkflowTabRedirect(toolName)) {
-              const workflowRedirect = await this.getWorkflowTabToolRedirect({
-                toolName,
-                args,
-                currentTabId: tabId,
-              });
-              if (workflowRedirect) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: workflowRedirect,
-                });
-                this.log.info(
-                  "agent",
-                  "Workflow tab controller redirected tool call",
-                  {
-                    turn: this.turnCount,
-                    tool: toolName,
-                    mode: "sequential",
-                    skillId: this.selectedSkillId,
-                  },
-                );
-                continue;
-              }
-            }
-
-            let autocompleteRewriteReason: string | null = null;
-            if (toolName === ToolName.TYPE_TEXT && args.id != null) {
-              const snapshot = this.context.getSnapshot();
-              const targetId = Number(args.id);
-              const target = Number.isFinite(targetId)
-                ? snapshot?.elements.find((el) => el.tag === targetId)
-                : null;
-              const planStatus = this.context.getPlanStatusRaw();
-              const activeObjective =
-                planStatus?.subtasks[planStatus.currentIndex]?.description ??
-                this.originalQuery;
-              const rewrite = assessAutocompleteTextRewrite({
-                objectiveText: activeObjective,
-                originalQuery: this.originalQuery,
-                element: target,
-                args,
-              });
-              if (rewrite) {
-                args.text = rewrite.rewrittenText;
-                toolCall.function.arguments = JSON.stringify(args);
-                autocompleteRewriteReason = rewrite.reason;
-              }
-            }
-
-            const preDecision = this.middleware.evaluatePreTool(
-              toolName,
-              args,
-              this.turnCount,
-            );
-            if (!preDecision.allowed) {
-              this.context.addMessage({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: getPreToolDeniedMessage(preDecision),
-              });
-              continue;
-            }
-            if (shouldReportApprovalBypass(preDecision)) {
-              this.stepHandler(
-                buildApprovalBypassedStep({
-                  id: crypto.randomUUID(),
-                  label: formatStepLabel(toolName, args, this.elementResolver),
-                  timestamp: Date.now(),
-                  toolName,
-                }),
-                false,
-              );
-            }
-            const forceConsequentialActionApproval =
-              this.requiresConsequentialActionApproval(toolName, args);
-            const approvalRequest = resolveToolApprovalRequest(
-              preDecision,
-              forceConsequentialActionApproval,
-            );
-            if (approvalRequest.requiresApproval) {
-              const approved = await this.ensureToolApproval(
-                toolName,
-                args,
-                approvalRequest.riskLevel,
-                approvalRequest.forceApproval,
-              );
-              if (!approved) {
-                this.context.addMessage({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  content: TOOL_APPROVAL_DENIED_MESSAGE,
-                });
-                continue;
-              }
-            }
-
-            // DONE tool — planner-validated exit
-            const shouldArmInlineEditVerification =
-              currentStepIndex >= 0 &&
-              this.getActiveToolProfileForStep(currentStepIndex) ===
-                "edit_surface" &&
-              ((toolName === ToolName.PRESS_KEY &&
-                typeof args.key === "string" &&
-                ["enter", "tab"].includes(String(args.key).toLowerCase()) &&
-                this.getUncommittedInlineEditDoneRejection(currentStepIndex) !==
-                  null) ||
-                (toolName === ToolName.TYPE_TEXT &&
-                  args.pressEnter === true &&
-                  this.getUncommittedInlineEditDoneRejection(
-                    currentStepIndex,
-                  ) !== null));
-            if (toolName === ToolName.DONE) {
-              const summary = (args.summary as string) || "Task completed.";
-
-              if (!(await this.handleDoneToolCall(toolCall.id, summary, tabId))) {
-                continue;
-              }
-
-              doneSummary = summary;
-              doneSignaled = true;
-              break;
-            }
-
-            // ESCALATE tool — voluntary model upgrade (de-escalates after progress)
-            if (toolName === ToolName.ESCALATE) {
-              const escalateState = await handleEscalateToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                args,
-                tabId,
-                prevElementCount,
-                escalationTier,
-                plannerModelStartTurn,
-                orientationPhase,
-              );
-              escalationTier = escalateState.escalationTier;
-              plannerModelStartTurn = escalateState.plannerModelStartTurn;
-              orientationPhase = escalateState.orientationPhase;
-              prevElementCount = escalateState.prevElementCount;
-              continue;
-            }
-
-            // CLARIFY tool — ask the user a question mid-execution
-            if (toolName === ToolName.CLARIFY) {
-              await this.handleClarifyToolCall(toolCall.id, args);
-              continue;
-            }
-
-            // UPDATE_NOTES tool - save a note to the current run scratchpad
-            if (toolName === ToolName.UPDATE_NOTES) {
-              handleUpdateNotesToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                toolName,
-                args,
-              );
-              continue;
-            }
-
-            // WAIT tool — re-orientation mechanism
-            if (toolName === ToolName.WAIT) {
-              prevElementCount = await handleWaitToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                toolName,
-                args,
-                tabId,
-                prevElementCount,
-              );
-              continue;
-            }
-
-            // NAVIGATE guard — block navigation to completed step URLs
-            if (
-              toolName === ToolName.NAVIGATE &&
-              handleNavigateGuardToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                args,
-              )
-            ) {
-              continue;
-            }
-
-            // LIST_TABS — workspace-scoped
-            if (toolName === ToolName.LIST_TABS) {
-              await handleListTabsToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                tabId,
-              );
-              continue;
-            }
-
-            // SWITCH_TAB — workspace-scoped, updates loop tabId
-            if (toolName === ToolName.SWITCH_TAB) {
-              const switchTabState = await handleSwitchTabToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                args,
-                tabId,
-                prevElementCount,
-              );
-              tabId = switchTabState.tabId;
-              prevElementCount = switchTabState.prevElementCount;
-              continue;
-            }
-
-            // CLOSE_TAB — workspace-scoped, prevents closing current tab
-            if (toolName === ToolName.CLOSE_TAB) {
-              await handleCloseTabToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                toolName,
-                args,
-                tabId,
-              );
-              continue;
-            }
-
-            // CREATE_TAB — workspace-scoped, auto-adds to workspace
-            if (toolName === ToolName.CREATE_TAB) {
-              await handleCreateTabToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                toolCall.id,
-                toolName,
-                args,
-              );
-              continue;
-            }
-
-            const genericToolParams: GenericSequentialToolCallParams = {
-                toolCall,
-                toolName,
-                args,
-                tabId,
-                prevElementCount,
-                autocompleteRewriteReason,
+                blockedActions,
+                recentSuccesses,
                 discoveredTagIds,
-                preDecision,
-                llmIntention,
-                currentStepIndex,
-                shouldArmInlineEditVerification,
-                cacheType,
                 orientationPhase,
                 orientationToolsUsed,
                 domModified,
                 visuallyModified,
                 lastDomAffectingToolName,
-            };
-            const genericToolState =
-              await handleGenericSequentialToolCall(
-                this as unknown as AgentLoopToolHandlerHost,
-                genericToolParams,
-              );
-            const mergedSequentialState = mergeGenericSequentialToolState(
-              {
-                prevElementCount,
-                domModified,
-                visuallyModified,
-                lastDomAffectingToolName,
               },
-              genericToolState,
-            );
-            prevElementCount = mergedSequentialState.prevElementCount;
-            domModified = mergedSequentialState.domModified;
-            visuallyModified = mergedSequentialState.visuallyModified;
-            lastDomAffectingToolName =
-              mergedSequentialState.lastDomAffectingToolName;
-            if (genericToolState.breakLoop) {
-              signalCompletedResult(genericToolState.completedSummary || "");
-              break;
-            }
-          }
+            },
+          );
+          lastReadElementId = parallelDispatch.state.lastReadElementId;
+          consecutiveReadElementSameId =
+            parallelDispatch.state.consecutiveReadElementSameId;
+          domModified = parallelDispatch.state.domModified;
+          visuallyModified = parallelDispatch.state.visuallyModified;
+          lastDomAffectingToolName =
+            parallelDispatch.state.lastDomAffectingToolName;
 
-          // Post-sequential verification gate check
-          if (!doneSignaled) {
-            handleSequentialVerificationGate({
-              planStatus: this.context.getPlanStatusRaw(),
-              toolResults: collectTrailingToolResultMessages(
-                this.context.getMessages(),
-              ),
-              currentUrl: this.context.getCurrentUrl(),
-              host: {
-                advanceCompletedSubtasks: () =>
-                  advanceCompletedSubtasks(
-                    this as unknown as AgentLoopPlanProgressHost,
-                  ),
-                resetConsecutiveAutoAdvances: () => {
-                  this.consecutiveAutoAdvances = 0;
+          this.finalizeParallelToolResults(parallelDispatch.results);
+        } else {
+          // SEQUENTIAL EXECUTION (has sequential tools or single tool)
+          const sequentialDispatch: SequentialToolDispatchOutput =
+            await executeSequentialToolCalls.call(
+              this as unknown as SequentialToolDispatchHost,
+              {
+                toolCalls: response.tool_calls,
+                repeatActionWindow: REPEAT_ACTION_WINDOW,
+                llmIntention,
+                signalCompletedResult,
+                state: {
+                  tabId,
+                  prevElementCount,
+                  escalationTier,
+                  plannerModelStartTurn,
+                  orientationPhase,
+                  recentToolCalls,
+                  verifiedFinalClickBypassKeys,
+                  lastReadElementId,
+                  consecutiveReadElementSameId,
+                  blockedActions,
+                  recentSuccesses,
+                  discoveredTagIds,
+                  orientationToolsUsed,
+                  domModified,
+                  visuallyModified,
+                  lastDomAffectingToolName,
+                  doneSignaled,
+                  doneSummary,
                 },
-                syncPlanStatus: (currentIndex, reason, data) =>
-                  this.syncPlanStatus(currentIndex, reason, data),
-                broadcastTaskProgress: (currentIndex) =>
-                  this.broadcastTaskProgress(currentIndex),
-                addUserMessage: (content) =>
-                  this.context.addMessage({ role: "user", content }),
-                logVerificationGate: (data) =>
-                  this.log.info(
-                    "agent",
-                    "Verification gate triggered (sequential)",
-                    {
-                      turn: this.turnCount,
-                      ...data,
-                    },
-                  ),
-                recordVerificationGate: (data) =>
-                  this.traceRecorder?.recordEvent(
-                    "verification_gate_triggered",
-                    data,
-                  ),
               },
-            });
-          }
+            );
+          tabId = sequentialDispatch.tabId;
+          prevElementCount = sequentialDispatch.prevElementCount;
+          escalationTier = sequentialDispatch.escalationTier;
+          plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
+          orientationPhase = sequentialDispatch.orientationPhase;
+          lastReadElementId = sequentialDispatch.lastReadElementId;
+          consecutiveReadElementSameId =
+            sequentialDispatch.consecutiveReadElementSameId;
+          domModified = sequentialDispatch.domModified;
+          visuallyModified = sequentialDispatch.visuallyModified;
+          lastDomAffectingToolName =
+            sequentialDispatch.lastDomAffectingToolName;
+          doneSignaled = sequentialDispatch.doneSignaled;
+          doneSummary = sequentialDispatch.doneSummary;
         }
 
         // --- Circuit Breaker: track tool failures ---
         if (!doneSignaled) {
           const recentMessages = this.context.getMessages();
+          const turnToolOutcomes = collectTurnToolOutcomeRecords({
+            toolCalls: response.tool_calls!,
+            messages: recentMessages,
+            snapshot: this.context.getSnapshot(),
+          });
           const { turnSuccesses, turnFailures } =
             countTrailingToolResultOutcomes(recentMessages);
 
@@ -7293,28 +6081,7 @@ export class AgentLoop {
           }
 
           // B. Same-tool repeat failure tracking
-          for (const toolCall of response.tool_calls!) {
-            const toolName = toolCall.function.name as ToolName;
-            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
-            let parsedArgs: Record<string, unknown> = {};
-            try {
-              parsedArgs = JSON.parse(toolCall.function.arguments);
-            } catch {
-              parsedArgs = {};
-            }
-            const argsKey = actionMemoryKey(
-              toolName,
-              parsedArgs,
-              rawArgsKey,
-              this.context.getSnapshot(),
-            );
-
-            // Find the corresponding tool result
-            const toolResult = recentMessages.find(
-              (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
-            );
-            const resultContent =
-              typeof toolResult?.content === "string" ? toolResult.content : "";
+          for (const { toolName, argsKey, resultContent } of turnToolOutcomes) {
             const failureTracking = updateSameToolFailureTracking({
               blockedActions,
               toolFailCounts,
@@ -7372,12 +6139,11 @@ export class AgentLoop {
           {
             const explorationBudget = updateExplorationBudget({
               previousCount: consecutiveExplorationTurns,
-              toolNames: response.tool_calls!.map((tc) => tc.function.name),
+              toolNames: turnToolOutcomes.map((outcome) => outcome.toolName),
               explorationOnlyTools: EXPLORATION_ONLY_TOOLS,
               maxConsecutive: EXPLORATION_BUDGET.MAX_CONSECUTIVE,
             });
-            consecutiveExplorationTurns =
-              explorationBudget.consecutiveTurns;
+            consecutiveExplorationTurns = explorationBudget.consecutiveTurns;
             if (explorationBudget.message) {
               this.context.addMessage({
                 role: "user",
@@ -7387,28 +6153,7 @@ export class AgentLoop {
           }
 
           // C. Redundant successful action detection
-          for (const toolCall of response.tool_calls!) {
-            const toolName = toolCall.function.name as ToolName;
-            const rawArgsKey = toolCall.function.arguments.slice(0, 100);
-            let parsedArgs: Record<string, unknown> = {};
-            try {
-              parsedArgs = JSON.parse(toolCall.function.arguments);
-            } catch {
-              parsedArgs = {};
-            }
-            const argsKey = actionMemoryKey(
-              toolName,
-              parsedArgs,
-              rawArgsKey,
-              this.context.getSnapshot(),
-            );
-
-            // Find the corresponding tool result
-            const toolResult = recentMessages.find(
-              (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
-            );
-            const resultContent =
-              typeof toolResult?.content === "string" ? toolResult.content : "";
+          for (const { toolName, argsKey, resultContent } of turnToolOutcomes) {
             const recentSuccessDecision = recordRecentSuccessfulAction({
               recentSuccesses,
               toolName,
@@ -7417,8 +6162,7 @@ export class AgentLoop {
               snapshot: this.context.getSnapshot(),
               windowSize: REDUNDANT_ACTION.WINDOW,
               infoThreshold: REDUNDANT_ACTION.INFO_THRESHOLD,
-              toolNameInfoThreshold:
-                REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD,
+              toolNameInfoThreshold: REDUNDANT_ACTION.TOOL_NAME_INFO_THRESHOLD,
             });
 
             if (recentSuccessDecision.kind === "redundant_nudge") {
@@ -7464,17 +6208,10 @@ export class AgentLoop {
             const currentSnapshotFp = getSnapshotFingerprint(
               this.context.getSnapshot(),
             );
-            for (const toolCall of response.tool_calls!) {
-              const toolResult = recentMessages.find(
-                (m) => m.role === "tool" && m.tool_call_id === toolCall.id,
-              );
-              const resultContent =
-                typeof toolResult?.content === "string"
-                  ? toolResult.content
-                  : "";
+            for (const outcome of turnToolOutcomes) {
               recordRecentOutcome({
                 recentOutcomes,
-                resultContent,
+                resultContent: outcome.resultContent,
                 snapshotFp: currentSnapshotFp,
                 windowSize: STAGNATION_DETECTION.WINDOW,
               });
@@ -7482,9 +6219,9 @@ export class AgentLoop {
               subgoalAttempts.push(
                 buildSubgoalAttempt({
                   turn: this.turnCount,
-                  toolName: toolCall.function.name,
-                  toolArguments: toolCall.function.arguments,
-                  resultContent,
+                  toolName: outcome.toolName,
+                  toolArguments: outcome.toolCall.function.arguments,
+                  resultContent: outcome.resultContent,
                   snapshotFp: currentSnapshotFp,
                 }),
               );
@@ -7748,149 +6485,19 @@ export class AgentLoop {
         // Batch snapshot refresh: ONE refresh after all tools complete
         if (domModified && !doneSignaled) {
           try {
-            // Wait for DOM to settle instead of fixed 100ms sleep
-            // Uses MutationObserver + rAF in content script — responds when idle
-            const readiness = await waitForDomReady(tabId, {
-              timeoutMs: 150,
-              waitForElements: prevElementCount > 0,
-            });
-            this.log.debug("agent", "DOM ready probe", {
-              turn: this.turnCount,
-              waitedMs: readiness.waitedMs,
-              elementCount: readiness.elementCount,
-            });
-
-            let snapResponse = await chrome.tabs.sendMessage(tabId, {
-              type: "DOM_SNAPSHOT_REQUEST",
-              requestId: crypto.randomUUID(),
-              source: MessageSource.BACKGROUND,
-              payload: {
-                refresh: true,
-                autoDismiss: false, // Don't destroy agent-triggered dialogs
+            const snapshotRefresh = await refreshPostToolSnapshot(
+              this as unknown as PostToolSnapshotRefreshHost,
+              {
+                tabId,
+                prevElementCount,
+                visuallyModified,
+                recentSuccesses,
               },
-            });
-            let snap = snapResponse?.payload?.snapshot;
-
-            // Retry once if elements dropped to 0 (SPA still rendering)
-            // or if a visual action produced no element count change (framework
-            // state update hasn't committed — React setState, Vue reactivity, etc.)
-            const noChangeAfterVisualAction =
-              snap &&
-              snap.elements.length > 0 &&
-              snap.elements.length === prevElementCount &&
-              visuallyModified;
-            if (
-              (snap && snap.elements.length === 0 && prevElementCount > 0) ||
-              noChangeAfterVisualAction
-            ) {
-              const isEmpty = snap!.elements.length === 0;
-              this.log.info(
-                "agent",
-                isEmpty
-                  ? "Empty snapshot after action, waiting for elements"
-                  : "No DOM change after visual action, retrying snapshot",
-                {
-                  turn: this.turnCount,
-                  elements: snap!.elements.length,
-                  prevElements: prevElementCount,
-                },
-              );
-              if (!isEmpty) {
-                this.traceRecorder?.recordEvent("snapshot_retry_no_change", {
-                  turn: this.turnCount,
-                  elements: snap!.elements.length,
-                });
-              }
-              // Wait for framework state commit: 500ms for empty page, 300ms for no-change
-              await waitForDomReady(tabId, {
-                timeoutMs: isEmpty ? 500 : 300,
-                waitForElements: isEmpty,
-              });
-              snapResponse = await chrome.tabs.sendMessage(tabId, {
-                type: "DOM_SNAPSHOT_REQUEST",
-                requestId: crypto.randomUUID(),
-                source: MessageSource.BACKGROUND,
-                payload: {
-                  refresh: true,
-                  autoDismiss: false, // Don't destroy agent-triggered dialogs
-                },
-              });
-              snap = snapResponse?.payload?.snapshot;
-            }
+            );
+            let snap = snapshotRefresh.snap;
+            prevElementCount = snapshotRefresh.prevElementCount;
 
             if (snap) {
-              this.log.info("agent", "Snapshot refreshed", {
-                turn: this.turnCount,
-                title: snap.title?.slice(0, 60),
-                url: snap.url?.slice(0, 100),
-                elements: snap.elements.length,
-                durationMs: snapResponse.payload.durationMs,
-              });
-              prevElementCount = snap.elements.length;
-              this.context.setSnapshot(snap);
-              this.updateMoneyTableAggregateFromSnapshot();
-
-              // Record post-tool DOM state so trace shows what perception was based on
-              this.traceRecorder?.recordPostToolSnapshot({
-                url: snap.url,
-                title: snap.title || "",
-                elementCount: snap.elements.length,
-                visibleContentLength: snap.visibleContent?.length || 0,
-                pageContentLength: snap.pageContent?.length || 0,
-                scrollY: snap.scroll?.y || 0,
-                elements: snap.elements,
-              });
-
-              // Invalidate DOM cache entries after snapshot refresh
-              this.toolCache.invalidateDom();
-
-              // Track URL in history + reset redundant action buffer on navigation
-              const currentUrl = snap.url;
-              if (currentUrl && !this.urlHistory.includes(currentUrl)) {
-                this.urlHistory.push(currentUrl);
-                recentSuccesses.length = 0;
-              }
-
-              // Record citation for visited page
-              if (currentUrl) {
-                this.recordCitation(
-                  currentUrl,
-                  snap.title || "",
-                  ToolName.READ_PAGE,
-                );
-              }
-
-              // Off-domain navigation detection
-              if (this.startingOrigin && snap.url) {
-                try {
-                  const currentOrigin = new URL(snap.url).origin;
-                  if (currentOrigin !== this.startingOrigin) {
-                    if (!this.offDomainWarned) {
-                      this.offDomainWarned = true;
-                      this.log.warn("agent", "Off-domain navigation detected", {
-                        turn: this.turnCount,
-                        startingOrigin: this.startingOrigin,
-                        currentUrl: snap.url,
-                      });
-                      this.context.addMessage({
-                        role: "user",
-                        content: `WARNING: You navigated away from the original page (${this.startingOrigin}). If the task should be completed on the original page, navigate back immediately. Do not search for answers on other sites — solve the task using the tools available on the original page.`,
-                      });
-                    }
-                  } else {
-                    this.offDomainWarned = false; // Reset when back on original domain
-                  }
-                } catch {
-                  /* invalid URL, skip */
-                }
-              }
-
-              // Refresh perception (vision model) — skips if fingerprint unchanged
-              // Skip vision call for read_page (snapshot refresh is sufficient)
-              if (visuallyModified) {
-                await this.refreshPerceptionAndTriage(tabId);
-              }
-
               const explicitSuccessSignal =
                 this.detectExplicitSuccessSignalInSnapshot(snap);
               // Suppress auto-complete for root agent (no nodeId) when query
@@ -8185,18 +6792,17 @@ export class AgentLoop {
                       planAfterAction.currentIndex,
                     ) === "submit_form"
                   ) {
-                    const submitResetSignal =
-                      detectFormSubmissionResetSuccess({
-                        currentStepDescription: currentSubtask.description,
-                        currentStepSuccessCriteria:
-                          this.planSteps[planAfterAction.currentIndex]
-                            ?.successCriteria,
-                        preActionSnapshot,
-                        currentSnapshot: snap,
-                        actionEffect,
-                        toolName: lastToolName,
-                        toolArgs: lastToolArgs,
-                      });
+                    const submitResetSignal = detectFormSubmissionResetSuccess({
+                      currentStepDescription: currentSubtask.description,
+                      currentStepSuccessCriteria:
+                        this.planSteps[planAfterAction.currentIndex]
+                          ?.successCriteria,
+                      preActionSnapshot,
+                      currentSnapshot: snap,
+                      actionEffect,
+                      toolName: lastToolName,
+                      toolArgs: lastToolArgs,
+                    });
 
                     if (submitResetSignal) {
                       this.consecutiveAutoAdvances = 0;
