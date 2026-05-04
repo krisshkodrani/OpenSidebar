@@ -796,6 +796,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     name: "Multi-Tab Procurement Loop",
     description:
       "Work through a checklist that requires opening store pages in new tabs, completing a purchase, returning to the source tab, and marking the completed item before repeating.",
+    packId: "procurement-workflows",
     tags: ["workflow", "procurement", "tabs", "shopping", "checklist"],
     triggers: [
       "procurement list",
@@ -946,6 +947,14 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
       "Default communication skills for careful email and message composition workflows.",
     enabledByDefault: true,
     skillIds: ["email-reply-careful"],
+  },
+  {
+    id: "procurement-workflows",
+    name: "Procurement Workflows",
+    description:
+      "Default checklist procurement skills for tabbed store-purchase workflows.",
+    enabledByDefault: true,
+    skillIds: ["multi-tab-procurement-loop"],
   },
 ];
 

@@ -1884,6 +1884,28 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].successCriteria).toMatch(/marked complete/i);
     });
 
+    test("does not collapse procurement workflows when the procurement pack is disabled", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": true, "difficulty": "complex", "subtasks": ["Buy the first procurement item", "Buy the second procurement item", "Mark both complete"]}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Buy the first two items from the procurement list and mark them complete.",
+            "Procurement List",
+            "https://example.com/procurement",
+            { enabledSkillPackIds: ["communication-workflows"] },
+        );
+
+        expect(result.nodes.length).toBeGreaterThan(1);
+        expect(result.nodes.map((node) => node.selectedSkillId)).not.toContain(
+            "multi-tab-procurement-loop",
+        );
+    });
+
     test("selects budget-aware-execution when the task explicitly mentions turn budget pressure", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -1926,7 +1948,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 });
 
 describe("selectPrimarySkill", () => {
-    test("keeps communication skills in a default-enabled catalog pack", () => {
+    test("keeps optional workflow skills in default-enabled catalog packs", () => {
         expect(listSkillPacks().map((pack) => pack.id)).toContain(
             "communication-workflows",
         );
@@ -1941,18 +1963,47 @@ describe("selectPrimarySkill", () => {
         );
         expect(getLoadedSkillContract("email-reply-careful")).toBeTruthy();
         expect(getSkillToolPolicy("email-reply-careful")).toBeTruthy();
+        expect(listSkillPacks().map((pack) => pack.id)).toContain(
+            "procurement-workflows",
+        );
+        expect(listDefaultEnabledSkillPackIds()).toContain(
+            "procurement-workflows",
+        );
+        expect(getSkillPack("procurement-workflows")?.skillIds).toContain(
+            "multi-tab-procurement-loop",
+        );
+        expect(listSkillDescriptors().map((skill) => skill.id)).toContain(
+            "multi-tab-procurement-loop",
+        );
+        expect(getLoadedSkillContract("multi-tab-procurement-loop")).toBeTruthy();
+        expect(getSkillToolPolicy("multi-tab-procurement-loop")).toBeTruthy();
         expect(
             listSkillDescriptors({ enabledSkillPackIds: [] }).map(
                 (skill) => skill.id,
             ),
         ).not.toContain("email-reply-careful");
         expect(
+            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
+                (skill) => skill.id,
+            ),
+        ).not.toContain("multi-tab-procurement-loop");
+        expect(
             getLoadedSkillContract("email-reply-careful", {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
         expect(
+            getLoadedSkillContract("multi-tab-procurement-loop", {
+                enabledSkillPackIds: [],
+            }),
+        ).toBeNull();
+        expect(
             getSkillToolPolicy("email-reply-careful", {
+                enabledSkillPackIds: [],
+            }),
+        ).toBeNull();
+        expect(
+            getSkillToolPolicy("multi-tab-procurement-loop", {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
@@ -2603,11 +2654,17 @@ describe("selectPrimarySkill", () => {
     });
 
     test("matches procurement workflows that require new tabs and checklist return", () => {
+        const input = {
+            query: "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.",
+            objective: "Open the matching store in a new tab and complete the purchase loop",
+            successCriteria: "The purchased row is checked off on the procurement list",
+        };
+
+        expect(selectPrimarySkill(input)?.id).toBe("multi-tab-procurement-loop");
         expect(
             selectPrimarySkill({
-                query: "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.",
-                objective: "Open the matching store in a new tab and complete the purchase loop",
-                successCriteria: "The purchased row is checked off on the procurement list",
+                ...input,
+                enabledSkillPackIds: ["procurement-workflows"],
             })?.id,
         ).toBe("multi-tab-procurement-loop");
     });
