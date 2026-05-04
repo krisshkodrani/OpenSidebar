@@ -60,6 +60,7 @@ export function mountOpenSidebarOverlay(
       disposing = true;
       root.unmount();
       restoreRuntime();
+      runtimeHarness?.dispose();
       overlayHost.dispose();
       if (
         runtimeHarness &&
