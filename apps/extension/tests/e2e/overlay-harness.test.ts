@@ -118,4 +118,46 @@ describe("Overlay harness browser injection", () => {
     expect(fakeBackground.lastUserText).toBe("Use the visible heading.");
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
+
+  it("round-trips rendered pause and resume controls through the fake background", async () => {
+    await runner.inject();
+    await runner.startMessageCapture();
+    await runner.startFakeBackgroundController();
+
+    await runner.emitRuntimeMessage({
+      type: "AGENT_STATUS",
+      source: "background",
+      requestId: "overlay-controls-running",
+      payload: {
+        status: "THINKING",
+        detail: "Fake background ready for controls",
+      },
+    });
+    await runner.waitForOverlayText("Fake background ready for controls");
+
+    await runner.clickOverlayButton("Pause agent");
+    await runner.waitForFakeBackgroundHandled("PAUSE_AGENT");
+    await runner.waitForOverlayText("Paused");
+
+    await runner.clickOverlayButton("Resume agent");
+    await runner.waitForFakeBackgroundHandled("RESUME_AGENT");
+    await runner.waitForOverlayText("Fake background resumed");
+
+    await runner.clickOverlayButton("Stop agent");
+    await runner.waitForFakeBackgroundHandled("STOP_AGENT");
+
+    const capture = await runner.readMessageCapture();
+    expect(capture.outboundTypes).toEqual(
+      expect.arrayContaining(["PAUSE_AGENT", "RESUME_AGENT", "STOP_AGENT"]),
+    );
+
+    const fakeBackground = await runner.readFakeBackgroundState();
+    expect(fakeBackground.handledTypes).toEqual(
+      expect.arrayContaining(["PAUSE_AGENT", "RESUME_AGENT", "STOP_AGENT"]),
+    );
+    expect(fakeBackground.emittedTypes).toEqual(
+      expect.arrayContaining(["AGENT_STATUS"]),
+    );
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
 });
