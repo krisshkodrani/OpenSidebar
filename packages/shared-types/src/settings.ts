@@ -10,7 +10,10 @@ export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
 export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
 export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
-export const DEFAULT_ENABLED_SKILL_PACK_IDS = ["communication-workflows"];
+export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
+  "communication-workflows",
+  "procurement-workflows",
+];
 
 export type TTSStylePreset =
   | "neutral"

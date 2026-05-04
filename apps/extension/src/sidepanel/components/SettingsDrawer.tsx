@@ -98,6 +98,11 @@ const SKILL_PACK_OPTIONS = [
     label: "Communication workflows",
     description: "Careful email reply and message composition guidance.",
   },
+  {
+    id: "procurement-workflows",
+    label: "Procurement workflows",
+    description: "Tabbed store purchasing and checklist completion guidance.",
+  },
 ];
 
 const OPENAI_TTS_VOICES = [
