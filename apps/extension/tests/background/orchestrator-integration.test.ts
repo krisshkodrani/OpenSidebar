@@ -32,6 +32,8 @@ const stoppedLoopNodeIds: string[] = [];
 const gracefulStopLoopNodeIds: string[] = [];
 const plannerOverrideCalls: Array<Record<string, unknown> | undefined> = [];
 const verifierOverrideCalls: Array<Record<string, unknown> | undefined> = [];
+let plannerBuildNodeCalls = 0;
+let verifierDecisionCalls = 0;
 
 let plannerBuildNodesImpl: (...args: unknown[]) => Promise<TaskNode[]>;
 let plannerExpandNodeImpl: (...args: unknown[]) => Promise<TaskNode[] | null>;
@@ -219,6 +221,8 @@ describe("Orchestrator integration join tests", () => {
     gracefulStopLoopNodeIds.length = 0;
     plannerOverrideCalls.length = 0;
     verifierOverrideCalls.length = 0;
+    plannerBuildNodeCalls = 0;
+    verifierDecisionCalls = 0;
 
     plannerBuildNodesImpl = async () => [makeNode("n1", "step one")];
     plannerExpandNodeImpl = async () => null;
@@ -407,6 +411,7 @@ describe("Orchestrator integration join tests", () => {
         plannerOverrideCalls.push(modelOverrides);
         return {
           buildNodes: async (...args: unknown[]) => {
+            plannerBuildNodeCalls += 1;
             const nodes = await plannerBuildNodesImpl(...args);
             return { nodes, isSingleNode: false, difficulty: "moderate" as const };
           },
@@ -416,7 +421,10 @@ describe("Orchestrator integration join tests", () => {
       createVerifier: (_apiKey, modelOverrides) => {
         verifierOverrideCalls.push(modelOverrides);
         return {
-          verifyNode: async (...args: unknown[]) => verifierDecisionImpl(...args),
+          verifyNode: async (...args: unknown[]) => {
+            verifierDecisionCalls += 1;
+            return verifierDecisionImpl(...args);
+          },
         };
       },
       createAgentLoop: (input) => {
@@ -486,6 +494,32 @@ describe("Orchestrator integration join tests", () => {
     expect(createdLoopNodeIds).toEqual(["n1", "n2"]);
     expect(capturedInstructions[0].instruction).toContain("Objective: collect data");
     expect(capturedInstructions[1].instruction).toContain("Objective: summarize data");
+  });
+
+  test("simple lane topology skips planner decomposition and LLM verifier", async () => {
+    plannerBuildNodesImpl = async () => {
+      throw new Error("planner should not run");
+    };
+    verifierDecisionImpl = async () => {
+      throw new Error("verifier should not run");
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask({
+      ...makeInput("Tell me what page I am on."),
+      settings: {
+        ...baseSettings,
+        laneTopologyMode: "simple",
+      },
+    });
+
+    expect(plannerBuildNodeCalls).toBe(0);
+    expect(verifierDecisionCalls).toBe(0);
+    expect(createdLoopNodeIds).toHaveLength(1);
+    expect(capturedInstructions[0].instruction).toContain(
+      "Objective: Tell me what page I am on.",
+    );
   });
 
   test("passes Fireworks provider settings to verifier and replanner", async () => {

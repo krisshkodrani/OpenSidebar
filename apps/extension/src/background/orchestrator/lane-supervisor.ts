@@ -10,6 +10,8 @@ import {
   RuntimeLane,
   WorkspaceLanePools,
 } from "./lane-types";
+import type { LaneTopologyConfig } from "./lane-topology";
+import { mergeLaneTopologyPolicies } from "./lane-topology";
 import { clampInteger } from "./utils";
 
 export type LanePolicyOverrides = Partial<
@@ -140,7 +142,14 @@ export function createWorkspaceLaneSupervisors(): WorkspaceLaneSupervisors {
 export function createWorkspaceLaneRuntime(args: {
   maxWorkers: number;
   overrides?: LanePolicyOverrides;
+  topology?: LaneTopologyConfig;
 }): WorkspaceLaneRuntime {
+  const overrides = args.topology
+    ? mergeLaneTopologyPolicies({
+        topology: args.topology,
+        overrides: args.overrides,
+      })
+    : args.overrides;
   const build = (lane: RuntimeLane): LaneRuntimeState => ({
     lane,
     activeCalls: 0,
@@ -151,7 +160,7 @@ export function createWorkspaceLaneRuntime(args: {
     policy: buildLanePolicy({
       lane,
       maxWorkers: args.maxWorkers,
-      overrides: args.overrides,
+      overrides,
     }),
   });
 

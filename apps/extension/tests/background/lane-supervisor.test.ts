@@ -16,6 +16,7 @@ import {
   releaseLaneOperation,
   releaseLaneOperationRegistration,
 } from "../../src/background/orchestrator/lane-supervisor";
+import { resolveLaneTopology } from "../../src/background/orchestrator/lane-topology";
 
 describe("orchestrator lane supervisor helpers", () => {
   test("builds lane policies with bounded overrides", () => {
@@ -54,6 +55,16 @@ describe("orchestrator lane supervisor helpers", () => {
     expect(runtime.executor.policy.maxConcurrent).toBe(2);
     expect(runtime.verifier.policy.maxConcurrent).toBe(2);
     expect(runtime.executor.activeCalls).toBe(0);
+  });
+
+  test("simple topology caps executor lane concurrency", () => {
+    const runtime = createWorkspaceLaneRuntime({
+      maxWorkers: 4,
+      topology: resolveLaneTopology("simple"),
+    });
+
+    expect(runtime.executor.policy.maxConcurrent).toBe(1);
+    expect(runtime.verifier.policy.maxConcurrent).toBe(4);
   });
 
   test("summarizes queue depth and circuit state for telemetry", () => {

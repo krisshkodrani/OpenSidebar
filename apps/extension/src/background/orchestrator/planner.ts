@@ -683,6 +683,21 @@ export function buildFallbackNodes(
   return stepsToNodes(query, fallbackSteps, phase, pageTitle, pageUrl);
 }
 
+export function buildDirectExecutionNodes(
+  query: string,
+  phase: "planned" | "planner_replan" = "planned",
+  pageTitle?: string,
+  pageUrl?: string,
+): TaskNode[] {
+  return stepsToNodes(
+    query,
+    [buildSingleFallbackStep(query)],
+    phase,
+    pageTitle,
+    pageUrl,
+  );
+}
+
 export class OrchestratorPlanner {
   private planner: TaskPlanner;
 
