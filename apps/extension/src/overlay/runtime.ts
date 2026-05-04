@@ -9,6 +9,12 @@ import type {
 } from "../sidepanel/runtime";
 
 export const OVERLAY_SEND_MESSAGE_EVENT = "opensidebar:overlay:send-message";
+export const OVERLAY_RECEIVE_MESSAGE_EVENT =
+  "opensidebar:overlay:receive-message";
+
+export interface OverlayRuntimeMessageEventDetail {
+  message: RuntimeMessage;
+}
 
 export type StorageAreaName = "local" | "sync" | "session";
 
@@ -26,6 +32,7 @@ export interface OverlayUiRuntimeHarness {
   emitMessage(message: RuntimeMessage): void;
   setActiveTab(tab: UiRuntimeTab): void;
   getStorageSnapshot(area: StorageAreaName): Record<string, unknown>;
+  dispose(): void;
 }
 
 function hasOwn(data: Record<string, unknown>, key: string): boolean {
@@ -140,6 +147,29 @@ export function createOverlayUiRuntimeHarness(
     }
   };
 
+  const emitMessage = (message: RuntimeMessage) => {
+    for (const listener of messageListeners) {
+      listener(message);
+    }
+  };
+
+  const onRuntimeMessageEvent = (event: Event) => {
+    const message = (
+      event as CustomEvent<Partial<OverlayRuntimeMessageEventDetail>>
+    ).detail?.message;
+    if (
+      message &&
+      typeof message === "object" &&
+      typeof (message as { type?: unknown }).type === "string"
+    ) {
+      emitMessage(message as RuntimeMessage);
+    }
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener(OVERLAY_RECEIVE_MESSAGE_EVENT, onRuntimeMessageEvent);
+  }
+
   const port: UiRuntimePort = {
     source: MessageSource.UI,
 
@@ -215,14 +245,20 @@ export function createOverlayUiRuntimeHarness(
   return {
     port,
     sentMessages,
-    emitMessage(message) {
-      for (const listener of messageListeners) {
-        listener(message);
-      }
-    },
+    emitMessage,
     setActiveTab,
     getStorageSnapshot(area) {
       return { ...storageData[area] };
+    },
+    dispose() {
+      if (typeof window !== "undefined") {
+        window.removeEventListener(
+          OVERLAY_RECEIVE_MESSAGE_EVENT,
+          onRuntimeMessageEvent,
+        );
+      }
+      messageListeners.clear();
+      activeTabListeners.clear();
     },
   };
 }
