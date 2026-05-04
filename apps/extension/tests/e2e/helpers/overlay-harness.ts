@@ -28,6 +28,7 @@ export interface OverlayHarnessMountState {
 
 export interface OverlayHarnessMessageCapture {
   outboundTypes: string[];
+  outboundMessages: unknown[];
   inboundTypes: string[];
 }
 
@@ -40,6 +41,7 @@ export interface OverlayHarnessRunner {
   startMessageCapture(): Promise<void>;
   sendUiMessage(message: unknown): Promise<void>;
   emitRuntimeMessage(message: unknown): Promise<void>;
+  sendFeedbackThroughUi(text: string): Promise<void>;
   readMessageCapture(): Promise<OverlayHarnessMessageCapture>;
   close(): Promise<void>;
 }
@@ -211,13 +213,18 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
 
     async startMessageCapture() {
       await page.evaluate(() => {
-        window.__overlaySmoke = { outboundTypes: [], inboundTypes: [] };
+        window.__overlaySmoke = {
+          outboundTypes: [],
+          outboundMessages: [],
+          inboundTypes: [],
+        };
         window.addEventListener("opensidebar:overlay:send-message", (event) => {
           const message = (
             event as CustomEvent<{ message?: { type?: string } }>
           ).detail?.message;
           if (message?.type) {
             window.__overlaySmoke.outboundTypes.push(message.type);
+            window.__overlaySmoke.outboundMessages.push(message);
           }
         });
         window.__opensidebarOverlayRuntime?.port.subscribeMessages((message) => {
@@ -242,6 +249,50 @@ export async function createOverlayHarnessRunner(): Promise<OverlayHarnessRunner
           }),
         );
       }, message);
+    },
+
+    async sendFeedbackThroughUi(text: string) {
+      await page.waitForFunction(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        return Boolean(
+          root?.querySelector('textarea[placeholder="Guide the agent..."]'),
+        );
+      });
+      await page.evaluate((value) => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        const textarea = root?.querySelector(
+          'textarea[placeholder="Guide the agent..."]',
+        ) as HTMLTextAreaElement | null;
+        if (!textarea) {
+          throw new Error("Overlay feedback textarea was not found.");
+        }
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          "value",
+        )?.set;
+        valueSetter?.call(textarea, value);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      }, text);
+      await page.waitForFunction(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        return Boolean(
+          root?.querySelector('button[aria-label="Send guidance"]'),
+        );
+      });
+      await page.evaluate(() => {
+        const root = document.getElementById("opensidebar-harness-host")
+          ?.shadowRoot;
+        const button = root?.querySelector(
+          'button[aria-label="Send guidance"]',
+        ) as HTMLButtonElement | null;
+        if (!button) {
+          throw new Error("Overlay send guidance button was not found.");
+        }
+        button.click();
+      });
     },
 
     readMessageCapture() {
