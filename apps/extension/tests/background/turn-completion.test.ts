@@ -93,8 +93,10 @@ function makeDeps(
 
 describe("completeTurnWithRetries", () => {
   test("returns a successful streamed response", async () => {
+    const recordPromptImageUsage = vi.fn();
     const deps = makeDeps({
       llm: makeLlm([makeResponse("done")]),
+      recordPromptImageUsage,
     });
 
     const result = await completeTurnWithRetries(deps);
@@ -103,14 +105,18 @@ describe("completeTurnWithRetries", () => {
     if (result.kind !== "response") return;
     expect(result.response.content).toBe("done");
     expect(result.retryCount).toBe(0);
+    expect(recordPromptImageUsage).toHaveBeenCalledTimes(1);
+    expect(recordPromptImageUsage).toHaveBeenCalledWith(messages);
     expect(deps.broadcasts).toEqual([
       { type: "STREAM_CHUNK", payload: { delta: "done", done: false } },
     ]);
   });
 
   test("retries empty responses and removes retry diagnostics", async () => {
+    const recordPromptImageUsage = vi.fn();
     const deps = makeDeps({
       llm: makeLlm([makeResponse(null), makeResponse("after retry")]),
+      recordPromptImageUsage,
     });
 
     const result = await completeTurnWithRetries(deps);
@@ -122,6 +128,8 @@ describe("completeTurnWithRetries", () => {
     if (result.kind !== "response") return;
     expect(result.response.content).toBe("after retry");
     expect(result.messages).toEqual(messages);
+    expect(recordPromptImageUsage).toHaveBeenCalledTimes(1);
+    expect(recordPromptImageUsage).toHaveBeenCalledWith(messages);
   });
 
   test("returns an early error result for exhausted provider credits", async () => {

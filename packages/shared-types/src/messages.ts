@@ -693,9 +693,9 @@ export interface SessionMetrics {
   visionCallCount?: number;
   /** Number of cached screenshot/perception observations reused without a model call */
   cachedVisionCallCount?: number;
-  /** Estimated prompt tokens attributable to image parts; informational and not added to totalTokens */
+  /** Estimated image prompt tokens for completed turns/calls; optional for legacy payloads and not added to totalTokens */
   totalImagePromptTokenEstimate?: number;
-  /** Number of image parts sent in LLM/perception prompts */
+  /** Number of image parts in completed LLM/perception prompts; optional for legacy payloads */
   imagePromptCount?: number;
   /** Selected perception path and why it was chosen for this run */
   perceptionModeDecision?: {

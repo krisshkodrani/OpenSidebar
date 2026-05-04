@@ -63,7 +63,8 @@
     "test:e2e:interactions": "nx run extension:test-e2e-medium",
     "test:e2e:runtime": "nx run extension:test-e2e-hard",
     "prompts:build": "nx run prompts-package:build",
-    "prompts:check": "nx run prompts-package:check"
+    "prompts:check": "nx run prompts-package:check",
+    "review:deepseek": "tsx scripts/deepseek-review.ts"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
