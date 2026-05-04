@@ -52,7 +52,11 @@ const SUGGESTED_ACTIONS = [
   "Help me complete this task",
 ];
 
-export default function App() {
+export interface AppProps {
+  themeRoot?: HTMLElement | null;
+}
+
+export default function App({ themeRoot }: AppProps = {}) {
   const ready = useStore((s) => s.ready);
   const messages = useStore((s) => s.messages);
   const addMessage = useStore((s) => s.addMessage);
@@ -159,7 +163,7 @@ export default function App() {
   // Dark Mode Logic
   useEffect(() => {
     const applyTheme = () => {
-      const root = document.documentElement;
+      const root = themeRoot ?? document.documentElement;
       const isDark =
         settings.theme === "dark" ||
         (settings.theme === "system" &&
@@ -178,7 +182,7 @@ export default function App() {
     const handler = () => applyTheme();
     mediaQuery.addEventListener("change", handler);
     return () => mediaQuery.removeEventListener("change", handler);
-  }, [settings.theme]);
+  }, [settings.theme, themeRoot]);
 
   // Initial load â€” resolve workspace, then load data
   useEffect(() => {
@@ -197,8 +201,7 @@ export default function App() {
             "opensidebar:workspaces",
           );
           const workspaces =
-            (stored["opensidebar:workspaces"] as Workspace[] | undefined) ||
-            [];
+            (stored["opensidebar:workspaces"] as Workspace[] | undefined) || [];
           const ws = workspaces.find((w) => w.tabIds.includes(tab.id!));
           if (ws) {
             useStore.getState().setActiveWorkspaceId(ws.id);
@@ -902,4 +905,3 @@ export default function App() {
     </ErrorBoundary>
   );
 }
-

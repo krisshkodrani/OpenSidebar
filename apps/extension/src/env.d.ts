@@ -1,5 +1,10 @@
 declare const __DEV__: boolean;
 
+declare module "*.css?inline" {
+  const css: string;
+  export default css;
+}
+
 // Web Speech API types (not included in lib.dom by default for Chrome)
 interface SpeechRecognitionAlternative {
   readonly transcript: string;
