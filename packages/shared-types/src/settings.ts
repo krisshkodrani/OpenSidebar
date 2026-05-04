@@ -8,6 +8,7 @@ import type { AgentLoopState } from "./agent";
 
 export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
 export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
+export type LaneTopologyMode = "simple" | "standard" | "full";
 
 export type TTSStylePreset =
   | "neutral"
@@ -68,6 +69,8 @@ export interface UserSettings {
   allowedNavigationOrigins?: string[];
   /** Require user confirmation before executing multi-step plans (default: true) */
   requirePlanConfirmation?: boolean;
+  /** Orchestrator lane topology. Defaults to full planner/executor/verifier topology. */
+  laneTopologyMode?: LaneTopologyMode;
   /** Override executor model. Must support screenshots and tool calling. */
   executorModel?: string;
   /** Override planner model. */

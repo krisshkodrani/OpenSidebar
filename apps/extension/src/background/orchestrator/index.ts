@@ -50,7 +50,11 @@ import {
   resetTabGroupAppearance,
 } from "../workspaces/tab-group-appearance";
 import { waitForContentScriptReady } from "../tab-ready";
-import { buildFallbackNodes, OrchestratorPlanner } from "./planner";
+import {
+  buildDirectExecutionNodes,
+  buildFallbackNodes,
+  OrchestratorPlanner,
+} from "./planner";
 import { inferToolProfileForStep } from "../agent/planner";
 import type { TokenUsage } from "../llm/types";
 import type { ToolProfile } from "../tools/metadata";
@@ -134,6 +138,11 @@ import {
   releaseLaneOperation,
   releaseLaneOperationRegistration,
 } from "./lane-supervisor";
+import {
+  resolveLaneTopologyFromSettings,
+  shouldUsePlannerDecomposition,
+  shouldUseVerifier,
+} from "./lane-topology";
 import {
   CHECKPOINT_VERSION,
   DEFAULT_MAX_REPLANS,
@@ -865,7 +874,11 @@ export class Orchestrator {
   private initializeWorkspaceRuntime(
     workspaceId: string,
     maxWorkers: number,
+    task?: Pick<OrchestratorTask, "laneTopologyMode">,
   ): void {
+    const topology = resolveLaneTopologyFromSettings({
+      laneTopologyMode: task?.laneTopologyMode,
+    });
     this.budgetEstimatorsByWorkspace.set(workspaceId, new BudgetEstimator());
     this.workersByWorkspace.set(workspaceId, this.createWorkspaceLanePools());
     this.laneSupervisorsByWorkspace.set(
@@ -877,11 +890,13 @@ export class Orchestrator {
       createWorkspaceLaneRuntime({
         maxWorkers,
         overrides: this.deps.lanePolicies,
+        topology,
       }),
     );
     logger.debug("orchestrator", "Workspace runtime isolation initialized", {
       workspaceId,
       maxWorkers,
+      laneTopologyMode: topology.mode,
     });
     this.emitLaneSupervisorActivity(workspaceId);
   }
@@ -2729,7 +2744,7 @@ export class Orchestrator {
     task.status = "running";
     task.currentIndex = currentIndex(task.nodes);
     this.tasksByWorkspace.set(task.workspaceId, task);
-    this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers);
+    this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
     this.sendDurableRunStatus(task.workspaceId, null);
     await this.emitTraceManifest({
@@ -3330,6 +3345,7 @@ export class Orchestrator {
       ? `${personalContextBrief}\n\nCURRENT REQUEST:\n${input.query}`
       : input.query;
     const taskId = crypto.randomUUID();
+    const laneTopology = resolveLaneTopologyFromSettings(input.settings);
     const task: OrchestratorTask = {
       runId: crypto.randomUUID(),
       id: taskId,
@@ -3343,7 +3359,10 @@ export class Orchestrator {
       createdAt: Date.now(),
       nodes: [],
       plannerReflexionLog: [],
-      maxWorkers: Math.max(1, Math.min(8, DEFAULT_MAX_WORKERS)),
+      maxWorkers: Math.max(
+        1,
+        Math.min(8, laneTopology.maxWorkers ?? DEFAULT_MAX_WORKERS),
+      ),
       maxReplans: DEFAULT_MAX_REPLANS,
       replansUsed: 0,
       horizonExpansions: 0,
@@ -3355,6 +3374,7 @@ export class Orchestrator {
         maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
       },
       tabCoordination: createTaskTabCoordination(input.tabId),
+      laneTopologyMode: laneTopology.mode,
     };
     try {
       const rootTab = await chrome.tabs.get(input.tabId);
@@ -3367,7 +3387,7 @@ export class Orchestrator {
       task.rootTabUrl = null;
     }
     this.tasksByWorkspace.set(input.workspaceId, task);
-    this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
+    this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
     this.sendDurableRunStatus(task.workspaceId, null);
     await this.emitTraceManifest(this.buildTaskManifest(task, input));
@@ -3378,6 +3398,7 @@ export class Orchestrator {
         query: input.query,
         tabId: input.tabId,
         maxWorkers: task.maxWorkers,
+        laneTopologyMode: laneTopology.mode,
       },
       "system",
     );
@@ -3394,9 +3415,63 @@ export class Orchestrator {
     });
 
     let nodes: TaskNode[] = [];
+    const usePlannerDecomposition = shouldUsePlannerDecomposition(laneTopology);
+    if (!usePlannerDecomposition) {
+      const tab = await chrome.tabs.get(input.tabId).catch(() => null);
+      nodes = buildDirectExecutionNodes(
+        input.query,
+        "planned",
+        tab?.title || "Untitled",
+        tab?.url || "",
+      );
+      task.planClassification = {
+        isSingleNode: nodes.length === 1,
+        difficulty: "simple",
+      };
+      if (nodes.length > 0) {
+        updateTabGroupAppearance(input.workspaceId, {
+          title: nodes[0].description,
+        });
+      }
+      this.emitTraceEvent(
+        task,
+        "plan_decomposed",
+        {
+          nodeCount: nodes.length,
+          structured: false,
+          fallback: true,
+          plannerSkipped: true,
+          laneTopologyMode: laneTopology.mode,
+          skills: nodes
+            .filter((node) => node.selectedSkillId)
+            .map((node) => ({
+              nodeId: node.id,
+              skillId: node.selectedSkillId,
+              reason: node.selectedSkillReason,
+            })),
+        },
+        "planner",
+      );
+      this.sendMessage({
+        type: "AGENT_STEP",
+        workspaceId: input.workspaceId,
+        payload: {
+          step: {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: "Planning skipped",
+            detail: "Simple lane topology selected a single executor path.",
+            status: "done",
+            timestamp: Date.now(),
+          },
+          update: false,
+        },
+      });
+    }
 
     // ─── Plan decomposition ───
-    try {
+    if (usePlannerDecomposition) {
+      try {
       const plannerContract = buildRoleExecutionContract(
         "planner",
         input.settings,
@@ -3529,6 +3604,7 @@ export class Orchestrator {
           update: false,
         },
       });
+      }
     }
 
     if (task.status === "stopped") {
@@ -4534,6 +4610,19 @@ export class Orchestrator {
                   confidence: verification.confidence,
                 },
               );
+            } else if (
+              !shouldUseVerifier(
+                resolveLaneTopologyFromSettings({
+                  laneTopologyMode: task.laneTopologyMode,
+                }),
+              )
+            ) {
+              verification = {
+                decision: "accept",
+                reason:
+                  "Verifier skipped by lane topology after executor completion.",
+                confidence: 0.7,
+              };
             } else {
               verification = await this.runInLane(task, "verifier", async () =>
                 verifier.verifyNode({

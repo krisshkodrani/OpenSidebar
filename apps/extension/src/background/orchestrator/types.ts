@@ -1,5 +1,6 @@
 import { AgentLoop } from "../agent";
 import type { Difficulty } from "../agent/constants";
+import type { LaneTopologyMode } from "./lane-topology";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
 import {
@@ -173,6 +174,7 @@ export interface OrchestratorTask {
     isSingleNode: boolean;
     difficulty: Difficulty;
   };
+  laneTopologyMode?: LaneTopologyMode;
   /** Internal: tracks whether onStreamChunk forwarded non-empty content (for dedup) */
   _streamHasContent?: boolean;
   /** Tab IDs created by the orchestrator for worker nodes (cleaned up on task end) */
