@@ -309,7 +309,7 @@ export function initializeBridge(
           .sendMessage({
             type: "WORKSPACE_SYNC",
             requestId: crypto.randomUUID(),
-            source: MessageSource.SIDEPANEL,
+            source: uiRuntime.source,
             payload: { workspaceId: wsId },
           })
           .catch(() => {});

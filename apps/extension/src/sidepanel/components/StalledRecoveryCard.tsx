@@ -1,6 +1,5 @@
 import React, { useCallback, useId, useMemo } from "react";
 import { AlertTriangle, ArrowRight, SkipForward, Square } from "lucide-react";
-import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
@@ -45,7 +44,7 @@ export function StalledRecoveryCard() {
       await uiRuntime.sendMessage({
         type: "SKIP_SUBTASK",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         workspaceId: activeWorkspaceId,
         payload: { taskId: taskProgress.taskId },
       });
@@ -60,7 +59,7 @@ export function StalledRecoveryCard() {
       await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: { workspaceId: activeWorkspaceId },
       });
       clearStagnationState();

@@ -39,7 +39,7 @@ import {
   getInteractionMode,
   getInteractionModeBadge,
 } from "./interaction-mode";
-import { AgentStatus, MessageSource, ChatEntry, Workspace } from "../types";
+import { AgentStatus, ChatEntry, Workspace } from "../types";
 import { getBlockedRuleForUrl } from "../utils/site-access";
 import {
   formatMissingProviderKeys,
@@ -213,7 +213,7 @@ export default function App({ themeRoot }: AppProps = {}) {
             const resp = await uiRuntime.sendMessage<{ workspaceId?: string }>({
               type: "SIDE_PANEL_OPENED",
               requestId: crypto.randomUUID(),
-              source: MessageSource.SIDEPANEL,
+              source: uiRuntime.source,
               payload: { tabId: tab.id, windowId: tab.windowId },
             });
             if (resp?.workspaceId && !useStore.getState().activeWorkspaceId) {
@@ -318,7 +318,7 @@ export default function App({ themeRoot }: AppProps = {}) {
             .sendMessage({
               type: "WORKSPACE_SYNC",
               requestId: crypto.randomUUID(),
-              source: MessageSource.SIDEPANEL,
+              source: uiRuntime.source,
               payload: { workspaceId: newWsId },
             })
             .catch(() => {});
@@ -348,7 +348,7 @@ export default function App({ themeRoot }: AppProps = {}) {
           .sendMessage({
             type: "WORKSPACE_SYNC",
             requestId: crypto.randomUUID(),
-            source: MessageSource.SIDEPANEL,
+            source: uiRuntime.source,
             payload: { workspaceId: wsId },
           })
           .catch(() => {});
@@ -542,7 +542,7 @@ export default function App({ themeRoot }: AppProps = {}) {
         await uiRuntime.sendMessage({
           type: "USER_CHAT",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           payload: {
             text: trimmedText,
             tabId: activeTabId,
@@ -580,7 +580,7 @@ export default function App({ themeRoot }: AppProps = {}) {
         await uiRuntime.sendMessage({
           type: "USER_CHAT",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           payload: {
             text: trimmedText,
             tabId: 0,
@@ -601,7 +601,7 @@ export default function App({ themeRoot }: AppProps = {}) {
       await uiRuntime.sendMessage({
         type: "STOP_AGENT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: {
           workspaceId: useStore.getState().activeWorkspaceId,
         },

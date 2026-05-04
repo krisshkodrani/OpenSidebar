@@ -7,7 +7,6 @@ import React, {
   useState,
 } from "react";
 import { AlertTriangle } from "lucide-react";
-import { MessageSource } from "../../types";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { formatStepLabel } from "../../background/agent/step-labels";
@@ -77,7 +76,7 @@ export function ApprovalOverlay() {
         await uiRuntime.sendMessage({
           type: "APPROVAL_RESPONSE",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           workspaceId: useStore.getState().activeWorkspaceId,
           payload: {
             approvalId: pendingApproval.approvalId,

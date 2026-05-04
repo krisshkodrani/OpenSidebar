@@ -27,6 +27,7 @@ import {
 } from "./keepalive";
 import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
+import { isUiMessageSource } from "./ui-message-source";
 import { orchestrator } from "./orchestrator";
 import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
@@ -427,7 +428,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "SKILL_RECORDING_START"
     ) {
       void handleSkillRecordingStart(message.payload.tabId)
@@ -439,7 +440,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      (message.source === MessageSource.SIDEPANEL ||
+      (isUiMessageSource(message.source) ||
         message.source === MessageSource.CONTENT) &&
       message.type === "SKILL_RECORDING_STOP"
     ) {
@@ -453,7 +454,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      (message.source === MessageSource.SIDEPANEL ||
+      (isUiMessageSource(message.source) ||
         message.source === MessageSource.CONTENT) &&
       message.type === "SKILL_RECORDING_CANCEL"
     ) {
@@ -477,7 +478,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "USER_SKILL_SAVE"
     ) {
       void saveUserWebsiteSkill(message.payload.draft, message.payload.enabled)
@@ -493,7 +494,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "USER_SKILL_LIST"
     ) {
       void loadUserWebsiteSkills()
@@ -505,7 +506,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "USER_SKILL_DELETE"
     ) {
       void deleteUserWebsiteSkill(message.payload.id)
@@ -520,10 +521,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     // 1. Chat (or hint injection)
-    if (
-      message.source === MessageSource.SIDEPANEL &&
-      message.type === "USER_CHAT"
-    ) {
+    if (isUiMessageSource(message.source) && message.type === "USER_CHAT") {
       const wsId = message.payload.workspaceId;
       (async () => {
         const resolvedWsId = await resolveWorkspaceId(
@@ -559,7 +557,7 @@ chrome.runtime.onMessage.addListener(
 
     // 2. Stop Agent
     if (
-      (message.source === MessageSource.SIDEPANEL ||
+      (isUiMessageSource(message.source) ||
         message.source === MessageSource.CONTENT) &&
       message.type === "STOP_AGENT"
     ) {
@@ -580,26 +578,17 @@ chrome.runtime.onMessage.addListener(
     }
 
     // 3. Pause / Resume Agent
-    if (
-      message.source === MessageSource.SIDEPANEL &&
-      message.type === "PAUSE_AGENT"
-    ) {
+    if (isUiMessageSource(message.source) && message.type === "PAUSE_AGENT") {
       const wsId = message.payload?.workspaceId;
       orchestrator.pauseTask(wsId ?? undefined);
       return false;
     }
-    if (
-      message.source === MessageSource.SIDEPANEL &&
-      message.type === "RESUME_AGENT"
-    ) {
+    if (isUiMessageSource(message.source) && message.type === "RESUME_AGENT") {
       const wsId = message.payload?.workspaceId;
       orchestrator.resumeTask(wsId ?? undefined);
       return false;
     }
-    if (
-      message.source === MessageSource.SIDEPANEL &&
-      message.type === "SKIP_SUBTASK"
-    ) {
+    if (isUiMessageSource(message.source) && message.type === "SKIP_SUBTASK") {
       const wsId = message.workspaceId ?? undefined;
       void orchestrator.skipSubtask(wsId, message.payload.taskId).then((ok) => {
         if (!ok) {
@@ -614,7 +603,7 @@ chrome.runtime.onMessage.addListener(
 
     // 3b. Approval decision from side panel
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "APPROVAL_RESPONSE"
     ) {
       orchestrator.resolveApprovalResponse(
@@ -625,7 +614,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "ESCALATION_DECISION"
     ) {
       const accepted = orchestrator.resolveEscalationDecision(message.payload);
@@ -640,7 +629,7 @@ chrome.runtime.onMessage.addListener(
 
     // 3c. Plan confirmation response from side panel
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "PLAN_CONFIRMATION_RESPONSE"
     ) {
       orchestrator.resolvePlanConfirmation(message.payload);
@@ -649,7 +638,7 @@ chrome.runtime.onMessage.addListener(
 
     // 3d. Clarification response from side panel
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "CLARIFICATION_RESPONSE"
     ) {
       orchestrator.resolveClarificationResponse(
@@ -661,7 +650,7 @@ chrome.runtime.onMessage.addListener(
 
     // 4. Side Panel Opened (Mount) — returns workspace ID so side panel can set it
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "SIDE_PANEL_OPENED"
     ) {
       handleSidePanelOpened(message.payload.tabId, message.payload.windowId)
@@ -672,7 +661,7 @@ chrome.runtime.onMessage.addListener(
 
     // 4b. Workspace Sync — side panel switched workspaces, re-broadcast state
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "WORKSPACE_SYNC"
     ) {
       const wsId = message.payload.workspaceId;
@@ -683,7 +672,7 @@ chrome.runtime.onMessage.addListener(
     }
 
     if (
-      message.source === MessageSource.SIDEPANEL &&
+      isUiMessageSource(message.source) &&
       message.type === "DATA_CONTROL_REQUEST"
     ) {
       (async () => {

@@ -14,6 +14,8 @@ import type {
   UserWebsiteSkillDraft,
 } from "./agent";
 
+export type UiMessageSource = MessageSource.SIDEPANEL | MessageSource.UI;
+
 // --- Core Message Types ---
 
 /** Base shape shared by every runtime message */
@@ -93,7 +95,7 @@ export type RuntimeMessage =
 /** User sends a new chat message from the side panel */
 export interface UserChatMessage extends BaseMessage {
   type: "USER_CHAT";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     text: string;
     /** Active tab ID at time of sending */
@@ -148,7 +150,7 @@ export interface ApprovalRequestMessage extends BaseMessage {
 /** Side panel responds to a pending approval request */
 export interface ApprovalResponseMessage extends BaseMessage {
   type: "APPROVAL_RESPONSE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     approvalId: string;
     approved: boolean;
@@ -176,7 +178,7 @@ export interface StreamChunkMessage extends BaseMessage {
 /** User requests the agent loop to stop (from side panel or in-page stop button) */
 export interface StopAgentMessage extends BaseMessage {
   type: "STOP_AGENT";
-  source: MessageSource.SIDEPANEL | MessageSource.CONTENT;
+  source: UiMessageSource | MessageSource.CONTENT;
   payload: {
     workspaceId?: string | null;
   };
@@ -185,7 +187,7 @@ export interface StopAgentMessage extends BaseMessage {
 /** Settings changed — broadcast to all contexts */
 export interface SettingsUpdateMessage extends BaseMessage {
   type: "SETTINGS_UPDATE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     settings: Partial<UserSettings>;
   };
@@ -194,7 +196,7 @@ export interface SettingsUpdateMessage extends BaseMessage {
 /** Side panel reports it has been opened/mounted */
 export interface SidePanelOpenedMessage extends BaseMessage {
   type: "SIDE_PANEL_OPENED";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     tabId: number;
     windowId: number;
@@ -204,7 +206,7 @@ export interface SidePanelOpenedMessage extends BaseMessage {
 /** Side panel requests background to re-broadcast current state for a workspace */
 export interface WorkspaceSyncMessage extends BaseMessage {
   type: "WORKSPACE_SYNC";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     workspaceId: string;
   };
@@ -212,7 +214,7 @@ export interface WorkspaceSyncMessage extends BaseMessage {
 
 export interface SkillRecordingStartMessage extends BaseMessage {
   type: "SKILL_RECORDING_START";
-  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND;
+  source: UiMessageSource | MessageSource.BACKGROUND;
   payload: {
     tabId: number;
   };
@@ -220,7 +222,7 @@ export interface SkillRecordingStartMessage extends BaseMessage {
 
 export interface SkillRecordingStopMessage extends BaseMessage {
   type: "SKILL_RECORDING_STOP";
-  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND | MessageSource.CONTENT;
+  source: UiMessageSource | MessageSource.BACKGROUND | MessageSource.CONTENT;
   payload: {
     tabId?: number;
   };
@@ -228,7 +230,7 @@ export interface SkillRecordingStopMessage extends BaseMessage {
 
 export interface SkillRecordingCancelMessage extends BaseMessage {
   type: "SKILL_RECORDING_CANCEL";
-  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND | MessageSource.CONTENT;
+  source: UiMessageSource | MessageSource.BACKGROUND | MessageSource.CONTENT;
   payload: {
     tabId?: number;
   };
@@ -255,7 +257,7 @@ export interface SkillRecordingStatusMessage extends BaseMessage {
 
 export interface UserSkillSaveMessage extends BaseMessage {
   type: "USER_SKILL_SAVE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     draft: UserWebsiteSkillDraft;
     enabled?: boolean;
@@ -264,7 +266,7 @@ export interface UserSkillSaveMessage extends BaseMessage {
 
 export interface UserSkillListMessage extends BaseMessage {
   type: "USER_SKILL_LIST";
-  source: MessageSource.SIDEPANEL | MessageSource.BACKGROUND;
+  source: UiMessageSource | MessageSource.BACKGROUND;
   payload: {
     skills?: UserWebsiteSkill[];
   };
@@ -272,7 +274,7 @@ export interface UserSkillListMessage extends BaseMessage {
 
 export interface UserSkillDeleteMessage extends BaseMessage {
   type: "USER_SKILL_DELETE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     id: string;
   };
@@ -557,7 +559,7 @@ export interface EscalationRequestMessage extends BaseMessage {
 
 export interface EscalationDecisionMessage extends BaseMessage {
   type: "ESCALATION_DECISION";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     escalationId: string;
     optionId: EscalationOptionId;
@@ -610,7 +612,7 @@ export interface SubtaskResult {
 /** Side panel requests skipping the current subtask */
 export interface SkipSubtaskMessage extends BaseMessage {
   type: "SKIP_SUBTASK";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     taskId: string;
   };
@@ -619,7 +621,7 @@ export interface SkipSubtaskMessage extends BaseMessage {
 /** Side panel requests pausing the agent loop */
 export interface PauseAgentMessage extends BaseMessage {
   type: "PAUSE_AGENT";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     workspaceId?: string | null;
   };
@@ -628,7 +630,7 @@ export interface PauseAgentMessage extends BaseMessage {
 /** Side panel requests resuming the paused agent loop */
 export interface ResumeAgentMessage extends BaseMessage {
   type: "RESUME_AGENT";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     workspaceId?: string | null;
   };
@@ -644,7 +646,7 @@ export interface SessionMetricsMessage extends BaseMessage {
 /** Side panel requests a scoped privacy/data cleanup action. */
 export interface DataControlRequestMessage extends BaseMessage {
   type: "DATA_CONTROL_REQUEST";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     action:
       | "clear_logs"
@@ -794,7 +796,7 @@ export interface PlanConfirmationRequestMessage extends BaseMessage {
 /** Side panel responds to a pending plan confirmation */
 export interface PlanConfirmationResponseMessage extends BaseMessage {
   type: "PLAN_CONFIRMATION_RESPONSE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     confirmationId: string;
     decision: "approve" | "cancel";
@@ -817,7 +819,7 @@ export interface ClarificationRequestMessage extends BaseMessage {
 /** Side panel responds to a pending clarification request */
 export interface ClarificationResponseMessage extends BaseMessage {
   type: "CLARIFICATION_RESPONSE";
-  source: MessageSource.SIDEPANEL;
+  source: UiMessageSource;
   payload: {
     clarificationId: string;
     answer: string;

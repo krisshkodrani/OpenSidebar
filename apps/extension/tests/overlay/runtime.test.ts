@@ -64,7 +64,7 @@ describe("overlay UI runtime", () => {
     await expect(
       harness.port.sendMessage({
         type: "USER_CHAT",
-        source: MessageSource.SIDEPANEL,
+        source: harness.port.source,
         requestId: "request-1",
         payload: { text: "Summarize this page", tabId: 1 },
       }),
@@ -85,6 +85,7 @@ describe("overlay UI runtime", () => {
     });
 
     expect(harness.sentMessages).toHaveLength(1);
+    expect(harness.port.source).toBe(MessageSource.UI);
     expect(onSendMessage).toHaveBeenCalledTimes(1);
     expect(eventSpy).toHaveBeenCalledTimes(1);
     expect(received).toEqual(["AGENT_STATUS"]);

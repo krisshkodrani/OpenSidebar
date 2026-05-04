@@ -21,6 +21,7 @@ export enum AgentStatus {
 /** Extension context that originated or receives a message */
 export enum MessageSource {
   SIDEPANEL = "sidepanel",
+  UI = "ui",
   BACKGROUND = "background",
   CONTENT = "content",
 }

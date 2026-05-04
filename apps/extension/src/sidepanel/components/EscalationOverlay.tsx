@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
 import { AlertOctagon } from "lucide-react";
-import { EscalationOptionId, MessageSource } from "../../types";
+import { EscalationOptionId } from "../../types";
 import { logger } from "../../utils";
 import { useStore } from "../store";
 import { uiRuntime } from "../runtime";
@@ -16,7 +16,7 @@ export function EscalationOverlay() {
         await uiRuntime.sendMessage({
           type: "ESCALATION_DECISION",
           requestId: crypto.randomUUID(),
-          source: MessageSource.SIDEPANEL,
+          source: uiRuntime.source,
           workspaceId: useStore.getState().activeWorkspaceId,
           payload: {
             escalationId: pendingEscalation.escalationId,
