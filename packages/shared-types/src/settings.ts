@@ -83,9 +83,9 @@ export interface UserSettings {
   temperature?: number;
   /**
    * Runtime observation path.
-   * - `auto`: runtime chooses DOM-only or unified VL from task/page signals
+   * - `auto`: runtime chooses structured DOM text or unified VL from task/page signals
    * - `unified_vl`: screenshot always goes directly to the executor
-   * - `structured`: internal degraded fallback that produces `Page Interpretation`
+   * - `structured`: DOM text and element data; screenshots are not sent directly to the executor
    */
   perceptionMode?: PerceptionRuntimeMode;
   /** @deprecated Use `perceptionMode` instead. */

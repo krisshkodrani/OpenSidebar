@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Save, Moon, Sun, Monitor, Download } from "lucide-react";
 import { useStore } from "../store";
-import type { LaneTopologyMode, UserSettings } from "../../types";
+import type {
+  LaneTopologyMode,
+  PerceptionRuntimeMode,
+  UserSettings,
+} from "../../types";
 import { getDefaultExecutorModel } from "../../utils/executor-model-policy";
 import { getProviderKeyStatus } from "../../utils/provider-keys";
 import { loadSettings, saveSettings } from "../../utils/settings-storage";
@@ -54,6 +58,29 @@ const LANE_TOPOLOGY_OPTIONS: {
     value: "simple",
     label: "Fast",
     description: "Single executor lane for simple read-only tasks.",
+  },
+];
+
+const PERCEPTION_MODE_OPTIONS: {
+  value: PerceptionRuntimeMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "auto",
+    label: "Auto-detect",
+    description:
+      "Use text when the page is readable; add screenshots for visual or sparse pages.",
+  },
+  {
+    value: "unified_vl",
+    label: "Prefer vision",
+    description: "Always send screenshots directly to the executor.",
+  },
+  {
+    value: "structured",
+    label: "Text only",
+    description: "Use DOM text and element data without executor screenshots.",
   },
 ];
 
@@ -1006,14 +1033,33 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   <label className="text-sm font-medium dark:text-warm-300">
                     Observation
                   </label>
+                  <select
+                    value={formState.perceptionMode ?? "auto"}
+                    onChange={(e) =>
+                      handleChange(
+                        "perceptionMode",
+                        e.target.value as PerceptionRuntimeMode,
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    {PERCEPTION_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                   <p className="text-xs text-warm-400 dark:text-warm-500">
-                    The executor is the primary perception path: every normal
-                    run sends page screenshots directly to a multimodal tool
-                    calling model.
+                    {
+                      PERCEPTION_MODE_OPTIONS.find(
+                        (option) =>
+                          option.value === (formState.perceptionMode ?? "auto"),
+                      )?.description
+                    }
                   </p>
                   <p className="text-xs text-warm-500 dark:text-warm-400">
-                    The older structured perception layer remains as an internal
-                    degraded fallback, not a user-facing model choice.
+                    Vision-only interaction is not exposed yet; visual tasks
+                    still keep DOM references for safer tool use.
                   </p>
                 </div>
 

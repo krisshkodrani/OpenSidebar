@@ -6,7 +6,7 @@ import {
 } from "../../src/utils/perception-mode";
 
 describe("perception mode resolution", () => {
-  test("auto defaults to unified VL even when DOM signals are sufficient", () => {
+  test("auto uses structured text mode when DOM signals are sufficient", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
@@ -15,8 +15,8 @@ describe("perception mode resolution", () => {
         pageTextLength: 2000,
       }),
     ).toMatchObject({
-      mode: "unified_vl",
-      reason: "auto_default_unified_vl",
+      mode: "structured",
+      reason: "dom_signals_sufficient",
       signals: [],
     });
   });
@@ -133,7 +133,7 @@ describe("perception mode resolution", () => {
         elementCount: 20,
         pageTextLength: 2000,
       }),
-    ).toBe("unified_vl");
+    ).toBe("structured");
   });
 
   test("extracts page signals from snapshot tags and text", () => {
