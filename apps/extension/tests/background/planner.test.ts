@@ -72,6 +72,7 @@ import {
     getLoadedSkillContract,
     getSkillToolPolicy,
     getSkillToolSuppressionPolicy,
+    KeywordSkillMatcher,
     resolveSkillToolProfile,
     selectPrimarySkill,
 } from "../../src/background/orchestrator/skills";
@@ -1896,6 +1897,19 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
 });
 
 describe("selectPrimarySkill", () => {
+    test("matches workflows through the keyword matcher boundary", () => {
+        const input = {
+            query: "Search the knowledge base and answer what users should do before resetting MFA.",
+            objective: "Use the knowledge search result to answer the user's question",
+            successCriteria: "Final answer contains the requested fact from the article",
+            pageTitle: "Knowledge Base",
+        };
+
+        expect(new KeywordSkillMatcher().match(input)?.id).toBe(
+            "search-answer-extraction",
+        );
+    });
+
     test("prefers list-detail review over generic compare for listing recommendations", () => {
         expect(
             selectPrimarySkill({

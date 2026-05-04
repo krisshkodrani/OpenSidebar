@@ -43,6 +43,18 @@ export interface SkillSelection {
   reason: string;
 }
 
+export interface SkillMatcherInput {
+  query?: string;
+  objective: string;
+  successCriteria?: string;
+  pageTitle?: string;
+  pageUrl?: string;
+}
+
+export interface SkillMatcher {
+  match(input: SkillMatcherInput): SkillSelection | null;
+}
+
 export interface SkillExecutionContract {
   sequencing?: string[];
   toolDiscipline?: string[];
@@ -2627,13 +2639,9 @@ export function summarizeSkillForVerifier(
   return lines.join("\n");
 }
 
-export function selectPrimarySkill(input: {
-  query?: string;
-  objective: string;
-  successCriteria?: string;
-  pageTitle?: string;
-  pageUrl?: string;
-}): SkillSelection | null {
+function selectPrimarySkillWithKeywordMatcher(
+  input: SkillMatcherInput,
+): SkillSelection | null {
   const corpus = buildCorpus([
     input.query,
     input.objective,
@@ -2976,4 +2984,18 @@ export function selectPrimarySkill(input: {
   }
 
   return null;
+}
+
+export class KeywordSkillMatcher implements SkillMatcher {
+  match(input: SkillMatcherInput): SkillSelection | null {
+    return selectPrimarySkillWithKeywordMatcher(input);
+  }
+}
+
+export const keywordSkillMatcher = new KeywordSkillMatcher();
+
+export function selectPrimarySkill(
+  input: SkillMatcherInput,
+): SkillSelection | null {
+  return keywordSkillMatcher.match(input);
 }
