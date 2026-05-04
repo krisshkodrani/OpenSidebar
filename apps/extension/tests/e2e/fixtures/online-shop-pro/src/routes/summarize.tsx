@@ -34,18 +34,6 @@ export default function Summarize() {
             positional encodings are added to input embeddings, giving the model
             information about token positions in the sequence.
           </p>
-
-          <p
-            style={{
-              marginTop: 24,
-              padding: 16,
-              background: "#f1f5f9",
-              borderRadius: 8,
-            }}
-          >
-            <strong>Test prompt:</strong> "Summarize this article in 2-3
-            sentences."
-          </p>
         </div>
       </div>
     </div>

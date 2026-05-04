@@ -23,6 +23,7 @@ import {
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import {
+  extractDoneSummary,
   findNewTraceFile,
   readTrace,
   formatTraceSummary,
@@ -60,6 +61,18 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
     console.log(`[e2e:summarize] Trace: ${traceFile}`);
 
     expect(turns.length).toBeLessThanOrEqual(2);
+    const summary = extractDoneSummary([traceFile!]).toLowerCase();
+    const coveredConcepts = [
+      /attention/.test(summary),
+      /encoder|decoder/.test(summary),
+      /position/.test(summary),
+      /parallel|efficien/.test(summary),
+    ].filter(Boolean).length;
+    expect(summary, "Agent must call done() with a summary").toBeTruthy();
+    expect(
+      coveredConcepts,
+      `Summary should cover core article concepts. Got: ${summary}`,
+    ).toBeGreaterThanOrEqual(2);
 
     const toolCalls = turns.flatMap((turn) =>
       turn.toolCalls.map((tool) => tool.name),

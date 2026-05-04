@@ -141,6 +141,11 @@ describe.skipIf(!h.apiKey)("E2E: Go-Back Navigation", () => {
       mentionsAlpha,
       `Summary must mention Alpha inventory (4,827). Got: ${combinedEvidence.slice(0, 300)}`,
     ).toBe(true);
+    const mentionsGamma = /6[,.]?412/.test(combinedEvidence);
+    expect(
+      mentionsGamma,
+      `Summary must mention Gamma inventory (6,412). Got: ${combinedEvidence.slice(0, 300)}`,
+    ).toBe(true);
 
     console.log(`\n[e2e] PASS — Forward/back navigation with data collection`);
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);

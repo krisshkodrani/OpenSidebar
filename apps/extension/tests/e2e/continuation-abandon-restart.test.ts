@@ -74,7 +74,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
 
     await sendUserChat(
       h.ctx,
-      "Fill the form with: name Alice Johnson, email alice@test.com, phone 555-0100.",
+      "Fill only the personal information fields with: name Alice Johnson, email alice@test.com, phone 555-0100. Stop after those fields; do not click Next or submit.",
       tabId,
       workspaceId,
     );
@@ -115,7 +115,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Abandon & Restart", () => {
     await sendUserChat(
       h.ctx,
       "Actually, scrap all of that. Clear everything and start over with: " +
-        "name Bob Martinez, email bob@company.com, phone 555-0200.",
+        "name Bob Martinez, email bob@company.com, phone 555-0200. Stop after those personal information fields; do not click Next or submit.",
       tabId,
       workspaceId,
     );

@@ -34,6 +34,7 @@ export default function HoverMenus() {
       categorySelected: selectedCategory,
       skuFound: visibleTooltip !== null || searchSubmitted,
       searchCompleted: searchSubmitted,
+      searchQuery: searchSubmitted ? searchQuery.trim() : "",
     };
   });
 
@@ -225,7 +226,7 @@ export default function HoverMenus() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Enter SKU (e.g. SKU-4829)"
+              placeholder="Enter SKU"
               style={{
                 flex: 1,
                 padding: "10px 14px",

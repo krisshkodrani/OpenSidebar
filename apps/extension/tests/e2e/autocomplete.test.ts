@@ -38,7 +38,7 @@ describe.skipIf(!h.apiKey)("E2E: Autocomplete", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt = "Fill in the address with '123 Main Street, Springfield, IL 62704' from the suggestions, and search for 'Laptop Stand' in the product search.";
+    const prompt = "Fill in the address with '123 Main Street, Springfield, IL 62704' from the suggestions, and select 'Laptop Stand' from the product suggestions.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

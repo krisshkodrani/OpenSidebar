@@ -22,6 +22,7 @@ import {
   waitForOutcome,
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
+import { extractDoneSummary } from "./helpers/diagnostics";
 
 const h = createE2EHarness({ maxTurns: 35, testLabel: "infinite-scroll" });
 
@@ -55,7 +56,7 @@ describe.skipIf(!h.apiKey)("E2E: Infinite Scroll", () => {
       workspaceId,
     );
 
-    await h.printTraceSummary();
+    const { traceFiles } = await h.printTraceSummary(workspaceId);
 
     if (!outcome.ok) {
       const ui = await h.page.evaluate(() => ({
@@ -76,6 +77,11 @@ describe.skipIf(!h.apiKey)("E2E: Infinite Scroll", () => {
     const result = outcome.result as any;
     expect(result.targetFound).toBe(true);
     expect(result.postsLoaded).toBeGreaterThanOrEqual(35);
+    const summary = extractDoneSummary(traceFiles);
+    expect(
+      /CODE-OMEGA-42|OMEGA-42/i.test(summary),
+      `Agent must report the secret code from the target post. Got: ${summary}`,
+    ).toBe(true);
 
     console.log(`\n[e2e] PASS — Target post found`);
     console.log(`[e2e]   Posts loaded: ${result.postsLoaded}`);

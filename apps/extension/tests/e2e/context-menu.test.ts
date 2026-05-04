@@ -78,6 +78,7 @@ describe.skipIf(!h.apiKey)("E2E: Context Menu", () => {
     const result = outcome.result as any;
     expect(result.renamed).toBe(true);
     expect(result.oldName).toBe("Q3 Report.pdf");
+    expect(result.newName).toBe("Q3 Financial Report 2026.pdf");
 
     console.log(`\n[e2e] PASS — Document renamed`);
     console.log(`[e2e]   Old: ${result.oldName}`);

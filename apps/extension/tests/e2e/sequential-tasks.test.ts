@@ -30,6 +30,7 @@ import {
 } from "./helpers/utils";
 import { getFixtureUrl } from "./helpers/fixture-server";
 import {
+  extractDoneSummary,
   findAllNewTraceFiles,
   readTrace,
   formatTraceSummary,
@@ -174,6 +175,18 @@ describe.skipIf(!h.apiKey)("E2E: Sequential Tasks", () => {
       );
     }
     expect(sumOutcome.ok, `Task 2 failed: ${sumOutcome.reason}`).toBe(true);
+    const summary = extractDoneSummary(task2Traces).toLowerCase();
+    const coveredConcepts = [
+      /attention/.test(summary),
+      /encoder|decoder/.test(summary),
+      /position/.test(summary),
+      /parallel|efficien/.test(summary),
+    ].filter(Boolean).length;
+    expect(summary, "Task 2 must produce a summarization answer").toBeTruthy();
+    expect(
+      coveredConcepts,
+      `Task 2 summary should cover the summarize page content. Got: ${summary}`,
+    ).toBeGreaterThanOrEqual(2);
 
     console.log(`[e2e:seq] Task 2 PASS — Summarize completed`);
     console.log(`[e2e:seq]   Task 2 traces: ${task2Traces.length}`);
