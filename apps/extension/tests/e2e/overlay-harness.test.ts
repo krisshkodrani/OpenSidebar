@@ -46,6 +46,31 @@ describe("Overlay harness browser injection", () => {
     const roundTrip = await runner.readMessageCapture();
     expect(roundTrip.outboundTypes).toContain("USER_CHAT");
     expect(roundTrip.inboundTypes).toContain("AGENT_STATUS");
+
+    await runner.sendFeedbackThroughUi("Try a more direct path.");
+    const feedbackCapture = await runner.readMessageCapture();
+    const feedbackMessage = feedbackCapture.outboundMessages.find(
+      (message): message is {
+        type: string;
+        source: string;
+        payload: { text?: string; isFeedback?: boolean };
+      } =>
+        Boolean(
+          message &&
+            typeof message === "object" &&
+            (message as { type?: unknown }).type === "USER_CHAT" &&
+            (message as { payload?: { isFeedback?: unknown } }).payload
+              ?.isFeedback === true,
+        ),
+    );
+    expect(feedbackMessage).toMatchObject({
+      type: "USER_CHAT",
+      source: "ui",
+      payload: {
+        text: "Try a more direct path.",
+        isFeedback: true,
+      },
+    });
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
 });
