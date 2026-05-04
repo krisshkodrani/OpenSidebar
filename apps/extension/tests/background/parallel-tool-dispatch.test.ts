@@ -120,6 +120,51 @@ describe("executeParallelToolCalls", () => {
     );
   });
 
+  test("blocks same-page anchor clicks before execution", async () => {
+    const call = toolCall(ToolName.CLICK_ELEMENT, { id: 1 });
+    const host = createHost();
+    (host.context as any).getCurrentUrl = () => "https://example.test/form";
+    (host.context as any).getSnapshot = () =>
+      ({
+        elements: [
+          {
+            tag: 1,
+            tagName: "a",
+            role: "link",
+            text: "Form",
+            attributes: { href: "/form" },
+            rect: { width: 80, height: 24 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      }) as any;
+
+    const output = await executeParallelToolCalls(host, {
+      toolCalls: [call],
+      tabId: 1,
+      repeatActionWindow: 20,
+      llmIntention: null,
+      state: baseState(),
+    });
+
+    expect(output.results).toEqual([
+      {
+        toolCall: call,
+        result: null,
+        error: expect.stringContaining("link to the current page"),
+      },
+    ]);
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "same_page_anchor_click_blocked",
+      expect.objectContaining({
+        targetUrl: "https://example.test/form",
+        mode: "parallel",
+      }),
+    );
+  });
+
   test("blocks exact repeated non-exempt actions before execution", async () => {
     const args = { url: "https://example.test/file.txt" };
     const call = toolCall(ToolName.DOWNLOAD_FILE, args);

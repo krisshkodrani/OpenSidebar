@@ -18,6 +18,7 @@ import {
   assessPreflightElement,
   assessReadElementSameIdNudge,
   assessRedundantSuccessBlock,
+  assessSamePageAnchorClick,
   assessToolCacheHit,
   type BlockedAction,
   type RecentAction,
@@ -401,6 +402,32 @@ export async function executeSequentialToolCalls(
             }
           : {},
       );
+      continue;
+    }
+
+    const samePageAnchorClick = assessSamePageAnchorClick({
+      toolName,
+      args,
+      snapshot: this.context.getSnapshot(),
+      currentUrl: this.context.getCurrentUrl(),
+    });
+    if (samePageAnchorClick.error) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: samePageAnchorClick.error,
+      });
+      this.log.warn("agent", "Same-page anchor click blocked", {
+        turn: this.turnCount,
+        tool: toolName,
+        targetUrl: samePageAnchorClick.targetUrl,
+        mode: "sequential",
+      });
+      this.traceRecorder?.recordEvent("same_page_anchor_click_blocked", {
+        tool: toolName,
+        targetUrl: samePageAnchorClick.targetUrl,
+        mode: "sequential",
+      });
       continue;
     }
 

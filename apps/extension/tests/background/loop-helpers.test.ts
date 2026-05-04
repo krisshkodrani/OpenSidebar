@@ -8,6 +8,7 @@ import {
   assessPreflightElement,
   assessRedundantSuccessBlock,
   assessReadElementSameIdNudge,
+  assessSamePageAnchorClick,
   assessSameUrlForcedEscalation,
   assessToolCacheHit,
   assessStepDurationWatchdog,
@@ -224,6 +225,101 @@ describe("assessPreflightElement", () => {
       warning:
         "Warning: Element [1] (id) is not visible in the viewport. Consider scrolling to it first, or it may be hidden.",
     });
+  });
+});
+
+describe("assessSamePageAnchorClick", () => {
+  const snapshot = {
+    elements: [
+      {
+        tag: 9,
+        tagName: "a",
+        role: "link",
+        text: "Form",
+        attributes: { href: "/form" },
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+      {
+        tag: 10,
+        tagName: "a",
+        role: "link",
+        text: "Shop",
+        attributes: { href: "/shop" },
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+      {
+        tag: 11,
+        tagName: "a",
+        role: "link",
+        text: "Details",
+        attributes: { href: "#details" },
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+      {
+        tag: 12,
+        tagName: "button",
+        role: "button",
+        text: "Submit",
+        attributes: {},
+        rect: { width: 60, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      },
+    ],
+  } as any;
+
+  it("blocks click_element on an anchor that resolves to the current page", () => {
+    const decision = assessSamePageAnchorClick({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 9 },
+      snapshot,
+      currentUrl: "http://127.0.0.1:50813/form",
+    });
+
+    expect(decision).toEqual({
+      error: expect.stringContaining("link to the current page"),
+      targetUrl: "http://127.0.0.1:50813/form",
+    });
+    expect(decision.error).toContain("discard in-progress state");
+  });
+
+  it("allows anchors that navigate to another route", () => {
+    expect(
+      assessSamePageAnchorClick({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 10 },
+        snapshot,
+        currentUrl: "http://127.0.0.1:50813/form",
+      }),
+    ).toEqual({ error: null, targetUrl: null });
+  });
+
+  it("allows in-page hash anchors", () => {
+    expect(
+      assessSamePageAnchorClick({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 11 },
+        snapshot,
+        currentUrl: "http://127.0.0.1:50813/form",
+      }),
+    ).toEqual({ error: null, targetUrl: null });
+  });
+
+  it("ignores non-anchor elements", () => {
+    expect(
+      assessSamePageAnchorClick({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 12 },
+        snapshot,
+        currentUrl: "http://127.0.0.1:50813/form",
+      }),
+    ).toEqual({ error: null, targetUrl: null });
   });
 });
 

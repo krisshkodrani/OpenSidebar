@@ -15,6 +15,7 @@ import {
   assessPreflightElement,
   assessReadElementSameIdNudge,
   assessRedundantSuccessBlock,
+  assessSamePageAnchorClick,
   assessToolCacheHit,
   type BlockedAction,
   type RecentAction,
@@ -297,6 +298,31 @@ export async function executeParallelToolCalls(
           toolCall,
           result: null,
           error: idPreDispatch.error,
+        };
+      }
+
+      const samePageAnchorClick = assessSamePageAnchorClick({
+        toolName,
+        args,
+        snapshot: host.context.getSnapshot(),
+        currentUrl: host.context.getCurrentUrl(),
+      });
+      if (samePageAnchorClick.error) {
+        host.log.warn("agent", "Same-page anchor click blocked", {
+          turn: host.turnCount,
+          tool: toolName,
+          targetUrl: samePageAnchorClick.targetUrl,
+          mode: "parallel",
+        });
+        host.traceRecorder?.recordEvent("same_page_anchor_click_blocked", {
+          tool: toolName,
+          targetUrl: samePageAnchorClick.targetUrl,
+          mode: "parallel",
+        });
+        return {
+          toolCall,
+          result: null,
+          error: samePageAnchorClick.error,
         };
       }
 
