@@ -1111,6 +1111,68 @@ export function assessPreflightElement(params: {
   );
 }
 
+export interface SamePageAnchorClickDecision {
+  error: string | null;
+  targetUrl: string | null;
+}
+
+function resolveSamePageAnchorTarget(params: {
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null;
+  currentUrl: string | null | undefined;
+}): { id: number; targetUrl: URL } | null {
+  if (!params.snapshot || !params.currentUrl) return null;
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return null;
+
+  const element = params.snapshot.elements.find((el) => el.tag === id);
+  if (!element) return null;
+
+  const tagName = element.tagName.toLowerCase();
+  const href = element.attributes?.href?.trim();
+  if (tagName !== "a" || !href || href.startsWith("#")) return null;
+
+  let current: URL;
+  let target: URL;
+  try {
+    current = new URL(params.currentUrl);
+    target = new URL(href, current);
+  } catch {
+    return null;
+  }
+
+  if (target.hash) return null;
+
+  const currentPage = `${current.origin}${current.pathname}${current.search}`;
+  const targetPage = `${target.origin}${target.pathname}${target.search}`;
+  if (currentPage !== targetPage) return null;
+
+  return { id, targetUrl: target };
+}
+
+export function assessSamePageAnchorClick(params: {
+  toolName: string;
+  args: Record<string, unknown>;
+  snapshot: DomSnapshot | null;
+  currentUrl: string | null | undefined;
+}): SamePageAnchorClickDecision {
+  if (params.toolName !== ToolName.CLICK_ELEMENT) {
+    return { error: null, targetUrl: null };
+  }
+
+  const target = resolveSamePageAnchorTarget(params);
+  if (!target) return { error: null, targetUrl: null };
+
+  return {
+    error:
+      `Error: Element [${target.id}] is a link to the current page (${target.targetUrl.href}). ` +
+      `Clicking it may reload the page and discard in-progress state. ` +
+      `You are already on this page; use the visible in-page controls instead, or call read_page if the expected controls are missing.`,
+    targetUrl: target.targetUrl.href,
+  };
+}
+
 /** Tracks a recent successful tool call for redundant action detection */
 export interface RecentAction {
   tool: string;

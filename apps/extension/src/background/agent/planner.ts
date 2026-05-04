@@ -232,14 +232,20 @@ function extractPrimaryObjective(text: string): string {
 
 function hasSequentialActionSequence(query: string): boolean {
   const text = query.toLowerCase();
-  if (!/\b(then|after that|afterwards|followed by)\b/.test(text)) return false;
+  if (!/\b(then|after that|afterwards|followed by|and)\b|[,;]/.test(text)) {
+    return false;
+  }
 
   const actionMatches =
     text.match(
-      /\b(activate|click|open|go to|navigate|turn on|turn off|enable|disable|select|choose|set|rename|move|drag|apply|fill|type|enter|read|report|summarize|search|find|book)\b/g,
+      /\b(activate|click|open|go to|navigate|turn on|turn off|enable|disable|select|choose|pick|set|rename|move|drag|apply|fill|type|enter|clear|submit|save|send|read|report|summarize|search|find|book)\b/g,
     ) || [];
+  const mutatingActionMatches = actionMatches.filter(
+    (action) =>
+      !["read", "report", "summarize", "search", "find"].includes(action),
+  );
 
-  return actionMatches.length >= 2;
+  return actionMatches.length >= 2 && mutatingActionMatches.length >= 1;
 }
 
 function isCompactFieldValueFormPlan(

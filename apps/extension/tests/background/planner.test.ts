@@ -377,6 +377,53 @@ describe("TaskPlanner.decompose", () => {
         expect(synthesizedPlanText).toMatch(/\balpha\b/i);
     });
 
+    test("keeps comma-and form actions structured even when difficulty is simple", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "simple",
+                steps: [
+                    {
+                        objective: "Select Business from the category dropdown",
+                        successCriteria: "Category selected value is Business",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Pick the Standard budget",
+                        successCriteria: "Standard budget option is selected",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Submit the form",
+                        successCriteria: "Form submission confirmation is visible",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const guardian = new TaskPlanner("test-key");
+        const result = await guardian.decompose(
+            "Select Business for the category, pick the Standard budget, and submit the form.",
+            "Multi-Step Form",
+            "https://example.com/form",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(3);
+        expect(result!.subtasks).toEqual([
+            "Select Business from the category dropdown",
+            "Pick the Standard budget",
+            "Submit the form",
+        ]);
+    });
+
     test("parses structured step graph with dependencies and assumptions", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

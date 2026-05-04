@@ -122,4 +122,48 @@ describe("executeSequentialToolCalls", () => {
     expect(output.doneSummary).toBe("All set.");
     expect(completed).not.toHaveBeenCalled();
   });
+
+  test("blocks same-page anchor clicks before execution", async () => {
+    const host = createHost();
+    (host.context as any).getCurrentUrl = () => "https://example.test/form";
+    (host.context as any).getSnapshot = () =>
+      ({
+        elements: [
+          {
+            tag: 1,
+            tagName: "a",
+            role: "link",
+            text: "Form",
+            attributes: { href: "/form" },
+            rect: { width: 80, height: 24 },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      }) as any;
+
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.CLICK_ELEMENT, { id: 1 })],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+    expect(host.context.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "click_element-call",
+        content: expect.stringContaining("link to the current page"),
+      }),
+    );
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "same_page_anchor_click_blocked",
+      expect.objectContaining({
+        targetUrl: "https://example.test/form",
+        mode: "sequential",
+      }),
+    );
+  });
 });
