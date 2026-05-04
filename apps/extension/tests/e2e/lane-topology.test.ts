@@ -1,8 +1,8 @@
 /**
  * E2E: Lane topology benefit regression.
  *
- * Runs the same simple read-only task in full and simple topology modes. The
- * assertion is intentionally about topology trace shape, not exact latency.
+ * Runs the same simple read-only task across topology modes. The assertion is
+ * intentionally about topology trace shape, not exact latency.
  */
 
 import {
@@ -36,7 +36,7 @@ import {
 const h = createE2EHarness({ maxTurns: 6, testLabel: "lane-topology" });
 
 type ModeResult = {
-  mode: "full" | "simple";
+  mode: "full" | "standard" | "simple";
   ok: boolean;
   summary: string;
   turnCount: number;
@@ -45,7 +45,9 @@ type ModeResult = {
   traceFiles: string[];
 };
 
-async function runSimplePageTask(mode: "full" | "simple"): Promise<ModeResult> {
+async function runSimplePageTask(
+  mode: "full" | "standard" | "simple",
+): Promise<ModeResult> {
   await updateUserSettings(h.ctx, { laneTopologyMode: mode });
   await navigateAndWait(h.page, getFixtureUrl("summarize"));
   await h.page.bringToFront();
@@ -94,11 +96,18 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
   afterEach(() => h.afterEachHook("lane-topology"));
   afterAll(() => h.afterAllHook());
 
-  it("simple mode skips planner and verifier orchestration for a simple read-only page task", async () => {
+  it("applies full, standard, and simple topology policies for a simple read-only page task", async () => {
     const full = await runSimplePageTask("full");
     h.tracesBefore = new Set([
       ...h.tracesBefore,
       ...full.traceFiles.map((filePath) => basename(filePath)),
+    ]);
+    await updateUserSettings(h.ctx, { laneTopologyMode: "full" });
+
+    const standard = await runSimplePageTask("standard");
+    h.tracesBefore = new Set([
+      ...h.tracesBefore,
+      ...standard.traceFiles.map((filePath) => basename(filePath)),
     ]);
     await updateUserSettings(h.ctx, { laneTopologyMode: "full" });
 
@@ -107,10 +116,16 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
     const simplePlan = simple.runEvents.find(
       (entry) => entry.type === "plan_decomposed",
     );
+    const standardPlan = standard.runEvents.find(
+      (entry) => entry.type === "plan_decomposed",
+    );
     const fullPlan = full.runEvents.find(
       (entry) => entry.type === "plan_decomposed",
     );
     const simplePlannerCalls = simple.runEvents.filter(
+      (entry) => entry.type === "planner_llm_call",
+    ).length;
+    const standardPlannerCalls = standard.runEvents.filter(
       (entry) => entry.type === "planner_llm_call",
     ).length;
     const fullPlannerCalls = full.runEvents.filter(
@@ -119,18 +134,26 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
     const simpleNodeVerified = simple.runEvents.filter(
       (entry) => entry.type === "node_verified",
     );
+    const standardNodeVerified = standard.runEvents.filter(
+      (entry) => entry.type === "node_verified",
+    );
     const fullNodeVerified = full.runEvents.filter(
       (entry) => entry.type === "node_verified",
     );
 
     expect(fullPlan?.data?.laneTopologyMode).toBe("full");
+    expect(standardPlan?.data?.laneTopologyMode).toBe("standard");
     expect(simplePlan?.data).toMatchObject({
       laneTopologyMode: "simple",
       plannerSkipped: true,
       nodeCount: 1,
     });
     expect(simplePlannerCalls).toBe(0);
+    expect(standardPlannerCalls).toBeGreaterThan(0);
     expect(simpleNodeVerified[0]?.data?.reason).toContain(
+      "Verifier skipped by lane topology",
+    );
+    expect(standardNodeVerified[0]?.data?.reason).toContain(
       "Verifier skipped by lane topology",
     );
     expect(fullNodeVerified[0]?.data?.reason).not.toContain(
@@ -143,7 +166,10 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
       `[e2e:lane-topology] full: turns=${full.turnCount}, plannerCalls=${fullPlannerCalls}, durationMs=${full.durationMs}`,
     );
     console.log(
+      `[e2e:lane-topology] standard: turns=${standard.turnCount}, plannerCalls=${standardPlannerCalls}, durationMs=${standard.durationMs}`,
+    );
+    console.log(
       `[e2e:lane-topology] simple: turns=${simple.turnCount}, plannerCalls=${simplePlannerCalls}, durationMs=${simple.durationMs}`,
     );
-  }, 240_000);
+  }, 300_000);
 });
