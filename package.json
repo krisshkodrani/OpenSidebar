@@ -62,6 +62,7 @@
     "test:e2e:smoke": "nx run extension:test-e2e-easy",
     "test:e2e:interactions": "nx run extension:test-e2e-medium",
     "test:e2e:runtime": "nx run extension:test-e2e-hard",
+    "workarena:demo": "tsx scripts/workarena-demo-server.ts",
     "prompts:build": "nx run prompts-package:build",
     "prompts:check": "nx run prompts-package:check",
     "review:deepseek": "tsx scripts/deepseek-review.ts"

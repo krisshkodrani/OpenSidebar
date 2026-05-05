@@ -468,6 +468,32 @@ This command compares the local arena task registry against the WorkArena catego
 npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
 
+## Demo Session Server
+
+For filming, start a local control server that opens a visible held WorkArena session on command and keeps it alive until teardown:
+
+```bash
+npm run workarena:demo -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
+```
+
+Then open:
+
+```text
+http://127.0.0.1:7595
+```
+
+The page exposes buttons for `Start visible session`, `Export session`, `Validate`, and `Teardown`. The server refuses to reset ServiceNow unless it was started with `--allow-servicenow-reset`.
+
+Useful HTTP endpoints:
+
+```text
+GET  /status
+POST /start
+POST /export
+POST /validate
+POST /teardown
+```
+
 The handoff runner is manual-only. It refuses to reset WorkArena unless `--allow-servicenow-reset` or `--reset` is present, checks doctor readiness first, starts the held BrowserGym session, exports cookies/storage and the active URL, imports that state into the OpenSidebar extension browser, runs the agent with the real WorkArena goal, validates through the still-held BrowserGym environment, tears down, and writes a JSON execution report under `.artifacts/e2e/`. The report includes bridge status summaries, storage import counts, the final OpenSidebar URL, and the terminal agent event summary.
 
 Use `--no-build` only when the extension is already built:
