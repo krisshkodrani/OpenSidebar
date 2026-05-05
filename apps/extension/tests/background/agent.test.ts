@@ -3630,6 +3630,88 @@ Showing 6-10 of 50`,
     expect(result).toBe(true);
   });
 
+  test("bypasses stale plan rejection when only a finalization step remains after destructive success", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: "Confirm the account deletion and verify the result",
+          status: "running",
+        },
+        {
+          description:
+            "Terminate task with success status since deletion is confirmed",
+          status: "pending",
+        },
+      ],
+      planSteps: [
+        {
+          successCriteria:
+            "Confirmation button clicked, deletion success message or modal closure visible",
+        },
+        {
+          successCriteria:
+            "Task is finished after the deletion confirmation is visible",
+        },
+      ],
+      snapshotText: "Account deleted successfully.",
+    });
+    (agent as any).originalQuery =
+      "Dismiss the overlays, fill in the email, then delete the account and confirm it.";
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary:
+        "Clicked Confirm Delete and verified the account was deleted successfully.",
+      currentStepIndex: 0,
+    });
+
+    expect(result).toBe(true);
+  });
+
+  test("does not treat unfinished task-field work as a finalization step", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: "Complete the first form section",
+          status: "running",
+        },
+        {
+          description: "Finish populating the remaining task fields",
+          status: "pending",
+        },
+      ],
+      planSteps: [
+        {
+          successCriteria: "First form section completed successfully",
+        },
+        {
+          successCriteria: "All remaining task fields are populated",
+        },
+      ],
+      snapshotText: "First form section completed successfully.",
+    });
+    (agent as any).originalQuery =
+      "Complete all form sections before submitting.";
+
+    const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
+      summary: "Completed the first form section successfully.",
+      currentStepIndex: 0,
+    });
+
+    expect(result).toBe(false);
+  });
+
   test("redirects procurement return to the existing checklist tab", async () => {
     const agent = new AgentLoop(
       "test-key",
