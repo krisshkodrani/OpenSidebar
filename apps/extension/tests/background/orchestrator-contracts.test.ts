@@ -3,6 +3,7 @@ import "../setup";
 import { ToolName, UserSettings } from "../../src/types";
 import { TaskNode } from "../../src/background/orchestrator/types";
 import { buildRoleExecutionContract } from "../../src/background/orchestrator/contracts";
+import { getSkillToolPolicy } from "../../src/background/orchestrator/skills";
 
 const baseSettings: UserSettings = {
   openRouterApiKey: "test",
@@ -119,6 +120,9 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
     expect(contract.allowedTools.includes(ToolName.DONE)).toBe(true);
+    expect(
+      getSkillToolPolicy("modal-overlay-recovery")?.discouragedTools,
+    ).not.toContain(ToolName.DONE);
   });
 
   test("inline-edit-surface suppresses coordinate fallback while keeping commit tools", () => {

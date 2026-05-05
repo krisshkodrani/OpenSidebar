@@ -27,7 +27,7 @@ const MAX_COMPACT_LIST_DETAIL_RESULT_LEN = 220;
 const MAX_PROGRESS_LIST_ITEMS = 4;
 const MAX_PROGRESS_FACTS = 4;
 const VERIFICATION_TURN_QUERY_PATTERN =
-  /\b(did it work|verify|confirm|check if|check whether|does it show|what('s| is) the (status|result|current)|is it there)\b/i;
+  /\b(did it work|verify|check if|check whether|does it show|what('s| is) the (status|result|current)|is it there|confirm (?:the )?(?:current )?(?:status|result|state)|confirm (?:if|whether|that))\b/i;
 
 const PHASE_LABELS: Record<NodeHandoffArtifact["phase"], string> = {
   planned: "Planner",

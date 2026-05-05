@@ -26,6 +26,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "modal-overlays.test.ts",
     "navigation-challenge.test.ts",
     "online-shop.test.ts",
+    "perception-auto-vision.test.ts",
     "web-components.test.ts",
   ],
   "runtime-regression": [
@@ -38,6 +39,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation-cross-tab.test.ts",
     "continuation-verify.test.ts",
     "continuation.test.ts",
+    "lane-topology.test.ts",
     "profile-checkout.test.ts",
     "profile-job-application.test.ts",
     "sequential-tasks.test.ts",

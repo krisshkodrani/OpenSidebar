@@ -187,6 +187,7 @@ import {
   assessDeadEndPattern,
   assessSameUrlForcedEscalation,
   assessStepDurationWatchdog,
+  buildOverlayRecoveryCompletionSummary,
   buildFailureBrief,
   buildHandoffBriefing,
   buildSubgoalAttempt,
@@ -205,6 +206,7 @@ import {
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
+  isDoneSummaryGroundedInSnapshot,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   matchSuccessCriteria,
@@ -1356,6 +1358,14 @@ export class AgentLoop {
     const elementCount = snap?.elements?.length ?? 0;
     const visibleLen = (snap?.visibleContent || snap?.pageContent || "").length;
     if (elementCount <= 5 || visibleLen <= 100) {
+      return false;
+    }
+    if (isDoneSummaryGroundedInSnapshot(summary, snap)) {
+      this.traceRecorder?.recordEvent("done_grounded_from_snapshot", {
+        turn: this.turnCount,
+        elementCount,
+        visibleLen,
+      });
       return false;
     }
 
@@ -6237,6 +6247,22 @@ export class AgentLoop {
             messages: recentMessages,
             snapshot: this.context.getSnapshot(),
           });
+          const overlayRecoveryCompletion =
+            buildOverlayRecoveryCompletionSummary({
+              originalQuery: this.originalQuery,
+              selectedSkillId: this.selectedSkillId,
+              snapshot: this.context.getSnapshot(),
+              toolOutcomes: turnToolOutcomes,
+            });
+          if (overlayRecoveryCompletion) {
+            signalCompletedResult(overlayRecoveryCompletion);
+            this.traceRecorder?.recordEvent("overlay_recovery_completed", {
+              turn: this.turnCount,
+              selectedSkillId: this.selectedSkillId,
+            });
+            await this.traceRecorder?.endTurn();
+            break;
+          }
           const { turnSuccesses, turnFailures } =
             countTrailingToolResultOutcomes(recentMessages);
 

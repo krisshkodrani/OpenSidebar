@@ -24,7 +24,8 @@ import {
 import { getFixtureUrl } from "./helpers/fixture-server";
 import {
   extractDoneSummary,
-  findNewTraceFile,
+  filterTraceFilesByWorkspace,
+  findAllNewTraceFiles,
   readTrace,
   formatTraceSummary,
 } from "./helpers/diagnostics";
@@ -53,7 +54,10 @@ describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
     );
 
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const traceFile = findNewTraceFile(h.tracesBefore);
+    const traceFile = filterTraceFilesByWorkspace(
+      findAllNewTraceFiles(h.tracesBefore),
+      workspaceId,
+    )[0];
     expect(traceFile).toBeTruthy();
 
     const turns = readTrace(traceFile!);
