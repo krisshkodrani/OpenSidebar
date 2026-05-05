@@ -14,7 +14,7 @@ import { importPlaywrightStorageState } from "./helpers/session-state";
 const h = createE2EHarness({ testLabel: "session-state-import" });
 
 describe("E2E: Session State Import", () => {
-  beforeAll(() => h.beforeAllHook(), 60_000);
+  beforeAll(() => h.beforeAllHook(), 120_000);
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("session-state-import"));
   afterAll(() => h.afterAllHook());

@@ -27,6 +27,7 @@ const MIME_TYPES: Record<string, string> = {
 
 let server: http.Server | null = null;
 let serverPort = 0;
+const STOP_TIMEOUT_MS = 3_000;
 
 export function getFixtureUrl(route: string): string {
   if (!serverPort) throw new Error("Fixture server not started");
@@ -92,13 +93,38 @@ export async function startFixtureServer(): Promise<number> {
 }
 
 export async function stopFixtureServer(): Promise<void> {
-  return new Promise((resolve) => {
-    if (server) {
-      server.close(() => resolve());
-      server = null;
-      serverPort = 0;
-    } else {
+  const activeServer = server;
+  if (!activeServer) return;
+
+  server = null;
+  serverPort = 0;
+
+  let closeError: Error | undefined;
+  const closed = new Promise<void>((resolve) => {
+    activeServer.close((error) => {
+      closeError = error ?? undefined;
       resolve();
-    }
+    });
   });
+
+  const timedOut = await Promise.race([
+    closed.then(() => false),
+    new Promise<boolean>((resolve) =>
+      setTimeout(() => resolve(true), STOP_TIMEOUT_MS),
+    ),
+  ]);
+
+  if (timedOut) {
+    activeServer.closeAllConnections?.();
+    activeServer.closeIdleConnections?.();
+    await Promise.race([
+      closed,
+      new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+    ]);
+    console.warn("[e2e] Fixture server close timed out; forced open connections closed.");
+  }
+
+  if (closeError) {
+    console.warn(`[e2e] Fixture server close reported: ${closeError.message}`);
+  }
 }

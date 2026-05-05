@@ -12,8 +12,10 @@ import puppeteer, {
   type Target,
   type WebWorker,
 } from "puppeteer";
+import { execFile } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
+import { promisify } from "util";
 
 export interface ExtensionContext {
   browser: Browser;
@@ -29,10 +31,76 @@ const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
 const HELPER_PATH = "/e2e-helper.html";
 const TRACE_VIEWER_URL = "http://127.0.0.1:7589/viewer";
 const HEADLESS_VIEWPORT = { width: 1365, height: 900 } as const;
+const DEFAULT_BROWSER_CLOSE_TIMEOUT_MS = 3_000;
+const DEFAULT_EXTENSION_PAGE_LOAD_TIMEOUT_MS = 15_000;
+const SERVICE_WORKER_TARGET_TIMEOUT_MS = 30_000;
+const execFileAsync = promisify(execFile);
+
+class OperationTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OperationTimeoutError";
+  }
+}
 
 function shouldRunHeadless(): boolean {
   const value = process.env.E2E_HEADLESS?.toLowerCase();
   return value === "true" || value === "1" || value === "yes";
+}
+
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new OperationTimeoutError(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function forceKillBrowser(browser: Browser): Promise<boolean> {
+  let browserProcess: ReturnType<Browser["process"]>;
+  try {
+    browserProcess = browser.process();
+  } catch {
+    return false;
+  }
+  if (!browserProcess || browserProcess.killed) return false;
+  if (process.platform === "win32" && browserProcess.pid) {
+    try {
+      await execFileAsync(
+        "taskkill",
+        ["/PID", String(browserProcess.pid), "/T", "/F"],
+        { windowsHide: true },
+      );
+      return true;
+    } catch {
+      // Fall through to ChildProcess.kill for non-standard Windows shells.
+    }
+  }
+  try {
+    if (browserProcess.kill("SIGKILL")) return true;
+  } catch {
+    // Windows may reject SIGKILL; fall back to the platform default signal.
+  }
+  try {
+    return browserProcess.kill();
+  } catch {
+    return false;
+  }
 }
 
 async function createBrowserPage(browser: Browser): Promise<Page> {
@@ -101,6 +169,7 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
   const headless = shouldRunHeadless();
   const browser = await puppeteer.launch({
     headless,
+    enableExtensions: true,
     defaultViewport: headless ? HEADLESS_VIEWPORT : null,
     args: [
       `--disable-extensions-except=${DIST_PATH}`,
@@ -114,11 +183,17 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
     pipe: true,
   });
 
-  // Wait for the service worker target to appear
-  const swTarget = await browser.waitForTarget(
-    (t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"),
-    { timeout: 15_000 },
-  );
+  let swTarget: Target;
+  try {
+    // Wait for the service worker target to appear
+    swTarget = await browser.waitForTarget(
+      (t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"),
+      { timeout: SERVICE_WORKER_TARGET_TIMEOUT_MS },
+    );
+  } catch (error) {
+    await closeExtension({ browser } as ExtensionContext);
+    throw error;
+  }
 
   const serviceWorker = (await swTarget.worker())!;
   if (!serviceWorker) {
@@ -146,8 +221,20 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
 /**
  * Gracefully close the browser.
  */
-export async function closeExtension(ctx: ExtensionContext): Promise<void> {
-  await ctx.browser.close();
+export async function closeExtension(
+  ctx: ExtensionContext,
+  timeoutMs: number = DEFAULT_BROWSER_CLOSE_TIMEOUT_MS,
+): Promise<void> {
+  try {
+    await withTimeout(ctx.browser.close(), timeoutMs, "Browser close");
+  } catch (error) {
+    const killed = await forceKillBrowser(ctx.browser);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[e2e] Browser close did not finish cleanly (${reason}); ` +
+        `${killed ? "killed browser process" : "no browser process to kill"}.`,
+    );
+  }
 }
 
 /**
@@ -181,7 +268,10 @@ export async function openHelperPage(ctx: ExtensionContext): Promise<Page> {
     ctx.helperPage = helperPage;
   }
   if (helperPage.url() !== helperUrl) {
-    await helperPage.goto(helperUrl, { waitUntil: "domcontentloaded" });
+    await helperPage.goto(helperUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: DEFAULT_EXTENSION_PAGE_LOAD_TIMEOUT_MS,
+    });
   }
   const [url, title] = await Promise.all([
     helperPage.url(),
@@ -201,7 +291,10 @@ export async function openTraceViewerPage(
   hash: string = "#view=backend",
 ): Promise<Page> {
   const page = await createBrowserPage(ctx.browser);
-  await page.goto(`${TRACE_VIEWER_URL}${hash}`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${TRACE_VIEWER_URL}${hash}`, {
+    waitUntil: "domcontentloaded",
+    timeout: DEFAULT_EXTENSION_PAGE_LOAD_TIMEOUT_MS,
+  });
   return page;
 }
 

@@ -51,7 +51,7 @@ function extractDoneSummary(traceFiles: string[]): string | null {
 }
 
 describe.skipIf(!h.apiKey)("E2E: Delayed Content", () => {
-  beforeAll(async () => { await h.beforeAllHook(); }, 60_000);
+  beforeAll(async () => { await h.beforeAllHook(); }, 120_000);
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("delayed-content"));
   afterAll(() => h.afterAllHook());

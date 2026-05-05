@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { __testOnly as e2eUtilsTestOnly } from "../e2e/helpers/utils";
+import { closeExtension } from "../e2e/helpers/browser";
 import {
   extractDoneSummary,
   filterTraceFilesByWorkspace,
@@ -120,5 +121,26 @@ describe("e2e helper semantics", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("bounds a stuck browser close and kills the browser process", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const kill = vi.fn(() => true);
+    const close = vi.fn(() => new Promise<void>(() => {}));
+    const ctx = {
+      browser: {
+        close,
+        process: () => ({ killed: false, kill }),
+      },
+    };
+
+    try {
+      await closeExtension(ctx as any, 5);
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(kill).toHaveBeenCalledWith("SIGKILL");
   });
 });

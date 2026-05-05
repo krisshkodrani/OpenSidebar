@@ -51,7 +51,7 @@ describe.skipIf(!h.apiKey)("E2E: Mutation Dedupe Recovery", () => {
       allowNavigation: true,
       requireApprovals: false,
     });
-  }, 60_000);
+  }, 120_000);
 
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("mutation-dedupe-recovery"));
