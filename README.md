@@ -98,6 +98,14 @@ npm run fmt        # Prettier
 - Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `npx tsx scripts/workarena-doctor.ts` and `npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
+## Harness And Skill Philosophy
+
+OpenSidebar uses benchmarks and fixtures to expose missing general browser-agent capabilities, not as targets for one-off shortcuts. The harness should stay thin: it can reset state, transfer sessions, collect traces, and validate outcomes, but product behavior belongs in the runtime, tools, controllers, prompts, or reusable skills.
+
+For WorkArena and ServiceNow work, the goal is not to hardcode a 100% benchmark pass. The goal is to improve broad workflow classes: menu navigation, form fill and readback, list filters and sorting, dashboard/chart extraction, knowledge search, catalog checkout, multi-tab work, and sincere infeasible-task handling. WorkArena validation is the proof that these general capabilities work.
+
+When a workflow is stable enough to teach, prefer a generic skill with sequencing, evidence expectations, and tool discipline. Site-specific or organization-specific procedures should eventually be user-authored custom skills, not hidden benchmark logic in the harness.
+
 ## Repo Layout
 
 - `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
@@ -133,6 +141,7 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Tools Reference](./docs/features/tools.md)
 - [WorkArena Roadmap](./docs/evals/workarena-roadmap.md)
 - [WorkArena Setup](./docs/evals/workarena.md)
+- [Right Level Of Abstraction](./docs/guides/right-level-of-abstraction.md)
 - [Personal Profile](./docs/personal-profile.md)
 - [Release Checklist](./docs/release-checklist.md)
 
