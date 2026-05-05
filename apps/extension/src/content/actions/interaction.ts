@@ -281,8 +281,9 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     return host.endsWith(".service-now.com") || host.endsWith(".servicenow.com");
   };
 
-  // Z-Index Check: Auto-hide covering overlays (up to 3 layers) before clicking
-  const MAX_OVERLAY_RETRIES = 3;
+  // Do not hide page overlays here: a real user click would be intercepted,
+  // and clicking through modal/backdrop state can toggle the wrong control.
+  const MAX_OVERLAY_RETRIES = 0;
   for (let attempt = 0; attempt < MAX_OVERLAY_RETRIES; attempt++) {
     const rect = el.getBoundingClientRect();
     const x = rect.left + rect.width / 2;

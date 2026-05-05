@@ -5560,7 +5560,7 @@ export class AgentLoop {
       `${snapshot?.title || ""}\n${snapshot?.url || ""}\n${snapshot?.visibleContent || ""}\n${snapshot?.pageContent || ""}`,
     );
     const confirmationIntent =
-      /\b(submit|submission|confirm|confirmation|complete|completed|success|sent|saved|applied|placed)\b/i.test(
+      /\b(submit|submission|confirm|confirmation|sent|saved|applied|placed)\b/i.test(
         taskContext,
       );
     const summaryShowsFinalization =
@@ -5607,6 +5607,61 @@ export class AgentLoop {
       snapshotShowsFinalState
     ) {
       return true;
+    }
+
+    const nextStepText = normalizeGuardText(
+      [
+        this.planSubtasks[currentStepIndex + 1]?.description,
+        this.planSteps[currentStepIndex + 1]?.objective,
+        this.planSteps[currentStepIndex + 1]?.successCriteria,
+      ]
+        .filter(
+          (part): part is string =>
+            typeof part === "string" && part.length > 0,
+        )
+        .join("\n"),
+    );
+    const nextStepIsFinalizationOnly =
+      /\b(?:terminate|end|close|finali[sz]e)\b[\s\S]{0,80}\b(?:task|workflow|run)\b/i.test(
+        nextStepText,
+      ) ||
+      /\b(?:finish|complete)\s+(?:the\s+)?(?:task|workflow|run)\b/i.test(
+        nextStepText,
+      ) ||
+      /\b(?:task|workflow|run)\s+(?:is\s+)?(?:finished|complete|completed|done)\b/i.test(
+        nextStepText,
+      ) ||
+      /\b(?:call|use)\s+done\b/i.test(nextStepText) ||
+      /\breport\s+(?:success|completion|that\b[\s\S]{0,80}\bcomplete)/i.test(
+        nextStepText,
+      );
+    const terminalMutationIntent =
+      /\b(confirm|confirmation|delete|deletion|remove|removal|submit|submission|save|apply|send|post|complete|success|close|dismiss|update|change)\b/i.test(
+        taskContext,
+      );
+    const summaryShowsTerminalState =
+      /\b(success(?:fully)?|completed?|confirmed?|deleted?|removed?|saved|submitted?|sent|posted|closed|dismissed|updated|changed|finished)\b/i.test(
+        summaryText,
+      );
+    const snapshotShowsTerminalMutation =
+      /\b(?:deleted|removed|saved|submitted|sent|posted|closed|dismissed|updated|changed|completed|confirmed)\s+successfully\b/i.test(
+        snapshotText,
+      ) ||
+      /\b(?:success|successful|thank you|confirmation|receipt|completed)\b/i.test(
+        snapshotText,
+      );
+    if (
+      nextStepIsFinalizationOnly &&
+      terminalMutationIntent &&
+      summaryShowsTerminalState &&
+      snapshotShowsTerminalMutation
+    ) {
+      const coherence = checkSummaryStepCoherence({
+        summary,
+        currentStepIndex,
+        stepDescriptions: this.planSubtasks.map((s) => s.description),
+      });
+      if (coherence.coherent) return true;
     }
 
     const editIntent =

@@ -401,6 +401,69 @@ describe("Content Actions", () => {
       }
     });
 
+    test("click_element does not hide page overlays to click a covered target", async () => {
+      document.body.innerHTML = `
+                <button id="target">Delete Account</button>
+                <div id="backdrop" class="modal">
+                  <button id="confirm">Confirm Delete</button>
+                </div>
+            `;
+      const target = document.getElementById("target") as HTMLButtonElement;
+      const backdrop = document.getElementById("backdrop") as HTMLDivElement;
+      target.getBoundingClientRect = () =>
+        ({
+          x: 100,
+          y: 100,
+          top: 100,
+          left: 100,
+          right: 220,
+          bottom: 140,
+          width: 120,
+          height: 40,
+          toJSON: () => {},
+        }) as DOMRect;
+      backdrop.getBoundingClientRect = () =>
+        ({
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: 500,
+          bottom: 500,
+          width: 500,
+          height: 500,
+          toJSON: () => {},
+        }) as DOMRect;
+      backdrop.style.cssText =
+        "position: fixed; inset: 0; z-index: 1000; display: block;";
+      resetStableIds();
+      tagElements();
+
+      const targetId = Number(target.getAttribute("data-os-tag"));
+      const clickHandler = vi.fn();
+      target.addEventListener("click", clickHandler);
+      const initialBackdropHtml = backdrop.outerHTML;
+      const elementFromPoint = vi
+        .spyOn(document, "elementFromPoint")
+        .mockImplementation(() =>
+          backdrop.style.display === "none" ? target : backdrop,
+        );
+
+      try {
+        const result = await executeAction(ToolName.CLICK_ELEMENT, {
+          id: targetId,
+        });
+
+        expect(result.success).toBe(false);
+        expect(result.result).toContain("Click intercepted");
+        expect(backdrop.style.display).toBe("block");
+        expect(backdrop.outerHTML).toBe(initialBackdropHtml);
+        expect(clickHandler).not.toHaveBeenCalled();
+      } finally {
+        elementFromPoint.mockRestore();
+      }
+    });
+
     test("type_text accepts string tag IDs", async () => {
       document.body.innerHTML = `<input id="email" type="email" />`;
       resetStableIds();
