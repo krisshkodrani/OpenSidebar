@@ -10,9 +10,9 @@ Key areas:
 
 - `apps/extension/src/background`: the main agent runtime, including the orchestrator, agent loop, tools, LLM client, skills, checkpoints, and durability logic.
 - `apps/extension/src/content`: content-script code and page bridge logic.
-- `apps/extension/src/sidepanel`: the extension UI used to start and monitor tasks.
-- `apps/extension/src/shared/`: shared React UI components (used by both sidepanel and overlay harness).
-- `apps/extension/src/adapters/`: BrowserAdapter implementations (chrome, playwright, mock) for decoupled environment I/O.
+- `apps/extension/src/sidepanel`: the React UI used to start and monitor tasks; it runs in the Chrome sidepanel and is reused by the overlay harness through a runtime port.
+- `apps/extension/src/overlay`: the draggable in-page overlay harness, including host, runtime, driver, and runner helpers.
+- `apps/extension/src/background/environment`: partial environment ports for background page/content/persistence I/O.
 - `apps/extension/src/trace-viewer`: the trace viewer and analytics UI.
 - `apps/extension/tests/background`: focused runtime and orchestrator tests.
 - `apps/extension/tests/e2e`: fixture-driven E2E tests for real browser behavior.
@@ -27,20 +27,20 @@ Repo policy:
 - If Notion is available, send archive-bound notes, reports, RFCs, and research writeups there directly instead of keeping them in git.
 - If a real product bug, follow-up task, or cleanup need is identified during work and is not being fixed immediately, create a GitHub issue for it when GitHub tools are available.
 
-## Harness Architecture Direction (RFC-012 Draft)
+## Harness Architecture Direction (RFC-012 Implemented With Caveat)
 
-OpenSidebar is evaluating a dual-environment model:
+OpenSidebar has implemented the boundary-first part of RFC-012:
 
-- **Extension (production):** Chrome sidepanel + chromeAdapter. Uses `chrome.tabs`, `chrome.scripting`, `chrome.storage`, `chrome.runtime`.
-- **Overlay (testing):** Draggable panel injected into any page via Playwright + playwrightAdapter. Uses `page.evaluate()`, `page.screenshot()`, in-memory storage.
-- **Headless (CI):** No UI. agent-core + mockAdapter. Trajectory output only.
+- **Extension (production):** Chrome sidepanel + `chromeUiRuntimePort` in `apps/extension/src/sidepanel/runtime.ts`, plus Chrome-backed background environment ports where they already exist.
+- **Overlay (testing):** Draggable panel injected into a generic page through `apps/extension/src/overlay`, with an in-memory `UiRuntimePort` and reusable runner page-port helpers.
+- **Headless/mock readiness:** Proven at the overlay runner page-port level, but a full headless agent-core runtime and replay contract are still deferred.
 
-The target direction is for the same agent-core to run identically across all three. The shared React UI (sidepanel components) would power both the extension sidepanel and the overlay. A `BrowserAdapter` interface would abstract environment-specific I/O.
+The target direction remains for reusable agent-core behavior to run consistently across extension, overlay, and headless/mock environments. The current implementation is not a single `BrowserAdapter` tree: use the existing small ports instead of inventing a parallel abstraction.
 
-Draft design constraints to preserve while RFC-012 is under review:
+Design constraints to preserve:
 
-- Sidepanel/UI components must NOT import `chrome.*` APIs directly. Use the bridge abstraction or adapter. Chrome APIs belong in the adapter layer only.
-- Agent-core (background) changes should avoid making a future overlay/headless adapter harder.
+- Sidepanel/UI components must NOT import `chrome.*` APIs directly. Use `apps/extension/src/sidepanel/runtime.ts`; Chrome APIs belong there for UI concerns.
+- New reusable background I/O should prefer `apps/extension/src/background/environment` ports where they exist. Chrome APIs are still expected in production shell/lifecycle code until those areas are explicitly ported.
 - Trajectories should avoid Chrome-specific fields when the data is intended for cross-environment replay.
 
 ## Default Change Placement
@@ -51,7 +51,7 @@ Prefer these locations when making changes:
 - Put page interaction fixes in reusable runtime policy, controllers, or skills before considering test changes.
 - Keep content-script and bridge fixes in `apps/extension/src/content` or background tool/bridge code, not in fixtures.
 - **E2E test harness (fixtures):** Keep thin. It may configure the environment, seed minimal state, collect diagnostics, and assert results, but it must not contain product logic.
-- **Overlay harness (RFC-012 draft):** If approved, this should be treated as product code rather than a throwaway test utility. Until approved, avoid adding hard dependencies on it.
+- **Overlay harness (RFC-012):** Treat this as product-quality test infrastructure, not a throwaway fixture. Keep dependencies explicit and avoid smuggling product behavior into the harness.
 - Use skills when a workflow pattern is stable and reusable across sites or tasks.
 - Use test-only instrumentation only when it is pure observability or minimal state injection needed for determinism.
 - Do not add repo-backed research workflows, vendored agent repos, or note-taking systems to the product tree.
