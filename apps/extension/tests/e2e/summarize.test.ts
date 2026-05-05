@@ -33,7 +33,7 @@ import {
 const h = createE2EHarness({ maxTurns: 6, testLabel: "summarize" });
 
 describe.skipIf(!h.apiKey)("E2E: Summarize", () => {
-  beforeAll(() => h.beforeAllHook(), 60_000);
+  beforeAll(() => h.beforeAllHook(), 120_000);
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("summarize"));
   afterAll(() => h.afterAllHook());

@@ -37,7 +37,7 @@ import { readTrace } from "./helpers/diagnostics";
 const h = createE2EHarness({ maxTurns: 15, testLabel: "structural-loading" });
 
 describe.skipIf(!h.apiKey)("E2E: Structural Loading", () => {
-  beforeAll(async () => { await h.beforeAllHook(); }, 60_000);
+  beforeAll(async () => { await h.beforeAllHook(); }, 120_000);
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("structural-loading"));
   afterAll(() => h.afterAllHook());

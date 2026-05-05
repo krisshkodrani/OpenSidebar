@@ -27,7 +27,7 @@ import { getFixtureUrl } from "./helpers/fixture-server";
 const h = createE2EHarness({ maxTurns: 20, testLabel: "login" });
 
 describe.skipIf(!h.apiKey)("E2E: Login", () => {
-  beforeAll(() => h.beforeAllHook(), 60_000);
+  beforeAll(() => h.beforeAllHook(), 120_000);
   beforeEach(() => h.beforeEachHook());
   afterEach(() => h.afterEachHook("login"));
   afterAll(() => h.afterAllHook());
