@@ -196,6 +196,24 @@ When working on runtime behavior, skills, prompts, or E2E-related failures, foll
 17. Sidepanel UI components must be environment-agnostic. Do not call `chrome.*` APIs directly inside components — use the bridge abstraction for message passing and persistence. This keeps the shared React app portable between sidepanel (chromeAdapter) and overlay (playwrightAdapter).
 18. Trajectories must be environment-agnostic. Record tool calls, observations, and step labels in a format that replays identically across adapters. Do not include Chrome-specific fields (tab ID references, `chrome.storage` keys) in trajectory entries intended for replay.
 
+## WorkArena And Generic Skill Philosophy
+
+Treat WorkArena as a high-signal evaluator, not as the product goal. A WorkArena failure should usually become a generic browser-agent capability improvement, and a WorkArena pass should be counted only when the real validator passes without hidden benchmark knowledge.
+
+Do not chase 100% WorkArena by adding task-id branches, seed branches, hidden expected values, or runner shortcuts. The intended path is to solve as much as possible through reusable runtime behavior and generic skills, then leave truly organization-specific procedures to user-authored custom skills.
+
+When ServiceNow or WorkArena exposes a stable workflow shape, prefer these fix layers in order:
+
+- tool/runtime primitive for repeated page operations;
+- domain adapter for stable platform semantics such as reference fields, choice values, frames, tables, and catalog state;
+- generic skill for sequencing, evidence, and tool discipline;
+- planner policy only when routing to the right workflow class is the repeated failure;
+- harness changes only for setup, session transfer, observation, validation, and reporting.
+
+Good generic skill candidates include menu navigation, form fill with field readback, list filtering, list sorting, dashboard or chart extraction, knowledge search answer extraction, service catalog ordering, multi-tab checklist work, and infeasible-task clarification. A skill must still be written as broadly as the workflow allows and must not depend on fixture selectors, WorkArena prompts, or validator-only facts.
+
+After a full staged E2E run is green, WorkArena work should proceed from a guarded ServiceNow smoke or category sample, then use trace learning and grade reports to choose the next generic runtime or skill improvement. Prefer category-balanced progress and trace clarity over isolated benchmark wins.
+
 ## Prompt And Skill Guidance
 
 - Prefer natural prompts in fixtures and tests. They should read like normal user requests, not activation phrases for a specific tool.

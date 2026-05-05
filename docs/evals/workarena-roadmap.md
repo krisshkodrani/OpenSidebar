@@ -1,6 +1,6 @@
 # WorkArena Roadmap
 
-Last updated: 2026-04-29
+Last updated: 2026-05-05
 
 This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to full graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
 
@@ -22,6 +22,7 @@ Recently resolved:
 - Initial reusable workflow skills and read-only inspectors now cover chart value extraction, knowledge/search answer extraction, list filtering, list sorting, and service catalog ordering. The first layer is generic runtime behavior, not WorkArena-specific fixture logic.
 - A thin suite runner and standalone grader are available. They reuse `workarena-handoff`, write reports under `.artifacts/e2e/`, and compute score-first pass@1 plus category-balanced pass@1.
 - The latest dated 7-case ServiceNow sample grades at 7/7 pass@1, with remaining efficiency warnings on form and catalog workflows.
+- The current pre-WorkArena checkpoint is to finish RFC promotion into stable docs, run the full staged OpenSidebar E2E suite, then continue to ServiceNow/WorkArena with the generic-skill-first policy below.
 
 ## Evaluation Contract
 
@@ -197,6 +198,8 @@ For each failure:
 
 Prefer reusable behavior over benchmark-specific prompts.
 
+WorkArena is an evaluator for broad browser-agent capability, not a target for benchmark-specific code. Do not add task-id branches, seed branches, hidden expected values, or harness shortcuts to make one case pass. A passing run is valuable when it proves a reusable runtime behavior, domain adapter, tool primitive, or generic skill.
+
 Good candidates for runtime or skill work:
 
 - ServiceNow menu navigation with filtered All-menu results.
@@ -206,6 +209,8 @@ Good candidates for runtime or skill work:
 - List/table column sort workflows.
 - Chart value extraction with DOM plus visual fallback.
 - Catalog checkout with intermediate cart verification.
+- Multi-tab checklist workflows with explicit return-to-source and completion evidence.
+- Infeasible or ambiguous task handling that asks for clarification instead of pretending progress.
 
 Rules:
 
@@ -214,6 +219,7 @@ Rules:
 - Skills must not use test-only selectors.
 - Harness code may observe, seed minimal state, collect diagnostics, and assert results.
 - Harness code must not become product behavior.
+- If a workflow is organization-specific rather than generally reusable, keep the product path open for user-authored custom skills instead of encoding that workflow in the harness.
 
 ## Reporting Policy
 
@@ -237,8 +243,9 @@ Do not commit dated E2E result reports under `docs/`.
 
 ## Immediate Next Steps
 
-1. Run the atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
-2. Use the generated grade report to rank failures and high-turn passes by category.
-3. Fix ServiceNow form efficiency first if `create-incident` remains high-turn or warning-heavy.
-4. Improve ServiceNow menu/catalog navigation efficiency if service-catalog runs remain high-turn.
-5. Add `pass@2` only after the no-retry baseline is captured.
+1. Finish promoting completed RFC conclusions into stable repo docs without committing RFC drafts.
+2. Run the full staged OpenSidebar E2E suite before starting the next real WorkArena batch.
+3. If staged is green, run the guarded ServiceNow smoke or atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
+4. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category.
+5. Fix the broadest reusable behavior first: runtime/tool/domain adapter when possible, generic skill when the workflow sequence is the missing piece.
+6. Add `pass@2` only after the no-retry baseline is captured.
