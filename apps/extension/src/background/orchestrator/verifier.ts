@@ -71,6 +71,16 @@ const ERROR_MARKERS = [
   "cannot",
 ];
 
+const NEGATIVE_COMPLETION_PATTERNS = [
+  /\b(?:verification|verifier)\s+(?:result|status)?\s*[:-]?\s*(?:task\s+)?not\s+(?:complete|completed|successful|satisfied|verified)\b/i,
+  /\btask\s+(?:is\s+)?not\s+complete\b/i,
+  /\b(?:field|input|value|required\s+state|required\s+value|actual\s+value)\b[\s\S]{0,120}\b(?:does\s+not\s+contain|missing|absent|empty|not\s+present|not\s+filled|not\s+set)\b/i,
+  /\bdid\s+not\s+(?:complete|succeed|work|match|fill|submit|save|update|delete|confirm)\b/i,
+  /\bhas\s+not\s+been\s+(?:completed|filled|submitted|saved|updated|deleted|confirmed)\b/i,
+  /\bnot\s+successfully\s+(?:filled|submitted|saved|updated|deleted|confirmed)\b/i,
+  /\brequired\s+value\b[\s\S]{0,120}\b(?:missing|absent|empty|not present)\b/i,
+];
+
 const GOAL_TOKEN_STOPWORDS = new Set([
   "page",
   "pages",
@@ -230,6 +240,10 @@ function isClarificationNeededOutcome(text: string): boolean {
   );
 }
 
+function hasNegativeCompletionEvidence(text: string): boolean {
+  return NEGATIVE_COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function evidenceConfidenceRank(value: EvidenceEvent["confidence"]): number {
   if (value === "high") return 3;
   if (value === "medium") return 2;
@@ -306,6 +320,16 @@ export function programmaticVerify(
       decision: "accept",
       reason: `Required typed evidence is present: ${input.requiredEvidenceTypes?.join(", ")}.`,
       confidence: 0.95,
+    };
+  }
+
+  if (hasNegativeCompletionEvidence(input.output)) {
+    return {
+      decision: "retry",
+      reason:
+        "Executor output explicitly says the step is not complete or the required state is missing.",
+      confidence: 0.9,
+      failureType: "state_mismatch",
     };
   }
 

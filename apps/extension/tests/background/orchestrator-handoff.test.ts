@@ -280,6 +280,12 @@ describe("Orchestrator handoff briefing", () => {
     expect(isVerificationTurnQuery("Did it work? What's the status now?")).toBe(
       true,
     );
+    expect(isVerificationTurnQuery("Confirm the current status")).toBe(true);
+    expect(
+      isVerificationTurnQuery(
+        "Fill in the email field, then click delete account and confirm the deletion.",
+      ),
+    ).toBe(false);
     expect(isVerificationTurnQuery("Click Save and continue")).toBe(false);
   });
 

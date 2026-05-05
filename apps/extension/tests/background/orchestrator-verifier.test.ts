@@ -73,6 +73,45 @@ describe("Orchestrator verifier fallback", () => {
     expect(decision?.reason).toContain("deferred an ambiguous choice");
   });
 
+  test("retries completed outputs that explicitly say the required state is missing", () => {
+    const decision = programmaticVerify({
+      output:
+        'Verification Result: Task NOT Complete. The email field does not contain the required value "test@example.com"; actual value is empty.',
+      objective: "Fill the email field with test@example.com",
+      successCriteria: "Email input field contains test@example.com",
+      evidence: [
+        {
+          claim: 'read_element [1] value=""',
+          basis: "tool_output",
+          confidence: 0.95,
+        },
+      ],
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.decision).toBe("retry");
+    expect(decision?.failureType).toBe("state_mismatch");
+  });
+
+  test("does not treat a legitimate Not Complete field value as failed verification", () => {
+    const decision = programmaticVerify({
+      output:
+        'Completed successfully. Verified the Status field is now "Not Complete".',
+      objective: 'Set the Status field to "Not Complete"',
+      successCriteria: 'Status field shows "Not Complete"',
+      evidence: [
+        {
+          claim: 'Status field value is "Not Complete".',
+          basis: "tool_output",
+          confidence: 0.95,
+        },
+      ],
+      executorOutcome: "completed",
+    });
+
+    expect(decision?.decision).not.toBe("retry");
+  });
+
   test("does not accept generic clarification text without a missing choice", () => {
     const decision = programmaticVerify({
       output: "I need clarification before proceeding, but I cannot complete the task.",

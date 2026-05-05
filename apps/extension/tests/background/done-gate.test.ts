@@ -11,7 +11,9 @@ import "../setup";
 import { isDoneSummaryAskingClarification } from "../../src/background/agent/loop";
 import {
   buildFirstTurnTextOnlyNudge,
+  buildOverlayRecoveryCompletionSummary,
   evaluateDoneTaskContractGuard,
+  isDoneSummaryGroundedInSnapshot,
   matchSuccessCriteria,
   requiresGroundingReadBeforeDone,
   snapshotSearchText,
@@ -310,6 +312,94 @@ describe("requiresGroundingReadBeforeDone", () => {
     expect(
       requiresGroundingReadBeforeDone("What is the URL of this page?"),
     ).toBe(false);
+  });
+});
+
+describe("isDoneSummaryGroundedInSnapshot", () => {
+  const transformerArticle = `
+    The Transformer architecture has revolutionized natural language processing.
+    At the heart of Transformers lies the attention mechanism, allowing models
+    to weigh different parts of input data. Transformers consist of an encoder
+    that processes input data and a decoder that generates output. Positional
+    encodings are added to input embeddings so the model understands sequence
+    order.
+  `;
+
+  test("accepts summaries grounded in page body content", () => {
+    expect(
+      isDoneSummaryGroundedInSnapshot(
+        "The page explains Transformer architecture, including attention, encoder-decoder structure, and positional encoding for sequence order.",
+        makeSnapshot({ pageContent: transformerArticle }),
+      ),
+    ).toBe(true);
+  });
+
+  test("rejects generic summaries that do not overlap with page body content", () => {
+    expect(
+      isDoneSummaryGroundedInSnapshot(
+        "The page provides a helpful overview with several important key points and clear examples.",
+        makeSnapshot({ pageContent: transformerArticle }),
+      ),
+    ).toBe(false);
+  });
+
+  test("rejects title-only grounding", () => {
+    expect(
+      isDoneSummaryGroundedInSnapshot(
+        "The page is about Transformer Architecture in Modern AI.",
+        makeSnapshot({
+          title: "Transformer Architecture in Modern AI",
+          pageContent: "",
+          visibleContent: "",
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("buildOverlayRecoveryCompletionSummary", () => {
+  test("completes overlay recovery after no overlay inspection and no visible dismiss targets", () => {
+    const summary = buildOverlayRecoveryCompletionSummary({
+      originalQuery:
+        "Close the cookie banner at the bottom and the newsletter popup so I can see the page.",
+      selectedSkillId: "modal-overlay-recovery",
+      snapshot: makeSnapshot({
+        pageContent: "Account Settings Notification Email Delete Account",
+        elements: [
+          makeElement("Notification Email"),
+          makeElement("Delete Account"),
+        ] as any,
+      }),
+      toolOutcomes: [
+        {
+          toolName: "inspect_hidden",
+          resultContent:
+            'No hidden elements found matching "cookie|newsletter|banner|popup|modal" (scanned in 6ms).',
+        },
+      ],
+    });
+
+    expect(summary).toContain("No blocking cookie banner");
+  });
+
+  test("does not complete overlay recovery while a visible dismiss target remains", () => {
+    const summary = buildOverlayRecoveryCompletionSummary({
+      originalQuery:
+        "Close the cookie banner at the bottom and the newsletter popup so I can see the page.",
+      selectedSkillId: "modal-overlay-recovery",
+      snapshot: makeSnapshot({
+        elements: [makeElement("Accept cookies")] as any,
+      }),
+      toolOutcomes: [
+        {
+          toolName: "inspect_hidden",
+          resultContent:
+            'No hidden elements found matching "cookie|newsletter|banner|popup|modal" (scanned in 6ms).',
+        },
+      ],
+    });
+
+    expect(summary).toBeNull();
   });
 });
 

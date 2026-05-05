@@ -415,6 +415,73 @@ export function snapshotSearchText(snapshot: DomSnapshot | null): string {
     .toLowerCase();
 }
 
+export function isDoneSummaryGroundedInSnapshot(
+  summary: string,
+  snapshot: DomSnapshot | null,
+): boolean {
+  if (!snapshot || summary.trim().length < 40) return false;
+
+  const sourceText = [snapshot.pageContent, snapshot.visibleContent]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (sourceText.length <= 100) return false;
+
+  const sourceTokens = new Set(tokenizeStepText(sourceText));
+  const summaryTokens = tokenizeStepText(summary).filter((token) =>
+    sourceTokens.has(token),
+  );
+  const uniqueOverlap = new Set(summaryTokens).size;
+  const requiredOverlap = Math.min(
+    5,
+    Math.max(3, Math.ceil(tokenizeStepText(summary).length * 0.25)),
+  );
+
+  return uniqueOverlap >= requiredOverlap;
+}
+
+const OVERLAY_RECOVERY_TASK_RE =
+  /\b(?:close|dismiss|clear|remove)\b.{0,80}\b(?:cookie|newsletter|popup|banner|modal|overlay|dialog)s?\b|\b(?:cookie|newsletter)\b.{0,40}\b(?:popup|banner|modal|overlay)\b/i;
+const NO_OVERLAY_INSPECTION_RE =
+  /no hidden elements found matching "[^"]*\b(?:cookie|newsletter|banner|popup|modal|close|dismiss|accept)\b[^"]*"/i;
+const VISIBLE_OVERLAY_DISMISS_TARGET_RE =
+  /\b(?:close newsletter popup|we use cookies|cookie policy|stay updated|subscribe to our newsletter|newsletter popup|accept cookies|accept all|reject cookies|dismiss|close popup)\b/i;
+
+export function buildOverlayRecoveryCompletionSummary(params: {
+  originalQuery: string;
+  selectedSkillId?: string | null;
+  snapshot: DomSnapshot | null;
+  toolOutcomes: Array<{ toolName: string; resultContent: string }>;
+}): string | null {
+  const isOverlayRecovery =
+    params.selectedSkillId === "modal-overlay-recovery" ||
+    OVERLAY_RECOVERY_TASK_RE.test(params.originalQuery);
+  if (!isOverlayRecovery) return null;
+
+  const noOverlayInspection = params.toolOutcomes.some(
+    (outcome) =>
+      outcome.toolName === ToolName.INSPECT_HIDDEN &&
+      NO_OVERLAY_INSPECTION_RE.test(outcome.resultContent),
+  );
+  if (!noOverlayInspection) return null;
+
+  const visibleOverlayTarget = params.snapshot?.elements.some((element) => {
+    if (element.isVisible === false) return false;
+    const elementText = [
+      element.text,
+      element.attributes?.["aria-label"],
+      element.attributes?.title,
+      element.attributes?.id,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return VISIBLE_OVERLAY_DISMISS_TARGET_RE.test(elementText);
+  });
+  if (visibleOverlayTarget) return null;
+
+  return "No blocking cookie banner, newsletter popup, modal, or overlay dismiss target remains visible or hidden; the page is accessible.";
+}
+
 function elementAttributeText(element: DomSnapshot["elements"][number]): string {
   return [
     element.text,

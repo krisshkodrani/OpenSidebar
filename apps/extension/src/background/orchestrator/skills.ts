@@ -752,13 +752,14 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     maturity: "candidate",
     preferredTools: ["read_page", "click_element", "press_key", "read_element"],
-    discouragedTools: ["done", "navigate", "type_text", "dismiss_overlays"],
+    discouragedTools: ["navigate", "type_text", "dismiss_overlays"],
     contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
       "Click the overlay's close/dismiss/accept/X button directly — do not use dismiss_overlays.",
       "Dismiss one overlay at a time, re-read after each to verify it is gone.",
-      "Do not call done until ALL blocking overlays are confirmed gone.",
+      "Call done after ALL blocking overlays are confirmed gone.",
+      "If read_page or inspect_hidden shows no cookie, newsletter, popup, banner, modal, close, dismiss, or accept controls remain, stop searching and call done.",
     ],
   },
   {
@@ -1940,11 +1941,13 @@ const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Prefer click_element on the actual dismiss control over dismiss_overlays.",
+        "Use done immediately after read_page or inspection confirms no blocking overlays remain.",
       ],
       completionChecks: [
         "Initial overlay count is known.",
         "Each dismissal is confirmed by a re-read.",
         "Final page state shows no blocking overlays remain.",
+        "A no-match read_page or inspect_hidden check for overlay terms is sufficient final evidence.",
       ],
       failureRecovery: [
         "If an overlay remains, find a fresh dismiss target or use Escape, then re-read again.",
