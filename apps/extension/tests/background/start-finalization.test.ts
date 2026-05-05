@@ -105,6 +105,54 @@ describe("finalizeStartResult", () => {
     expect(deps.clearTraceRecorder).toHaveBeenCalled();
   });
 
+  test("omits Chrome-specific tool args from replay trajectory summaries", async () => {
+    const result: LoopResult = {
+      outcome: "completed",
+      turnCount: 1,
+      summary: "Switched tabs",
+    };
+    const deps = makeDeps(result, {
+      context: {
+        getMessages: () => [
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call-1",
+                type: "function",
+                function: {
+                  name: ToolName.SWITCH_TAB,
+                  arguments: JSON.stringify({
+                    tabId: 123,
+                    chromeTabId: 456,
+                    storageKey: "chrome.storage.local",
+                  }),
+                },
+              },
+            ],
+          },
+          {
+            role: "tool",
+            tool_call_id: "call-1",
+            content: "Switched to project page",
+          },
+        ],
+      },
+    });
+
+    await finalizeStartResult(deps);
+
+    const trajectory = result.trajectory?.join("\n") ?? "";
+    expect(trajectory).toContain("switch_tab");
+    expect(trajectory).toContain("Switched to project page");
+    expect(trajectory).not.toContain("tabId");
+    expect(trajectory).not.toContain("chromeTabId");
+    expect(trajectory).not.toContain("chrome.storage");
+    expect(trajectory).not.toContain("123");
+    expect(trajectory).not.toContain("456");
+  });
+
   test("preserves pending interaction checkpoints and does not finalize as plan failure", async () => {
     const result: LoopResult = {
       outcome: "awaiting_approval",
