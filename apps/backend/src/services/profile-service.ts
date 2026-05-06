@@ -39,6 +39,11 @@ const JOB_CONTEXT_KEYWORDS = new Set([
   "summary",
   "work",
 ]);
+const PROFILE_FIELD_ALIASES = new Map<string, string>([
+  ["description", "summary"],
+  ["endDate", "end_date"],
+  ["startDate", "start_date"],
+]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -46,6 +51,34 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function isProfilePathSegment(segment: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(segment);
+}
+
+function toSnakeCase(segment: string): string {
+  return segment.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+
+function toCamelCase(segment: string): string {
+  return segment.replace(/_([a-z])/g, (_, letter: string) =>
+    letter.toUpperCase(),
+  );
+}
+
+function readObjectField(
+  value: Record<string, unknown>,
+  segment: string,
+): unknown {
+  if (segment in value) return value[segment];
+
+  const alias = PROFILE_FIELD_ALIASES.get(segment);
+  if (alias && alias in value) return value[alias];
+
+  const snakeCase = toSnakeCase(segment);
+  if (snakeCase !== segment && snakeCase in value) return value[snakeCase];
+
+  const camelCase = toCamelCase(segment);
+  if (camelCase !== segment && camelCase in value) return value[camelCase];
+
+  return undefined;
 }
 
 export function resolveProfilePath(explicitPath?: string): string {
@@ -83,7 +116,11 @@ export function normalizeRequestedFields(fields: string[]): string[] {
   const normalized = new Set<string>();
   for (const rawField of fields) {
     if (typeof rawField !== "string") continue;
-    const field = rawField.trim().replace(/^profile\./, "").replace(/\.+/g, ".");
+    const field = rawField
+      .trim()
+      .replace(/^profile\./, "")
+      .replace(/\[(\d+)\]/g, ".$1")
+      .replace(/\.+/g, ".");
     if (!field) continue;
     const segments = field.split(".");
     if (segments.some((segment) => !isProfilePathSegment(segment))) {
@@ -101,10 +138,16 @@ function readProfileValue(
   const segments = field.split(".");
   let current: unknown = profile;
   for (const segment of segments) {
-    if (!isPlainObject(current) || !(segment in current)) {
+    if (Array.isArray(current)) {
+      if (!/^\d+$/.test(segment)) return undefined;
+      current = current[Number(segment)];
+      continue;
+    }
+    if (!isPlainObject(current)) {
       return undefined;
     }
-    current = current[segment];
+    current = readObjectField(current, segment);
+    if (current === undefined) return undefined;
   }
 
   if (
@@ -126,6 +169,10 @@ function readProfileValue(
         typeof item === "boolean",
     )
   ) {
+    return current as ProfileValue;
+  }
+
+  if (Array.isArray(current) && current.every((item) => isPlainObject(item))) {
     return current as ProfileValue;
   }
 

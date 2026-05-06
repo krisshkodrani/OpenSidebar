@@ -10,9 +10,10 @@ import { ToolResultCache } from "../../src/background/agent/tool-cache";
 function toolCall(
   name: ToolName,
   args: Record<string, unknown> = {},
+  id = `${name}-call`,
 ): ToolCall {
   return {
-    id: `${name}-call`,
+    id,
     type: "function",
     function: {
       name,
@@ -88,13 +89,18 @@ function createHost(): SequentialToolDispatchHost {
     },
     originalQuery: "finish the task",
     recordSkillToolSelection: vi.fn(),
+    recordMutationSensitiveAction: vi.fn(),
+    refreshPerceptionAndTriage: vi.fn(),
+    refreshSnapshotWithRetry: vi.fn(async () => 0),
     requiresConsequentialActionApproval: vi.fn(() => false),
+    replayMutationSensitiveAction: vi.fn(() => false),
     selectedSkillId: null,
     stepHandler: vi.fn(),
     throwIfGracefulStopRequested: vi.fn(),
     toolCache: new ToolResultCache(),
     traceRecorder: {
       recordEvent: vi.fn(),
+      recordToolExecution: vi.fn(),
     },
     turnCount: 4,
   } as unknown as SequentialToolDispatchHost;
@@ -164,6 +170,37 @@ describe("executeSequentialToolCalls", () => {
         targetUrl: "https://example.test/form",
         mode: "sequential",
       }),
+    );
+  });
+
+  test("blocks duplicate click_element calls in the same response", async () => {
+    const host = createHost();
+    (host.executeToolCall as any).mockResolvedValue(
+      'Clicked [42] button "Add experience"',
+    );
+
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [
+        toolCall(ToolName.CLICK_ELEMENT, { id: 42 }, "click-1"),
+        toolCall(ToolName.CLICK_ELEMENT, { id: 42 }, "click-2"),
+      ],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(host.context.addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "tool",
+        tool_call_id: "click-2",
+        content: expect.stringContaining("duplicate click_element"),
+      }),
+    );
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "same_response_click_blocked",
+      expect.objectContaining({ tool: ToolName.CLICK_ELEMENT }),
     );
   });
 });

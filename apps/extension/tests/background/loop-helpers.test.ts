@@ -15,6 +15,7 @@ import {
   buildSubgoalAttempt,
   buildZeroEffectDecision,
   countTrailingToolResultOutcomes,
+  extractDiscoveredTagIds,
   normalizeOutcome,
   recordRecentSuccessfulAction,
   recordRecentOutcome,
@@ -25,6 +26,26 @@ import {
 } from "../../src/background/agent/loop-helpers";
 import { ToolResultCache } from "../../src/background/agent/tool-cache";
 import { ToolName } from "../../src/types";
+
+describe("extractDiscoveredTagIds", () => {
+  it("does not treat successful click target ids as reusable discoveries", () => {
+    expect(
+      extractDiscoveredTagIds(
+        ToolName.CLICK_ELEMENT,
+        'Clicked [42] button "Add experience"',
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps blocker ids from click failures for recovery", () => {
+    expect(
+      extractDiscoveredTagIds(
+        ToolName.CLICK_ELEMENT,
+        'Click intercepted: target [42] is covered by [99] <div>',
+      ),
+    ).toEqual([42, 99]);
+  });
+});
 
 describe("buildZeroEffectDecision", () => {
   it("warns on the first consecutive zero-effect turn", () => {

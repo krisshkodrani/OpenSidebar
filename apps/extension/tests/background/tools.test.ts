@@ -220,7 +220,7 @@ describe("Tool Registration", () => {
     }));
     (chrome.tabs as any).update = vi.fn(async () => ({}));
 
-    const result = await toolRegistry.execute(
+    const execution = await toolRegistry.executeDetailed(
       {
         id: "open-module",
         type: "function",
@@ -234,6 +234,7 @@ describe("Tool Registration", () => {
       },
       123,
     );
+    const result = execution.result;
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/now/table/sys_app_module?"),
@@ -244,6 +245,18 @@ describe("Tool Registration", () => {
     expect(result).toContain("Application: Configuration");
     expect(result).toContain("Module: HBase");
     expect(result).toContain(`Target URL: ${targetUrl}`);
+    expect(execution.evidence?.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["navigation_reached", "goal_state_verified"]),
+    );
+    expect(execution.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: ToolName.OPEN_SERVICENOW_MODULE,
+          confidence: "high",
+          supportsTaskGoal: true,
+        }),
+      ]),
+    );
   });
 
   test("open_servicenow_module can resolve without navigating", async () => {
@@ -370,7 +383,9 @@ describe("Tool Registration", () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
     const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
       url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
@@ -388,7 +403,9 @@ describe("Tool Registration", () => {
     `;
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
       if (details.args?.[0] === "sys_app_module") {
-        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+        return [
+          { frameId: 0, result: { ok: false, reason: "lookup_timeout" } },
+        ];
       }
       return [{ frameId: 0, result: await details.func(...details.args) }];
     });
@@ -423,7 +440,9 @@ describe("Tool Registration", () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
     const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
       url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
@@ -456,7 +475,9 @@ describe("Tool Registration", () => {
 
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
       if (details.args?.[0] === "sys_app_module") {
-        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+        return [
+          { frameId: 0, result: { ok: false, reason: "lookup_timeout" } },
+        ];
       }
       return [{ frameId: 0, result: await details.func(...details.args) }];
     });
@@ -548,7 +569,9 @@ describe("Tool Registration", () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
     const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Failed to fetch"));
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
       url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
@@ -564,7 +587,10 @@ describe("Tool Registration", () => {
     const filter = document.querySelector("input") as HTMLInputElement;
     const navigator = document.querySelector("#navigator") as HTMLElement;
     filter.addEventListener("input", () => {
-      if (filter.value === "Configuration" && navigator.childElementCount === 0) {
+      if (
+        filter.value === "Configuration" &&
+        navigator.childElementCount === 0
+      ) {
         navigator.innerHTML = `
           <section>Configuration Database Instances
             <a href="${target}">HBase</a>
@@ -574,7 +600,9 @@ describe("Tool Registration", () => {
     });
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
       if (details.args?.[0] === "sys_app_module") {
-        return [{ frameId: 0, result: { ok: false, reason: "lookup_timeout" } }];
+        return [
+          { frameId: 0, result: { ok: false, reason: "lookup_timeout" } },
+        ];
       }
       return [{ frameId: 0, result: await details.func(...details.args) }];
     });
@@ -1032,9 +1060,10 @@ describe("Tool Registration", () => {
       getDisplayValue: () => "INC0034429",
       setValue: (field: string, value: string) => {
         values[field] = value;
-        const control = document.querySelector(
-          `[name="incident.${field}"]`,
-        ) as HTMLInputElement | HTMLSelectElement | null;
+        const control = document.querySelector(`[name="incident.${field}"]`) as
+          | HTMLInputElement
+          | HTMLSelectElement
+          | null;
         if (control) control.value = value;
       },
     };
@@ -1062,7 +1091,10 @@ describe("Tool Registration", () => {
             name: ToolName.CONFIGURE_SERVICENOW_FORM,
             arguments: JSON.stringify({
               fields: [
-                { field: "Short description", value: "EMAIL Server Down Again" },
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
                 { field: "Channel", value: "Phone" },
               ],
               submit: true,
@@ -1143,7 +1175,10 @@ describe("Tool Registration", () => {
             name: ToolName.CONFIGURE_SERVICENOW_FORM,
             arguments: JSON.stringify({
               fields: [
-                { field: "Short description", value: "EMAIL Server Down Again" },
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
               ],
               submit: true,
             }),
@@ -1218,7 +1253,10 @@ describe("Tool Registration", () => {
             name: ToolName.CONFIGURE_SERVICENOW_FORM,
             arguments: JSON.stringify({
               fields: [
-                { field: "Short description", value: "EMAIL Server Down Again" },
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
               ],
               submit: true,
             }),
@@ -1299,7 +1337,9 @@ describe("Tool Registration", () => {
 
       expect(submitButton.getAttribute("data-clicked")).toBe("true");
       expect(result).toContain("Submitted ServiceNow form record: CHG0000021");
-      expect(result).not.toContain("Submitted ServiceNow form record: CHG0040878");
+      expect(result).not.toContain(
+        "Submitted ServiceNow form record: CHG0040878",
+      );
     } finally {
       (window as any).g_form = originalGForm;
       (window as any).happyDOM.setURL("https://example.com/");
@@ -1363,7 +1403,9 @@ describe("Tool Registration", () => {
 
       expect(submitButton.getAttribute("data-clicked")).toBe("true");
       expect(result).toContain("Submitted ServiceNow form record: CHG0000021");
-      expect(result).not.toContain("Submitted ServiceNow form record: CHG0040884");
+      expect(result).not.toContain(
+        "Submitted ServiceNow form record: CHG0040884",
+      );
     } finally {
       (window as any).g_form = originalGForm;
       (window as any).happyDOM.setURL("https://example.com/");
@@ -1434,7 +1476,10 @@ describe("Tool Registration", () => {
             name: ToolName.CONFIGURE_SERVICENOW_FORM,
             arguments: JSON.stringify({
               fields: [
-                { field: "Short description", value: "EMAIL Server Down Again" },
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
               ],
               submit: true,
             }),
@@ -1446,10 +1491,16 @@ describe("Tool Registration", () => {
       const expectedUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
         "incident.do?sys_id=73d10c4693a8035065c5ff87dd03d644",
       )}`;
-      expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: expectedUrl });
+      expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+        url: expectedUrl,
+      });
       expect(result).toContain("Submitted ServiceNow form record: INC0034429");
-      expect(result).toContain(`Opened submitted ServiceNow record: ${expectedUrl}`);
-      expect(result).toContain("Current title: INC0034429 | Incident | ServiceNow");
+      expect(result).toContain(
+        `Opened submitted ServiceNow record: ${expectedUrl}`,
+      );
+      expect(result).toContain(
+        "Current title: INC0034429 | Incident | ServiceNow",
+      );
     } finally {
       (window as any).g_form = originalGForm;
       (window as any).fetch = originalFetch;

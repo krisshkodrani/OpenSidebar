@@ -18,10 +18,7 @@ const defaultCompleteStreamFn = (
 
 // Mock LLM Client — now mocking completeStream instead of complete
 const { mockCompleteStream } = vi.hoisted(() => {
-  const defaultFn = (
-    request: any,
-    onTextDelta: (delta: string) => void,
-  ) => {
+  const defaultFn = (request: any, onTextDelta: (delta: string) => void) => {
     onTextDelta("Final answer");
     return Promise.resolve({
       role: "assistant",
@@ -87,6 +84,7 @@ vi.mock("../../src/background/llm", () => ({
 import {
   AgentLoop,
   countVisibleListDetailActions,
+  extractServiceNowModuleRequest,
   getListDetailDoneRejection,
   getListDetailWorkflowBlock,
   getNextUnreviewedListDetailAction,
@@ -134,6 +132,26 @@ describe("AgentLoop", () => {
     }));
   }
 
+  test("extractServiceNowModuleRequest parses quoted and plain module paths", () => {
+    expect(
+      extractServiceNowModuleRequest(
+        'Navigate to the "Database Instances > HBase" module of the "Configuration" application.',
+      ),
+    ).toEqual({
+      application: "Configuration",
+      path: ["Database Instances", "HBase"],
+    });
+
+    expect(
+      extractServiceNowModuleRequest(
+        "Open the Database Instances / Oracle module in the Configuration application",
+      ),
+    ).toEqual({
+      application: "Configuration",
+      path: ["Database Instances", "Oracle"],
+    });
+  });
+
   test("explicit success detection ignores prior-step page-show history", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
@@ -147,14 +165,16 @@ describe("AgentLoop", () => {
     setPlanContext(agent, {
       subtasks: [
         {
-          description: "Fill Caller field with 'Joe Employee' using autocomplete",
+          description:
+            "Fill Caller field with 'Joe Employee' using autocomplete",
           status: "running",
         },
       ],
       planSteps: [
         {
           objective: "Fill Caller field with 'Joe Employee' using autocomplete",
-          successCriteria: "Caller field shows 'Joe Employee' as selected value",
+          successCriteria:
+            "Caller field shows 'Joe Employee' as selected value",
         },
       ],
       snapshotText: "Incident New record Caller Short description",
@@ -238,9 +258,12 @@ describe("AgentLoop", () => {
     (agent as any).elementResolver = () => '"Submit" button';
 
     expect(
-      (agent as any).requiresJobApplicationSubmitApproval(ToolName.CLICK_ELEMENT, {
-        id: 40,
-      }),
+      (agent as any).requiresJobApplicationSubmitApproval(
+        ToolName.CLICK_ELEMENT,
+        {
+          id: 40,
+        },
+      ),
     ).toBe(false);
   });
 
@@ -275,9 +298,12 @@ describe("AgentLoop", () => {
     (agent as any).elementResolver = () => '"Submit" button';
 
     expect(
-      (agent as any).requiresJobApplicationSubmitApproval(ToolName.CLICK_ELEMENT, {
-        id: 40,
-      }),
+      (agent as any).requiresJobApplicationSubmitApproval(
+        ToolName.CLICK_ELEMENT,
+        {
+          id: 40,
+        },
+      ),
     ).toBe(true);
   });
 
@@ -411,8 +437,7 @@ describe("AgentLoop", () => {
 
     // Step objective does NOT mention suggestions, but original query does
     const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText:
-        "Search for Laptop Stand in the product search field",
+      objectiveText: "Search for Laptop Stand in the product search field",
       originalQuery:
         "Fill in the address with '123 Main Street' from the suggestions, and search for 'Laptop Stand' in the product search.",
       element: target,
@@ -420,9 +445,7 @@ describe("AgentLoop", () => {
     });
 
     expect(rewrite).not.toBeNull();
-    expect(rewrite?.rewrittenText.length).toBeLessThan(
-      "Laptop Stand".length,
-    );
+    expect(rewrite?.rewrittenText.length).toBeLessThan("Laptop Stand".length);
   });
 
   test("rewriteAutocompleteTextEntry does not rewrite normal input even when query mentions suggestions", () => {
@@ -471,7 +494,8 @@ describe("AgentLoop", () => {
     };
 
     const rewrite = rewriteAutocompleteTextEntry({
-      objectiveText: "Search for the SKU number for Widget X in the search field.",
+      objectiveText:
+        "Search for the SKU number for Widget X in the search field.",
       originalQuery:
         "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
       element: target,
@@ -576,7 +600,8 @@ describe("AgentLoop", () => {
       onStep: vi.fn(),
     });
 
-    (agent as any).originalQuery = "Enter the secret code into the input and submit it";
+    (agent as any).originalQuery =
+      "Enter the secret code into the input and submit it";
     (agent as any).context.getPlanStatusRaw = vi.fn(() => null);
     // Provide a snapshot with a draggable element — drag_and_drop should be included
     (agent as any).context.getSnapshot = vi.fn(() => ({
@@ -629,7 +654,7 @@ describe("AgentLoop", () => {
     const names = filtered.map((t: any) => t.function.name);
 
     expect(names).toContain(ToolName.NAVIGATE); // always in base set
-    expect(names).toContain(ToolName.GO_BACK);   // always in base set
+    expect(names).toContain(ToolName.GO_BACK); // always in base set
     expect(names).toContain(ToolName.CLICK_ELEMENT);
   });
 
@@ -772,7 +797,9 @@ describe("AgentLoop", () => {
 
     const logInfo = vi.spyOn((agent as any).log, "info");
     (agent as any).planSteps = [
-      { successCriteria: "The document list shows Q3 Financial Report 2026.pdf" },
+      {
+        successCriteria: "The document list shows Q3 Financial Report 2026.pdf",
+      },
     ];
 
     const tools = [
@@ -1329,6 +1356,80 @@ describe("AgentLoop", () => {
     expect(fourthArgs).toEqual({ submit: true, submitButton: "Submit" });
   });
 
+  test("atomic ServiceNow module controller opens parsed module path and completes on navigation evidence", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-module-navigation",
+      },
+    );
+    (agent as any).originalQuery =
+      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
+    (agent as any).planSteps = [
+      {
+        objective: "Open the requested ServiceNow application navigator module",
+        successCriteria:
+          "The current ServiceNow page is the Configuration > Database Instances > HBase module",
+      },
+    ];
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockImplementationOnce(async () => {
+        (agent as any).evidenceAccumulator.addMany([
+          {
+            type: "navigation_reached",
+            source: ToolName.OPEN_SERVICENOW_MODULE,
+            confidence: "high",
+            observedAt: new Date().toISOString(),
+            supportsTaskGoal: true,
+            detail: {
+              application: "Configuration",
+              path: ["Database Instances", "HBase"],
+            },
+          },
+          {
+            type: "goal_state_verified",
+            source: ToolName.OPEN_SERVICENOW_MODULE,
+            confidence: "high",
+            observedAt: new Date().toISOString(),
+            supportsTaskGoal: true,
+            detail: {
+              application: "Configuration",
+              path: ["Database Instances", "HBase"],
+            },
+          },
+        ]);
+        return [
+          "Opened ServiceNow module.",
+          "Application: Configuration",
+          "Module: HBase",
+        ].join("\n");
+      });
+
+    const result = await (agent as any).maybeRunAtomicSkillController(123);
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain(
+      "Configuration > Database Instances > HBase",
+    );
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+    expect(executeToolCall.mock.calls[0][0].function.name).toBe(
+      ToolName.OPEN_SERVICENOW_MODULE,
+    );
+    expect(
+      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
+    ).toEqual({
+      application: "Configuration",
+      path: ["Database Instances", "HBase"],
+    });
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1791,7 +1892,8 @@ describe("AgentLoop", () => {
     (agent as any).originalQuery =
       "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
 
-    const firstNote = (agent as any).updateMoneyTableAggregate(`Page: Employee Directory
+    const firstNote = (agent as any)
+      .updateMoneyTableAggregate(`Page: Employee Directory
 
 Page content:
 #
@@ -1816,7 +1918,8 @@ Showing 1-5 of 50`);
     expect(firstNote).toContain("not exhaustive");
     expect(firstNote).toContain("Next action: click Next");
 
-    const laterNote = (agent as any).updateMoneyTableAggregate(`Page: Employee Directory
+    const laterNote = (agent as any)
+      .updateMoneyTableAggregate(`Page: Employee Directory
 
 Page content:
 #
@@ -1866,7 +1969,9 @@ Showing 6-10 of 50`,
     (agent as any).updateMoneyTableAggregateFromSnapshot();
 
     expect((agent as any).context.getWorkingNotes()).toContain("Frank Garcia");
-    expect((agent as any).context.getWorkingNotes()).toContain("rows read 5/50");
+    expect((agent as any).context.getWorkingNotes()).toContain(
+      "rows read 5/50",
+    );
   });
 
   test("extracts highest salary aggregate from compact read_page table text", () => {
@@ -1884,7 +1989,9 @@ Showing 6-10 of 50`,
 
     expect(note).toContain("Yara Nelson");
     expect(note).toContain("$122,000");
-    expect((agent as any).context.getWorkingNotes()).toContain("seen rows 46-50/50");
+    expect((agent as any).context.getWorkingNotes()).toContain(
+      "seen rows 46-50/50",
+    );
   });
 
   test("rejects completed money table answer that conflicts with tracked aggregate", () => {
@@ -1902,7 +2009,9 @@ Showing 6-10 of 50`,
       "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 6 Frank Garcia frank.garcia@company.com Operations $63,655 7 Yara Nelson yara.nelson@company.com Engineering $122,000 8 Omar Hall omar.hall@company.com Support $98,100 9 Ivy Stone ivy.stone@company.com Sales $99,000 10 Jack King jack.king@company.com Sales $100,000 Showing 6 - 10 of 10 Page 2 of 2",
     );
 
-    const rejection = (agent as any).getIncorrectMoneyTableAggregateDoneRejection(
+    const rejection = (
+      agent as any
+    ).getIncorrectMoneyTableAggregateDoneRejection(
       "The highest salary is Jack King at $100,000.",
     );
 
@@ -2036,7 +2145,8 @@ Showing 6-10 of 50`,
             attributes: {
               "aria-label":
                 "View details for Senior Frontend Engineer at Nextera Tech",
-              style: "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
+              style:
+                "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
             },
             rect: { x: 0, y: 0, width: 1, height: 1 },
             isVisible: true,
@@ -2048,7 +2158,8 @@ Showing 6-10 of 50`,
             role: "button",
             text: "View details for Full Stack Engineer at DataPulse",
             attributes: {
-              style: "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
+              style:
+                "background-color: rgb(37, 99, 235); color: rgb(255, 255, 255);",
             },
             rect: { x: 0, y: 0, width: 1, height: 1 },
             isVisible: true,
@@ -2464,8 +2575,7 @@ Showing 6-10 of 50`,
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
-      "full stack engineer at datapulse";
+    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
     (agent as any).listDetailOpenedTargets = new Set([
       "full stack engineer at datapulse",
     ]);
@@ -2651,8 +2761,7 @@ Showing 6-10 of 50`,
       "Review the job listings and tell me which ones are the best matches for my profile and why.";
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).listDetailVisibleActionCount = 10;
-    (agent as any).listDetailCurrentTarget =
-      "full stack engineer at datapulse";
+    (agent as any).listDetailCurrentTarget = "full stack engineer at datapulse";
     (agent as any).listDetailReviewedTargets = new Set([
       "full stack engineer at datapulse",
     ]);
@@ -2852,10 +2961,7 @@ Showing 6-10 of 50`,
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).turnCount = 3;
 
-    (agent as any).recordSkillToolSelection(
-      ToolName.PRESS_KEY,
-      "sequential",
-    );
+    (agent as any).recordSkillToolSelection(ToolName.PRESS_KEY, "sequential");
 
     expect(recordEvent).toHaveBeenCalledWith("skill_tool_selected", {
       turn: 3,
@@ -2912,7 +3018,12 @@ Showing 6-10 of 50`,
 
     const logWarn = vi.spyOn((agent as any).log, "warn");
     (agent as any).planSubtasks = [
-      { description: "Step 1", status: "completed", turnsUsed: 0, turnBudget: 0 },
+      {
+        description: "Step 1",
+        status: "completed",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
       { description: "Step 2", status: "pending", turnsUsed: 0, turnBudget: 0 },
     ];
 
@@ -2967,8 +3078,12 @@ Showing 6-10 of 50`,
     });
 
     setPlanContext(agent, {
-      subtasks: [{ description: "Report Warehouse Gamma count", status: "running" }],
-      planSteps: [{ successCriteria: "Warehouse Gamma inventory count 6,412 visible" }],
+      subtasks: [
+        { description: "Report Warehouse Gamma count", status: "running" },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+      ],
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
@@ -3001,7 +3116,8 @@ Showing 6-10 of 50`,
     });
 
     const result = (agent as any).evaluateTextAdmissionAdvanceGate({
-      summary: "Unable to complete the Warehouse Gamma check even though the page changed.",
+      summary:
+        "Unable to complete the Warehouse Gamma check even though the page changed.",
       consecutiveTextOnly: 2,
     });
 
@@ -3075,8 +3191,15 @@ Showing 6-10 of 50`,
     (agent as any).verificationTurnMode = true;
 
     setPlanContext(agent, {
-      subtasks: [{ description: "Report Warehouse Gamma inventory count", status: "running" }],
-      planSteps: [{ successCriteria: "Warehouse Gamma inventory count 6,412 visible" }],
+      subtasks: [
+        {
+          description: "Report Warehouse Gamma inventory count",
+          status: "running",
+        },
+      ],
+      planSteps: [
+        { successCriteria: "Warehouse Gamma inventory count 6,412 visible" },
+      ],
       snapshotText: "Warehouse Gamma inventory count: 6,412 units",
     });
 
@@ -3092,36 +3215,39 @@ Showing 6-10 of 50`,
   test("final-step text admission nudges done instead of auto-completing", async () => {
     mockCompleteStream.mockReset();
     let callIdx = 0;
-    mockCompleteStream.mockImplementation((_request: any, onTextDelta: (delta: string) => void) => {
-      callIdx++;
-      if (callIdx <= 2) {
-        const text = "## Completed\nWarehouse Gamma inventory count is 6,412 units.";
-        onTextDelta(text);
+    mockCompleteStream.mockImplementation(
+      (_request: any, onTextDelta: (delta: string) => void) => {
+        callIdx++;
+        if (callIdx <= 2) {
+          const text =
+            "## Completed\nWarehouse Gamma inventory count is 6,412 units.";
+          onTextDelta(text);
+          return Promise.resolve({
+            role: "assistant",
+            content: text,
+            tool_calls: undefined,
+            finish_reason: "stop",
+          });
+        }
+
         return Promise.resolve({
           role: "assistant",
-          content: text,
-          tool_calls: undefined,
-          finish_reason: "stop",
-        });
-      }
-
-      return Promise.resolve({
-        role: "assistant",
-        content: null,
-        tool_calls: [
-          {
-            id: "tc_done",
-            type: "function",
-            function: {
-              name: "done",
-              arguments:
-                '{"summary":"Warehouse Gamma inventory count is 6,412 units."}',
+          content: null,
+          tool_calls: [
+            {
+              id: "tc_done",
+              type: "function",
+              function: {
+                name: "done",
+                arguments:
+                  '{"summary":"Warehouse Gamma inventory count is 6,412 units."}',
+              },
             },
-          },
-        ],
-        finish_reason: "tool_calls",
-      });
-    });
+          ],
+          finish_reason: "tool_calls",
+        });
+      },
+    );
 
     const onMessage = vi.fn();
     const agent = new AgentLoop(
@@ -3421,7 +3547,10 @@ Showing 6-10 of 50`,
     expect(validateDone).toHaveBeenCalled();
     expect(result.outcome).not.toBe("completed");
     expect((agent as any).doneRejections).toBeGreaterThan(0);
-    expect(onMessage).not.toHaveBeenCalledWith("The final step is complete.", []);
+    expect(onMessage).not.toHaveBeenCalledWith(
+      "The final step is complete.",
+      [],
+    );
   });
 
   test("done hard gate blocks repeated done after max rejections", async () => {
@@ -3463,7 +3592,10 @@ Showing 6-10 of 50`,
         String(message.content).includes("done() BLOCKED"),
       ),
     ).toBe(true);
-    expect(onMessage).not.toHaveBeenCalledWith("Trying to finish too early.", []);
+    expect(onMessage).not.toHaveBeenCalledWith(
+      "Trying to finish too early.",
+      [],
+    );
   });
 
   test("bypasses stale plan rejection for satisfied spreadsheet edit tasks", () => {
@@ -3475,12 +3607,23 @@ Showing 6-10 of 50`,
 
     setPlanContext(agent, {
       subtasks: [
-        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
-        { description: "Clear the previous cell value if needed", status: "pending" },
+        {
+          description: "Update the Q1 Sales cell in row 1 to 999",
+          status: "running",
+        },
+        {
+          description: "Clear the previous cell value if needed",
+          status: "pending",
+        },
       ],
       planSteps: [
-        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
-        { successCriteria: "Old value is no longer present in the edited cell" },
+        {
+          successCriteria:
+            "Spreadsheet shows Q1 Sales value 999 in the first row",
+        },
+        {
+          successCriteria: "Old value is no longer present in the edited cell",
+        },
       ],
       snapshotText:
         "Spreadsheet row 1 Q1 Sales value 999 is visible in the edited cell.",
@@ -3489,7 +3632,8 @@ Showing 6-10 of 50`,
       "In the spreadsheet, change the Q1 Sales value in the first row to 999.";
 
     const result = (agent as any).shouldBypassPlanIncompleteDoneRejection({
-      summary: "Updated the spreadsheet so the first-row Q1 Sales cell now shows 999.",
+      summary:
+        "Updated the spreadsheet so the first-row Q1 Sales cell now shows 999.",
       currentStepIndex: 0,
     });
 
@@ -3513,7 +3657,8 @@ Showing 6-10 of 50`,
     setPlanContext(agent, {
       subtasks: [
         {
-          description: "Click the application navigator menu to access applications and modules",
+          description:
+            "Click the application navigator menu to access applications and modules",
           status: "running",
         },
         {
@@ -3555,8 +3700,14 @@ Showing 6-10 of 50`,
     setPlanContext(agent, {
       subtasks: [
         { description: "Open the store in a new tab", status: "completed" },
-        { description: "Switch to the newly opened store tab", status: "running" },
-        { description: "Add the item to cart and place the order", status: "pending" },
+        {
+          description: "Switch to the newly opened store tab",
+          status: "running",
+        },
+        {
+          description: "Add the item to cart and place the order",
+          status: "pending",
+        },
       ],
       planSteps: [
         { successCriteria: "Store tab opened" },
@@ -3606,7 +3757,10 @@ Showing 6-10 of 50`,
 
     setPlanContext(agent, {
       subtasks: [
-        { description: "Select Business for the category", status: "completed" },
+        {
+          description: "Select Business for the category",
+          status: "completed",
+        },
         { description: "Pick the Standard budget", status: "running" },
         { description: "Submit the form", status: "pending" },
       ],
@@ -3955,10 +4109,16 @@ Showing 6-10 of 50`,
 
     setPlanContext(agent, {
       subtasks: [
-        { description: "Update the Q1 Sales cell in row 1 to 999", status: "running" },
+        {
+          description: "Update the Q1 Sales cell in row 1 to 999",
+          status: "running",
+        },
       ],
       planSteps: [
-        { successCriteria: "Spreadsheet shows Q1 Sales value 999 in the first row" },
+        {
+          successCriteria:
+            "Spreadsheet shows Q1 Sales value 999 in the first row",
+        },
       ],
       snapshotText:
         "Spreadsheet row 1 Q1 Sales value 999 is visible while the cell is still marked (editing).",
@@ -3973,7 +4133,11 @@ Showing 6-10 of 50`,
           tagName: "input",
           text: "999",
           isVisible: true,
-          attributes: { type: "text", value: "999", "aria-label": "Q1 Sales editor" },
+          attributes: {
+            type: "text",
+            value: "999",
+            "aria-label": "Q1 Sales editor",
+          },
         },
       ],
       pageContent:
@@ -3995,37 +4159,41 @@ Showing 6-10 of 50`,
       activeToolProfile: "edit_surface",
       targetId: 37,
       snapshot: {
-      title: "Quarterly Sales Sheet",
-      url: "https://example.com/sheet",
-      elements: [
-        {
-          tag: 37,
-          tagName: "td",
-          role: "gridcell",
-          text: "130",
-          isVisible: true,
-          isDisabled: false,
-          rect: { x: 10, y: 10, width: 80, height: 24 },
-          attributes: {},
-        },
-        {
-          tag: 44,
-          tagName: "input",
-          role: "textbox",
-          text: "130",
-          isVisible: true,
-          isDisabled: false,
-          rect: { x: 12, y: 12, width: 76, height: 20 },
-          attributes: { type: "text", value: "130", "aria-label": "Q1 Sales editor" },
-        },
-      ],
-      pageContent:
-        "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
-      visibleContent:
-        "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
-      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
-      viewportHeight: 800,
-      timestamp: Date.now(),
+        title: "Quarterly Sales Sheet",
+        url: "https://example.com/sheet",
+        elements: [
+          {
+            tag: 37,
+            tagName: "td",
+            role: "gridcell",
+            text: "130",
+            isVisible: true,
+            isDisabled: false,
+            rect: { x: 10, y: 10, width: 80, height: 24 },
+            attributes: {},
+          },
+          {
+            tag: 44,
+            tagName: "input",
+            role: "textbox",
+            text: "130",
+            isVisible: true,
+            isDisabled: false,
+            rect: { x: 12, y: 12, width: 76, height: 20 },
+            attributes: {
+              type: "text",
+              value: "130",
+              "aria-label": "Q1 Sales editor",
+            },
+          },
+        ],
+        pageContent:
+          "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
+        visibleContent:
+          "Quarterly Sales spreadsheet. Row 1 Q1 Sales cell is in editing mode.",
+        scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+        viewportHeight: 800,
+        timestamp: Date.now(),
       },
     });
 
@@ -4127,7 +4295,9 @@ describe("High-risk approval policy", () => {
   beforeEach(() => {
     mockCompleteStream.mockImplementation(defaultCompleteStreamFn);
     mockCompleteStream.mockClear();
-    (chrome.runtime as any).sendMessage = vi.fn(async () => ({ success: true }));
+    (chrome.runtime as any).sendMessage = vi.fn(async () => ({
+      success: true,
+    }));
   });
 
   test("requests explicit approval for high-risk tool when bypass is off", async () => {
@@ -4152,9 +4322,9 @@ describe("High-risk approval policy", () => {
 
     const result = await agent.start("Go to example.com", 123);
 
-    const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
-      (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
-    );
+    const approvalRequests = (
+      chrome.runtime.sendMessage as any
+    ).mock.calls.filter((call: any[]) => call[0]?.type === "APPROVAL_REQUEST");
     expect(approvalRequests.length).toBeGreaterThan(0);
     expect(result.outcome).toBe("awaiting_approval");
     expect(result.pendingInteraction).toMatchObject({
@@ -4188,7 +4358,10 @@ describe("High-risk approval policy", () => {
       { bypassApprovals: false },
     );
 
-    const initialResult = await initialAgent.start("Navigate to example.com", 123);
+    const initialResult = await initialAgent.start(
+      "Navigate to example.com",
+      123,
+    );
     expect(initialResult.outcome).toBe("awaiting_approval");
     expect(initialResult.pendingInteraction?.kind).toBe("approval");
 
@@ -4218,7 +4391,9 @@ describe("High-risk approval policy", () => {
 
   test("times out high-risk approval and denies tool execution", async () => {
     setupLLMSequence([
-      makeToolCall("tc_nav_timeout", "navigate", { url: "https://example.com" }),
+      makeToolCall("tc_nav_timeout", "navigate", {
+        url: "https://example.com",
+      }),
     ]);
 
     (chrome.runtime as any).sendMessage = vi.fn(async (_msg: any) => ({
@@ -4267,9 +4442,9 @@ describe("High-risk approval policy", () => {
 
     await agent.start("Close current tab quickly", 123);
 
-    const approvalRequests = (chrome.runtime.sendMessage as any).mock.calls.filter(
-      (call: any[]) => call[0]?.type === "APPROVAL_REQUEST",
-    );
+    const approvalRequests = (
+      chrome.runtime.sendMessage as any
+    ).mock.calls.filter((call: any[]) => call[0]?.type === "APPROVAL_REQUEST");
     expect(approvalRequests.length).toBe(0);
     const bypassStep = onStep.mock.calls.find(
       (call: any[]) =>
@@ -4454,7 +4629,9 @@ describe("Workspace-scoped tab operations", () => {
     );
     expect(toolResult).toBeDefined();
     expect(toolResult.content).toContain("Cannot switch to tab 789");
-    expect(toolResult.content).toContain("chrome-extension://abc123/e2e-helper.html");
+    expect(toolResult.content).toContain(
+      "chrome-extension://abc123/e2e-helper.html",
+    );
     expect(updateSpy).not.toHaveBeenCalled();
 
     (chrome.tabs as any).get = originalGet;

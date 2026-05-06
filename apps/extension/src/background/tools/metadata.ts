@@ -347,6 +347,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.XRAY_PAGE,
     ToolName.SCROLL_PAGE,
     ToolName.LIST_TABS,
+    ToolName.GET_PROFILE_FIELDS,
     // System (always)
     ToolName.DONE,
     ToolName.ESCALATE,

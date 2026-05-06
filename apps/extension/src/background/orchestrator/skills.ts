@@ -519,12 +519,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     contextScope: "turn",
     verifierMode: "deterministic",
     atomic: true,
-    requiredEvidenceTypes: [
-      "field_value_observed",
-      "fill_attempted",
-      "submit_succeeded",
-      "record_identity_observed",
-    ],
+    requiredEvidenceTypes: ["navigation_reached", "goal_state_verified"],
     notes: [
       "Use ServiceNow module metadata before manual application navigator clicks.",
       "Do not call navigate with a search query inside ServiceNow.",
@@ -556,6 +551,38 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Map values to fields before typing.",
       "For configurators, verify any derived total, price, or summary after changing options before finishing.",
+    ],
+  },
+  {
+    id: "progressive-repeatable-form",
+    name: "Progressive Repeatable Form",
+    description:
+      "Create, fill, and verify repeatable form groups that appear after Add another/Add item controls.",
+    tags: ["workflow", "forms", "repeatable", "progressive", "data-entry"],
+    triggers: [
+      "add another section",
+      "add multiple experience entries",
+      "create repeated form sections",
+      "fill repeatable rows in order",
+      "add item three times then fill fields",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "get_profile_fields",
+      "read_page",
+      "click_element",
+      "type_text",
+      "select_option",
+      "set_checkbox",
+      "update_notes",
+    ],
+    discouragedTools: ["press_key", "click_coordinates"],
+    contextScope: "turn",
+    verifierMode: "deterministic",
+    notes: [
+      "Count existing repeated groups before adding new ones.",
+      "Re-ground after Add another/Add item controls because element ids and field groups can change.",
+      "Map values by group label or index, not by field order alone.",
     ],
   },
   {
@@ -1136,7 +1163,8 @@ const SKILL_BODIES: Record<
         recovery: "configure the requested options and submit/order the item",
       },
       {
-        signal: "cart or confirmation shows duplicate line items or a quantity different from the request",
+        signal:
+          "cart or confirmation shows duplicate line items or a quantity different from the request",
         recovery:
           "do not call done; edit the cart if possible or escalate with the mismatch evidence",
       },
@@ -1619,6 +1647,66 @@ const SKILL_BODIES: Record<
       failureRecovery: [
         "If a value lands in the wrong field, re-read labels and repair the mapping before resubmitting.",
         "If submission fires too early, return to the remaining fields and finish the mapping before trying again.",
+      ],
+    },
+  },
+  "progressive-repeatable-form": {
+    procedureMarkdown: [
+      "1. Identify the repeatable group name, the required item count, and the current visible item count.",
+      "2. If the task references saved profile data for repeated rows, call get_profile_fields once for the exact array/path before filling.",
+      "3. Stay on the current form page; do not navigate to profile, workspace, account, or site-navigation pages to look for saved values.",
+      "4. Add only the missing number of groups; after each Add another/Add item action, use fresh page state before reusing element ids.",
+      "5. Bind each data item to its matching visible group by label or index, such as Experience 2 company, rather than by raw field order.",
+      "6. Fill all visible fields for each group from the mapped data, preserving row order and copying profile strings exactly unless the user specifies another ordering or transformation.",
+      "7. Verify the final group count, each group label/index, and each filled value by readback or visible page state. Long text fields must match the source profile text, not a paraphrase.",
+      "8. Do not click final Submit/Send/Apply controls unless the current step explicitly asks for that final action and consent policy allows it.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Repeatable group name and required count",
+      "Current count before adding and final count after adding",
+      "Field/value mapping for each repeated group",
+      "Readback evidence that each group contains its intended exact values",
+      "Final submit state when a submit control exists",
+    ],
+    commonFailures: [
+      {
+        signal: "old Add button id is reused after a group appears",
+        recovery:
+          "call read_page and use the current Add control id before adding the next group",
+      },
+      {
+        signal: "values are shifted into the wrong repeated group",
+        recovery:
+          "re-read labels such as item number, row heading, or aria-label and repair by group index",
+      },
+      {
+        signal: "the final submit action is clicked during preparation",
+        recovery:
+          "stop after the requested groups are prepared and report ready state without submitting",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Count existing groups, add only missing groups with fresh grounding after each mutation, map data by group index, fill fields, then verify the completed group set.",
+      ],
+      toolDiscipline: [
+        "Use get_profile_fields once for exact repeated profile arrays when needed.",
+        "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
+        "Do not navigate away from the form to find saved profile data; the profile tool is the source of truth.",
+        "Use read_page after Add another/Add item clicks before reusing the add control or filling newly inserted fields.",
+        "Prefer labeled field ids or aria labels over positional guesses.",
+        "Avoid press_key and click_coordinates for form progression or final submit.",
+      ],
+      completionChecks: [
+        "The requested number of groups is visible.",
+        "Each group label or index matches the intended data row.",
+        "Each requested field value is present in the intended group and text values match the source profile strings exactly.",
+        "No final submit action has been taken unless explicitly requested and approved.",
+      ],
+      failureRecovery: [
+        "If the add control disappears or changes id, re-ground with read_page before continuing.",
+        "If the page has fewer groups than requested after an add click, retry only after verifying current count.",
+        "If group mapping is ambiguous, read group headings and labels before typing further.",
       ],
     },
   },
@@ -2295,8 +2383,12 @@ const configuratorPattern =
   /\b(configure|configurator|pick|choose|select|enable|disable)\b[\s\S]{0,120}\b(size|option|engraving|color|variant|total price|total|price|summary)\b/i;
 const profileFieldPattern =
   /\b(saved profile|profile field|profile data|identity\.(?:first_name|last_name|email)|full name|email address)\b/i;
+const progressiveRepeatableFormPattern =
+  /\b(?:add|create|insert)\b[\s\S]{0,120}\b(?:another|multiple|several|\d+|two|three|four|five|sections?|roles?|experiences?|education|addresses?|dependents?)\b[\s\S]{0,120}\b(?:section|role|experience|education|address|dependent|form group|field group)s?\b|\b(?:add|create|insert)\b[\s\S]{0,120}\b(?:experience|education|address|dependent|role|work history|employment history)\s+entries\b|\b(?:experience|education|address|dependent|role|employment history|work history)\s+\d+\b|\b(?:roles?|experiences?|sections?)\b[\s\S]{0,80}\b(?:in order|repeatable|repeated|add another|add item|add experience)\b/i;
 const consequentialActionConsentPattern =
   /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b|\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b|\b(?:final approval|required approval|approval required|ask before)\b/i;
+const finalConsequentialActionPattern =
+  /\b(?:submit|send|post|publish|buy|purchase|place order|delete|confirm|approve|apply)\b/i;
 const jobApplicationPattern =
   /\b(?:job|career|position|vacancy|resume|cv)\b[\s\S]{0,160}\b(?:apply|application|submit|form|cover letter|resume|cv)\b|\b(?:apply|application|submit)\b[\s\S]{0,160}\b(?:job|career|position|vacancy|resume|cv)\b/i;
 const transactionPattern =
@@ -2540,6 +2632,10 @@ export function resolveSkillToolProfile(
     return hasServiceNowRecordSubmitIntent(text) ? "submit_form" : "form_fill";
   }
 
+  if (descriptor.id === "progressive-repeatable-form") {
+    return "form_fill";
+  }
+
   if (
     (hasCapability(descriptor, "compose_response") ||
       hasCapability(descriptor, "submit_response")) &&
@@ -2577,6 +2673,25 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
 > = {
   "structured-form-fill": {
     temporarilySuppressedTools: [ToolName.PRESS_KEY],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+    ],
+  },
+  "progressive-repeatable-form": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.OPEN_SERVICENOW_MODULE,
+      ToolName.GO_BACK,
+      ToolName.CREATE_TAB,
+      ToolName.LIST_TABS,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.PRESS_KEY,
+      ToolName.CLICK_COORDINATES,
+    ],
     exemptTools: [
       ToolName.DONE,
       ToolName.ESCALATE,
@@ -2796,6 +2911,12 @@ function selectPrimarySkillWithKeywordMatcher(
         stepCorpus,
       )) ||
     configuratorPattern.test(stepCorpus);
+  const currentStepLooksLikeProgressiveRepeatableForm =
+    progressiveRepeatableFormPattern.test(stepCorpus) ||
+    (progressiveRepeatableFormPattern.test(corpus) &&
+      /\b(?:fill|add|create|section|entry|row|item|role|experience|education|address|dependent|field)\b/i.test(
+        stepCorpus,
+      ));
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
   const matchesMultiTabChecklistWorkflow =
@@ -2825,6 +2946,15 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
+  if (currentStepLooksLikeProgressiveRepeatableForm) {
+    const selection = selectEnabledSkill(
+      input,
+      "progressive-repeatable-form",
+      "Current step targets repeated/progressive form groups and should count, add, map, fill, and verify groups by index or label.",
+    );
+    if (selection) return selection;
+  }
+
   if (jobApplicationPattern.test(corpus)) {
     const selection = selectEnabledSkill(
       input,
@@ -2848,11 +2978,14 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
-  if (consequentialActionConsentPattern.test(corpus)) {
+  if (
+    consequentialActionConsentPattern.test(corpus) &&
+    finalConsequentialActionPattern.test(stepCorpus)
+  ) {
     const selection = selectEnabledSkill(
       input,
       "consequential-action-consent",
-      "Task mentions approval, confirmation, prepare-only, or unclear final-action consent and should treat final actions as approval-gated.",
+      "Current step includes a final consequential action with approval or prepare-only policy, so final execution must be consent-gated.",
     );
     if (selection) return selection;
   }

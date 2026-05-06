@@ -41,6 +41,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation.test.ts",
     "lane-topology.test.ts",
     "profile-checkout.test.ts",
+    "profile-experience-application.test.ts",
     "profile-job-application.test.ts",
     "sequential-tasks.test.ts",
     "stop-drain-recovery.test.ts",

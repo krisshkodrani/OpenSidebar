@@ -129,9 +129,15 @@ export function assessElementIdPreDispatch(params: {
  * content script's tag map but may not be in the background's snapshot yet.
  */
 export function extractDiscoveredTagIds(
-  _toolName: string,
+  toolName: string,
   result: string,
 ): number[] {
+  if (
+    toolName === ToolName.CLICK_ELEMENT &&
+    /^Clicked\s+\[\d+\](?:\s|$)/i.test(result.trim())
+  ) {
+    return [];
+  }
   const matches = result.matchAll(/\[(\d+)\]/g);
   return [...matches].map((m) => Number(m[1])).filter((n) => !isNaN(n));
 }

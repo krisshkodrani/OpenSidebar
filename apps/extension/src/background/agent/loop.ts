@@ -312,6 +312,45 @@ export function isDoneSummaryAskingClarification(summary: string): boolean {
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
+type ParsedServiceNowModuleRequest = {
+  application: string;
+  path: string[];
+};
+
+function cleanServiceNowModuleLabel(value: string): string {
+  return value
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/^["'\s]+|["'.\s]+$/g, "")
+    .replace(/^the\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function extractServiceNowModuleRequest(
+  text: string,
+): ParsedServiceNowModuleRequest | null {
+  const normalized = text.replace(/\s+/g, " ");
+  const patterns = [
+    /\b(?:navigate to|open)\s+(?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\s+module\s+(?:of|in)\s+(?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\s+application\b/i,
+    /\b(?:navigate to|open)\s+(?:the\s+)?(.+?)\s+module\s+(?:of|in)\s+(?:the\s+)?(.+?)\s+application\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(normalized);
+    if (!match) continue;
+    const rawPath = cleanServiceNowModuleLabel(match[1] ?? "");
+    const application = cleanServiceNowModuleLabel(match[2] ?? "");
+    const path = rawPath
+      .split(/\s*>\s*|\s*\/\s*/)
+      .map(cleanServiceNowModuleLabel)
+      .filter(Boolean);
+    if (application && path.length > 0) {
+      return { application, path };
+    }
+  }
+  return null;
+}
+
 // Re-export submodules for barrel compatibility
 export * from "./loop-types";
 export * from "./loop-prompts";
@@ -609,9 +648,7 @@ export class AgentLoop {
   ): void {
     const requested = imagePromptUsageForCount(imageCount);
     const used = this.metrics.totalImagePromptTokenEstimate ?? 0;
-    const max = resolveImagePromptTokenBudget(
-      this.maxImagePromptTokenEstimate,
-    );
+    const max = resolveImagePromptTokenBudget(this.maxImagePromptTokenEstimate);
     const detail = {
       source,
       requestedImages: imageCount,
@@ -4405,8 +4442,7 @@ export class AgentLoop {
     const required =
       getLoadedSkillContract(this.selectedSkillId ?? undefined, {
         enabledSkillPackIds: this.enabledSkillPackIds,
-      })
-        ?.requiredEvidenceTypes ?? [];
+      })?.requiredEvidenceTypes ?? [];
     if (required.length === 0) return [];
     const evidence = this.evidenceAccumulator.toArray();
     if (evidence.some((event) => event.type === "uncertainty_detected")) {
@@ -4820,11 +4856,35 @@ export class AgentLoop {
       .find((tool) => tool !== ToolName.DONE && tool !== ToolName.READ_PAGE);
     if (!preferredTool) return null;
 
-    const fields = extractFieldValuePairs(this.originalQuery);
+    const activePlanIndex = this.planSubtasks.findIndex(
+      (subtask) => subtask.status === "running",
+    );
+    const activePlanStep =
+      activePlanIndex >= 0
+        ? this.planSteps[activePlanIndex]
+        : this.planSteps[0];
+    const activeSubtask =
+      activePlanIndex >= 0 ? this.planSubtasks[activePlanIndex] : undefined;
+    const controllerText = [
+      this.originalQuery,
+      activeSubtask?.description,
+      activePlanStep?.objective,
+      activePlanStep?.successCriteria,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
+    const fields = extractFieldValuePairs(controllerText);
     if (
       preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM &&
       fields.length === 0
     ) {
+      return null;
+    }
+    const moduleRequest =
+      preferredTool === ToolName.OPEN_SERVICENOW_MODULE
+        ? extractServiceNowModuleRequest(controllerText)
+        : null;
+    if (preferredTool === ToolName.OPEN_SERVICENOW_MODULE && !moduleRequest) {
       return null;
     }
 
@@ -4835,7 +4895,9 @@ export class AgentLoop {
             submit: this.hasTrustedServiceNowSubmitIntent(),
             submitButton: "Submit",
           }
-        : {};
+        : preferredTool === ToolName.OPEN_SERVICENOW_MODULE && moduleRequest
+          ? moduleRequest
+          : {};
 
     this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
     this.turnCount++;
@@ -4890,16 +4952,37 @@ export class AgentLoop {
       return null;
     }
 
+    const recordSummary = this.evidenceAccumulator
+      .getByType("record_identity_observed")
+      .at(-1)
+      ?.detail?.recordNumber?.toString();
+    const navigationEvidence = this.evidenceAccumulator
+      .getByType("navigation_reached")
+      .at(-1);
+    const navigationSummary = navigationEvidence
+      ? [
+          navigationEvidence.detail?.application,
+          ...(Array.isArray(navigationEvidence.detail?.path)
+            ? navigationEvidence.detail.path
+            : []),
+        ]
+          .filter(
+            (part): part is string =>
+              typeof part === "string" && part.length > 0,
+          )
+          .join(" > ")
+      : "";
     const summary =
-      this.evidenceAccumulator
-        .getByType("record_identity_observed")
-        .at(-1)
-        ?.detail?.recordNumber?.toString() ||
+      recordSummary ||
+      (navigationSummary
+        ? `Successfully opened ServiceNow module ${navigationSummary}.`
+        : "") ||
       result.split("\n").find((line) => /submitted|configured/i.test(line)) ||
       `${contract.name} completed with required evidence.`;
-    const finalSummary = /completed|submitted|configured/i.test(summary)
-      ? summary
-      : `${contract.name} completed: ${summary}`;
+    const finalSummary =
+      /completed|submitted|configured|opened|navigated/i.test(summary)
+        ? summary
+        : `${contract.name} completed: ${summary}`;
     this.completeTaskResult(finalSummary);
     this.traceRecorder?.recordEvent("atomic_skill_controller_completed", {
       turn: this.turnCount,
@@ -5616,8 +5699,7 @@ export class AgentLoop {
         this.planSteps[currentStepIndex + 1]?.successCriteria,
       ]
         .filter(
-          (part): part is string =>
-            typeof part === "string" && part.length > 0,
+          (part): part is string => typeof part === "string" && part.length > 0,
         )
         .join("\n"),
     );

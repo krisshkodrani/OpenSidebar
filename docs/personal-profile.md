@@ -70,6 +70,35 @@ profile:
     date_of_birth: "1990-01-01"
 ```
 
+## Job Experience Sample
+
+For repeated work-history forms, keep experience entries as a YAML list under the
+structured profile. The agent can request the full list with
+`get_profile_fields(["experience.roles"])` and map each item into the repeated
+form sections. Individual entries can also be requested with array paths such as
+`experience.roles[1].company`.
+
+```yaml
+profile:
+  experience:
+    roles:
+      - company: Atlas Labs
+        title: Senior Frontend Engineer
+        start_date: "2022-04"
+        end_date: Present
+        summary: Built React and TypeScript workflow tools for enterprise teams.
+      - company: Northstar Systems
+        title: Frontend Engineer
+        start_date: "2019-06"
+        end_date: "2022-03"
+        summary: Delivered customer dashboards with GraphQL and design-system components.
+      - company: BrightPixel Studio
+        title: Web Developer
+        start_date: "2017-01"
+        end_date: "2019-05"
+        summary: Created responsive web applications and automated content workflows.
+```
+
 ## Runtime Behavior
 
 - The agent should request only the exact fields it needs.

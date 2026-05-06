@@ -205,7 +205,10 @@ async function resolveServiceNowRecordUrl(
   tableName: string,
   recordNumber: string,
 ): Promise<string | null> {
-  if (!/^[a-z0-9_]+$/i.test(tableName) || !/^[A-Z]{2,}\d+$/i.test(recordNumber)) {
+  if (
+    !/^[a-z0-9_]+$/i.test(tableName) ||
+    !/^[A-Z]{2,}\d+$/i.test(recordNumber)
+  ) {
     return null;
   }
   try {
@@ -231,7 +234,9 @@ async function resolveServiceNowRecordUrl(
         );
         if (!response.ok) return null;
         const payload = await response.json();
-        const record = Array.isArray(payload?.result) ? payload.result[0] : null;
+        const record = Array.isArray(payload?.result)
+          ? payload.result[0]
+          : null;
         const sysId =
           typeof record?.sys_id === "string"
             ? record.sys_id
@@ -247,8 +252,10 @@ async function resolveServiceNowRecordUrl(
     return (
       results
         .map((result) => result.result)
-        .find((value): value is string => typeof value === "string" && value.length > 0) ??
-      null
+        .find(
+          (value): value is string =>
+            typeof value === "string" && value.length > 0,
+        ) ?? null
     );
   } catch {
     return null;
@@ -512,17 +519,15 @@ function stripServiceNowShellTarget(value: string): string {
   for (const candidate of candidates) {
     try {
       const parsed = new URL(candidate);
-      const targetMatch = /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(
-        parsed.pathname,
-      );
+      const targetMatch =
+        /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(parsed.pathname);
       if (targetMatch?.[1]) {
         return decodeURIComponent(targetMatch[1]) + parsed.search;
       }
       return `${parsed.pathname.replace(/^\/+/, "")}${parsed.search}`;
     } catch {
-      const targetMatch = /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(
-        candidate,
-      );
+      const targetMatch =
+        /\/now\/nav\/ui\/classic\/params\/target\/(.+)$/i.exec(candidate);
       if (targetMatch?.[1]) return decodeURIComponent(targetMatch[1]);
     }
   }
@@ -607,7 +612,8 @@ function scoreServiceNowModuleCandidate(
 
   let score = 0;
   if (titleKey === leafKey) score += 100;
-  else if (titleKey.includes(leafKey) || leafKey.includes(titleKey)) score += 55;
+  else if (titleKey.includes(leafKey) || leafKey.includes(titleKey))
+    score += 55;
   if (nameKey === leafKey) score += 25;
   else if (nameKey.includes(leafKey)) score += 15;
   if (appKey) {
@@ -704,14 +710,11 @@ async function fetchServiceNowTableRecordsFromPage(
             `/api/now/table/${encodeURIComponent(tableName)}?${search.toString()}`,
             window.location.origin,
           ).href;
-          const response = await fetch(
-            url,
-            {
-              credentials: "same-origin",
-              headers: { Accept: "application/json" },
-              signal: controller.signal,
-            },
-          );
+          const response = await fetch(url, {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller.signal,
+          });
           if (!response.ok) {
             return { ok: false, reason: `lookup_http_${response.status}` };
           }
@@ -1114,10 +1117,13 @@ async function prepareServiceNowNavigatorCandidate(
   for (const frameId of frameIds) {
     const results = await runInFrame(frameId).catch(() => null);
     const value = results?.[0]?.result as
-      | ({ ok: true; query: string; candidateText: string; href: string } | {
-          ok: false;
-          reason: string;
-        })
+      | (
+          | { ok: true; query: string; candidateText: string; href: string }
+          | {
+              ok: false;
+              reason: string;
+            }
+        )
       | undefined;
     if (!value) {
       lastReason = "navigator_script_failed";
@@ -1204,6 +1210,29 @@ function summarizeServiceNowNavigatorOutcome(
     : `Navigator: ${value.reason} in ${formatServiceNowDuration(outcome.durationMs)}`;
 }
 
+function serviceNowModuleEvidence(
+  detail: Record<string, unknown>,
+): EvidenceEvent[] {
+  const base = {
+    source: ToolName.OPEN_SERVICENOW_MODULE,
+    confidence: "high" as const,
+    observedAt: new Date().toISOString(),
+    supportsTaskGoal: true,
+  };
+  return [
+    {
+      ...base,
+      type: "navigation_reached",
+      detail,
+    },
+    {
+      ...base,
+      type: "goal_state_verified",
+      detail,
+    },
+  ];
+}
+
 async function commitResolvedServiceNowModule(
   tabId: number,
   resolved: ResolvedServiceNowModule,
@@ -1217,7 +1246,9 @@ async function commitResolvedServiceNowModule(
 async function commitServiceNowNavigatorCandidate(
   tabId: number,
   candidate: Extract<ServiceNowNavigatorCandidateResult, { ok: true }>,
-): Promise<"navigator_href" | "navigator_click" | "navigator_click_unavailable"> {
+): Promise<
+  "navigator_href" | "navigator_click" | "navigator_click_unavailable"
+> {
   clearTabReady(tabId);
   if (candidate.targetUrl) {
     await chrome.tabs.update(tabId, { url: candidate.targetUrl });
@@ -1362,7 +1393,9 @@ async function resolveServiceNowModule(
         return {
           ok: false,
           reason:
-            pageError instanceof Error ? pageError.message : "module_lookup_failed",
+            pageError instanceof Error
+              ? pageError.message
+              : "module_lookup_failed",
         };
       }
     } else {
@@ -2927,7 +2960,11 @@ export function registerTools() {
       });
 
       if (!shouldRun) {
-        const resolved = await resolveServiceNowModule(tabId, application, path);
+        const resolved = await resolveServiceNowModule(
+          tabId,
+          application,
+          path,
+        );
         if (!resolved.ok) {
           const candidateLines = summarizeServiceNowModuleCandidates(
             resolved.candidates,
@@ -2992,9 +3029,8 @@ export function registerTools() {
           ].filter(
             (
               promise,
-            ): promise is
-              | typeof metadataPromise
-              | typeof navigatorPromise => Boolean(promise),
+            ): promise is typeof metadataPromise | typeof navigatorPromise =>
+              Boolean(promise),
           ),
         );
 
@@ -3004,7 +3040,7 @@ export function registerTools() {
           const resolved = metadataOutcome.value;
           if (resolved?.ok) {
             await commitResolvedServiceNowModule(tabId, resolved);
-            return [
+            const result = [
               "Opened ServiceNow module.",
               "Winning path: metadata",
               `Application: ${resolved.module.application || application || "unknown"}`,
@@ -3013,9 +3049,28 @@ export function registerTools() {
               `Target: ${resolved.target}`,
               `Target URL: ${resolved.targetUrl}`,
               `Candidate count: ${resolved.candidateCount}`,
-              summarizeServiceNowMetadataOutcome(metadataOutcome, raceStartedAt),
-              summarizeServiceNowNavigatorOutcome(navigatorOutcome, raceStartedAt),
+              summarizeServiceNowMetadataOutcome(
+                metadataOutcome,
+                raceStartedAt,
+              ),
+              summarizeServiceNowNavigatorOutcome(
+                navigatorOutcome,
+                raceStartedAt,
+              ),
             ].join("\n");
+            return {
+              result,
+              evidence: serviceNowModuleEvidence({
+                winningPath: "metadata",
+                application:
+                  resolved.module.application || application || "unknown",
+                path,
+                moduleTitle: resolved.module.title,
+                moduleSysId: resolved.module.sysId,
+                target: resolved.target,
+                targetUrl: resolved.targetUrl,
+              }),
+            };
           }
           continue;
         }
@@ -3030,7 +3085,7 @@ export function registerTools() {
               candidate,
             );
             if (commitPath !== "navigator_click_unavailable") {
-              return [
+              const result = [
                 "Opened ServiceNow module via navigator fallback.",
                 `Winning path: ${commitPath}`,
                 `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
@@ -3049,11 +3104,25 @@ export function registerTools() {
               ]
                 .filter(Boolean)
                 .join("\n");
+              return {
+                result,
+                evidence: serviceNowModuleEvidence({
+                  winningPath: commitPath,
+                  application: application || "unknown",
+                  path,
+                  candidate: candidate.candidateText,
+                  navigatorQuery: candidate.query,
+                  target: candidate.target ?? null,
+                  targetUrl: candidate.targetUrl ?? null,
+                }),
+              };
             }
             navigatorCommitFailure = commitPath;
           } catch (error) {
             navigatorCommitFailure =
-              error instanceof Error ? error.message : "navigator_commit_failed";
+              error instanceof Error
+                ? error.message
+                : "navigator_commit_failed";
           }
         }
       }
@@ -5544,7 +5613,8 @@ export function registerTools() {
               ];
               return controls.find((el) => matches(labelsFor(el), label));
             };
-            const currentBodyText = () => display(document.body?.innerText || "");
+            const currentBodyText = () =>
+              display(document.body?.innerText || "");
             const cartCheckoutVisible = () => {
               const text = currentBodyText();
               return (
@@ -5846,7 +5916,11 @@ export function registerTools() {
               label: string;
               type: string;
               reference: string;
-              control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+              control:
+                | HTMLInputElement
+                | HTMLSelectElement
+                | HTMLTextAreaElement
+                | null;
             };
 
             const normalizeFieldName = (raw: unknown): string => {
@@ -5860,7 +5934,11 @@ export function registerTools() {
 
             const controlFor = (
               fieldName: string,
-            ): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null => {
+            ):
+              | HTMLInputElement
+              | HTMLSelectElement
+              | HTMLTextAreaElement
+              | null => {
               const candidates: unknown[] = [];
               try {
                 candidates.push(gForm.getControl?.(fieldName));
@@ -5885,7 +5963,9 @@ export function registerTools() {
                 }
               }
               const controls = candidates.filter(
-                (candidate): candidate is
+                (
+                  candidate,
+                ): candidate is
                   | HTMLInputElement
                   | HTMLSelectElement
                   | HTMLTextAreaElement =>
@@ -5896,7 +5976,10 @@ export function registerTools() {
               return (
                 controls.find(
                   (control) =>
-                    !(control instanceof HTMLInputElement && control.type === "hidden"),
+                    !(
+                      control instanceof HTMLInputElement &&
+                      control.type === "hidden"
+                    ),
                 ) ??
                 controls[0] ??
                 null
@@ -5993,14 +6076,19 @@ export function registerTools() {
               }
               try {
                 return Boolean(
-                  document.getElementById(`lookup.${fieldPathFor(fieldName, control)}`),
+                  document.getElementById(
+                    `lookup.${fieldPathFor(fieldName, control)}`,
+                  ),
                 );
               } catch {
                 return false;
               }
             };
 
-            const referenceFor = (fieldName: string, control: Element | null) => {
+            const referenceFor = (
+              fieldName: string,
+              control: Element | null,
+            ) => {
               const commonReference = commonReferenceTableForField(fieldName);
               if (commonReference) return commonReference;
               if (!isReferenceLikeControl(fieldName, control)) return "";
@@ -6046,7 +6134,9 @@ export function registerTools() {
               // DOM field discovery below.
             }
             document
-              .querySelectorAll("input[name], select[name], textarea[name], input[id], select[id], textarea[id]")
+              .querySelectorAll(
+                "input[name], select[name], textarea[name], input[id], select[id], textarea[id]",
+              )
               .forEach((el) => {
                 const raw =
                   el.getAttribute("name") || el.getAttribute("id") || "";
@@ -6134,8 +6224,7 @@ export function registerTools() {
               try {
                 const displayBox = gForm.getDisplayBox?.(field.name);
                 const displayBoxValue =
-                  displayBox &&
-                  displayBox instanceof HTMLInputElement
+                  displayBox && displayBox instanceof HTMLInputElement
                     ? display(displayBox.value)
                     : "";
                 if (displayBoxValue) return displayBoxValue;
@@ -6168,7 +6257,9 @@ export function registerTools() {
                 `[id$=".${escapeCss(field.name)}"]:not([id^="sys_display."])`,
               ]) {
                 try {
-                  candidates.push(...Array.from(document.querySelectorAll(selector)));
+                  candidates.push(
+                    ...Array.from(document.querySelectorAll(selector)),
+                  );
                 } catch {
                   // Continue with direct candidates.
                 }
@@ -6214,7 +6305,10 @@ export function registerTools() {
               value: string,
             ) => {
               if (!control) return;
-              if (control instanceof HTMLInputElement && control.type === "checkbox") {
+              if (
+                control instanceof HTMLInputElement &&
+                control.type === "checkbox"
+              ) {
                 control.checked = /^(true|yes|checked|1)$/i.test(value);
               } else {
                 const descriptor =
@@ -6267,7 +6361,8 @@ export function registerTools() {
               if (value && typeof value === "object") {
                 const obj = value as Record<string, unknown>;
                 if (typeof obj.value === "string") return obj.value;
-                if (typeof obj.display_value === "string") return obj.display_value;
+                if (typeof obj.display_value === "string")
+                  return obj.display_value;
               }
               return "";
             };
@@ -6288,7 +6383,13 @@ export function registerTools() {
                 "first_name",
                 "last_name",
               ];
-              const exactQuery = ["name", "display_name", "number", "user_name", "email"]
+              const exactQuery = [
+                "name",
+                "display_name",
+                "number",
+                "user_name",
+                "email",
+              ]
                 .map((field) => `${field}=${clean}`)
                 .join("^OR");
               const fetchRecords = async (query: string) => {
@@ -6333,7 +6434,8 @@ export function registerTools() {
               const selected =
                 records.find((record: Record<string, unknown>) => {
                   const exact = queryFields.some(
-                    (field) => normalize(unwrap(record[field])) === normalize(clean),
+                    (field) =>
+                      normalize(unwrap(record[field])) === normalize(clean),
                   );
                   const fullName =
                     `${unwrap(record.first_name)} ${unwrap(record.last_name)}`.trim();
@@ -6353,7 +6455,9 @@ export function registerTools() {
               rawDisplayValue: string,
             ): Promise<{ ok: true } | { ok: false; reason: string }> => {
               const input =
-                field.control instanceof HTMLInputElement ? field.control : null;
+                field.control instanceof HTMLInputElement
+                  ? field.control
+                  : null;
               if (!input) return { ok: false, reason: "field_not_found" };
               const displayValue = rawDisplayValue.trim();
               if (!displayValue)
@@ -6400,7 +6504,10 @@ export function registerTools() {
                   }),
                 );
               };
-              const dispatchInput = (data: string | null, inputType: string) => {
+              const dispatchInput = (
+                data: string | null,
+                inputType: string,
+              ) => {
                 input.dispatchEvent(
                   new view.InputEvent("input", {
                     bubbles: true,
@@ -6596,7 +6703,10 @@ export function registerTools() {
                   const option = findMatchingOption();
                   if (option) {
                     const sysId = extractSysId(option);
-                    if (sysId && commitReferenceValue(field, sysId, displayValue)) {
+                    if (
+                      sysId &&
+                      commitReferenceValue(field, sysId, displayValue)
+                    ) {
                       await delay(100);
                       if (
                         isCommittedReferenceValue(
@@ -6656,7 +6766,9 @@ export function registerTools() {
             ): Promise<{ ok: true } | { ok: false; reason: string }> => {
               const desired = value;
               const choiceControl =
-                field.control instanceof HTMLSelectElement ? field.control : null;
+                field.control instanceof HTMLSelectElement
+                  ? field.control
+                  : null;
               if (choiceControl) {
                 const option =
                   Array.from(choiceControl.options).find(
@@ -6665,7 +6777,9 @@ export function registerTools() {
                       normalize(candidate.value) === normalize(desired),
                   ) ??
                   Array.from(choiceControl.options).find((candidate) =>
-                    normalize(candidate.textContent).includes(normalize(desired)),
+                    normalize(candidate.textContent).includes(
+                      normalize(desired),
+                    ),
                   );
                 const optionValue = option?.value ?? desired;
                 try {
@@ -6705,7 +6819,10 @@ export function registerTools() {
                   return { ok: true };
                 }
 
-                const resolved = await resolveReference(referenceTable, desired);
+                const resolved = await resolveReference(
+                  referenceTable,
+                  desired,
+                );
                 if (resolved) {
                   commitReferenceValue(
                     field,
@@ -6723,7 +6840,10 @@ export function registerTools() {
                   }
                 }
 
-                const selected = await selectReferenceAutocomplete(field, desired);
+                const selected = await selectReferenceAutocomplete(
+                  field,
+                  desired,
+                );
                 if (selected.ok) return { ok: true };
                 return {
                   ok: false,
@@ -6802,38 +6922,45 @@ export function registerTools() {
                 const numberField = fieldsMeta.find((field) =>
                   isRecordNumberField(field),
                 );
-                return numberField ? recordNumberFromText(readValue(numberField)) : "";
+                return numberField
+                  ? recordNumberFromText(readValue(numberField))
+                  : "";
               })();
 
             const recordFromTitle =
               document.title.match(/\bCreate\s+([A-Z]{2,}\d+)\b/i)?.[1] ||
-              document.body?.innerText?.match(/\b(?:Number|Record)\s+([A-Z]{2,}\d+)\b/i)?.[1] ||
+              document.body?.innerText?.match(
+                /\b(?:Number|Record)\s+([A-Z]{2,}\d+)\b/i,
+              )?.[1] ||
               null;
-            const tableName =
-              (() => {
-                try {
-                  const table = gForm.getTableName?.();
-                  if (table) return String(table);
-                } catch {
-                  // Fall back to field paths below.
-                }
-                const fieldPath = fieldsMeta.find((field) =>
-                  field.fieldPath.includes("."),
-                )?.fieldPath;
-                return fieldPath ? fieldPath.split(".")[0] : "";
-              })();
+            const tableName = (() => {
+              try {
+                const table = gForm.getTableName?.();
+                if (table) return String(table);
+              } catch {
+                // Fall back to field paths below.
+              }
+              const fieldPath = fieldsMeta.find((field) =>
+                field.fieldPath.includes("."),
+              )?.fieldPath;
+              return fieldPath ? fieldPath.split(".")[0] : "";
+            })();
 
             let submitClicked = false;
             let submitLabel = "";
             let submitMethod = "";
             let submitActionName = "";
             if (input.submit && mismatches.length === 0) {
-              const expected = input.submitButton ? normalize(input.submitButton) : "";
+              const expected = input.submitButton
+                ? normalize(input.submitButton)
+                : "";
               const isUsableSubmitControl = (control: HTMLElement) => {
                 const style = getComputedStyle(control);
                 const disabled =
                   "disabled" in control &&
-                  Boolean((control as HTMLButtonElement | HTMLInputElement).disabled);
+                  Boolean(
+                    (control as HTMLButtonElement | HTMLInputElement).disabled,
+                  );
                 return (
                   !disabled &&
                   style.display !== "none" &&
@@ -6900,7 +7027,9 @@ export function registerTools() {
                 return { ok: true, method: "click", actionName };
               };
               const controls = Array.from(
-                document.querySelectorAll("button, input[type='submit'], input[type='button'], [role='button']"),
+                document.querySelectorAll(
+                  "button, input[type='submit'], input[type='button'], [role='button']",
+                ),
               ) as HTMLElement[];
               const submitControl =
                 controls.find((control) => {
@@ -6998,9 +7127,14 @@ export function registerTools() {
             "i",
           ).test(currentTitle);
         const submitVerified =
-          !submit || (selected.submitClicked === true && !submitStayedOnSameCreateRecord);
+          !submit ||
+          (selected.submitClicked === true && !submitStayedOnSameCreateRecord);
         const effectiveMismatches = [...mismatches];
-        if (submit && selected.submitClicked === true && submitStayedOnSameCreateRecord) {
+        if (
+          submit &&
+          selected.submitClicked === true &&
+          submitStayedOnSameCreateRecord
+        ) {
           effectiveMismatches.push(
             `submit did not leave the create form for ${submittedRecord}`,
           );
@@ -7090,7 +7224,9 @@ export function registerTools() {
             observedAt,
             supportsTaskGoal: selected.submitClicked === true,
             detail: {
-              submitLabel: String(selected.submitLabel || submitButton || "submit"),
+              submitLabel: String(
+                selected.submitLabel || submitButton || "submit",
+              ),
               submitMethod: String(selected.submitMethod || ""),
             },
           });
@@ -7102,7 +7238,10 @@ export function registerTools() {
             confidence: "high",
             observedAt,
             supportsTaskGoal: false,
-            detail: { reason: "same_create_form_after_submit", submittedRecord },
+            detail: {
+              reason: "same_create_form_after_submit",
+              submittedRecord,
+            },
           });
         }
         if (effectiveOk && submit && submittedRecord) {
