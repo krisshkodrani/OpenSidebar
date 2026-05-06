@@ -165,4 +165,108 @@ describe("MutationLedger", () => {
     expect(first).not.toBe(second);
     expect(first).toContain("|elements:");
   });
+
+  test("includes form element value changes even when page text is unchanged", () => {
+    const first = getMutationReplayFingerprint(
+      snapshot({
+        pageContent: "Partner portal Register a partner contact.",
+        elements: [
+          {
+            tag: 10,
+            tagName: "button",
+            text: "Submit registration",
+            role: "button",
+            attributes: { type: "submit" },
+          },
+          {
+            tag: 4,
+            tagName: "input",
+            text: "415-555-0134",
+            role: "tel",
+            attributes: { name: "phone", value: "415-555-0134" },
+          },
+        ],
+      }),
+    );
+    const second = getMutationReplayFingerprint(
+      snapshot({
+        pageContent: "Partner portal Register a partner contact.",
+        elements: [
+          {
+            tag: 10,
+            tagName: "button",
+            text: "Submit registration",
+            role: "button",
+            attributes: { type: "submit" },
+          },
+          {
+            tag: 4,
+            tagName: "input",
+            text: "+1 415-555-0134",
+            role: "tel",
+            attributes: { name: "phone", value: "+1 415-555-0134" },
+          },
+        ],
+      }),
+    );
+
+    expect(first).not.toBe(second);
+    expect(first).toContain("|elements:");
+  });
+
+  test("does not replay a repeated submit click after form values change", () => {
+    const ledger = new MutationLedger(() => 10, () => "effect-1");
+    const beforeValidation = snapshot({
+      pageContent: "Partner portal Register a partner contact.",
+      elements: [
+        {
+          tag: 10,
+          tagName: "button",
+          text: "Submit registration",
+          role: "button",
+          attributes: { type: "submit" },
+        },
+        {
+          tag: 4,
+          tagName: "input",
+          text: "415-555-0134",
+          role: "tel",
+          attributes: { name: "phone", value: "415-555-0134" },
+        },
+      ],
+    });
+    const afterRepair = snapshot({
+      pageContent: "Partner portal Register a partner contact.",
+      elements: [
+        {
+          tag: 10,
+          tagName: "button",
+          text: "Submit registration",
+          role: "button",
+          attributes: { type: "submit" },
+        },
+        {
+          tag: 4,
+          tagName: "input",
+          text: "+1 415-555-0134",
+          role: "tel",
+          attributes: { name: "phone", value: "+1 415-555-0134" },
+        },
+      ],
+    });
+
+    ledger.record({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 10 },
+      result: 'Clicked [10] button "Submit registration"',
+      actionSnapshot: beforeValidation,
+      currentSnapshot: beforeValidation,
+      planIndex: 0,
+      turn: 1,
+    });
+
+    expect(
+      ledger.lookup(ToolName.CLICK_ELEMENT, { id: 10 }, afterRepair, false),
+    ).toBeNull();
+  });
 });

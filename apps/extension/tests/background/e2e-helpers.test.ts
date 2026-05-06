@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { __testOnly as e2eUtilsTestOnly } from "../e2e/helpers/utils";
 import { closeExtension } from "../e2e/helpers/browser";
 import {
+  collectFormTraceMetrics,
   extractDoneSummary,
   filterTraceFilesByWorkspace,
 } from "../e2e/helpers/diagnostics";
@@ -118,6 +119,173 @@ describe("e2e helper semantics", () => {
       );
 
       expect(extractDoneSummary([trace])).toBe("0");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("collects form trace outcome and efficiency metrics", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-e2e-"));
+    try {
+      const trace = join(dir, "form.jsonl");
+      writeFileSync(
+        trace,
+        [
+          JSON.stringify({
+            turnNumber: 1,
+            llmRequest: {
+              messages: [
+                {
+                  role: "user",
+                  content:
+                    "Page Interpretation\nStep 1. Full name, email, and phone fields are visible. Skill contract says post-submit success or validation state is possible.",
+                },
+              ],
+            },
+            llmResponse: {
+              toolCalls: [
+                { function: { name: "type_text", arguments: "{}" } },
+                { function: { name: "type_text", arguments: "{}" } },
+                { function: { name: "type_text", arguments: "{}" } },
+              ],
+            },
+            progressState: { stagnantTurns: 0, signal: null },
+          }),
+          JSON.stringify({
+            turnNumber: 2,
+            llmRequest: {
+              messages: [
+                {
+                  role: "user",
+                  content:
+                    "Page Interpretation\nPhone must include a country code. Invite code must match PN-4821 exactly. Access reason and Data processing agreement remain visible.",
+                },
+              ],
+            },
+            llmResponse: {
+              toolCalls: [
+                {
+                  function: {
+                    name: "click_element",
+                    arguments: JSON.stringify({ label: "Submit registration" }),
+                  },
+                },
+                { function: { name: "select_option", arguments: "{}" } },
+                { function: { name: "set_checkbox", arguments: "{}" } },
+              ],
+            },
+            elements: [
+              { text: "Phone must include a country code." },
+              { text: "Invite code must match PN-4821 exactly." },
+            ],
+            progressState: { stagnantTurns: 1, signal: "same_action" },
+          }),
+          JSON.stringify({
+            turnNumber: 3,
+            llmRequest: {
+              messages: [
+                {
+                  role: "user",
+                  content:
+                    "Page Interpretation\nReview summary is visible. Request submitted confirmation appears.",
+                },
+              ],
+            },
+            llmResponse: {
+              toolCalls: [
+                {
+                  function: {
+                    name: "click_element",
+                    arguments: JSON.stringify({ label: "Submit request" }),
+                  },
+                },
+                {
+                  function: {
+                    name: "done",
+                    arguments: JSON.stringify({ summary: "Submitted" }),
+                  },
+                },
+              ],
+            },
+            progressState: { stagnantTurns: 0, signal: null },
+          }),
+        ].join("\n") + "\n",
+        "utf-8",
+      );
+
+      const metrics = collectFormTraceMetrics([trace], {
+        requiredFieldCount: 5,
+        expectedStepTransitions: 2,
+        conditionalFieldLabels: ["Access reason", "Data processing agreement"],
+        validationErrorLabels: [
+          "Phone must include a country code",
+          "Invite code must match PN-4821",
+        ],
+        reviewText: "Review summary",
+        confirmationText: "Request submitted",
+      });
+
+      expect(metrics).toMatchObject({
+        turns: 3,
+        perceptionReads: 3,
+        fieldWriteCount: 5,
+        stepTransitionCount: 2,
+        validationErrorCount: 2,
+        correctedFieldCount: 2,
+        failedSubmitCount: 1,
+        reworkStagnationCount: 1,
+        finalSubmitConfidence: 1,
+        recoverySuccess: true,
+        outcome: {
+          filledRequiredFields: true,
+          handledConditionalFields: true,
+          advancedAllSteps: true,
+          verifiedReview: true,
+          submitted: true,
+          detectedConfirmation: true,
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not treat a visible submit button as a completed submit", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-e2e-"));
+    try {
+      const trace = join(dir, "form-open.jsonl");
+      writeFileSync(
+        trace,
+        `${JSON.stringify({
+          turnNumber: 1,
+          llmRequest: {
+            messages: [
+              {
+                role: "user",
+                content:
+                  "Page Interpretation\nA Submit request button is visible on the form.",
+              },
+            ],
+          },
+          llmResponse: {
+            toolCalls: [{ function: { name: "read_page", arguments: "{}" } }],
+          },
+          toolExecutions: [
+            {
+              toolName: "read_page",
+              result: "Page has a Submit request button.",
+              success: true,
+            },
+          ],
+          progressState: { stagnantTurns: 0, signal: null },
+        })}\n`,
+        "utf-8",
+      );
+
+      const metrics = collectFormTraceMetrics([trace]);
+
+      expect(metrics.outcome.submitted).toBe(false);
+      expect(metrics.finalSubmitConfidence).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

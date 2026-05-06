@@ -1771,6 +1771,53 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("collapses structured form fill and submit plans into one skill-owned workflow node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective:
+                            "Fill the partner registration form with Sam Rivera, sam.rivera@example.com, 415-555-0134, Northstar Analytics, Data analyst, Customer Success, and invite code pn-4821.",
+                        successCriteria:
+                            "The registration fields contain the requested values.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective:
+                            "Accept the partner terms and submit the registration.",
+                        successCriteria:
+                            "The registration submission succeeds or visible validation feedback is handled.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Register Sam Rivera for the partner portal. Use sam.rivera@example.com, phone 415-555-0134, company Northstar Analytics, role Data analyst, team Customer Success, and invite code pn-4821 exactly as provided. Accept the partner terms and submit the registration.",
+            "Partner Registration",
+            "https://example.com/partner-registration",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe("structured-form-fill");
+        expect(result.nodes[0].description).toContain(
+            "Complete the workflow for the original request",
+        );
+        expect(result.nodes[0].successCriteria).toContain(
+            "not merely an intermediate",
+        );
+    });
+
     test("fallback executor nodes expose workflow inspector tools", () => {
         const nodes = buildFallbackNodes(
             "Tell me the value shown in the dashboard chart.",
@@ -2768,6 +2815,34 @@ describe("selectPrimarySkill", () => {
                 pageTitle: "Work Experience Application",
             })?.id,
         ).toBe("progressive-repeatable-form");
+    });
+
+    test("prefers multi-step-form-wizard for conditional form flows", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Submit a vendor access request for Maya Patel. The request has multiple steps, customer data reveals extra fields, and the final review must be confirmed.",
+                objective:
+                    "Complete the current form step, continue through review, handle any conditional fields, and submit the request",
+                successCriteria:
+                    "The request is submitted after the review summary shows the requested values",
+                pageTitle: "Vendor Access Request",
+            })?.id,
+        ).toBe("multi-step-form-wizard");
+    });
+
+    test("routes conditional form field steps to the wizard skill", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Complete the vendor access request. Selecting customer data shows extra required fields before review.",
+                objective:
+                    "Fill the conditional access reason field and mark the data processing agreement checkbox",
+                successCriteria:
+                    "Conditional fields are complete before continuing to review",
+                pageTitle: "Vendor Access Request",
+            })?.id,
+        ).toBe("multi-step-form-wizard");
     });
 
     test("routes prepare-only submit steps to consent policy only for the final action", () => {

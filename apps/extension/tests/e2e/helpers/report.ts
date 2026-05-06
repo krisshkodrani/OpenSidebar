@@ -18,9 +18,11 @@ import {
   type SessionDiagnostics,
 } from "../../../src/trace-viewer/diagnostics";
 import {
+  collectFormTraceMetrics,
   extractRunIdFromTraceFile,
   readSkillSummaryForRun,
   readTrace,
+  type FormTraceMetrics,
   type TraceTurn,
 } from "./diagnostics";
 
@@ -65,6 +67,7 @@ interface TraceAnalysis extends TraceCostData {
   nodeSkills: Array<{ nodeId: string; skillId: string; reason?: string }>;
   diagnostics: SessionDiagnostics;
   failureClass: FailureClass;
+  formMetrics: FormTraceMetrics | null;
 }
 
 function createEmptyDiagnostics(): SessionDiagnostics {
@@ -339,6 +342,12 @@ function analyzeTraces(
     }
   }
 
+  const formMetrics = collectFormTraceMetrics(traceFiles);
+  const hasFormSkill =
+    skillsUsed.has("structured-form-fill") ||
+    skillsUsed.has("progressive-repeatable-form") ||
+    skillsUsed.has("multi-step-form-wizard");
+
   return {
     turns: totalTurns,
     cost: totalCost,
@@ -359,6 +368,7 @@ function analyzeTraces(
     })),
     diagnostics,
     failureClass: null,
+    formMetrics: hasFormSkill ? formMetrics : null,
   };
 }
 
@@ -397,6 +407,18 @@ function formatCounterSummary(
     .slice(0, maxItems);
   if (items.length === 0) return "none";
   return items.map(([key, value]) => `${key}(${value})`).join(", ");
+}
+
+function formatFormRubric(metrics: FormTraceMetrics): string {
+  const outcome = metrics.outcome;
+  return [
+    outcome.filledRequiredFields ? "fields" : "fields?",
+    outcome.handledConditionalFields ? "conditional" : "conditional?",
+    outcome.advancedAllSteps ? "steps" : "steps?",
+    outcome.verifiedReview ? "review" : "review?",
+    outcome.submitted ? "submit" : "submit?",
+    outcome.detectedConfirmation ? "confirmation" : "confirmation?",
+  ].join(", ");
 }
 
 function buildMarkdownReport(
@@ -452,6 +474,30 @@ function buildMarkdownReport(
   lines.push(
     "- `Success`: Whether the case completed successfully in the run.",
   );
+  lines.push(
+    "- `Form metrics`: For form-skill traces, field writes count text/select/checkbox writes, validation errors count observed inline/server feedback, corrections count field writes after validation feedback, rework counts stagnation/widening signals, and submit confidence ranges from 0 to 1.",
+  );
+
+  const formAnalyses = analyses.filter(({ analysis }) => analysis.formMetrics);
+  if (formAnalyses.length > 0) {
+    lines.push("");
+    lines.push("## Form Metrics");
+    lines.push("");
+    lines.push(
+      "| Case | Field writes | Step transitions | Validation errors | Failed submits | Corrections | Rework | Submit confidence | Recovery | Rubric |",
+    );
+    lines.push(
+      "|------|-------------:|-----------------:|------------------:|---------------:|------------:|-------:|------------------:|----------|--------|",
+    );
+    for (const { rec, analysis } of formAnalyses) {
+      const metrics = analysis.formMetrics;
+      if (!metrics) continue;
+      lines.push(
+        `| ${rec.name} | ${metrics.fieldWriteCount} | ${metrics.stepTransitionCount} | ${metrics.validationErrorCount} | ${metrics.failedSubmitCount} | ${metrics.correctedFieldCount} | ${metrics.reworkStagnationCount} | ${metrics.finalSubmitConfidence.toFixed(2)} | ${metrics.recoverySuccess ? "Yes" : "No"} | ${formatFormRubric(metrics)} |`,
+      );
+    }
+  }
+
   lines.push("");
   lines.push("## Stability Notes");
   lines.push("");
