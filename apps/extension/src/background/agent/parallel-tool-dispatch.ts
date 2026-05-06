@@ -1,4 +1,5 @@
 import { AgentStep, ToolCall, ToolName } from "../../types";
+import { resolveProfileFields } from "../infrastructure/backend-client";
 import { DOM_MODIFYING_TOOLS } from "../tools/metadata";
 import {
   hasRecentExactTextFieldRead,
@@ -29,6 +30,11 @@ import {
 } from "./loop-tool-handlers";
 import type { PreToolDecision } from "./middleware";
 import type { ParallelToolExecutionResult } from "./parallel-tool-execution";
+import {
+  assessProfileLiteralTextRewrite,
+  collectProfileRecordSetsFromValues,
+  getProfileLiteralFallbackFields,
+} from "./profile-literal-guards";
 import {
   actionMemoryKey,
   assessRepeatAction,
@@ -414,6 +420,51 @@ export async function executeParallelToolCalls(
             mode: "parallel",
           });
           return { toolCall, result: null, error: targetError };
+        }
+        let profileLiteralRewrite = assessProfileLiteralTextRewrite({
+          selectedSkillId: host.selectedSkillId,
+          messages: host.context.getMessages(),
+          element: target,
+          text: args.text,
+        });
+        if (!profileLiteralRewrite) {
+          const fallbackFields = getProfileLiteralFallbackFields(target);
+          if (fallbackFields.length > 0) {
+            const resolvedProfile = await resolveProfileFields(fallbackFields);
+            if (resolvedProfile) {
+              profileLiteralRewrite = assessProfileLiteralTextRewrite({
+                selectedSkillId: host.selectedSkillId,
+                messages: [],
+                recordSets: collectProfileRecordSetsFromValues(
+                  resolvedProfile.values,
+                ),
+                element: target,
+                text: args.text,
+              });
+            }
+          }
+        }
+        if (profileLiteralRewrite) {
+          args.text = profileLiteralRewrite.rewrittenText;
+          toolCall.function.arguments = JSON.stringify(args);
+          host.context.addMessage({
+            role: "user",
+            content: profileLiteralRewrite.reason,
+          });
+          host.log.info("agent", "Profile literal text rewrite applied", {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            skillId: host.selectedSkillId,
+            mode: "parallel",
+          });
+          host.traceRecorder?.recordEvent("profile_literal_text_rewrite", {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            skillId: host.selectedSkillId ?? "unknown",
+            mode: "parallel",
+          });
         }
       }
 

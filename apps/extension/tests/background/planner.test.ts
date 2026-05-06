@@ -1723,6 +1723,54 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("collapses progressive repeatable form plans into one skill-owned workflow node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Read the work history form structure",
+                        successCriteria: "The required number of experience entries is known",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Retrieve saved profile work history",
+                        successCriteria: "Profile roles are available",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Add and fill the experience entries",
+                        successCriteria: "Work history entries are visible and the application is not submitted",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Use the roles from my saved profile to complete my work history on this application. Add the experience entries the page needs, keep them in profile order, and leave the application unsubmitted.",
+            "Work Experience Application",
+            "https://example.com/experience-application",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe(
+            "progressive-repeatable-form",
+        );
+        expect(result.nodes[0].description).toContain(
+            "Complete the workflow for the original request",
+        );
+    });
+
     test("fallback executor nodes expose workflow inspector tools", () => {
         const nodes = buildFallbackNodes(
             "Tell me the value shown in the dashboard chart.",
@@ -2334,6 +2382,17 @@ describe("selectPrimarySkill", () => {
                 "form_fill",
             ),
         ).toBe("full");
+        const repeatableFormSkill = getLoadedSkillContract(
+            "progressive-repeatable-form",
+        );
+        expect(repeatableFormSkill?.procedureMarkdown).toContain(
+            "copying profile strings exactly",
+        );
+        expect(
+            repeatableFormSkill?.executionContract?.toolDiscipline,
+        ).toContain(
+            "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
+        );
         expect(
             selectPrimarySkill({
                 query:
@@ -2681,6 +2740,46 @@ describe("selectPrimarySkill", () => {
                 successCriteria: "Checkout form shows full name and email from the saved profile and order is submitted",
             })?.id,
         ).toBe("structured-form-fill");
+    });
+
+    test("prefers progressive-repeatable-form for adding repeated form groups", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Use the roles from my saved profile to complete my work history. Add whatever experience entries are needed and leave the application unsubmitted.",
+                objective:
+                    "Add three work experience entries and verify Experience 1, Experience 2, and Experience 3 are visible",
+                successCriteria:
+                    "Three experience sections are visible and the application has not been submitted",
+                pageTitle: "Work Experience Application",
+            })?.id,
+        ).toBe("progressive-repeatable-form");
+    });
+
+    test("keeps repeated form fill nodes out of consent-only routing", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Use the roles from my saved profile to complete my work history. Add whatever experience entries are needed and leave the application unsubmitted.",
+                objective:
+                    "Fill Experience 2 using the matching role from the saved profile",
+                successCriteria:
+                    "Experience 2 company, title, dates, and summary match the second saved role",
+                pageTitle: "Work Experience Application",
+            })?.id,
+        ).toBe("progressive-repeatable-form");
+    });
+
+    test("routes prepare-only submit steps to consent policy only for the final action", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Fill the application from my saved profile, but do not submit it without my approval.",
+                objective: "Submit the application",
+                successCriteria: "Submission is held until explicit approval is granted",
+                pageTitle: "Frontend Engineer Application",
+            })?.id,
+        ).toBe("consequential-action-consent");
     });
 
     test("keeps cart-modify-checkout for earlier cart step even when query mentions saved profile", () => {

@@ -727,6 +727,175 @@ body {
   margin-bottom: 20px;
 }
 
+/* Progressive experience application */
+.experience-app {
+  background: #f8fafc;
+  min-height: 100vh;
+}
+.experience-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+}
+.experience-panel,
+.experience-sidebar {
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+.experience-panel {
+  padding: 24px;
+}
+.experience-header {
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+}
+.experience-header h1 {
+  color: #0f172a;
+  font-size: 26px;
+  font-weight: 750;
+  margin: 0 0 6px;
+}
+.experience-eyebrow {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  text-transform: uppercase;
+}
+.experience-progress {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  display: flex;
+  font-size: 13px;
+  font-weight: 650;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  min-height: 42px;
+  padding: 10px 12px;
+}
+.experience-empty {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  color: #475569;
+  margin-bottom: 16px;
+  padding: 18px;
+}
+.experience-list {
+  display: grid;
+  gap: 16px;
+}
+.experience-section {
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  margin: 0;
+  min-width: 0;
+  padding: 16px;
+}
+.experience-section legend {
+  color: #111827;
+  font-size: 16px;
+  font-weight: 750;
+  padding: 0 6px;
+}
+.experience-section-status {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+.experience-field-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.experience-field-grid .field {
+  margin-bottom: 0;
+  min-width: 0;
+}
+.experience-field-wide {
+  grid-column: 1 / -1;
+}
+.experience-actions {
+  align-items: center;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+.experience-sidebar {
+  align-self: start;
+  padding: 18px;
+  position: sticky;
+  top: 72px;
+}
+.experience-sidebar h2 {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 750;
+  margin: 0 0 14px;
+}
+.experience-sidebar dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.experience-sidebar dl div {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+.experience-sidebar dt {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.experience-sidebar dd {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 650;
+  margin: 3px 0 0;
+}
+
+@media (max-width: 840px) {
+  .experience-shell {
+    grid-template-columns: 1fr;
+    padding: 20px 16px 36px;
+  }
+  .experience-sidebar {
+    order: -1;
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .experience-panel {
+    padding: 18px;
+  }
+  .experience-field-grid {
+    grid-template-columns: 1fr;
+  }
+  .experience-progress,
+  .experience-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .experience-actions .btn {
+    width: 100%;
+  }
+}
+
 /* Navigation Challenge */
 .step-indicator {
   display: flex;

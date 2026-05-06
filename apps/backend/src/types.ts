@@ -5,10 +5,12 @@
 // —— Profile types (filesystem-backed) ——
 
 export type ProfileScalar = string | number | boolean | null;
+export type ProfileObject = Record<string, unknown>;
 export type ProfileValue =
   | ProfileScalar
   | ProfileScalar[]
-  | Record<string, unknown>;
+  | ProfileObject
+  | ProfileObject[];
 
 export interface PersonalProfileDocument {
   profile: Record<string, unknown>;

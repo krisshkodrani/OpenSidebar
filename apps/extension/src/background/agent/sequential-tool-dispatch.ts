@@ -37,6 +37,12 @@ import {
   type AgentLoopToolHandlerHost,
   type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
+import { resolveProfileFields } from "../infrastructure/backend-client";
+import {
+  assessProfileLiteralTextRewrite,
+  collectProfileRecordSetsFromValues,
+  getProfileLiteralFallbackFields,
+} from "./profile-literal-guards";
 import {
   advanceCompletedSubtasks,
   type AgentLoopPlanProgressHost,
@@ -181,6 +187,7 @@ export async function executeSequentialToolCalls(
     doneSignaled = true;
     params.signalCompletedResult(summary, options);
   };
+  const sameResponseClickKeys = new Set<string>();
   for (const toolCall of params.toolCalls) {
     if (!this.isRunning) break;
     this.throwIfGracefulStopRequested();
@@ -201,6 +208,31 @@ export async function executeSequentialToolCalls(
       this.context.getSnapshot(),
     );
     this.recordSkillToolSelection(toolName, "sequential");
+
+    if (toolName === ToolName.CLICK_ELEMENT) {
+      if (sameResponseClickKeys.has(argsKey)) {
+        const message =
+          "BLOCKED: duplicate click_element with the same target in one response. " +
+          "Clicking can change the DOM and invalidate element IDs; call read_page before retrying the same click.";
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: message,
+        });
+        this.log.warn("agent", "Duplicate same-response click blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          mode: "sequential",
+        });
+        this.traceRecorder?.recordEvent("same_response_click_blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          mode: "sequential",
+        });
+        continue;
+      }
+      sameResponseClickKeys.add(argsKey);
+    }
 
     const repeatActionExempt =
       isListDetailReturnControlRepeatExempt({
@@ -557,6 +589,51 @@ export async function executeSequentialToolCalls(
           mode: "sequential",
         });
         continue;
+      }
+      let profileLiteralRewrite = assessProfileLiteralTextRewrite({
+        selectedSkillId: this.selectedSkillId,
+        messages: this.context.getMessages(),
+        element: target,
+        text: args.text,
+      });
+      if (!profileLiteralRewrite) {
+        const fallbackFields = getProfileLiteralFallbackFields(target);
+        if (fallbackFields.length > 0) {
+          const resolvedProfile = await resolveProfileFields(fallbackFields);
+          if (resolvedProfile) {
+            profileLiteralRewrite = assessProfileLiteralTextRewrite({
+              selectedSkillId: this.selectedSkillId,
+              messages: [],
+              recordSets: collectProfileRecordSetsFromValues(
+                resolvedProfile.values,
+              ),
+              element: target,
+              text: args.text,
+            });
+          }
+        }
+      }
+      if (profileLiteralRewrite) {
+        args.text = profileLiteralRewrite.rewrittenText;
+        toolCall.function.arguments = JSON.stringify(args);
+        this.context.addMessage({
+          role: "user",
+          content: profileLiteralRewrite.reason,
+        });
+        this.log.info("agent", "Profile literal text rewrite applied", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          skillId: this.selectedSkillId,
+          mode: "sequential",
+        });
+        this.traceRecorder?.recordEvent("profile_literal_text_rewrite", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          skillId: this.selectedSkillId ?? "unknown",
+          mode: "sequential",
+        });
       }
     }
 

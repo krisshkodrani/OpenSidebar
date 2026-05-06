@@ -151,6 +151,7 @@ const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "list-filter-workflow",
   "list-sort-workflow",
   "catalog-order-workflow",
+  "progressive-repeatable-form",
 ]);
 
 function unionTools(groups: TaskNode[]): ToolName[] {

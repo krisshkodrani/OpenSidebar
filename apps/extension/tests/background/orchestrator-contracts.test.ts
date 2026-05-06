@@ -94,6 +94,36 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.CLARIFY)).toBe(true);
   });
 
+  test("progressive-repeatable-form suppresses shortcut actions while preserving form tools", () => {
+    const node = makeNode(
+      [
+        ToolName.READ_PAGE,
+        ToolName.CLICK_ELEMENT,
+        ToolName.TYPE_TEXT,
+        ToolName.NAVIGATE,
+        ToolName.OPEN_SERVICENOW_MODULE,
+        ToolName.PRESS_KEY,
+        ToolName.CLICK_COORDINATES,
+        ToolName.UPDATE_NOTES,
+      ],
+      {
+        selectedSkillId: "progressive-repeatable-form",
+      },
+    );
+    const contract = buildRoleExecutionContract("executor", baseSettings, node);
+
+    expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.OPEN_SERVICENOW_MODULE)).toBe(
+      false,
+    );
+    expect(contract.allowedTools.includes(ToolName.PRESS_KEY)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
+  });
+
   test("modal-overlay-recovery suppresses broad actions but keeps recovery exits available", () => {
     const node = makeNode(
       [
