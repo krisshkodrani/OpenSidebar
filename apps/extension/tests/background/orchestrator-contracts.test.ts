@@ -124,6 +124,36 @@ describe("Orchestrator role contracts", () => {
     expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
   });
 
+  test("multi-step-form-wizard suppresses navigation shortcuts while preserving form tools", () => {
+    const node = makeNode(
+      [
+        ToolName.READ_PAGE,
+        ToolName.CLICK_ELEMENT,
+        ToolName.TYPE_TEXT,
+        ToolName.SELECT_OPTION,
+        ToolName.SET_CHECKBOX,
+        ToolName.NAVIGATE,
+        ToolName.PRESS_KEY,
+        ToolName.CLICK_COORDINATES,
+        ToolName.UPDATE_NOTES,
+      ],
+      {
+        selectedSkillId: "multi-step-form-wizard",
+      },
+    );
+    const contract = buildRoleExecutionContract("executor", baseSettings, node);
+
+    expect(contract.allowedTools.includes(ToolName.READ_PAGE)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.CLICK_ELEMENT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.TYPE_TEXT)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.SELECT_OPTION)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.SET_CHECKBOX)).toBe(true);
+    expect(contract.allowedTools.includes(ToolName.NAVIGATE)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.PRESS_KEY)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.CLICK_COORDINATES)).toBe(false);
+    expect(contract.allowedTools.includes(ToolName.UPDATE_NOTES)).toBe(true);
+  });
+
   test("modal-overlay-recovery suppresses broad actions but keeps recovery exits available", () => {
     const node = makeNode(
       [

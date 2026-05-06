@@ -551,6 +551,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Map values to fields before typing.",
       "For configurators, verify any derived total, price, or summary after changing options before finishing.",
+      "If same-page validation errors appear after submit, repair the named fields and resubmit instead of treating validation as completion.",
     ],
   },
   {
@@ -583,6 +584,38 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Count existing repeated groups before adding new ones.",
       "Re-ground after Add another/Add item controls because element ids and field groups can change.",
       "Map values by group label or index, not by field order alone.",
+    ],
+  },
+  {
+    id: "multi-step-form-wizard",
+    name: "Multi-Step Form Wizard",
+    description:
+      "Complete forms split across Next/Back/Review steps, including conditional fields that appear after earlier choices.",
+    tags: ["workflow", "forms", "wizard", "conditional", "data-entry"],
+    triggers: [
+      "multi-step form",
+      "form wizard",
+      "continue through review",
+      "conditional fields",
+      "next step then submit",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "type_text",
+      "select_option",
+      "set_checkbox",
+      "click_element",
+      "read_element",
+      "update_notes",
+    ],
+    discouragedTools: ["press_key", "click_coordinates"],
+    contextScope: "turn",
+    verifierMode: "deterministic",
+    notes: [
+      "Treat each Next/Continue click as a state transition that requires fresh grounding.",
+      "After selecting options that reveal conditional fields, fill and verify the revealed requirements before advancing.",
+      "Use the review step as evidence before final submit.",
     ],
   },
   {
@@ -1609,6 +1642,7 @@ const SKILL_BODIES: Record<
       "9. Re-check required fields and validation messages before submission.",
       "10. For product configurators or option forms, re-read the derived total, price, or summary after option changes before submission or completion.",
       "11. Submit only when all requested values are present and no obvious validation blocker remains.",
+      "12. If submission returns same-page validation errors, re-read the current page, repair only the fields named by the validation feedback, verify the repaired values, then submit again with fresh element ids.",
     ].join("\n"),
     requiredEvidence: [
       "Field mapping for requested values",
@@ -1625,28 +1659,37 @@ const SKILL_BODIES: Record<
         signal: "wrong value in wrong field",
         recovery: "re-read labels and verify mapping before resubmitting",
       },
+      {
+        signal: "same-page validation errors remain after submit",
+        recovery:
+          "repair the named fields from current validation feedback, re-ground on the page, and resubmit with current element ids",
+      },
     ],
     executionContract: {
       sequencing: [
         "Map fields before typing.",
         "Fill values field-by-field.",
         "Submit only after the full required set is present.",
+        "Treat same-page validation feedback as part of the current form workflow until it is repaired or proven impossible.",
       ],
       toolDiscipline: [
         "Use get_profile_fields for exact saved-profile values when the task calls for them.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
         'Use read_element(attribute="value") for filled textareas or long exact literals when read_page evidence is ambiguous.',
         "For configurators, use read_page after option changes to verify the derived total or summary.",
+        "After validation feedback changes the page, use read_page or read_element before reusing submit or field element ids.",
       ],
       completionChecks: [
         "All requested values are visibly present in the intended fields.",
         "Any derived total, price, or summary reflects the selected options when relevant.",
         "No obvious validation blocker remains before submit.",
-        "After submit, either a success state or a concrete validation state is visible.",
+        "After submit, a success state is visible when the user requested submission.",
+        "Visible validation errors are repaired before done unless they make the task impossible.",
       ],
       failureRecovery: [
         "If a value lands in the wrong field, re-read labels and repair the mapping before resubmitting.",
         "If submission fires too early, return to the remaining fields and finish the mapping before trying again.",
+        "If submit returns validation errors on the same page, correct the named values using current page state and submit again.",
       ],
     },
   },
@@ -1707,6 +1750,62 @@ const SKILL_BODIES: Record<
         "If the add control disappears or changes id, re-ground with read_page before continuing.",
         "If the page has fewer groups than requested after an add click, retry only after verifying current count.",
         "If group mapping is ambiguous, read group headings and labels before typing further.",
+      ],
+    },
+  },
+  "multi-step-form-wizard": {
+    procedureMarkdown: [
+      "1. Identify the current step, the visible required fields, and the final requested outcome.",
+      "2. Fill only fields visible on the current step, preserving explicit user values exactly.",
+      "3. Before clicking Next/Continue, verify the current step has no obvious missing required values or validation blockers.",
+      "4. After every Next/Continue/Back transition, call read_page or otherwise re-ground before using element ids from the prior step.",
+      "5. When a select, radio, checkbox, or toggle reveals conditional fields, fill those newly visible requirements before advancing.",
+      "6. On review steps, compare the visible summary against the requested values before final submission.",
+      "7. Submit only after the review or confirmation control is intentionally handled and the task asks for submission.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Current step and visible required fields",
+      "Filled values on each step before advancement",
+      "Conditional fields revealed by earlier choices",
+      "Review-step summary before final submit",
+      "Post-submit success or validation state",
+    ],
+    commonFailures: [
+      {
+        signal: "Next is clicked before conditional fields appear or are filled",
+        recovery:
+          "re-read the current step, fill the newly visible required fields, then continue",
+      },
+      {
+        signal: "an element id from a prior step is reused after navigation",
+        recovery:
+          "re-ground on the current step and use current labels or ids before acting",
+      },
+      {
+        signal: "review data does not match the requested values",
+        recovery:
+          "go back to the relevant step, repair the field, then return to review",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Ground current step, fill visible fields, verify step readiness, advance, re-ground, handle conditional fields, review, then submit only when requested.",
+      ],
+      toolDiscipline: [
+        "Use read_page after each step transition before reusing element ids.",
+        "Use select_option and set_checkbox for option controls instead of keyboard shortcuts.",
+        "Avoid press_key and click_coordinates for wizard progression and submit.",
+        'Use read_element(attribute="value") for long text fields when visible readback is ambiguous.',
+      ],
+      completionChecks: [
+        "Each requested value appears in the intended field or review summary.",
+        "Conditional fields required by chosen options are completed.",
+        "The review step is confirmed before final submission.",
+        "After submit, success or concrete validation feedback is visible.",
+      ],
+      failureRecovery: [
+        "If advancement fails, inspect validation messages and fill the missing visible field before retrying.",
+        "If a conditional field was missed, return to the triggering step and complete it before submitting.",
       ],
     },
   },
@@ -2385,6 +2484,10 @@ const profileFieldPattern =
   /\b(saved profile|profile field|profile data|identity\.(?:first_name|last_name|email)|full name|email address)\b/i;
 const progressiveRepeatableFormPattern =
   /\b(?:add|create|insert)\b[\s\S]{0,120}\b(?:another|multiple|several|\d+|two|three|four|five|sections?|roles?|experiences?|education|addresses?|dependents?)\b[\s\S]{0,120}\b(?:section|role|experience|education|address|dependent|form group|field group)s?\b|\b(?:add|create|insert)\b[\s\S]{0,120}\b(?:experience|education|address|dependent|role|work history|employment history)\s+entries\b|\b(?:experience|education|address|dependent|role|employment history|work history)\s+\d+\b|\b(?:roles?|experiences?|sections?)\b[\s\S]{0,80}\b(?:in order|repeatable|repeated|add another|add item|add experience)\b/i;
+const multiStepFormWizardPattern =
+  /\b(?:multi[-\s]?step|wizard|step\s+\d|next\s+step|continue\s+(?:to|through)|review\s+(?:step|details|page|summary))\b[\s\S]{0,160}\b(?:form|request|application|enrollment|intake|submit|submission)\b|\b(?:form|request|application|enrollment|intake)\b[\s\S]{0,160}\b(?:multi[-\s]?step|wizard|next|continue\s+(?:to|through)|review\s+(?:step|details|page|summary))\b/i;
+const conditionalFormPattern =
+  /\b(?:conditional|depends on|reveals?|appears?|hidden|required if|only if)\b[\s\S]{0,120}\b(?:field|fields|section|question|checkbox|dropdown|radio|select)\b|\b(?:field|fields|section|question)\b[\s\S]{0,120}\b(?:appears?|reveals?|required if|only if)\b/i;
 const consequentialActionConsentPattern =
   /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b|\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b|\b(?:final approval|required approval|approval required|ask before)\b/i;
 const finalConsequentialActionPattern =
@@ -2632,7 +2735,10 @@ export function resolveSkillToolProfile(
     return hasServiceNowRecordSubmitIntent(text) ? "submit_form" : "form_fill";
   }
 
-  if (descriptor.id === "progressive-repeatable-form") {
+  if (
+    descriptor.id === "progressive-repeatable-form" ||
+    descriptor.id === "multi-step-form-wizard"
+  ) {
     return "form_fill";
   }
 
@@ -2672,7 +2778,11 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
   SkillToolSuppressionPolicy
 > = {
   "structured-form-fill": {
-    temporarilySuppressedTools: [ToolName.PRESS_KEY],
+    temporarilySuppressedTools: [
+      ToolName.PRESS_KEY,
+      ToolName.XRAY_PAGE,
+      ToolName.CLICK_COORDINATES,
+    ],
     exemptTools: [
       ToolName.DONE,
       ToolName.ESCALATE,
@@ -2681,6 +2791,25 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
     ],
   },
   "progressive-repeatable-form": {
+    temporarilySuppressedTools: [
+      ToolName.NAVIGATE,
+      ToolName.OPEN_SERVICENOW_MODULE,
+      ToolName.GO_BACK,
+      ToolName.CREATE_TAB,
+      ToolName.LIST_TABS,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.PRESS_KEY,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+    ],
+  },
+  "multi-step-form-wizard": {
     temporarilySuppressedTools: [
       ToolName.NAVIGATE,
       ToolName.OPEN_SERVICENOW_MODULE,
@@ -2917,6 +3046,13 @@ function selectPrimarySkillWithKeywordMatcher(
       /\b(?:fill|add|create|section|entry|row|item|role|experience|education|address|dependent|field)\b/i.test(
         stepCorpus,
       ));
+  const currentStepLooksLikeMultiStepFormWizard =
+    multiStepFormWizardPattern.test(stepCorpus) ||
+    ((multiStepFormWizardPattern.test(corpus) ||
+      conditionalFormPattern.test(corpus)) &&
+      /\b(?:fill|form|field|request|application|enrollment|intake|continue|next|review|submit|confirm|checkbox|select|radio)\b/i.test(
+        stepCorpus,
+      ));
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
   const matchesMultiTabChecklistWorkflow =
@@ -2951,6 +3087,15 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "progressive-repeatable-form",
       "Current step targets repeated/progressive form groups and should count, add, map, fill, and verify groups by index or label.",
+    );
+    if (selection) return selection;
+  }
+
+  if (currentStepLooksLikeMultiStepFormWizard) {
+    const selection = selectEnabledSkill(
+      input,
+      "multi-step-form-wizard",
+      "Current step targets a multi-step or conditional form and should fill visible fields, re-ground after transitions, handle revealed fields, review, and submit when requested.",
     );
     if (selection) return selection;
   }

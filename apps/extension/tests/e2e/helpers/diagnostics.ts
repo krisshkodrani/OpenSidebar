@@ -221,6 +221,39 @@ export interface RunCompletionSummary {
   summary: string;
 }
 
+export interface FormOutcomeEvidence {
+  requiredFieldCount?: number;
+  expectedStepTransitions?: number;
+  conditionalFieldLabels?: string[];
+  validationErrorLabels?: string[];
+  reviewText?: string;
+  submitted?: boolean;
+  confirmationText?: string;
+}
+
+export interface FormOutcomeRubric {
+  filledRequiredFields: boolean;
+  handledConditionalFields: boolean;
+  advancedAllSteps: boolean;
+  verifiedReview: boolean;
+  submitted: boolean;
+  detectedConfirmation: boolean;
+}
+
+export interface FormTraceMetrics {
+  turns: number;
+  perceptionReads: number;
+  fieldWriteCount: number;
+  stepTransitionCount: number;
+  validationErrorCount: number;
+  correctedFieldCount: number;
+  failedSubmitCount: number;
+  reworkStagnationCount: number;
+  finalSubmitConfidence: number;
+  recoverySuccess: boolean;
+  outcome: FormOutcomeRubric;
+}
+
 function isRejectedDoneTurn(entry: any): boolean {
   const events = Array.isArray(entry?.events) ? entry.events : [];
   return events.some((event: any) => {
@@ -325,7 +358,7 @@ export function extractLatestReadPageText(traceFiles: string[]): string {
   let latestText = "";
   let latestTimestamp = "";
 
-  for (const filePath of traceFiles) {
+  for (const filePath of sortTraceFilesChronologically(traceFiles)) {
     if (!existsSync(filePath)) continue;
     try {
       const raw = readFileSync(filePath, "utf-8");
@@ -575,6 +608,223 @@ export function collectSkillIdsForTraceFiles(traceFiles: string[]): string[] {
   return [...skillIds].sort();
 }
 
+export function collectFormTraceMetrics(
+  traceFiles: string[],
+  evidence: FormOutcomeEvidence = {},
+): FormTraceMetrics {
+  let turns = 0;
+  let perceptionReads = 0;
+  let fieldWriteCount = 0;
+  let stepTransitionCount = 0;
+  let correctedFieldCount = 0;
+  let reworkStagnationCount = 0;
+  let sawDone = false;
+  let sawSubmitAction = false;
+  let submitActionCount = 0;
+  let validationSeen = false;
+  const rawParts: string[] = [];
+  const observedValidationParts: string[] = [];
+  const traceEntries: any[] = [];
+
+  for (const filePath of traceFiles) {
+    if (!existsSync(filePath)) continue;
+    let raw = "";
+    try {
+      raw = readFileSync(filePath, "utf-8");
+    } catch {
+      continue;
+    }
+    rawParts.push(raw);
+
+    const lines = raw.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        traceEntries.push(JSON.parse(line));
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  for (const entry of traceEntries.sort(compareTraceEntries)) {
+    turns++;
+    const entryText = collectEntryValidationText(entry);
+    const turnHasValidationSignal = entryHasValidationSignal(
+      entryText,
+      evidence.validationErrorLabels,
+    );
+    if (turnHasValidationSignal) {
+      observedValidationParts.push(entryText);
+    }
+
+    const messages = Array.isArray(entry?.llmRequest?.messages)
+      ? entry.llmRequest.messages
+      : [];
+    if (
+      messages.some(
+        (message: any) =>
+          typeof message?.content === "string" &&
+          message.content.includes("Page Interpretation"),
+      )
+    ) {
+      perceptionReads++;
+    }
+
+    const toolCalls = Array.isArray(entry?.llmResponse?.toolCalls)
+      ? entry.llmResponse.toolCalls
+      : [];
+    let transitionCallsFromToolCalls = 0;
+    let submitCallsFromToolCalls = 0;
+    for (const toolCall of toolCalls) {
+      const name = String(
+        toolCall?.function?.name ?? toolCall?.name ?? "",
+      );
+      const args = toolCall?.function?.arguments
+        ? safeParseArgs(toolCall.function.arguments)
+        : toolCall?.args ?? {};
+      const argsText = JSON.stringify(args);
+
+      if (
+        name === "type_text" ||
+        name === "select_option" ||
+        name === "set_checkbox"
+      ) {
+        fieldWriteCount++;
+        if (validationSeen || turnHasValidationSignal) {
+          correctedFieldCount++;
+        }
+      }
+      if (name === "done") {
+        sawDone = true;
+      }
+      if (
+        name === "click_element" &&
+        /\b(continue|next|review|submit|finish)\b/i.test(argsText)
+      ) {
+        transitionCallsFromToolCalls++;
+        if (/\bsubmit\b/i.test(argsText)) {
+          sawSubmitAction = true;
+          submitCallsFromToolCalls++;
+        }
+      }
+    }
+
+    const toolExecutions = Array.isArray(entry?.toolExecutions)
+      ? entry.toolExecutions
+      : [];
+    let transitionExecutions = 0;
+    let submitExecutions = 0;
+    for (const execution of toolExecutions) {
+      const toolName = String(execution?.toolName ?? "");
+      const resultText =
+        typeof execution?.result === "string" ? execution.result : "";
+      if (
+        toolName === "click_element" &&
+        /\b(continue|next|review|submit|finish)\b/i.test(resultText)
+      ) {
+        transitionExecutions++;
+        if (/\bsubmit\b/i.test(resultText)) {
+          sawSubmitAction = true;
+          submitExecutions++;
+        }
+      }
+    }
+    stepTransitionCount +=
+      transitionExecutions > 0
+        ? transitionExecutions
+        : transitionCallsFromToolCalls;
+    submitActionCount +=
+      submitExecutions > 0 ? submitExecutions : submitCallsFromToolCalls;
+
+    const progress = entry?.progressState;
+    if (
+      typeof progress?.stagnantTurns === "number" &&
+      progress.stagnantTurns > 0
+    ) {
+      reworkStagnationCount++;
+    }
+    if (turnHasValidationSignal) {
+      validationSeen = true;
+    }
+  }
+
+  const rawText = rawParts.join("\n");
+  reworkStagnationCount += countPattern(rawText, /\bstagnat\w*\b/gi);
+  reworkStagnationCount += countPattern(rawText, /\bwiden(?:ed|ing)?\b/gi);
+  const normalizedRawText = rawText.toLowerCase();
+  const requiredFieldCount = Math.max(1, evidence.requiredFieldCount ?? 1);
+  const conditionalLabels = evidence.conditionalFieldLabels ?? [];
+  const handledConditionalFields =
+    conditionalLabels.length > 0
+      ? conditionalLabels.every((label) =>
+          normalizedRawText.includes(label.toLowerCase()),
+        )
+      : /\b(conditional|revealed|required when|data processing agreement|access reason)\b/i.test(
+          rawText,
+        );
+  const verifiedReview = evidence.reviewText
+    ? normalizedRawText.includes(evidence.reviewText.toLowerCase())
+    : /\b(review|summary|confirm)\b/i.test(rawText);
+  const submitted =
+    evidence.submitted === true ||
+    sawSubmitAction ||
+    sawDone ||
+    /\b(submitted|request submitted|submitted successfully)\b/i.test(rawText);
+  const detectedConfirmation = evidence.confirmationText
+    ? normalizedRawText.includes(evidence.confirmationText.toLowerCase())
+    : /\b(confirmation|confirmed|request submitted|submitted successfully|complete)\b/i.test(
+        rawText,
+      );
+  const validationErrorCount = countValidationErrors(
+    observedValidationParts.join("\n"),
+    evidence.validationErrorLabels,
+  );
+  const failedSubmitCount = Math.max(
+    validationErrorCount > 0 ? 1 : 0,
+    submitActionCount - (submitted ? 1 : 0),
+  );
+
+  const outcome: FormOutcomeRubric = {
+    filledRequiredFields: fieldWriteCount >= requiredFieldCount,
+    handledConditionalFields,
+    advancedAllSteps:
+      stepTransitionCount >= Math.max(1, evidence.expectedStepTransitions ?? 1),
+    verifiedReview,
+    submitted,
+    detectedConfirmation,
+  };
+
+  const finalSubmitConfidence =
+    outcome.submitted && outcome.detectedConfirmation
+      ? 1
+      : outcome.submitted && sawDone
+        ? 0.7
+        : sawDone
+          ? 0.4
+          : 0;
+  const recoverySuccess =
+    validationErrorCount > 0
+      ? failedSubmitCount > 0 &&
+        correctedFieldCount >= 1 &&
+        outcome.submitted &&
+        outcome.detectedConfirmation
+      : outcome.submitted && outcome.detectedConfirmation;
+
+  return {
+    turns,
+    perceptionReads,
+    fieldWriteCount,
+    stepTransitionCount,
+    validationErrorCount,
+    correctedFieldCount,
+    failedSubmitCount,
+    reworkStagnationCount,
+    finalSubmitConfidence,
+    recoverySuccess,
+    outcome,
+  };
+}
+
 export function traceFilesContainText(traceFiles: string[], text: string): boolean {
   for (const filePath of traceFiles) {
     if (!existsSync(filePath)) continue;
@@ -587,6 +837,79 @@ export function traceFilesContainText(traceFiles: string[], text: string): boole
   }
 
   return false;
+}
+
+function countPattern(text: string, pattern: RegExp): number {
+  let count = 0;
+  pattern.lastIndex = 0;
+  while (pattern.exec(text)) count++;
+  return count;
+}
+
+function entryHasValidationSignal(
+  text: string,
+  validationErrorLabels: string[] | undefined,
+): boolean {
+  if (validationErrorLabels?.length) {
+    const normalized = text.toLowerCase();
+    return validationErrorLabels.some((label) =>
+      normalized.includes(label.toLowerCase()),
+    );
+  }
+  return /\b(error|invalid|required|must include|must be|please enter|correct this field)\b/i.test(
+    text,
+  );
+}
+
+function countValidationErrors(
+  text: string,
+  validationErrorLabels: string[] | undefined,
+): number {
+  if (validationErrorLabels?.length) {
+    const normalized = text.toLowerCase();
+    return validationErrorLabels.filter((label) =>
+      normalized.includes(label.toLowerCase()),
+    ).length;
+  }
+  return countPattern(
+    text,
+    /\b(?:invalid|required|must include|must be|please enter|correct this field)\b/gi,
+  );
+}
+
+function collectEntryValidationText(entry: any): string {
+  const parts: string[] = [];
+
+  for (const execution of entry?.toolExecutions ?? []) {
+    if (typeof execution?.result === "string") parts.push(execution.result);
+    if (typeof execution?.error === "string") parts.push(execution.error);
+  }
+
+  for (const element of entry?.elements ?? []) {
+    if (typeof element?.text === "string") parts.push(element.text);
+    const attributes = element?.attributes;
+    if (attributes && typeof attributes === "object") {
+      for (const value of Object.values(attributes)) {
+        if (typeof value === "string") parts.push(value);
+      }
+    }
+  }
+
+  return parts.join("\n");
+}
+
+function compareTraceEntries(a: any, b: any): number {
+  return getTraceEntryTimestamp(a) - getTraceEntryTimestamp(b);
+}
+
+function getTraceEntryTimestamp(entry: any): number {
+  const value = entry?.timestamp ?? entry?.recordedAt ?? entry?.turnNumber;
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  }
+  return Number.MAX_SAFE_INTEGER;
 }
 
 function safeParseArgs(raw: string | Record<string, unknown>): Record<string, unknown> {

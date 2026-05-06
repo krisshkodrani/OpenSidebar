@@ -76,6 +76,7 @@ export interface AgentLoopToolHandlerHost {
     reason: string;
   } | null;
   planSubtasks: Array<{ status: string; description: string }>;
+  selectedSkillId?: string | null;
   recordMutationSensitiveAction(
     toolName: ToolName,
     args: Record<string, unknown>,
@@ -1091,9 +1092,13 @@ export async function handleGenericSequentialToolCall(
     prevElementCount = await loop.refreshSnapshotWithRetry(tabId, preCount);
     if (prevElementCount > preCount + 2) {
       const delta = prevElementCount - preCount;
+      const content =
+        loop.selectedSkillId === "multi-step-form-wizard"
+          ? `${delta} new elements appeared after typing or a form choice in this turn. Snapshot refreshed. Treat this as current-step state; if these are conditional fields, fill them before advancing. Do not assume they are autocomplete suggestions unless a matching option list is visible.`
+          : `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value - select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`;
       loop.context.addMessage({
         role: "user",
-        content: `${delta} new elements appeared after typing (autocomplete suggestions or dropdown detected). Snapshot refreshed. IMPORTANT: Do NOT type the full value — select the matching option from the dropdown by clicking it. Typing the complete value will not register as a selection.`,
+        content,
       });
       loop.log.info("agent", "Post-type DOM settle: new elements detected", {
         turn: loop.turnCount,

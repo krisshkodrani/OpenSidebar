@@ -25,8 +25,6 @@ export function getMutationReplayFingerprint(
 
   const pageText =
     `${snapshot.pageContent ?? ""}\n${snapshot.visibleContent ?? ""}`.trim();
-  if (pageText) return base;
-
   const elementSignature = (snapshot.elements ?? [])
     .slice(0, 120)
     .map((element) => {
@@ -54,7 +52,9 @@ export function getMutationReplayFingerprint(
     })
     .join("|");
 
-  return `${base}|elements:${djb2(elementSignature)}`;
+  return pageText || elementSignature
+    ? `${base}|elements:${djb2(elementSignature)}`
+    : base;
 }
 
 export function getMutationReplayScopedKey(

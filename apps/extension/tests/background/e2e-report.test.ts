@@ -200,6 +200,7 @@ describe("e2e report helper", () => {
               },
             },
             failureClass: null,
+            formMetrics: null,
           },
         },
       ],
