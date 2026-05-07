@@ -1,8 +1,10 @@
 import { toolRegistry } from "./registry";
 import {
+  DomSnapshot,
   EvidenceEvent,
   ToolName,
   MessageSource,
+  TaggedElement,
   UserSettings,
 } from "../../types";
 import { logger } from "../../utils";
@@ -328,6 +330,7 @@ type ServiceNowNavigatorCandidateResult =
       target: string | null;
       targetUrl: string | null;
       frameId: number;
+      elementTag?: number;
     }
   | { ok: false; reason: string };
 
@@ -340,6 +343,13 @@ type ServiceNowCurrentModuleMatch =
       matchedBy: string[];
     }
   | { ok: false; reason: string };
+
+type ServiceNowSnapshotElementCandidate = {
+  element: TaggedElement;
+  label: string;
+  href: string;
+  score: number;
+};
 
 type TimedServiceNowResult<T> = {
   value?: T;
@@ -564,6 +574,13 @@ function buildServiceNowTargetUrlFromHref(
     target,
     targetUrl: `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`,
   };
+}
+
+function serviceNowHrefHasTruncatedModuleParam(href: string): boolean {
+  const match = /(?:[?&])sysparm_userpref_module=([0-9a-f]{1,31})(?:$|[&#])/i.exec(
+    href,
+  );
+  return Boolean(match);
 }
 
 function appendServiceNowModuleParam(target: string, sysId: string): string {
@@ -918,6 +935,322 @@ async function fetchServiceNowTableRecordsFromPage(
     }
   }
   throw new Error(lastReason);
+}
+
+async function requestServiceNowDomSnapshot(
+  tabId: number,
+): Promise<DomSnapshot | null> {
+  try {
+    await waitForDomReady(tabId, { timeoutMs: 250, waitForElements: true });
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: "DOM_SNAPSHOT_REQUEST",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      payload: { refresh: true, autoDismiss: false },
+    });
+    const snapshot = response?.payload?.snapshot;
+    if (!snapshot || !Array.isArray(snapshot.elements)) return null;
+    return snapshot as DomSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForServiceNowDomSnapshot(
+  tabId: number,
+  initialSnapshot: DomSnapshot,
+  predicate: (snapshot: DomSnapshot) => boolean,
+  timeoutMs: number,
+): Promise<DomSnapshot> {
+  const deadline = Date.now() + timeoutMs;
+  let latest = initialSnapshot;
+  do {
+    await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
+    const snapshot = await requestServiceNowDomSnapshot(tabId);
+    if (snapshot) {
+      latest = snapshot;
+      if (predicate(snapshot)) return snapshot;
+    }
+  } while (Date.now() < deadline);
+  return latest;
+}
+
+function serviceNowSnapshotElementLabel(element: TaggedElement): string {
+  const seen = new Set<string>();
+  return [
+    element.text,
+    element.attributes?.["aria-label"],
+    element.attributes?.title,
+  ]
+    .filter((value): value is string => {
+      if (typeof value !== "string" || !value.trim()) return false;
+      const key = value.replace(/\s+/g, " ").trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findServiceNowAllMenuButton(
+  snapshot: DomSnapshot,
+): TaggedElement | null {
+  const candidates = snapshot.elements
+    .filter((element) => element.isVisible && !element.isDisabled)
+    .map((element) => {
+      const label = serviceNowSnapshotElementLabel(element);
+      const key = serviceNowMatchKey(label);
+      const tagName = element.tagName.toLowerCase();
+      const role = (element.role || "").toLowerCase();
+      let score = 0;
+      if (tagName === "button" || role === "button") score += 40;
+      if (key === "all") score += 100;
+      else if (key.startsWith("all")) score += 40;
+      if (element.attributes?.["aria-expanded"] === "true") score += 10;
+      return { element, score };
+    })
+    .filter((candidate) => candidate.score >= 100)
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.element ?? null;
+}
+
+function findServiceNowAllMenuFilter(
+  snapshot: DomSnapshot,
+): TaggedElement | null {
+  const candidates = snapshot.elements
+    .filter(
+      (element) =>
+        element.isVisible &&
+        !element.isDisabled &&
+        element.tagName.toLowerCase() === "input",
+    )
+    .map((element) => {
+      const attrs = element.attributes ?? {};
+      const blob = serviceNowMatchKey(
+        [
+          attrs.placeholder,
+          attrs["aria-label"],
+          attrs.id,
+          attrs.name,
+          attrs.role,
+          attrs.type,
+          element.text,
+        ]
+          .filter((value): value is string => typeof value === "string")
+          .join(" "),
+      );
+      let score = 0;
+      if (blob.includes("filter")) score += 100;
+      if (blob.includes("menu") || blob.includes("navigator")) score += 35;
+      if (blob.includes("search")) score += 20;
+      if (attrs.type === "search") score += 10;
+      if (blob.includes("global") || blob.includes("sncwsgs")) score -= 80;
+      return { element, score };
+    })
+    .filter((candidate) => candidate.score >= 50)
+    .sort((a, b) => b.score - a.score);
+  return candidates[0]?.element ?? null;
+}
+
+function scoreServiceNowSnapshotModuleCandidate(
+  element: TaggedElement,
+  snapshot: DomSnapshot,
+  application: string,
+  path: string[],
+): ServiceNowSnapshotElementCandidate | null {
+  if (!element.isVisible || element.isDisabled) return null;
+  const tagName = element.tagName.toLowerCase();
+  const role = (element.role || "").toLowerCase();
+  const href = element.attributes?.href || "";
+  const label = serviceNowSnapshotElementLabel(element);
+  const labelKey = serviceNowMatchKey(label);
+  const leaf = path[path.length - 1] || "";
+  const leafKey = serviceNowMatchKey(leaf);
+  if (!labelKey || !leafKey || !labelKey.includes(leafKey)) return null;
+
+  const looksLikeModuleLink =
+    (tagName === "a" || role === "link" || role === "menuitem") &&
+    (candidateLooksLikeServiceNowTarget(href) ||
+      href.includes("sysparm_userpref_module") ||
+      /\.do(?:\?|$)/i.test(href));
+  if (!looksLikeModuleLink) return null;
+
+  const pageKey = serviceNowMatchKey(
+    [snapshot.pageContent, snapshot.visibleContent, snapshot.title]
+      .filter((value): value is string => typeof value === "string")
+      .join(" "),
+  );
+  const appKey = serviceNowMatchKey(application);
+  let score = labelKey === leafKey ? 130 : 65;
+  if (labelKey.startsWith(leafKey)) score += 20;
+  if (href.includes("sysparm_userpref_module")) score += 20;
+  if (candidateLooksLikeServiceNowTarget(href)) score += 20;
+  if (appKey && pageKey.includes(appKey)) score += 30;
+  for (const segment of path.slice(0, -1)) {
+    const segmentKey = serviceNowMatchKey(segment);
+    if (segmentKey && pageKey.includes(segmentKey)) score += 15;
+  }
+  if (/view results|no exact match|filter|search/i.test(label)) score -= 80;
+
+  return score >= 75 ? { element, label, href, score } : null;
+}
+
+function selectServiceNowSnapshotModuleCandidate(
+  snapshot: DomSnapshot,
+  origin: string,
+  application: string,
+  path: string[],
+  query: string,
+): ServiceNowNavigatorCandidateResult {
+  const ranked = snapshot.elements
+    .map((element) =>
+      scoreServiceNowSnapshotModuleCandidate(
+        element,
+        snapshot,
+        application,
+        path,
+      ),
+    )
+    .filter(
+      (candidate): candidate is ServiceNowSnapshotElementCandidate =>
+        candidate !== null,
+    )
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  if (!best) return { ok: false, reason: "snapshot_candidate_not_found" };
+
+  const target = buildServiceNowTargetUrlFromHref(origin, best.href);
+  const safeTarget = serviceNowHrefHasTruncatedModuleParam(best.href)
+    ? null
+    : target;
+  if (!target && typeof best.element.tag !== "number") {
+    return { ok: false, reason: "snapshot_candidate_missing_href" };
+  }
+  return {
+    ok: true,
+    query,
+    candidateText: best.label,
+    href: best.href,
+    target: safeTarget?.target ?? null,
+    targetUrl: safeTarget?.targetUrl ?? null,
+    frameId: 0,
+    elementTag: best.element.tag,
+  };
+}
+
+async function prepareServiceNowSnapshotNavigatorCandidate(
+  tabId: number,
+  origin: string,
+  application: string,
+  path: string[],
+): Promise<ServiceNowNavigatorCandidateResult> {
+  const leaf = path[path.length - 1] || "";
+  const searchValues = [
+    application,
+    leaf,
+    path.join(" "),
+    application ? `${application} ${leaf}` : "",
+  ]
+    .map((value) => value.trim())
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+  if (!leaf || searchValues.length === 0) {
+    return { ok: false, reason: "empty_module_path" };
+  }
+
+  let snapshot = await requestServiceNowDomSnapshot(tabId);
+  if (!snapshot) {
+    await ensureContentScript(tabId, 1_500).catch(() => false);
+    snapshot = await requestServiceNowDomSnapshot(tabId);
+  }
+  if (!snapshot) return { ok: false, reason: "snapshot_unavailable" };
+
+  let candidate = selectServiceNowSnapshotModuleCandidate(
+    snapshot,
+    origin,
+    application,
+    path,
+    "existing snapshot",
+  );
+  if (candidate.ok) return candidate;
+
+  let filter = findServiceNowAllMenuFilter(snapshot);
+  if (!filter) {
+    const allButton = findServiceNowAllMenuButton(snapshot);
+    if (allButton) {
+      await executeContentTool(
+        ToolName.CLICK_ELEMENT,
+        { id: allButton.tag },
+        tabId,
+      );
+      snapshot = await waitForServiceNowDomSnapshot(
+        tabId,
+        snapshot,
+        (nextSnapshot) =>
+          Boolean(findServiceNowAllMenuFilter(nextSnapshot)) ||
+          selectServiceNowSnapshotModuleCandidate(
+            nextSnapshot,
+            origin,
+            application,
+            path,
+            "visible snapshot",
+          ).ok,
+        4_000,
+      );
+      filter = findServiceNowAllMenuFilter(snapshot);
+      candidate = selectServiceNowSnapshotModuleCandidate(
+        snapshot,
+        origin,
+        application,
+        path,
+        "visible snapshot",
+      );
+      if (candidate.ok) return candidate;
+    }
+  }
+
+  let lastReason = candidate.reason;
+  for (const query of searchValues) {
+    filter = findServiceNowAllMenuFilter(snapshot) ?? filter;
+    if (!filter) {
+      lastReason = "snapshot_filter_not_found";
+      continue;
+    }
+    const typeResult = await executeContentTool(
+      ToolName.TYPE_TEXT,
+      { id: filter.tag, text: query },
+      tabId,
+    );
+    if (typeResult.startsWith("Error:")) {
+      lastReason = "snapshot_filter_type_failed";
+      continue;
+    }
+    snapshot = await waitForServiceNowDomSnapshot(
+      tabId,
+      snapshot,
+      (nextSnapshot) =>
+        selectServiceNowSnapshotModuleCandidate(
+          nextSnapshot,
+          origin,
+          application,
+          path,
+          query,
+        ).ok,
+      4_000,
+    );
+    candidate = selectServiceNowSnapshotModuleCandidate(
+      snapshot,
+      origin,
+      application,
+      path,
+      query,
+    );
+    if (candidate.ok) return candidate;
+    lastReason = candidate.reason;
+  }
+
+  return { ok: false, reason: lastReason };
 }
 
 async function prepareServiceNowNavigatorCandidate(
@@ -1403,6 +1736,19 @@ async function commitServiceNowNavigatorCandidate(
   "navigator_href" | "navigator_click" | "navigator_click_unavailable"
 > {
   clearTabReady(tabId);
+  if (typeof candidate.elementTag === "number") {
+    const clickResult = await executeContentTool(
+      ToolName.CLICK_ELEMENT,
+      { id: candidate.elementTag },
+      tabId,
+    );
+    if (!clickResult.startsWith("Error:")) {
+      await waitForNavigation(tabId, 10_000);
+      await waitForContentScriptReady(tabId, 2_000);
+      return "navigator_click";
+    }
+  }
+
   if (candidate.targetUrl) {
     await chrome.tabs.update(tabId, { url: candidate.targetUrl });
     await waitForNavigation(tabId, 10_000);
@@ -3196,12 +3542,27 @@ export function registerTools() {
         resolveServiceNowModule(tabId, application, path, originResult.origin),
       ).then((outcome) => ({ source: "metadata" as const, outcome }));
       const navigatorPromise = withServiceNowTiming(
-        prepareServiceNowNavigatorCandidate(
-          tabId,
-          originResult.origin,
-          application,
-          path,
-        ),
+        (async () => {
+          const snapshotCandidate =
+            await prepareServiceNowSnapshotNavigatorCandidate(
+              tabId,
+              originResult.origin,
+              application,
+              path,
+            );
+          if (snapshotCandidate.ok) return snapshotCandidate;
+          const navigatorCandidate = await prepareServiceNowNavigatorCandidate(
+            tabId,
+            originResult.origin,
+            application,
+            path,
+          );
+          if (navigatorCandidate.ok) return navigatorCandidate;
+          return {
+            ok: false,
+            reason: `${snapshotCandidate.reason}; ${navigatorCandidate.reason}`,
+          } as ServiceNowNavigatorCandidateResult;
+        })(),
       ).then((outcome) => ({ source: "navigator" as const, outcome }));
 
       while (metadataPending || navigatorPending) {
