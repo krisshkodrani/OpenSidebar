@@ -4389,23 +4389,6 @@ export function registerTools() {
                   title: document.title,
                 };
               }
-              const hasListSurface =
-                Boolean(listApi) ||
-                Boolean(
-                  document.querySelector(
-                    "table.data_list_table, [data-list_id], th[name], [id$='_table']",
-                  ),
-                );
-              if (!hasListSurface) {
-                return {
-                  ok: false,
-                  reason: "no_list_surface_in_frame",
-                  table: tableName,
-                  url: location.href,
-                  title: document.title,
-                };
-              }
-
               if (payload.table) {
                 const requested = keyFor(payload.table);
                 const title = keyFor(document.title);
@@ -4488,8 +4471,17 @@ export function registerTools() {
               if (tableName === "incident") {
                 addField("caller_id", "Caller", "reference", "sys_user");
                 addField("category", "Category", "choice", "");
+                addField("priority", "Priority", "choice", "");
+                addField("impact", "Impact", "choice", "");
+                addField("urgency", "Urgency", "choice", "");
                 addField("state", "State", "choice", "");
                 addField("assigned_to", "Assigned to", "reference", "sys_user");
+                addField(
+                  "assignment_group",
+                  "Assignment group",
+                  "reference",
+                  "sys_user_group",
+                );
               }
 
               const hasKnownField = (requestedField: string): boolean => {
@@ -4591,6 +4583,34 @@ export function registerTools() {
                     resolved: "6",
                     closed: "7",
                     canceled: "8",
+                  },
+                  priority: {
+                    critical: "1",
+                    "1critical": "1",
+                    high: "2",
+                    "2high": "2",
+                    moderate: "3",
+                    "3moderate": "3",
+                    low: "4",
+                    "4low": "4",
+                    planning: "5",
+                    "5planning": "5",
+                  },
+                  impact: {
+                    high: "1",
+                    "1high": "1",
+                    medium: "2",
+                    "2medium": "2",
+                    low: "3",
+                    "3low": "3",
+                  },
+                  urgency: {
+                    high: "1",
+                    "1high": "1",
+                    medium: "2",
+                    "2medium": "2",
+                    low: "3",
+                    "3low": "3",
                   },
                 };
                 const fallback =

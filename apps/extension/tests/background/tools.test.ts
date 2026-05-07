@@ -870,6 +870,142 @@ describe("Tool Registration", () => {
     expect(result).toContain(`sysparm_query=${query}`);
   });
 
+  test("apply_list_filter encodes incident choice and reference filters from a list URL without table DOM", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/incident_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Incidents | ServiceNow";
+    document.body.innerHTML = "";
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: { value: "group123", display_value: "group123" },
+              name: { value: "Service Desk", display_value: "Service Desk" },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Incidents | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            join: "AND",
+            conditions: [
+              { field: "Priority", operator: "is", value: "2 - High" },
+              { field: "Category", operator: "is", value: "Hardware" },
+              { field: "State", operator: "is", value: "Closed" },
+              {
+                field: "Assignment group",
+                operator: "is",
+                value: "Service Desk",
+              },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query = "priority=2^category=hardware^state=7^assignment_group=group123";
+    const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+    const targetUrl = `https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/now/table/sys_user_group?"),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Applied incident list filter.");
+    expect(result).toContain(`sysparm_query=${query}`);
+  });
+
+  test("apply_list_filter encodes incident priority labels before validation", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Incidents | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              sys_id: { value: "user123", display_value: "user123" },
+              name: {
+                value: "System Administrator",
+                display_value: "System Administrator",
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Incidents | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            join: "OR",
+            conditions: [
+              {
+                field: "Caller",
+                operator: "is",
+                value: "System Administrator",
+              },
+              { field: "Priority", operator: "is", value: "4 - Low" },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query = "caller_id=user123^ORpriority=4";
+
+    expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).not.toContain("priority=4 - Low");
+  });
+
   test("apply_list_sort navigates to the structured ServiceNow list sort query", async () => {
     const query = "ORDERBYDESCnumber^ORDERBYDESCcalendar_duration";
     const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;

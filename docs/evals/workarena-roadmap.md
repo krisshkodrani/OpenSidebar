@@ -4,7 +4,7 @@ Last updated: 2026-05-07
 
 This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to full graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
 
-Use this page for planning, grading contract, runner requirements, and triage policy. Use [`workarena.md`](./workarena.md) for setup commands and the current manual runbook.
+Use this page for planning, grading contract, runner requirements, and triage policy. Use [`workarena.md`](./workarena.md) for setup commands and the current manual runbook. Use [WorkArena Generalized Harness Philosophy](../guides/workarena-generalized-harness-philosophy.md) for the stable evaluator-to-product principles behind this roadmap.
 
 ## Current State
 
