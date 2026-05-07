@@ -1673,6 +1673,49 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].allowedTools).toContain(ToolName.INSPECT_TABLE);
     });
 
+    test("restores original scope for single-step multi-field list sort plans", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "simple",
+                steps: [
+                    {
+                        objective:
+                            "Click the 'Number' column header in the incidents list to sort by Number descending",
+                        successCriteria:
+                            "The Number column is sorted in descending order",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            'Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
+            "Incidents | ServiceNow",
+            "https://example.service-now.com/incident_list.do",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe("list-sort-workflow");
+        expect(result.nodes[0].description).toContain(
+            "Complete the workflow for the original request",
+        );
+        expect(result.nodes[0].description).toContain("Duration");
+        expect(result.nodes[0].assumptions).toContain(
+            'Preserve all explicit constraints from the user\'s original request: Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)',
+        );
+        expect(result.nodes[0].handoffArtifacts.at(-1)?.note).toContain(
+            "Skill-owned workflow scope restored",
+        );
+    });
+
     test("collapses ServiceNow record form plans into one skill-owned workflow node", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

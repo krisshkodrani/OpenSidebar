@@ -514,6 +514,75 @@ function collapseSkillOwnedWorkflowNodes(
   ];
 }
 
+function preserveOriginalScopeForSingleSkillOwnedNode(
+  nodes: TaskNode[],
+  query: string,
+  pageTitle?: string,
+  pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
+): TaskNode[] {
+  if (nodes.length !== 1) return nodes;
+
+  const selection = selectPrimarySkill({
+    query,
+    objective: query,
+    successCriteria: query,
+    pageTitle,
+    pageUrl,
+    ...skillCatalogOptions,
+  });
+  if (!selection) return nodes;
+  const selectedDescriptor = getSkillDescriptor(
+    selection.id,
+    skillCatalogOptions,
+  );
+  if (!selectedDescriptor?.atomic && !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) {
+    return nodes;
+  }
+
+  const node = nodes[0];
+  const compactQuery = compactText(query);
+  const compactDescription = compactText(node.description);
+  if (!compactQuery || compactDescription.includes(compactQuery)) {
+    return nodes;
+  }
+
+  const navigationOnly = isNavigationOnlyTask(query);
+  return [
+    {
+      ...node,
+      selectedSkillId: selection.id,
+      selectedSkillReason: selection.reason,
+      description: navigationOnly
+        ? compactText(`Navigate according to the original request: ${query}`)
+        : compactText(
+            `Complete the workflow for the original request: ${query}`,
+          ),
+      successCriteria: navigationOnly
+        ? navigationOnlySuccessCriteria()
+        : compactText(
+            [
+              "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
+              node.successCriteria,
+            ].join(" "),
+          ),
+      assumptions: dedupeStrings([
+        ...(node.assumptions || []),
+        `Preserve all explicit constraints from the user's original request: ${compactQuery}`,
+      ]),
+      handoffArtifacts: [
+        ...node.handoffArtifacts,
+        {
+          role: "planner",
+          phase: "planned",
+          note: `Skill-owned workflow scope restored to the original request: ${compactQuery}`,
+          timestamp: Date.now(),
+        },
+      ],
+    },
+  ];
+}
+
 function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -891,6 +960,25 @@ export class OrchestratorPlanner {
       logger.info(
         "orchestrator",
         "Collapsed workflow micro-steps into skill-owned node",
+        {
+          count: nodes.length,
+          selectedSkillId: nodes[0]?.selectedSkillId,
+        },
+      );
+    }
+
+    const originalScopedNodes = preserveOriginalScopeForSingleSkillOwnedNode(
+      nodes,
+      query,
+      pageTitle,
+      pageUrl,
+      skillCatalogOptions,
+    );
+    if (originalScopedNodes !== nodes) {
+      nodes = originalScopedNodes;
+      logger.info(
+        "orchestrator",
+        "Restored original request scope for single skill-owned workflow node",
         {
           count: nodes.length,
           selectedSkillId: nodes[0]?.selectedSkillId,
