@@ -452,6 +452,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     verifierMode: "hybrid",
     notes: [
       "When the request gives explicit sort fields and directions, use apply_list_sort before manual column-header or list-menu clicks.",
+      "For multi-field sort requests, include every requested field and direction in one apply_list_sort call rather than sorting one header at a time.",
       "Do not open personalization/list configuration for sorting unless the structured sort helper reports unsupported fields.",
       "Completion requires URL, header, or row-order evidence that sorting changed.",
     ],
@@ -1141,11 +1142,12 @@ const SKILL_BODIES: Record<
   },
   "list-sort-workflow": {
     procedureMarkdown: [
-      "1. If the request contains explicit sort fields and directions, call apply_list_sort with the ordered clauses as the first mutation.",
-      "2. Use inspect_table to identify columns, sort indicators, and URL query state before or after applying the structured sort.",
-      "3. Use manual column-header or list-menu sorting only when apply_list_sort is unavailable or reports unsupported fields.",
-      "4. Re-run inspect_table and verify a sort indicator, URL parameter, or changed row order.",
-      "5. Call done only when the requested sort is evidenced.",
+      "1. If the request contains explicit sort fields and directions, call apply_list_sort with all ordered clauses as the first mutation.",
+      "2. For multi-field requests, preserve the original request scope even if the current planner wording names only one header; include every requested sort field/direction in a single apply_list_sort call.",
+      "3. Use inspect_table to identify columns, sort indicators, and URL query state before or after applying the structured sort.",
+      "4. Use manual column-header or list-menu sorting only when apply_list_sort is unavailable or reports unsupported fields.",
+      "5. Re-run inspect_table and verify a sort indicator, URL parameter, or changed row order.",
+      "6. Call done only when the requested sort is evidenced.",
     ].join("\n"),
     requiredEvidence: [
       "Requested sort column and direction",
@@ -1168,9 +1170,10 @@ const SKILL_BODIES: Record<
       sequencing: ["Inspect table, apply sort, verify sort state."],
       toolDiscipline: [
         "Use apply_list_sort before column-header, personalization, or list-menu clicks for explicit sort requests.",
+        "For multi-field sort requests, send one apply_list_sort call containing all requested clauses in order.",
       ],
       completionChecks: [
-        "The requested column and direction are visible in sort evidence.",
+        "Every requested column and direction is visible in sort evidence.",
       ],
     },
   },
