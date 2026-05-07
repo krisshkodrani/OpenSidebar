@@ -676,6 +676,168 @@ describe("Tool Registration", () => {
     expect(result).toContain("Winning path: navigator_href");
   });
 
+  test("open_servicenow_module uses tagged ServiceNow navigator snapshots", async () => {
+    const target = "pa_filters_list.do?sysparm_userpref_module=d20";
+    const targetUrl = `https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("Failed to fetch"),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => {
+      if (details.args?.[0] === "sys_app_module") {
+        return [
+          { frameId: 0, result: { ok: false, reason: "lookup_timeout" } },
+        ];
+      }
+      return [
+        {
+          frameId: 0,
+          result: {
+            title: "Home | ServiceNow",
+            url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+            target: "",
+            headings: [],
+          },
+        },
+      ];
+    });
+
+    let allOpened = false;
+    let filtered = false;
+    const elementBase = {
+      rect: { x: 0, y: 0, width: 100, height: 20 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const snapshot = () => ({
+      title: "ServiceNow",
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      visibleContent: filtered
+        ? "Performance Analytics Breakdowns Elements Filters"
+        : allOpened
+          ? "All menu filter"
+          : "All",
+      pageContent: filtered
+        ? "Performance Analytics\nBreakdowns\nElements Filters"
+        : allOpened
+          ? "All menu filter"
+          : "All",
+      viewport: { width: 1200, height: 800 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 800 },
+      elements: [
+        {
+          ...elementBase,
+          tag: 2,
+          tagName: "input",
+          role: "textbox",
+          text: "",
+          attributes: { placeholder: "Search", "aria-label": "Search" },
+        },
+        {
+          ...elementBase,
+          tag: 4,
+          tagName: "div",
+          role: "button",
+          text: "All",
+          attributes: { role: "button", "aria-label": "All" },
+        },
+        ...(allOpened
+          ? [
+              {
+                ...elementBase,
+                tag: 20,
+                tagName: "input",
+                role: "textbox",
+                text: filtered ? "Performance Analytics" : "",
+                attributes: {
+                  placeholder: "Filter",
+                  "aria-label": "Filter",
+                },
+              },
+            ]
+          : []),
+        ...(filtered
+          ? [
+              {
+                ...elementBase,
+                tag: 185,
+                tagName: "a",
+                role: "link",
+                text: "Elements Filters",
+                attributes: {
+                  href: target,
+                  "aria-label": "Elements Filters",
+                },
+              },
+            ]
+          : []),
+      ],
+    });
+    (chrome.tabs as any).sendMessage = vi.fn(
+      async (_tabId: number, message: any) => {
+        if (message?.type === "DOM_READY_PROBE") {
+          return { payload: { waitedMs: 10, elementCount: 3 } };
+        }
+        if (message?.type === "DOM_SNAPSHOT_REQUEST") {
+          return { payload: { snapshot: snapshot(), durationMs: 5 } };
+        }
+        if (message?.type === "TOOL_EXECUTE") {
+          let result = "";
+          if (message.payload.toolName === ToolName.CLICK_ELEMENT) {
+            if (message.payload.args.id === 4) {
+              allOpened = true;
+              result = 'Clicked [4] div "All"';
+            } else {
+              expect(message.payload.args).toEqual({ id: 185 });
+              result = 'Clicked [185] a "Elements Filters"';
+            }
+          } else {
+            expect(message.payload.toolName).toBe(ToolName.TYPE_TEXT);
+            expect(message.payload.args).toEqual({
+              id: 20,
+              text: "Performance Analytics",
+            });
+            filtered = true;
+            result = 'Typed "Performance Analytics"';
+          }
+          return { payload: { result } };
+        }
+        return { payload: { result: "ok", success: true } };
+      },
+    );
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-module-snapshot-navigator",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Performance Analytics",
+            path: ["Breakdowns", "Elements Filters"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.tabs.update).not.toHaveBeenCalledWith(123, {
+      url: targetUrl,
+    });
+    expect(result).toContain(
+      "Opened ServiceNow module via navigator fallback.",
+    );
+    expect(result).toContain("Winning path: navigator_click");
+    expect(result).toContain("Navigator query: Performance Analytics");
+    expect(result).toContain("Candidate: Elements Filters");
+  });
+
   test("open_servicenow_module commits metadata when it resolves before navigator", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
