@@ -1,6 +1,6 @@
 # WorkArena Roadmap
 
-Last updated: 2026-05-05
+Last updated: 2026-05-07
 
 This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to full graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
 
@@ -22,7 +22,7 @@ Recently resolved:
 - Initial reusable workflow skills and read-only inspectors now cover chart value extraction, knowledge/search answer extraction, list filtering, list sorting, and service catalog ordering. The first layer is generic runtime behavior, not WorkArena-specific fixture logic.
 - A thin suite runner and standalone grader are available. They reuse `workarena-handoff`, write reports under `.artifacts/e2e/`, and compute score-first pass@1 plus category-balanced pass@1.
 - The latest dated 7-case ServiceNow sample grades at 7/7 pass@1, with remaining efficiency warnings on form and catalog workflows.
-- The current pre-WorkArena checkpoint is to finish RFC promotion into stable docs, run the full staged OpenSidebar E2E suite, then continue to ServiceNow/WorkArena with the generic-skill-first policy below.
+- The completed harness boundary conclusions are now promoted into stable architecture docs. The current pre-WorkArena checkpoint is to run the full staged OpenSidebar E2E suite, then continue to ServiceNow/WorkArena with the generic-skill-first policy below.
 
 ## Evaluation Contract
 
@@ -243,9 +243,8 @@ Do not commit dated E2E result reports under `docs/`.
 
 ## Immediate Next Steps
 
-1. Finish promoting completed RFC conclusions into stable repo docs without committing RFC drafts.
-2. Run the full staged OpenSidebar E2E suite before starting the next real WorkArena batch.
-3. If staged is green, run the guarded ServiceNow smoke or atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
-4. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category.
-5. Fix the broadest reusable behavior first: runtime/tool/domain adapter when possible, generic skill when the workflow sequence is the missing piece.
-6. Add `pass@2` only after the no-retry baseline is captured.
+1. Run the full staged OpenSidebar E2E suite before starting the next real WorkArena batch.
+2. If staged is green, run the guarded ServiceNow smoke or atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
+3. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category.
+4. Fix the broadest reusable behavior first: runtime/tool/domain adapter when possible, generic skill when the workflow sequence is the missing piece.
+5. Add `pass@2` only after the no-retry baseline is captured.

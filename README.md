@@ -135,6 +135,7 @@ Open `http://127.0.0.1:7589/viewer`.
 
 - [Getting Started](./docs/getting-started.md)
 - [Architecture Overview](./docs/architecture/overview.md)
+- [Runtime Boundaries](./docs/architecture/runtime-boundaries.md)
 - [Developer Guide](./docs/developer-guide.md)
 - [Agent Loop](./docs/architecture/agent-loop.md)
 - [Perception Layer](./docs/architecture/perception-layer.md)

@@ -5,6 +5,20 @@ All notable changes to OpenSidebar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1 Release Checkpoint] - 2026-05-07
+
+### Changed
+
+- Promoted the completed runtime-boundary conclusions into stable architecture docs.
+- Documented the shared side panel runtime port, overlay harness, and background environment port boundaries.
+- Updated the WorkArena roadmap so the next checkpoint starts from staged E2E and guarded ServiceNow validation.
+
+### Verified
+
+- Full staged OpenSidebar E2E checkpoint passed when run in smaller chunks after the staged wrapper exceeded the tool timeout.
+- WorkArena doctor reported ready, and the guarded ServiceNow `all-menu` seed `0` smoke passed with validation score `1`.
+- Extension manifest bumped to `0.3.1`; workspace package bumped to `0.9.1`.
+
 ## [0.3.0 Demo Checkpoint] - 2026-05-05
 
 ### Added

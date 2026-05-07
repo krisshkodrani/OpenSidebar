@@ -18,7 +18,8 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
 - The extension is the main product surface and owns:
   - service worker runtime
   - content script
-  - side panel UI
+  - shared side panel UI
+  - overlay harness
   - trace viewer
   - extension tests and E2E harness
 - The backend is an app-local service used for:
@@ -47,3 +48,4 @@ From the repo root:
 - Root `vite.config.ts` and `vitest.config.ts` remain as thin shims so existing root commands still work.
 - The production build still emits the extension artifact to root `dist/` because the load-unpacked and E2E flows depend on that location.
 - Some extension compatibility wrappers still exist under `apps/extension/src/prompts/` and `apps/extension/src/types/` to avoid a mass import rewrite while the repo settles.
+- Side panel UI code is shared between the Chrome side panel and the overlay harness. Components use `apps/extension/src/sidepanel/runtime.ts` for runtime, tab, permission, and storage access; direct Chrome API calls belong in the Chrome-backed adapter or production shell code.

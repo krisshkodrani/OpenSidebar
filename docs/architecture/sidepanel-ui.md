@@ -4,13 +4,14 @@ The side panel is OpenSidebar's user-facing interface built with React, TypeScri
 
 ## Architecture
 
-**Location:** `src/sidepanel/`
+**Location:** `apps/extension/src/sidepanel/`
 
 **Files:**
 
 - `App.tsx` - Main component, message listener, composes all sub-components
 - `store.ts` - Zustand + Immer state management
-- `bridge.ts` - Centralized message router. Routes all `RuntimeMessage` types to store actions
+- `runtime.ts` - `UiRuntimePort` contract plus the Chrome-backed production adapter
+- `bridge.ts` - Centralized message router. Routes all `RuntimeMessage` types to store actions through the UI runtime subscription
 - `components/` - UI components (Header, InputArea, MessageBubble, ControlBar, StallBanner, TaskProgressPanel, MetricsBar, CompletionSummary, SettingsDrawer, SavedPromptsDrawer, etc.)
 
 ## Component Hierarchy
@@ -82,55 +83,33 @@ interface SidePanelState {
 - `setTurnProgress(payload)` - Update turn counter
 - `setSessionMetrics(payload)` - Update metrics bar
 
+## Runtime Boundary
+
+The side panel React app is shared by two hosts:
+
+- Chrome side panel production UI, backed by `chromeUiRuntimePort`.
+- In-page overlay harness, backed by an in-memory `UiRuntimePort`.
+
+Shared components and hooks must use `uiRuntime` from `runtime.ts` for messaging, tab/window lookup, permissions, URL resolution, keepalive, and storage. Direct `chrome.*` access belongs in `runtime.ts` or production shell code, not in UI components.
+
 ## Communication Flow
 
-The side panel communicates directly with the background service worker via Chrome extension messaging.
+The side panel communicates with the background through the `UiRuntimePort` abstraction. In production this wraps Chrome extension messaging. In the overlay harness it uses browser events and synthetic tab/storage state.
 
 ### Message Handling Architecture
 
-Messages are handled in **App.tsx** at the top level using a `useEffect` hook with `chrome.runtime.onMessage.addListener`:
+Messages are routed through **bridge.ts**. `initializeBridge()` subscribes to `uiRuntime.subscribeMessages()`, filters background messages, and applies store updates:
 
 ```typescript
 useEffect(() => {
-  const listener = (message: RuntimeMessage) => {
-    if (message.source !== MessageSource.BACKGROUND) return;
-
-    switch (message.type) {
-      case "AGENT_STATUS":
-        updateStatus(message.payload.status, message.payload.detail);
-        setAgentRunning(message.payload.status !== AgentStatus.IDLE);
-        break;
-      case "STREAM_CHUNK":
-        handleStreamChunk(message.payload);
-        break;
-      case "AGENT_RESPONSE":
-        handleAgentResponse(message.payload);
-        break;
-      case "AGENT_STAGNATION":
-        setStagnationState(message.payload);
-        break;
-      case "AGENT_TURN":
-        setTurnProgress(message.payload);
-        break;
-      case "TASK_PROGRESS":
-        setTaskProgress(message.payload);
-        break;
-      case "TASK_COMPLETION":
-        setTaskCompletion(message.payload);
-        break;
-      case "SESSION_METRICS":
-        setSessionMetrics(message.payload);
-        break;
-      // ... all message types handled
-    }
-  };
-
-  chrome.runtime.onMessage.addListener(listener);
-  return () => chrome.runtime.onMessage.removeListener(listener);
+  return initializeBridge(useStore, {
+    onScreenshot: handleScreenshot,
+    onClose: handleCloseRequest,
+  });
 }, []);
 ```
 
-The **bridge.ts** module (`initializeBridge()`) provides a centralized router with exhaustive `never` check for routing messages to store actions.
+The router uses exhaustive handling for known `RuntimeMessage` types and keeps message-to-store mapping outside individual components.
 
 ### Sending Messages to Agent
 
@@ -160,17 +139,14 @@ const handleSend = useCallback(async (text: string) => {
     addMessage(userEntry);
     addMessage(assistantEntry);
 
-    // 2. Get active tab
-    const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true
-    });
+    // 2. Get active tab through the runtime port
+    const tab = await uiRuntime.getActiveTab();
 
-    // 3. Send to background
-    await chrome.runtime.sendMessage({
+    // 3. Send to background through the runtime port
+    await uiRuntime.sendMessage({
         type: "USER_CHAT",
         requestId: crypto.randomUUID(),
-        source: MessageSource.SIDEPANEL,
+        source: uiRuntime.source,
         payload: {
             text,
             tabId: tab?.id ?? 0,
@@ -399,32 +375,31 @@ useEffect(() => {
 ### Mock Pattern
 
 ```typescript
-const mockSendMessage = mock(() => Promise.resolve({ success: true }));
-(globalThis as any).chrome = {
-  runtime: {
-    sendMessage: mockSendMessage,
-    onMessage: {
-      addListener: mock((cb) => cb),
-      removeListener: mock(),
-    },
-  },
-  tabs: {
-    query: mock(() => Promise.resolve([{ id: 123 }])),
-  },
-};
+const runtimeHarness = createOverlayUiRuntimeHarness({
+  tab: { id: 123, active: true, windowId: 1 },
+  onSendMessage: () => ({ success: true }),
+});
+const restoreRuntime = setUiRuntimePortForTesting(runtimeHarness.port);
+
+afterEach(() => {
+  restoreRuntime();
+  runtimeHarness.dispose();
+});
 ```
 
 ## Key Implementation Notes
 
-1. **Always filter by source** - Check `message.source === MessageSource.BACKGROUND` to ignore echoes
-2. **Cleanup listeners** - Always return cleanup function from useEffect
-3. **Use useCallback** - Memoize handlers to prevent unnecessary re-renders
-4. **Optimistic updates** - Add user message immediately before API call
-5. **Placeholder assistant** - Create streaming placeholder before sending to background
-6. **Error handling** - Catch sendMessage failures and update error state
+1. **Use the runtime port** - UI components call `uiRuntime`, not `chrome.*`
+2. **Always filter by source** - Check `message.source === MessageSource.BACKGROUND` to ignore echoes
+3. **Cleanup listeners** - Always return cleanup function from useEffect
+4. **Use useCallback** - Memoize handlers to prevent unnecessary re-renders
+5. **Optimistic updates** - Add user message immediately before API call
+6. **Placeholder assistant** - Create streaming placeholder before sending to background
+7. **Error handling** - Catch sendMessage failures and update error state
 
 ## See Also
 
 - [Architecture Overview](./overview.md) - System-wide architecture
+- [Runtime Boundaries](./runtime-boundaries.md) - UI, overlay, and background port boundaries
 - [Agent Loop](./agent-loop.md) - Background processing
 - [Project Setup](./project-setup.md) - Build configuration
