@@ -507,6 +507,55 @@ describe("Tool Registration", () => {
     expect(result).toContain("Navigator query: existing navigator");
   });
 
+  test("open_servicenow_module emits evidence when the requested module is already open", async () => {
+    const currentUrl =
+      "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do%3Fsysparm_userpref_module%3Dd20";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("should not query metadata"),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: currentUrl,
+      title: "Classic | Unified Navigation App | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async () => [
+      {
+        frameId: 0,
+        result: {
+          title: "Elements Filters | ServiceNow",
+          url: currentUrl,
+          target: currentUrl,
+          headings: ["Elements Filters Context Menu"],
+        },
+      },
+    ]);
+
+    const execution = await toolRegistry.executeDetailed(
+      {
+        id: "open-module-already-open",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Performance Analytics",
+            path: ["Breakdowns", "Elements Filters"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(chrome.tabs.update).not.toHaveBeenCalled();
+    expect(execution.result).toContain("ServiceNow module is already open.");
+    expect(execution.result).toContain("Winning path: current_page");
+    expect(execution.evidence?.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["navigation_reached", "goal_state_verified"]),
+    );
+  });
+
   test("open_servicenow_module commits navigator when metadata is slow", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";

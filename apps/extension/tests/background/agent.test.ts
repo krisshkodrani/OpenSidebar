@@ -1294,6 +1294,56 @@ describe("AgentLoop", () => {
     expect(secondArgs).toEqual({ submit: true, submitButton: "Submit" });
   });
 
+  test("ServiceNow record controller handles natural field-value creation prompts", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new change request with a value of "Hardware" for field "Assignment group", a value of "Update DNS" for field "Short description", and a value of "2 - Medium" for field "Impact".';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Assignment group (assignment_group) = Hardware\n" +
+          "- Short description (short_description) = Update DNS\n" +
+          "- Impact (impact) = 2 - Medium",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: CHG0036109\n" +
+          "Current title: CHG0036109 | Change Request | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(executeToolCall).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
+    ).toEqual({
+      fields: [
+        { field: "Assignment group", value: "Hardware" },
+        { field: "Short description", value: "Update DNS" },
+        { field: "Impact", value: "2 - Medium" },
+      ],
+      submit: false,
+    });
+  });
+
   test("ServiceNow record controller retries submit after same-create-form evidence", async () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(

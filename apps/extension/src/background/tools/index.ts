@@ -331,6 +331,16 @@ type ServiceNowNavigatorCandidateResult =
     }
   | { ok: false; reason: string };
 
+type ServiceNowCurrentModuleMatch =
+  | {
+      ok: true;
+      title: string;
+      url: string;
+      target: string;
+      matchedBy: string[];
+    }
+  | { ok: false; reason: string };
+
 type TimedServiceNowResult<T> = {
   value?: T;
   error?: string;
@@ -659,6 +669,149 @@ async function getServiceNowTabOrigin(
   } catch {
     return { ok: false, reason: "missing_tab_origin" };
   }
+}
+
+function decodeServiceNowClassicTarget(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const marker = "/now/nav/ui/classic/params/target/";
+    const index = parsed.pathname.indexOf(marker);
+    if (index >= 0) {
+      const encodedTarget = parsed.pathname.slice(index + marker.length);
+      return `${decodeURIComponent(encodedTarget)}${parsed.search}`;
+    }
+    return `${parsed.pathname.replace(/^\/+/, "")}${parsed.search}`;
+  } catch {
+    return "";
+  }
+}
+
+async function detectAlreadyOpenServiceNowModule(
+  tabId: number,
+  origin: string,
+  path: string[],
+): Promise<ServiceNowCurrentModuleMatch> {
+  const leaf = path[path.length - 1] || "";
+  const leafKey = serviceNowMatchKey(leaf);
+  if (!leafKey) return { ok: false, reason: "empty_module_path" };
+
+  let tabUrl = "";
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    tabUrl = getTabUrl(tab);
+    if (new URL(tabUrl).origin !== origin) {
+      return { ok: false, reason: "origin_mismatch" };
+    }
+  } catch {
+    return { ok: false, reason: "missing_tab_url" };
+  }
+
+  const pageTarget = decodeServiceNowClassicTarget(tabUrl);
+  const results = await chrome.scripting
+    .executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN" as any,
+      func: () => {
+        const visibleText = (node: Element): string => {
+          const style = window.getComputedStyle(node);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          ) {
+            return "";
+          }
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 && rect.height <= 0) return "";
+          return [
+            node.textContent ?? "",
+            node.getAttribute("aria-label") ?? "",
+            node.getAttribute("title") ?? "",
+          ]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim();
+        };
+        const headingSelector = [
+          "h1",
+          "h2",
+          '[role="heading"]',
+          '[title$="Context Menu"]',
+          ".navbar-title",
+          ".page-title",
+        ].join(",");
+        const headings = Array.from(document.querySelectorAll(headingSelector))
+          .map(visibleText)
+          .filter(Boolean)
+          .slice(0, 12);
+        return {
+          title: document.title || "",
+          url: location.href,
+          target: location.href,
+          headings,
+        };
+      },
+    })
+    .catch(() => []);
+
+  const matchedBy: string[] = [];
+  let bestTitle = "";
+  let bestUrl = tabUrl;
+  let bestTarget = pageTarget;
+
+  for (const result of results ?? []) {
+    const value = result.result as
+      | {
+          title?: string;
+          url?: string;
+          target?: string;
+          headings?: string[];
+        }
+      | undefined;
+    if (!value) continue;
+    const frameUrl = typeof value.url === "string" ? value.url : "";
+    if (frameUrl) {
+      try {
+        if (new URL(frameUrl).origin !== origin) continue;
+      } catch {
+        continue;
+      }
+    }
+    const title = typeof value.title === "string" ? value.title : "";
+    const headings = Array.isArray(value.headings) ? value.headings : [];
+    const target = frameUrl ? decodeServiceNowClassicTarget(frameUrl) : pageTarget;
+    const titleKey = serviceNowMatchKey(title);
+    const headingMatches = headings.filter((heading) => {
+      const key = serviceNowMatchKey(heading.replace(/\bcontext menu\b/gi, ""));
+      return key === leafKey || key.includes(leafKey);
+    });
+    const titleMatches = titleKey === leafKey || titleKey.includes(leafKey);
+    const targetLooksLikeModule =
+      /\.do(?:\?|$)/i.test(target) && !/\b(?:home|login)\b/i.test(target);
+
+    if ((titleMatches || headingMatches.length > 0) && targetLooksLikeModule) {
+      if (titleMatches) matchedBy.push(`title:${title}`);
+      matchedBy.push(
+        ...headingMatches.map((heading) => `heading:${heading}`),
+      );
+      bestTitle = title || headingMatches[0] || bestTitle;
+      bestUrl = frameUrl || bestUrl;
+      bestTarget = target || bestTarget;
+      break;
+    }
+  }
+
+  if (matchedBy.length === 0) {
+    return { ok: false, reason: "current_module_not_matched" };
+  }
+
+  return {
+    ok: true,
+    title: bestTitle || leaf,
+    url: bestUrl,
+    target: bestTarget,
+    matchedBy: [...new Set(matchedBy)],
+  };
 }
 
 async function fetchServiceNowTableRecords(
@@ -2959,11 +3112,49 @@ export function registerTools() {
         shouldRun,
       });
 
+      const originResult = await getServiceNowTabOrigin(tabId);
+      if (!originResult.ok) {
+        return [
+          `Error: Could not resolve ServiceNow module (${originResult.reason}).`,
+          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+        ].join("\n");
+      }
+
+      const alreadyOpen = await detectAlreadyOpenServiceNowModule(
+        tabId,
+        originResult.origin,
+        path,
+      );
+      if (alreadyOpen.ok) {
+        const result = [
+          "ServiceNow module is already open.",
+          `Winning path: current_page`,
+          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+          `Page title: ${alreadyOpen.title}`,
+          `Target: ${alreadyOpen.target}`,
+          `URL: ${alreadyOpen.url}`,
+          `Matched by: ${alreadyOpen.matchedBy.join("; ")}`,
+        ].join("\n");
+        return {
+          result,
+          evidence: serviceNowModuleEvidence({
+            winningPath: "current_page",
+            application: application || "unknown",
+            path,
+            moduleTitle: path[path.length - 1],
+            target: alreadyOpen.target,
+            targetUrl: alreadyOpen.url,
+            matchedBy: alreadyOpen.matchedBy,
+          }),
+        };
+      }
+
       if (!shouldRun) {
         const resolved = await resolveServiceNowModule(
           tabId,
           application,
           path,
+          originResult.origin,
         );
         if (!resolved.ok) {
           const candidateLines = summarizeServiceNowModuleCandidates(
@@ -2989,14 +3180,6 @@ export function registerTools() {
           `Target: ${resolved.target}`,
           `Target URL: ${resolved.targetUrl}`,
           `Candidate count: ${resolved.candidateCount}`,
-        ].join("\n");
-      }
-
-      const originResult = await getServiceNowTabOrigin(tabId);
-      if (!originResult.ok) {
-        return [
-          `Error: Could not resolve ServiceNow module (${originResult.reason}).`,
-          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
         ].join("\n");
       }
 
