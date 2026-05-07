@@ -3045,7 +3045,8 @@ export class AgentLoop {
     const result = await runStartExecution({
       run: async () => {
         const controllerResult =
-          await this.maybeRunAtomicSkillController(tabId);
+          (await this.maybeRunServiceNowRecordFormController(tabId)) ??
+          (await this.maybeRunAtomicSkillController(tabId));
         return controllerResult ?? (await this.loop(tabId));
       },
       getTurnCount: () => this.turnCount,
@@ -4834,12 +4835,35 @@ export class AgentLoop {
   }
 
   private isTaskLevelServiceNowRecordWorkflow(): boolean {
-    return (
-      this.selectedSkillId === "servicenow-record-form" &&
+    if (this.selectedSkillId !== "servicenow-record-form") return false;
+    const text = this.getServiceNowRecordWorkflowText();
+    if (
       /\bObjective:\s*Complete the workflow for the original request\b/i.test(
-        this.originalQuery,
+        text,
+      )
+    ) {
+      return true;
+    }
+    return (
+      extractFieldValuePairs(text).length > 0 &&
+      /\b(?:ServiceNow|incident|change request|problem|record)\b/i.test(text) &&
+      /\b(?:create|new|submit|submitted|created record|confirmation)\b/i.test(
+        text,
       )
     );
+  }
+
+  private getServiceNowRecordWorkflowText(): string {
+    return [
+      this.originalQuery,
+      ...this.planSteps.flatMap((step) => [
+        step.objective,
+        step.successCriteria ?? "",
+      ]),
+      ...this.planSubtasks.map((subtask) => subtask.description),
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
   }
 
   private async maybeRunAtomicSkillController(
@@ -5135,7 +5159,7 @@ export class AgentLoop {
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return null;
     if (!this.hasTrustedServiceNowSubmitIntent()) return null;
 
-    const fields = extractFieldValuePairs(this.originalQuery);
+    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
     if (fields.length === 0) return null;
 
     this.statusHandler(AgentStatus.ACTING, "Configuring ServiceNow form...");
