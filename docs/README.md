@@ -40,6 +40,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Release Checklist](./release-checklist.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
+- [WorkArena Generalized Harness Philosophy](./guides/workarena-generalized-harness-philosophy.md)
 - [Trace Viewer Developer Workflow](./guides/trace-viewer-developer-workflow.md)
 
 ## Evaluations
