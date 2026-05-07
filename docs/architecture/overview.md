@@ -1,6 +1,6 @@
 # Architecture Overview
 
-OpenSidebar is a Manifest V3 Chrome extension with three runtime contexts:
+OpenSidebar is a Manifest V3 Chrome extension with three production runtime contexts:
 
 ```text
 Side Panel <-> Service Worker <-> Content Script
@@ -11,6 +11,8 @@ Side Panel <-> Service Worker <-> Content Script
 - Side panel: React UI, chat, plans, approvals, streaming output, settings
 - Service worker: agent loop, orchestrator, model routing, tracing
 - Content script: DOM snapshotting, tagging, and tool execution in the page context
+
+The same side panel React app also runs inside the overlay harness for browser-driven testing. The overlay is injected into a generic page and talks through an in-memory `UiRuntimePort`; production side panel wiring talks through the Chrome-backed `chromeUiRuntimePort`. Shared UI code should use the runtime port instead of importing `chrome.*` directly.
 
 ## Model Stack
 
@@ -29,7 +31,9 @@ Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_AP
 
 - `apps/extension/src/background/`: main execution loop, orchestrator, perception, tools, and tracing
 - `apps/extension/src/content/`: page snapshotting, tagging, and DOM actions
-- `apps/extension/src/sidepanel/`: chat UI, settings, approvals, and plan display
+- `apps/extension/src/sidepanel/`: shared chat UI, settings, approvals, plan display, and UI runtime port
+- `apps/extension/src/overlay/`: draggable in-page overlay harness that mounts the shared side panel app
+- `apps/extension/src/background/environment/`: partial page, content bridge, and persistence ports for reusable background I/O
 - `apps/extension/src/trace-viewer/`: trace inspection UI
 - `apps/backend/src/`: local backend service for scheduled tasks and durable run state
 - `packages/prompts/src/`: compiled prompt registry and render helpers
@@ -57,5 +61,6 @@ Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_AP
 - [Agent Loop](./agent-loop.md)
 - [Perception Layer](./perception-layer.md)
 - [Content Script](./content-script.md)
+- [Runtime Boundaries](./runtime-boundaries.md)
 - [Developer Guide](../developer-guide.md)
 - [Tools](./tools.md)

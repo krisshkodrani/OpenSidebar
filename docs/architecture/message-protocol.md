@@ -18,38 +18,43 @@
 
 ## Overview
 
-OpenSidebar has three execution contexts that communicate via Chrome's messaging APIs:
+OpenSidebar has three production extension contexts that communicate through Chrome messaging, plus an overlay harness that exercises the same UI contract through browser events.
 
 | Context                         | Process              | Lifecycle                              | File                           |
 | ------------------------------- | -------------------- | -------------------------------------- | ------------------------------ |
-| **Service Worker** (background) | Extension process    | Ephemeral (terminates after ~30s idle) | `src/background/background.ts` |
-| **Side Panel** (UI)             | Extension process    | Lives while panel is open              | `src/sidepanel/App.tsx`        |
-| **Content Script**              | Tab renderer process | Lives while page is loaded             | `src/content/content.ts`       |
+| **Service Worker** (background) | Extension process    | Ephemeral (terminates after ~30s idle) | `apps/extension/src/background/background.ts` |
+| **Side Panel** (UI)             | Extension process    | Lives while panel is open              | `apps/extension/src/sidepanel/App.tsx`, `apps/extension/src/sidepanel/runtime.ts` |
+| **Content Script**              | Tab renderer process | Lives while page is loaded             | `apps/extension/src/content/content.ts` |
+| **Overlay Harness**             | Page renderer process | Lives while injected into a test page | `apps/extension/src/overlay/` |
 
 ### Communication Paths
 
 ```
-Side Panel ←——chrome.runtime——→ Service Worker ←——chrome.tabs.sendMessage——→ Content Script
+Side Panel UI <-> UiRuntimePort <-> Service Worker <-> ContentBridgePort/chrome.tabs.sendMessage <-> Content Script
 ```
 
 **Rules:**
 
+- Shared side panel UI code must use `UiRuntimePort`; the Chrome-backed adapter is the only side panel module that wraps `chrome.runtime`, `chrome.tabs`, `chrome.windows`, `chrome.permissions`, and `chrome.storage`.
+- The overlay harness uses the same message payloads with `MessageSource.UI` instead of `MessageSource.SIDEPANEL`.
 - Content scripts **cannot** talk directly to the side panel — all messages route through the service worker.
 
 ---
 
 ## Transport Mechanisms
 
-### 1. `chrome.runtime.sendMessage` (one-shot, with response)
+### 1. `UiRuntimePort.sendMessage` (one-shot, with response)
 
-Used for: Side Panel ↔ Service Worker.
+Used for: Side Panel UI to Service Worker.
+
+Production side panel calls are backed by `chrome.runtime.sendMessage`. Overlay harness calls are backed by browser events and an optional fake background controller.
 
 ```typescript
 // Sender
-const response = await chrome.runtime.sendMessage({
+const response = await uiRuntime.sendMessage({
   type: "USER_CHAT",
   requestId: crypto.randomUUID(),
-  source: "sidepanel",
+  source: uiRuntime.source,
   payload: { text: "Search for flights to NYC", tabId: 123, workspaceId: null },
 });
 
@@ -64,13 +69,15 @@ chrome.runtime.onMessage.addListener(
 );
 ```
 
-### 2. `chrome.tabs.sendMessage` (background → content script)
+### 2. `ContentBridgePort.sendMessage` / `chrome.tabs.sendMessage` (background to content script)
 
-Used for: Service Worker → Content Script (tab-targeted).
+Used for: Service Worker to Content Script (tab-targeted).
+
+Reusable background code should prefer `ContentBridgePort` where available. Production wiring still uses the Chrome-backed implementation.
 
 ```typescript
 // Background sends to a specific tab
-const response = await chrome.tabs.sendMessage(tabId, {
+const response = await contentBridgePort.sendMessage(tabId, {
   type: "DOM_SNAPSHOT_REQUEST",
   requestId: crypto.randomUUID(),
   source: "background",
@@ -81,6 +88,14 @@ const response = await chrome.tabs.sendMessage(tabId, {
 ### 3. `chrome.runtime.onMessage` with `sender.tab` check (content script → background)
 
 Content scripts use `chrome.runtime.sendMessage`, and the background listener disambiguates via `sender.tab`.
+
+### 4. Overlay browser events (overlay harness to fake or test background)
+
+Used for: browser-driven overlay smoke tests.
+
+- Outbound UI messages dispatch `opensidebar:overlay:send-message`.
+- Inbound background-style messages dispatch `opensidebar:overlay:receive-message`.
+- `apps/extension/src/overlay/driver.ts` exposes helpers for emitting inbound messages and subscribing to outbound UI messages.
 
 ---
 
@@ -96,7 +111,7 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 
 ## Message Catalog
 
-### Side Panel → Service Worker
+### UI → Service Worker
 
 | Message Type      | Purpose                     | Payload                                 | Expected Response                                                                             |
 | ----------------- | --------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -107,7 +122,7 @@ Every message carries a `requestId: string` (UUID v4). This enables:
 | `RESUME_AGENT`    | User resumes paused agent   | `{ workspaceId? }`                      | `AGENT_STATUS` with `status: THINKING`                                                        |
 | `SKIP_SUBTASK`    | User skips current subtask  | `{ taskId }`                            | —                                                                                             |
 
-### Service Worker → Side Panel
+### Service Worker → UI
 
 | Message Type        | Purpose                              | Payload                                                                                          |
 | ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------ | ------- | ---------- | --------------------------------------- |

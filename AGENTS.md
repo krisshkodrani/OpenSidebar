@@ -27,9 +27,9 @@ Repo policy:
 - If Notion is available, send archive-bound notes, reports, RFCs, and research writeups there directly instead of keeping them in git.
 - If a real product bug, follow-up task, or cleanup need is identified during work and is not being fixed immediately, create a GitHub issue for it when GitHub tools are available.
 
-## Harness Architecture Direction (RFC-012 Implemented With Caveat)
+## Harness Architecture Direction
 
-OpenSidebar has implemented the boundary-first part of RFC-012:
+The stable architecture decision is documented in `docs/architecture/runtime-boundaries.md`. In short, OpenSidebar has implemented the boundary-first harness split:
 
 - **Extension (production):** Chrome sidepanel + `chromeUiRuntimePort` in `apps/extension/src/sidepanel/runtime.ts`, plus Chrome-backed background environment ports where they already exist.
 - **Overlay (testing):** Draggable panel injected into a generic page through `apps/extension/src/overlay`, with an in-memory `UiRuntimePort` and reusable runner page-port helpers.
@@ -51,7 +51,7 @@ Prefer these locations when making changes:
 - Put page interaction fixes in reusable runtime policy, controllers, or skills before considering test changes.
 - Keep content-script and bridge fixes in `apps/extension/src/content` or background tool/bridge code, not in fixtures.
 - **E2E test harness (fixtures):** Keep thin. It may configure the environment, seed minimal state, collect diagnostics, and assert results, but it must not contain product logic.
-- **Overlay harness (RFC-012):** Treat this as product-quality test infrastructure, not a throwaway fixture. Keep dependencies explicit and avoid smuggling product behavior into the harness.
+- **Overlay harness:** Treat this as product-quality test infrastructure, not a throwaway fixture. Keep dependencies explicit and avoid smuggling product behavior into the harness.
 - Use skills when a workflow pattern is stable and reusable across sites or tasks.
 - Use test-only instrumentation only when it is pure observability or minimal state injection needed for determinism.
 - Do not add repo-backed research workflows, vendored agent repos, or note-taking systems to the product tree.

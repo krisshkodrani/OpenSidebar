@@ -14,6 +14,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Agent Loop](./architecture/agent-loop.md)
 - [Orchestrator](./architecture/orchestrator.md)
 - [Content Script](./architecture/content-script.md)
+- [Runtime Boundaries](./architecture/runtime-boundaries.md)
 - [Perception Layer](./architecture/perception-layer.md)
 - [Message Protocol](./architecture/message-protocol.md)
 - [Navigation Bridge](./architecture/navigation-bridge.md)
