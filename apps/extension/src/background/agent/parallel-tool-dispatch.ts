@@ -27,6 +27,7 @@ import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
   storeSuccessfulToolResult,
+  toolProvidesPageGrounding,
   type AgentLoopToolHandlerHost,
 } from "./loop-tool-handlers";
 import type { PreToolDecision } from "./middleware";
@@ -672,10 +673,7 @@ export async function executeParallelToolCalls(
           };
         }
 
-        if (
-          toolName === ToolName.READ_PAGE ||
-          toolName === ToolName.XRAY_PAGE
-        ) {
+        if (toolProvidesPageGrounding(toolName)) {
           host.hasReadPage = true;
         }
         if (toolName === ToolName.READ_PAGE) {

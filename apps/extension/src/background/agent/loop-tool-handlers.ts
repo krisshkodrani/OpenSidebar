@@ -51,6 +51,14 @@ function formatTabListResult(
   return lines;
 }
 
+export function toolProvidesPageGrounding(toolName: ToolName): boolean {
+  return (
+    toolName === ToolName.READ_PAGE ||
+    toolName === ToolName.XRAY_PAGE ||
+    toolName === ToolName.INSPECT_CHART
+  );
+}
+
 export interface AgentLoopToolHandlerHost {
   checkNavigateGuard(url: string): string | null;
   consecutiveAutoAdvances: number;
@@ -978,8 +986,8 @@ export async function handleGenericSequentialToolCall(
     };
   }
 
-  // Track read_page / xray_page for done() content verification guard
-  if (toolName === ToolName.READ_PAGE || toolName === ToolName.XRAY_PAGE) {
+  // Track page evidence for done() content verification guard.
+  if (toolProvidesPageGrounding(toolName)) {
     loop.hasReadPage = true;
   }
   if (toolName === ToolName.READ_PAGE) {

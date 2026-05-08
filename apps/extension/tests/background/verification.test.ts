@@ -286,6 +286,39 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("rejects chart label-count answers that repeat the count", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the maximum value in the "Open Request Items" chart? Give me both the label and the count. If there are many, pick one.',
+      summary:
+        'Label: Standard Laptop. Count: 4. The maximum value is Standard Laptop with a count of 4.',
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("Label: count");
+  });
+
+  test("rejects chart label-count answers that omit the label", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the maximum value in the "Open Request Items" chart? Give me both the label and the count. If there are many, pick one.',
+      summary: "4",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.reason).toContain("both the label and the count");
+  });
+
+  test("allows chart label-count answers with the count before the label", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'What is the maximum value in the "Open Request Items" chart? Give me both the label and the count. If there are many, pick one.',
+      summary: "4 (Standard Laptop)",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects chart max answers that include tie and axis numbers", () => {
     const result = assessWorkflowDoneGuard({
       query:

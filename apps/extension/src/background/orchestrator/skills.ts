@@ -343,6 +343,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "Prefer structured chart and SVG evidence before any pointer exploration.",
       "Treat chart/dashboard extraction as read-only; do not click Run, Refresh, report edit, drilldown, export, filter, or navigation controls unless the user explicitly asks to change the chart.",
       "When the user asks for one chart value, answer with exactly one numeric value and the requested unit; keep supporting counts, totals, timestamps, and axis ranges out of the final answer.",
+      "When the user asks for a chart label and count, answer as 'Label: count' with one numeric count; do not repeat the count or include percentages, totals, axis ranges, or tie details.",
       "Completion requires a concrete requested chart value, not just reaching the chart page.",
     ],
   },
@@ -1037,7 +1038,8 @@ const SKILL_BODIES: Record<
       "5. If inspect_chart lacks the requested value, read_page and read_element only to locate accessible chart text or labels.",
       "6. Store the extracted value and its evidence in notes when the workflow has more than one step.",
       "7. For single-value questions, call done with exactly one numeric value and the requested unit; do not include supporting counts, totals, axis ranges, dates, or chart timestamps in the final answer.",
-      "8. Call done only when the final answer contains the requested value and names the chart/category it came from while the report/dashboard remains in a stable view state.",
+      "8. For label-and-count questions, call done with exactly 'Label: count' using one numeric count; do not repeat the count or include percentages, totals, axis ranges, dates, or tie details.",
+      "9. Call done only when the final answer contains the requested value and names the chart/category it came from while the report/dashboard remains in a stable view state.",
     ].join("\n"),
     requiredEvidence: [
       "The requested chart metric or category",

@@ -273,7 +273,16 @@ function extractStandaloneNumericTokens(text: string): string[] {
   return tokens;
 }
 
+function chartQueryExpectsLabelAndCount(queryText: string): boolean {
+  return (
+    /\blabel\b[^.]{0,60}\bcount\b/.test(queryText) ||
+    /\bcount\b[^.]{0,60}\blabel\b/.test(queryText)
+  );
+}
+
 function chartQueryExpectsSingleNumericAnswer(queryText: string): boolean {
+  if (chartQueryExpectsLabelAndCount(queryText)) return false;
+
   const asksForMultipleNumericValues =
     /\b(?:both|two|three|all|each|every|multiple)\b[^.]{0,50}\b(?:numbers|values|counts|percentages|percents|metrics)\b/.test(
       queryText,
@@ -292,8 +301,13 @@ function chartQueryExpectsSingleNumericAnswer(queryText: string): boolean {
     ) ||
     /\b(?:maximum|minimum|highest|lowest|largest|smallest)\s+(?:value|count|percentage|percent|number)\b/.test(
       queryText,
-    ) ||
-    /\bgive\s+me\s+both\s+the\s+label\s+and\s+the\s+count\b/.test(queryText)
+    )
+  );
+}
+
+function chartSummaryHasNonNumericLabel(summary: string): boolean {
+  return /[a-z]/.test(
+    summary.replace(/(?:[$]\s*)?\d[\d,]*(?:\.\d+)?%?/gi, " "),
   );
 }
 
@@ -430,6 +444,22 @@ export function assessWorkflowDoneGuard(
       };
     }
     const numericTokens = extractStandaloneNumericTokens(summary);
+    if (chartQueryExpectsLabelAndCount(queryText)) {
+      if (numericTokens.length !== 1) {
+        return {
+          blocked: true,
+          reason:
+            "Chart label-and-count task should answer exactly as 'Label: count' with one numeric count; omit percentages, totals, axis ranges, tie details, and repeated counts.",
+        };
+      }
+      if (!chartSummaryHasNonNumericLabel(summary)) {
+        return {
+          blocked: true,
+          reason:
+            "Chart label-and-count task requires both the label and the count, not just the number.",
+        };
+      }
+    }
     if (
       chartQueryExpectsSingleNumericAnswer(queryText) &&
       numericTokens.length > 1
