@@ -4922,6 +4922,132 @@ export class AgentLoop {
     return { finalSummary, newIndex };
   }
 
+  private maybeCompleteTrustedListFilterStep(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    mode: "parallel" | "sequential";
+  }): { finalSummary: string; newIndex: number } | null {
+    if (this.selectedSkillId !== "list-filter-workflow") return null;
+    if (params.toolName !== ToolName.APPLY_LIST_FILTER) return null;
+    if (
+      /^error:/i.test(params.toolResult) ||
+      !/\bapplied\b/i.test(params.toolResult) ||
+      !/\bquery state:\s*sysparm_query=.+/i.test(params.toolResult)
+    ) {
+      return null;
+    }
+
+    const conditions = Array.isArray(params.toolArgs?.conditions)
+      ? params.toolArgs.conditions
+          .filter(
+            (
+              condition,
+            ): condition is {
+              field: string;
+              operator?: string;
+              value?: unknown;
+            } =>
+              !!condition &&
+              typeof condition === "object" &&
+              typeof (condition as any).field === "string" &&
+              (condition as any).field.trim().length > 0,
+          )
+          .map((condition) => ({
+            field: condition.field.trim(),
+            operator: String(condition.operator ?? "is").trim() || "is",
+            value:
+              condition.value == null ? "" : String(condition.value).trim(),
+          }))
+      : [];
+    if (conditions.length === 0) return null;
+
+    const normalizedResult = params.toolResult
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+    const missing = conditions.filter((condition) => {
+      const field = condition.field.toLowerCase();
+      const operator = condition.operator.toLowerCase();
+      const value = condition.value.toLowerCase();
+      const hasField = normalizedResult.includes(field);
+      if (!hasField) return true;
+      if (/empty/.test(operator)) {
+        return !normalizedResult.includes("empty");
+      }
+      return value.length > 0 && !normalizedResult.includes(value);
+    });
+    if (missing.length > 0) return null;
+
+    const queryLine =
+      params.toolResult
+        .split(/\r?\n/)
+        .find((line) => /\bquery state:/i.test(line))
+        ?.trim() ?? "Query state recorded by apply_list_filter.";
+    const conditionSummary = conditions
+      .map((condition) => {
+        const value =
+          condition.value.length > 0 ? ` ${condition.value}` : "";
+        return `${condition.field} ${condition.operator}${value}`;
+      })
+      .join("; ");
+    const finalSummary = `Applied list filter: ${conditionSummary}. Evidence: ${queryLine}`;
+
+    const plan = this.context.getPlanStatusRaw();
+    if (
+      !plan ||
+      plan.currentIndex < 0 ||
+      plan.currentIndex >= plan.subtasks.length
+    ) {
+      this.log.info("agent", "trusted list filter completed planless workflow", {
+        turn: this.turnCount,
+        mode: params.mode,
+        conditionCount: conditions.length,
+      });
+      this.traceRecorder?.recordEvent("trusted_list_filter_success", {
+        fromStep: -1,
+        toStep: 0,
+        reason: finalSummary,
+        trustedTool: params.toolName,
+        mode: params.mode,
+        completedAllSteps: true,
+        planless: true,
+      });
+      return { finalSummary, newIndex: 0 };
+    }
+
+    this.consecutiveAutoAdvances = 0;
+    const fromStep = plan.currentIndex;
+    const newIndex = completeRemainingSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
+      fromStep,
+      finalSummary,
+    );
+    this.syncPlanStatus(newIndex, "trusted_list_filter_success", {
+      reason: finalSummary,
+      advancedTo: newIndex,
+      mode: params.mode,
+      trustedTool: params.toolName,
+      conditionCount: conditions.length,
+    });
+    this.broadcastTaskProgress(newIndex);
+    this.log.info("agent", "trusted list filter completed workflow", {
+      turn: this.turnCount,
+      fromStep,
+      toStep: newIndex,
+      mode: params.mode,
+      conditionCount: conditions.length,
+    });
+    this.traceRecorder?.recordEvent("trusted_list_filter_success", {
+      fromStep,
+      toStep: newIndex,
+      reason: finalSummary,
+      trustedTool: params.toolName,
+      mode: params.mode,
+      completedAllSteps: newIndex >= this.planSubtasks.length,
+    });
+    return { finalSummary, newIndex };
+  }
+
   private hasTrustedServiceNowSubmitIntent(): boolean {
     const text = `${this.originalQuery}\n${this.planSteps
       .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
@@ -5300,11 +5426,12 @@ export class AgentLoop {
         toolArgs: fillArgs,
         toolResult: fill.result,
       });
+      const maxFormLoadRetries = 5;
       for (
         let attempt = 1;
         (!fill.ok || !fillSignal) &&
         this.isServiceNowRecordFormLoadMiss(fill.result) &&
-        attempt <= 3;
+        attempt <= maxFormLoadRetries;
         attempt++
       ) {
         this.traceRecorder?.recordEvent(

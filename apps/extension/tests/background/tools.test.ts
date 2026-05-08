@@ -28,6 +28,7 @@ beforeEach(() => {
     addListener: () => {},
     removeListener: () => {},
   };
+  (chrome.webNavigation as any).getAllFrames = undefined;
   (chrome.tabs as any).get = vi.fn(async (_tabId: number) => ({
     id: 123,
     url: "https://example.com/start",
@@ -188,7 +189,7 @@ describe("Tool Registration", () => {
         <p>General benefits information.</p>
       </main>
     `;
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
       const value = String(url);
       if (value.includes("sys_kb_id=hire")) {
         return new Response(
@@ -2376,6 +2377,147 @@ describe("Tool Registration", () => {
     } finally {
       (window as any).g_form = originalGForm;
       (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form runs form script in the current record frame", async () => {
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: "Create INC0034429 | Incident | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (_details: any) => [
+      {
+        frameId: 0,
+        result: {
+          matched: true,
+          ok: true,
+          url: "https://workarenapublic16.service-now.com/incident.do",
+          title: "Create INC0034429 | Incident | ServiceNow",
+          configured: [
+            "Short description (short_description) = Email system down",
+          ],
+          mismatches: [],
+          submitClicked: false,
+          tableName: "incident",
+          fieldCount: 3,
+        },
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-servicenow-form-frame",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_SERVICENOW_FORM,
+          arguments: JSON.stringify({
+            fields: [
+              { field: "Short description", value: "Email system down" },
+            ],
+            submit: false,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
+    expect((chrome.scripting.executeScript as any).mock.calls[0][0].target).toEqual(
+      { tabId: 123 },
+    );
+    expect(result).toContain("Configured ServiceNow form.");
+  });
+
+  test("configure_servicenow_form targets the ServiceNow record child frame", async () => {
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/problem.do",
+      title: "Create PRB0034429 | Problem | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.webNavigation as any).getAllFrames = vi.fn(async () => [
+      {
+        frameId: 0,
+        url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/problem.do",
+      },
+      {
+        frameId: 5,
+        url: "https://workarenapublic16.service-now.com/problem.do",
+      },
+    ]);
+    (chrome.scripting.executeScript as any) = vi.fn(async () => [
+      {
+        frameId: 5,
+        result: {
+          matched: true,
+          ok: true,
+          url: "https://workarenapublic16.service-now.com/problem.do",
+          title: "Create PRB0034429 | Problem | ServiceNow",
+          configured: [
+            "Problem statement (short_description) = Email system down",
+          ],
+          mismatches: [],
+          submitClicked: false,
+          tableName: "problem",
+          fieldCount: 3,
+        },
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-servicenow-form-child-frame",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_SERVICENOW_FORM,
+          arguments: JSON.stringify({
+            fields: [
+              { field: "Problem statement", value: "Email system down" },
+            ],
+            submit: false,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect((chrome.scripting.executeScript as any).mock.calls[0][0].target).toEqual(
+      { tabId: 123, frameIds: [5] },
+    );
+    expect(result).toContain("Configured ServiceNow form.");
+  });
+
+  test("configure_servicenow_form returns an error when the injected script stalls", async () => {
+    (chrome.scripting.executeScript as any) = vi.fn(
+      () => new Promise(() => {}),
+    );
+    vi.useFakeTimers();
+
+    try {
+      const resultPromise = toolRegistry.execute(
+        {
+          id: "configure-servicenow-form-timeout",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Short description", value: "Stalled form" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      await vi.advanceTimersByTimeAsync(25_000);
+
+      await expect(resultPromise).resolves.toContain(
+        "Error configuring ServiceNow form: configure_servicenow_form script timed out after 25000ms",
+      );
+    } finally {
+      vi.useRealTimers();
     }
   });
 

@@ -193,6 +193,8 @@ function withTimeout<T>(
   });
 }
 
+const CONFIGURE_SERVICENOW_FORM_SCRIPT_TIMEOUT_MS = 25_000;
+
 async function tryInPageHistoryBack(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -7778,19 +7780,76 @@ export function registerTools() {
       }
 
       try {
-        const results = await chrome.scripting.executeScript({
-          target: { tabId, allFrames: true },
-          world: "MAIN" as any,
-          func: async (input: {
-            fields: Array<{ field: string; value: string }>;
-            submit: boolean;
-            submitButton: string | null;
-          }) => {
-            const normalize = (value: unknown) =>
-              String(value ?? "")
-                .replace(/\s+/g, " ")
-                .trim()
-                .toLowerCase();
+        let scriptTarget: { tabId: number; frameIds?: number[] } = { tabId };
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const tableHints = new Set<string>();
+          const collectTableHints = (url: string) => {
+            for (const match of url.matchAll(
+              /(?:target\/|\/)([a-z][a-z0-9_]*)\.do(?:[/?#]|$)/gi,
+            )) {
+              tableHints.add(match[1].toLowerCase());
+            }
+          };
+          collectTableHints(tab.url || "");
+          const frames =
+            typeof chrome.webNavigation?.getAllFrames === "function"
+              ? await chrome.webNavigation.getAllFrames({ tabId })
+              : null;
+          const frameScores = (frames || [])
+            .map((frame) => {
+              const frameUrl = String(frame.url || "");
+              const url = frameUrl.toLowerCase();
+              const isServiceNowHost =
+                /^https:\/\/[^/]+\.service-now\.com\//i.test(frameUrl) ||
+                /^https:\/\/[^/]+\.servicenow\.com\//i.test(frameUrl);
+              if (!isServiceNowHost) return null;
+              let score = frame.frameId === 0 ? 0 : 10;
+              if (/\.do(?:[/?#]|$)/i.test(frameUrl)) score += 20;
+              for (const tableHint of tableHints) {
+                if (
+                  url.includes(`/${tableHint}.do`) ||
+                  url.includes(`target/${tableHint}.do`)
+                ) {
+                  score += 100;
+                }
+              }
+              if (/about:blank|empty\.html|blank\.html/i.test(frameUrl)) {
+                score -= 100;
+              }
+              return { frameId: frame.frameId, score };
+            })
+            .filter(
+              (
+                frame,
+              ): frame is {
+                frameId: number;
+                score: number;
+              } => Boolean(frame),
+            )
+            .sort((a, b) => b.score - a.score);
+          const selectedFrame = frameScores[0];
+          if (selectedFrame && selectedFrame.frameId !== 0) {
+            scriptTarget = { tabId, frameIds: [selectedFrame.frameId] };
+          }
+        } catch {
+          // Fall back to the current frame if frame metadata is unavailable.
+        }
+
+        const results = await withTimeout(
+          chrome.scripting.executeScript({
+            target: scriptTarget,
+            world: "MAIN" as any,
+            func: async (input: {
+              fields: Array<{ field: string; value: string }>;
+              submit: boolean;
+              submitButton: string | null;
+            }) => {
+              const normalize = (value: unknown) =>
+                String(value ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .toLowerCase();
             const keyFor = (value: unknown) =>
               normalize(value).replace(/[^a-z0-9]+/g, "");
             const display = (value: unknown) =>
@@ -8983,9 +9042,12 @@ export function registerTools() {
               tableName,
               fieldCount: fieldsMeta.length,
             };
-          },
-          args: [{ fields, submit, submitButton }],
-        });
+            },
+            args: [{ fields, submit, submitButton }],
+          }),
+          CONFIGURE_SERVICENOW_FORM_SCRIPT_TIMEOUT_MS,
+          "configure_servicenow_form script",
+        );
 
         const plans = (results || [])
           .map((result) => result.result as Record<string, unknown> | undefined)

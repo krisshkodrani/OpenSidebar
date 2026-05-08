@@ -1256,6 +1256,78 @@ describe("AgentLoop", () => {
     expect(completion).toBeNull();
   });
 
+  test("trusted list filter helper completes from structured filter evidence", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-filter-workflow",
+      },
+    );
+
+    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
+      toolName: ToolName.APPLY_LIST_FILTER,
+      toolArgs: {
+        join: "AND",
+        conditions: [
+          { field: "Asset function", operator: "is", value: "Secondary" },
+          { field: "Model category", operator: "is", value: "Computer" },
+          { field: "Assigned to", operator: "is empty", value: "" },
+        ],
+      },
+      toolResult:
+        "Applied alm_hardware list filter.\n" +
+        "Query state: sysparm_query=asset_function=secondary^model_category=81feb9c137101000deeabfc8bcbe5dc4^assigned_toISEMPTY\n" +
+        "Conditions:\n" +
+        '- Asset function is "Secondary" -> asset_function=secondary\n' +
+        '- Model category is "Computer" -> model_category=81feb9c137101000deeabfc8bcbe5dc4\n' +
+        '- Assigned to is empty "" -> assigned_toISEMPTY',
+      mode: "sequential",
+    });
+
+    expect(completion).not.toBeNull();
+    expect(completion.finalSummary).toContain("Asset function is Secondary");
+    expect(completion.finalSummary).toContain("Model category is Computer");
+    expect(completion.finalSummary).toContain("Assigned to is empty");
+    expect(completion.finalSummary).toContain("asset_function=secondary");
+  });
+
+  test("trusted list filter helper waits when a requested condition is missing", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-filter-workflow",
+      },
+    );
+
+    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
+      toolName: ToolName.APPLY_LIST_FILTER,
+      toolArgs: {
+        conditions: [
+          { field: "Asset function", operator: "is", value: "Secondary" },
+          { field: "Model category", operator: "is", value: "Computer" },
+        ],
+      },
+      toolResult:
+        "Applied alm_hardware list filter.\n" +
+        "Query state: sysparm_query=asset_function=secondary\n" +
+        "Conditions:\n" +
+        '- Asset function is "Secondary" -> asset_function=secondary',
+      mode: "sequential",
+    });
+
+    expect(completion).toBeNull();
+  });
+
   test("catalog order snapshot completion accepts visible request confirmation", () => {
     const onStatus = vi.fn();
     const onMessage = vi.fn();
@@ -1511,6 +1583,52 @@ describe("AgentLoop", () => {
     expect(
       JSON.parse(executeToolCall.mock.calls[1][0].function.arguments),
     ).toMatchObject({ submit: false });
+  });
+
+  test("ServiceNow record controller keeps retrying delayed form frames", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Submit the form and verify the created record.';
+
+    const loadMiss =
+      "Error: Could not find a ServiceNow record form on the current page.";
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(loadMiss)
+      .mockResolvedValueOnce(loadMiss)
+      .mockResolvedValueOnce(loadMiss)
+      .mockResolvedValueOnce(loadMiss)
+      .mockResolvedValueOnce(loadMiss)
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Problem statement (short_description) = Email system is down again",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: PRB0050139\n" +
+          "Current title: PRB0050140 | Problem | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain("PRB0050139");
+    expect(executeToolCall).toHaveBeenCalledTimes(7);
   });
 
   test("ServiceNow record controller handles natural field-value creation prompts", async () => {
