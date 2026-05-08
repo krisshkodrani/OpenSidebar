@@ -76,6 +76,7 @@ export interface AgentLoopToolHandlerHost {
   maybeCompleteTrustedListSortStep(params: any): {
     finalSummary: string;
   } | null;
+  maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
   middleware: any;
   originalQuery: string;
   pendingInlineEditVerification: {
@@ -1094,6 +1095,14 @@ export async function handleGenericSequentialToolCall(
       completedSummary: trustedListSortCompletion.finalSummary,
     };
   }
+
+  await loop.maybeAutoSubmitConfiguredCatalogItem({
+    toolName,
+    toolArgs: args,
+    toolResult: result,
+    tabId,
+    mode: "sequential",
+  });
 
   const trustedAutoSubmitCompletion =
     await loop.maybeAutoSubmitTrustedServiceNowForm({

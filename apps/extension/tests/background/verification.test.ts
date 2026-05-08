@@ -410,7 +410,7 @@ describe("assessWorkflowDoneGuard", () => {
 
   test("rejects catalog detail pages without request confirmation", () => {
     const result = assessWorkflowDoneGuard({
-      query: "Order a standard laptop from the service catalog.",
+      query: "Order a premium monitor from the service catalog.",
       summary:
         "The catalog item detail page is open with configuration options visible.",
       selectedSkillId: "catalog-order-workflow",
@@ -421,9 +421,9 @@ describe("assessWorkflowDoneGuard", () => {
 
   test("allows catalog request confirmations", () => {
     const result = assessWorkflowDoneGuard({
-      query: "Order a standard laptop from the service catalog.",
+      query: "Order a premium monitor from the service catalog.",
       summary:
-        "The standard laptop request was submitted and confirmation REQ0012345 is visible.",
+        "The premium monitor request was submitted and confirmation REQ0012345 is visible.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(false);
@@ -432,12 +432,12 @@ describe("assessWorkflowDoneGuard", () => {
   test("allows catalog order-status confirmations when the task text mentions requested-item checks", () => {
     const result = assessWorkflowDoneGuard({
       query:
-        "Order a standard laptop from the service catalog. Completion checks: The current page remains the request/order confirmation page, not a requested-item detail page.",
+        "Order a premium monitor from the service catalog. Completion checks: The current page remains the request/order confirmation page, not a requested-item detail page.",
       pageTitle: "Order Status: REQ0024260 | ServiceNow",
       pageUrl:
         "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do%3Fsysparm_sys_id%3D830ae7",
       summary:
-        "Order Status: REQ0024260. The Standard Laptop request was submitted with Quantity 10.",
+        "Order Status: REQ0024260. The Premium Monitor request was submitted with Quantity 10.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(false);
@@ -446,21 +446,21 @@ describe("assessWorkflowDoneGuard", () => {
   test("rejects catalog confirmations that over-order requested quantity", () => {
     const result = assessWorkflowDoneGuard({
       query:
-        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+        'Go to the hardware store and order 10 "Premium Monitor" with extended warranty enabled.',
       summary:
-        "Request Number: REQ0024250. Items Ordered: 2 line items of Lenovo - Carbon x1, each line item Quantity 10. Total Order: 20 Standard Laptops.",
+        "Request Number: REQ0024250. Items Ordered: 2 line items of Premium Monitor, each line item Quantity 10. Total Order: 20 Premium Monitors.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(true);
-    expect(result.reason).toContain("expected 10");
+    expect(result.reason).toContain("requested quantity 10");
   });
 
   test("allows catalog confirmations with matching requested quantity", () => {
     const result = assessWorkflowDoneGuard({
       query:
-        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+        'Go to the hardware store and order 10 "Premium Monitor" with extended warranty enabled.',
       summary:
-        "Request Number: REQ0024251. The Standard Laptop request was submitted with Quantity 10.",
+        "Request Number: REQ0024251. The Premium Monitor request was submitted with Quantity 10.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(false);
@@ -469,12 +469,12 @@ describe("assessWorkflowDoneGuard", () => {
   test("rejects catalog completion from requested-item detail pages", () => {
     const result = assessWorkflowDoneGuard({
       query:
-        'Go to the hardware store and order 10 "Standard Laptop" with Adobe Acrobat enabled.',
+        'Go to the hardware store and order 10 "Premium Monitor" with extended warranty enabled.',
       pageTitle: "RITM0043966 | Requested Item | ServiceNow",
       pageUrl:
         "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/sc_req_item.do%3Fsys_id%3D80b7",
       summary:
-        "Request Number: REQ0023006. The Standard Laptop request was submitted with Quantity 10.",
+        "Request Number: REQ0023006. The Premium Monitor request was submitted with Quantity 10.",
       selectedSkillId: "catalog-order-workflow",
     });
     expect(result.blocked).toBe(true);

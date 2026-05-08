@@ -5211,6 +5211,12 @@ export class AgentLoop {
     return { toolCall, result, ok };
   }
 
+  private isServiceNowRecordFormLoadMiss(result: string): boolean {
+    return /could not find a servicenow record form|no servicenow record form|record form .*not.*found/i.test(
+      result,
+    );
+  }
+
   private startServiceNowRecordControllerTraceTurn(fieldCount: number): void {
     if (!this.traceRecorder) return;
 
@@ -5283,17 +5289,48 @@ export class AgentLoop {
     this.startServiceNowRecordControllerTraceTurn(fields.length);
     try {
       const fillArgs = { fields, submit: false };
-      const fill = await this.executeServiceNowRecordControllerTool({
+      let fill = await this.executeServiceNowRecordControllerTool({
         tabId,
         args: fillArgs,
         label: "Configure ServiceNow form",
         eventName: "servicenow_record_controller_fill_started",
       });
-      const fillSignal = detectTrustedFormFillStepCompletion({
+      let fillSignal = detectTrustedFormFillStepCompletion({
         toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
         toolArgs: fillArgs,
         toolResult: fill.result,
       });
+      for (
+        let attempt = 1;
+        (!fill.ok || !fillSignal) &&
+        this.isServiceNowRecordFormLoadMiss(fill.result) &&
+        attempt <= 3;
+        attempt++
+      ) {
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_fill_retry_queued",
+          {
+            turn: this.turnCount,
+            attempt,
+            reason: "form_not_ready",
+          },
+        );
+        await waitForDomReady(tabId, {
+          timeoutMs: 750 + attempt * 500,
+          waitForElements: true,
+        });
+        fill = await this.executeServiceNowRecordControllerTool({
+          tabId,
+          args: fillArgs,
+          label: `Configure ServiceNow form (retry ${attempt})`,
+          eventName: "servicenow_record_controller_fill_retry_started",
+        });
+        fillSignal = detectTrustedFormFillStepCompletion({
+          toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+          toolArgs: fillArgs,
+          toolResult: fill.result,
+        });
+      }
       if (!fill.ok || !fillSignal) {
         this.traceRecorder?.recordEvent(
           "servicenow_record_controller_deferred",
@@ -5598,6 +5635,176 @@ export class AgentLoop {
       completedAllSteps: newIndex >= this.planSubtasks.length,
     });
     return { finalSummary: signal.reason, newIndex };
+  }
+
+  private maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null {
+    if (this.selectedSkillId !== "catalog-order-workflow") return null;
+    const snapshot = this.context.getSnapshot();
+    if (!snapshot) return null;
+    const pageText = [
+      snapshot.title,
+      snapshot.url,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const requestNumber = pageText.match(/\bREQ\d+\b/i)?.[0]?.toUpperCase();
+    if (!requestNumber || !/\border status\b|\brequest number\b/i.test(pageText)) {
+      return null;
+    }
+
+    const itemName = this.extractExpectedCatalogItemNameFromQuery();
+    if (
+      itemName &&
+      !pageText.toLowerCase().includes(itemName.toLowerCase())
+    ) {
+      return null;
+    }
+
+    const quantity =
+      this.originalQuery.match(/\border\s+(\d+)\b/i)?.[1] ??
+      this.originalQuery.match(/\bquantity\s*(?:of|=|:)?\s*(\d+)\b/i)?.[1] ??
+      null;
+    if (
+      quantity &&
+      /\bquantity\b/i.test(pageText) &&
+      !new RegExp(`\\b${quantity}\\b`).test(pageText)
+    ) {
+      return null;
+    }
+
+    const summaryParts = [`Catalog order submitted: ${requestNumber}.`];
+    if (itemName) summaryParts.push(`Item: ${itemName}.`);
+    if (quantity) summaryParts.push(`Quantity: ${quantity}.`);
+    const summary = summaryParts.join(" ");
+    this.completeTaskResult(summary);
+    this.traceRecorder?.recordEvent("catalog_order_snapshot_completed", {
+      turn: this.turnCount,
+      requestNumber,
+      itemName: itemName ?? null,
+      quantity,
+    });
+    return {
+      outcome: "completed",
+      turnCount: this.turnCount,
+      summary,
+      failure: { category: "none", code: "none" },
+      metrics: this.getMetrics(),
+    };
+  }
+
+  private extractExpectedCatalogItemNameFromQuery(): string | null {
+    const quotedOrderItem =
+      this.originalQuery.match(
+        /\b(?:order|request|purchase|buy)\s+\d+\s+"([^"]{3,120})"/i,
+      )?.[1] ??
+      this.originalQuery.match(
+        /\b(?:order|request|purchase|buy|configure)\s+"([^"]{3,120})"/i,
+      )?.[1] ??
+      this.originalQuery.match(
+        /"([^"]{3,120})"\s+(?:from|in)\s+(?:the\s+)?(?:service\s+)?catalog\b/i,
+      )?.[1] ??
+      null;
+    if (quotedOrderItem) return quotedOrderItem.trim();
+
+    const namedItem =
+      this.originalQuery.match(
+        /\b(?:catalog item|item|product)\s+(?:named|called)\s+(.{3,120}?)(?=\s+(?:with|and|from|in)\b|[.,;\n]|$)/i,
+      )?.[1] ?? null;
+    return namedItem ? namedItem.replace(/^["']|["']$/g, "").trim() : null;
+  }
+
+  private shouldAutoSubmitConfiguredCatalogItem(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+  }): boolean {
+    if (this.selectedSkillId !== "catalog-order-workflow") return false;
+    if (params.toolName !== ToolName.CONFIGURE_CATALOG_ITEM) return false;
+    if (params.toolArgs?.submit === true) return false;
+    if (!/\b(order|request|cart|checkout)\b/i.test(this.originalQuery)) {
+      return false;
+    }
+    if (!/^Configured catalog item\./i.test(params.toolResult)) return false;
+    if (
+      /\b(?:Error:|incomplete|Missing|Mismatches|could not|not found)\b/i.test(
+        params.toolResult,
+      )
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  private async maybeAutoSubmitConfiguredCatalogItem(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    tabId: number;
+    mode: "parallel" | "sequential";
+  }): Promise<void> {
+    if (!this.shouldAutoSubmitConfiguredCatalogItem(params)) return;
+
+    const submitArgs = {
+      ...(params.toolArgs ?? {}),
+      submit: true,
+    };
+    const submitToolCall: ToolCall = {
+      id: `auto_${crypto.randomUUID()}`,
+      type: "function",
+      function: {
+        name: ToolName.CONFIGURE_CATALOG_ITEM,
+        arguments: JSON.stringify(submitArgs),
+      },
+    } as ToolCall;
+    const toolStep: AgentStep = {
+      id: crypto.randomUUID(),
+      type: "tool",
+      label: "Submit configured catalog item",
+      detail: JSON.stringify(submitArgs),
+      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+      status: "running",
+      timestamp: Date.now(),
+    };
+    this.stepHandler(toolStep, false);
+    this.log.info("agent", "Auto-submitting configured catalog item", {
+      turn: this.turnCount,
+      mode: params.mode,
+    });
+    this.traceRecorder?.recordEvent("catalog_config_auto_submit_started", {
+      turn: this.turnCount,
+      mode: params.mode,
+      trustedTool: ToolName.CONFIGURE_CATALOG_ITEM,
+    });
+
+    const startedAt = Date.now();
+    const result = await this.executeToolCall(submitToolCall, params.tabId);
+    const durationMs = Date.now() - startedAt;
+    this.stepHandler(
+      {
+        ...toolStep,
+        status: /^Error:/i.test(result) ? "error" : "done",
+        durationMs,
+        ...(/^Error:/i.test(result) ? { errorMessage: result } : {}),
+      },
+      true,
+    );
+    this.traceRecorder?.recordToolExecution(
+      submitToolCall.id,
+      ToolName.CONFIGURE_CATALOG_ITEM,
+      submitArgs,
+      result,
+      !/^Error:/i.test(result),
+      durationMs,
+      RiskLevel.MEDIUM,
+      /^Error:/i.test(result) ? result : undefined,
+    );
+    this.context.addMessage({
+      role: "tool",
+      content: result,
+      tool_call_id: submitToolCall.id,
+    });
   }
 
   private completeSubmitFormReset(
@@ -6295,6 +6502,11 @@ export class AgentLoop {
         this.sessionStartTime,
       );
       this.updateMoneyTableAggregateFromSnapshot();
+      const catalogSnapshotCompletion =
+        this.maybeCompleteCatalogOrderFromSnapshot();
+      if (catalogSnapshotCompletion) {
+        return catalogSnapshotCompletion;
+      }
 
       // 1. LLM Inference (streamed)
       // `let` because retry loop may append diagnostic hints (cleaned up after)

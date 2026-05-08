@@ -1256,6 +1256,112 @@ describe("AgentLoop", () => {
     expect(completion).toBeNull();
   });
 
+  test("catalog order snapshot completion accepts visible request confirmation", () => {
+    const onStatus = vi.fn();
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: onStatus,
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Order 10 "Premium Monitor" from the hardware catalog.';
+    (agent as any).context.setSnapshot({
+      title: "Order Status: REQ0025875 | ServiceNow",
+      url: "https://example.service-now.com/checkout",
+      visibleContent:
+        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
+      pageContent:
+        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
+      elements: [],
+    });
+
+    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
+
+    expect(completion?.outcome).toBe("completed");
+    expect(completion?.summary).toContain("REQ0025875");
+    expect(completion?.summary).toContain("Premium Monitor");
+    expect(completion?.summary).toContain("Quantity: 10");
+    expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
+    expect(onMessage).toHaveBeenCalledWith(
+      expect.stringContaining("REQ0025875"),
+      [],
+    );
+  });
+
+  test("catalog order snapshot completion accepts named catalog items", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Request quantity 2 of catalog item named Facilities Access Package with approval notes "front desk".';
+    (agent as any).context.setSnapshot({
+      title: "Order Status: REQ0025876 | ServiceNow",
+      url: "https://example.service-now.com/checkout",
+      visibleContent:
+        "Request Number REQ0025876 Facilities Access Package Quantity 2",
+      pageContent:
+        "Request Number REQ0025876 Facilities Access Package Quantity 2",
+      elements: [],
+    });
+
+    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
+
+    expect(completion?.outcome).toBe("completed");
+    expect(completion?.summary).toContain("REQ0025876");
+    expect(completion?.summary).toContain("Facilities Access Package");
+    expect(completion?.summary).toContain("Quantity: 2");
+  });
+
+  test("catalog order helper auto-submits after trusted configuration", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Go to the hardware store and order 10 "Premium Monitor".';
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValue(
+        "Configured catalog item.\nClicked submit control: Add to Cart",
+      );
+
+    await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
+      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+      toolArgs: { quantity: "10", submit: false },
+      toolResult:
+        "Configured catalog item.\nConfigured:\n- Quantity=10\n- Adobe Acrobat=checked",
+      tabId: 123,
+      mode: "sequential",
+    });
+
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
+    ).toEqual({ quantity: "10", submit: true });
+  });
+
   test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1360,6 +1466,51 @@ describe("AgentLoop", () => {
       executeToolCall.mock.calls[1][0].function.arguments,
     );
     expect(secondArgs).toEqual({ submit: true, submitButton: "Submit" });
+  });
+
+  test("ServiceNow record controller retries when the form is still loading", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new incident with a value of "EMAIL Server Down Again" for field "Short description". Submit the form and verify the created record.';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Short description (short_description) = EMAIL Server Down Again",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: INC0036109\n" +
+          "Current title: Create INC0036110 | Incident | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain("INC0036109");
+    expect(executeToolCall).toHaveBeenCalledTimes(3);
+    expect(
+      JSON.parse(executeToolCall.mock.calls[1][0].function.arguments),
+    ).toMatchObject({ submit: false });
   });
 
   test("ServiceNow record controller handles natural field-value creation prompts", async () => {

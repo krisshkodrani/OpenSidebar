@@ -142,6 +142,7 @@ Open `http://127.0.0.1:7589/viewer`.
 - [Tools Reference](./docs/features/tools.md)
 - [WorkArena Roadmap](./docs/evals/workarena-roadmap.md)
 - [WorkArena Setup](./docs/evals/workarena.md)
+- [WorkArena Major Full Run Checklist](./docs/evals/workarena-full-run-checklist.md)
 - [Right Level Of Abstraction](./docs/guides/right-level-of-abstraction.md)
 - [WorkArena Generalized Harness Philosophy](./docs/guides/workarena-generalized-harness-philosophy.md)
 - [Personal Profile](./docs/personal-profile.md)

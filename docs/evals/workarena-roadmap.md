@@ -237,6 +237,7 @@ Stable documentation:
 docs/evals/workarena.md
 docs/evals/workarena-roadmap.md
 docs/evals/workarena-smoke-test-checklist.md
+docs/evals/workarena-full-run-checklist.md
 ```
 
 Do not commit dated E2E result reports under `docs/`.

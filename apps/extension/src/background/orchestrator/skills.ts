@@ -468,7 +468,9 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     triggers: [
       "order catalog item",
       "service catalog",
-      "standard laptop",
+      "hardware catalog item",
+      "hardware store",
+      "catalog item with options",
       "configure item",
       "request item",
     ],
@@ -2482,7 +2484,7 @@ const listFilterPattern =
 const listSortPattern =
   /\b(sort|order by|ascending|descending|sort column|sort [^.\n]{0,80}list|sort [^.\n]{0,80}table)\b/i;
 const catalogOrderPattern =
-  /\b(service catalog|catalog item|request item|standard laptop|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog)\b/i;
+  /\b(service catalog|catalog item|request item|hardware store|hardware catalog|catalog option|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog|order\s+\d+\s+"[^"]{3,120}"\s+with\s+configuration)\b/i;
 const serviceNowModuleNavigationPattern =
   /\b(application navigator|module of the|module in the|navigate to (?:the )?[^.\n]{0,120}module|open (?:the )?[^.\n]{0,120}module|(?:service\s*now|servicenow)[^.\n]{0,80}\bmodule\b|\bmodule\b[^.\n]{0,80}\b(?:service\s*now|servicenow))\b/i;
 const formPattern =
@@ -3124,7 +3126,7 @@ function selectPrimarySkillWithKeywordMatcher(
 
   if (
     catalogOrderPattern.test(corpus) &&
-    /\b(order|request|catalog|quantity|configure|cart|laptop|software|item)\b/i.test(
+    /\b(order|request|catalog|quantity|configure|cart|hardware|software|item)\b/i.test(
       corpus,
     )
   ) {
