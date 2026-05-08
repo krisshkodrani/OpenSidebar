@@ -313,6 +313,27 @@ describe("requiresGroundingReadBeforeDone", () => {
       requiresGroundingReadBeforeDone("What is the URL of this page?"),
     ).toBe(false);
   });
+
+  test("does not require read_page for structured chart value extraction", () => {
+    expect(
+      requiresGroundingReadBeforeDone(
+        'What is the maximum value in the "Open Request Items" chart? Give me both the label and the count. If there are many, pick one.',
+      ),
+    ).toBe(false);
+    expect(
+      requiresGroundingReadBeforeDone(
+        "Extract the Active Requests count from the dashboard chart.",
+      ),
+    ).toBe(false);
+  });
+
+  test("still requires grounding for whole-page chart summaries", () => {
+    expect(
+      requiresGroundingReadBeforeDone(
+        "Summarize this dashboard page and describe the chart trends.",
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("isDoneSummaryGroundedInSnapshot", () => {

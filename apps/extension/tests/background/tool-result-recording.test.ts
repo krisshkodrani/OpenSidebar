@@ -3,6 +3,7 @@ import {
   recordFailedToolExecution,
   recordSuccessfulToolExecution,
   storeSuccessfulToolResult,
+  toolProvidesPageGrounding,
   updateInlineEditVerificationState,
   type AgentLoopToolHandlerHost,
 } from "../../src/background/agent/loop-tool-handlers";
@@ -92,6 +93,12 @@ function preDecision(): PreToolDecision {
 }
 
 describe("tool result recording", () => {
+  test("treats structured chart inspection as page grounding", () => {
+    expect(toolProvidesPageGrounding(ToolName.INSPECT_CHART)).toBe(true);
+    expect(toolProvidesPageGrounding(ToolName.READ_PAGE)).toBe(true);
+    expect(toolProvidesPageGrounding(ToolName.FIND_ELEMENT)).toBe(false);
+  });
+
   test("records successful tool execution side effects", () => {
     vi.spyOn(Date, "now").mockReturnValue(145);
     const loop = host();

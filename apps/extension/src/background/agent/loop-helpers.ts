@@ -2167,6 +2167,30 @@ export function requiresGroundingReadBeforeDone(query: string): boolean {
     /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
   ];
 
+  const chartValueExtraction =
+    /\b(chart|dashboard|graph|plot|highcharts|visualization)\b/.test(
+      normalized,
+    ) &&
+    /\b(value|count|percentage|percent|number|label|maximum|minimum|highest|lowest|largest|smallest)\b/.test(
+      normalized,
+    );
+  const wholePageReadIntent = [
+    /\bsummari[sz]e\b/,
+    /\bsummary\b/,
+    /\bdescribe (?:this|the) page\b/,
+    /\breport (?:on|about) (?:this|the) page\b/,
+    /\breview (?:this|the) page\b/,
+    /\bmain points?\b/,
+    /\bkey points?\b/,
+    /\bheadlines?\b/,
+    /\bwhat does (?:this|the) page say\b/,
+    /\bread (?:this|the) page\b/,
+    /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
+  ].some((pattern) => pattern.test(normalized));
+  if (chartValueExtraction && !wholePageReadIntent) {
+    return false;
+  }
+
   return pageReadTasks.some((pattern) => pattern.test(normalized));
 }
 
