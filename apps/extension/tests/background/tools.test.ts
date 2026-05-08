@@ -1986,6 +1986,89 @@ describe("Tool Registration", () => {
     expect(result).not.toContain("priority=4 - Low");
   });
 
+  test("apply_list_filter resolves inherited hardware asset fields from a list URL", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic15.service-now.com/now/nav/ui/classic/params/target/alm_hardware_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Hardware | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/cmdb_model_category?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                sys_id: { value: "computer-cat", display_value: "computer-cat" },
+                name: { value: "Computer", display_value: "Computer" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/now/table/sys_choice?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                value: { value: "secondary", display_value: "secondary" },
+                label: { value: "Secondary", display_value: "Secondary" },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Hardware | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            join: "AND",
+            conditions: [
+              { field: "Asset function", operator: "is", value: "Secondary" },
+              { field: "Model category", operator: "is", value: "Computer" },
+              { field: "Assigned to", operator: "is empty", value: "" },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query =
+      "asset_function=secondary^model_category=computer-cat^assigned_toISEMPTY";
+    const target = `alm_hardware_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+    const targetUrl = `https://workarenapublic15.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Applied alm_hardware list filter.");
+    expect(result).toContain(`sysparm_query=${query}`);
+  });
+
   test("apply_list_sort navigates to the structured ServiceNow list sort query", async () => {
     const query = "ORDERBYDESCnumber^ORDERBYDESCcalendar_duration";
     const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
@@ -2060,6 +2143,60 @@ describe("Tool Registration", () => {
     expect(result).toContain("Applied incident list sorting.");
     expect(result).toContain(`sysparm_query=${query}`);
     expect(result).toContain("ORDERBYDESCcalendar_duration");
+  });
+
+  test("apply_list_sort resolves hidden hardware asset fields from a list URL", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/alm_hardware_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Hardware | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Hardware | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-sort",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_SORT,
+          arguments: JSON.stringify({
+            sorts: [
+              { field: "Substate", direction: "ascending" },
+              { field: "Vendor", direction: "ascending" },
+              { field: "Cost", direction: "ascending" },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query = "ORDERBYsubstatus^ORDERBYvendor^ORDERBYcost";
+    const target = `alm_hardware_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+    const targetUrl = `https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Applied alm_hardware list sorting.");
+    expect(result).toContain(`sysparm_query=${query}`);
   });
 
   test("configure_catalog_item fills catalog controls and clicks submit", async () => {

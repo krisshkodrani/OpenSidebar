@@ -461,6 +461,9 @@ function commonServiceNowReferenceTableForField(
     company: "core_company",
     department: "cmn_department",
     location: "cmn_location",
+    model_category: "cmdb_model_category",
+    modelcategory: "cmdb_model_category",
+    vendor: "core_company",
   };
   return commonReferences[key] ?? commonReferences[compactKey] ?? null;
 }
@@ -6135,6 +6138,35 @@ export function registerTools() {
                   reference: reference || existing?.reference || "",
                 });
               };
+              const dictionaryTablesFor = (table: string): string[] => {
+                const normalized = table.trim();
+                const inherited: Record<string, string[]> = {
+                  alm_hardware: [
+                    "alm_hardware",
+                    "alm_asset",
+                    "cmdb_ci",
+                    "cmdb",
+                  ],
+                  alm_asset: ["alm_asset", "cmdb_ci", "cmdb"],
+                  incident: ["incident", "task"],
+                };
+                return inherited[normalized] || [normalized];
+              };
+              const addCommonListFields = (table: string) => {
+                if (table === "alm_hardware" || table === "alm_asset") {
+                  addField("asset_function", "Asset function", "choice", "");
+                  addField(
+                    "model_category",
+                    "Model category",
+                    "reference",
+                    "cmdb_model_category",
+                  );
+                  addField("assigned_to", "Assigned to", "reference", "sys_user");
+                  addField("substatus", "Substate", "choice", "");
+                  addField("vendor", "Vendor", "reference", "core_company");
+                  addField("cost", "Cost", "decimal", "");
+                }
+              };
 
               for (const th of [
                 ...document.querySelectorAll(
@@ -6167,6 +6199,8 @@ export function registerTools() {
                 );
               }
 
+              addCommonListFields(tableName);
+
               const hasKnownField = (requestedField: string): boolean => {
                 const normalized = keyFor(requestedField);
                 const snake = normalize(requestedField).replace(
@@ -6195,7 +6229,7 @@ export function registerTools() {
                 const dictRecords = await fetchJson(
                   "/api/now/table/sys_dictionary",
                   {
-                    sysparm_query: `name=${tableName}^internal_type!=collection`,
+                    sysparm_query: `nameIN${dictionaryTablesFor(tableName).join(",")}^internal_type!=collection`,
                     sysparm_fields:
                       "element,column_label,internal_type,reference",
                     sysparm_limit: "1000",
@@ -6305,7 +6339,7 @@ export function registerTools() {
                 if (fallback) return fallback;
 
                 const choices = await fetchJson("/api/now/table/sys_choice", {
-                  sysparm_query: `name=${tableName}^element=${field.name}`,
+                  sysparm_query: `nameIN${dictionaryTablesFor(tableName).join(",")}^element=${field.name}`,
                   sysparm_fields: "value,label",
                   sysparm_limit: "500",
                   sysparm_display_value: "all",
@@ -6316,7 +6350,16 @@ export function registerTools() {
                   const label = unwrap(record.label);
                   return keyFor(value) === wanted || keyFor(label) === wanted;
                 });
-                return choice ? unwrap(choice.value) : displayValue;
+                if (choice) return unwrap(choice.value);
+                if (field.name === "asset_function") {
+                  const assetFunctionFallbacks: Record<string, string> = {
+                    primary: "primary",
+                    secondary: "secondary",
+                  };
+                  const fallback = assetFunctionFallbacks[wanted];
+                  if (fallback) return fallback;
+                }
+                return displayValue;
               };
 
               const resolveReferenceValue = async (
@@ -6719,7 +6762,7 @@ export function registerTools() {
                     "table.data_list_table, [data-list_id], th[name], [id$='_table']",
                   ),
                 );
-              if (!hasListSurface) {
+              if (!hasListSurface && !tableFromUrl) {
                 return {
                   ok: false,
                   reason: "no_list_surface_in_frame",
@@ -6792,6 +6835,35 @@ export function registerTools() {
                   reference: reference || existing?.reference || "",
                 });
               };
+              const dictionaryTablesFor = (table: string): string[] => {
+                const normalized = table.trim();
+                const inherited: Record<string, string[]> = {
+                  alm_hardware: [
+                    "alm_hardware",
+                    "alm_asset",
+                    "cmdb_ci",
+                    "cmdb",
+                  ],
+                  alm_asset: ["alm_asset", "cmdb_ci", "cmdb"],
+                  incident: ["incident", "task"],
+                };
+                return inherited[normalized] || [normalized];
+              };
+              const addCommonListFields = (table: string) => {
+                if (table === "alm_hardware" || table === "alm_asset") {
+                  addField("asset_function", "Asset function", "choice", "");
+                  addField(
+                    "model_category",
+                    "Model category",
+                    "reference",
+                    "cmdb_model_category",
+                  );
+                  addField("assigned_to", "Assigned to", "reference", "sys_user");
+                  addField("substatus", "Substate", "choice", "");
+                  addField("vendor", "Vendor", "reference", "core_company");
+                  addField("cost", "Cost", "decimal", "");
+                }
+              };
 
               for (const th of [
                 ...document.querySelectorAll(
@@ -6826,6 +6898,8 @@ export function registerTools() {
                 addField("caller_id", "Caller", "reference", "sys_user");
               }
 
+              addCommonListFields(tableName);
+
               const hasKnownField = (requestedField: string): boolean => {
                 const normalized = keyFor(requestedField);
                 const snake = normalize(requestedField).replace(
@@ -6848,7 +6922,7 @@ export function registerTools() {
                 const dictRecords = await fetchJson(
                   "/api/now/table/sys_dictionary",
                   {
-                    sysparm_query: `name=${tableName}^internal_type!=collection`,
+                    sysparm_query: `nameIN${dictionaryTablesFor(tableName).join(",")}^internal_type!=collection`,
                     sysparm_fields:
                       "element,column_label,internal_type,reference",
                     sysparm_limit: "1000",
