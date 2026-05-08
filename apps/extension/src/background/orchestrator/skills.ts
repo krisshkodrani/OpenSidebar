@@ -361,6 +361,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     maturity: "candidate",
     preferredTools: [
+      "search_knowledge_base",
       "read_page",
       "find_element",
       "type_text",
@@ -374,6 +375,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Opening a result is intermediate.",
       "Prefer exact-question terms over broad paraphrases when searching.",
+      "For knowledge-base answer questions, call search_knowledge_base first so search, result ranking, article reading, and answer extraction happen as one grounded read-only workflow.",
       "Compare result snippets or titles before opening; do not assume the first result is the answer.",
       "Completion requires a final answer that contains the requested fact.",
     ],
@@ -1081,7 +1083,7 @@ const SKILL_BODIES: Record<
   "search-answer-extraction": {
     procedureMarkdown: [
       "1. Clarify the exact fact requested by the user before searching.",
-      "2. Search with the most distinctive terms from the exact question before using broad paraphrases.",
+      "2. For knowledge-base answer tasks, call search_knowledge_base first with the exact question and distinctive search terms.",
       "3. For ServiceNow knowledge tasks, prefer the Knowledge Portal search/results surface over filtered classic admin lists unless the user explicitly asks to edit records.",
       "4. Read the search result snippets or titles and choose the result whose content is most likely to contain the requested fact, not simply the first result.",
       "5. For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number or a strong count cue; if the opened result has no answer, return to grounded results and try the next candidate.",
@@ -1102,7 +1104,13 @@ const SKILL_BODIES: Record<
       },
     ],
     executionContract: {
-      sequencing: ["Search, read the result, extract the fact, then answer."],
+      sequencing: [
+        "Search, read ranked results, extract the fact, then answer.",
+      ],
+      toolDiscipline: [
+        "Use search_knowledge_base before manual search field clicks for explicit knowledge-base answer questions.",
+        "When search_knowledge_base returns an answer candidate with evidence, call done with only the requested answer unless the user asked for explanation.",
+      ],
       completionChecks: [
         "The final answer contains the requested fact or states that it was not found after grounded search.",
       ],
@@ -1186,7 +1194,8 @@ const SKILL_BODIES: Record<
       "5. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
       "6. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
       "7. Continue until a request/order/cart confirmation is visible, then verify the confirmed line count and quantity match the request before calling done.",
-      "8. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
+      "8. Treat an Order Status page with a REQ request number as the final confirmation page; do not click request, item, or RITM links from it just to inspect.",
+      "9. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
     ].join("\n"),
     requiredEvidence: [
       "Requested item and configuration",
@@ -1213,6 +1222,7 @@ const SKILL_BODIES: Record<
         "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
         "Prefer configure_catalog_item over separate select_option, set_checkbox, type_text, and submit clicks when the requested configuration is explicit.",
         "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
+        "Once an Order Status page with a REQ number is visible, avoid clicking request/item links and call done from that confirmation page.",
       ],
       completionChecks: [
         "A request/order/cart confirmation exists after submission.",

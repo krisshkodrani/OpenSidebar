@@ -209,6 +209,11 @@ export function extractSubmittedRecordNumberFromText(value: unknown): string | n
   );
   if (serviceNowForm) return normalizeRecordNumber(serviceNowForm[1]);
 
+  const catalogRequest = value.match(
+    /\b(?:Request Number|Order Status)\s*:?\s*(REQ\d+)\b/i,
+  );
+  if (catalogRequest) return normalizeRecordNumber(catalogRequest[1]);
+
   const fallback = value.match(/\bpreviousRecordId["'\s:]+([A-Z]{2,}\d+)\b/i);
   return fallback ? normalizeRecordNumber(fallback[1]) : null;
 }

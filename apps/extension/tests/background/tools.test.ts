@@ -179,6 +179,772 @@ describe("Tool Registration", () => {
     });
   });
 
+  test("search_knowledge_base extracts a numeric answer from a ranked article", async () => {
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb?id=kb_article_view&sys_kb_id=hire">Annual hiring overview</a>
+        <p>Information about new hires, onboarding, and annual planning.</p>
+        <a href="/kb?id=kb_article_view&sys_kb_id=benefits">Benefits overview</a>
+        <p>General benefits information.</p>
+      </main>
+    `;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("sys_kb_id=hire")) {
+        return new Response(
+          "<html><body><article>Our company typically makes 300 new hires each year.</article></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("<html><body>No matching results.</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            query: "new hires annual",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Knowledge base search result.");
+    expect(result).toContain("Answer candidate: 300");
+    expect(result).toContain('Completion hint: call done with summary "300"');
+  });
+
+  test("search_knowledge_base ranks ServiceNow table fallback records locally", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = "<main><p>Knowledge home</p></main>";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        const isBroadFallback = value.includes("workflow_state%3Dpublished");
+        return new Response(
+          JSON.stringify({
+            result: isBroadFallback
+              ? [
+                  {
+                    sys_id: "unrelated",
+                    number: "KB001",
+                    short_description: "Benefits overview",
+                    text: "<p>Benefits are updated each year.</p>",
+                  },
+                  {
+                    sys_id: "hiring",
+                    number: "KB002",
+                    short_description: "Annual hiring plan",
+                    text: "<p>The company typically makes 425 new hires each year.</p>",
+                  },
+                ]
+              : [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("<html><body>No matching results.</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-table",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 425");
+    expect(result).toContain("Evidence article: KB002 Annual hiring plan");
+  });
+
+  test("search_knowledge_base rejects employee budget numbers for hiring questions", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = "<main><p>Knowledge home</p></main>";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                sys_id: "training",
+                number: "KB001",
+                short_description: "Employee training budget",
+                text: "<p>The annual spending on employee training programs is $250,000.</p>",
+              },
+              {
+                sys_id: "hiring",
+                number: "KB002",
+                short_description: "Annual hiring plan",
+                text: "<p>The company typically makes 100 new hires each year.</p>",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("<html><body>No matching results.</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-budget-reject",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            query: "hiring statistics workforce employees company size",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).not.toContain("Answer candidate: 250,000");
+  });
+
+  test("search_knowledge_base searches discovered scoped knowledge bases", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="?id=kb_search&kb_knowledge_base=company">Company Protocols</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (
+        value.includes("kb_knowledge_base=company") &&
+        value.includes("query=")
+      ) {
+        return new Response(
+          `<html><body>
+            <a href="/kb?id=kb_article_view&sys_kb_id=company-hiring">Annual hiring plan</a>
+            <p>The company typically makes 100 new hires each year.</p>
+          </body></html>`,
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      if (value.includes("sys_kb_id=company-hiring")) {
+        return new Response(
+          "<html><body><article>The company typically makes 100 new hires each year.</article></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>No matching results.</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-scoped-kb",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            query: "new hires",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("Annual hiring plan");
+  });
+
+  test("search_knowledge_base reads ServiceNow article link text through table API", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb?id=kb_article_view&sys_kb_id=article47">Article 47</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (
+        value.includes("/api/now/table/kb_knowledge") &&
+        value.includes("sys_id%3Darticle47")
+      ) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                number: "KB047",
+                short_description: "Article 47",
+                text: "<p>The company typically makes 512 new hires each year.</p>",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("<html><body>Article shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-article-api",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 512");
+    expect(result).toContain("Evidence article: KB047 Article 47");
+  });
+
+  test("search_knowledge_base falls back to direct ServiceNow record API for article links", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb?id=kb_article_view&sys_kb_id=article48">Article 48</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (
+        value.includes("/api/now/table/kb_knowledge?") &&
+        value.includes("sys_id%3Darticle48")
+      ) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (value.includes("/api/now/table/kb_knowledge/article48?")) {
+        return new Response(
+          JSON.stringify({
+            result: {
+              number: "KB048",
+              short_description: "Article 48",
+              text: "<p>Our company typically makes 625 new hires each year.</p>",
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("<html><body>Article shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-direct-article-api",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 625");
+    expect(result).toContain("Evidence article: KB048 Article 48");
+  });
+
+  test("search_knowledge_base falls back to legacy ServiceNow article HTML", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb?id=kb_article_view&sys_kb_id=article49">Article 49</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: value.includes("/article49?") ? 404 : 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (value.includes("/kb_view.do?sys_kb_id=article49")) {
+        return new Response(
+          "<html><body><article>The company typically makes 710 new hires each year.</article></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("<html><body>Article shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-legacy-article-html",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 710");
+    expect(result).toContain("Evidence article: Knowledge article article49");
+  });
+
+  test("search_knowledge_base extracts from the current knowledge article body", async () => {
+    window.history.pushState({}, "", "/kb/en/article-8?id=kb_article_view");
+    document.body.innerHTML = `
+      <article>
+        <h1>Hiring volume</h1>
+        <p>The company typically makes 100 new hires each year.</p>
+      </article>
+    `;
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("<html><body>No matching results.</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+    );
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-current-article",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("Evidence article:");
+  });
+
+  test("search_knowledge_base reads ServiceNow sys_id article links", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb_knowledge.do?sys_id=article50">Edit Article</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (
+        value.includes("/api/now/table/kb_knowledge?") &&
+        value.includes("sys_id%3Darticle50")
+      ) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                number: "KB050",
+                short_description: "Hiring volume",
+                text: "<p>The company typically makes 830 new hires each year.</p>",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("<html><body>Article shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-sys-id-link",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 830");
+    expect(result).toContain("Evidence article: KB050 Hiring volume");
+  });
+
+  test("search_knowledge_base extracts numeric answers from result snippets when article fetch is a shell", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_search&query=new%20hires");
+    document.body.innerHTML = `
+      <main>
+        <div class="search-results">
+          <div class="search-result-card">
+            <div class="result-title">
+              <a href="/kb?sys_kb_id=article8&id=kb_article_view&sysparm_rank=1">Article 8</a>
+            </div>
+            <p>Article 8 General Knowledge Relevancy : 9.9089 Onboarding: Ensuring a smooth and welcoming onboarding process for new hires. Training and Development. Benefits overview. Employee support. Career planning. Internal mobility. Orientation guidance. HR policies. Learning paths. Mentorship options. Wellness programs. Performance management. Recruitment support. Benefits administration. Employee relations. Compensation notes. Time off policies. Career development. Internal transfers. HR contacts. Diversity programs. Company updates. Employee portal help. New joiner checklist. Manager guidance. Department overview. Support contacts. General employment information. This earlier result is long enough to push later results beyond a naive snippet boundary.</p>
+          </div>
+          <div class="search-result-card">
+            <div class="result-title">
+              <a href="/kb?sys_kb_id=article40&id=kb_article_view&sysparm_rank=2">Article 40</a>
+            </div>
+            <p>Article 40 General Knowledge Relevancy : 9.8701 part of our orientation process for new hires, and we continue to support diverse perspectives in all departments.</p>
+          </div>
+          <div class="search-result-card">
+          <div class="result-title">
+            <a href="/kb?sys_kb_id=article47&id=kb_article_view&sysparm_rank=3">Article 47</a>
+          </div>
+          <p>Article 47 General Knowledge Relevancy : 6.5775, collaboration, and growth. As we continue to expand our operations and break new ground in the technology of yearly hires is 100, reflecting our sustained growth.</p>
+          </div>
+        </div>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-snippet-answer",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("Article URL:");
+  });
+
+  test("search_knowledge_base reads shadow-rendered knowledge search results", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_search&query=new%20hires");
+    document.body.innerHTML = `<main><kb-search-results></kb-search-results></main>`;
+    const host = document.querySelector("kb-search-results") as HTMLElement;
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <section>
+        <a href="?id=kb_article_view&sys_kb_id=article47">Article 47</a>
+        <p>Article 47 General Knowledge Relevancy : 6.5775, collaboration, and growth.
+        As we continue to expand our operations, the number of yearly hires is 100,
+        reflecting sustained growth.</p>
+      </section>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-shadow-results",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("Article 47");
+  });
+
+  test("search_knowledge_base tries canonical ServiceNow portal article routes", async () => {
+    window.history.pushState({}, "", "/kb/en?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="?id=kb_article_view&sys_kb_id=article47">Article 47</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (value.includes("/kb/en/article-47?")) {
+        return new Response(
+          "<html><body><article>As we expand, the technology team yearly hires is 100, reflecting sustained growth.</article></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-canonical-article",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("/kb/en/article-47?");
+  });
+
+  test("search_knowledge_base resolves ServiceNow article-number results through classic routes", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="?id=kb_article_view&sys_kb_id=article47">Article 47</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (value.includes("sysparm_article=KB0010047")) {
+        return new Response(
+          "<html><body><article>Careers and opportunities. The average number of yearly hires is 100, reflecting sustained growth.</article></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-classic-article-number",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("KB0010047");
+  });
+
+  test("search_knowledge_base reads ServiceNow Service Portal search JSON", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `<main><h1>Knowledge Home</h1></main>`;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/sp/page") && value.includes("kb_search")) {
+        return new Response(
+          JSON.stringify({
+            result: {
+              containers: [
+                {
+                  rows: [
+                    {
+                      widgets: [
+                        {
+                          data: {
+                            results: [
+                              {
+                                title: "Article 47",
+                                snippet:
+                                  "Careers and opportunities. The average number of yearly hires is 100, reflecting sustained growth.",
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-service-portal-json",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            query: "new hires annual",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain("Service Portal knowledge search");
+  });
+
   test("open_servicenow_module resolves and opens a ServiceNow module", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
@@ -547,7 +1313,10 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    const metadataCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes("/api/now/table/sys_app_module"),
+    );
+    expect(metadataCalls).toHaveLength(0);
     expect(chrome.tabs.update).not.toHaveBeenCalled();
     expect(execution.result).toContain("ServiceNow module is already open.");
     expect(execution.result).toContain("Winning path: current_page");

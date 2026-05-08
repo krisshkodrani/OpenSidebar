@@ -4,6 +4,7 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
+import { assessCatalogOrderPostConfirmationClick } from "./catalog-order-policy";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -13,6 +14,11 @@ import {
   assessListDetailWorkflow,
   isListDetailReturnControlRepeatExempt,
 } from "./list-detail-policy";
+import {
+  buildKnowledgeBaseSearchArgs,
+  shouldRouteKnowledgeBaseSearchFirst,
+  shouldRouteKnowledgeBaseSearchToRenderedResults,
+} from "./knowledge-search-routing";
 import {
   assessElementIdPreDispatch,
   assessFailedActionRepeat,
@@ -193,14 +199,75 @@ export async function executeSequentialToolCalls(
     this.throwIfGracefulStopRequested();
 
     // Parse args for risk classification and done detection
-    const toolName = toolCall.function.name as ToolName;
-    const rawArgsKey = toolCall.function.arguments.slice(0, 100);
+    let toolName = toolCall.function.name as ToolName;
     let args: Record<string, unknown> = {};
     try {
       args = JSON.parse(toolCall.function.arguments);
     } catch {
       // Registry will handle parse error on execute
     }
+    if (
+      shouldRouteKnowledgeBaseSearchFirst({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        originalQuery: this.originalQuery,
+        messages: this.context.getMessages(),
+        recentToolCalls,
+      })
+    ) {
+      const routedArgs = buildKnowledgeBaseSearchArgs(this.originalQuery);
+      this.log.info("agent", "Routed knowledge workflow to extractor tool", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.SEARCH_KNOWLEDGE_BASE,
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent("knowledge_search_tool_rerouted", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.SEARCH_KNOWLEDGE_BASE,
+        selectedSkillId: this.selectedSkillId,
+      });
+      toolName = ToolName.SEARCH_KNOWLEDGE_BASE;
+      args = routedArgs;
+      toolCall.function.name = ToolName.SEARCH_KNOWLEDGE_BASE;
+      toolCall.function.arguments = JSON.stringify(routedArgs);
+    }
+    const renderedKnowledgeSearchUrl =
+      shouldRouteKnowledgeBaseSearchToRenderedResults({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        originalQuery: this.originalQuery,
+        messages: this.context.getMessages(),
+        recentToolCalls,
+        currentUrl:
+          this.context.getSnapshot()?.url ?? this.context.getCurrentUrl(),
+        requestedUrl: typeof args.url === "string" ? args.url : null,
+      });
+    if (renderedKnowledgeSearchUrl) {
+      this.log.info("agent", "Routed knowledge workflow to rendered results", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.NAVIGATE,
+        url: renderedKnowledgeSearchUrl.slice(0, 160),
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent(
+        "knowledge_search_rendered_results_rerouted",
+        {
+          turn: this.turnCount,
+          fromTool: toolName,
+          toTool: ToolName.NAVIGATE,
+          url: renderedKnowledgeSearchUrl.slice(0, 240),
+          selectedSkillId: this.selectedSkillId,
+        },
+      );
+      toolName = ToolName.NAVIGATE;
+      args = { url: renderedKnowledgeSearchUrl };
+      toolCall.function.name = ToolName.NAVIGATE;
+      toolCall.function.arguments = JSON.stringify(args);
+    }
+    const rawArgsKey = toolCall.function.arguments.slice(0, 100);
     const argsKey = actionMemoryKey(
       toolName,
       args,
@@ -640,6 +707,36 @@ export async function executeSequentialToolCalls(
     if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
       const snapshot = this.context.getSnapshot();
       const target = snapshot?.elements.find((el: any) => el.tag === args.id);
+      const catalogConfirmationClickBlock =
+        assessCatalogOrderPostConfirmationClick({
+          selectedSkillId: this.selectedSkillId,
+          toolName,
+          args,
+          snapshot,
+        });
+      if (catalogConfirmationClickBlock) {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: catalogConfirmationClickBlock,
+        });
+        this.log.warn("agent", "Catalog confirmation drill-in click blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          mode: "sequential",
+        });
+        this.traceRecorder?.recordEvent(
+          "catalog_confirmation_drill_in_blocked",
+          {
+            turn: this.turnCount,
+            tool: toolName,
+            id: args.id,
+            mode: "sequential",
+          },
+        );
+        continue;
+      }
       const planStatus = this.context.getPlanStatusRaw();
       const activeObjective =
         planStatus?.subtasks[planStatus.currentIndex]?.description ??

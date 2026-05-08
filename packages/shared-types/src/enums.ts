@@ -37,6 +37,7 @@ export enum ToolName {
   READ_PAGE = "read_page",
   NAVIGATE = "navigate",
   OPEN_SERVICENOW_MODULE = "open_servicenow_module",
+  SEARCH_KNOWLEDGE_BASE = "search_knowledge_base",
 
   CREATE_TAB = "create_tab",
   CLOSE_TAB = "close_tab",

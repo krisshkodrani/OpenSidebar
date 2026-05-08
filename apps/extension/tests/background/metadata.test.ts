@@ -218,6 +218,7 @@ describe("Tool Metadata", () => {
       expect(tools).not.toContain(ToolName.SELECT_OPTION);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).toContain(ToolName.READ_PAGE);
+      expect(tools).toContain(ToolName.SEARCH_KNOWLEDGE_BASE);
       expect(tools).toContain(ToolName.FIND_ELEMENT);
       expect(tools).toContain(ToolName.SCROLL_PAGE);
     });

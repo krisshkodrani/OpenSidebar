@@ -9,6 +9,10 @@ import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
 import { ESCALATION_REFLECTION } from "./loop-prompts";
 import { extractDiscoveredTagIds, getSnapshotFingerprint } from "./loop-helpers";
+import {
+  extractKnowledgeBaseAnswerCandidate,
+  extractKnowledgeBaseAnswerFromText,
+} from "./knowledge-search-routing";
 
 function getTabUrl(tab: chrome.tabs.Tab): string {
   return tab.url || tab.pendingUrl || "";
@@ -67,6 +71,9 @@ export interface AgentLoopToolHandlerHost {
     finalSummary: string;
   } | null>;
   maybeCompleteTrustedFormSubmitStep(params: any): {
+    finalSummary: string;
+  } | null;
+  maybeCompleteTrustedListSortStep(params: any): {
     finalSummary: string;
   } | null;
   middleware: any;
@@ -993,6 +1000,59 @@ export async function handleGenericSequentialToolCall(
     tool_call_id: toolCall.id,
   });
 
+  if (
+    loop.selectedSkillId === "search-answer-extraction" &&
+    toolName === ToolName.SEARCH_KNOWLEDGE_BASE
+  ) {
+    const answerCandidate =
+      extractKnowledgeBaseAnswerCandidate(result) ??
+      extractKnowledgeBaseAnswerFromText(result, loop.originalQuery);
+    if (answerCandidate) {
+      loop.log.info("agent", "Knowledge answer extracted from tool evidence", {
+        turn: loop.turnCount,
+        answerCandidate: answerCandidate.slice(0, 80),
+      });
+      loop.traceRecorder?.recordEvent("knowledge_answer_extracted", {
+        answerCandidate: answerCandidate.slice(0, 120),
+      });
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: true,
+        completedSummary: answerCandidate,
+      };
+    }
+  }
+
+  if (
+    loop.selectedSkillId === "search-answer-extraction" &&
+    toolName === ToolName.READ_PAGE
+  ) {
+    const answerCandidate = extractKnowledgeBaseAnswerFromText(
+      result,
+      loop.originalQuery,
+    );
+    if (answerCandidate) {
+      loop.log.info("agent", "Knowledge answer extracted from page evidence", {
+        turn: loop.turnCount,
+        answerCandidate: answerCandidate.slice(0, 80),
+      });
+      loop.traceRecorder?.recordEvent("knowledge_answer_extracted_from_page", {
+        answerCandidate: answerCandidate.slice(0, 120),
+      });
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: true,
+        completedSummary: answerCandidate,
+      };
+    }
+  }
+
   const trustedSubmitCompletion = loop.maybeCompleteTrustedFormSubmitStep({
     toolName,
     toolArgs: args,
@@ -1017,6 +1077,23 @@ export async function handleGenericSequentialToolCall(
     toolResult: result,
     mode: "sequential",
   });
+
+  const trustedListSortCompletion = loop.maybeCompleteTrustedListSortStep({
+    toolName,
+    toolArgs: args,
+    toolResult: result,
+    mode: "sequential",
+  });
+  if (trustedListSortCompletion) {
+    return {
+      prevElementCount,
+      domModified,
+      visuallyModified,
+      lastDomAffectingToolName,
+      breakLoop: true,
+      completedSummary: trustedListSortCompletion.finalSummary,
+    };
+  }
 
   const trustedAutoSubmitCompletion =
     await loop.maybeAutoSubmitTrustedServiceNowForm({

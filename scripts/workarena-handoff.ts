@@ -503,6 +503,19 @@ function summarizeAgentTerminal(terminal: AgentTerminal): JsonRecord {
   };
 }
 
+function extractFinalAnswerFromAgentTerminal(terminal: AgentTerminal): string | null {
+  const lastCompletion = [...terminal.events]
+    .reverse()
+    .find((event) => event.type === "TASK_COMPLETION");
+  if (lastCompletion?.status !== "completed") return null;
+  const payload = nestedRecord(lastCompletion, "payload");
+  return (
+    stringValue(payload, "summary") ??
+    stringValue(lastCompletion, "detail") ??
+    null
+  );
+}
+
 function terminalFromTraceSession(
   workspaceId: string,
   traceTerminal: NonNullable<ReturnType<typeof readTraceTerminalFromIndex>>,
@@ -858,9 +871,11 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     );
     const metrics = readTraceMetrics(traceFiles.length > 0 ? traceFiles : traceSummary.traceFiles);
     const agentTerminalSummary = summarizeAgentTerminal(terminal);
+    const finalAnswer =
+      metrics.finalAnswer ?? extractFinalAnswerFromAgentTerminal(terminal);
     const submittedRecordNumber =
       metrics.submittedRecordNumber ??
-      extractSubmittedRecordNumberFromText(metrics.finalAnswer) ??
+      extractSubmittedRecordNumberFromText(finalAnswer) ??
       extractSubmittedRecordNumberFromText(JSON.stringify(agentTerminalSummary));
 
     const validationStart = Date.now();
@@ -869,7 +884,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       activeUrl: validationUrl.url,
       storageState: validationStorage.storageState,
       submittedRecordNumber,
-      finalAnswer: metrics.finalAnswer,
+      finalAnswer,
     });
     const validationMs = Date.now() - validationStart;
     const validationResult = validationFromBridge(validation);
@@ -901,7 +916,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
         plannerModel: process.env.E2E_PLANNER_MODEL || null,
         traceIds: metrics.traceIds,
         traceFiles: metrics.traceFiles,
-        finalAnswer: metrics.finalAnswer,
+        finalAnswer,
         turns: metrics.turns,
         perceptions: metrics.perceptions,
         toolCalls: metrics.toolCalls,

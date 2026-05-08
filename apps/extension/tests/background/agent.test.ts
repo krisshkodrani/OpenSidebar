@@ -1188,6 +1188,74 @@ describe("AgentLoop", () => {
     expect(completion.finalSummary).toContain("CHG0000021");
   });
 
+  test("trusted list sort helper completes from structured sort evidence", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-sort-workflow",
+      },
+    );
+
+    const completion = (agent as any).maybeCompleteTrustedListSortStep({
+      toolName: ToolName.APPLY_LIST_SORT,
+      toolArgs: {
+        sorts: [
+          { field: "Number", direction: "descending" },
+          { field: "Duration", direction: "descending" },
+        ],
+      },
+      toolResult:
+        "Applied incident list sorting.\n" +
+        "Query state: sysparm_query=ORDERBYDESCnumber^ORDERBYDESCcalendar_duration\n" +
+        "Sorts:\n" +
+        "- Number desc\n" +
+        "- Duration desc",
+      mode: "sequential",
+    });
+
+    expect(completion).not.toBeNull();
+    expect(completion.finalSummary).toContain("Number descending");
+    expect(completion.finalSummary).toContain("Duration descending");
+    expect(completion.finalSummary).toContain("ORDERBYDESCnumber");
+  });
+
+  test("trusted list sort helper waits when a requested sort clause is missing", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-sort-workflow",
+      },
+    );
+
+    const completion = (agent as any).maybeCompleteTrustedListSortStep({
+      toolName: ToolName.APPLY_LIST_SORT,
+      toolArgs: {
+        sorts: [
+          { field: "Number", direction: "descending" },
+          { field: "Duration", direction: "descending" },
+        ],
+      },
+      toolResult:
+        "Applied incident list sorting.\n" +
+        "Query state: sysparm_query=ORDERBYDESCnumber\n" +
+        "Sorts:\n" +
+        "- Number desc",
+      mode: "sequential",
+    });
+
+    expect(completion).toBeNull();
+  });
+
   test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {
     const agent = new AgentLoop(
       "test-key",
@@ -4848,6 +4916,7 @@ describe("buildDomAwareProfile", () => {
     expect(profile.has(ToolName.CLICK_ELEMENT)).toBe(true);
     expect(profile.has(ToolName.TYPE_TEXT)).toBe(true);
     expect(profile.has(ToolName.DONE)).toBe(true);
+    expect(profile.has(ToolName.SEARCH_KNOWLEDGE_BASE)).toBe(true);
     expect(profile.has(ToolName.NAVIGATE)).toBe(true); // nav always in base
     expect(profile.has(ToolName.GO_BACK)).toBe(true);
     // Extras not included without matching elements

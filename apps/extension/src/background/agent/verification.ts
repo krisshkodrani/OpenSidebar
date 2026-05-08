@@ -368,7 +368,16 @@ function extractRequestedSortLabels(queryText: string): string[] {
   const parenthesizedDirection =
     /(?:^|[-:\s])"?([a-z][a-z0-9 /_-]{1,50})"?\s*\((?:ascending|descending|asc|desc)\)/gi;
   for (const match of queryText.matchAll(parenthesizedDirection)) {
-    const label = (match[1] || "").replace(/\s+/g, " ").trim();
+    let label = (match[1] || "")
+      .replace(/\s+/g, " ")
+      .replace(/^["'\s:,-]+|["'\s:,-]+$/g, "")
+      .trim();
+    label = label
+      .replace(/^.*\bby\s+/i, "")
+      .replace(/^.*\bfields?\s*[-:]\s*/i, "")
+      .replace(/^(?:and|then)\s+/i, "")
+      .replace(/^["'\s:,-]+|["'\s:,-]+$/g, "")
+      .trim();
     if (label && !/^(?:sort|fields?|following fields?)$/i.test(label)) {
       labels.add(label.toLowerCase());
     }

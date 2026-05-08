@@ -57,6 +57,20 @@ describe("Orchestrator role contracts", () => {
     expect(contract.disabledTools.has(ToolName.NAVIGATE)).toBe(true);
   });
 
+  test("executor contract allows selected skill preferred tools", () => {
+    const node = makeNode([ToolName.READ_PAGE], {
+      selectedSkillId: "search-answer-extraction",
+    });
+    const contract = buildRoleExecutionContract("executor", baseSettings, node);
+
+    expect(contract.allowedTools.includes(ToolName.SEARCH_KNOWLEDGE_BASE)).toBe(
+      true,
+    );
+    expect(contract.disabledTools.has(ToolName.SEARCH_KNOWLEDGE_BASE)).toBe(
+      false,
+    );
+  });
+
   test("executor contract respects global disable flags", () => {
     const node = makeNode([ToolName.NAVIGATE, ToolName.DONE]);
     const contract = buildRoleExecutionContract(
