@@ -1,6 +1,6 @@
 # WorkArena Roadmap
 
-Last updated: 2026-05-07
+Last updated: 2026-05-08
 
 This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to full graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
 
@@ -21,7 +21,8 @@ Recently resolved:
 - A passed WorkArena validation previously recorded internal `agentTerminalReason=task_failed`. The stale-plan guard fix was confirmed by a live rerun: `validation.passed=true`, `score=1`, and `agentTerminalReason=task_completed`. [GitHub issue #16](https://github.com/krisshkodrani/OpenSidebar/issues/16) is closed.
 - Initial reusable workflow skills and read-only inspectors now cover chart value extraction, knowledge/search answer extraction, list filtering, list sorting, and service catalog ordering. The first layer is generic runtime behavior, not WorkArena-specific fixture logic.
 - A thin suite runner and standalone grader are available. They reuse `workarena-handoff`, write reports under `.artifacts/e2e/`, and compute score-first pass@1 plus category-balanced pass@1.
-- The latest dated 7-case ServiceNow sample grades at 7/7 pass@1, with remaining efficiency warnings on form and catalog workflows.
+- The latest dated 7-case ServiceNow sample grades at 7/7 pass@1. Catalog efficiency remains worth watching, but it is no longer a harness blocker by itself.
+- The first broader ServiceNow chunk has been rerun as two smaller guarded batches and is 7/7 pass@1. Generic ServiceNow form frame targeting has brought `create-problem`, `create-incident`, and `create-change-request` back to single-turn passes in the guarded chunk.
 - The completed harness boundary conclusions are now promoted into stable architecture docs. The current pre-WorkArena checkpoint is to run the full staged OpenSidebar E2E suite, then continue to ServiceNow/WorkArena with the generic-skill-first policy below.
 
 ## Evaluation Contract
@@ -70,6 +71,103 @@ Report warnings must not flip benchmark success, but they must be visible:
 | 5. Runtime fixes | In progress | Improve broad ServiceNow behavior from trace evidence. | Category failures are fixed in runtime policy, tools, controllers, or reusable skills. |
 | 6. Full graded run | Planned | Produce a category-balanced WorkArena grade. | All target tasks/seeds run with pass@1, optional pass@2, and validated reports. |
 | 7. Scheduled confidence | Optional | Make WorkArena regression tracking repeatable. | A deliberate, budgeted cadence exists for smoke, sample, and full graded runs. |
+
+## Full Run Ready Harness Roadmap
+
+The goal is a harness that can run a full WorkArena batch deliberately, preserve benchmark truth, and produce enough evidence to decide the next product fix without rerunning blindly.
+
+Run-ready means the harness is allowed to fail tasks, but it must not lose evidence, hide validation truth, or require one-off runner patches while the batch is in progress.
+
+### R0. Source And Build Hygiene
+
+Status: In progress.
+
+Exit criteria:
+
+- Current branch has a named checkpoint commit before a full run.
+- The extension is rebuilt after runtime changes before any `--no-build` WorkArena command.
+- The run notes record any unrelated dirty worktree state.
+- Focused tests for changed runtime areas pass.
+- `npm run build` and `npm run ci:lint` pass, with known warnings explicitly recorded.
+
+### R1. Harness Readiness
+
+Status: Mostly ready.
+
+Exit criteria:
+
+- `workarena-doctor` reports ready.
+- `workarena-suite` can run explicit task lists, categories, seeds, retries, max turns, and resume from reports.
+- `workarena-handoff` remains the single task execution path for reset, session transfer, agent run, validation, and teardown.
+- Browser close, timeout, and teardown warnings are captured in reports instead of becoming silent hangs.
+- No leftover WorkArena runner processes remain after command timeout or interruption.
+
+### R2. Report And Trace Credibility
+
+Status: Mostly ready.
+
+Exit criteria:
+
+- Every generated `agent-execution` report validates with `workarena-validate-reports`.
+- Every task report includes the real WorkArena prompt, active URL, trace files, terminal reason, validation score, timing, and bridge status.
+- Full-run summaries include pass@1, category-balanced pass@1, score, turns, cost, warnings, and failure stage.
+- Passed validation with timeout, missing trace, or terminal mismatch is surfaced as a warning, not counted as clean stability.
+- Trace-learning output can classify failures by fix layer.
+
+### R3. ServiceNow Capability Baseline
+
+Status: Mostly ready.
+
+Exit criteria:
+
+- The current 7-case calibrated sample is green.
+- The first broader ServiceNow chunk is green across:
+  - menu navigation
+  - incident form creation
+  - change-request form creation
+  - problem form creation
+  - incident list filtering
+  - hardware list filtering
+  - incident list sorting
+- Known high-turn passes have an owner or accepted risk note.
+- Browser close or teardown warnings are recorded as harness warnings and do not mask validation truth.
+- Any remaining cost target must be selected from traces and fixed through a generic runtime, ServiceNow adapter, or skill layer rather than a task branch.
+
+### R4. Category-Balanced Atomic Baseline
+
+Status: Next major checkpoint.
+
+Exit criteria:
+
+- Run all atomic ServiceNow categories at seed `0`, no retries, `maxTurns=20`.
+- Split into small chunks if needed to avoid wrapper timeouts.
+- Preserve `--retries 0` for the first signal run.
+- Stop widening only for clean infrastructure breakage or a repeated product regression that invalidates the batch.
+- Produce one dated suite summary and one grade summary under `.artifacts/e2e/`.
+
+### R5. Full Atomic Run
+
+Status: Planned.
+
+Exit criteria:
+
+- Run all atomic WorkArena tasks across the chosen seed set.
+- Start with seed `0`; widen to seeds `0,1,2` only after seed `0` has no harness-level blockers.
+- Keep pass@1 as the main reliability metric.
+- Add pass@2 only after the no-retry baseline is captured.
+- Do not patch prompts, task ids, seeds, validators, or runner shortcuts during the batch.
+
+### R6. Run-Ready Definition Of Done
+
+Status: Planned.
+
+The harness is full-run ready when all of these are true:
+
+- A full atomic command can be launched from a clean checkpoint with explicit reset approval.
+- Each task either passes validation or leaves a valid report with failure stage, trace evidence, and teardown status.
+- The final summary can answer: what passed, what failed, what timed out, what cost the most, and what generic capability should be fixed next.
+- No full-run blocker requires benchmark-specific code.
+- The recommended next action after the run is based on traces, not speculation.
 
 ## Suite Runner Requirements
 
@@ -244,8 +342,9 @@ Do not commit dated E2E result reports under `docs/`.
 
 ## Immediate Next Steps
 
-1. Run the full staged OpenSidebar E2E suite before starting the next real WorkArena batch.
-2. If staged is green, run the guarded ServiceNow smoke or atomic category sample across seeds `0,1,2` with no retries and `maxTurns=20`.
-3. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category.
-4. Fix the broadest reusable behavior first: runtime/tool/domain adapter when possible, generic skill when the workflow sequence is the missing piece.
-5. Add `pass@2` only after the no-retry baseline is captured.
+1. Re-run local hygiene after the latest runtime changes: focused background tests, `npm run build`, `npm run ci:lint`, and `workarena-validate-reports`.
+2. Create a named checkpoint commit that records the current green ServiceNow baseline and any unrelated dirty worktree state.
+3. Run R4: all atomic ServiceNow categories at seed `0`, `--retries 0`, `--max-turns 20`, split into small chunks if needed.
+4. Generate and validate the dated suite and grade summaries under `.artifacts/e2e/`.
+5. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category before widening to seeds `0,1,2`.
+6. Add `pass@2` only after the no-retry baseline is captured.

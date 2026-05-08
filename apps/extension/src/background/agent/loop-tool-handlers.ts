@@ -76,6 +76,9 @@ export interface AgentLoopToolHandlerHost {
   maybeCompleteTrustedListSortStep(params: any): {
     finalSummary: string;
   } | null;
+  maybeCompleteTrustedListFilterStep(params: any): {
+    finalSummary: string;
+  } | null;
   maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
   middleware: any;
   originalQuery: string;
@@ -1093,6 +1096,23 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedListSortCompletion.finalSummary,
+    };
+  }
+
+  const trustedListFilterCompletion = loop.maybeCompleteTrustedListFilterStep({
+    toolName,
+    toolArgs: args,
+    toolResult: result,
+    mode: "sequential",
+  });
+  if (trustedListFilterCompletion) {
+    return {
+      prevElementCount,
+      domModified,
+      visuallyModified,
+      lastDomAffectingToolName,
+      breakLoop: true,
+      completedSummary: trustedListFilterCompletion.finalSummary,
     };
   }
 
