@@ -7158,6 +7158,7 @@ export function registerTools() {
         typeof args.submitButton === "string" && args.submitButton.trim()
           ? args.submitButton.trim()
           : null;
+      const continueToCheckout = args.continueToCheckout === true;
 
       try {
         const results = await chrome.scripting.executeScript({
@@ -7456,8 +7457,14 @@ export function registerTools() {
               if (!submitControl) {
                 mismatches.push("Submit/order control not found.");
               } else {
+                const submitLabels = labelsFor(submitControl);
                 submitLabel =
-                  labelsFor(submitControl)[0] ||
+                  submitLabels.find((label) =>
+                    /\b(add to cart|checkout|order|request|submit)\b/i.test(
+                      label,
+                    ),
+                  ) ||
+                  submitLabels[0] ||
                   submitControl.textContent ||
                   "submit";
                 if (cartReady && /\badd to cart\b/i.test(submitLabel)) {
@@ -7519,6 +7526,124 @@ export function registerTools() {
           });
         }
 
+        let checkoutClick: Record<string, unknown> | null = null;
+        if (continueToCheckout && selected.submitClicked === true) {
+          const checkoutResults = await chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: "MAIN" as any,
+            func: async () => {
+              const sleep = (ms: number) =>
+                new Promise((resolve) => setTimeout(resolve, ms));
+              const display = (value: unknown) =>
+                String(value ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim();
+              const visible = (el: Element | null) => {
+                if (!el || !(el instanceof HTMLElement)) return false;
+                const style = window.getComputedStyle(el);
+                const rect = el.getBoundingClientRect();
+                return (
+                  style.display !== "none" &&
+                  style.visibility !== "hidden" &&
+                  style.opacity !== "0" &&
+                  rect.width > 0 &&
+                  rect.height > 0
+                );
+              };
+              const labelsFor = (el: Element): string[] => {
+                const control = el as HTMLInputElement;
+                return [
+                  el.getAttribute("aria-label"),
+                  el.getAttribute("title"),
+                  el.getAttribute("name"),
+                  el.getAttribute("id"),
+                  control.value,
+                  el.textContent,
+                ]
+                  .map(display)
+                  .filter(Boolean);
+              };
+              const currentBodyText = () =>
+                display(document.body?.innerText || document.body?.textContent || "");
+              const cartReady = () => {
+                const text = currentBodyText();
+                return (
+                  /\b(cart|basket|bag)\b/i.test(text) &&
+                  /\b(proceed to checkout|continue to checkout|checkout)\b/i.test(
+                    text,
+                  )
+                );
+              };
+              const findCheckoutControl = () => {
+                const controls = [
+                  ...document.querySelectorAll(
+                    "button, input[type='button'], input[type='submit'], a, [role='button']",
+                  ),
+                ].filter(visible);
+                return controls.find((el) =>
+                  labelsFor(el).some((label) =>
+                    /\b(proceed to checkout|continue to checkout|checkout)\b/i.test(
+                      label,
+                    ),
+                  ),
+                ) as HTMLElement | undefined;
+              };
+
+              const deadline = Date.now() + 3_000;
+              do {
+                const control = findCheckoutControl();
+                if (control && cartReady()) {
+                  const labels = labelsFor(control);
+                  const label =
+                    labels.find((value) =>
+                      /\b(proceed to checkout|continue to checkout|checkout)\b/i.test(
+                        value,
+                      ),
+                    ) ||
+                    labels[0] ||
+                    control.textContent ||
+                    "checkout";
+                  control.click();
+                  return {
+                    cartReady: true,
+                    clicked: true,
+                    label,
+                    url: location.href,
+                    title: document.title,
+                  };
+                }
+                await sleep(150);
+              } while (Date.now() < deadline);
+
+              return {
+                cartReady: cartReady(),
+                clicked: false,
+                label: null,
+                url: location.href,
+                title: document.title,
+              };
+            },
+            args: [],
+          });
+          const checkoutPlans = (checkoutResults || [])
+            .map(
+              (result) =>
+                result.result as Record<string, unknown> | undefined,
+            )
+            .filter((result): result is Record<string, unknown> =>
+              Boolean(result),
+            );
+          checkoutClick =
+            checkoutPlans.find((plan) => plan.clicked === true) || null;
+          if (checkoutClick?.clicked === true) {
+            await waitForNavigation(tabId, 12_000);
+            await waitForDomReady(tabId, {
+              timeoutMs: 2_000,
+              waitForElements: true,
+            });
+          }
+        }
+
         const tab = await chrome.tabs.get(tabId);
         const configured = Array.isArray(selected.configured)
           ? selected.configured.map(String)
@@ -7537,6 +7662,9 @@ export function registerTools() {
             : "",
           selected.submitClicked
             ? `Clicked submit control: ${String(selected.submitLabel || "submit")}`
+            : "",
+          checkoutClick?.clicked === true
+            ? `Clicked cart checkout control: ${String(checkoutClick.label || "checkout")}`
             : "",
           `Current URL: ${tab.url || selected.url || ""}`,
           `Current title: ${tab.title || selected.title || ""}`,

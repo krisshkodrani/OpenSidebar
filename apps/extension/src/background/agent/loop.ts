@@ -5749,6 +5749,7 @@ export class AgentLoop {
     const submitArgs = {
       ...(params.toolArgs ?? {}),
       submit: true,
+      continueToCheckout: true,
     };
     const submitToolCall: ToolCall = {
       id: `auto_${crypto.randomUUID()}`,

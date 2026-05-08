@@ -2855,6 +2855,83 @@ describe("Tool Registration", () => {
     rectSpy.mockRestore();
   });
 
+  test("configure_catalog_item continues from add-to-cart to checkout when requested", async () => {
+    let bodyText =
+      "Service Catalog\nStandard Laptop\nQuantity\nAdd to Cart";
+    let addClicked = false;
+    let checkoutClicked = false;
+    document.title = "Standard Laptop | Service Catalog";
+    document.body.innerHTML = `
+            <label for="quantity">Quantity</label>
+            <select id="quantity">
+                <option value="1">1</option>
+                <option value="10">10</option>
+            </select>
+            <button id="add">Add to Cart</button>
+        `;
+    Object.defineProperty(document.body, "innerText", {
+      configurable: true,
+      get: () => bodyText,
+    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    document.getElementById("add")!.addEventListener("click", () => {
+      addClicked = true;
+      bodyText = "Shopping Cart\nStandard Laptop\nQuantity 10\nProceed to Checkout";
+      document.body.innerHTML = `<button id="checkout">Proceed to Checkout</button>`;
+      document.getElementById("checkout")!.addEventListener("click", () => {
+        checkoutClicked = true;
+        bodyText = "Checkout\nStandard Laptop";
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/checkout",
+      title: "Checkout | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      {
+        result: await details.func(...(details.args || [])),
+        frameId: 0,
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            quantity: "10",
+            submit: true,
+            submitButton: "Add to Cart",
+            continueToCheckout: true,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(addClicked).toBe(true);
+    expect(checkoutClicked).toBe(true);
+    expect(result).toContain("Clicked submit control: Add to Cart");
+    expect(result).toContain("Clicked cart checkout control");
+    rectSpy.mockRestore();
+  });
+
   test("inspect_chart reports Highcharts point counts and percentages", async () => {
     const originalHighcharts = (window as any).Highcharts;
     (window as any).Highcharts = {

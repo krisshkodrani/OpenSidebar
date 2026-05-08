@@ -833,6 +833,22 @@ export async function executeSequentialToolCalls(
       }
     }
 
+    if (
+      toolName === ToolName.CONFIGURE_CATALOG_ITEM &&
+      this.selectedSkillId === "catalog-order-workflow" &&
+      args.submit === true &&
+      args.continueToCheckout !== true &&
+      /\b(order|request|cart|checkout)\b/i.test(this.originalQuery)
+    ) {
+      args.continueToCheckout = true;
+      toolCall.function.arguments = JSON.stringify(args);
+      this.traceRecorder?.recordEvent("catalog_cart_handoff_enabled", {
+        turn: this.turnCount,
+        mode: "sequential",
+        selectedSkillId: this.selectedSkillId,
+      });
+    }
+
     const preDecision = this.middleware.evaluatePreTool(
       toolName,
       args,

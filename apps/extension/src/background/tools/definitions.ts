@@ -1048,6 +1048,11 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
           type: "string",
           description: 'Optional visible submit button label, e.g. "Order Now".',
         },
+        continueToCheckout: {
+          type: "boolean",
+          description:
+            "After clicking an add-to-cart/order-to-cart control, continue by clicking a visible cart checkout/proceed-to-checkout control in the same call. Defaults to false.",
+        },
       },
       required: [],
     },
