@@ -56,6 +56,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
+  [ToolName.SEARCH_KNOWLEDGE_BASE]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+    cacheable: false,
+  },
   [ToolName.DONE]: {
     risk: RiskLevel.LOW,
     domModifying: false,
@@ -337,6 +343,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   read_only: [
     // Observe
     ToolName.READ_PAGE,
+    ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
     ToolName.FIND_ELEMENT,
     ToolName.INSPECT_HIDDEN,
@@ -357,6 +364,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   form_fill: [
     // Observe
     ToolName.READ_PAGE,
+    ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
     ToolName.FIND_ELEMENT,
     ToolName.INSPECT_HIDDEN,
@@ -401,6 +409,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
   navigate: [
     // Observe
     ToolName.READ_PAGE,
+    ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
     ToolName.FIND_ELEMENT,
     ToolName.SCROLL_PAGE,
@@ -521,6 +530,7 @@ export function buildDomAwareProfile(
   const tools = new Set<ToolName>([
     // Observe
     ToolName.READ_PAGE,
+    ToolName.SEARCH_KNOWLEDGE_BASE,
     ToolName.READ_ELEMENT,
     ToolName.FIND_ELEMENT,
     ToolName.SCROLL_PAGE,

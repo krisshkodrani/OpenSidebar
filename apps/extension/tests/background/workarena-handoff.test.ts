@@ -93,6 +93,19 @@ describe("WorkArena handoff trace metrics", () => {
     ).toBe("INC0046011");
   });
 
+  test("extracts catalog request numbers from order confirmation text", () => {
+    expect(
+      extractSubmittedRecordNumberFromText(
+        "Order Status: REQ0024924 | ServiceNow",
+      ),
+    ).toBe("REQ0024924");
+    expect(
+      extractSubmittedRecordNumberFromText(
+        "Request Number: req0024925. Quantity 10.",
+      ),
+    ).toBe("REQ0024925");
+  });
+
   test("reads completed agent sessions as terminal task evidence", () => {
     withTempTrace(
       [

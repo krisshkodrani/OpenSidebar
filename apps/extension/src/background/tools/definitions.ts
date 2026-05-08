@@ -157,6 +157,42 @@ export const OPEN_SERVICENOW_MODULE_DEF: ToolDefinition = {
   },
 };
 
+export const SEARCH_KNOWLEDGE_BASE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SEARCH_KNOWLEDGE_BASE,
+    description:
+      "Search the current site's knowledge base, read the best matching articles, and extract the requested answer with evidence. Use this before manual search clicks for knowledge-base answer questions.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description:
+            "Exact user question to answer from the knowledge source.",
+        },
+        query: {
+          type: "string",
+          description:
+            "Optional search query. Defaults to distinctive terms from the question.",
+        },
+        answerType: {
+          type: "string",
+          enum: ["auto", "number", "text"],
+          description:
+            "Expected answer shape. Defaults to auto; use number for count, percent, date-like, or numeric questions.",
+        },
+        maxResults: {
+          type: "integer",
+          description:
+            "Maximum result articles to fetch and rank (default 5, max 10).",
+        },
+      },
+      required: ["question"],
+    },
+  },
+};
+
 export const CREATE_TAB_DEF: ToolDefinition = {
   type: "function",
   function: {

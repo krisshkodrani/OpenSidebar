@@ -26,6 +26,7 @@ const EXECUTOR_DEFAULT_TOOLS: ToolName[] = [
   ToolName.READ_PAGE,
   ToolName.NAVIGATE,
   ToolName.OPEN_SERVICENOW_MODULE,
+  ToolName.SEARCH_KNOWLEDGE_BASE,
   ToolName.CREATE_TAB,
   ToolName.CLOSE_TAB,
   ToolName.SWITCH_TAB,

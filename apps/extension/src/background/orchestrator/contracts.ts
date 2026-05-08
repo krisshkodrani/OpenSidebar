@@ -1,5 +1,5 @@
 import { AgentRole, ToolName, UserSettings } from "../../types";
-import { getSkillToolSuppressionPolicy } from "./skills";
+import { getSkillToolPolicy, getSkillToolSuppressionPolicy } from "./skills";
 import { TaskNode } from "./types";
 
 export type ModelTier = "executor" | "planner";
@@ -67,6 +67,10 @@ export function buildRoleExecutionContract(
   }
 
   const allowed = new Set<ToolName>(node.allowedTools);
+  const skillToolPolicy = getSkillToolPolicy(node.selectedSkillId);
+  for (const tool of skillToolPolicy?.preferredTools ?? []) {
+    allowed.add(tool);
+  }
   // Executor must always be able to finalize a subtask.
   allowed.add(ToolName.DONE);
   applySkillToolSuppression(node, allowed);

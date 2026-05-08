@@ -6,6 +6,7 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
+import { assessCatalogOrderPostConfirmationClick } from "./catalog-order-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
   assessListDetailWorkflow,
@@ -471,6 +472,35 @@ export async function executeParallelToolCalls(
       if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
         const snapshot = host.context.getSnapshot();
         const target = snapshot?.elements.find((el: any) => el.tag === args.id);
+        const catalogConfirmationClickBlock =
+          assessCatalogOrderPostConfirmationClick({
+            selectedSkillId: host.selectedSkillId,
+            toolName,
+            args,
+            snapshot,
+          });
+        if (catalogConfirmationClickBlock) {
+          host.log.warn("agent", "Catalog confirmation drill-in click blocked", {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            mode: "parallel",
+          });
+          host.traceRecorder?.recordEvent(
+            "catalog_confirmation_drill_in_blocked",
+            {
+              turn: host.turnCount,
+              tool: toolName,
+              id: args.id,
+              mode: "parallel",
+            },
+          );
+          return {
+            toolCall,
+            result: null,
+            error: catalogConfirmationClickBlock,
+          };
+        }
         const planStatus = host.context.getPlanStatusRaw();
         const activeObjective =
           planStatus?.subtasks[planStatus.currentIndex]?.description ??

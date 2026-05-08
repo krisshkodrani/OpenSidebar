@@ -4811,6 +4811,117 @@ export class AgentLoop {
     return true;
   }
 
+  private maybeCompleteTrustedListSortStep(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    mode: "parallel" | "sequential";
+  }): { finalSummary: string; newIndex: number } | null {
+    if (this.selectedSkillId !== "list-sort-workflow") return null;
+    if (params.toolName !== ToolName.APPLY_LIST_SORT) return null;
+    if (
+      /^error:/i.test(params.toolResult) ||
+      !/\bapplied\b/i.test(params.toolResult) ||
+      !/\bquery state:\s*sysparm_query=.*orderby/i.test(params.toolResult)
+    ) {
+      return null;
+    }
+
+    const sorts = Array.isArray(params.toolArgs?.sorts)
+      ? params.toolArgs.sorts
+          .filter(
+            (sort): sort is { field: string; direction?: string } =>
+              !!sort &&
+              typeof sort === "object" &&
+              typeof (sort as any).field === "string" &&
+              (sort as any).field.trim().length > 0,
+          )
+          .map((sort) => ({
+            field: sort.field.trim(),
+            direction: /^asc/i.test(String(sort.direction ?? "ascending"))
+              ? "ascending"
+              : "descending",
+          }))
+      : [];
+    if (sorts.length === 0) return null;
+
+    const normalizedResult = params.toolResult
+      .replace(/\s+/g, " ")
+      .toLowerCase();
+    const missing = sorts.filter((sort) => {
+      const field = sort.field.toLowerCase();
+      const shortDirection =
+        sort.direction === "ascending" ? "asc" : "desc";
+      return !normalizedResult.includes(`${field} ${shortDirection}`);
+    });
+    if (missing.length > 0) return null;
+
+    const queryLine =
+      params.toolResult
+        .split(/\r?\n/)
+        .find((line) => /\bquery state:/i.test(line))
+        ?.trim() ?? "Query state recorded by apply_list_sort.";
+    const sortSummary = sorts
+      .map((sort) => `${sort.field} ${sort.direction}`)
+      .join("; ");
+    const finalSummary = `Applied list sort: ${sortSummary}. Evidence: ${queryLine}`;
+
+    const plan = this.context.getPlanStatusRaw();
+    if (
+      !plan ||
+      plan.currentIndex < 0 ||
+      plan.currentIndex >= plan.subtasks.length
+    ) {
+      this.log.info("agent", "trusted list sort completed planless workflow", {
+        turn: this.turnCount,
+        mode: params.mode,
+        sortCount: sorts.length,
+      });
+      this.traceRecorder?.recordEvent("trusted_list_sort_success", {
+        fromStep: -1,
+        toStep: 0,
+        reason: finalSummary,
+        trustedTool: params.toolName,
+        mode: params.mode,
+        completedAllSteps: true,
+        planless: true,
+      });
+      return { finalSummary, newIndex: 0 };
+    }
+
+    this.consecutiveAutoAdvances = 0;
+    const fromStep = plan.currentIndex;
+    const newIndex = completeRemainingSubtasks(
+      this as unknown as AgentLoopPlanProgressHost,
+      fromStep,
+      finalSummary,
+    );
+    this.syncPlanStatus(newIndex, "trusted_list_sort_success", {
+      reason: finalSummary,
+      advancedTo: newIndex,
+      mode: params.mode,
+      trustedTool: params.toolName,
+      sortCount: sorts.length,
+    });
+    this.broadcastTaskProgress(newIndex);
+    this.log.info("agent", "trusted list sort completed workflow", {
+      turn: this.turnCount,
+      fromStep,
+      toStep: newIndex,
+      mode: params.mode,
+      sortCount: sorts.length,
+    });
+    this.traceRecorder?.recordEvent("trusted_list_sort_success", {
+      fromStep,
+      toStep: newIndex,
+      reason: finalSummary,
+      trustedTool: params.toolName,
+      mode: params.mode,
+      completedAllSteps: newIndex >= this.planSubtasks.length,
+    });
+    return { finalSummary, newIndex };
+  }
+
   private hasTrustedServiceNowSubmitIntent(): boolean {
     const text = `${this.originalQuery}\n${this.planSteps
       .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)

@@ -129,6 +129,18 @@ export interface OpenServiceNowModuleArgs {
   run?: boolean;
 }
 
+/** Arguments for search_knowledge_base */
+export interface SearchKnowledgeBaseArgs {
+  /** Exact user question to answer from the knowledge source */
+  question: string;
+  /** Optional search query. Defaults to distinctive terms from the question. */
+  query?: string;
+  /** Expected answer shape. Defaults to auto; use number for count/percent/date-like numeric questions. */
+  answerType?: "auto" | "number" | "text";
+  /** Maximum result articles to fetch and rank (default 5, max 10). */
+  maxResults?: number;
+}
+
 /** Arguments for create_tab */
 export interface CreateTabArgs {
   /** URL to open in the new tab */
@@ -462,6 +474,7 @@ export type ToolArgsMap = {
   [ToolName.READ_PAGE]: ReadPageArgs;
   [ToolName.NAVIGATE]: NavigateArgs;
   [ToolName.OPEN_SERVICENOW_MODULE]: OpenServiceNowModuleArgs;
+  [ToolName.SEARCH_KNOWLEDGE_BASE]: SearchKnowledgeBaseArgs;
 
   [ToolName.CREATE_TAB]: CreateTabArgs;
   [ToolName.CLOSE_TAB]: CloseTabArgs;

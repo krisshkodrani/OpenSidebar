@@ -394,6 +394,20 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("normalizes requested sort labels from planner handoff prose", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Objective: Complete the workflow for the original request: Sort the "incidents" list by the following fields: - Number (descending) - Duration (descending)\n' +
+        'The subtask outcome for "Sort the incidents list by Number (descending) and Duration (descending) using the column headers" is verified on the page or in tool output.',
+      pageUrl:
+        "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do%3Fsysparm_query%3DORDERBYDESCnumber%5EORDERBYDESCcalendar_duration",
+      summary:
+        "Successfully sorted the Incidents list by Number (descending) and Duration (descending). URL query state: sysparm_query=ORDERBYDESCnumber^ORDERBYDESCcalendar_duration.",
+      selectedSkillId: "list-sort-workflow",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects catalog detail pages without request confirmation", () => {
     const result = assessWorkflowDoneGuard({
       query: "Order a standard laptop from the service catalog.",
