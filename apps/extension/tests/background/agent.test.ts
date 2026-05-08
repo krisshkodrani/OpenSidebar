@@ -1359,7 +1359,7 @@ describe("AgentLoop", () => {
     expect(executeToolCall).toHaveBeenCalledTimes(1);
     expect(
       JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
-    ).toEqual({ quantity: "10", submit: true });
+    ).toEqual({ quantity: "10", submit: true, continueToCheckout: true });
   });
 
   test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {

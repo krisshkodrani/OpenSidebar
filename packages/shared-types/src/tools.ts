@@ -421,6 +421,8 @@ export interface ConfigureCatalogItemArgs {
   submit?: boolean;
   /** Optional visible submit button label, e.g. "Order Now" */
   submitButton?: string;
+  /** After an add-to-cart submit, continue to a visible cart checkout control */
+  continueToCheckout?: boolean;
 }
 
 /** One field to configure on a ServiceNow record form */

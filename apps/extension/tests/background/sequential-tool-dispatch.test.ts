@@ -203,4 +203,40 @@ describe("executeSequentialToolCalls", () => {
       expect.objectContaining({ tool: ToolName.CLICK_ELEMENT }),
     );
   });
+
+  test("enables cart checkout handoff for catalog-order submissions", async () => {
+    const host = createHost();
+    host.selectedSkillId = "catalog-order-workflow";
+    host.originalQuery = 'Order 10 "Standard Laptop" from the hardware store.';
+    (host.executeToolCall as any).mockResolvedValue("Configured catalog item.");
+    const call = toolCall(ToolName.CONFIGURE_CATALOG_ITEM, {
+      quantity: "10",
+      submit: true,
+      submitButton: "Add to Cart",
+    });
+
+    await executeSequentialToolCalls.call(host, {
+      toolCalls: [call],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: vi.fn(),
+      state: baseState(),
+    });
+
+    expect(host.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(
+        (host.executeToolCall as any).mock.calls[0][0].function.arguments,
+      ),
+    ).toEqual({
+      quantity: "10",
+      submit: true,
+      submitButton: "Add to Cart",
+      continueToCheckout: true,
+    });
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "catalog_cart_handoff_enabled",
+      expect.objectContaining({ mode: "sequential" }),
+    );
+  });
 });
