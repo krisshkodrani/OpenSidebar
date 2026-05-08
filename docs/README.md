@@ -48,6 +48,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [WorkArena Setup](./evals/workarena.md)
 - [WorkArena Roadmap](./evals/workarena-roadmap.md)
 - [WorkArena First Smoke Test Checklist](./evals/workarena-smoke-test-checklist.md)
+- [WorkArena Major Full Run Checklist](./evals/workarena-full-run-checklist.md)
 
 ## Other
 

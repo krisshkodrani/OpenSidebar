@@ -2372,8 +2372,8 @@ describe("selectPrimarySkill", () => {
     test("matches catalog order workflows before generic form fill", () => {
         expect(
             selectPrimarySkill({
-                query: "Order a standard laptop from the service catalog with quantity 1.",
-                objective: "Configure the standard laptop catalog item and submit the request",
+                query: 'Go to the hardware store and order 10 "Premium Monitor" with configuration {"Warranty": true}.',
+                objective: "Configure the requested hardware catalog item and submit the request",
                 successCriteria: "Catalog request confirmation is visible",
                 pageTitle: "Service Catalog",
             })?.id,
@@ -2467,7 +2467,7 @@ describe("selectPrimarySkill", () => {
         expect(
             resolveSkillToolProfile(
                 "catalog-order-workflow",
-                "Order a standard laptop from the service catalog",
+                "Order a premium monitor from the service catalog",
                 "Request confirmation is visible",
                 "form_fill",
             ),
