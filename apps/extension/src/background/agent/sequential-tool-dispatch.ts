@@ -4,7 +4,10 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
-import { assessCatalogOrderPostConfirmationClick } from "./catalog-order-policy";
+import {
+  assessCatalogOrderConfigurationClick,
+  assessCatalogOrderPostConfirmationClick,
+} from "./catalog-order-policy";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -713,6 +716,13 @@ export async function executeSequentialToolCalls(
           toolName,
           args,
           snapshot,
+        }) ||
+        assessCatalogOrderConfigurationClick({
+          selectedSkillId: this.selectedSkillId,
+          toolName,
+          args,
+          snapshot,
+          originalQuery: this.originalQuery,
         });
       if (catalogConfirmationClickBlock) {
         this.context.addMessage({

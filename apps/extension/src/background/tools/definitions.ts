@@ -993,7 +993,7 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
   function: {
     name: ToolName.CONFIGURE_CATALOG_ITEM,
     description:
-      "Configure a visible ServiceNow/service catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button. Use this on catalog item detail pages instead of separate select_option, set_checkbox, type_text, and submit clicks.",
+      "Configure a visible ServiceNow/service catalog item by label, verify requested values, and optionally click the order/request/add-to-cart button. Use this on catalog item detail pages instead of separate select_option, set_checkbox, type_text, radio-option clicks, and submit clicks.",
     parameters: {
       type: "object",
       properties: {
@@ -1015,6 +1015,26 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
               value: {
                 type: "string",
                 description: "Value to enter.",
+              },
+            },
+            required: ["field", "value"],
+          },
+        },
+        optionFields: {
+          type: "array",
+          description:
+            "Dropdown/select/radio-like options to choose by visible field label, aria-label, name, id, or nearby catalog variable label.",
+          items: {
+            type: "object",
+            description: "One option field/value pair to select.",
+            properties: {
+              field: {
+                type: "string",
+                description: 'Dropdown field label, e.g. "How long do you need it for ?".',
+              },
+              value: {
+                type: "string",
+                description: 'Option label or value to select, e.g. "1 week".',
               },
             },
             required: ["field", "value"],

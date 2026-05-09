@@ -2785,6 +2785,106 @@ describe("Tool Registration", () => {
     rectSpy.mockRestore();
   });
 
+  test("configure_catalog_item resolves radio-like catalog option groups by page order", async () => {
+    document.title = "Development Laptop (PC) | ServiceNow";
+    document.body.innerHTML = `
+            <div class="question_text">What size solid state drive do you want?</div>
+            <input id="IO:ssd_250" name="IO:ssd" type="radio" value="250" style="display:none" />
+            <label type="radio" name="IO:ssd" checked="true">250 GB</label>
+            <input id="IO:ssd_500" name="IO:ssd" type="radio" value="500" style="display:none" />
+            <label type="radio" name="IO:ssd" checked="false">500 GB [add $300.00]</label>
+            <input id="IO:ssd_checked_radio" name="IO:ssd_checked_radio" type="hidden" value="" />
+            <div class="question_text">Please specify an operating system</div>
+            <input id="IO:os_windows8" name="IO:os" type="radio" value="windows8" style="display:none" />
+            <label type="radio" name="IO:os" checked="false">Windows 8</label>
+            <input id="IO:os_ubuntu" name="IO:os" type="radio" value="ubuntu" style="display:none" checked />
+            <label type="radio" name="IO:os" checked="true">Ubuntu [subtract $100.00]</label>
+            <input id="IO:os_checked_radio" name="IO:os_checked_radio" type="hidden" value="" />
+            <label for="quantity">Quantity</label>
+            <select id="quantity" name="quantity">
+                <option value="1">1</option>
+                <option value="2">2</option>
+            </select>
+            <button id="order" type="button">Order Now</button>
+        `;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      setValue: vi.fn((field: string, value: string) => {
+        values[field] = value;
+      }),
+    };
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/catalog_item",
+      title: "Development Laptop (PC) | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            optionFields: [
+              {
+                field: "What size solid state drive do you want?",
+                value: "250",
+              },
+              {
+                field: "Please specify an operating system",
+                value: "Windows 8",
+              },
+            ],
+            submit: true,
+            submitButton: "Order Now",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect((document.getElementById("IO:ssd_250") as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect(
+      (document.getElementById("IO:ssd_checked_radio") as HTMLInputElement).value,
+    ).toBe("IO:ssd_250");
+    expect(
+      (document.getElementById("IO:os_windows8") as HTMLInputElement).checked,
+    ).toBe(
+      true,
+    );
+    expect(
+      (document.getElementById("IO:os_checked_radio") as HTMLInputElement).value,
+    ).toBe("IO:os_windows8");
+    expect(values["IO:ssd"]).toBe("250");
+    expect(values["IO:os"]).toBe("windows8");
+    expect(result).toContain("Configured catalog item.");
+    expect(result).toContain("What size solid state drive do you want?=250");
+    expect(result).toContain("Please specify an operating system=Windows 8");
+    (window as any).g_form = originalGForm;
+    rectSpy.mockRestore();
+  });
+
   test("configure_catalog_item commits ServiceNow checkbox variables through g_form", async () => {
     document.title = "Developer Laptop (Mac) | ServiceNow";
     document.body.innerHTML = `

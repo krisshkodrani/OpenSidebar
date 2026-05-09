@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { ToolName } from "../../src/types";
-import { assessCatalogOrderPostConfirmationClick } from "../../src/background/agent/catalog-order-policy";
+import {
+  assessCatalogOrderConfigurationClick,
+  assessCatalogOrderPostConfirmationClick,
+} from "../../src/background/agent/catalog-order-policy";
 
 function link(id: number, text: string, href = "#") {
   return {
@@ -58,6 +61,56 @@ describe("assessCatalogOrderPostConfirmationClick", () => {
         url: "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/com.glideapp.servicecatalog_checkout_view_v2.do",
         visibleContent: "Order Status REQ0024924",
         elements: [link(7, "REQ0024924")],
+      } as any,
+    });
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("assessCatalogOrderConfigurationClick", () => {
+  test("blocks manual option clicks when a catalog order has explicit configuration fields", () => {
+    const result = assessCatalogOrderConfigurationClick({
+      selectedSkillId: "catalog-order-workflow",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 9 },
+      originalQuery:
+        'Order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\'}',
+      snapshot: {
+        title: "Development Laptop (PC) | ServiceNow",
+        url: "https://workarenapublic18.service-now.com/com.glideapp.servicecatalog_cat_item_view.do",
+        visibleContent:
+          "Development Laptop (PC) Please specify an operating system Windows 8 Add to Cart",
+        elements: [
+          {
+            tag: 9,
+            tagName: "label",
+            role: "",
+            text: "Windows 8",
+            attributes: { type: "radio", name: "IO:os" },
+            isVisible: true,
+            isDisabled: false,
+          },
+        ],
+      } as any,
+    });
+
+    expect(result).toContain("explicit configuration fields");
+    expect(result).toContain("configure_catalog_item");
+  });
+
+  test("allows catalog navigation clicks before the item detail page", () => {
+    const result = assessCatalogOrderConfigurationClick({
+      selectedSkillId: "catalog-order-workflow",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 9 },
+      originalQuery:
+        'Order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\'}',
+      snapshot: {
+        title: "Catalog | ServiceNow",
+        url: "https://workarenapublic18.service-now.com/catalog_home.do",
+        visibleContent: "Hardware Development Laptop (PC)",
+        elements: [link(9, "Hardware")],
       } as any,
     });
 

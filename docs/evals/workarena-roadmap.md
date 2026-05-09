@@ -31,11 +31,13 @@ Recently resolved:
 
 Current validation gate:
 
-- The R4 service-catalog chunk is now green at seed `0`, no retries, `maxTurns=20`: 9/9 pass@1, median turns `7`, p95 turns `15`, warnings `0`.
-- Catalog blockers were fixed generically in `configure_catalog_item`: durable text/dropdown/quantity commits, direct order-vs-cart routing, and direct checkbox label resolution so sibling checkbox labels do not cross-match.
-- The current service-catalog evidence is `.artifacts/e2e/workarena-suite-2026-05-09-service-catalog-seed-0-020740499.md`.
-- The remaining pre-full-run work is report validation, source hygiene, checkpointing, and cost/stability triage for high-turn passing cases.
-- Treat remaining high-turn passes, such as `order-development-laptop-p-c` at 15 turns, as cost/stability work only after validation remains green. Fix them through generic tools, ServiceNow platform semantics, or reusable skills, not task-id branches.
+- The seed `0` atomic ServiceNow baseline is green across the current 33 task target set: 33/33 pass@1, category-balanced pass@1 `100.0%`, median turns `3`, p95 turns `11`, warnings `0`.
+- The current grade evidence is `.artifacts/e2e/workarena-grade-2026-05-09.md`, generated from the latest 33 seed `0` handoff reports.
+- `workarena-validate-reports` accepts all 319 current WorkArena reports.
+- The R4 service-catalog category is green at seed `0`: 9/9 pass@1, median turns `7`, p95 turns `11`, warnings `0`; `order-development-laptop-p-c` now passes in 6 turns.
+- Catalog blockers were fixed generically in `configure_catalog_item`: durable text/dropdown/quantity commits, direct order-vs-cart routing, direct checkbox label resolution, radio-like option groups, and ServiceNow radio value commits.
+- A one-shot full atomic command can exceed a 60 minute outer shell timeout. Until the wrapper has a longer supervised timeout, the accepted full-run procedure is a clean checkpoint plus explicit category/task chunks, followed by `workarena-grade`.
+- The remaining pre-widening work is source hygiene, checkpointing, and a deliberate decision whether the next run is seeds `0,1,2` pass@1 or a pass@2 retry study.
 
 ## Evaluation Contract
 
@@ -79,9 +81,9 @@ Report warnings must not flip benchmark success, but they must be visible:
 | 1. Trace credibility | In progress | Make every real run inspectable and gradeable. | Planner activity visible in Trace Viewer; terminal-state mismatch classified or fixed. |
 | 2. Suite runner | Done | Run controlled batches without duplicating handoff logic. | A thin wrapper can run selected suites, categories, seeds, retries, and resume from reports. |
 | 3. Grader | Done | Aggregate JSON reports into stable scorecards. | Markdown and JSON summaries include pass rates, scores, costs, traces, and warning classes. |
-| 4. Calibrated sample | In progress | Run enough tasks to identify dominant failure modes. | All atomic ServiceNow categories run at seed `0`, no retries, with validated reports. |
+| 4. Calibrated sample | Done | Run enough tasks to identify dominant failure modes. | All atomic ServiceNow categories run at seed `0`, no retries, with validated reports. |
 | 5. Runtime fixes | In progress | Improve broad ServiceNow behavior from trace evidence. | Category failures are fixed in runtime policy, tools, controllers, or reusable skills. |
-| 6. Full atomic run | Planned | Produce a category-balanced WorkArena grade for atomic tasks. | All target atomic tasks/seeds run with pass@1, optional pass@2, and validated reports. |
+| 6. Full atomic run | Seed `0` baseline done; multi-seed planned | Produce a category-balanced WorkArena grade for atomic tasks. | All target atomic tasks/seeds run with pass@1, optional pass@2, and validated reports. |
 | 7. Scheduled confidence | Optional | Make WorkArena regression tracking repeatable. | A deliberate, budgeted cadence exists for smoke, sample, and full graded runs. |
 
 ## Full WorkArena Run Ready Harness Roadmap
@@ -153,7 +155,7 @@ Exit criteria:
 
 ### R4. Category-Balanced Atomic Baseline
 
-Status: Seed `0` ServiceNow category chunks are green. The next gate is report validation, checkpointing, and a deliberate full atomic seed `0` run.
+Status: Done for the current seed `0` ServiceNow atomic target set. The next gate is checkpointing and deliberate widening.
 
 Exit criteria:
 
@@ -162,15 +164,16 @@ Exit criteria:
 - Preserve `--retries 0` for the first signal run.
 - Stop widening only for clean infrastructure breakage or a repeated product regression that invalidates the batch.
 - Produce timestamped suite summaries and one grade summary under `.artifacts/e2e/`.
+- Current evidence: `.artifacts/e2e/workarena-grade-2026-05-09.md`, 33/33 pass@1, category-balanced pass@1 `100.0%`, warnings `0`.
 
 Recommended R4 chunk order:
 
 1. Form confidence chunk: `create-change-request`, `create-incident`, `create-hardware-asset`, `create-problem`, `create-user`. Current status: passed at seed `0`.
 2. List confidence chunk: all list filter and list sort atomic tasks at seed `0`. Current status: passed at seed `0`; filters 6/6 and sorts 6/6.
 3. Knowledge, menu, and dashboard chunk. Current status: passed at seed `0`; the chart terminal mismatch was fixed and rerun cleanly.
-4. Service catalog chunk. Current status: passed 9/9 at seed `0`; median turns `7`, p95 turns `15`, warnings `0`.
+4. Service catalog chunk. Current status: passed 9/9 at seed `0`; median turns `7`, p95 turns `11`, warnings `0`.
 
-Do not widen to seeds `0,1,2` until the seed `0` reports validate, the checkpoint is created, and high-turn seed `0` passes have an accepted cost/stability risk note.
+Do not widen to seeds `0,1,2` until the checkpoint is created and the remaining high-turn seed `0` passes have an accepted cost/stability risk note.
 
 ### R4A. Active Catalog Blocker
 
@@ -179,9 +182,11 @@ Status: Resolved for seed `0` service-catalog validation; keep monitoring as cos
 Exit criteria:
 
 - `configure_catalog_item` can set text fields, dropdown/select fields, checkboxes, and quantity fields in one generic call.
+- `configure_catalog_item` can set radio-like catalog option groups and commit ServiceNow radio variables with the submitted form value while preserving the `_checked_radio` marker.
 - ServiceNow catalog select values are committed to the same page state that WorkArena validation reads after submission.
 - The isolated `workarena.servicenow.order-loaner-laptop` seed `0` run passes without task-id-specific code.
-- The full service-catalog seed `0` chunk reruns at 9/9 pass@1.
+- The isolated `workarena.servicenow.order-development-laptop-p-c` seed `0` run passes without task-id-specific code.
+- The full service-catalog seed `0` category is 9/9 pass@1 in the latest grade.
 - The generated focused and service-catalog suite reports validate with `workarena-validate-reports`.
 
 Preferred fix layer:

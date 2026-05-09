@@ -8,6 +8,11 @@ export interface CatalogOrderPostConfirmationClickInput {
   snapshot: DomSnapshot | null | undefined;
 }
 
+export interface CatalogOrderConfigurationClickInput
+  extends CatalogOrderPostConfirmationClickInput {
+  originalQuery?: string | null;
+}
+
 function normalize(value: unknown): string {
   return String(value ?? "")
     .replace(/\s+/g, " ")
@@ -61,6 +66,80 @@ function isConfirmationDrillInTarget(element: TaggedElement | undefined): boolea
     /\b(req|ritm)\d+\b/.test(label) ||
     /\b(standard laptop|lenovo|requested item|request item)\b/.test(label) ||
     /\b(sc_req_item\.do|sysparm_sys_id|sys_id=)\b/.test(label)
+  );
+}
+
+function explicitCatalogConfigurationFields(query: string | null | undefined): string[] {
+  const fields = new Set<string>();
+  for (const match of String(query ?? "").matchAll(/['"]([^'"]{2,160})['"]\s*:/g)) {
+    const field = match[1]?.replace(/\s+/g, " ").trim();
+    if (field) fields.add(field);
+  }
+  return [...fields];
+}
+
+function isCatalogItemConfigurationPage(snapshot: DomSnapshot): boolean {
+  const pageText = normalize(
+    [
+      snapshot.title,
+      snapshot.url,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+    ].join("\n"),
+  );
+  return (
+    /servicecatalog_cat_item|catalog item|order this item|add to cart|order now/.test(
+      pageText,
+    ) && !isOrderConfirmationPage(snapshot)
+  );
+}
+
+function isManualCatalogOptionOrSubmitTarget(
+  element: TaggedElement | undefined,
+): boolean {
+  if (!element) return false;
+  const label = normalize(
+    [
+      element.text,
+      element.role,
+      element.tagName,
+      element.attributes?.type,
+      element.attributes?.role,
+      element.attributes?.["aria-label"],
+      element.attributes?.title,
+      element.attributes?.name,
+      element.attributes?.id,
+    ].join(" "),
+  );
+  return (
+    /\b(add to cart|order now|place order|submit order|request|checkout|proceed to checkout)\b/.test(
+      label,
+    ) ||
+    /\bradio\b/.test(label)
+  );
+}
+
+export function assessCatalogOrderConfigurationClick(
+  input: CatalogOrderConfigurationClickInput,
+): string | null {
+  if (input.selectedSkillId !== "catalog-order-workflow") return null;
+  if (input.toolName !== ToolName.CLICK_ELEMENT) return null;
+  if (!input.snapshot || !isCatalogItemConfigurationPage(input.snapshot)) {
+    return null;
+  }
+  if (explicitCatalogConfigurationFields(input.originalQuery).length === 0) {
+    return null;
+  }
+
+  const id = targetId(input.args);
+  if (id === null) return null;
+  const target = input.snapshot.elements.find((element) => element.tag === id);
+  if (!isManualCatalogOptionOrSubmitTarget(target)) return null;
+
+  return (
+    "BLOCKED: this catalog order has explicit configuration fields. " +
+    "Use inspect_catalog_item and configure_catalog_item with the requested quantity, optionFields, checkboxes, and textFields; " +
+    "do not manually click radio options or Add to Cart/Order Now controls before the helper reports the requested configuration."
   );
 }
 
