@@ -29,16 +29,20 @@ export interface SkillDescriptor {
   packId?: string;
 }
 
+export type SkillPackType = "core" | "enterprise" | "platform";
+
 export interface SkillPack {
   id: string;
   name: string;
   description: string;
+  type: SkillPackType;
   enabledByDefault: boolean;
   skillIds: string[];
 }
 
 export interface SkillCatalogOptions {
   enabledSkillPackIds?: readonly string[];
+  candidateSkillIds?: readonly string[];
 }
 
 export interface SkillToolPolicy {
@@ -62,7 +66,19 @@ export interface SkillMatcherInput {
   successCriteria?: string;
   pageTitle?: string;
   pageUrl?: string;
+  pageMarkers?: readonly string[];
+  runtimeContext?: readonly string[];
   enabledSkillPackIds?: readonly string[];
+  candidateSkillIds?: readonly string[];
+}
+
+export type SkillActivationSignalStrength = "always" | "weak" | "strong";
+
+export interface SkillCandidateDescriptor {
+  skill: SkillDescriptor;
+  packId?: string;
+  activationReason: string;
+  signalStrength: SkillActivationSignalStrength;
 }
 
 export interface SkillMatcher {
@@ -501,6 +517,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     description:
       "Resolve and open ServiceNow application navigator modules by metadata instead of manual menu or global search exploration.",
     tags: ["workflow", "servicenow", "navigation", "module"],
+    packId: "servicenow-platform",
     triggers: [
       "ServiceNow module",
       "application navigator",
@@ -697,6 +714,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     description:
       "Fill, verify, and submit ServiceNow record forms by field label/name with form-state readback.",
     tags: ["workflow", "forms", "servicenow", "record"],
+    packId: "servicenow-platform",
     triggers: [
       "servicenow record form",
       "create a new incident",
@@ -1006,12 +1024,15 @@ const SKILL_CATALOG: SkillDescriptor[] = [
   },
 ];
 
+const MAX_ROUTED_SKILL_CANDIDATES = 32;
+
 const BUILT_IN_SKILL_PACKS: SkillPack[] = [
   {
     id: "communication-workflows",
     name: "Communication Workflows",
     description:
       "Default communication skills for careful email and message composition workflows.",
+    type: "enterprise",
     enabledByDefault: true,
     skillIds: ["email-reply-careful"],
   },
@@ -1020,8 +1041,18 @@ const BUILT_IN_SKILL_PACKS: SkillPack[] = [
     name: "Multi-Tab Workflows",
     description:
       "Default checklist skills for source-list workflows that intentionally span multiple tabs.",
+    type: "enterprise",
     enabledByDefault: true,
     skillIds: ["multi-tab-checklist-workflow"],
+  },
+  {
+    id: "servicenow-platform",
+    name: "ServiceNow Platform",
+    description:
+      "ServiceNow-specific platform semantics for application modules, record forms, reference fields, and Glide-backed commits.",
+    type: "platform",
+    enabledByDefault: true,
+    skillIds: ["servicenow-module-navigation", "servicenow-record-form"],
   },
 ];
 
@@ -2553,6 +2584,164 @@ function buildCorpus(parts: Array<string | undefined>): string {
     .toLowerCase();
 }
 
+function buildRoutingCorpus(input: SkillMatcherInput): string {
+  return buildCorpus([
+    input.query,
+    input.objective,
+    input.successCriteria,
+    input.pageTitle,
+    ...(input.pageMarkers ?? []),
+    ...(input.runtimeContext ?? []),
+  ]);
+}
+
+function stripBenchmarkTaskIds(text: string): string {
+  return text.replace(/\bworkarena\.[a-z0-9_.-]+\b/gi, " ");
+}
+
+function hasServiceNowUrlSignal(pageUrl?: string): boolean {
+  if (!pageUrl) return false;
+  try {
+    const url = new URL(pageUrl);
+    const host = url.hostname.toLowerCase();
+    return (
+      host.endsWith(".service-now.com") ||
+      host.endsWith(".servicenow.com") ||
+      host === "service-now.com" ||
+      host === "servicenow.com"
+    );
+  } catch {
+    return /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl);
+  }
+}
+
+function getServiceNowActivationReason(
+  input: SkillMatcherInput,
+): string | null {
+  if (hasServiceNowUrlSignal(input.pageUrl)) {
+    return "ServiceNow URL host is active.";
+  }
+
+  const markerCorpus = buildCorpus([
+    input.pageTitle,
+    ...(input.pageMarkers ?? []),
+    ...(input.runtimeContext ?? []),
+  ]);
+  if (/\b(?:service\s*now|servicenow)\b/i.test(markerCorpus)) {
+    return "ServiceNow page or runtime marker is active.";
+  }
+
+  const taskCorpus = stripBenchmarkTaskIds(
+    buildCorpus([input.query, input.objective, input.successCriteria]),
+  );
+  if (/\b(?:service\s*now|servicenow)\b/i.test(taskCorpus)) {
+    return "User explicitly named ServiceNow as the target environment.";
+  }
+
+  return null;
+}
+
+function hasCommunicationPackSignal(input: SkillMatcherInput): boolean {
+  const corpus = buildRoutingCorpus(input);
+  return emailReplyPattern.test(corpus) || threadMessagePattern.test(corpus);
+}
+
+function hasProcurementPackSignal(input: SkillMatcherInput): boolean {
+  const corpus = buildRoutingCorpus(input);
+  return (
+    naturalProcurementChecklistPattern.test(corpus) ||
+    procurementLoopPattern.test(corpus) ||
+    (explicitTabIntentPattern.test(corpus) &&
+      sourceListLoopPattern.test(corpus) &&
+      repeatedItemPattern.test(corpus) &&
+      sourceProgressPattern.test(corpus))
+  );
+}
+
+function isPackPolicyEnabled(
+  pack: SkillPack,
+  options?: SkillCatalogOptions,
+): boolean {
+  const enabledSkillPackIds = resolveEnabledSkillPackIds(options);
+  return !enabledSkillPackIds || enabledSkillPackIds.has(pack.id);
+}
+
+function getPackActivationReason(
+  pack: SkillPack,
+  input: SkillMatcherInput,
+): { reason: string; strength: SkillActivationSignalStrength } | null {
+  if (pack.id === "communication-workflows" && hasCommunicationPackSignal(input)) {
+    return {
+      reason: "Communication workflow signals are present.",
+      strength: "weak",
+    };
+  }
+
+  if (pack.id === "procurement-workflows" && hasProcurementPackSignal(input)) {
+    return {
+      reason: "Source-list or multi-tab checklist workflow signals are present.",
+      strength: "weak",
+    };
+  }
+
+  if (pack.id === "servicenow-platform") {
+    const reason = getServiceNowActivationReason(input);
+    return reason ? { reason, strength: "strong" } : null;
+  }
+
+  return null;
+}
+
+export function resolveEligibleSkillCandidates(
+  input: SkillMatcherInput,
+): SkillCandidateDescriptor[] {
+  const candidates: SkillCandidateDescriptor[] = [];
+  const seen = new Set<string>();
+  const policyOptions: SkillCatalogOptions = {
+    enabledSkillPackIds: input.enabledSkillPackIds,
+  };
+
+  const addSkill = (
+    skill: SkillDescriptor,
+    activationReason: string,
+    signalStrength: SkillActivationSignalStrength,
+  ) => {
+    if (seen.has(skill.id)) return;
+    seen.add(skill.id);
+    candidates.push({
+      skill: cloneSkillDescriptor(skill),
+      packId: skill.packId,
+      activationReason,
+      signalStrength,
+    });
+  };
+
+  for (const skill of SKILL_CATALOG) {
+    if (!skill.packId) {
+      addSkill(skill, "Core workflow skills are always eligible.", "always");
+    }
+  }
+
+  for (const pack of BUILT_IN_SKILL_PACKS) {
+    if (!isPackPolicyEnabled(pack, policyOptions)) continue;
+    const activation = getPackActivationReason(pack, input);
+    if (!activation) continue;
+    for (const skillId of pack.skillIds) {
+      const skill = SKILL_CATALOG.find((candidate) => candidate.id === skillId);
+      if (skill) addSkill(skill, activation.reason, activation.strength);
+    }
+  }
+
+  const activatedPackCandidates = candidates.filter(
+    (candidate) => candidate.packId,
+  );
+  const coreCandidates = candidates.filter((candidate) => !candidate.packId);
+  return [...activatedPackCandidates, ...coreCandidates].slice(
+    0,
+    MAX_ROUTED_SKILL_CANDIDATES,
+  );
+}
+
 function cloneSkillPack(pack: SkillPack): SkillPack {
   return {
     ...pack,
@@ -2592,6 +2781,12 @@ function isSkillDescriptorEnabled(
   skill: SkillDescriptor,
   options?: SkillCatalogOptions,
 ): boolean {
+  if (
+    options?.candidateSkillIds &&
+    !new Set(options.candidateSkillIds).has(skill.id)
+  ) {
+    return false;
+  }
   if (!skill.packId) return true;
   const enabledSkillPackIds = resolveEnabledSkillPackIds(options);
   if (!enabledSkillPackIds) return true;
@@ -3458,5 +3653,10 @@ export const keywordSkillMatcher = new KeywordSkillMatcher();
 export function selectPrimarySkill(
   input: SkillMatcherInput,
 ): SkillSelection | null {
-  return keywordSkillMatcher.match(input);
+  if (input.candidateSkillIds) return keywordSkillMatcher.match(input);
+
+  const candidateSkillIds = resolveEligibleSkillCandidates(input).map(
+    (candidate) => candidate.skill.id,
+  );
+  return keywordSkillMatcher.match({ ...input, candidateSkillIds });
 }
