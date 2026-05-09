@@ -1399,6 +1399,56 @@ describe("AgentLoop", () => {
     expect(completion?.summary).toContain("Quantity: 2");
   });
 
+  test("catalog order snapshot completion accepts catalog SKU aliases after trusted configuration", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\', \'What size solid state drive do you want?\': \'250\'}';
+    vi.spyOn(agent as any, "executeToolCall").mockResolvedValue(
+      "Configured catalog item.\nClicked submit control: Add to Cart",
+    );
+
+    await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
+      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+      toolArgs: { quantity: "1", submit: false },
+      toolResult:
+        "Configured catalog item.\n" +
+        "Configured:\n" +
+        "- Please specify an operating system=Windows 8\n" +
+        "- What size solid state drive do you want?=250 GB\n" +
+        "- Quantity=1",
+      tabId: 123,
+      mode: "sequential",
+    });
+    (agent as any).context.setSnapshot({
+      title: "Order Status: REQ0024215 | ServiceNow",
+      url: "https://example.service-now.com/checkout",
+      visibleContent:
+        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
+      pageContent:
+        "Order Status REQ0024215 Thank you, your request has been submitted Description Dell XPS 13 Quantity 1 Total $1,100.00",
+      elements: [],
+    });
+
+    const completion = (agent as any).maybeCompleteCatalogOrderFromSnapshot();
+
+    expect(completion?.outcome).toBe("completed");
+    expect(completion?.summary).toContain("REQ0024215");
+    expect(completion?.summary).toContain("Development Laptop (PC)");
+    expect(completion?.summary).toContain(
+      "Requested configuration verified before submission.",
+    );
+  });
+
   test("catalog order helper auto-submits after trusted configuration", async () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1432,6 +1482,40 @@ describe("AgentLoop", () => {
     expect(
       JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
     ).toEqual({ quantity: "10", submit: true, continueToCheckout: true });
+  });
+
+  test("catalog order helper waits when explicit configuration fields are missing", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Go to the hardware store and order 5 "Loaner Laptop" with configuration {\'How long do you need it for ?\': \'1 week\', \'When do you need it ?\': \'On time for the next meeting\'}';
+
+    expect(
+      (agent as any).shouldAutoSubmitConfiguredCatalogItem({
+        toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+        toolArgs: { quantity: "5", submit: false },
+        toolResult:
+          'Configured catalog item.\nConfigured:\n- Quantity=5\n- When do you need it ?="On time for the next meeting"',
+      }),
+    ).toBe(false);
+
+    expect(
+      (agent as any).shouldAutoSubmitConfiguredCatalogItem({
+        toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+        toolArgs: { quantity: "5", submit: false },
+        toolResult:
+          'Configured catalog item.\nConfigured:\n- Quantity=5\n- How long do you need it for ?=1 week\n- When do you need it ?="On time for the next meeting"',
+      }),
+    ).toBe(true);
   });
 
   test("auto-submit gate applies only to task-level ServiceNow record workflows", () => {

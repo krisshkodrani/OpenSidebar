@@ -1192,7 +1192,7 @@ const SKILL_BODIES: Record<
   "catalog-order-workflow": {
     procedureMarkdown: [
       "1. Use inspect_catalog_item to read product name, quantity controls, options, price/summary, and order controls.",
-      "2. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, checkbox states, and text requirements in one verified action.",
+      "2. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, dropdown/radio-like options, checkbox states, and text requirements in one verified action.",
       "3. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
       "4. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
       "5. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
@@ -1224,7 +1224,7 @@ const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
-        "Prefer configure_catalog_item over separate select_option, set_checkbox, type_text, and submit clicks when the requested configuration is explicit.",
+        "Prefer configure_catalog_item over separate select_option, radio-option clicks, set_checkbox, type_text, and submit clicks when the requested configuration is explicit, including dropdown/select/radio-like values.",
         "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
         "Once an Order Status page with a REQ number is visible, avoid clicking request/item links and call done from that confirmation page.",
       ],

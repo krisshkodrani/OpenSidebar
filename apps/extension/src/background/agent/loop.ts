@@ -312,6 +312,13 @@ export function isDoneSummaryAskingClarification(summary: string): boolean {
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
+type TrustedCatalogOrderSubmission = {
+  itemName: string | null;
+  quantity: string | null;
+  configuredResult: string;
+  submittedAtTurn: number;
+};
+
 type ParsedServiceNowModuleRequest = {
   application: string;
   path: string[];
@@ -533,6 +540,9 @@ export class AgentLoop {
   private listDetailCurrentTargetRead = false;
   /** Largest visible detail-action set observed for the active list/detail review. */
   private listDetailVisibleActionCount = 0;
+  /** Trusted catalog helper evidence waiting for the next request confirmation page. */
+  private trustedCatalogOrderSubmission: TrustedCatalogOrderSubmission | null =
+    null;
 
   /** Task planning state */
   private taskId: string | null = null;
@@ -5782,17 +5792,16 @@ export class AgentLoop {
     }
 
     const itemName = this.extractExpectedCatalogItemNameFromQuery();
+    const trustedSubmission = this.getFreshTrustedCatalogOrderSubmission();
     if (
       itemName &&
-      !pageText.toLowerCase().includes(itemName.toLowerCase())
+      !pageText.toLowerCase().includes(itemName.toLowerCase()) &&
+      !this.trustedCatalogOrderSubmissionCoversRequest(trustedSubmission)
     ) {
       return null;
     }
 
-    const quantity =
-      this.originalQuery.match(/\border\s+(\d+)\b/i)?.[1] ??
-      this.originalQuery.match(/\bquantity\s*(?:of|=|:)?\s*(\d+)\b/i)?.[1] ??
-      null;
+    const quantity = this.extractExpectedCatalogQuantityFromQuery();
     if (
       quantity &&
       /\bquantity\b/i.test(pageText) &&
@@ -5804,6 +5813,9 @@ export class AgentLoop {
     const summaryParts = [`Catalog order submitted: ${requestNumber}.`];
     if (itemName) summaryParts.push(`Item: ${itemName}.`);
     if (quantity) summaryParts.push(`Quantity: ${quantity}.`);
+    if (trustedSubmission) {
+      summaryParts.push("Requested configuration verified before submission.");
+    }
     const summary = summaryParts.join(" ");
     this.completeTaskResult(summary);
     this.traceRecorder?.recordEvent("catalog_order_snapshot_completed", {
@@ -5842,6 +5854,59 @@ export class AgentLoop {
     return namedItem ? namedItem.replace(/^["']|["']$/g, "").trim() : null;
   }
 
+  private extractExpectedCatalogQuantityFromQuery(): string | null {
+    return (
+      this.originalQuery.match(/\border\s+(\d+)\b/i)?.[1] ??
+      this.originalQuery.match(/\bquantity\s*(?:of|=|:)?\s*(\d+)\b/i)?.[1] ??
+      null
+    );
+  }
+
+  private extractExpectedCatalogConfigurationFieldsFromQuery(): string[] {
+    const fields = new Set<string>();
+    for (const match of this.originalQuery.matchAll(
+      /['"]([^'"]{2,160})['"]\s*:/g,
+    )) {
+      const field = match[1]?.replace(/\s+/g, " ").trim();
+      if (field) fields.add(field);
+    }
+    return [...fields];
+  }
+
+  private catalogConfigurationEvidenceCoversRequest(toolResult: string): boolean {
+    const expectedFields = this.extractExpectedCatalogConfigurationFieldsFromQuery();
+    if (expectedFields.length === 0) return true;
+    const normalize = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
+    const evidence = normalize(toolResult);
+    return expectedFields.every((field) => evidence.includes(normalize(field)));
+  }
+
+  private getFreshTrustedCatalogOrderSubmission(): TrustedCatalogOrderSubmission | null {
+    if (!this.trustedCatalogOrderSubmission) return null;
+    return this.turnCount - this.trustedCatalogOrderSubmission.submittedAtTurn <= 6
+      ? this.trustedCatalogOrderSubmission
+      : null;
+  }
+
+  private trustedCatalogOrderSubmissionCoversRequest(
+    submission: TrustedCatalogOrderSubmission | null,
+  ): boolean {
+    if (!submission) return false;
+    if (this.extractExpectedCatalogConfigurationFieldsFromQuery().length === 0) {
+      return false;
+    }
+    const itemName = this.extractExpectedCatalogItemNameFromQuery();
+    if (itemName && submission.itemName !== itemName) return false;
+    const quantity = this.extractExpectedCatalogQuantityFromQuery();
+    if (quantity && submission.quantity !== quantity) return false;
+    return this.catalogConfigurationEvidenceCoversRequest(
+      submission.configuredResult,
+    );
+  }
+
   private shouldAutoSubmitConfiguredCatalogItem(params: {
     toolName: string;
     toolArgs?: Record<string, unknown>;
@@ -5859,6 +5924,9 @@ export class AgentLoop {
         params.toolResult,
       )
     ) {
+      return false;
+    }
+    if (!this.catalogConfigurationEvidenceCoversRequest(params.toolResult)) {
       return false;
     }
     return true;
@@ -5933,6 +6001,17 @@ export class AgentLoop {
       content: result,
       tool_call_id: submitToolCall.id,
     });
+    if (
+      !/^Error:/i.test(result) &&
+      !/\b(?:incomplete|Missing|Mismatches|could not|not found)\b/i.test(result)
+    ) {
+      this.trustedCatalogOrderSubmission = {
+        itemName: this.extractExpectedCatalogItemNameFromQuery(),
+        quantity: this.extractExpectedCatalogQuantityFromQuery(),
+        configuredResult: params.toolResult,
+        submittedAtTurn: this.turnCount,
+      };
+    }
   }
 
   private completeSubmitFormReset(

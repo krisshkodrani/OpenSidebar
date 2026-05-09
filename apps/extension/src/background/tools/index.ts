@@ -8326,21 +8326,232 @@ export function registerTools() {
               const controls = [
                 ...document.querySelectorAll("select"),
               ] as HTMLSelectElement[];
-              const labelled = controls.find((el) =>
-                matches(labelsFor(el), field),
+              const labelled = controls.find(
+                (el) => matches(labelsFor(el), field) && selectOptionFor(el, value),
               );
               if (labelled) return labelled;
               const visibleFollowing = findFollowingControl(
                 field,
                 controls.filter(visible),
               );
-              if (visibleFollowing) return visibleFollowing;
+              if (visibleFollowing && selectOptionFor(visibleFollowing, value)) {
+                return visibleFollowing;
+              }
               const following = findFollowingControl(field, controls);
-              if (following) return following;
+              if (following && selectOptionFor(following, value)) return following;
               const valueMatches = controls.filter((el) =>
                 selectOptionFor(el, value),
               );
               return valueMatches.length === 1 ? valueMatches[0] : undefined;
+            };
+            const radioLikeControls = () =>
+              [
+                ...document.querySelectorAll(
+                  "input[type='radio'], [role='radio'], label[type='radio'], label[role='radio']",
+                ),
+              ] as Element[];
+            const radioGroupNameFor = (el: Element) =>
+              display(
+                el.getAttribute("name") ||
+                  el.getAttribute("data-name") ||
+                  el.getAttribute("aria-controls") ||
+                  "",
+              );
+            const radioInputFor = (el: Element): HTMLInputElement | null => {
+              if (el instanceof HTMLInputElement && el.type === "radio") {
+                return el;
+              }
+              const nested = el.querySelector?.("input[type='radio']");
+              if (nested instanceof HTMLInputElement) return nested;
+              const controlId =
+                el.getAttribute("for") ||
+                el.getAttribute("control") ||
+                el.getAttribute("aria-controls");
+              const controlled = controlId ? document.getElementById(controlId) : null;
+              if (
+                controlled instanceof HTMLInputElement &&
+                controlled.type === "radio"
+              ) {
+                return controlled;
+              }
+              const groupName = radioGroupNameFor(el);
+              if (!groupName) return null;
+              const groupInputs = [
+                ...document.querySelectorAll(
+                  `input[type='radio'][name="${escapeCss(groupName)}"]`,
+                ),
+              ] as HTMLInputElement[];
+              if (groupInputs.length === 0) return null;
+              const visibleGroupControls = radioLikeControls().filter(
+                (candidate) =>
+                  !(candidate instanceof HTMLInputElement) &&
+                  radioGroupNameFor(candidate) === groupName,
+              );
+              const labelIndex = visibleGroupControls.indexOf(el);
+              if (labelIndex >= 0 && groupInputs[labelIndex]) {
+                return groupInputs[labelIndex];
+              }
+              const labelText = norm(el.textContent);
+              return (
+                groupInputs.find((input) =>
+                  [
+                    ...directLabelsFor(input),
+                    input.closest("label")?.textContent,
+                    input.nextElementSibling?.matches("label")
+                      ? input.nextElementSibling.textContent
+                      : null,
+                  ].some((label) => {
+                    const candidate = norm(label);
+                    return (
+                      candidate &&
+                      labelText &&
+                      (candidate === labelText ||
+                        candidate.includes(labelText) ||
+                        labelText.includes(candidate))
+                    );
+                  }),
+                ) ?? null
+              );
+            };
+            const radioStoredValueFor = (el: Element) => {
+              const input = radioInputFor(el);
+              return display(
+                input?.value ||
+                  input?.id ||
+                  el.getAttribute("id") ||
+                  (el as HTMLInputElement).value ||
+                  el.getAttribute("value") ||
+                  el.textContent ||
+                  "",
+              );
+            };
+            const radioCheckedMarkerValueFor = (el: Element) => {
+              const input = radioInputFor(el);
+              return display(
+                input?.id ||
+                  el.getAttribute("id") ||
+                  (el as HTMLInputElement).value ||
+                  el.getAttribute("value") ||
+                  el.textContent ||
+                  "",
+              );
+            };
+            const radioDisplayValueFor = (el: Element) =>
+              display(
+                [
+                  el.getAttribute("aria-label"),
+                  el.getAttribute("title"),
+                  el.getAttribute("id")
+                    ? document.querySelector(
+                        `label[for="${escapeCss(el.getAttribute("id") || "")}"]`,
+                      )?.textContent
+                    : null,
+                  el.closest("label")?.textContent,
+                  el.nextElementSibling?.matches("label")
+                    ? el.nextElementSibling.textContent
+                    : null,
+                  el.textContent,
+                  (el as HTMLInputElement).value,
+                ]
+                  .filter(Boolean)
+                  .join(" "),
+              );
+            const radioOptionMatches = (el: Element, value: string) => {
+              const wanted = norm(value);
+              const compactWanted = wanted.replace(/[^a-z0-9]+/g, "");
+              const labels = [
+                radioDisplayValueFor(el),
+                ...directLabelsFor(el),
+                ...labelsFor(el).filter((label) => label.length <= 160),
+              ];
+              return labels.some((label) => {
+                const candidate = norm(label);
+                const compactCandidate = candidate.replace(/[^a-z0-9]+/g, "");
+                return (
+                  candidate === wanted ||
+                  candidate.includes(wanted) ||
+                  (compactWanted.length > 0 &&
+                    compactCandidate.includes(compactWanted))
+                );
+              });
+            };
+            const findRadioOptionControl = (field: string, value: string) => {
+              const controls = radioLikeControls();
+              const findAfterField = (candidates: Element[]) => {
+                for (const anchor of labelAnchorsFor(field)) {
+                  const after = candidates.filter((el) =>
+                    Boolean(anchor.compareDocumentPosition(el) & 4),
+                  );
+                  const match = after.find((el) => radioOptionMatches(el, value));
+                  if (match) return match;
+                }
+                return undefined;
+              };
+              const visibleMatch = findAfterField(controls.filter(visible));
+              if (visibleMatch) return visibleMatch;
+              const followingMatch = findAfterField(controls);
+              if (followingMatch) return followingMatch;
+              const valueMatches = controls.filter((el) =>
+                radioOptionMatches(el, value),
+              );
+              return valueMatches.length === 1 ? valueMatches[0] : undefined;
+            };
+            const setRadioOptionControlState = (control: Element) => {
+              const inputControl = radioInputFor(control);
+              const commitControl = inputControl || control;
+              const groupName =
+                radioGroupNameFor(commitControl) || radioGroupNameFor(control);
+              const selectedValue = radioStoredValueFor(commitControl);
+              const selectedCheckedMarker =
+                radioCheckedMarkerValueFor(commitControl);
+              if (control instanceof HTMLElement && visible(control)) {
+                control.click();
+              }
+              const groupControls = groupName
+                ? radioLikeControls().filter(
+                    (candidate) => radioGroupNameFor(candidate) === groupName,
+                  )
+                : [control];
+              for (const candidate of groupControls) {
+                const candidateInput = radioInputFor(candidate);
+                const selected =
+                  candidate === control ||
+                  (Boolean(inputControl) && candidateInput === inputControl);
+                if (candidateInput) {
+                  setNativeChecked(candidateInput, selected);
+                }
+                if (candidate instanceof HTMLElement) {
+                  candidate.setAttribute("checked", String(selected));
+                  candidate.setAttribute("aria-checked", String(selected));
+                }
+              }
+              const checkedRadioName = groupName
+                ? `${groupName}_checked_radio`
+                : null;
+              if (checkedRadioName && selectedCheckedMarker) {
+                document
+                  .querySelectorAll(
+                    `input[name="${escapeCss(checkedRadioName)}"], input[id="${escapeCss(checkedRadioName)}"]`,
+                  )
+                  .forEach((el) => {
+                    if (el instanceof HTMLInputElement) {
+                      setNativeValue(el, selectedCheckedMarker);
+                    }
+                  });
+              }
+              if (selectedValue) {
+                commitServiceNowValue(commitControl, selectedValue);
+                if (commitControl !== control) {
+                  commitServiceNowValue(control, selectedValue);
+                }
+              }
+              if (inputControl?.checked) {
+                return true;
+              }
+              const checked =
+                control.getAttribute("checked") ||
+                control.getAttribute("aria-checked");
+              return checked === "true";
             };
             const findCheckbox = (label: string) => {
               const controls = [
@@ -8481,29 +8692,42 @@ export function registerTools() {
 
             for (const field of input.optionFields) {
               const control = findOptionControl(field.field, field.value);
-              if (!control) {
-                mismatches.push(`Dropdown field not found: ${field.field}.`);
+              if (control) {
+                const option = selectOptionFor(control, field.value);
+                if (!option) {
+                  mismatches.push(
+                    `Option not found for ${field.field}: ${field.value}.`,
+                  );
+                  continue;
+                }
+                setNativeValue(control, option.value);
+                const selectedText =
+                  control.selectedOptions[0]?.textContent?.trim() ||
+                  control.value;
+                if (
+                  norm(control.value) !== norm(option.value) &&
+                  norm(selectedText) !== norm(field.value)
+                ) {
+                  mismatches.push(
+                    `Option ${field.field} is ${selectedText || control.value}.`,
+                  );
+                } else {
+                  configured.push(`${field.field}=${selectedText || option.value}`);
+                }
                 continue;
               }
-              const option = selectOptionFor(control, field.value);
-              if (!option) {
-                mismatches.push(
-                  `Dropdown option not found for ${field.field}: ${field.value}.`,
-                );
+              const radioControl = findRadioOptionControl(field.field, field.value);
+              if (!radioControl) {
+                mismatches.push(`Option field not found: ${field.field}.`);
                 continue;
               }
-              setNativeValue(control, option.value);
-              const selectedText =
-                control.selectedOptions[0]?.textContent?.trim() || control.value;
-              if (
-                norm(control.value) !== norm(option.value) &&
-                norm(selectedText) !== norm(field.value)
-              ) {
-                mismatches.push(
-                  `Dropdown ${field.field} is ${selectedText || control.value}.`,
-                );
+              const selected = setRadioOptionControlState(radioControl);
+              if (!selected) {
+                mismatches.push(`Option ${field.field} was not selected.`);
               } else {
-                configured.push(`${field.field}=${selectedText || option.value}`);
+                configured.push(
+                  `${field.field}=${radioDisplayValueFor(radioControl) || field.value}`,
+                );
               }
             }
 
@@ -8657,9 +8881,20 @@ export function registerTools() {
           .filter((result): result is Record<string, unknown> =>
             Boolean(result),
           );
+        const configuredCount = (plan: Record<string, unknown>) =>
+          Array.isArray(plan.configured) ? plan.configured.length : 0;
+        const mismatchCount = (plan: Record<string, unknown>) =>
+          Array.isArray(plan.mismatches) ? plan.mismatches.length : 0;
+        const bestMatched = plans
+          .filter((plan) => plan.matched === true)
+          .sort(
+            (a, b) =>
+              configuredCount(b) - configuredCount(a) ||
+              mismatchCount(a) - mismatchCount(b),
+          )[0];
         const selected =
           plans.find((plan) => plan.ok === true) ||
-          plans.find((plan) => plan.matched === true);
+          bestMatched;
 
         if (!selected) {
           return "Error: Could not find a catalog item form on the current page.";

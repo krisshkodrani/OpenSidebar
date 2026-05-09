@@ -6,7 +6,10 @@ import {
   isFinalCommunicationClick,
 } from "./action-exemption-policy";
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
-import { assessCatalogOrderPostConfirmationClick } from "./catalog-order-policy";
+import {
+  assessCatalogOrderConfigurationClick,
+  assessCatalogOrderPostConfirmationClick,
+} from "./catalog-order-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
   assessListDetailWorkflow,
@@ -479,6 +482,13 @@ export async function executeParallelToolCalls(
             toolName,
             args,
             snapshot,
+          }) ||
+          assessCatalogOrderConfigurationClick({
+            selectedSkillId: host.selectedSkillId,
+            toolName,
+            args,
+            snapshot,
+            originalQuery: host.originalQuery,
           });
         if (catalogConfirmationClickBlock) {
           host.log.warn("agent", "Catalog confirmation drill-in click blocked", {
