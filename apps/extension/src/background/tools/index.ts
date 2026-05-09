@@ -194,6 +194,8 @@ function withTimeout<T>(
 }
 
 const CONFIGURE_SERVICENOW_FORM_SCRIPT_TIMEOUT_MS = 25_000;
+const SERVICENOW_RECORD_LOOKUP_TIMEOUT_MS = 12_000;
+const APPLY_LIST_FILTER_SCRIPT_TIMEOUT_MS = 25_000;
 
 async function tryInPageHistoryBack(tabId: number): Promise<void> {
   await chrome.scripting.executeScript({
@@ -264,6 +266,577 @@ async function resolveServiceNowRecordUrl(
     );
   } catch {
     return null;
+  }
+}
+
+async function serviceNowRecordExistsBySysId(
+  tabId: number,
+  tableName: string,
+  sysId: string,
+): Promise<boolean> {
+  if (
+    !/^[a-z0-9_]+$/i.test(tableName) ||
+    !/^[0-9a-f]{32}$/i.test(sysId)
+  ) {
+    return false;
+  }
+  try {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: "MAIN" as any,
+        func: async (input: { tableName: string; sysId: string }) => {
+          const isServiceNowHost =
+            location.hostname.endsWith(".service-now.com") ||
+            location.hostname.endsWith(".servicenow.com");
+          if (!isServiceNowHost) return false;
+          const params = new URLSearchParams({
+            sysparm_query: `sys_id=${input.sysId}`,
+            sysparm_fields: "sys_id",
+            sysparm_limit: "1",
+          });
+          const headers: Record<string, string> = {
+            Accept: "application/json",
+          };
+          const token = String((window as any).g_ck || "");
+          if (token) headers["X-UserToken"] = token;
+          const response = await fetch(
+            `/api/now/table/${encodeURIComponent(input.tableName)}?${params.toString()}`,
+            { credentials: "same-origin", headers },
+          );
+          if (!response.ok) return false;
+          const payload = await response.json();
+          const record = Array.isArray(payload?.result)
+            ? payload.result[0]
+            : null;
+          const foundSysId =
+            typeof record?.sys_id === "string"
+              ? record.sys_id
+              : typeof record?.sys_id?.value === "string"
+                ? record.sys_id.value
+                : "";
+          return foundSysId.toLowerCase() === input.sysId.toLowerCase();
+        },
+        args: [{ tableName, sysId: sysId.toLowerCase() }],
+      }),
+      SERVICENOW_RECORD_LOOKUP_TIMEOUT_MS,
+      "ServiceNow sys_id lookup",
+    );
+    return results.some((result) => result.result === true);
+  } catch {
+    return false;
+  }
+}
+
+type ServiceNowSubmittedRecordField = {
+  name: string;
+  label: string;
+  value: string;
+};
+
+type ServiceNowRecordLookupOptions = {
+  attempts?: number;
+  delayMs?: number;
+  timeoutMs?: number;
+};
+
+function hasServiceNowIdentityFields(
+  fields: ServiceNowSubmittedRecordField[],
+): boolean {
+  return fields.some((field) => {
+    if (!/^[a-z0-9_]+$/i.test(field.name) || !field.value.trim()) {
+      return false;
+    }
+    const identity = `${field.name} ${field.label}`;
+    return /\b(?:user[_\s-]*name|user\s*id|serial[_\s-]*number|asset[_\s-]*tag|email)\b/i.test(
+      identity,
+    );
+  });
+}
+
+async function resolveServiceNowRecordSysIdByFields(
+  tabId: number,
+  tableName: string,
+  fields: ServiceNowSubmittedRecordField[],
+  options: ServiceNowRecordLookupOptions = {},
+): Promise<string | null> {
+  if (!/^[a-z0-9_]+$/i.test(tableName)) return null;
+  const identityFields = fields
+    .map((field) => ({
+      name: String(field.name || "").trim(),
+      label: String(field.label || "").trim(),
+      value: String(field.value || "").trim(),
+    }))
+    .filter((field) => {
+      if (!/^[a-z0-9_]+$/i.test(field.name) || !field.value) return false;
+      const identity = `${field.name} ${field.label}`;
+      return /\b(?:user[_\s-]*name|user\s*id|serial[_\s-]*number|asset[_\s-]*tag|email)\b/i.test(
+        identity,
+      );
+    });
+  if (identityFields.length === 0) return null;
+
+  try {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: "MAIN" as any,
+        func: async (input: {
+          tableName: string;
+          fields: ServiceNowSubmittedRecordField[];
+          attempts: number;
+          delayMs: number;
+        }) => {
+          const isServiceNowHost =
+            location.hostname.endsWith(".service-now.com") ||
+            location.hostname.endsWith(".servicenow.com");
+          if (!isServiceNowHost) return null;
+          const delay = (ms: number) =>
+            new Promise((resolve) => setTimeout(resolve, ms));
+          const headers: Record<string, string> = {
+            Accept: "application/json",
+          };
+          const token = String((window as any).g_ck || "");
+          if (token) headers["X-UserToken"] = token;
+          const attempts = Math.max(1, Math.min(20, input.attempts || 16));
+          const delayMs = Math.max(0, Math.min(1000, input.delayMs || 500));
+          for (let attempt = 0; attempt < attempts; attempt++) {
+            for (const field of input.fields) {
+              const cleanValue = field.value.replace(/\^/g, "");
+              const params = new URLSearchParams({
+                sysparm_query: `${field.name}=${cleanValue}^ORDERBYDESCsys_created_on`,
+                sysparm_fields: `sys_id,${field.name},sys_created_on`,
+                sysparm_limit: "1",
+              });
+              const response = await fetch(
+                `/api/now/table/${encodeURIComponent(input.tableName)}?${params.toString()}`,
+                { credentials: "same-origin", headers },
+              );
+              if (!response.ok) continue;
+              const payload = await response.json();
+              const record = Array.isArray(payload?.result)
+                ? payload.result[0]
+                : null;
+              const sysId =
+                typeof record?.sys_id === "string"
+                  ? record.sys_id
+                  : typeof record?.sys_id?.value === "string"
+                    ? record.sys_id.value
+                    : "";
+              if (/^[0-9a-f]{32}$/i.test(sysId)) return sysId.toLowerCase();
+            }
+            if (attempt < attempts - 1 && delayMs > 0) {
+              await delay(delayMs);
+            }
+          }
+          return null;
+        },
+        args: [
+          {
+            tableName,
+            fields: identityFields,
+            attempts: options.attempts ?? 16,
+            delayMs: options.delayMs ?? 500,
+          },
+        ],
+      }),
+      options.timeoutMs ?? SERVICENOW_RECORD_LOOKUP_TIMEOUT_MS,
+      "ServiceNow identity-field lookup",
+    );
+    return (
+      results
+        .map((result) => result.result)
+        .find(
+          (value): value is string =>
+            typeof value === "string" && /^[0-9a-f]{32}$/i.test(value),
+        ) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+type ServiceNowNativeSubmitRetryResult = {
+  ok: boolean;
+  method?: string;
+  actionName?: string;
+  submittedSysId?: string;
+  reason?: string;
+};
+
+async function retryServiceNowNativeSubmit(
+  tabId: number,
+  target: { tabId: number; frameIds?: number[] },
+  preferredActionName: string,
+): Promise<ServiceNowNativeSubmitRetryResult | null> {
+  try {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({
+        target,
+        world: "MAIN" as any,
+        func: (input: { actionName: string }) => {
+          const gForm = (window as any).g_form;
+          const isServiceNowHost =
+            location.hostname.endsWith(".service-now.com") ||
+            location.hostname.endsWith(".servicenow.com");
+          if (!isServiceNowHost || !gForm) {
+            return {
+              ok: false,
+              reason: "not_servicenow_form_frame",
+            };
+          }
+
+          const escapeCss = (value: string) =>
+            (window as any).CSS?.escape
+              ? (window as any).CSS.escape(value)
+              : value.replace(/["\\]/g, "\\$&");
+          const currentSysId = () => {
+            try {
+              const sysId = String(gForm.getUniqueValue?.() || "");
+              if (/^[0-9a-f]{32}$/i.test(sysId)) return sysId.toLowerCase();
+            } catch {
+              // Fall back to controls below.
+            }
+            const tableName = (() => {
+              try {
+                return String(gForm.getTableName?.() || "");
+              } catch {
+                return "";
+              }
+            })();
+            const candidates = [
+              tableName ? `${tableName}.sys_id` : "",
+              "sys_uniqueValue",
+              "sys_id",
+            ].filter(Boolean);
+            for (const name of candidates) {
+              const control = document.querySelector(
+                `[name="${escapeCss(name)}"], #${escapeCss(name)}`,
+              ) as HTMLInputElement | null;
+              const value = String(control?.value || "");
+              if (/^[0-9a-f]{32}$/i.test(value)) return value.toLowerCase();
+            }
+            return "";
+          };
+          const actionNameFor = (control: HTMLElement | null) => {
+            if (!control) return "";
+            const candidates = [
+              control.getAttribute("name"),
+              control.getAttribute("value"),
+              control.getAttribute("id"),
+              control.getAttribute("data-action-name"),
+            ].filter((value): value is string => Boolean(value));
+            return (
+              candidates.find((value) =>
+                /\b(?:sysverb_insert|sysverb_update|sysverb_save|sysverb_submit)\b/i.test(
+                  value,
+                ),
+              ) ||
+              candidates.find((value) => /\bsysverb_/i.test(value)) ||
+              ""
+            );
+          };
+          const submitControl = Array.from(
+            document.querySelectorAll(
+              "button, input[type='submit'], input[type='button'], [role='button']",
+            ),
+          ).find((control): control is HTMLElement => {
+            if (!(control instanceof HTMLElement)) return false;
+            const actionName = actionNameFor(control);
+            if (actionName) return true;
+            const text = [
+              control.textContent,
+              control.getAttribute("value"),
+              control.getAttribute("aria-label"),
+              control.getAttribute("title"),
+              control.getAttribute("id"),
+              control.getAttribute("name"),
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return /\b(submit|save|update|insert)\b/i.test(text);
+          });
+          const actionName =
+            (/^sysverb_[a-z0-9_]+$/i.test(input.actionName)
+              ? input.actionName
+              : "") ||
+            actionNameFor(submitControl ?? null) ||
+            "sysverb_insert";
+          const formElement =
+            gForm.getFormElement?.() ||
+            submitControl?.closest("form") ||
+            document.querySelector("form");
+
+          if (
+            typeof (window as any).gsftSubmit === "function" &&
+            formElement
+          ) {
+            try {
+              (window as any).gsftSubmit(null, formElement, actionName);
+              return {
+                ok: true,
+                method: "gsftSubmit",
+                actionName,
+                submittedSysId: currentSysId(),
+              };
+            } catch {
+              // Fall back to g_form.submit below.
+            }
+          }
+
+          if (typeof gForm.submit === "function") {
+            try {
+              gForm.submit(actionName);
+              return {
+                ok: true,
+                method: "g_form.submit",
+                actionName,
+                submittedSysId: currentSysId(),
+              };
+            } catch {
+              // Report a generic unavailable fallback below.
+            }
+          }
+
+          return {
+            ok: false,
+            reason: "servicenow_submit_api_unavailable",
+          };
+        },
+        args: [{ actionName: preferredActionName }],
+      }),
+      5_000,
+      "ServiceNow native submit retry",
+    );
+    return (
+      results
+        .map((result) => result.result as ServiceNowNativeSubmitRetryResult)
+        .find((result) => result?.ok === true) ||
+      results
+        .map((result) => result.result as ServiceNowNativeSubmitRetryResult)
+        .find((result) => result && result.reason !== "not_servicenow_form_frame") ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+function serviceNowRecordUrlForSysId(
+  baseUrl: string,
+  tableName: string,
+  sysId: string,
+): string {
+  if (
+    !/^[a-z0-9_]+$/i.test(tableName) ||
+    !/^[0-9a-f]{32}$/i.test(sysId)
+  ) {
+    return "";
+  }
+  try {
+    const origin = new URL(baseUrl).origin;
+    const target = `${tableName}.do?sys_id=${sysId.toLowerCase()}`;
+    return `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+  } catch {
+    return "";
+  }
+}
+
+async function collectServiceNowSubmitDiagnostics(
+  tabId: number,
+): Promise<string[]> {
+  try {
+    const results = await withTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: "MAIN" as any,
+        func: () => {
+          const gForm = (window as any).g_form;
+          const isServiceNowContext =
+            Boolean(gForm) ||
+            location.hostname.endsWith(".service-now.com") ||
+            location.hostname.endsWith(".servicenow.com");
+          if (!isServiceNowContext) return null;
+
+          const cleanText = (value: unknown): string =>
+            String(value ?? "")
+              .replace(/\s+/g, " ")
+              .trim();
+          const lines: string[] = [];
+          const addLine = (value: unknown) => {
+            const text = cleanText(value);
+            if (!text || text.length > 240) return;
+            if (!lines.some((line) => line.toLowerCase() === text.toLowerCase())) {
+              lines.push(text);
+            }
+          };
+          const escapeCss = (value: string) => {
+            try {
+              return CSS.escape(value);
+            } catch {
+              return value.replace(/["\\]/g, "\\$&");
+            }
+          };
+          const fieldName = (value: unknown): string =>
+            cleanText(value).replace(/^[a-z0-9_]+\./i, "");
+          const labelForField = (name: string): string => {
+            const cleanName = fieldName(name);
+            try {
+              const label = cleanText(gForm?.getLabelOf?.(cleanName));
+              if (label) return `${label} (${cleanName})`;
+            } catch {
+              // Fall through to DOM labels.
+            }
+            const selectors = [
+              `[for="${escapeCss(name)}"]`,
+              `[for="${escapeCss(cleanName)}"]`,
+              `[for$=".${escapeCss(cleanName)}"]`,
+            ];
+            for (const selector of selectors) {
+              const label = document.querySelector(selector);
+              const text = cleanText(label?.textContent);
+              if (text) return `${text} (${cleanName})`;
+            }
+            return cleanName || name;
+          };
+          const valueForField = (name: string): string => {
+            const cleanName = fieldName(name);
+            try {
+              const value = cleanText(gForm?.getValue?.(cleanName));
+              if (value) return value;
+            } catch {
+              // Fall through to DOM controls.
+            }
+            try {
+              const displayBox = gForm?.getDisplayBox?.(cleanName);
+              const displayValue = cleanText(displayBox?.value);
+              if (displayValue) return displayValue;
+            } catch {
+              // Fall through to DOM controls.
+            }
+            try {
+              const control = gForm?.getControl?.(cleanName);
+              const value = cleanText(control?.value);
+              if (value) return value;
+            } catch {
+              // Fall through to selectors.
+            }
+            const control = document.querySelector(
+              [
+                `[name="${escapeCss(name)}"]`,
+                `[name$=".${escapeCss(cleanName)}"]`,
+                `#${escapeCss(name)}`,
+                `#${escapeCss(cleanName)}`,
+              ].join(", "),
+            ) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+            return cleanText(control?.value);
+          };
+          const missingFields: string[] = [];
+          const addMissingField = (value: unknown) => {
+            const name = fieldName(value);
+            if (!name) return;
+            const label = labelForField(name);
+            if (
+              !missingFields.some(
+                (field) => field.toLowerCase() === label.toLowerCase(),
+              )
+            ) {
+              missingFields.push(label);
+            }
+          };
+
+          try {
+            const missing = gForm?.getMissingFields?.();
+            if (Array.isArray(missing)) {
+              for (const field of missing) addMissingField(field);
+            } else if (typeof missing === "string") {
+              for (const field of missing.split(/[,;\n]+/)) {
+                addMissingField(field);
+              }
+            }
+          } catch {
+            // Some ServiceNow forms expose getMissingFields only after submit.
+          }
+
+          try {
+            const fieldNames = Array.isArray(gForm?.getFieldNames?.())
+              ? gForm.getFieldNames()
+              : [];
+            for (const name of fieldNames) {
+              let mandatory = false;
+              try {
+                mandatory = Boolean(gForm?.isMandatory?.(name));
+              } catch {
+                mandatory = false;
+              }
+              if (!mandatory) continue;
+              const value = valueForField(name);
+              if (!value || /^--\s*none\s*--$/i.test(value)) {
+                addMissingField(name);
+              }
+            }
+          } catch {
+            // DOM messages still provide useful diagnostics below.
+          }
+
+          if (missingFields.length) {
+            addLine(`Missing mandatory fields: ${missingFields.join(", ")}`);
+          }
+
+          const messageSelectors = [
+            ".outputmsg_text",
+            ".outputmsg",
+            ".notification",
+            ".notification-message",
+            ".fieldmsg",
+            "[role='alert']",
+            ".form_message",
+            ".message",
+            ".error",
+          ].join(",");
+          for (const node of Array.from(
+            document.querySelectorAll(messageSelectors),
+          )) {
+            const text = cleanText(node.textContent);
+            if (
+              /\b(?:mandatory|required|invalid|error|not filled|cannot be blank|must be filled|please enter|not submitted)\b/i.test(
+                text,
+              )
+            ) {
+              addLine(text);
+            }
+          }
+
+          const bodyLines = cleanText(document.body?.innerText || "")
+            .split(/(?<=[.!?])\s+|\n+/)
+            .slice(0, 80);
+          for (const text of bodyLines) {
+            if (
+              /\b(?:mandatory|required|invalid|not filled|cannot be blank|must be filled|please enter|not submitted)\b/i.test(
+                text,
+              )
+            ) {
+              addLine(text);
+            }
+          }
+
+          return lines.slice(0, 8);
+        },
+        args: [],
+      }),
+      3_000,
+      "ServiceNow submit diagnostics",
+    );
+    return results
+      .flatMap((result) => (Array.isArray(result.result) ? result.result : []))
+      .filter((value): value is string => typeof value === "string")
+      .filter((value, index, all) => {
+        const lower = value.toLowerCase();
+        return all.findIndex((candidate) => candidate.toLowerCase() === lower) === index;
+      })
+      .slice(0, 8);
+  } catch {
+    return [];
   }
 }
 
@@ -6031,6 +6604,17 @@ export function registerTools() {
                 }
                 return "";
               };
+              const displayOf = (value: unknown): string => {
+                if (typeof value === "string") return value;
+                if (value && typeof value === "object") {
+                  const obj = value as Record<string, unknown>;
+                  if (typeof obj.display_value === "string") {
+                    return obj.display_value;
+                  }
+                  if (typeof obj.value === "string") return obj.value;
+                }
+                return "";
+              };
               const cleanQueryValue = (value: string): string =>
                 value.replace(/\^/g, "").trim();
               const serviceNowListMatch = /\/([^/?#]+)_list\.do\b/i.exec(
@@ -6150,7 +6734,9 @@ export function registerTools() {
                     "cmdb",
                   ],
                   alm_asset: ["alm_asset", "cmdb_ci", "cmdb"],
+                  change_request: ["change_request", "task"],
                   incident: ["incident", "task"],
+                  problem: ["problem", "task"],
                 };
                 return inherited[normalized] || [normalized];
               };
@@ -6167,6 +6753,36 @@ export function registerTools() {
                   addField("substatus", "Substate", "choice", "");
                   addField("vendor", "Vendor", "reference", "core_company");
                   addField("cost", "Cost", "decimal", "");
+                }
+                if (table === "sc_cat_item") {
+                  addField("type", "Type", "choice", "");
+                  addField("category", "Category", "reference", "sc_category");
+                  addField("active", "Active", "boolean", "");
+                }
+                if (
+                  table === "change_request" ||
+                  table === "incident" ||
+                  table === "problem"
+                ) {
+                  addField("assigned_to", "Assigned to", "reference", "sys_user");
+                  addField("short_description", "Short description", "string", "");
+                  addField("state", "State", "choice", "");
+                }
+                if (table === "change_request") {
+                  addField("chg_model", "Model", "reference", "chg_model");
+                }
+                if (table === "incident") {
+                  addField("caller_id", "Caller", "reference", "sys_user");
+                  addField("category", "Category", "choice", "");
+                  addField("priority", "Priority", "choice", "");
+                  addField("impact", "Impact", "choice", "");
+                  addField("urgency", "Urgency", "choice", "");
+                  addField(
+                    "assignment_group",
+                    "Assignment group",
+                    "reference",
+                    "sys_user_group",
+                  );
                 }
               };
 
@@ -6203,31 +6819,7 @@ export function registerTools() {
 
               addCommonListFields(tableName);
 
-              const hasKnownField = (requestedField: string): boolean => {
-                const normalized = keyFor(requestedField);
-                const snake = normalize(requestedField).replace(
-                  /[^a-z0-9]+/g,
-                  "_",
-                );
-                if (fields.has(snake) || fields.has(`${snake}_id`)) return true;
-                for (const field of fields.values()) {
-                  if (
-                    keyFor(field.name) === normalized ||
-                    keyFor(field.label) === normalized ||
-                    keyFor(field.label).includes(normalized) ||
-                    normalized.includes(keyFor(field.label))
-                  ) {
-                    return true;
-                  }
-                }
-                return false;
-              };
-
-              if (
-                !payload.conditions.every((condition) =>
-                  hasKnownField(condition.field),
-                )
-              ) {
+              {
                 const dictRecords = await fetchJson(
                   "/api/now/table/sys_dictionary",
                   {
@@ -6247,6 +6839,7 @@ export function registerTools() {
                     unwrap(record.reference),
                   );
                 }
+                addCommonListFields(tableName);
               }
 
               const byKey = new Map<string, FieldMeta>();
@@ -6259,8 +6852,6 @@ export function registerTools() {
                 requestedField: string,
               ): FieldMeta | null => {
                 const normalized = keyFor(requestedField);
-                const direct = byKey.get(normalized);
-                if (direct) return direct;
                 const snake = normalize(requestedField).replace(
                   /[^a-z0-9]+/g,
                   "_",
@@ -6268,6 +6859,8 @@ export function registerTools() {
                 if (fields.has(snake)) return fields.get(snake) || null;
                 if (fields.has(`${snake}_id`))
                   return fields.get(`${snake}_id`) || null;
+                const direct = byKey.get(normalized);
+                if (direct) return direct;
                 for (const field of fields.values()) {
                   if (
                     keyFor(field.label).includes(normalized) ||
@@ -6279,9 +6872,71 @@ export function registerTools() {
                 return null;
               };
 
+              const resolveValueFromCurrentTable = async (
+                field: FieldMeta,
+                displayValue: string,
+                conditionIndex: number,
+              ): Promise<string> => {
+                if (!displayValue.trim()) return "";
+                const predicates: string[] = [];
+                for (
+                  let index = 0;
+                  index < payload.conditions.length;
+                  index += 1
+                ) {
+                  if (index === conditionIndex) continue;
+                  const condition = payload.conditions[index];
+                  const otherField = resolveField(condition.field);
+                  if (!otherField) continue;
+                  const operator = normalize(condition.operator || "is");
+                  const value = condition.value ?? "";
+                  const rawType = normalize(otherField.type);
+                  if (
+                    operator.includes("not") ||
+                    operator.includes("start") ||
+                    operator.includes("empty") ||
+                    !value.trim() ||
+                    rawType.includes("reference") ||
+                    rawType.includes("choice") ||
+                    rawType === "boolean" ||
+                    rawType === "integer"
+                  ) {
+                    continue;
+                  }
+                  predicates.push(
+                    `${otherField.name}=${cleanQueryValue(value)}`,
+                  );
+                  if (predicates.length >= 3) break;
+                }
+                if (predicates.length === 0) return "";
+                const records = await fetchJson(
+                  `/api/now/table/${encodeURIComponent(tableName)}`,
+                  {
+                    sysparm_query: predicates.join("^"),
+                    sysparm_fields: field.name,
+                    sysparm_limit: "5",
+                    sysparm_display_value: "all",
+                  },
+                );
+                const wanted = normalize(displayValue);
+                for (const record of records) {
+                  const cell = record[field.name];
+                  const rawValue = unwrap(cell);
+                  const display = displayOf(cell);
+                  if (
+                    normalize(display) === wanted ||
+                    normalize(rawValue) === wanted
+                  ) {
+                    return rawValue || display;
+                  }
+                }
+                return "";
+              };
+
               const resolveChoiceValue = async (
                 field: FieldMeta,
                 displayValue: string,
+                conditionIndex: number,
               ): Promise<string> => {
                 const incidentChoiceFallbacks: Record<
                   string,
@@ -6353,6 +7008,12 @@ export function registerTools() {
                   return keyFor(value) === wanted || keyFor(label) === wanted;
                 });
                 if (choice) return unwrap(choice.value);
+                const recordValue = await resolveValueFromCurrentTable(
+                  field,
+                  displayValue,
+                  conditionIndex,
+                );
+                if (recordValue) return recordValue;
                 if (field.name === "asset_function") {
                   const assetFunctionFallbacks: Record<string, string> = {
                     primary: "primary",
@@ -6360,6 +7021,10 @@ export function registerTools() {
                   };
                   const fallback = assetFunctionFallbacks[wanted];
                   if (fallback) return fallback;
+                }
+                if (/^--\s*none\s*--$/i.test(displayValue.trim())) return "";
+                if (/^[a-z][a-z0-9 _-]*$/i.test(displayValue.trim())) {
+                  return displayValue.trim().toLowerCase().replace(/\s+/g, "_");
                 }
                 return displayValue;
               };
@@ -6379,9 +7044,17 @@ export function registerTools() {
                       normalize(displayValue),
                 );
                 if (override?.sysId) return override.sysId;
+                const recordValue = await resolveValueFromCurrentTable(
+                  field,
+                  displayValue,
+                  conditionIndex,
+                );
+                if (recordValue) return recordValue;
                 const safe = cleanQueryValue(displayValue);
                 const queryFields = [
                   "name",
+                  "title",
+                  "label",
                   "display_name",
                   "number",
                   "user_name",
@@ -6394,12 +7067,14 @@ export function registerTools() {
                   fetchJson(referencePath, {
                     sysparm_query: query,
                     sysparm_fields:
-                      "sys_id,name,display_name,number,user_name,email,first_name,last_name",
+                      "sys_id,name,title,label,display_name,number,user_name,email,first_name,last_name",
                     sysparm_limit: "5",
                     sysparm_display_value: "all",
                   });
                 const exactQuery = [
                   "name",
+                  "title",
+                  "label",
                   "display_name",
                   "number",
                   "user_name",
@@ -6420,7 +7095,14 @@ export function registerTools() {
                 }
                 if (records.length === 0) {
                   records = await fetchReferenceRecords(
-                    ["name", "display_name", "user_name", "email"]
+                    [
+                      "name",
+                      "title",
+                      "label",
+                      "display_name",
+                      "user_name",
+                      "email",
+                    ]
                       .map((queryField) => `${queryField}LIKE${safe}`)
                       .join("^OR"),
                   );
@@ -6454,7 +7136,11 @@ export function registerTools() {
                   rawType === "integer"
                 ) {
                   return cleanQueryValue(
-                    await resolveChoiceValue(field, displayValue),
+                    await resolveChoiceValue(
+                      field,
+                      displayValue,
+                      conditionIndex,
+                    ),
                   );
                 }
                 if (rawType.includes("reference") || field.reference) {
@@ -6571,7 +7257,7 @@ export function registerTools() {
               },
             ],
           }),
-          12_000,
+          APPLY_LIST_FILTER_SCRIPT_TIMEOUT_MS,
           "apply_list_filter planning",
         );
 
@@ -6847,7 +7533,9 @@ export function registerTools() {
                     "cmdb",
                   ],
                   alm_asset: ["alm_asset", "cmdb_ci", "cmdb"],
+                  change_request: ["change_request", "task"],
                   incident: ["incident", "task"],
+                  problem: ["problem", "task"],
                 };
                 return inherited[normalized] || [normalized];
               };
@@ -6864,6 +7552,20 @@ export function registerTools() {
                   addField("substatus", "Substate", "choice", "");
                   addField("vendor", "Vendor", "reference", "core_company");
                   addField("cost", "Cost", "decimal", "");
+                }
+                if (
+                  table === "change_request" ||
+                  table === "incident" ||
+                  table === "problem"
+                ) {
+                  addField("assigned_to", "Assigned to", "reference", "sys_user");
+                  addField("closed_by", "Closed by", "reference", "sys_user");
+                  addField("description", "Description", "string", "");
+                  addField("short_description", "Short description", "string", "");
+                  addField("state", "State", "choice", "");
+                }
+                if (table === "change_request") {
+                  addField("chg_model", "Model", "reference", "chg_model");
                 }
               };
 
@@ -6952,8 +7654,6 @@ export function registerTools() {
                 requestedField: string,
               ): FieldMeta | null => {
                 const normalized = keyFor(requestedField);
-                const direct = byKey.get(normalized);
-                if (direct) return direct;
                 const snake = normalize(requestedField).replace(
                   /[^a-z0-9]+/g,
                   "_",
@@ -6961,6 +7661,8 @@ export function registerTools() {
                 if (fields.has(snake)) return fields.get(snake) || null;
                 if (fields.has(`${snake}_id`))
                   return fields.get(`${snake}_id`) || null;
+                const direct = byKey.get(normalized);
+                if (direct) return direct;
                 const partial = [...fields.values()]
                   .filter((field) => {
                     const labelKey = keyFor(field.label);
@@ -7216,6 +7918,19 @@ export function registerTools() {
               value: field.value,
             }))
         : [];
+      const optionFields = Array.isArray(args.optionFields)
+        ? args.optionFields
+            .filter(
+              (field: any) =>
+                typeof field?.field === "string" &&
+                typeof field?.value === "string" &&
+                field.field.trim(),
+            )
+            .map((field: any) => ({
+              field: field.field.trim(),
+              value: field.value,
+            }))
+        : [];
       const checkboxes = Array.isArray(args.checkboxes)
         ? args.checkboxes
             .filter(
@@ -7240,13 +7955,17 @@ export function registerTools() {
         const results = await chrome.scripting.executeScript({
           target: { tabId, allFrames: true },
           world: "MAIN" as any,
-          func: (input: {
+          func: async (input: {
             quantity: string | null;
             textFields: Array<{ field: string; value: string }>;
+            optionFields: Array<{ field: string; value: string }>;
             checkboxes: Array<{ label: string; checked: boolean }>;
             submit: boolean;
             submitButton: string | null;
+            continueToCheckout: boolean;
           }) => {
+            const sleep = (ms: number) =>
+              new Promise((resolve) => setTimeout(resolve, ms));
             const norm = (value: unknown) =>
               String(value ?? "")
                 .replace(/\s+/g, " ")
@@ -7272,21 +7991,35 @@ export function registerTools() {
               window.CSS?.escape
                 ? window.CSS.escape(value)
                 : value.replace(/["\\]/g, "\\$&");
-            const labelsFor = (el: Element): string[] => {
+            const directLabelsFor = (el: Element): string[] => {
               const control = el as
                 | HTMLInputElement
                 | HTMLSelectElement
                 | HTMLTextAreaElement;
-              const labels = [
+              return [
                 el.getAttribute("aria-label"),
+                el.getAttribute("aria-labelledby"),
                 el.getAttribute("title"),
+                el.getAttribute("data-original-title"),
                 el.getAttribute("placeholder"),
                 el.getAttribute("name"),
                 el.getAttribute("id"),
                 el.getAttribute("control"),
                 control.value,
                 el.textContent,
-              ];
+              ]
+                .map(display)
+                .filter(Boolean);
+            };
+            const labelsFor = (el: Element): string[] => {
+              const labels = directLabelsFor(el);
+              const labelledBy = el.getAttribute("aria-labelledby");
+              if (labelledBy) {
+                for (const labelId of labelledBy.split(/\s+/)) {
+                  if (!labelId) continue;
+                  labels.push(document.getElementById(labelId)?.textContent);
+                }
+              }
               const id = el.getAttribute("id");
               if (id) {
                 document
@@ -7297,6 +8030,33 @@ export function registerTools() {
               if (closestLabel) labels.push(closestLabel.textContent);
               const previous = el.previousElementSibling;
               if (previous) labels.push(previous.textContent);
+              let ancestor = el.parentElement;
+              let depth = 0;
+              while (ancestor && ancestor !== document.body && depth < 4) {
+                const ancestorText = display(
+                  ancestor.innerText || ancestor.textContent,
+                );
+                if (ancestorText && ancestorText.length <= 300) {
+                  labels.push(ancestorText);
+                }
+                Array.from(ancestor.children)
+                  .filter(
+                    (node) =>
+                      node !== el &&
+                      node.matches(
+                        "label, [aria-label], [title], .label, .question_text, .sc-variable-label",
+                      ),
+                  )
+                  .forEach((node) => {
+                    labels.push(
+                      node.getAttribute("aria-label") ||
+                        node.getAttribute("title") ||
+                        node.textContent,
+                    );
+                  });
+                ancestor = ancestor.parentElement;
+                depth += 1;
+              }
               return labels.map(display).filter(Boolean);
             };
             const matches = (labels: string[], expected: string) => {
@@ -7306,10 +8066,79 @@ export function registerTools() {
                 return haystack === needle || haystack.includes(needle);
               });
             };
+            const triggerLibraryEvents = (
+              el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+            ) => {
+              const win = (el.ownerDocument?.defaultView || window) as any;
+              for (const candidate of [win.jQuery, win.$j]) {
+                if (typeof candidate !== "function") continue;
+                try {
+                  const wrapped = candidate(el);
+                  wrapped?.trigger?.("change");
+                  wrapped?.trigger?.("input");
+                } catch {
+                  // Library hooks are best-effort; native events remain primary.
+                }
+              }
+            };
+            const serviceNowFieldNamesFor = (el: Element) => {
+              const rawNames = [
+                el.getAttribute("name"),
+                el.getAttribute("id"),
+                el.getAttribute("control"),
+                el.getAttribute("for"),
+                el.getAttribute("aria-controls"),
+              ]
+                .map(display)
+                .filter(Boolean);
+              const names: string[] = [];
+              for (const rawName of rawNames) {
+                names.push(rawName);
+                const withoutLabel = rawName.replace(/_label$/i, "");
+                if (withoutLabel !== rawName) names.push(withoutLabel);
+                const withoutNi = withoutLabel.replace(/^ni\./i, "");
+                if (withoutNi !== withoutLabel) names.push(withoutNi);
+              }
+              return [...new Set(names)];
+            };
+            const commitServiceNowValue = (el: Element, value: string) => {
+              const gForm = (window as any).g_form;
+              if (typeof gForm?.setValue !== "function") return;
+              for (const name of serviceNowFieldNamesFor(el)) {
+                try {
+                  gForm.setValue(name, value);
+                } catch {
+                  // Some visible catalog controls are not g_form fields.
+                }
+              }
+            };
             const setNativeValue = (
               el: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
               value: string,
             ) => {
+              if (el instanceof HTMLSelectElement) {
+                const optionIndex = [...el.options].findIndex(
+                  (option) => option.value === value,
+                );
+                try {
+                  el.scrollIntoView({ behavior: "instant", block: "center" });
+                  el.focus();
+                } catch {
+                  // Non-visual test environments may not implement scrolling.
+                }
+                const setter = Object.getOwnPropertyDescriptor(
+                  HTMLSelectElement.prototype,
+                  "value",
+                )?.set;
+                if (setter) setter.call(el, value);
+                else el.value = value;
+                if (optionIndex >= 0) el.selectedIndex = optionIndex;
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                triggerLibraryEvents(el);
+                commitServiceNowValue(el, value);
+                return;
+              }
               const prototype = Object.getPrototypeOf(el);
               const descriptor =
                 Object.getOwnPropertyDescriptor(prototype, "value") ||
@@ -7322,6 +8151,8 @@ export function registerTools() {
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
               el.dispatchEvent(new Event("blur", { bubbles: true }));
+              triggerLibraryEvents(el);
+              commitServiceNowValue(el, value);
             };
             const setNativeChecked = (
               el: HTMLInputElement,
@@ -7340,6 +8171,34 @@ export function registerTools() {
               el.checked = checked;
               el.dispatchEvent(new Event("input", { bubbles: true }));
               el.dispatchEvent(new Event("change", { bubbles: true }));
+              triggerLibraryEvents(el);
+              commitServiceNowValue(el, checked ? "true" : "false");
+            };
+            const setRelatedCheckboxControls = (
+              source: Element,
+              checked: boolean,
+            ) => {
+              const aliases = new Set(serviceNowFieldNamesFor(source));
+              if (aliases.size === 0) return;
+              const value = checked ? "true" : "false";
+              const controls = [
+                ...document.querySelectorAll("input, select, textarea"),
+              ] as Array<
+                HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+              >;
+              for (const control of controls) {
+                if (control === source) continue;
+                const names = serviceNowFieldNamesFor(control);
+                if (!names.some((name) => aliases.has(name))) continue;
+                if (
+                  control instanceof HTMLInputElement &&
+                  control.type === "checkbox"
+                ) {
+                  setNativeChecked(control, checked);
+                } else {
+                  setNativeValue(control, value);
+                }
+              }
             };
             const checkboxState = (el: Element): boolean | null => {
               if (el instanceof HTMLInputElement && el.type === "checkbox") {
@@ -7366,16 +8225,76 @@ export function registerTools() {
               if (checked === "false") return false;
               return null;
             };
+            const labelAnchorsFor = (field: string) => {
+              const root = document.body || document.documentElement;
+              const needle = norm(field);
+              const anchors: Node[] = [];
+              const walker = document.createTreeWalker(root, 4);
+              let node = walker.nextNode();
+              while (node) {
+                const parent = node.parentElement;
+                const text = norm(node.textContent);
+                if (
+                  parent &&
+                  text &&
+                  !/^(script|style|noscript)$/i.test(parent.tagName) &&
+                  (text === needle || text.includes(needle))
+                ) {
+                  anchors.push(parent);
+                }
+                node = walker.nextNode();
+              }
+              return anchors;
+            };
+            const findFollowingControl = <T extends Element>(
+              field: string,
+              controls: T[],
+            ): T | undefined => {
+              for (const anchor of labelAnchorsFor(field)) {
+                const control = controls.find(
+                  (el) => Boolean(anchor.compareDocumentPosition(el) & 4),
+                );
+                if (control) return control;
+              }
+              return undefined;
+            };
             const findQuantity = () => {
               const controls = [
-                ...document.querySelectorAll("select, input"),
+                ...document.querySelectorAll(
+                  "select, input:not([type='button']):not([type='submit'])",
+                ),
               ] as Array<HTMLInputElement | HTMLSelectElement>;
-              return (
-                controls.find((el) => matches(labelsFor(el), "quantity")) ||
-                controls.find((el) =>
+              const visibleControls = controls.filter(visible);
+              const byLabel = (
+                candidates: Array<HTMLInputElement | HTMLSelectElement>,
+              ) =>
+                candidates.find((el) => matches(labelsFor(el), "quantity")) ||
+                candidates.find((el) =>
                   /quantity|qty/i.test(`${el.id} ${el.name}`),
-                )
+                );
+              return (
+                byLabel(visibleControls) ||
+                findFollowingControl("quantity", visibleControls) ||
+                byLabel(controls) ||
+                findFollowingControl("quantity", controls)
               );
+            };
+            const setRelatedQuantityControls = (
+              value: string,
+              primary: HTMLInputElement | HTMLSelectElement,
+            ) => {
+              const controls = [
+                ...document.querySelectorAll(
+                  "select, input:not([type='button']):not([type='submit'])",
+                ),
+              ] as Array<HTMLInputElement | HTMLSelectElement>;
+              for (const control of controls) {
+                if (control === primary) continue;
+                if (!/quantity|qty/i.test(`${control.id} ${control.name}`)) {
+                  continue;
+                }
+                setNativeValue(control, value);
+              }
             };
             const findTextControl = (field: string) => {
               const controls = [
@@ -7383,7 +8302,45 @@ export function registerTools() {
                   "textarea, input:not([type='checkbox']):not([type='radio']):not([type='button']):not([type='submit'])",
                 ),
               ] as Array<HTMLInputElement | HTMLTextAreaElement>;
-              return controls.find((el) => matches(labelsFor(el), field));
+              const visibleControls = controls.filter(visible);
+              return (
+                visibleControls.find((el) => matches(labelsFor(el), field)) ||
+                findFollowingControl(field, visibleControls) ||
+                controls.find((el) => matches(labelsFor(el), field)) ||
+                findFollowingControl(field, controls)
+              );
+            };
+            const selectOptionFor = (
+              control: HTMLSelectElement,
+              value: string,
+            ) =>
+              [...control.options].find(
+                (candidate) =>
+                  norm(candidate.value) === norm(value) ||
+                  norm(candidate.textContent) === norm(value),
+              ) ||
+              [...control.options].find((candidate) =>
+                norm(candidate.textContent).includes(norm(value)),
+              );
+            const findOptionControl = (field: string, value: string) => {
+              const controls = [
+                ...document.querySelectorAll("select"),
+              ] as HTMLSelectElement[];
+              const labelled = controls.find((el) =>
+                matches(labelsFor(el), field),
+              );
+              if (labelled) return labelled;
+              const visibleFollowing = findFollowingControl(
+                field,
+                controls.filter(visible),
+              );
+              if (visibleFollowing) return visibleFollowing;
+              const following = findFollowingControl(field, controls);
+              if (following) return following;
+              const valueMatches = controls.filter((el) =>
+                selectOptionFor(el, value),
+              );
+              return valueMatches.length === 1 ? valueMatches[0] : undefined;
             };
             const findCheckbox = (label: string) => {
               const controls = [
@@ -7391,7 +8348,63 @@ export function registerTools() {
                   "input[type='checkbox'], [role='checkbox'], label[type='checkbox'], label[control]",
                 ),
               ];
-              return controls.find((el) => matches(labelsFor(el), label));
+              const checkboxLabelsFor = (el: Element): string[] => {
+                const labels = directLabelsFor(el);
+                const id = el.getAttribute("id");
+                if (id) {
+                  document
+                    .querySelectorAll(
+                      `label[for="${escapeCss(id)}"], label[control="${escapeCss(id)}"]`,
+                    )
+                    .forEach((candidate) => labels.push(candidate.textContent));
+                  labels.push(document.getElementById(`${id}_label`)?.textContent);
+                }
+                const controlId =
+                  el.getAttribute("for") ||
+                  el.getAttribute("control") ||
+                  el.getAttribute("aria-controls");
+                if (controlId) {
+                  labels.push(document.getElementById(controlId)?.textContent);
+                }
+                return labels.map(display).filter(Boolean);
+              };
+              return controls.find((el) => matches(checkboxLabelsFor(el), label));
+            };
+            const setCheckboxControlState = (
+              control: Element,
+              checked: boolean,
+              allowClick: boolean,
+            ) => {
+              const before = checkboxState(control);
+              if (
+                allowClick &&
+                before !== checked &&
+                control instanceof HTMLElement &&
+                visible(control)
+              ) {
+                control.click();
+              }
+              const controlId =
+                control.getAttribute("for") ||
+                control.getAttribute("control") ||
+                control.getAttribute("aria-controls");
+              const inputEl = controlId
+                ? document.getElementById(controlId)
+                : control;
+              if (
+                inputEl instanceof HTMLInputElement &&
+                inputEl.type === "checkbox"
+              ) {
+                setNativeChecked(inputEl, checked);
+                setRelatedCheckboxControls(inputEl, checked);
+              }
+              if (control instanceof HTMLElement) {
+                control.setAttribute("checked", String(checked));
+                control.setAttribute("aria-checked", String(checked));
+                commitServiceNowValue(control, checked ? "true" : "false");
+                setRelatedCheckboxControls(control, checked);
+              }
+              return checkboxState(control);
             };
             const currentBodyText = () =>
               display(document.body?.innerText || "");
@@ -7410,11 +8423,21 @@ export function registerTools() {
               ].filter(visible);
               const findByPattern = (pattern: RegExp) =>
                 controls.find((el) =>
-                  labelsFor(el).some((label) => pattern.test(label)),
+                  directLabelsFor(el).some((label) => pattern.test(label)),
                 ) as HTMLElement | undefined;
+              if (
+                input.continueToCheckout &&
+                input.submitButton &&
+                /\badd to cart\b/i.test(input.submitButton)
+              ) {
+                const directOrder = findByPattern(
+                  /\b(order now|place order|submit order|request)\b/i,
+                );
+                if (directOrder) return directOrder;
+              }
               if (input.submitButton) {
                 const exact = controls.find((el) =>
-                  matches(labelsFor(el), input.submitButton as string),
+                  matches(directLabelsFor(el), input.submitButton as string),
                 );
                 if (exact) return exact as HTMLElement;
               }
@@ -7446,6 +8469,66 @@ export function registerTools() {
                 `${location.href} ${document.title} ${document.body?.innerText || ""}`,
               );
 
+            for (const field of input.textFields) {
+              const control = findTextControl(field.field);
+              if (!control) {
+                mismatches.push(`Text field not found: ${field.field}.`);
+                continue;
+              }
+              setNativeValue(control, field.value);
+              configured.push(`${field.field}="${field.value}"`);
+            }
+
+            for (const field of input.optionFields) {
+              const control = findOptionControl(field.field, field.value);
+              if (!control) {
+                mismatches.push(`Dropdown field not found: ${field.field}.`);
+                continue;
+              }
+              const option = selectOptionFor(control, field.value);
+              if (!option) {
+                mismatches.push(
+                  `Dropdown option not found for ${field.field}: ${field.value}.`,
+                );
+                continue;
+              }
+              setNativeValue(control, option.value);
+              const selectedText =
+                control.selectedOptions[0]?.textContent?.trim() || control.value;
+              if (
+                norm(control.value) !== norm(option.value) &&
+                norm(selectedText) !== norm(field.value)
+              ) {
+                mismatches.push(
+                  `Dropdown ${field.field} is ${selectedText || control.value}.`,
+                );
+              } else {
+                configured.push(`${field.field}=${selectedText || option.value}`);
+              }
+            }
+
+            for (const checkbox of input.checkboxes) {
+              const control = findCheckbox(checkbox.label);
+              if (!control) {
+                mismatches.push(`Checkbox not found: ${checkbox.label}.`);
+                continue;
+              }
+              const after = setCheckboxControlState(
+                control,
+                checkbox.checked,
+                true,
+              );
+              if (after !== null && after !== checkbox.checked) {
+                mismatches.push(
+                  `Checkbox ${checkbox.label} is ${after ? "checked" : "unchecked"}.`,
+                );
+              } else {
+                configured.push(
+                  `${checkbox.label}=${checkbox.checked ? "checked" : "unchecked"}`,
+                );
+              }
+            }
+
             if (input.quantity !== null) {
               const quantity = findQuantity();
               if (!quantity) {
@@ -7464,62 +8547,39 @@ export function registerTools() {
                   );
                 } else {
                   setNativeValue(quantity, option.value);
-                  configured.push(
-                    `Quantity=${option.textContent?.trim() || option.value}`,
-                  );
+                  setRelatedQuantityControls(option.value, quantity);
+                  const selectedText =
+                    quantity.selectedOptions[0]?.textContent?.trim() ||
+                    quantity.value;
+                  if (
+                    norm(quantity.value) !== norm(option.value) &&
+                    norm(selectedText) !== norm(input.quantity)
+                  ) {
+                    mismatches.push(
+                      `Quantity is ${selectedText || quantity.value}.`,
+                    );
+                  } else {
+                    configured.push(`Quantity=${selectedText || option.value}`);
+                  }
                 }
               } else {
                 setNativeValue(quantity, input.quantity);
-                configured.push(`Quantity=${input.quantity}`);
+                setRelatedQuantityControls(input.quantity, quantity);
+                if (norm(quantity.value) !== norm(input.quantity)) {
+                  mismatches.push(`Quantity is ${quantity.value}.`);
+                } else {
+                  configured.push(`Quantity=${input.quantity}`);
+                }
               }
             }
 
-            for (const field of input.textFields) {
-              const control = findTextControl(field.field);
-              if (!control) {
-                mismatches.push(`Text field not found: ${field.field}.`);
-                continue;
-              }
-              setNativeValue(control, field.value);
-              configured.push(`${field.field}="${field.value}"`);
-            }
-
-            for (const checkbox of input.checkboxes) {
-              const control = findCheckbox(checkbox.label);
-              if (!control) {
-                mismatches.push(`Checkbox not found: ${checkbox.label}.`);
-                continue;
-              }
-              const before = checkboxState(control);
-              if (
-                before !== checkbox.checked &&
-                control instanceof HTMLElement &&
-                visible(control)
-              ) {
-                control.click();
-              }
-              const controlId =
-                control.getAttribute("for") ||
-                control.getAttribute("control") ||
-                control.getAttribute("aria-controls");
-              const inputEl = controlId
-                ? document.getElementById(controlId)
-                : control;
-              if (
-                inputEl instanceof HTMLInputElement &&
-                inputEl.type === "checkbox"
-              ) {
-                setNativeChecked(inputEl, checkbox.checked);
-              }
-              const after = checkboxState(control);
-              if (after !== null && after !== checkbox.checked) {
-                mismatches.push(
-                  `Checkbox ${checkbox.label} is ${after ? "checked" : "unchecked"}.`,
-                );
-              } else {
-                configured.push(
-                  `${checkbox.label}=${checkbox.checked ? "checked" : "unchecked"}`,
-                );
+            if (input.submit && configured.length > 0 && mismatches.length === 0) {
+              await sleep(2_000);
+              for (const checkbox of input.checkboxes) {
+                const control = findCheckbox(checkbox.label);
+                if (control) {
+                  setCheckboxControlState(control, checkbox.checked, false);
+                }
               }
             }
 
@@ -7533,7 +8593,16 @@ export function registerTools() {
               if (!submitControl) {
                 mismatches.push("Submit/order control not found.");
               } else {
-                const submitLabels = labelsFor(submitControl);
+                const submitInput = submitControl as HTMLInputElement;
+                const submitLabels = [
+                  submitControl.textContent,
+                  submitInput.value,
+                  submitControl.getAttribute("aria-label"),
+                  submitControl.getAttribute("title"),
+                  ...directLabelsFor(submitControl),
+                ]
+                  .map(display)
+                  .filter(Boolean);
                 submitLabel =
                   submitLabels.find((label) =>
                     /\b(add to cart|checkout|order|request|submit)\b/i.test(
@@ -7574,9 +8643,11 @@ export function registerTools() {
             {
               quantity,
               textFields,
+              optionFields,
               checkboxes,
               submit,
               submitButton,
+              continueToCheckout,
             },
           ],
         });
@@ -7603,7 +8674,13 @@ export function registerTools() {
         }
 
         let checkoutClick: Record<string, unknown> | null = null;
-        if (continueToCheckout && selected.submitClicked === true) {
+        const clickedSubmitLabel = String(selected.submitLabel || "");
+        const shouldContinueFromCart =
+          continueToCheckout &&
+          selected.submitClicked === true &&
+          /\badd to cart\b/i.test(clickedSubmitLabel);
+
+        if (shouldContinueFromCart) {
           const checkoutResults = await chrome.scripting.executeScript({
             target: { tabId, allFrames: true },
             world: "MAIN" as any,
@@ -8292,6 +9369,109 @@ export function registerTools() {
               control.dispatchEvent(new Event("blur", { bubbles: true }));
             };
 
+            const delay = (ms: number) =>
+              new Promise((resolve) => setTimeout(resolve, ms));
+            const isVisibleControl = (control: Element | null): boolean => {
+              if (!control?.isConnected) return false;
+              const view = control.ownerDocument?.defaultView ?? window;
+              let node: Element | null = control;
+              while (node) {
+                const style = view.getComputedStyle(node);
+                if (
+                  style.display === "none" ||
+                  style.visibility === "hidden" ||
+                  style.opacity === "0"
+                ) {
+                  return false;
+                }
+                node = node.parentElement;
+              }
+              const rect = control.getBoundingClientRect();
+              return rect.width > 0 || rect.height > 0;
+            };
+            const revealFieldSection = async (field: FieldMeta) => {
+              if (isVisibleControl(field.control)) return false;
+              let sectionId = "";
+              try {
+                const element = gForm.getElement?.(field.name);
+                const ancestors =
+                  typeof element?.ancestors === "function"
+                    ? element.ancestors()
+                    : [];
+                for (const ancestor of ancestors) {
+                  const id = String(ancestor?.id || "");
+                  if (id.startsWith("section-")) {
+                    sectionId = id;
+                    break;
+                  }
+                }
+              } catch {
+                // DOM fallback below.
+              }
+              if (!sectionId) {
+                let node = field.control?.parentElement ?? null;
+                while (node) {
+                  if (node.id?.startsWith("section-")) {
+                    sectionId = node.id;
+                    break;
+                  }
+                  node = node.parentElement;
+                }
+              }
+              const sectionName = sectionId.replace(/^section-/, "");
+              if (!sectionName) return false;
+
+              try {
+                const tabs = (window as any).g_tabs2Sections;
+                const tabIDs = Array.isArray(tabs?.tabIDs) ? tabs.tabIDs : [];
+                const index = tabIDs.findIndex((value: unknown) => {
+                  const raw = String(value || "");
+                  const suffix = raw.split(".").pop() || raw;
+                  return (
+                    raw === sectionName ||
+                    suffix === sectionName ||
+                    keyFor(raw) === keyFor(sectionName) ||
+                    keyFor(suffix) === keyFor(sectionName)
+                  );
+                });
+                const tabElement = index >= 0 ? tabs?.tabsTabs?.[index]?.element : null;
+                if (tabElement instanceof HTMLElement) {
+                  tabElement.click();
+                  await delay(100);
+                  return true;
+                }
+              } catch {
+                // DOM fallback below.
+              }
+
+              const sectionKey = keyFor(sectionName);
+              const tab = Array.from(
+                document.querySelectorAll(
+                  '[role="tab"], [aria-controls], [id*="tab"], .tabs2_tab, .tab_caption',
+                ),
+              ).find((node): node is HTMLElement => {
+                if (!(node instanceof HTMLElement)) return false;
+                const identity = keyFor(
+                  [
+                    node.id,
+                    node.textContent,
+                    node.getAttribute("aria-controls"),
+                    node.getAttribute("aria-label"),
+                    node.getAttribute("title"),
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                );
+                return Boolean(sectionKey && identity.includes(sectionKey));
+              });
+              if (tab) {
+                tab.click();
+                await delay(100);
+                return true;
+              }
+              return false;
+            };
+
             const commitReferenceValue = (
               field: FieldMeta,
               sysId: string,
@@ -8369,13 +9549,25 @@ export function registerTools() {
                 };
                 const token = String((window as any).g_ck || "");
                 if (token) headers["X-UserToken"] = token;
-                const response = await fetch(
-                  `/api/now/table/${encodeURIComponent(referenceTable)}?${params.toString()}`,
-                  { credentials: "same-origin", headers },
-                );
-                if (!response.ok) return [];
-                const payload = await response.json();
-                return Array.isArray(payload?.result) ? payload.result : [];
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 4_000);
+                try {
+                  const response = await fetch(
+                    `/api/now/table/${encodeURIComponent(referenceTable)}?${params.toString()}`,
+                    {
+                      credentials: "same-origin",
+                      headers,
+                      signal: controller.signal,
+                    },
+                  );
+                  if (!response.ok) return [];
+                  const payload = await response.json();
+                  return Array.isArray(payload?.result) ? payload.result : [];
+                } catch {
+                  return [];
+                } finally {
+                  clearTimeout(timer);
+                }
               };
               let records = await fetchRecords(exactQuery);
               if (records.length === 0 && referenceTable === "sys_user") {
@@ -8414,10 +9606,19 @@ export function registerTools() {
               return sysId ? { sysId, displayValue: selectedDisplay } : null;
             };
 
+            type FieldSetSuccess = {
+              ok: true;
+              acceptedDisplay?: string;
+              acceptedSysId?: string;
+            };
+            type FieldSetResult =
+              | FieldSetSuccess
+              | { ok: false; reason: string };
+
             const selectReferenceAutocomplete = async (
               field: FieldMeta,
               rawDisplayValue: string,
-            ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+            ): Promise<FieldSetResult> => {
               const input =
                 field.control instanceof HTMLInputElement
                   ? field.control
@@ -8643,7 +9844,7 @@ export function registerTools() {
                   displayValue,
                 )
               ) {
-                return { ok: true };
+                return { ok: true, acceptedDisplay: displayValue };
               }
 
               const rawTokens = displayValue.split(/\s+/).filter(Boolean);
@@ -8679,7 +9880,11 @@ export function registerTools() {
                           sysId,
                         )
                       ) {
-                        return { ok: true };
+                        return {
+                          ok: true,
+                          acceptedDisplay: displayValue,
+                          acceptedSysId: sysId,
+                        };
                       }
                     }
 
@@ -8693,7 +9898,7 @@ export function registerTools() {
                         )
                       ) {
                         setNativeValue(field.control, displayValue);
-                        return { ok: true };
+                        return { ok: true, acceptedDisplay: displayValue };
                       }
                     }
                     return { ok: false, reason: "selection_unverified" };
@@ -8709,13 +9914,13 @@ export function registerTools() {
                 await delay(100);
                 if (
                   isCommittedReferenceValue(
-                    readCommittedReferenceValue(field),
-                    displayValue,
-                  )
-                ) {
-                  setNativeValue(field.control, displayValue);
-                  return { ok: true };
-                }
+                  readCommittedReferenceValue(field),
+                  displayValue,
+                )
+              ) {
+                setNativeValue(field.control, displayValue);
+                return { ok: true, acceptedDisplay: displayValue };
+              }
               }
               setInputValue(displayValue);
               input.dispatchEvent(
@@ -8727,7 +9932,8 @@ export function registerTools() {
             const setField = async (
               field: FieldMeta,
               value: string,
-            ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+            ): Promise<FieldSetResult> => {
+              await revealFieldSection(field);
               const desired = value;
               const choiceControl =
                 field.control instanceof HTMLSelectElement
@@ -8780,7 +9986,7 @@ export function registerTools() {
                   const hidden = hiddenControlFor(field);
                   if (hidden) setNativeValue(hidden, "");
                   setNativeValue(field.control, "");
-                  return { ok: true };
+                  return { ok: true, acceptedDisplay: "" };
                 }
 
                 const resolved = await resolveReference(
@@ -8800,7 +10006,11 @@ export function registerTools() {
                       resolved.sysId,
                     )
                   ) {
-                    return { ok: true };
+                    return {
+                      ok: true,
+                      acceptedDisplay: resolved.displayValue,
+                      acceptedSysId: resolved.sysId,
+                    };
                   }
                 }
 
@@ -8808,7 +10018,13 @@ export function registerTools() {
                   field,
                   desired,
                 );
-                if (selected.ok) return { ok: true };
+                if (selected.ok) {
+                  const committed = readCommittedReferenceValue(field);
+                  return selected.acceptedSysId ||
+                    !/^[0-9a-f]{32}$/i.test(committed)
+                    ? selected
+                    : { ...selected, acceptedSysId: committed };
+                }
                 return {
                   ok: false,
                   reason: resolved
@@ -8837,6 +10053,7 @@ export function registerTools() {
             };
 
             const configured: string[] = [];
+            const configuredFields: ServiceNowSubmittedRecordField[] = [];
             let configuredRecordNumber = "";
             const mismatches: string[] = [];
             const recordNumberFromText = (value: string): string => {
@@ -8846,8 +10063,15 @@ export function registerTools() {
               field: Pick<FieldMeta, "label" | "name" | "fieldPath">,
               requestedField = "",
             ) => {
-              const identity = `${field.label || ""} ${field.name} ${field.fieldPath} ${requestedField}`;
-              return /(^|[\s_.-])number($|[\s_.-])/i.test(identity);
+              const terminalFieldName = field.fieldPath.includes(".")
+                ? field.fieldPath.slice(field.fieldPath.lastIndexOf(".") + 1)
+                : field.fieldPath;
+              return [
+                field.label,
+                field.name,
+                terminalFieldName,
+                requestedField,
+              ].some((value) => keyFor(value) === "number");
             };
             for (const requested of input.fields) {
               const field = matchField(requested.field);
@@ -8858,15 +10082,52 @@ export function registerTools() {
               const setResult = await setField(field, requested.value);
               const actual = readValue(field);
               const expected = display(requested.value);
+              const acceptedDisplay =
+                setResult.ok && setResult.acceptedDisplay
+                  ? setResult.acceptedDisplay
+                  : "";
+              const acceptedSysId =
+                setResult.ok && setResult.acceptedSysId
+                  ? setResult.acceptedSysId
+                  : "";
+              const committedReferenceValue = acceptedSysId
+                ? readCommittedReferenceValue(field)
+                : "";
+              const normalizedActual = normalize(actual);
+              const normalizedExpected = normalize(expected);
+              const actualTokenCount = normalizedActual
+                .split(" ")
+                .filter(Boolean).length;
+              const isReferenceDisplayAlias = Boolean(
+                field.reference &&
+                  actualTokenCount >= 2 &&
+                  normalizedExpected.endsWith(normalizedActual),
+              );
               const ok =
                 setResult.ok &&
                 (expected === ""
                   ? actual === "" || /^--\s*none\s*--$/i.test(actual)
-                  : normalize(actual) === normalize(expected) ||
-                    normalize(actual).includes(normalize(expected)));
+                  : normalizedActual === normalizedExpected ||
+                    normalizedActual.includes(normalizedExpected) ||
+                    isReferenceDisplayAlias ||
+                    (acceptedDisplay
+                      ? normalizedActual === normalize(acceptedDisplay) ||
+                        normalizedActual.includes(normalize(acceptedDisplay))
+                      : false) ||
+                    (acceptedSysId
+                      ? actual.trim().toLowerCase() ===
+                          acceptedSysId.toLowerCase() ||
+                        normalize(committedReferenceValue) ===
+                          normalize(acceptedSysId)
+                      : false));
               const row = `${field.label || field.name} (${field.name}) = ${actual || "(empty)"}`;
               if (ok) {
                 configured.push(row);
+                configuredFields.push({
+                  name: field.name,
+                  label: field.label || field.name,
+                  value: actual || requested.value,
+                });
                 if (isRecordNumberField(field, requested.field)) {
                   configuredRecordNumber =
                     recordNumberFromText(actual) ||
@@ -8914,7 +10175,30 @@ export function registerTools() {
             let submitLabel = "";
             let submitMethod = "";
             let submitActionName = "";
+            let submittedSysId = "";
+            const currentSysId = () => {
+              try {
+                const sysId = String(gForm.getUniqueValue?.() || "");
+                if (/^[0-9a-f]{32}$/i.test(sysId)) return sysId;
+              } catch {
+                // Fall back to form controls below.
+              }
+              const candidates = [
+                tableName ? `${tableName}.sys_id` : "",
+                "sys_uniqueValue",
+                "sys_id",
+              ].filter(Boolean);
+              for (const name of candidates) {
+                const control = document.querySelector(
+                  `[name="${escapeCss(name)}"], #${escapeCss(name)}`,
+                ) as HTMLInputElement | null;
+                const value = String(control?.value || "");
+                if (/^[0-9a-f]{32}$/i.test(value)) return value;
+              }
+              return "";
+            };
             if (input.submit && mismatches.length === 0) {
+              submittedSysId = currentSysId();
               const expected = input.submitButton
                 ? normalize(input.submitButton)
                 : "";
@@ -8967,6 +10251,12 @@ export function registerTools() {
                   gForm.getFormElement?.() ||
                   control.closest("form") ||
                   document.querySelector("form");
+                try {
+                  control.click();
+                  return { ok: true, method: "click", actionName };
+                } catch {
+                  // Fall back to ServiceNow submit APIs below.
+                }
                 if (
                   actionName &&
                   typeof (window as any).gsftSubmit === "function" &&
@@ -9031,6 +10321,7 @@ export function registerTools() {
               url: location.href,
               title: document.title,
               configured,
+              configuredFields,
               mismatches,
               submitClicked,
               submitLabel,
@@ -9039,6 +10330,7 @@ export function registerTools() {
               submittedRecord: submitClicked
                 ? currentRecordNumber || recordFromTitle
                 : null,
+              submittedSysId: submitClicked ? submittedSysId : null,
               tableName,
               fieldCount: fieldsMeta.length,
             };
@@ -9073,6 +10365,18 @@ export function registerTools() {
         const configured = Array.isArray(selected.configured)
           ? selected.configured.map(String)
           : [];
+        const configuredFields = Array.isArray(selected.configuredFields)
+          ? selected.configuredFields
+              .filter(
+                (field): field is Record<string, unknown> =>
+                  field !== null && typeof field === "object",
+              )
+              .map((field) => ({
+                name: String(field.name || ""),
+                label: String(field.label || ""),
+                value: String(field.value || ""),
+              }))
+          : [];
         const mismatches = Array.isArray(selected.mismatches)
           ? selected.mismatches.map(String)
           : [];
@@ -9080,22 +10384,160 @@ export function registerTools() {
           typeof selected.submittedRecord === "string"
             ? selected.submittedRecord
             : "";
+        const submittedSysId =
+          typeof selected.submittedSysId === "string" &&
+          /^[0-9a-f]{32}$/i.test(selected.submittedSysId)
+            ? selected.submittedSysId.toLowerCase()
+            : "";
         const tableName =
           typeof selected.tableName === "string" ? selected.tableName : "";
-        const currentUrl = tab.url || String(selected.url || "");
-        const currentTitle = tab.title || String(selected.title || "");
+        let currentUrl = tab.url || String(selected.url || "");
+        let currentTitle = tab.title || String(selected.title || "");
         const escapeRegExp = (value: string) =>
           value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const submitStayedOnSameCreateRecord =
-          submit &&
-          submittedRecord &&
-          new RegExp(
-            `\\b(?:Create|New)\\s+${escapeRegExp(submittedRecord)}\\b`,
-            "i",
-          ).test(currentTitle);
-        const submitVerified =
+        const computeSubmitStayedOnSameCreateRecord = () =>
+          Boolean(
+            submit &&
+              submittedRecord &&
+              new RegExp(
+                `\\b(?:Create|New)\\s+${escapeRegExp(submittedRecord)}\\b`,
+                "i",
+              ).test(currentTitle),
+          );
+        const isLikelySameUncommittedForm = () => {
+          if (!submit || selected.submitClicked !== true) return false;
+          const selectedUrl = String(selected.url || "");
+          const selectedTitle = String(selected.title || "");
+          const currentUrlLower = currentUrl.toLowerCase();
+          const selectedUrlLower = selectedUrl.toLowerCase();
+          const sameLocation =
+            Boolean(selectedUrl && currentUrl === selectedUrl) ||
+            Boolean(
+              tableName &&
+                currentUrlLower.includes(`${tableName.toLowerCase()}.do`) &&
+                selectedUrlLower.includes(`${tableName.toLowerCase()}.do`),
+            );
+          const titleLooksUncommitted =
+            /\bnew record\b/i.test(currentTitle) ||
+            /\bcreate\b/i.test(currentTitle) ||
+            /\bnew record\b/i.test(selectedTitle);
+          return sameLocation && titleLooksUncommitted;
+        };
+        let submitStayedOnSameCreateRecord =
+          computeSubmitStayedOnSameCreateRecord();
+        let resolvedSubmittedSysId = submittedSysId;
+        let fallbackSubmitMethod = "";
+        let fallbackSubmitActionName = "";
+        let fallbackSubmittedSysId = "";
+        const configuredFieldsContainIdentity =
+          hasServiceNowIdentityFields(configuredFields);
+        const verifySubmittedSysId = async (
+          options: {
+            quickIdentityLookup?: boolean;
+            allowSubmittedSysIdLookup?: boolean;
+          } = {},
+        ) => {
+          if (
+            !submit ||
+            selected.submitClicked !== true ||
+            submittedRecord ||
+            !tableName
+          ) {
+            return false;
+          }
+          if (configuredFieldsContainIdentity) {
+            const sysIdFromFields =
+              await resolveServiceNowRecordSysIdByFields(
+                tabId,
+                tableName,
+                configuredFields,
+                options.quickIdentityLookup
+                  ? { attempts: 2, delayMs: 250, timeoutMs: 2_000 }
+                  : undefined,
+              );
+            if (sysIdFromFields) {
+              resolvedSubmittedSysId = sysIdFromFields;
+              return true;
+            }
+          }
+          const candidateSysId = fallbackSubmittedSysId || submittedSysId;
+          if (options.allowSubmittedSysIdLookup !== false && candidateSysId) {
+            const exists = await serviceNowRecordExistsBySysId(
+              tabId,
+              tableName,
+              candidateSysId,
+            );
+            if (exists) {
+              resolvedSubmittedSysId = candidateSysId;
+              return true;
+            }
+          }
+          return false;
+        };
+        let submittedSysIdVerified = await verifySubmittedSysId({
+          quickIdentityLookup: isLikelySameUncommittedForm(),
+          allowSubmittedSysIdLookup:
+            !configuredFieldsContainIdentity || !isLikelySameUncommittedForm(),
+        });
+        const submitHasTrustedIdentity =
+          !submit || Boolean(submittedRecord) || submittedSysIdVerified;
+        let submitVerified =
           !submit ||
-          (selected.submitClicked === true && !submitStayedOnSameCreateRecord);
+          (selected.submitClicked === true &&
+            !submitStayedOnSameCreateRecord &&
+            submitHasTrustedIdentity);
+        let submitDiagnostics =
+          submit &&
+          selected.submitClicked === true &&
+          !submitVerified &&
+          isLikelySameUncommittedForm()
+            ? await collectServiceNowSubmitDiagnostics(tabId)
+            : [];
+        if (
+          submit &&
+          selected.submitClicked === true &&
+          !submitVerified &&
+          isLikelySameUncommittedForm() &&
+          submitDiagnostics.length === 0
+        ) {
+          const fallback = await retryServiceNowNativeSubmit(
+            tabId,
+            scriptTarget,
+            String(selected.submitActionName || ""),
+          );
+          if (fallback?.ok === true) {
+            fallbackSubmitMethod = fallback.method || "";
+            fallbackSubmitActionName = fallback.actionName || "";
+            fallbackSubmittedSysId =
+              typeof fallback.submittedSysId === "string" &&
+              /^[0-9a-f]{32}$/i.test(fallback.submittedSysId)
+                ? fallback.submittedSysId.toLowerCase()
+                : "";
+            if (fallbackSubmittedSysId && !resolvedSubmittedSysId) {
+              resolvedSubmittedSysId = fallbackSubmittedSysId;
+            }
+            await waitForNavigation(tabId, 12_000);
+            await waitForDomReady(tabId, {
+              timeoutMs: 2_000,
+              waitForElements: true,
+            });
+            tab = await chrome.tabs.get(tabId);
+            currentUrl = tab.url || currentUrl;
+            currentTitle = tab.title || currentTitle;
+            submitStayedOnSameCreateRecord =
+              computeSubmitStayedOnSameCreateRecord();
+            submittedSysIdVerified = await verifySubmittedSysId();
+            submitVerified =
+              selected.submitClicked === true &&
+              !submitStayedOnSameCreateRecord &&
+              (!submit || Boolean(submittedRecord) || submittedSysIdVerified);
+          } else if (fallback?.reason) {
+            submitDiagnostics = [
+              ...submitDiagnostics,
+              `ServiceNow submit fallback unavailable: ${fallback.reason}`,
+            ];
+          }
+        }
         const effectiveMismatches = [...mismatches];
         if (
           submit &&
@@ -9106,7 +10548,35 @@ export function registerTools() {
             `submit did not leave the create form for ${submittedRecord}`,
           );
         }
+        if (
+          submit &&
+          selected.submitClicked === true &&
+          !submittedRecord &&
+          submittedSysId &&
+          !submittedSysIdVerified
+        ) {
+          effectiveMismatches.push(
+            `submitted record sys_id ${submittedSysId} was not found in ServiceNow`,
+          );
+        } else if (
+          submit &&
+          selected.submitClicked === true &&
+          !submittedRecord &&
+          !submittedSysId
+        ) {
+          effectiveMismatches.push(
+            "submit did not expose a submitted record identity",
+          );
+        }
         const effectiveOk = selected.ok === true && submitVerified;
+        if (
+          submit &&
+          selected.submitClicked === true &&
+          !submitVerified &&
+          submitDiagnostics.length === 0
+        ) {
+          submitDiagnostics = await collectServiceNowSubmitDiagnostics(tabId);
+        }
         let openedSubmittedRecordUrl = "";
         if (effectiveOk && submit && submittedRecord) {
           const resetToNextCreateRecord =
@@ -9136,6 +10606,36 @@ export function registerTools() {
               openedSubmittedRecordUrl = recordUrl;
             }
           }
+        } else if (
+          effectiveOk &&
+          submit &&
+          !submittedRecord &&
+          submittedSysIdVerified &&
+          resolvedSubmittedSysId &&
+          tableName
+        ) {
+          const recordUrl = serviceNowRecordUrlForSysId(
+            currentUrl || String(selected.url || ""),
+            tableName,
+            resolvedSubmittedSysId,
+          );
+          if (
+            recordUrl &&
+            !new RegExp(`\\bsys_id=${escapeRegExp(resolvedSubmittedSysId)}\\b`, "i").test(
+              currentUrl,
+            )
+          ) {
+            await chrome.tabs.update(tabId, { url: recordUrl });
+            await waitForNavigation(tabId, 12_000);
+            await waitForDomReady(tabId, {
+              timeoutMs: 2_000,
+              waitForElements: true,
+            });
+            tab = await chrome.tabs.get(tabId);
+            currentUrl = tab.url || recordUrl;
+            currentTitle = tab.title || currentTitle;
+            openedSubmittedRecordUrl = recordUrl;
+          }
         }
         const lines = [
           effectiveOk
@@ -9145,14 +10645,23 @@ export function registerTools() {
           effectiveMismatches.length
             ? `Mismatches:\n- ${effectiveMismatches.join("\n- ")}`
             : "",
+          submitDiagnostics.length
+            ? `Submit diagnostics:\n- ${submitDiagnostics.join("\n- ")}`
+            : "",
           selected.submitClicked
             ? `Clicked submit control: ${String(selected.submitLabel || "submit")}`
             : "",
           selected.submitMethod
             ? `Submit method: ${String(selected.submitMethod)}${selected.submitActionName ? ` (${String(selected.submitActionName)})` : ""}`
             : "",
+          fallbackSubmitMethod
+            ? `Fallback submit method: ${fallbackSubmitMethod}${fallbackSubmitActionName ? ` (${fallbackSubmitActionName})` : ""}`
+            : "",
           submittedRecord && submitVerified
             ? `Submitted ServiceNow form record: ${submittedRecord}`
+            : "",
+          resolvedSubmittedSysId && submittedSysIdVerified
+            ? `Submitted ServiceNow form sys_id: ${resolvedSubmittedSysId}`
             : "",
           openedSubmittedRecordUrl
             ? `Opened submitted ServiceNow record: ${openedSubmittedRecordUrl}`
@@ -9194,7 +10703,9 @@ export function registerTools() {
               submitLabel: String(
                 selected.submitLabel || submitButton || "submit",
               ),
-              submitMethod: String(selected.submitMethod || ""),
+              submitMethod: fallbackSubmitMethod
+                ? `${String(selected.submitMethod || "")}+${fallbackSubmitMethod}`
+                : String(selected.submitMethod || ""),
             },
           });
         }
@@ -9211,10 +10722,30 @@ export function registerTools() {
             },
           });
         }
-        if (effectiveOk && submit && submittedRecord) {
+        if (submit && submitDiagnostics.length > 0) {
+          evidence.push({
+            type: "uncertainty_detected",
+            source: ToolName.CONFIGURE_SERVICENOW_FORM,
+            confidence: "high",
+            observedAt,
+            supportsTaskGoal: false,
+            detail: {
+              reason: "servicenow_submit_diagnostics",
+              diagnostics: submitDiagnostics,
+            },
+          });
+        }
+        if (
+          effectiveOk &&
+          submit &&
+          (submittedRecord || submittedSysIdVerified)
+        ) {
           const identity = {
             table: tableName,
-            recordNumber: submittedRecord,
+            recordNumber: submittedRecord || undefined,
+            sysId: submittedSysIdVerified
+              ? resolvedSubmittedSysId
+              : undefined,
             url: openedSubmittedRecordUrl || tab.url || currentUrl,
           };
           evidence.push(

@@ -1,8 +1,8 @@
 # WorkArena Roadmap
 
-Last updated: 2026-05-08
+Last updated: 2026-05-09
 
-This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to full graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
+This roadmap defines how OpenSidebar should progress from guarded WorkArena smoke runs to a full WorkArena run-ready harness and then to graded WorkArena performance evaluation. It is intentionally separate from generated run reports, which belong under `.artifacts/e2e/`.
 
 Use this page for planning, grading contract, runner requirements, and triage policy. Use [`workarena.md`](./workarena.md) for setup commands and the current manual runbook. Use [WorkArena Generalized Harness Philosophy](../guides/workarena-generalized-harness-philosophy.md) for the stable evaluator-to-product principles behind this roadmap.
 
@@ -22,8 +22,20 @@ Recently resolved:
 - Initial reusable workflow skills and read-only inspectors now cover chart value extraction, knowledge/search answer extraction, list filtering, list sorting, and service catalog ordering. The first layer is generic runtime behavior, not WorkArena-specific fixture logic.
 - A thin suite runner and standalone grader are available. They reuse `workarena-handoff`, write reports under `.artifacts/e2e/`, and compute score-first pass@1 plus category-balanced pass@1.
 - The latest dated 7-case ServiceNow sample grades at 7/7 pass@1. Catalog efficiency remains worth watching, but it is no longer a harness blocker by itself.
-- The first broader ServiceNow chunk has been rerun as two smaller guarded batches and is 7/7 pass@1. Generic ServiceNow form frame targeting has brought `create-problem`, `create-incident`, and `create-change-request` back to single-turn passes in the guarded chunk.
-- The completed harness boundary conclusions are now promoted into stable architecture docs. The current pre-WorkArena checkpoint is to run the full staged OpenSidebar E2E suite, then continue to ServiceNow/WorkArena with the generic-skill-first policy below.
+- The first broader ServiceNow chunk has been rerun as two smaller guarded batches and is 7/7 pass@1. WorkArena record-creation task slugs such as `create-problem`, `create-incident`, and `create-change-request` route through the generic runtime skill `servicenow-record-form`; the slug names are evaluator case names, not product skill names.
+- The completed harness boundary conclusions are now promoted into stable architecture docs.
+- Generic ServiceNow form-submit confirmation now records submitted identity evidence and can re-open the submitted record by `sys_id` for validation handoff. The R4 form confidence chunk has passed 5/5 at seed `0`.
+- The list-filter resolver now prefers exact internal field names, preserves common ServiceNow field semantics over weak dictionary metadata, and can resolve row-backed choice/reference values from the current list table.
+- The R4 list confidence chunk is green at seed `0`: the six list-filter tasks passed 6/6 with p95 turns `1`, and the six list-sort tasks passed 6/6 with turns `1,2,2,1,1,1` after inherited ServiceNow task fields were added to `apply_list_sort`.
+- The R4 knowledge/menu/dashboard chunk is green at seed `0`: the seven tasks passed 7/7. A chart-value pass that initially ended with `agentTerminalReason=task_failed` was fixed by scoping chart answer-shape guards to the embedded original user request; the focused rerun completed in 3 turns with `agentTerminalReason=task_completed`.
+
+Current validation gate:
+
+- The R4 service-catalog chunk is now green at seed `0`, no retries, `maxTurns=20`: 9/9 pass@1, median turns `7`, p95 turns `15`, warnings `0`.
+- Catalog blockers were fixed generically in `configure_catalog_item`: durable text/dropdown/quantity commits, direct order-vs-cart routing, and direct checkbox label resolution so sibling checkbox labels do not cross-match.
+- The current service-catalog evidence is `.artifacts/e2e/workarena-suite-2026-05-09-service-catalog-seed-0-020740499.md`.
+- The remaining pre-full-run work is report validation, source hygiene, checkpointing, and cost/stability triage for high-turn passing cases.
+- Treat remaining high-turn passes, such as `order-development-laptop-p-c` at 15 turns, as cost/stability work only after validation remains green. Fix them through generic tools, ServiceNow platform semantics, or reusable skills, not task-id branches.
 
 ## Evaluation Contract
 
@@ -67,20 +79,22 @@ Report warnings must not flip benchmark success, but they must be visible:
 | 1. Trace credibility | In progress | Make every real run inspectable and gradeable. | Planner activity visible in Trace Viewer; terminal-state mismatch classified or fixed. |
 | 2. Suite runner | Done | Run controlled batches without duplicating handoff logic. | A thin wrapper can run selected suites, categories, seeds, retries, and resume from reports. |
 | 3. Grader | Done | Aggregate JSON reports into stable scorecards. | Markdown and JSON summaries include pass rates, scores, costs, traces, and warning classes. |
-| 4. Calibrated sample | Planned | Run enough tasks to identify dominant failure modes. | All atomic categories run across a small seed set with no retries. |
+| 4. Calibrated sample | In progress | Run enough tasks to identify dominant failure modes. | All atomic ServiceNow categories run at seed `0`, no retries, with validated reports. |
 | 5. Runtime fixes | In progress | Improve broad ServiceNow behavior from trace evidence. | Category failures are fixed in runtime policy, tools, controllers, or reusable skills. |
-| 6. Full graded run | Planned | Produce a category-balanced WorkArena grade. | All target tasks/seeds run with pass@1, optional pass@2, and validated reports. |
+| 6. Full atomic run | Planned | Produce a category-balanced WorkArena grade for atomic tasks. | All target atomic tasks/seeds run with pass@1, optional pass@2, and validated reports. |
 | 7. Scheduled confidence | Optional | Make WorkArena regression tracking repeatable. | A deliberate, budgeted cadence exists for smoke, sample, and full graded runs. |
 
-## Full Run Ready Harness Roadmap
+## Full WorkArena Run Ready Harness Roadmap
 
 The goal is a harness that can run a full WorkArena batch deliberately, preserve benchmark truth, and produce enough evidence to decide the next product fix without rerunning blindly.
 
 Run-ready means the harness is allowed to fail tasks, but it must not lose evidence, hide validation truth, or require one-off runner patches while the batch is in progress.
 
+Read this as a widening ladder. Do not skip a gate because a narrower batch happened to pass once; widen only when the current gate produces valid reports and the remaining risks are either fixed or explicitly accepted.
+
 ### R0. Source And Build Hygiene
 
-Status: In progress.
+Status: Active gate before every widening run; not satisfied after code changes until focused tests, build, lint, and report validation are rerun.
 
 Exit criteria:
 
@@ -92,7 +106,7 @@ Exit criteria:
 
 ### R1. Harness Readiness
 
-Status: Mostly ready.
+Status: Mostly ready; suite summaries now use unique scope/timestamp filenames and still need report validation after each batch.
 
 Exit criteria:
 
@@ -111,17 +125,18 @@ Exit criteria:
 - Every generated `agent-execution` report validates with `workarena-validate-reports`.
 - Every task report includes the real WorkArena prompt, active URL, trace files, terminal reason, validation score, timing, and bridge status.
 - Full-run summaries include pass@1, category-balanced pass@1, score, turns, cost, warnings, and failure stage.
+- Suite summary filenames include run scope, seed scope, and timestamp so same-day chunks and focused reruns preserve separate evidence.
 - Passed validation with timeout, missing trace, or terminal mismatch is surfaced as a warning, not counted as clean stability.
 - Trace-learning output can classify failures by fix layer.
 
 ### R3. ServiceNow Capability Baseline
 
-Status: Mostly ready.
+Status: Mostly ready; form-submit identity and list confidence are resolved at seed `0`.
 
 Exit criteria:
 
-- The current 7-case calibrated sample is green.
-- The first broader ServiceNow chunk is green across:
+- The 7-case calibrated sample is green.
+- The first broader ServiceNow chunk remains green across:
   - menu navigation
   - incident form creation
   - change-request form creation
@@ -129,13 +144,16 @@ Exit criteria:
   - incident list filtering
   - hardware list filtering
   - incident list sorting
+- Hardware asset creation passes validation through generic submit identity confirmation, or leaves a direct submit diagnostic if it regresses.
+- List-filter field/value resolution is confirmed on hardware, incident, catalog item, asset, change request, and user lists.
+- List-sort field resolution is confirmed on asset, change request, hardware, incident, catalog item, and user lists.
 - Known high-turn passes have an owner or accepted risk note.
 - Browser close or teardown warnings are recorded as harness warnings and do not mask validation truth.
 - Any remaining cost target must be selected from traces and fixed through a generic runtime, ServiceNow adapter, or skill layer rather than a task branch.
 
 ### R4. Category-Balanced Atomic Baseline
 
-Status: Next major checkpoint.
+Status: Seed `0` ServiceNow category chunks are green. The next gate is report validation, checkpointing, and a deliberate full atomic seed `0` run.
 
 Exit criteria:
 
@@ -143,7 +161,35 @@ Exit criteria:
 - Split into small chunks if needed to avoid wrapper timeouts.
 - Preserve `--retries 0` for the first signal run.
 - Stop widening only for clean infrastructure breakage or a repeated product regression that invalidates the batch.
-- Produce one dated suite summary and one grade summary under `.artifacts/e2e/`.
+- Produce timestamped suite summaries and one grade summary under `.artifacts/e2e/`.
+
+Recommended R4 chunk order:
+
+1. Form confidence chunk: `create-change-request`, `create-incident`, `create-hardware-asset`, `create-problem`, `create-user`. Current status: passed at seed `0`.
+2. List confidence chunk: all list filter and list sort atomic tasks at seed `0`. Current status: passed at seed `0`; filters 6/6 and sorts 6/6.
+3. Knowledge, menu, and dashboard chunk. Current status: passed at seed `0`; the chart terminal mismatch was fixed and rerun cleanly.
+4. Service catalog chunk. Current status: passed 9/9 at seed `0`; median turns `7`, p95 turns `15`, warnings `0`.
+
+Do not widen to seeds `0,1,2` until the seed `0` reports validate, the checkpoint is created, and high-turn seed `0` passes have an accepted cost/stability risk note.
+
+### R4A. Active Catalog Blocker
+
+Status: Resolved for seed `0` service-catalog validation; keep monitoring as cost/stability work.
+
+Exit criteria:
+
+- `configure_catalog_item` can set text fields, dropdown/select fields, checkboxes, and quantity fields in one generic call.
+- ServiceNow catalog select values are committed to the same page state that WorkArena validation reads after submission.
+- The isolated `workarena.servicenow.order-loaner-laptop` seed `0` run passes without task-id-specific code.
+- The full service-catalog seed `0` chunk reruns at 9/9 pass@1.
+- The generated focused and service-catalog suite reports validate with `workarena-validate-reports`.
+
+Preferred fix layer:
+
+1. Product runtime/tool primitive: make catalog option and quantity commits durable.
+2. ServiceNow platform semantics: use stable ServiceNow form/catalog APIs only if generic DOM events are insufficient.
+3. Generic skill sequencing: keep the cart-to-checkout handoff disciplined after Add to Cart or Order Now.
+4. Harness/reporting: only capture clearer diagnostics; do not encode answers or shortcuts.
 
 ### R5. Full Atomic Run
 
@@ -169,6 +215,20 @@ The harness is full-run ready when all of these are true:
 - No full-run blocker requires benchmark-specific code.
 - The recommended next action after the run is based on traces, not speculation.
 
+## Readiness Gates
+
+Use these gates to decide whether to keep widening or go back to product work:
+
+| Gate | Required signal | If it fails |
+| --- | --- | --- |
+| Build gate | Focused tests, lint, and build pass after latest runtime changes. | Stop and fix local product correctness before any WorkArena reset. |
+| Report gate | `workarena-validate-reports` accepts generated execution reports. | Fix report schema or missing evidence before interpreting scores. |
+| Harness gate | Reset, session import, validation, and teardown produce explicit statuses. | Fix the bridge/runner; do not classify product failures yet. |
+| ServiceNow commit gate | Form submit either produces a validator-visible record or direct diagnostics. | Fix the ServiceNow submit/diagnostic primitive before more form runs. |
+| ServiceNow list gate | List filter/sort tools set the intended query or order in one direct operation and validation can inspect it. | Fix generic list-tool resolution or ServiceNow platform semantics before widening. |
+| Category gate | Each category has at least one no-retry seed `0` result. | Keep sampling that category before claiming full-run readiness. |
+| Cost gate | High-turn passing cases have trace-backed owners or accepted risk notes. | Optimize through generic tools or skills only after correctness is stable. |
+
 ## Suite Runner Requirements
 
 The full runner should wrap the existing handoff runner instead of reimplementing WorkArena reset, session transfer, validation, or teardown.
@@ -178,7 +238,7 @@ Current suite runner examples:
 ```bash
 npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20
 npx tsx scripts/workarena-suite.ts --category menu --seeds 0..4 --no-build
-npx tsx scripts/workarena-suite.ts --resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD.json
+npx tsx scripts/workarena-suite.ts --resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json
 npx tsx scripts/workarena-grade.ts
 ```
 
@@ -324,8 +384,8 @@ Rules:
 Generated artifacts:
 
 ```text
-.artifacts/e2e/workarena-suite-YYYY-MM-DD.json
-.artifacts/e2e/workarena-suite-YYYY-MM-DD.md
+.artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json
+.artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.md
 .artifacts/e2e/workarena-trace-learning-YYYY-MM-DD.md
 ```
 
@@ -342,9 +402,8 @@ Do not commit dated E2E result reports under `docs/`.
 
 ## Immediate Next Steps
 
-1. Re-run local hygiene after the latest runtime changes: focused background tests, `npm run build`, `npm run ci:lint`, and `workarena-validate-reports`.
-2. Create a named checkpoint commit that records the current green ServiceNow baseline and any unrelated dirty worktree state.
-3. Run R4: all atomic ServiceNow categories at seed `0`, `--retries 0`, `--max-turns 20`, split into small chunks if needed.
-4. Generate and validate the dated suite and grade summaries under `.artifacts/e2e/`.
-5. Use the generated grade and trace-learning reports to rank failures and high-turn passes by category before widening to seeds `0,1,2`.
-6. Add `pass@2` only after the no-retry baseline is captured.
+1. Validate generated WorkArena reports with `workarena-validate-reports`.
+2. Run final source hygiene for checkpoint scope: focused tests are green, build is green, and `npm run ci:lint` should be run before committing if this checkpoint is release-facing.
+3. Create a named checkpoint commit for the generic catalog fixes and roadmap update, staging only relevant files from the dirty worktree.
+4. Use the generated grade and trace-learning reports to rank high-turn passing cases before widening; current top catalog cost is `order-development-laptop-p-c` at 15 turns.
+5. Run the full atomic seed `0` no-retry baseline after the checkpoint, then widen to seeds `0,1,2` only after that report validates.

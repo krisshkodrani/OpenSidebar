@@ -1929,22 +1929,44 @@ describe("Tool Registration", () => {
     document.title = "Incidents | ServiceNow";
     document.body.innerHTML = "";
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          result: [
-            {
-              sys_id: { value: "user123", display_value: "user123" },
-              name: {
-                value: "System Administrator",
-                display_value: "System Administrator",
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/sys_user?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                sys_id: { value: "user123", display_value: "user123" },
+                name: {
+                  value: "System Administrator",
+                  display_value: "System Administrator",
+                },
               },
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/now/table/sys_dictionary?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                element: "category",
+                column_label: "Category",
+                internal_type: "string",
+                reference: "",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
       url: serviceNowUrl,
@@ -1973,6 +1995,11 @@ describe("Tool Registration", () => {
                 operator: "is",
                 value: "System Administrator",
               },
+              {
+                field: "Category",
+                operator: "is",
+                value: "Inquiry / Help",
+              },
               { field: "Priority", operator: "is", value: "4 - Low" },
             ],
           }),
@@ -1981,10 +2008,248 @@ describe("Tool Registration", () => {
       123,
     );
 
-    const query = "caller_id=user123^ORpriority=4";
+    const query = "caller_id=user123^ORcategory=inquiry^ORpriority=4";
 
     expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).not.toContain("category=Inquiry / Help");
     expect(result).not.toContain("priority=4 - Low");
+  });
+
+  test("apply_list_filter prefers exact field names over duplicate ServiceNow labels", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/change_request_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Change Requests | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/sys_dictionary?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                element: "assigned_to",
+                column_label: "Assigned to",
+                internal_type: "reference",
+                reference: "sys_user",
+              },
+              {
+                element: "phase_state",
+                column_label: "State",
+                internal_type: "choice",
+                reference: "",
+              },
+              {
+                element: "state",
+                column_label: "State",
+                internal_type: "choice",
+                reference: "",
+              },
+              {
+                element: "short_description",
+                column_label: "Short description",
+                internal_type: "string",
+                reference: "",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Change Requests | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            join: "OR",
+            conditions: [
+              { field: "Assigned to", operator: "is", value: "Bow Ruggeri" },
+              { field: "State", operator: "is", value: "Review" },
+              { field: "Model", operator: "is", value: "" },
+              {
+                field: "Short description",
+                operator: "is",
+                value: "Apply patches 10.2.0.1 to 10.2.0.3",
+              },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query =
+      "assigned_to=Bow Ruggeri^ORstate=review^ORchg_modelISEMPTY^ORshort_description=Apply patches 10.2.0.1 to 10.2.0.3";
+
+    expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).not.toContain("phase_state=review");
+    expect(result).not.toContain("unknown_field:Model");
+  });
+
+  test("apply_list_filter resolves catalog choice labels and title references", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/sc_cat_item_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Catalog Items | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/sys_dictionary?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                element: "type",
+                column_label: "Type",
+                internal_type: "string",
+                reference: "",
+              },
+              {
+                element: "category",
+                column_label: "Category",
+                internal_type: "reference",
+                reference: "sc_category",
+              },
+              {
+                element: "name",
+                column_label: "Name",
+                internal_type: "string",
+                reference: "",
+              },
+              {
+                element: "short_description",
+                column_label: "Short description",
+                internal_type: "string",
+                reference: "",
+              },
+              {
+                element: "active",
+                column_label: "Active",
+                internal_type: "boolean",
+                reference: "",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (
+        url.includes("/api/now/table/sys_choice?") &&
+        decodeURIComponent(url).includes("element=type")
+      ) {
+        return new Response(
+          JSON.stringify({
+            result: [],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/now/table/sc_cat_item?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                type: { value: "item", display_value: "Item" },
+                category: {
+                  value: "app-access",
+                  display_value: "Application and Account Access",
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/now/table/sc_category?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                sys_id: "catalog-processing",
+                title: "Catalog Processing",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Catalog Items | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            join: "OR",
+            conditions: [
+              { field: "Type", operator: "is", value: "Item" },
+              {
+                field: "Category",
+                operator: "is",
+                value: "Application and Account Access",
+              },
+              { field: "Name", operator: "is", value: "Request zoom webinar" },
+              {
+                field: "Short description",
+                operator: "is",
+                value: "Request to book a zoom webinar",
+              },
+              { field: "Active", operator: "is", value: "true" },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query =
+      "type=item^ORcategory=app-access^ORname=Request zoom webinar^ORshort_description=Request to book a zoom webinar^ORactive=true";
+
+    expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).not.toContain("type=Item");
+    expect(result).not.toContain("category=Application and Account Access");
   });
 
   test("apply_list_filter resolves inherited hardware asset fields from a list URL", async () => {
@@ -2200,9 +2465,76 @@ describe("Tool Registration", () => {
     expect(result).toContain(`sysparm_query=${query}`);
   });
 
+  test("apply_list_sort resolves inherited ServiceNow task fields on change request lists", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/change_request_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Change Requests | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: [
+            {
+              element: "chg_model",
+              column_label: "Model",
+              internal_type: "reference",
+              reference: "chg_model",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Change Requests | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-sort",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_SORT,
+          arguments: JSON.stringify({
+            sorts: [
+              { field: "Closed by", direction: "ascending" },
+              { field: "Description", direction: "descending" },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query = "ORDERBYclosed_by^ORDERBYDESCdescription";
+    const target = `change_request_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+    const targetUrl = `https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Applied change_request list sorting.");
+    expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).not.toContain("unknown_field:Closed by");
+  });
+
   test("configure_catalog_item fills catalog controls and clicks submit", async () => {
     document.title = "Standard Laptop | ServiceNow";
     document.body.innerHTML = `
+            <input id="sysparm_quantity" name="sysparm_quantity" type="hidden" value="1" />
             <label for="quantity">Quantity</label>
             <select id="quantity">
                 <option value="1">1</option>
@@ -2214,6 +2546,11 @@ describe("Tool Registration", () => {
             <input id="photoshop" type="checkbox" checked />
             <label for="software">Additional software requirements</label>
             <textarea id="software"></textarea>
+            <label for="duration">How long do you need it for ?</label>
+            <select id="duration">
+                <option value="1_day">1 day</option>
+                <option value="1_week">1 week</option>
+            </select>
             <button id="order">Order Now</button>
         `;
     const rectSpy = vi
@@ -2230,8 +2567,20 @@ describe("Tool Registration", () => {
         toJSON: () => ({}),
       } as DOMRect);
     const orderButton = document.getElementById("order")!;
+    let committedQuantity = "1";
     orderButton.addEventListener("click", () => {
       orderButton.setAttribute("data-clicked", "true");
+      orderButton.setAttribute("data-submitted-quantity", committedQuantity);
+    });
+    document.getElementById("duration")!.addEventListener("change", () => {
+      (document.getElementById("quantity") as HTMLSelectElement).value = "1";
+    });
+    document.getElementById("quantity")!.addEventListener("change", () => {
+      const value = (document.getElementById("quantity") as HTMLSelectElement)
+        .value;
+      setTimeout(() => {
+        committedQuantity = value;
+      }, 100);
     });
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
@@ -2240,7 +2589,7 @@ describe("Tool Registration", () => {
       groupId: -1,
     }));
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
-      { result: details.func(...details.args), frameId: 0 },
+      { result: await details.func(...details.args), frameId: 0 },
     ]);
 
     const result = await toolRegistry.execute(
@@ -2255,6 +2604,12 @@ describe("Tool Registration", () => {
               {
                 field: "Additional software requirements",
                 value: "Trello, Salesforce",
+              },
+            ],
+            optionFields: [
+              {
+                field: "How long do you need it for ?",
+                value: "1 week",
               },
             ],
             checkboxes: [
@@ -2273,6 +2628,9 @@ describe("Tool Registration", () => {
       (document.getElementById("quantity") as HTMLSelectElement).value,
     ).toBe("10");
     expect(
+      (document.getElementById("sysparm_quantity") as HTMLInputElement).value,
+    ).toBe("10");
+    expect(
       (document.getElementById("acrobat") as HTMLInputElement).checked,
     ).toBe(true);
     expect(
@@ -2281,9 +2639,228 @@ describe("Tool Registration", () => {
     expect(
       (document.getElementById("software") as HTMLTextAreaElement).value,
     ).toBe("Trello, Salesforce");
+    expect((document.getElementById("duration") as HTMLSelectElement).value).toBe(
+      "1_week",
+    );
     expect(orderButton.getAttribute("data-clicked")).toBe("true");
+    expect(orderButton.getAttribute("data-submitted-quantity")).toBe("10");
     expect(result).toContain("Configured catalog item.");
+    expect(result).toContain("How long do you need it for ?=1 week");
     expect(result).toContain("Clicked submit control");
+    rectSpy.mockRestore();
+  });
+
+  test("configure_catalog_item sets the only dropdown with a matching option when the label is hidden", async () => {
+    document.title = "Loaner Laptop | ServiceNow";
+    document.body.innerHTML = `
+            <select id="IO:f3776a9ac0a8010a003825c7b4d9066d">
+                <option value="1 day">1 day</option>
+                <option value="1 month">1 month</option>
+                <option value="1 week">1 week</option>
+                <option value="2 weeks">2 weeks</option>
+            </select>
+        `;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/catalog_item",
+      title: "Loaner Laptop | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            optionFields: [
+              {
+                field: "How long do you need it for ?",
+                value: "1 week",
+              },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(
+      (
+        document.getElementById(
+          "IO:f3776a9ac0a8010a003825c7b4d9066d",
+        ) as HTMLSelectElement
+      ).value,
+    ).toBe("1 week");
+    expect(result).toContain("Configured catalog item.");
+    expect(result).toContain("How long do you need it for ?=1 week");
+  });
+
+  test("configure_catalog_item resolves unassociated ServiceNow variable labels by page order", async () => {
+    document.title = "Loaner Laptop | ServiceNow";
+    document.body.innerHTML = `
+            <div class="question_text">When do you need it ?</div>
+            <div class="variable_control">
+                <input id="IO:f3776a9ac0a8010a003825c7b49b6068" name="IO:f3776a9ac0a8010a003825c7b49b6068" />
+            </div>
+            <div class="question_text">How long do you need it for ?</div>
+            <div class="variable_control">
+                <select id="IO:f3776a9ac0a8010a003825c7b4d9066d" name="IO:f3776a9ac0a8010a003825c7b4d9066d">
+                    <option value="1 day">1 day</option>
+                    <option value="1 week">1 week</option>
+                </select>
+            </div>
+        `;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/catalog_item",
+      title: "Loaner Laptop | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            textFields: [
+              {
+                field: "When do you need it ?",
+                value: "On time for the next meeting",
+              },
+            ],
+            optionFields: [
+              {
+                field: "How long do you need it for ?",
+                value: "1 week",
+              },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(
+      (
+        document.getElementById(
+          "IO:f3776a9ac0a8010a003825c7b49b6068",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("On time for the next meeting");
+    expect(
+      (
+        document.getElementById(
+          "IO:f3776a9ac0a8010a003825c7b4d9066d",
+        ) as HTMLSelectElement
+      ).value,
+    ).toBe("1 week");
+    expect(result).toContain("Configured catalog item.");
+    expect(result).toContain(
+      'When do you need it ?="On time for the next meeting"',
+    );
+    expect(result).toContain("How long do you need it for ?=1 week");
+    rectSpy.mockRestore();
+  });
+
+  test("configure_catalog_item commits ServiceNow checkbox variables through g_form", async () => {
+    document.title = "Developer Laptop (Mac) | ServiceNow";
+    document.body.innerHTML = `
+            <label id="ni.IO:acrobat_label" type="checkbox" checked="false" control="ni.IO:acrobat" name="ni.IO:acrobat">Adobe Acrobat</label>
+            <input id="ni.IO:acrobat" name="ni.IO:acrobat" type="checkbox" />
+            <input id="IO:acrobat" name="IO:acrobat" type="hidden" value="false" />
+            <label id="ni.IO:photoshop_label" type="checkbox" checked="true" control="ni.IO:photoshop" name="ni.IO:photoshop">Adobe Photoshop</label>
+            <input id="ni.IO:photoshop" name="ni.IO:photoshop" type="checkbox" checked />
+            <input id="IO:photoshop" name="IO:photoshop" type="hidden" value="true" />
+        `;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      setValue: vi.fn((field: string, value: string) => {
+        values[field] = value;
+      }),
+    };
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/catalog_item",
+      title: "Developer Laptop (Mac) | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            checkboxes: [
+              { label: "Adobe Acrobat", checked: true },
+              { label: "Adobe Photoshop", checked: false },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(values["IO:acrobat"]).toBe("true");
+    expect(values["IO:photoshop"]).toBe("false");
+    expect(
+      (document.getElementById("ni.IO:acrobat") as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (document.getElementById("IO:acrobat") as HTMLInputElement).value,
+    ).toBe("true");
+    expect(
+      (document.getElementById("IO:photoshop") as HTMLInputElement).value,
+    ).toBe("false");
+    expect(
+      document
+        .getElementById("ni.IO:photoshop_label")!
+        .getAttribute("checked"),
+    ).toBe("false");
+    expect(result).toContain("Adobe Acrobat=checked");
+    expect(result).toContain("Adobe Photoshop=unchecked");
+    (window as any).g_form = originalGForm;
     rectSpy.mockRestore();
   });
 
@@ -2301,9 +2878,12 @@ describe("Tool Registration", () => {
                 <option value="phone">Phone</option>
             </select>
             <button id="sysverb_insert">Submit</button>
-        `;
+    `;
     const values: Record<string, string> = {};
     const originalGForm = (window as any).g_form;
+    const originalGsftSubmit = (window as any).gsftSubmit;
+    const gsftSubmit = vi.fn();
+    (window as any).gsftSubmit = gsftSubmit;
     (window as any).g_form = {
       getFieldNames: () => ["short_description", "contact_type"],
       getControl: (field: string) =>
@@ -2362,8 +2942,10 @@ describe("Tool Registration", () => {
       expect(values.short_description).toBe("EMAIL Server Down Again");
       expect(values.contact_type).toBe("phone");
       expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(gsftSubmit).not.toHaveBeenCalled();
       expect(result).toContain("Configured ServiceNow form.");
       expect(result).not.toContain("Mismatches:");
+      expect(result).toContain("Submit method: click (sysverb_insert)");
       expect(result).toContain("Submitted ServiceNow form record: INC0034429");
       expect(execution.evidence?.map((event) => event.type)).toEqual(
         expect.arrayContaining([
@@ -2376,6 +2958,11 @@ describe("Tool Registration", () => {
       );
     } finally {
       (window as any).g_form = originalGForm;
+      if (originalGsftSubmit === undefined) {
+        delete (window as any).gsftSubmit;
+      } else {
+        (window as any).gsftSubmit = originalGsftSubmit;
+      }
       (window as any).happyDOM.setURL("https://example.com/");
     }
   });
@@ -2591,6 +3178,220 @@ describe("Tool Registration", () => {
       expect(result).not.toContain("Submitted ServiceNow form record:");
       expect(execution.evidence?.map((event) => event.type)).toContain(
         "uncertainty_detected",
+      );
+    } finally {
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form falls back to ServiceNow submit API when click leaves an uncommitted form", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    const staleSysId = "11111111111111111111111111111111";
+    const submittedSysId = "22222222222222222222222222222222";
+    const serialNumber = "SN-5e7a307c-8d84-4bff-b23f-0e9a2d18fb29";
+    (window as any).happyDOM.setURL(`${origin}/alm_hardware.do`);
+    document.title = "New Record | Hardware | ServiceNow";
+    document.body.innerHTML = `
+            <form id="hardware-form">
+                <label for="alm_hardware.serial_number">Serial number</label>
+                <input id="alm_hardware.serial_number" name="alm_hardware.serial_number" />
+                <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+            </form>
+        `;
+    const values: Record<string, string> = {};
+    let fallbackSubmitted = false;
+    const originalGForm = (window as any).g_form;
+    const originalGsftSubmit = (window as any).gsftSubmit;
+    const originalFetch = globalThis.fetch;
+    (window as any).g_form = {
+      getTableName: () => "alm_hardware",
+      getUniqueValue: () => staleSysId,
+      getFormElement: () => document.getElementById("hardware-form"),
+      getFieldNames: () => ["serial_number"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="alm_hardware.${field}"]`),
+      getLabelOf: () => "Serial number",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="alm_hardware.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    (window as any).gsftSubmit = vi.fn(() => {
+      fallbackSubmitted = true;
+      document.title = "Hardware | ServiceNow";
+      (window as any).happyDOM.setURL(`${origin}/welcome.do`);
+    });
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const text = String(url);
+      const result =
+        fallbackSubmitted && text.includes("serial_number%3D")
+          ? [{ sys_id: submittedSysId }]
+          : [];
+      return new Response(JSON.stringify({ result }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: window.location.href,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...(details.args || [])), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-native-submit-fallback",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Serial number", value: serialNumber }],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect((window as any).gsftSubmit).toHaveBeenCalledOnce();
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain(
+        "Fallback submit method: gsftSubmit (sysverb_insert)",
+      );
+      expect(result).toContain(
+        `Submitted ServiceNow form sys_id: ${submittedSysId}`,
+      );
+      const expectedUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        `alm_hardware.do?sys_id=${submittedSysId}`,
+      )}`;
+      expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+        url: expectedUrl,
+      });
+      expect(result).toContain(
+        `Opened submitted ServiceNow record: ${expectedUrl}`,
+      );
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      if (originalGsftSubmit === undefined) {
+        delete (window as any).gsftSubmit;
+      } else {
+        (window as any).gsftSubmit = originalGsftSubmit;
+      }
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form reports ServiceNow submit diagnostics", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "New Record | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <label for="incident.vendor">Vendor</label>
+            <input id="incident.vendor" name="incident.vendor" />
+            <button id="sysverb_insert">Submit</button>
+        `;
+    Object.defineProperty(document.body, "innerText", {
+      configurable: true,
+      get: () => document.body.textContent || "",
+    });
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getTableName: () => "incident",
+      getFieldNames: () => ["short_description", "vendor"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="incident.${field}"]`),
+      getLabelOf: (field: string) =>
+        field === "vendor" ? "Vendor" : "Short description",
+      getMissingFields: () => ["vendor"],
+      getValue: (field: string) => values[field] || "",
+      isMandatory: (field: string) => field === "vendor",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="incident.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      const message = document.createElement("div");
+      message.className = "outputmsg_text";
+      message.textContent =
+        "The following mandatory fields are not filled in: Vendor";
+      document.body.append(message);
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...(details.args || [])), frameId: 0 },
+    ]);
+
+    try {
+      const execution = await toolRegistry.executeDetailed(
+        {
+          id: "configure-servicenow-form-diagnostics",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
+              ],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(execution.result).toContain("ServiceNow form configuration incomplete.");
+      expect(execution.result).toContain("Submit diagnostics:");
+      expect(execution.result).toContain(
+        "Missing mandatory fields: Vendor (vendor)",
+      );
+      expect(execution.result).toContain(
+        "The following mandatory fields are not filled in: Vendor",
+      );
+      expect(execution.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "uncertainty_detected",
+            detail: expect.objectContaining({
+              reason: "servicenow_submit_diagnostics",
+            }),
+          }),
+        ]),
       );
     } finally {
       (window as any).g_form = originalGForm;
@@ -2903,6 +3704,279 @@ describe("Tool Registration", () => {
     }
   });
 
+  test("configure_servicenow_form reports sys_id-only submitted records", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    const sysId = "abcdef0123456789abcdef0123456789";
+    (window as any).happyDOM.setURL(`${origin}/sys_user.do`);
+    document.title = "Create User | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_user.user_name">User ID</label>
+            <input id="sys_user.user_name" name="sys_user.user_name" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    const originalFetch = globalThis.fetch;
+    (window as any).g_form = {
+      getTableName: () => "sys_user",
+      getUniqueValue: () => sysId,
+      getFieldNames: () => ["user_name"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="sys_user.${field}"]`),
+      getLabelOf: () => "User ID",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="sys_user.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ result: [{ sys_id: sysId }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ) as any;
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "ServiceNow";
+      (window as any).happyDOM.setURL(`${origin}/welcome.do`);
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/welcome.do`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const execution = await toolRegistry.executeDetailed(
+        {
+          id: "configure-servicenow-sys-id-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "User ID", value: "3765002066203434277" }],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(execution.result).toContain("Configured ServiceNow form.");
+      expect(execution.result).toContain(
+        `Submitted ServiceNow form sys_id: ${sysId}`,
+      );
+      const expectedUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        `sys_user.do?sys_id=${sysId}`,
+      )}`;
+      expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+        url: expectedUrl,
+      });
+      expect(execution.result).toContain(
+        `Opened submitted ServiceNow record: ${expectedUrl}`,
+      );
+      expect(execution.result).not.toContain("Mismatches:");
+      expect(execution.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "record_identity_observed",
+            detail: expect.objectContaining({ table: "sys_user", sysId }),
+          }),
+        ]),
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form resolves submitted sys_id from identity fields", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    const staleSysId = "11111111111111111111111111111111";
+    const submittedSysId = "22222222222222222222222222222222";
+    const serialNumber = "SN-2c5b8b2d-2b29-42af-b10c-33623d625244";
+    (window as any).happyDOM.setURL(`${origin}/alm_hardware.do`);
+    document.title = "New Record | Hardware | ServiceNow";
+    document.body.innerHTML = `
+            <label for="alm_hardware.serial_number">Serial number</label>
+            <input id="alm_hardware.serial_number" name="alm_hardware.serial_number" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    const originalFetch = globalThis.fetch;
+    (window as any).g_form = {
+      getTableName: () => "alm_hardware",
+      getUniqueValue: () => staleSysId,
+      getFieldNames: () => ["serial_number"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="alm_hardware.${field}"]`),
+      getLabelOf: () => "Serial number",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="alm_hardware.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const text = String(url);
+      const result = text.includes("serial_number%3D")
+        ? [{ sys_id: submittedSysId }]
+        : [];
+      return new Response(JSON.stringify({ result }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "ServiceNow";
+      (window as any).happyDOM.setURL(`${origin}/welcome.do`);
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/welcome.do`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-sys-id-field-resolution",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Serial number", value: serialNumber }],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain(
+        `Submitted ServiceNow form sys_id: ${submittedSysId}`,
+      );
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form does not treat serial number as a record number", async () => {
+    const origin = "https://workarenapublic16.service-now.com";
+    const sysId = "abcdef0123456789abcdef0123456789";
+    const serialNumber = "SN-2b466749-54f8-4b3c-abb9-eb111bd99269";
+    (window as any).happyDOM.setURL(`${origin}/alm_hardware.do`);
+    document.title = "New Record | Hardware | ServiceNow";
+    document.body.innerHTML = `
+            <label for="alm_hardware.serial_number">Serial number</label>
+            <input id="alm_hardware.serial_number" name="alm_hardware.serial_number" />
+            <button id="sysverb_insert" value="sysverb_insert">Submit</button>
+        `;
+    const values: Record<string, string> = {};
+    const originalGForm = (window as any).g_form;
+    const originalFetch = globalThis.fetch;
+    (window as any).g_form = {
+      getTableName: () => "alm_hardware",
+      getUniqueValue: () => sysId,
+      getFieldNames: () => ["serial_number"],
+      getControl: (field: string) =>
+        document.querySelector(`[name="alm_hardware.${field}"]`),
+      getLabelOf: () => "Serial number",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string) => {
+        values[field] = value;
+        const control = document.querySelector(
+          `[name="alm_hardware.${field}"]`,
+        ) as HTMLInputElement | null;
+        if (control) control.value = value;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ result: [{ sys_id: sysId }] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ) as any;
+    const submitButton = document.getElementById("sysverb_insert")!;
+    submitButton.addEventListener("click", () => {
+      submitButton.setAttribute("data-clicked", "true");
+      document.title = "ServiceNow";
+      (window as any).happyDOM.setURL(`${origin}/welcome.do`);
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: `${origin}/welcome.do`,
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-serial-number-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Serial number", value: serialNumber }],
+              submit: true,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(submitButton.getAttribute("data-clicked")).toBe("true");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain(`Submitted ServiceNow form sys_id: ${sysId}`);
+      expect(result).not.toContain("Submitted ServiceNow form record: ABB9");
+      const expectedUrl = `${origin}/now/nav/ui/classic/params/target/${encodeURIComponent(
+        `alm_hardware.do?sys_id=${sysId}`,
+      )}`;
+      expect(chrome.tabs.update).toHaveBeenCalledWith(123, {
+        url: expectedUrl,
+      });
+      expect(result).toContain(
+        `Opened submitted ServiceNow record: ${expectedUrl}`,
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
   test("configure_servicenow_form commits ServiceNow reference fields with sys_id backing values", async () => {
     (window as any).happyDOM.setURL(
       "https://workarenapublic16.service-now.com/incident.do",
@@ -2937,7 +4011,7 @@ describe("Tool Registration", () => {
       setValue: (field: string, value: string, display: string) => {
         values[field] = value;
         hiddenInput.value = value;
-        displayInput.value = display;
+        displayInput.value = display === "Asus G Series" ? "G Series" : display;
       },
     };
     globalThis.fetch = vi.fn(
@@ -2991,6 +4065,207 @@ describe("Tool Registration", () => {
     } finally {
       globalThis.fetch = originalFetch;
       (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form accepts resolved reference display aliases", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/alm_hardware.do",
+    );
+    document.title = "Create Hardware Asset | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.alm_hardware.model">Model</label>
+            <input
+                id="sys_display.alm_hardware.model"
+                name="sys_display.alm_hardware.model"
+                role="combobox"
+            />
+            <input id="alm_hardware.model" name="alm_hardware.model" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.alm_hardware.model",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "alm_hardware.model",
+    ) as HTMLInputElement;
+    displayInput.addEventListener("change", () => {
+      if (displayInput.value === "Asus G Series") {
+        displayInput.value = "G Series";
+      }
+    });
+    const values: Record<string, string> = {};
+    const sysId = "fedcba9876543210fedcba9876543210";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["model"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "cmdb_model" }),
+      getLabelOf: () => "Model",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string, display: string) => {
+        values[field] = value;
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            result: [{ sys_id: sysId, display_name: "Asus G Series" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/alm_hardware.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-alias-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Model", value: "Asus G Series" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(values.model).toBe(sysId);
+      expect(hiddenInput.value).toBe(sysId);
+      expect(displayInput.value).toBe("G Series");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain("Model (model) = G Series");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form reveals ServiceNow form sections before filling hidden fields", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/alm_hardware.do",
+    );
+    document.title = "Create Hardware Asset | ServiceNow";
+    document.body.innerHTML = `
+            <span id="tab-general" role="tab">*General</span>
+            <span id="tab-financial" role="tab">*Financial</span>
+            <section id="section-financial" style="display: none">
+                <label for="sys_display.alm_hardware.vendor">Vendor</label>
+                <input
+                    id="sys_display.alm_hardware.vendor"
+                    name="sys_display.alm_hardware.vendor"
+                    role="combobox"
+                />
+                <input id="alm_hardware.vendor" name="alm_hardware.vendor" type="hidden" />
+            </section>
+        `;
+    const financialTab = document.getElementById("tab-financial")!;
+    const financialSection = document.getElementById("section-financial")!;
+    financialTab.addEventListener("click", () => {
+      financialTab.setAttribute("data-clicked", "true");
+      financialSection.setAttribute("style", "display: block");
+    });
+    const displayInput = document.getElementById(
+      "sys_display.alm_hardware.vendor",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "alm_hardware.vendor",
+    ) as HTMLInputElement;
+    const values: Record<string, string> = {};
+    const sysId = "0123456789abcdef0123456789abcdef";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_tabs2Sections = {
+      tabIDs: ["alm_hardware.general", "alm_hardware.financial"],
+      tabsTabs: [
+        { element: document.getElementById("tab-general") },
+        { element: financialTab },
+      ],
+    };
+    (window as any).g_form = {
+      getFieldNames: () => ["vendor"],
+      getControl: () => hiddenInput,
+      getElement: () => displayInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "core_company" }),
+      getLabelOf: () => "Vendor",
+      getValue: (field: string) => values[field] || "",
+      setValue: (field: string, value: string, display: string) => {
+        values[field] = value;
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            result: [{ sys_id: sysId, name: "Asus" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/alm_hardware.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-hidden-section-form",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Vendor", value: "Asus" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(financialTab.getAttribute("data-clicked")).toBe("true");
+      expect(values.vendor).toBe(sysId);
+      expect(hiddenInput.value).toBe(sysId);
+      expect(displayInput.value).toBe("Asus");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain("Vendor (vendor) = Asus");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      delete (window as any).g_tabs2Sections;
       (window as any).happyDOM.setURL("https://example.com/");
     }
   });
@@ -3109,7 +4384,7 @@ describe("Tool Registration", () => {
       groupId: -1,
     }));
     (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
-      { result: details.func(...details.args), frameId: 0 },
+      { result: await details.func(...details.args), frameId: 0 },
     ]);
 
     const result = await toolRegistry.execute(
@@ -3208,6 +4483,71 @@ describe("Tool Registration", () => {
     expect(checkoutClicked).toBe(true);
     expect(result).toContain("Clicked submit control: Add to Cart");
     expect(result).toContain("Clicked cart checkout control");
+    rectSpy.mockRestore();
+  });
+
+  test("configure_catalog_item prefers direct order over add-to-cart checkout when both are visible", async () => {
+    let orderClicked = false;
+    let addClicked = false;
+    document.title = "Standard Laptop | Service Catalog";
+    document.body.innerHTML = `
+            <label for="quantity">Quantity</label>
+            <select id="quantity">
+                <option value="1">1</option>
+                <option value="10">10</option>
+            </select>
+            <button id="order">Order Now</button>
+            <button id="add">Add to Cart</button>
+        `;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    document.getElementById("order")!.addEventListener("click", () => {
+      orderClicked = true;
+    });
+    document.getElementById("add")!.addEventListener("click", () => {
+      addClicked = true;
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/order_status",
+      title: "Order Status | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            quantity: "10",
+            submit: true,
+            submitButton: "Add to Cart",
+            continueToCheckout: true,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(orderClicked).toBe(true);
+    expect(addClicked).toBe(false);
+    expect(result).toContain("Clicked submit control: Order Now");
     rectSpy.mockRestore();
   });
 
