@@ -8,6 +8,7 @@ import {
   parseSeedSpec,
   parseSuiteArgs,
   selectSuiteTargets,
+  suiteAttemptReportSuffix,
   suiteReportFileStem,
   suiteRunFromAttempt,
   type WorkArenaSuiteReport,
@@ -192,6 +193,12 @@ describe("WorkArena suite parsing", () => {
 
     expect(singleTaskStem).toBe(
       "workarena-suite-2026-05-09-workarena.servicenow.sort-change-request-list-seed-0-123457001",
+    );
+  });
+
+  test("suite attempt report suffix includes run time to avoid handoff report overwrite", () => {
+    expect(suiteAttemptReportSuffix("2026-05-09T12:34:56.789Z", 2, 1)).toBe(
+      "run-123456789-seed-2-attempt-1",
     );
   });
 });

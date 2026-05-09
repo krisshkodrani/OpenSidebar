@@ -2,13 +2,15 @@ import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
-type ReviewArgs = {
+export type ReviewArgs = {
   mode: "staged" | "last" | "working";
   allowRemote: boolean;
   allowLarge: boolean;
   base?: string;
   model: string;
   outputDir: string;
+  objective?: string;
+  evidencePaths: string[];
 };
 
 const DEFAULT_MODEL = "deepseek-v4-pro";
@@ -16,13 +18,14 @@ const API_URL = "https://api.deepseek.com/chat/completions";
 const MAX_DIFF_CHARS = 200_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
-function parseArgs(argv: string[]): ReviewArgs {
+export function parseArgs(argv: string[]): ReviewArgs {
   const args: ReviewArgs = {
     mode: "staged",
     allowRemote: false,
     allowLarge: false,
     model: DEFAULT_MODEL,
     outputDir: ".artifacts/reviews",
+    evidencePaths: [],
   };
 
   let i = 0;
@@ -54,6 +57,10 @@ function parseArgs(argv: string[]): ReviewArgs {
       args.model = readValue("--model");
     } else if (arg === "--output-dir") {
       args.outputDir = readValue("--output-dir");
+    } else if (arg === "--objective") {
+      args.objective = readValue("--objective");
+    } else if (arg === "--evidence") {
+      args.evidencePaths.push(readValue("--evidence"));
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -120,11 +127,49 @@ function diffFence(diff: string): { open: string; close: string } {
   return { open: `${fence}diff`, close: fence };
 }
 
-function buildPrompt(diff: string): string {
-  const fence = diffFence(diff);
+function readEvidenceFiles(paths: string[]): Array<{ path: string; content: string }> {
+  return paths.map((path) => ({
+    path,
+    content: readFileSync(path, "utf-8"),
+  }));
+}
+
+export function buildPrompt(
+  diff: string,
+  context: {
+    objective?: string;
+    evidence?: Array<{ path: string; content: string }>;
+  } = {},
+): string {
+  const evidenceText = context.evidence
+    ?.map((entry) => `${entry.path}\n${entry.content}`)
+    .join("\n");
+  const fence = diffFence([diff, context.objective, evidenceText].join("\n"));
+  const textFenceOpen = fence.open.replace(/diff$/, "");
+  const goalContext = context.objective
+    ? [
+        "Goal context:",
+        context.objective,
+        "",
+      ]
+    : [];
+  const evidence = context.evidence?.length
+    ? [
+        "Verification evidence:",
+        ...context.evidence.flatMap((entry) => [
+          `Evidence file: ${entry.path}`,
+          textFenceOpen,
+          entry.content.trim(),
+          fence.close,
+        ]),
+        "",
+      ]
+    : [];
   return [
     "Review this private repository diff as an adversarial senior engineer.",
     "",
+    ...goalContext,
+    ...evidence,
     "Focus on:",
     "- correctness bugs",
     "- async/race conditions",
@@ -179,12 +224,21 @@ async function main() {
     );
   }
   const files = getDiffFileList(args);
+  const evidence = readEvidenceFiles(args.evidencePaths);
   console.warn(
     "Sending repository diff to DeepSeek. Confirmed by --allow-remote.",
   );
   console.warn(`Diff size: ${diff.length} characters, ${diffLines} lines.`);
   if (files.length > 0) {
     console.warn(`Files included:\n${files.map((file) => `- ${file}`).join("\n")}`);
+  }
+  if (args.objective) {
+    console.warn("Goal objective included in review prompt.");
+  }
+  if (evidence.length > 0) {
+    console.warn(
+      `Evidence included:\n${evidence.map((entry) => `- ${entry.path}`).join("\n")}`,
+    );
   }
 
   const body = {
@@ -195,7 +249,13 @@ async function main() {
         content:
           "You are a strict code reviewer. Be concise, concrete, and skeptical.",
       },
-      { role: "user", content: buildPrompt(diff) },
+      {
+        role: "user",
+        content: buildPrompt(diff, {
+          objective: args.objective,
+          evidence,
+        }),
+      },
     ],
     thinking: { type: "enabled" },
     reasoning_effort: "high",
@@ -242,7 +302,9 @@ async function main() {
   console.log(outputPath);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (process.argv[1]?.replace(/\\/g, "/").endsWith("scripts/deepseek-review.ts")) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 import { ToolName } from "../../src/types";
 import {
   buildKnowledgeBaseSearchArgs,
+  extractKnowledgeBaseArticleUrlFromRenderedText,
   extractKnowledgeBaseAnswerCandidate,
   extractKnowledgeBaseAnswerFromText,
   extractKnowledgeBaseRenderedSearchUrl,
   shouldRouteKnowledgeBaseSearchFirst,
+  shouldRouteKnowledgeBaseSearchToTopArticle,
   shouldRouteKnowledgeBaseSearchToRenderedResults,
 } from "../../src/background/agent/knowledge-search-routing";
 
@@ -145,6 +147,64 @@ describe("knowledge search routing", () => {
     ).toBe("https://example.service-now.com/kb?id=kb_search&query=new%20hires");
   });
 
+  test("extracts top article URL from rendered knowledge search text", () => {
+    expect(
+      extractKnowledgeBaseArticleUrlFromRenderedText(
+        [
+          "Page: which ensures financial Knowledge Search - Knowledge Portal",
+          '## 7 results for "which ensures financial"',
+          "### [Article 25](https://example.service-now.com/kb?sys_kb_id=f158fa3293ea7210cc31fa95dd03d6e0&id=kb_article_view&sysparm_rank=1)",
+          "Ensuring Integrity and Transparency in Financial Reporting",
+        ].join("\n"),
+      ),
+    ).toBe(
+      "https://example.service-now.com/kb?sys_kb_id=f158fa3293ea7210cc31fa95dd03d6e0&id=kb_article_view&sysparm_rank=1",
+    );
+  });
+
+  test("prefers rendered article links whose context matches the question", () => {
+    expect(
+      extractKnowledgeBaseArticleUrlFromRenderedText(
+        [
+          "Page: which charged ensuring Knowledge Search - Knowledge Portal",
+          '## 7 results for "which charged ensuring"',
+          "### [Article 2](https://example.service-now.com/kb?sys_kb_id=wrong&id=kb_article_view)",
+          "Enhancing Your Conference Room Experience.",
+          "### [Article 25](https://example.service-now.com/kb?sys_kb_id=right&id=kb_article_view)",
+          "Ensuring Integrity and Transparency in Financial Reporting.",
+        ].join("\n"),
+        'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+      ),
+    ).toBe(
+      "https://example.service-now.com/kb?sys_kb_id=right&id=kb_article_view",
+    );
+  });
+
+  test("routes rendered knowledge recovery to the top article URL", () => {
+    expect(
+      shouldRouteKnowledgeBaseSearchToTopArticle({
+        selectedSkillId: "search-answer-extraction",
+        toolName: ToolName.SEARCH_KNOWLEDGE_BASE,
+        originalQuery:
+          'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+        currentUrl:
+          "https://example.service-now.com/kb?id=kb_search&query=which%20ensures%20financial",
+        messages: [
+          {
+            role: "tool",
+            content: [
+              "Page: which ensures financial Knowledge Search - Knowledge Portal",
+              "### [Article 25](https://example.service-now.com/kb?sys_kb_id=f158fa3293ea7210cc31fa95dd03d6e0&id=kb_article_view)",
+              "Ensuring Integrity and Transparency in Financial Reporting",
+            ].join("\n"),
+          },
+        ],
+      }),
+    ).toBe(
+      "https://example.service-now.com/kb?sys_kb_id=f158fa3293ea7210cc31fa95dd03d6e0&id=kb_article_view",
+    );
+  });
+
   test("does not reroute to rendered results when already on that URL", () => {
     expect(
       shouldRouteKnowledgeBaseSearchToRenderedResults({
@@ -190,7 +250,7 @@ describe("knowledge search routing", () => {
     ).toBeNull();
   });
 
-  test("does not reroute manual recovery after a recent extractor attempt", () => {
+  test("reroutes manual recovery after an empty early extractor attempt", () => {
     expect(
       shouldRouteKnowledgeBaseSearchFirst({
         selectedSkillId: "search-answer-extraction",
@@ -201,6 +261,49 @@ describe("knowledge search routing", () => {
           {
             tool: ToolName.SEARCH_KNOWLEDGE_BASE,
             argsKey: '{"question":"Search the knowledge base"}',
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  test("does not reroute after repeated knowledge search attempts without evidence", () => {
+    expect(
+      shouldRouteKnowledgeBaseSearchFirst({
+        selectedSkillId: "search-answer-extraction",
+        toolName: ToolName.CLICK_ELEMENT,
+        originalQuery: "Search the knowledge base and answer the question.",
+        messages: [],
+        recentToolCalls: [
+          {
+            tool: ToolName.SEARCH_KNOWLEDGE_BASE,
+            argsKey: '{"question":"Search the knowledge base"}',
+          },
+          {
+            tool: ToolName.SEARCH_KNOWLEDGE_BASE,
+            argsKey: '{"question":"Search the knowledge base"}',
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
+  test("does not reroute while a knowledge search tool call is already pending", () => {
+    expect(
+      shouldRouteKnowledgeBaseSearchFirst({
+        selectedSkillId: "search-answer-extraction",
+        toolName: ToolName.CLICK_ELEMENT,
+        originalQuery: "Search the knowledge base and answer the question.",
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              {
+                function: {
+                  name: ToolName.SEARCH_KNOWLEDGE_BASE,
+                },
+              },
+            ],
           },
         ],
       }),
@@ -215,7 +318,27 @@ describe("knowledge search routing", () => {
     ).toEqual({
       question:
         "Each year, how many new hires does the company typically make? Your answer should be a number.",
+      query: "new hires hiring recruitment headcount",
       answerType: "number",
+    });
+  });
+
+  test("derives answer type from the original quoted question, not handoff scaffolding", () => {
+    expect(
+      buildKnowledgeBaseSearchArgs(
+        [
+          'Objective: Complete the workflow for the original request: Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+          "Skill procedure:",
+          "For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number.",
+          "Original user request:",
+          'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+        ].join("\n"),
+      ),
+    ).toEqual({
+      question:
+        "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer.",
+      query: "integrity financial audits",
+      answerType: "auto",
     });
   });
 
@@ -261,6 +384,26 @@ describe("knowledge search routing", () => {
         'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."',
       ),
     ).toBe("100");
+  });
+
+  test("does not extract numeric UI artifacts for text-answer knowledge questions", () => {
+    expect(
+      extractKnowledgeBaseAnswerFromText(
+        [
+          "Page: Knowledge Search - Knowledge Portal | ServiceNow",
+          '4 results for "which charged ensuring"',
+          "Article 2 General Knowledge Enhancing Your Conference Room Experience.",
+          "Article Metadata Authored by System Administrator Article has 21 views.",
+        ].join(" "),
+        [
+          'Objective: Complete the workflow for the original request: Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+          "Skill procedure:",
+          "For numeric-answer questions, prefer candidates whose snippets contain the requested entity plus a number.",
+          "Original user request:",
+          'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+        ].join("\n"),
+      ),
+    ).toBeNull();
   });
 
   test("does not treat article ids as numeric answers", () => {
@@ -342,6 +485,60 @@ describe("knowledge search routing", () => {
           "Article 47 Article Metadata System Administrator updated 4mo ago",
         ].join(" "),
         'Answer using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."',
+      ),
+    ).toBeNull();
+  });
+
+  test("does not extract generic company names from rendered search snippets", () => {
+    expect(
+      extractKnowledgeBaseAnswerFromText(
+        [
+          "Page: financial audit integrity Knowledge Search - Knowledge Portal",
+          '2 results for "financial audit integrity"',
+          "Article 25 General Knowledge.",
+          "Our Company is committed to corporate integrity and financial transparency.",
+        ].join(" "),
+        'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+      ),
+    ).toBeNull();
+  });
+
+  test("extracts company answers from knowledge article text", () => {
+    expect(
+      extractKnowledgeBaseAnswerFromText(
+        [
+          "Page: General Knowledge - Article 25 - Knowledge Portal",
+          "Ensuring Integrity and Transparency in Financial Reporting.",
+          "Our annual financial audits are conducted independently.",
+          "PriceWaterhouseCoopers is charged with ensuring the integrity of our financial audits.",
+        ].join(" "),
+        'Answer the following question using the knowledge base: "Which company is charged with ensuring the integrity of our financial audits? State the full name of the company as an answer."',
+      ),
+    ).toBe("PriceWaterhouseCoopers");
+  });
+
+  test("extracts organization answers from provider article text", () => {
+    expect(
+      extractKnowledgeBaseAnswerFromText(
+        [
+          "Page: IT Knowledge - Article 42 - Knowledge Portal",
+          "Laptop procurement standards.",
+          "Contoso Hardware Group provides the standard laptop imaging service for new employees.",
+        ].join(" "),
+        'Answer the following question using the knowledge base: "Which provider supplies the standard laptop imaging service for new employees? State the full name of the provider as an answer."',
+      ),
+    ).toBe("Contoso Hardware Group");
+  });
+
+  test("does not extract organizations from unrelated article context", () => {
+    expect(
+      extractKnowledgeBaseAnswerFromText(
+        [
+          "Page: IT Knowledge - Article 42 - Knowledge Portal",
+          "Contoso Hardware Group appears in the vendor directory.",
+          "The standard laptop imaging service must be requested through the hardware catalog.",
+        ].join(" "),
+        'Answer the following question using the knowledge base: "Which provider supplies the standard laptop imaging service for new employees? State the full name of the provider as an answer."',
       ),
     ).toBeNull();
   });

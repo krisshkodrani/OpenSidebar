@@ -119,17 +119,29 @@ export function extractFieldValuePairs(text: string): Array<{
     pairs.push({ field: trimmedField, value });
   };
 
-  for (const match of text.matchAll(
-    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([^"'\r\n]{1,160})\3/gi,
-  )) {
-    pushPair(match[4] ?? "", match[2] ?? "");
+  const collectPairs = (source: string): number => {
+    const before = pairs.length;
+
+    for (const match of source.matchAll(
+      /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([^"'\r\n]{1,160})\3/gi,
+    )) {
+      pushPair(match[4] ?? "", match[2] ?? "");
+    }
+
+    for (const match of source.matchAll(
+      /\bfield\s+(["'])([^"'\r\n]{1,160})\1\s+(?:to|with|as|=)\s+(["'])([\s\S]*?)\3/gi,
+    )) {
+      pushPair(match[2] ?? "", match[4] ?? "");
+    }
+
+    return pairs.length - before;
+  };
+
+  for (const originalRequest of extractOriginalUserRequestSections(text)) {
+    collectPairs(originalRequest);
   }
 
-  for (const match of text.matchAll(
-    /\bfield\s+(["'])([^"'\r\n]{1,160})\1\s+(?:to|with|as|=)\s+(["'])([\s\S]*?)\3/gi,
-  )) {
-    pushPair(match[2] ?? "", match[4] ?? "");
-  }
+  collectPairs(text);
 
   if (pairs.length === 0) {
     for (const match of text.matchAll(
@@ -152,6 +164,24 @@ export function extractFieldValuePairs(text: string): Array<{
       return { field, value };
     },
   );
+}
+
+function extractOriginalUserRequestSections(text: string): string[] {
+  const sections: string[] = [];
+  const labelPattern = /Original user request[^\r\n:]*:\s*/gi;
+  for (const match of text.matchAll(labelPattern)) {
+    const start = match.index == null ? -1 : match.index + match[0].length;
+    if (start < 0) continue;
+    const remainder = text.slice(start);
+    const endMatch = remainder.match(
+      /\r?\n\s*(?:\r?\n|Execution policy:|VERIFICATION(?: CHECKPOINT| TURN)?:|Rules:|Skill execution contract:|Current task:)/i,
+    );
+    const section = (
+      endMatch?.index == null ? remainder : remainder.slice(0, endMatch.index)
+    ).trim();
+    if (section) sections.push(section);
+  }
+  return sections;
 }
 
 function isRecordFormCreationPrompt(text: string): boolean {

@@ -252,6 +252,14 @@ function suiteReportTimeScope(generatedAt: string): string {
   return timePart && timePart.length > 0 ? timePart : "000000000";
 }
 
+export function suiteAttemptReportSuffix(
+  generatedAt: string,
+  seed: number,
+  attempt: number,
+): string {
+  return `run-${suiteReportTimeScope(generatedAt)}-seed-${seed}-attempt-${attempt}`;
+}
+
 export function suiteReportFileStem(
   report: Pick<
     WorkArenaSuiteReport,

@@ -13,6 +13,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Overview](./architecture/overview.md)
 - [Agent Loop](./architecture/agent-loop.md)
 - [Orchestrator](./architecture/orchestrator.md)
+- [Skill Routing Without Prompt Bloat](./architecture/skill-routing-without-prompt-bloat.md)
 - [Content Script](./architecture/content-script.md)
 - [Runtime Boundaries](./architecture/runtime-boundaries.md)
 - [Perception Layer](./architecture/perception-layer.md)
