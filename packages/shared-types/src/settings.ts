@@ -13,6 +13,7 @@ export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
 export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
   "communication-workflows",
   "procurement-workflows",
+  "servicenow-platform",
 ];
 
 export type TTSStylePreset =

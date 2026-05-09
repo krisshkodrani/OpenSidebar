@@ -78,6 +78,7 @@ import {
     listDefaultEnabledSkillPackIds,
     listSkillDescriptors,
     listSkillPacks,
+    resolveEligibleSkillCandidates,
     resolveSkillToolProfile,
     selectPrimarySkill,
 } from "../../src/background/orchestrator/skills";
@@ -2230,6 +2231,21 @@ describe("selectPrimarySkill", () => {
                 enabledSkillPackIds: [],
             }),
         ).toBeNull();
+        expect(listSkillPacks().map((pack) => pack.id)).toContain(
+            "servicenow-platform",
+        );
+        expect(listDefaultEnabledSkillPackIds()).toContain(
+            "servicenow-platform",
+        );
+        expect(getSkillPack("servicenow-platform")?.type).toBe("platform");
+        expect(getSkillPack("servicenow-platform")?.skillIds).toContain(
+            "servicenow-record-form",
+        );
+        expect(
+            listSkillDescriptors({ enabledSkillPackIds: [] }).map(
+                (skill) => skill.id,
+            ),
+        ).not.toContain("servicenow-record-form");
     });
 
     test("returns cloned skill descriptors from catalog lookup", () => {
@@ -2294,6 +2310,134 @@ describe("selectPrimarySkill", () => {
         expect(new KeywordSkillMatcher().match(input)?.id).toBe(
             "search-answer-extraction",
         );
+    });
+
+    test("routes ServiceNow platform skills only from strong environment evidence", () => {
+        const genericIncidentTask = {
+            query:
+                'Create a new incident with a value of "Printer offline" for field "Short description".',
+            objective:
+                'Fill the incident form with Short description="Printer offline" and leave it ready to submit.',
+            successCriteria:
+                "The requested incident fields are visible with matching readback.",
+            pageTitle: "Acme Helpdesk",
+            pageUrl: "https://helpdesk.example.com/incidents/new",
+        };
+
+        expect(selectPrimarySkill(genericIncidentTask)?.id).not.toBe(
+            "servicenow-record-form",
+        );
+        expect(
+            resolveEligibleSkillCandidates(genericIncidentTask).map(
+                (candidate) => candidate.skill.id,
+            ),
+        ).not.toContain("servicenow-record-form");
+
+        const serviceNowTask = {
+            ...genericIncidentTask,
+            query:
+                'ServiceNow: create a new incident with a value of "Printer offline" for field "Short description".',
+        };
+
+        expect(selectPrimarySkill(serviceNowTask)?.id).toBe(
+            "servicenow-record-form",
+        );
+        const serviceNowCandidate = resolveEligibleSkillCandidates(
+            serviceNowTask,
+        ).find((candidate) => candidate.skill.id === "servicenow-record-form");
+        expect(serviceNowCandidate?.packId).toBe("servicenow-platform");
+        expect(serviceNowCandidate?.signalStrength).toBe("strong");
+
+        expect(
+            selectPrimarySkill({
+                ...genericIncidentTask,
+                pageTitle: "Create Incident | ServiceNow",
+                pageUrl: "https://workarenapublic16.service-now.com/incident.do",
+            })?.id,
+        ).toBe("servicenow-record-form");
+        expect(
+            selectPrimarySkill({
+                ...genericIncidentTask,
+                pageTitle: "Create Incident",
+                pageUrl: "https://helpdesk.internal.example/incidents/new",
+                runtimeContext: ["platform: ServiceNow"],
+            })?.id,
+        ).toBe("servicenow-record-form");
+    });
+
+    test("ignores WorkArena task ids as ServiceNow activation signals", () => {
+        const candidates = resolveEligibleSkillCandidates({
+            query: "workarena.servicenow.create-incident",
+            objective:
+                'Create a new incident with a value of "Printer offline" for field "Short description".',
+            successCriteria: "The incident form is filled.",
+            pageTitle: "Generic Ticketing",
+            pageUrl: "https://tickets.example.com/incidents/new",
+        }).map((candidate) => candidate.skill.id);
+
+        expect(candidates).not.toContain("servicenow-record-form");
+        expect(candidates).not.toContain("servicenow-module-navigation");
+    });
+
+    test("keeps generic catalog and knowledge tasks out of ServiceNow activation", () => {
+        expect(
+            resolveEligibleSkillCandidates({
+                query:
+                    "Order a laptop from the hardware catalog and proceed through checkout.",
+                objective:
+                    "Configure the laptop catalog item and submit the request.",
+                successCriteria: "Order confirmation is visible.",
+                pageTitle: "Hardware Store",
+                pageUrl: "https://shop.example.com/catalog/laptops",
+            }).map((candidate) => candidate.skill.id),
+        ).not.toContain("servicenow-record-form");
+
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Search the knowledge base and answer what users should do before resetting MFA.",
+                objective:
+                    "Use the knowledge search result to answer the user's question",
+                successCriteria:
+                    "Final answer contains the requested fact from the article",
+                pageTitle: "Help Center",
+                pageUrl: "https://docs.example.com/kb",
+            })?.id,
+        ).toBe("search-answer-extraction");
+    });
+
+    test("respects disabled platform packs even when strong signals match", () => {
+        const input = {
+            query:
+                'Create a new incident with a value of "Printer offline" for field "Short description".',
+            objective:
+                'Fill the form with Short description="Printer offline".',
+            successCriteria: "The ServiceNow incident form is filled.",
+            pageTitle: "Create Incident | ServiceNow",
+            pageUrl: "https://workarenapublic16.service-now.com/incident.do",
+            enabledSkillPackIds: [],
+        };
+
+        expect(
+            resolveEligibleSkillCandidates(input).map(
+                (candidate) => candidate.skill.id,
+            ),
+        ).not.toContain("servicenow-record-form");
+        expect(selectPrimarySkill(input)?.id).not.toBe("servicenow-record-form");
+    });
+
+    test("keeps routed candidate sets bounded", () => {
+        expect(
+            resolveEligibleSkillCandidates({
+                query:
+                    "In ServiceNow, reply to an email, open a procurement list in tabs, sort an incident table, filter records, order a catalog item, and search the knowledge base.",
+                objective:
+                    "Exercise multiple workflow signals without exposing the full skill catalog to selection.",
+                successCriteria: "A bounded candidate set is produced.",
+                pageTitle: "Home | ServiceNow",
+                pageUrl: "https://workarenapublic16.service-now.com/now/nav/ui/home",
+            }).length,
+        ).toBeLessThanOrEqual(32);
     });
 
     test("prefers list-detail review over generic compare for listing recommendations", () => {
