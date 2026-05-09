@@ -22,6 +22,7 @@ import {
 import {
   completedKeysFromSuiteReport,
   parseSuiteArgs,
+  suiteAttemptReportSuffix,
   selectSuiteTargets,
   suiteReportFileStem,
   suiteRunFromAttempt,
@@ -76,8 +77,9 @@ function runHandoff(
   target: WorkArenaSuiteTarget,
   attempt: number,
   args: WorkArenaSuiteArgs,
+  generatedAt: string,
 ): { reportPath: string | null; exitCode: number | null } {
-  const suffix = `seed-${target.seed}-attempt-${attempt}`;
+  const suffix = suiteAttemptReportSuffix(generatedAt, target.seed, attempt);
   const commandArgs = [
     "tsx",
     "scripts/workarena-handoff.ts",
@@ -242,6 +244,7 @@ function suiteStatus(
 
 async function main(): Promise<void> {
   const args = parseSuiteArgs();
+  const generatedAt = new Date().toISOString();
   const list = loadTaskList(args);
   const targets = selectSuiteTargets(list, args);
   const prior = readPriorSuiteReport(args.resumeFromReport);
@@ -272,7 +275,7 @@ async function main(): Promise<void> {
 
     let passed = false;
     for (let attempt = 1; attempt <= args.retries + 1; attempt += 1) {
-      const handoff = runHandoff(target, attempt, args);
+      const handoff = runHandoff(target, attempt, args, generatedAt);
       const input = handoff.reportPath ? readExecutionReport(handoff.reportPath) : null;
       if (!input) {
         runs.push(
@@ -315,7 +318,7 @@ async function main(): Promise<void> {
   const report: WorkArenaSuiteReport = {
     benchmark: "workarena",
     mode: "suite",
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     suite: args.suite,
     categories: args.categories,
     seeds: args.seeds,

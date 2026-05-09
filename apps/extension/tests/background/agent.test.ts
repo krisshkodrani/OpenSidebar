@@ -1561,6 +1561,31 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("ServiceNow submit intent is scoped to fill-only plan steps", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+
+    expect(
+      (agent as any).hasTrustedServiceNowSubmitIntent(
+        "Fill the form with requested field values. Do not submit the form yet.",
+      ),
+    ).toBe(false);
+    expect(
+      (agent as any).hasTrustedServiceNowSubmitIntent(
+        "Submit the form and verify the created record or confirmation is visible.",
+      ),
+    ).toBe(true);
+  });
+
   test("ServiceNow record controller configures and submits explicit task-level workflows", async () => {
     const onStatus = vi.fn();
     const onMessage = vi.fn();

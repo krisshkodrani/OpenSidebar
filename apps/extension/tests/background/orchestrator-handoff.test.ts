@@ -564,6 +564,21 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction.length).toBeLessThan(2600);
   });
 
+  test("preserves repeated whitespace inside quoted original request values", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      'Fill the form with Short description="Assessment : ATF Assessor".',
+      'Create a new incident with a value of "Assessment :  ATF Assessor" for field "Short description".',
+    );
+
+    expect(instruction).toContain(
+      'value of "Assessment :  ATF Assessor" for field "Short description"',
+    );
+  });
+
   test("includes advance_step action text for non-final gates", () => {
     const node = makeNode([]);
     node.verificationGate = {

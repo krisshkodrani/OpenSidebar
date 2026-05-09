@@ -109,8 +109,8 @@ function compactOriginalQuery(
   originalQuery: string,
   activeObjective: string,
 ): string {
-  const normalized = originalQuery.replace(/\s+/g, " ").trim();
-  if (normalized.length <= MAX_ORIGINAL_QUERY_EXCERPT) return normalized;
+  const raw = originalQuery.trim();
+  if (raw.length <= MAX_ORIGINAL_QUERY_EXCERPT) return raw;
 
   const objectiveTokens = activeObjective
     .toLowerCase()
@@ -118,7 +118,7 @@ function compactOriginalQuery(
     .map((token) => token.trim())
     .filter((token) => token.length >= MIN_ASSUMPTION_TOKEN_LEN);
 
-  const candidateClauses = normalized
+  const candidateClauses = raw
     .split(/(?<=[.!?])\s+|\s+(?=and then|then|but|while)\b/i)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);

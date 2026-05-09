@@ -37,6 +37,7 @@ import {
   detectAdmission,
 } from "./verification";
 import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
+import { createResultPageProgressState } from "./result-page-progress-policy";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
 import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
@@ -5058,7 +5059,32 @@ export class AgentLoop {
     return { finalSummary, newIndex };
   }
 
-  private hasTrustedServiceNowSubmitIntent(): boolean {
+  private hasTrustedServiceNowSubmitIntent(text?: string): boolean {
+    const intentText =
+      text ??
+      `${this.originalQuery}\n${this.planSteps
+        .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
+        .join("\n")}`;
+    if (
+      /\b(?:do not submit|not submit|ready to submit|submit action has not been clicked|has not been submitted)\b/i.test(
+        intentText,
+      )
+    ) {
+      return false;
+    }
+    if (
+      /\b(?:submit the form|form submission completes|submitted record|created record|created\/updated record|confirmation|resulting item page)\b/i.test(
+        intentText,
+      )
+    ) {
+      return true;
+    }
+    return /\bcreate\s+(?:a\s+|an\s+|the\s+)?(?:new\s+)?(?:incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
+      intentText,
+    );
+  }
+
+  private hasTaskLevelServiceNowSubmitIntent(): boolean {
     const text = `${this.originalQuery}\n${this.planSteps
       .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
       .join("\n")}`;
@@ -5163,7 +5189,7 @@ export class AgentLoop {
       preferredTool === ToolName.CONFIGURE_SERVICENOW_FORM
         ? {
             fields,
-            submit: this.hasTrustedServiceNowSubmitIntent(),
+            submit: this.hasTrustedServiceNowSubmitIntent(controllerText),
             submitButton: "Submit",
           }
         : preferredTool === ToolName.OPEN_SERVICENOW_MODULE && moduleRequest
@@ -5410,7 +5436,7 @@ export class AgentLoop {
     tabId: number,
   ): Promise<LoopResult | null> {
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return null;
-    if (!this.hasTrustedServiceNowSubmitIntent()) return null;
+    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
 
     const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
     if (fields.length === 0) return null;
@@ -5605,7 +5631,7 @@ export class AgentLoop {
   }): boolean {
     if (this.selectedSkillId !== "servicenow-record-form") return false;
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return false;
-    if (!this.hasTrustedServiceNowSubmitIntent()) return false;
+    if (!this.hasTaskLevelServiceNowSubmitIntent()) return false;
     return Boolean(
       detectTrustedFormFillStepCompletion({
         toolName: params.toolName,
@@ -5708,7 +5734,7 @@ export class AgentLoop {
     ) {
       if (
         this.selectedSkillId !== "servicenow-record-form" ||
-        !this.hasTrustedServiceNowSubmitIntent()
+        !this.hasTaskLevelServiceNowSubmitIntent()
       ) {
         return null;
       }
@@ -6495,6 +6521,7 @@ export class AgentLoop {
 
     // Track all recent tool calls so exact looping can be blocked even when calls "succeed"
     const recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
+    const resultPageProgress = createResultPageProgressState();
     const verifiedFinalClickBypassKeys = new Set<string>();
 
     // Tag IDs discovered by find_element (not yet in snapshot but valid for next tool call)
@@ -6911,6 +6938,7 @@ export class AgentLoop {
                   lastDomAffectingToolName,
                   doneSignaled,
                   doneSummary,
+                  resultPageProgress,
                 },
               },
             );

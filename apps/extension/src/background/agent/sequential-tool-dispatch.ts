@@ -19,6 +19,7 @@ import {
 } from "./list-detail-policy";
 import {
   buildKnowledgeBaseSearchArgs,
+  shouldRouteKnowledgeBaseSearchToTopArticle,
   shouldRouteKnowledgeBaseSearchFirst,
   shouldRouteKnowledgeBaseSearchToRenderedResults,
 } from "./knowledge-search-routing";
@@ -52,6 +53,10 @@ import {
   collectProfileRecordSetsFromValues,
   getProfileLiteralFallbackFields,
 } from "./profile-literal-guards";
+import {
+  assessResultPageProgress,
+  type ResultPageProgressState,
+} from "./result-page-progress-policy";
 import {
   advanceCompletedSubtasks,
   type AgentLoopPlanProgressHost,
@@ -148,6 +153,7 @@ export interface SequentialToolDispatchState {
   lastDomAffectingToolName: string | null;
   doneSignaled: boolean;
   doneSummary: string;
+  resultPageProgress: ResultPageProgressState;
 }
 
 export type SequentialToolDispatchOutput = SequentialToolDispatchState;
@@ -186,6 +192,7 @@ export async function executeSequentialToolCalls(
     recentSuccesses,
     discoveredTagIds,
     orientationToolsUsed,
+    resultPageProgress,
   } = params.state;
 
   const signalCompletedResult = (
@@ -236,6 +243,8 @@ export async function executeSequentialToolCalls(
       toolCall.function.name = ToolName.SEARCH_KNOWLEDGE_BASE;
       toolCall.function.arguments = JSON.stringify(routedArgs);
     }
+    const currentUrl =
+      this.context.getSnapshot()?.url ?? this.context.getCurrentUrl();
     const renderedKnowledgeSearchUrl =
       shouldRouteKnowledgeBaseSearchToRenderedResults({
         selectedSkillId: this.selectedSkillId,
@@ -243,8 +252,7 @@ export async function executeSequentialToolCalls(
         originalQuery: this.originalQuery,
         messages: this.context.getMessages(),
         recentToolCalls,
-        currentUrl:
-          this.context.getSnapshot()?.url ?? this.context.getCurrentUrl(),
+        currentUrl,
         requestedUrl: typeof args.url === "string" ? args.url : null,
       });
     if (renderedKnowledgeSearchUrl) {
@@ -268,6 +276,108 @@ export async function executeSequentialToolCalls(
       toolName = ToolName.NAVIGATE;
       args = { url: renderedKnowledgeSearchUrl };
       toolCall.function.name = ToolName.NAVIGATE;
+      toolCall.function.arguments = JSON.stringify(args);
+    }
+    const renderedKnowledgeArticleUrl =
+      shouldRouteKnowledgeBaseSearchToTopArticle({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        originalQuery: this.originalQuery,
+        messages: this.context.getMessages(),
+        currentUrl,
+        requestedUrl: typeof args.url === "string" ? args.url : null,
+      });
+    if (renderedKnowledgeArticleUrl) {
+      this.log.info("agent", "Routed knowledge workflow to top article", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.NAVIGATE,
+        url: renderedKnowledgeArticleUrl.slice(0, 160),
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent("knowledge_search_article_rerouted", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.NAVIGATE,
+        url: renderedKnowledgeArticleUrl.slice(0, 240),
+        selectedSkillId: this.selectedSkillId,
+      });
+      toolName = ToolName.NAVIGATE;
+      args = { url: renderedKnowledgeArticleUrl };
+      toolCall.function.name = ToolName.NAVIGATE;
+      toolCall.function.arguments = JSON.stringify(args);
+    }
+    const resultPageProgressDecision = assessResultPageProgress({
+      state: resultPageProgress,
+      selectedSkillId: this.selectedSkillId,
+      toolName,
+      originalQuery: this.originalQuery,
+      messages: this.context.getMessages(),
+      currentUrl,
+      requestedUrl: typeof args.url === "string" ? args.url : null,
+    });
+    if (resultPageProgressDecision.action === "navigate") {
+      this.log.info("agent", "Routed result page workflow to ranked candidate", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.NAVIGATE,
+        url: resultPageProgressDecision.url.slice(0, 160),
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent("result_page_candidate_rerouted", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.NAVIGATE,
+        url: resultPageProgressDecision.url.slice(0, 240),
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      toolName = ToolName.NAVIGATE;
+      args = { url: resultPageProgressDecision.url };
+      toolCall.function.name = ToolName.NAVIGATE;
+      toolCall.function.arguments = JSON.stringify(args);
+    } else if (resultPageProgressDecision.action === "read_page") {
+      this.log.info("agent", "Routed result page workflow to read_page", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.READ_PAGE,
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent("result_page_read_page_rerouted", {
+        turn: this.turnCount,
+        fromTool: toolName,
+        toTool: ToolName.READ_PAGE,
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      toolName = ToolName.READ_PAGE;
+      args = {};
+      toolCall.function.name = ToolName.READ_PAGE;
+      toolCall.function.arguments = JSON.stringify(args);
+    } else if (resultPageProgressDecision.action === "exhausted") {
+      this.log.info("agent", "Result page workflow exhausted", {
+        turn: this.turnCount,
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.traceRecorder?.recordEvent("result_page_progress_exhausted", {
+        turn: this.turnCount,
+        reason: resultPageProgressDecision.reason,
+        selectedSkillId: this.selectedSkillId,
+      });
+      this.context.addMessage({
+        role: "user",
+        content:
+          "RESULT PAGE SEARCH EXHAUSTED: You have already grounded this result page and have no unvisited relevant candidates left. If the requested answer is not visible in current evidence, call done with a concise not-found answer instead of repeating the same search or read.",
+      });
+      toolName = ToolName.DONE;
+      args = {
+        summary:
+          "I could not find the requested answer after reading the available result page evidence.",
+      };
+      toolCall.function.name = ToolName.DONE;
       toolCall.function.arguments = JSON.stringify(args);
     }
     const rawArgsKey = toolCall.function.arguments.slice(0, 100);

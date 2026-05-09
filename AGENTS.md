@@ -121,7 +121,7 @@ When implementing non-trivial code changes, use this workflow:
 
 1. Implement the requested change.
 2. Run the relevant tests/typechecks/lints.
-3. Call the DeepSeek MCP reviewer on the final diff.
+3. Run the direct DeepSeek review script on the final diff.
 4. Treat DeepSeek as an adversarial reviewer and second-opinion doctor, not as an automatic author or final authority.
 5. For each DeepSeek finding:
    - **Accept** if it identifies a concrete bug, missed edge case, security issue, brittle selector, race condition, or maintainability problem.
@@ -144,12 +144,28 @@ Skip the review workflow for:
 
 When in doubt, run the review.
 
+### Direct DeepSeek commands
+
+Do not use a DeepSeek MCP reviewer. Use the repo script directly:
+
+- Working diff: `npm run review:deepseek -- --working --allow-remote`
+- Staged diff before commit: `npm run review:deepseek -- --staged --allow-remote`
+- Last commit: `npm run review:deepseek -- --last --allow-remote`
+
+For `/goal` work, include the goal objective and any concise verification evidence when useful:
+
+```sh
+npm run review:deepseek -- --working --allow-remote --objective "Complete the active /goal objective" --evidence .artifacts/e2e/example-report.md
+```
+
+The script requires `DEEPSEEK_API_KEY` in the environment or `.env`, refuses remote review unless `--allow-remote` is passed, and writes review artifacts under `.artifacts/reviews/`.
+
 ### Reviewer fallback
 
-If the DeepSeek MCP reviewer is unavailable (e.g., down, rate-limited, or returns empty results):
+If the direct DeepSeek review script is unavailable (e.g., missing `DEEPSEEK_API_KEY`, network failure, rate limit, or empty result):
 
 - Self-review the diff against the same [reviewer focus list](#deepseek-reviewer-focus).
-- Note the unavailability and self-review result in the summary.
+- Note the direct review failure and self-review result in the summary.
 - The agreement gate still applies: tests must pass, and any self-identified issues must be addressed or explicitly rejected with reasoning.
 
 ### DeepSeek reviewer focus

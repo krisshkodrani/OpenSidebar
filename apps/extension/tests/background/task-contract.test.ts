@@ -256,6 +256,20 @@ describe("task contract helpers", () => {
     ]);
   });
 
+  test("prefers exact quoted values from the original user request", () => {
+    const prompt = [
+      'Objective: Complete the workflow for the original request: Create a new incident with a value of "Assessment : ATF Assessor" for field "Short description", a value of "survey user" for field "Caller". Fill the form with the requested field values: Short description="Assessment : ATF Assessor"; Caller="survey user". Do not submit the form yet.',
+      "Execution policy:",
+      "- Execute only the current step objective.",
+      'Original user request: Create a new incident with a value of "Assessment :  ATF Assessor" for field "Short description", and a value of "survey user" for field "Caller".',
+    ].join("\n");
+
+    expect(extractFieldValuePairs(prompt)).toEqual([
+      { field: "Short description", value: "Assessment :  ATF Assessor" },
+      { field: "Caller", value: "survey user" },
+    ]);
+  });
+
   test("does not parse instruction scaffolding as a WorkArena field label", () => {
     const prompt = [
       'Objective: Complete the workflow for the original request: Create a new hardware asset with a value of "Computer" for field "Model category", a value of "Asus G Series" for field "Model", a value of "Asus" for field "Vendor", a value of "SN-8aa7221a-b142-4732-ab2f-e7baea862e73" for field "Serial number", and a value of "SL 5 Years" for field "Depreciation". Fill the form with the requested field values: Model category="Computer"; Model="Asus G Series"; Vendor="Asus"; Serial number="SN-8aa7221a-b142-4732-ab2f-e7baea862e73"; Depreciation="SL 5 Years". Do not submit the form yet.',

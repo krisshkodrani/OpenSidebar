@@ -4385,6 +4385,7 @@ export function registerTools() {
             "when",
             "where",
             "who",
+            "which",
             "with",
             "would",
             "year",
@@ -4410,22 +4411,51 @@ export function registerTools() {
           const questionTopicTerms = keywords(input.question).filter(
             (term) => !answerIntentTerms.has(term),
           );
+          const queryTerms = keywords(input.query).filter(
+            (term) => !answerIntentTerms.has(term),
+          );
+          const lowValueQuestionTerms = new Set([
+            "answer",
+            "charged",
+            "ensuring",
+            "following",
+            "full",
+            "name",
+            "state",
+          ]);
+          const focusedQuestionTopicTerms = questionTopicTerms.filter(
+            (term) => !lowValueQuestionTerms.has(term),
+          );
           const hasHiringQuestion =
             /\b(?:new hires?|hires?|hiring|recruit|recruitment|headcount)\b/i.test(
               input.question,
             );
-          const expandedTopicVariants = hasHiringQuestion
-            ? [
-                "new hires",
-                "hires",
-                "hiring",
-                "recruitment",
-                "headcount",
-                "careers opportunities",
-                "talent acquisition",
-                "team expansion",
-              ]
-            : [];
+          const hasAuditQuestion =
+            /\b(?:audits?|auditors?|financial reporting|accounting)\b/i.test(
+              input.question,
+            );
+          const expandedTopicVariants = [
+            ...(hasHiringQuestion
+              ? [
+                  "new hires",
+                  "hires",
+                  "hiring",
+                  "recruitment",
+                  "headcount",
+                  "careers opportunities",
+                  "talent acquisition",
+                  "team expansion",
+                ]
+              : []),
+            ...(hasAuditQuestion
+              ? [
+                  "financial reporting",
+                  "audit integrity",
+                  "auditor",
+                  "accounting controls",
+                ]
+              : []),
+          ];
           const hasQuestionTopicCue = (text: string) => {
             if (hasHiringQuestion) {
               return /\b(?:new hires?|hires?|hiring|recruit|recruitment|headcount)\b/i.test(
@@ -4455,17 +4485,17 @@ export function registerTools() {
                 (value, index, all) => Boolean(value) && all.indexOf(value) === index,
               );
           const queryVariants = uniqueNonEmpty([
-            questionTopicTerms.slice(0, 4).join(" "),
-            questionTopicTerms.slice(0, 2).join(" "),
-            questionTopicTerms[0] ?? "",
+            input.query,
             queryText,
-            terms.slice(0, 3).join(" "),
-            terms.slice(0, 2).join(" "),
-            terms[0] ?? "",
-            ...expandedTopicVariants,
-          ]);
+            focusedQuestionTopicTerms.slice(0, 4).join(" "),
+            queryTerms.slice(0, 4).join(" "),
+            questionTopicTerms.slice(0, 4).join(" "),
+            expandedTopicVariants[0] ?? "",
+          ]).slice(0, 5);
           const renderedSearchQueryText =
-            questionTopicTerms.slice(0, 3).join(" ") || queryText;
+            focusedQuestionTopicTerms.slice(0, 3).join(" ") ||
+            questionTopicTerms.slice(0, 3).join(" ") ||
+            queryText;
           const wantsNumber =
             input.answerType === "number" ||
             (input.answerType === "auto" &&
