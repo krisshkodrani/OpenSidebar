@@ -80,4 +80,40 @@ describe("WorkArena validation URL selection", () => {
       ]),
     );
   });
+
+  test("prefers the task form URL after a create-record sys_id handoff", () => {
+    const startUrl =
+      "https://workarena.example.com/now/nav/ui/classic/params/target/alm_hardware.do";
+    const submittedSysId = "073ece642bf0c7d09c8bf462fe91bf3d";
+    const detailUrl =
+      "https://workarena.example.com/now/nav/ui/classic/params/target/alm_hardware.do%3Fsys_id%3D073ece642bf0c7d09c8bf462fe91bf3d";
+
+    const selection = selectValidationUrl({
+      startUrl,
+      browserActiveUrl: startUrl,
+      importedPageUrl: startUrl,
+      finalOpenSidebarUrl: detailUrl,
+      frameUrls: [
+        "https://workarena.example.com/alm_hardware.do?sys_id=073ece642bf0c7d09c8bf462fe91bf3d",
+      ],
+      submittedRecordNumber: submittedSysId,
+    });
+
+    expect(selection.source).toBe("browserActiveUrl");
+    expect(selection.url).toBe(startUrl);
+    expect(selection.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "finalOpenSidebarUrl",
+          selected: false,
+          reason: "submitted_record_detail_url",
+        }),
+        expect.objectContaining({
+          source: "frameUrl:1",
+          selected: false,
+          reason: "submitted_record_detail_url",
+        }),
+      ]),
+    );
+  });
 });

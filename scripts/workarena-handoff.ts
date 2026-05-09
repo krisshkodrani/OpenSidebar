@@ -851,18 +851,6 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       .frames()
       .map((frame) => frame.url())
       .filter((url): url is string => typeof url === "string" && url.length > 0);
-    const validationUrl = selectValidationUrl({
-      startUrl: browser.startUrl,
-      browserActiveUrl: browser.activeUrl,
-      importedPageUrl,
-      finalOpenSidebarUrl,
-      frameUrls: finalFrameUrls,
-    });
-    const validationStorage = await exportCurrentPageStorageState(
-      harness.page,
-      validationUrl.url,
-    );
-    validationStorageExport = validationStorage.summary;
 
     const traceSummary = await harness.printTraceSummary(workspaceId);
     const traceFiles = filterTraceFilesByWorkspace(
@@ -877,6 +865,20 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       metrics.submittedRecordNumber ??
       extractSubmittedRecordNumberFromText(finalAnswer) ??
       extractSubmittedRecordNumberFromText(JSON.stringify(agentTerminalSummary));
+
+    const validationUrl = selectValidationUrl({
+      startUrl: browser.startUrl,
+      browserActiveUrl: browser.activeUrl,
+      importedPageUrl,
+      finalOpenSidebarUrl,
+      frameUrls: finalFrameUrls,
+      submittedRecordNumber,
+    });
+    const validationStorage = await exportCurrentPageStorageState(
+      harness.page,
+      validationUrl.url,
+    );
+    validationStorageExport = validationStorage.summary;
 
     const validationStart = Date.now();
     validation = await bridge.request({

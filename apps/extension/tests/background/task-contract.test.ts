@@ -256,6 +256,27 @@ describe("task contract helpers", () => {
     ]);
   });
 
+  test("does not parse instruction scaffolding as a WorkArena field label", () => {
+    const prompt = [
+      'Objective: Complete the workflow for the original request: Create a new hardware asset with a value of "Computer" for field "Model category", a value of "Asus G Series" for field "Model", a value of "Asus" for field "Vendor", a value of "SN-8aa7221a-b142-4732-ab2f-e7baea862e73" for field "Serial number", and a value of "SL 5 Years" for field "Depreciation". Fill the form with the requested field values: Model category="Computer"; Model="Asus G Series"; Vendor="Asus"; Serial number="SN-8aa7221a-b142-4732-ab2f-e7baea862e73"; Depreciation="SL 5 Years". Do not submit the form yet.',
+      "Execution policy:",
+      "- Execute only the current step objective.",
+      "- Submit by calling configure_servicenow_form with submit=true after all requested fields are verified.",
+      'Original user request: Create a new hardware asset with a value of "Computer" for field "Model category", a value of "Asus G Series" for field "Model", a value of "Asus" for field "Vendor", a value of "SN-8aa7221a-b142-4732-ab2f-e7baea862e73" for field "Serial number", and a value of "SL 5 Years" for field "Depreciation".',
+    ].join("\n");
+
+    expect(extractFieldValuePairs(prompt)).toEqual([
+      { field: "Model category", value: "Computer" },
+      { field: "Model", value: "Asus G Series" },
+      { field: "Vendor", value: "Asus" },
+      {
+        field: "Serial number",
+        value: "SN-8aa7221a-b142-4732-ab2f-e7baea862e73",
+      },
+      { field: "Depreciation", value: "SL 5 Years" },
+    ]);
+  });
+
   test("does not turn empty WorkArena field values into fake quoted obligations", () => {
     const prompt =
       'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", a value of "false" for field "Knowledge", a value of "" for field "Service", a value of "Closed before close notes were made mandatory" for field "Resolution notes", a value of "Multiple employees have reported that they are unable to send/receive email." for field "Description", a value of "" for field "Change Request", and a value of "Phone" for field "Channel".';

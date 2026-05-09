@@ -772,10 +772,16 @@ export function detectTrustedFormSubmitCompletion(params: {
   if (toolName !== ToolName.CONFIGURE_SERVICENOW_FORM) return null;
   if (toolArgs?.submit !== true) return null;
 
-  const submittedRecord =
-    toolResult.match(/\bSubmitted ServiceNow form record:\s*([A-Z]{2,}\d+)\b/i)?.[1] ??
-    "";
-  if (!submittedRecord) return null;
+  const submittedRecord = toolResult.match(
+    /\bSubmitted ServiceNow form record:\s*([A-Z]{2,}\d+)\b/i,
+  )?.[1];
+  const submittedSysId = toolResult.match(
+    /\bSubmitted ServiceNow form sys_id:\s*([0-9a-f]{32})\b/i,
+  )?.[1];
+  const submittedIdentity = submittedRecord
+    ? submittedRecord.toUpperCase()
+    : submittedSysId?.toLowerCase();
+  if (!submittedIdentity) return null;
 
   if (!toolResult.startsWith("Configured ServiceNow form.")) return null;
   if (
@@ -788,14 +794,16 @@ export function detectTrustedFormSubmitCompletion(params: {
   if (!/\bClicked submit control:/i.test(toolResult)) return null;
 
   return {
-    reason: `Trusted ServiceNow form helper submitted record ${submittedRecord.toUpperCase()}.`,
+    reason: `Trusted ServiceNow form helper submitted record ${submittedIdentity}.`,
     matchedTokens: [
       "Configured ServiceNow form",
       "Clicked submit control",
-      "Submitted ServiceNow form record",
-      submittedRecord.toUpperCase(),
+      submittedRecord
+        ? "Submitted ServiceNow form record"
+        : "Submitted ServiceNow form sys_id",
+      submittedIdentity,
     ],
-    submittedRecord: submittedRecord.toUpperCase(),
+    submittedRecord: submittedIdentity,
   };
 }
 

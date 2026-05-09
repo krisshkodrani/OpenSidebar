@@ -38,6 +38,17 @@ function hasUndefinedReportId(value: string): boolean {
   return decodeUrlLike(value).toLowerCase().includes("jvar_report_id=undefined");
 }
 
+function hasSubmittedRecordIdentity(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  return /^[A-Z]{2,}\d+$/i.test(trimmed) || /^[0-9a-f]{32}$/i.test(trimmed);
+}
+
+function isSubmittedRecordDetailUrl(value: string): boolean {
+  const decoded = decodeUrlLike(value).toLowerCase();
+  return /\.do\?[^#]*\bsys_id=[0-9a-f]{32}\b/i.test(decoded);
+}
+
 function canonicalizeClassicServiceNowUrl(value: string): string {
   const parsed = parseUrl(value);
   if (!parsed) return value;
@@ -86,10 +97,14 @@ export function selectValidationUrl(input: {
   importedPageUrl: string;
   finalOpenSidebarUrl: string;
   frameUrls: string[];
+  submittedRecordNumber?: string | null;
 }): ValidationUrlSelection {
   const expectedUrl = input.startUrl ?? input.browserActiveUrl ?? input.importedPageUrl;
   const expectedOrigin = parseUrl(expectedUrl)?.origin ?? null;
   const expectedPath = workArenaUrlPath(expectedUrl);
+  const preferTaskUrlAfterSubmittedRecord = hasSubmittedRecordIdentity(
+    input.submittedRecordNumber,
+  );
   const entries = uniqueCandidates([
     { source: "finalOpenSidebarUrl", url: input.finalOpenSidebarUrl },
     ...input.frameUrls.map((url, index) => ({
@@ -111,6 +126,11 @@ export function selectValidationUrl(input: {
       reason = "undefined_report_id";
     } else if (expectedOrigin && parsed.origin !== expectedOrigin) {
       reason = "origin_mismatch";
+    } else if (
+      preferTaskUrlAfterSubmittedRecord &&
+      isSubmittedRecordDetailUrl(entry.url)
+    ) {
+      reason = "submitted_record_detail_url";
     } else {
       const candidatePath = workArenaUrlPath(entry.url);
       const isFinalOpenSidebarUrl = entry.source.startsWith("finalOpenSidebarUrl");

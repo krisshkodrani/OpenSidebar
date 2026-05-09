@@ -23,6 +23,7 @@ import {
   completedKeysFromSuiteReport,
   parseSuiteArgs,
   selectSuiteTargets,
+  suiteReportFileStem,
   suiteRunFromAttempt,
   targetKey,
   type WorkArenaSuiteArgs,
@@ -188,9 +189,18 @@ function generateSuiteMarkdown(report: WorkArenaSuiteReport): string {
 }
 
 function writeSuiteReports(report: WorkArenaSuiteReport): WorkArenaSuiteReport {
-  const suffix = today();
-  const jsonPath = writeJsonReport(report, `workarena-suite-${suffix}.json`);
-  const markdownPath = resolve(REPORTS_DIR, `workarena-suite-${suffix}.md`);
+  const baseStem = suiteReportFileStem(report);
+  let stem = baseStem;
+  let collision = 1;
+  while (
+    existsSync(resolve(REPORTS_DIR, `${stem}.json`)) ||
+    existsSync(resolve(REPORTS_DIR, `${stem}.md`))
+  ) {
+    stem = `${baseStem}-${collision}`;
+    collision += 1;
+  }
+  const jsonPath = writeJsonReport(report, `${stem}.json`);
+  const markdownPath = resolve(REPORTS_DIR, `${stem}.md`);
   const withReports: WorkArenaSuiteReport = {
     ...report,
     reports: {

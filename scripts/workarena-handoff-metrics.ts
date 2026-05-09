@@ -193,8 +193,10 @@ function extractDoneSummary(traceFiles: string[]): string {
 
 export function normalizeRecordNumber(value: unknown): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim().toUpperCase();
-  return /^[A-Z]{2,}\d+$/.test(trimmed) ? trimmed : null;
+  const trimmed = value.trim();
+  if (/^[A-Z]{2,}\d+$/i.test(trimmed)) return trimmed.toUpperCase();
+  if (/^[0-9a-f]{32}$/i.test(trimmed)) return trimmed.toLowerCase();
+  return null;
 }
 
 export function extractSubmittedRecordNumberFromText(value: unknown): string | null {
@@ -209,12 +211,19 @@ export function extractSubmittedRecordNumberFromText(value: unknown): string | n
   );
   if (serviceNowForm) return normalizeRecordNumber(serviceNowForm[1]);
 
+  const serviceNowFormSysId = value.match(
+    /\bSubmitted ServiceNow form sys_id:\s*([0-9a-f]{32})\b/i,
+  );
+  if (serviceNowFormSysId) return normalizeRecordNumber(serviceNowFormSysId[1]);
+
   const catalogRequest = value.match(
     /\b(?:Request Number|Order Status)\s*:?\s*(REQ\d+)\b/i,
   );
   if (catalogRequest) return normalizeRecordNumber(catalogRequest[1]);
 
-  const fallback = value.match(/\bpreviousRecordId["'\s:]+([A-Z]{2,}\d+)\b/i);
+  const fallback = value.match(
+    /\bpreviousRecordId["'\s:]+([A-Z]{2,}\d+|[0-9a-f]{32})\b/i,
+  );
   return fallback ? normalizeRecordNumber(fallback[1]) : null;
 }
 

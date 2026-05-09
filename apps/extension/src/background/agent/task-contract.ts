@@ -111,6 +111,8 @@ export function extractFieldValuePairs(text: string): Array<{
   const pushPair = (field: string, value: string) => {
     const trimmedField = field.trim();
     if (!trimmedField) return;
+    if (/[\r\n]/.test(trimmedField)) return;
+    if (trimmedField.length > 160) return;
     const key = normalize(trimmedField);
     if (seenFields.has(key)) return;
     seenFields.add(key);
@@ -118,7 +120,7 @@ export function extractFieldValuePairs(text: string): Array<{
   };
 
   for (const match of text.matchAll(
-    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([\s\S]*?)\3/gi,
+    /\b(?:a\s+)?value\s+of\s+(["'])([\s\S]*?)\1\s+for\s+field\s+(["'])([^"'\r\n]{1,160})\3/gi,
   )) {
     pushPair(match[4] ?? "", match[2] ?? "");
   }

@@ -91,6 +91,11 @@ describe("WorkArena handoff trace metrics", () => {
     expect(
       extractSubmittedRecordNumberFromText('{"previousRecordId":"INC0046011"}'),
     ).toBe("INC0046011");
+    expect(
+      extractSubmittedRecordNumberFromText(
+        "Submitted ServiceNow form sys_id: ABCDEF0123456789ABCDEF0123456789",
+      ),
+    ).toBe("abcdef0123456789abcdef0123456789");
   });
 
   test("extracts catalog request numbers from order confirmation text", () => {

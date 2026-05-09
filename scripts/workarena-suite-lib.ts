@@ -1,4 +1,9 @@
-import type { ListResult, TaskInfo, WorkArenaSuite } from "./workarena-adapter-lib.js";
+import {
+  safeFilePart,
+  type ListResult,
+  type TaskInfo,
+  type WorkArenaSuite,
+} from "./workarena-adapter-lib.js";
 import type {
   WorkArenaGradeSummary,
   WorkArenaGradedAttempt,
@@ -223,6 +228,41 @@ export function completedKeysFromSuiteReport(
     completed.add(targetKey(run.taskId, run.seed));
   }
   return completed;
+}
+
+function suiteReportScope(
+  report: Pick<WorkArenaSuiteReport, "suite" | "categories" | "runs">,
+): string {
+  const categories = report.categories.filter((category) => category !== "all");
+  if (categories.length > 0) return categories.join("-");
+
+  const taskIds = [...new Set(report.runs.map((run) => run.taskId).filter(Boolean))];
+  if (taskIds.length === 1) return taskIds[0];
+  if (taskIds.length > 1) return `${report.suite}-${taskIds.length}-tasks`;
+  return report.suite;
+}
+
+function suiteReportSeedScope(seeds: number[]): string {
+  if (seeds.length === 1) return `seed-${seeds[0]}`;
+  return `seeds-${seeds.join("-")}`;
+}
+
+function suiteReportTimeScope(generatedAt: string): string {
+  const timePart = generatedAt.split("T")[1]?.replace(/\D/g, "").slice(0, 9);
+  return timePart && timePart.length > 0 ? timePart : "000000000";
+}
+
+export function suiteReportFileStem(
+  report: Pick<
+    WorkArenaSuiteReport,
+    "generatedAt" | "suite" | "categories" | "seeds" | "runs"
+  >,
+): string {
+  const datePart = report.generatedAt.split("T")[0] || "unknown-date";
+  const scope = safeFilePart(suiteReportScope(report)).slice(0, 96);
+  const seedScope = safeFilePart(suiteReportSeedScope(report.seeds));
+  const timeScope = suiteReportTimeScope(report.generatedAt);
+  return `workarena-suite-${datePart}-${scope}-${seedScope}-${timeScope}`;
 }
 
 export function suiteRunFromAttempt(
