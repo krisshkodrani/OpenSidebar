@@ -264,6 +264,18 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("uses the embedded original request instead of chart skill instructions", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        'Objective: Complete the workflow for the original request: What is the value of "IBM" in the "Configuration Item by Manufacturer" chart (in percent)? ' +
+        "Skill procedure: For label-and-count questions, call done with exactly 'Label: count' using one numeric count. " +
+        'Original user request (reference for specific values): What is the value of "IBM" in the "Configuration Item by Manufacturer" chart (in percent)?',
+      summary: "2.76%",
+      selectedSkillId: "chart-value-extraction",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects single chart answers with supporting numeric details", () => {
     const result = assessWorkflowDoneGuard({
       query:

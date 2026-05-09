@@ -898,6 +898,22 @@ describe("detectTrustedFormSubmitCompletion", () => {
     expect(signal!.submittedRecord).toBe("CHG0000021");
   });
 
+  it("accepts a verified ServiceNow submit helper result with only sys_id evidence", () => {
+    const signal = detectTrustedFormSubmitCompletion({
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { fields: [], submit: true, submitButton: "Submit" },
+      toolResult:
+        "Configured ServiceNow form.\n" +
+        "Clicked submit control: Submit\n" +
+        "Submit method: gsftSubmit (sysverb_insert)\n" +
+        "Submitted ServiceNow form sys_id: ABCDEF0123456789ABCDEF0123456789\n" +
+        "Current title: ServiceNow",
+    });
+
+    expect(signal).not.toBeNull();
+    expect(signal!.submittedRecord).toBe("abcdef0123456789abcdef0123456789");
+  });
+
   it("does not accept submit helper results with mismatches", () => {
     const signal = detectTrustedFormSubmitCompletion({
       toolName: ToolName.CONFIGURE_SERVICENOW_FORM,

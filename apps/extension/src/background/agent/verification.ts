@@ -253,6 +253,21 @@ function normalizeWorkflowGuardText(value: unknown): string {
     .toLowerCase();
 }
 
+function extractWorkflowGuardPrimaryRequest(queryText: string): string {
+  const originalRequest = /original user request[^:]*:\s*(.+)$/i.exec(
+    queryText,
+  )?.[1];
+  if (originalRequest?.trim()) return originalRequest.trim();
+
+  const workflowRequest =
+    /complete the workflow for the original request:\s*(.+?)(?:\s+success criteria:|\s+planner assumptions|\s+selected workflow skill:|\s+handoff context:|\s+execution policy:|\s+reality check signal:|$)/i.exec(
+      queryText,
+    )?.[1];
+  if (workflowRequest?.trim()) return workflowRequest.trim();
+
+  return queryText;
+}
+
 function workflowSkillOrQueryMatches(
   selectedSkillId: string | null | undefined,
   skillId: string,
@@ -414,6 +429,7 @@ export function assessWorkflowDoneGuard(
   );
   const summary = normalizeWorkflowGuardText(input.summary);
   const skillId = input.selectedSkillId ?? null;
+  const primaryRequestText = extractWorkflowGuardPrimaryRequest(queryText);
 
   if (!summary) return { blocked: false, reason: null };
 
@@ -444,7 +460,7 @@ export function assessWorkflowDoneGuard(
       };
     }
     const numericTokens = extractStandaloneNumericTokens(summary);
-    if (chartQueryExpectsLabelAndCount(queryText)) {
+    if (chartQueryExpectsLabelAndCount(primaryRequestText)) {
       if (numericTokens.length !== 1) {
         return {
           blocked: true,
@@ -461,7 +477,7 @@ export function assessWorkflowDoneGuard(
       }
     }
     if (
-      chartQueryExpectsSingleNumericAnswer(queryText) &&
+      chartQueryExpectsSingleNumericAnswer(primaryRequestText) &&
       numericTokens.length > 1
     ) {
       return {

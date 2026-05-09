@@ -482,13 +482,23 @@ class WorkArenaSession:
                 "reason": "no_submitted_record_number",
             }
 
-        record_number = submitted_record_number.strip().upper()
-        if not re.fullmatch(r"[A-Z]{2,}\d+", record_number):
+        record_identity = submitted_record_number.strip()
+        record_number = (
+            record_identity.upper()
+            if re.fullmatch(r"[A-Z]{2,}\d+", record_identity, re.IGNORECASE)
+            else None
+        )
+        direct_sys_id = (
+            record_identity.lower()
+            if re.fullmatch(r"[0-9a-f]{32}", record_identity, re.IGNORECASE)
+            else None
+        )
+        if record_number is None and direct_sys_id is None:
             return {
                 "attempted": True,
                 "ok": False,
-                "recordNumber": submitted_record_number,
-                "error": "submittedRecordNumber is not a ServiceNow record number",
+                "recordIdentity": submitted_record_number,
+                "error": "submittedRecordNumber is neither a ServiceNow record number nor sys_id",
             }
 
         browser_env = self.env.unwrapped
@@ -501,6 +511,7 @@ class WorkArenaSession:
                 "attempted": True,
                 "ok": False,
                 "recordNumber": record_number,
+                "sysId": direct_sys_id,
                 "error": "Active WorkArena task does not expose session_sys_id_field.",
             }
         if not isinstance(table_name, str) or not table_name or instance is None:
@@ -508,6 +519,7 @@ class WorkArenaSession:
                 "attempted": True,
                 "ok": False,
                 "recordNumber": record_number,
+                "sysId": direct_sys_id,
                 "sessionKey": session_key,
                 "error": "Active WorkArena task does not expose a queryable ServiceNow table.",
             }
@@ -522,6 +534,7 @@ class WorkArenaSession:
                 "attempted": True,
                 "ok": False,
                 "recordNumber": record_number,
+                "sysId": direct_sys_id,
                 "sessionKey": session_key,
                 "table": table_name,
                 "error": "No BrowserGym page is available for record id sync.",
@@ -539,6 +552,7 @@ class WorkArenaSession:
                 "attempted": True,
                 "ok": True,
                 "recordNumber": record_number,
+                "sysId": direct_sys_id or existing,
                 "sessionKey": session_key,
                 "table": table_name,
                 "existing": True,
@@ -547,11 +561,16 @@ class WorkArenaSession:
         try:
             from browsergym.workarena.api.utils import table_api_call
 
+            query = (
+                f"sys_id={direct_sys_id}"
+                if direct_sys_id is not None
+                else f"number={record_number}^ORDERBYDESCsys_created_on"
+            )
             response = table_api_call(
                 instance=instance,
                 table=table_name,
                 params={
-                    "sysparm_query": f"number={record_number}^ORDERBYDESCsys_created_on",
+                    "sysparm_query": query,
                     "sysparm_fields": "sys_id,number,sys_created_on,sys_updated_on",
                     "sysparm_limit": "5",
                 },
@@ -565,20 +584,24 @@ class WorkArenaSession:
                     "attempted": True,
                     "ok": False,
                     "recordNumber": record_number,
+                    "sysId": direct_sys_id,
                     "sessionKey": session_key,
                     "table": table_name,
-                    "error": "Submitted record number was not found in ServiceNow.",
+                    "error": "Submitted record identity was not found in ServiceNow.",
                 }
             first_record = records[0] if isinstance(records[0], dict) else {}
             sys_id = first_record.get("sys_id")
+            if not isinstance(sys_id, str) or not sys_id:
+                sys_id = direct_sys_id
             if not isinstance(sys_id, str) or not sys_id:
                 return {
                     "attempted": True,
                     "ok": False,
                     "recordNumber": record_number,
+                    "sysId": direct_sys_id,
                     "sessionKey": session_key,
                     "table": table_name,
-                    "error": "Submitted record did not include a sys_id.",
+                    "error": "Submitted record identity did not include a sys_id.",
                 }
 
             page.evaluate(

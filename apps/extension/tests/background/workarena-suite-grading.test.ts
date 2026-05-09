@@ -8,6 +8,7 @@ import {
   parseSeedSpec,
   parseSuiteArgs,
   selectSuiteTargets,
+  suiteReportFileStem,
   suiteRunFromAttempt,
   type WorkArenaSuiteReport,
 } from "../../../../scripts/workarena-suite-lib";
@@ -149,6 +150,49 @@ describe("WorkArena suite parsing", () => {
       "workarena.servicenow.order-standard-laptop:0",
       "workarena.servicenow.order-standard-laptop:1",
     ]);
+  });
+
+  test("builds scoped suite report names instead of date-only names", () => {
+    const categoryStem = suiteReportFileStem({
+      generatedAt: "2026-05-09T12:34:56.789Z",
+      suite: "atomic",
+      categories: ["dashboard", "knowledge", "menu"],
+      seeds: [0],
+      runs: [],
+    });
+
+    expect(categoryStem).toBe(
+      "workarena-suite-2026-05-09-dashboard-knowledge-menu-seed-0-123456789",
+    );
+
+    const singleTaskStem = suiteReportFileStem({
+      generatedAt: "2026-05-09T12:34:57.001Z",
+      suite: "atomic",
+      categories: ["all"],
+      seeds: [0],
+      runs: [
+        {
+          taskId: "workarena.servicenow.sort-change-request-list",
+          category: "list-sort",
+          seed: 0,
+          attempt: 1,
+          status: "passed",
+          passed: true,
+          score: 1,
+          reportPath: "sort-change-request-list.json",
+          turns: 2,
+          traces: 1,
+          failureStage: null,
+          validationMessage: "Nice work",
+          prompt: null,
+          warnings: [],
+        },
+      ],
+    });
+
+    expect(singleTaskStem).toBe(
+      "workarena-suite-2026-05-09-workarena.servicenow.sort-change-request-list-seed-0-123457001",
+    );
   });
 });
 

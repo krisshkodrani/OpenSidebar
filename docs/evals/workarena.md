@@ -388,11 +388,11 @@ npx tsx scripts/workarena-suite.ts --task workarena.servicenow.create-incident -
 The suite runner builds the extension once, then calls `workarena-handoff` with `--no-build` for each target. It writes:
 
 ```text
-.artifacts/e2e/workarena-suite-YYYY-MM-DD.json
-.artifacts/e2e/workarena-suite-YYYY-MM-DD.md
+.artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json
+.artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.md
 ```
 
-Use `--resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD.json` to skip targets already completed in a prior suite report.
+Use `--resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json` to skip targets already completed in a prior suite report.
 
 ## Trace Learning Report
 
