@@ -4775,11 +4775,11 @@ export function registerTools() {
             }
             return normalize(`${strings.join(" ")} ${serialized}`);
           };
-          const fetchServicePortalPageText = async (
+          const fetchServicePortalPagePayload = async (
             pageId: string,
             params: Record<string, string>,
           ) => {
-            if (!hasBudget()) return "";
+            if (!hasBudget()) return null;
             try {
               const queryParams = new URLSearchParams({
                 sysparm_type: "page",
@@ -4794,12 +4794,18 @@ export function registerTools() {
                 },
               );
               if (!response.ok) return "";
-              const payload = await response.json().catch(() => null);
-              const text = textFromJson(payload);
-              return text === "null" ? "" : text;
+              return await response.json().catch(() => null);
             } catch {
-              return "";
+              return null;
             }
+          };
+          const fetchServicePortalPageText = async (
+            pageId: string,
+            params: Record<string, string>,
+          ) => {
+            const payload = await fetchServicePortalPagePayload(pageId, params);
+            const text = textFromJson(payload);
+            return text === "null" ? "" : text;
           };
           const sysKbIdFromUrl = (url: string) => {
             try {
@@ -5126,16 +5132,90 @@ export function registerTools() {
               snippet: string;
               text: string;
             }> = [];
+            const addPortalPayloadRecords = (
+              payload: unknown,
+              fallbackUrl: string,
+            ) => {
+              const visit = (entry: unknown, depth: number) => {
+                if (depth > 8 || records.length >= 25) return;
+                if (Array.isArray(entry)) {
+                  for (const item of entry) visit(item, depth + 1);
+                  return;
+                }
+                if (!entry || typeof entry !== "object") return;
+                const item = entry as Record<string, unknown>;
+                const title = normalize(
+                  item.title ??
+                    item.short_description ??
+                    item.label ??
+                    item.name ??
+                    item.number,
+                );
+                const snippet = textFromJson(
+                  item.snippet ??
+                    item.summary ??
+                    item.text ??
+                    item.description ??
+                    item.content ??
+                    item,
+                );
+                const rawUrl = normalize(
+                  item.url ?? item.link ?? item.href ?? item.target_url,
+                );
+                const sysId = normalize(
+                  item.sys_id ??
+                    item.sys_kb_id ??
+                    item.kb_knowledge ??
+                    item.id,
+                );
+                let url = rawUrl ? absoluteUrl(rawUrl) : "";
+                if (!url && sysId && /^[0-9a-f]{32}$/i.test(sysId)) {
+                  url = new URL(
+                    `/kb?id=kb_article_view&sys_kb_id=${encodeURIComponent(sysId)}`,
+                    location.origin,
+                  ).href;
+                }
+                if (
+                  title &&
+                  snippet &&
+                  url &&
+                  (isKnowledgeArticleUrl(url) || hasQuestionTopicCue(snippet))
+                ) {
+                  records.push({
+                    title,
+                    url,
+                    snippet: snippet.slice(0, 800),
+                    text: snippet,
+                  });
+                }
+                for (const value of Object.values(item)) visit(value, depth + 1);
+              };
+              visit(payload, 0);
+              if (records.length === 0) {
+                const text = textFromJson(payload);
+                if (text && text !== "null") {
+                  records.push({
+                    title: "Service Portal knowledge search",
+                    url: fallbackUrl,
+                    snippet: text.slice(0, 800),
+                    text,
+                  });
+                }
+              }
+            };
             for (const variant of queryVariants) {
               if (!hasBudget()) break;
-              const text = await fetchServicePortalPageText("kb_search", {
+              const payload = await fetchServicePortalPagePayload("kb_search", {
                 query: variant,
               });
-              if (!text) continue;
+              if (payload == null) continue;
+              const text = textFromJson(payload);
+              if (!text || text === "null") continue;
               const url = new URL(
                 `/kb?id=kb_search&query=${encodeURIComponent(variant)}`,
                 location.origin,
               ).href;
+              addPortalPayloadRecords(payload, url);
               records.push({
                 title: `Service Portal knowledge search: ${variant}`,
                 url,
@@ -5227,7 +5307,125 @@ export function registerTools() {
             snippet: string;
             text?: string;
           }> = [];
+          const articleCandidates: Array<{
+            title: string;
+            url: string;
+            answer: string;
+            sentence: string;
+            score: number;
+          }> = [];
           const seenUrls = new Set<string>();
+          const rankSearchResults = (
+            results: Array<{
+              title: string;
+              url: string;
+              snippet: string;
+              text?: string;
+            }>,
+          ) =>
+            results
+              .map((entry) => ({
+                ...entry,
+                score: scoreText(`${entry.title} ${entry.snippet}`),
+              }))
+              .sort((a, b) => b.score - a.score)
+              .slice(0, Math.max(input.maxResults, 20));
+          const addAnswerCandidatesFromResults = async (
+            results: ReturnType<typeof rankSearchResults>,
+          ) => {
+            for (const result of results) {
+              if (!hasBudget()) break;
+              if (result.text) {
+                const extracted = extractAnswer(
+                  `${result.title}. ${result.snippet}. ${result.text}`,
+                );
+                if (!extracted) continue;
+                articleCandidates.push({
+                  title: result.title,
+                  url: result.url,
+                  answer: extracted.answer,
+                  sentence: extracted.sentence,
+                  score: result.score + extracted.score,
+                });
+                continue;
+              }
+              const sysKbId = sysKbIdFromUrl(result.url);
+              const serviceNowRecord =
+                await fetchServiceNowKnowledgeRecordBySysId(sysKbId);
+              if (serviceNowRecord) {
+                const extracted = extractAnswer(
+                  `${serviceNowRecord.title || result.title}. ${result.snippet}. ${serviceNowRecord.text}`,
+                );
+                if (extracted) {
+                  articleCandidates.push({
+                    title: serviceNowRecord.title || result.title,
+                    url: result.url,
+                    answer: extracted.answer,
+                    sentence: extracted.sentence,
+                    score: result.score + extracted.score + 4,
+                  });
+                  continue;
+                }
+              }
+              for (const articleNumber of articleNumbersFromText(
+                `${result.title} ${result.snippet}`,
+              )) {
+                if (!hasBudget()) break;
+                const record =
+                  await fetchServiceNowKnowledgeRecordByNumber(articleNumber);
+                if (!record) continue;
+                const extracted = extractAnswer(
+                  `${record.title || result.title}. ${result.snippet}. ${record.text}`,
+                );
+                if (extracted) {
+                  articleCandidates.push({
+                    title: record.title || result.title,
+                    url: result.url,
+                    answer: extracted.answer,
+                    sentence: extracted.sentence,
+                    score: result.score + extracted.score + 4,
+                  });
+                  continue;
+                }
+              }
+              let fetched:
+                | {
+                    text: string;
+                    url: string;
+                    extracted: ReturnType<typeof extractAnswer>;
+                  }
+                | null = null;
+              for (const url of articleFetchUrls(result)) {
+                if (!hasBudget()) break;
+                try {
+                  const doc = await fetchDocument(url);
+                  const text = cleanDocument(doc);
+                  const extracted = extractAnswer(
+                    `${result.title}. ${result.snippet}. ${text}`,
+                  );
+                  if (extracted) {
+                    fetched = { text, url, extracted };
+                    break;
+                  }
+                } catch {
+                  // Keep trying alternate article URL shapes for the same result.
+                }
+              }
+              const extracted =
+                fetched?.extracted ??
+                extractAnswer(`${result.title}. ${result.snippet}`);
+              if (!extracted) continue;
+              articleCandidates.push({
+                title: result.title,
+                url: fetched?.url ?? result.url,
+                answer: extracted.answer,
+                sentence: extracted.sentence,
+                score: result.score + extracted.score,
+              });
+            }
+          };
+          const hasStrongAnswerCandidate = () =>
+            articleCandidates.some((candidate) => candidate.score >= 20);
           const currentArticleText = cleanDocument(document);
           const currentUrl = location.href;
           const hasArticleRegion = Boolean(
@@ -5284,120 +5482,24 @@ export function registerTools() {
               // Try the next same-origin portal URL.
             }
           }
-          for (const entry of await fetchServicePortalKnowledgeSearchRecords()) {
-            if (seenUrls.has(entry.url)) continue;
-            seenUrls.add(entry.url);
-            searchResults.push(entry);
+          await addAnswerCandidatesFromResults(rankSearchResults(searchResults));
+          if (!hasStrongAnswerCandidate() && hasBudget()) {
+            for (const entry of await fetchServicePortalKnowledgeSearchRecords()) {
+              if (seenUrls.has(entry.url)) continue;
+              seenUrls.add(entry.url);
+              searchResults.push(entry);
+            }
           }
-          for (const entry of await fetchServiceNowKnowledgeRecords()) {
-            if (seenUrls.has(entry.url)) continue;
-            seenUrls.add(entry.url);
-            searchResults.push(entry);
-          }
-
-          const rankedResults = searchResults
-            .map((entry) => ({
-              ...entry,
-              score: scoreText(`${entry.title} ${entry.snippet}`),
-            }))
-            .sort((a, b) => b.score - a.score)
-            .slice(0, Math.max(input.maxResults, 20));
-
-          const articleCandidates: Array<{
-            title: string;
-            url: string;
-            answer: string;
-            sentence: string;
-            score: number;
-          }> = [];
-          for (const result of rankedResults) {
-            if (!hasBudget()) break;
-            if (result.text) {
-              const extracted = extractAnswer(
-                `${result.title}. ${result.snippet}. ${result.text}`,
-              );
-              if (!extracted) continue;
-              articleCandidates.push({
-                title: result.title,
-                url: result.url,
-                answer: extracted.answer,
-                sentence: extracted.sentence,
-                score: result.score + extracted.score,
-              });
-              continue;
+          if (!hasStrongAnswerCandidate() && hasBudget()) {
+            for (const entry of await fetchServiceNowKnowledgeRecords()) {
+              if (seenUrls.has(entry.url)) continue;
+              seenUrls.add(entry.url);
+              searchResults.push(entry);
             }
-            const sysKbId = sysKbIdFromUrl(result.url);
-            const serviceNowRecord = await fetchServiceNowKnowledgeRecordBySysId(
-              sysKbId,
-            );
-            if (serviceNowRecord) {
-              const extracted = extractAnswer(
-                `${serviceNowRecord.title || result.title}. ${result.snippet}. ${serviceNowRecord.text}`,
-              );
-              if (extracted) {
-                articleCandidates.push({
-                  title: serviceNowRecord.title || result.title,
-                  url: result.url,
-                  answer: extracted.answer,
-                  sentence: extracted.sentence,
-                  score: result.score + extracted.score + 4,
-                });
-                continue;
-              }
-            }
-            for (const articleNumber of articleNumbersFromText(
-              `${result.title} ${result.snippet}`,
-            )) {
-              if (!hasBudget()) break;
-              const record = await fetchServiceNowKnowledgeRecordByNumber(
-                articleNumber,
-              );
-              if (!record) continue;
-              const extracted = extractAnswer(
-                `${record.title || result.title}. ${result.snippet}. ${record.text}`,
-              );
-              if (extracted) {
-                articleCandidates.push({
-                  title: record.title || result.title,
-                  url: result.url,
-                  answer: extracted.answer,
-                  sentence: extracted.sentence,
-                  score: result.score + extracted.score + 4,
-                });
-                continue;
-              }
-            }
-            let fetched:
-              | { text: string; url: string; extracted: ReturnType<typeof extractAnswer> }
-              | null = null;
-            for (const url of articleFetchUrls(result)) {
-              if (!hasBudget()) break;
-              try {
-                const doc = await fetchDocument(url);
-                const text = cleanDocument(doc);
-                const extracted = extractAnswer(
-                  `${result.title}. ${result.snippet}. ${text}`,
-                );
-                if (extracted) {
-                  fetched = { text, url, extracted };
-                  break;
-                }
-              } catch {
-                // Keep trying alternate article URL shapes for the same result.
-              }
-            }
-            const extracted =
-              fetched?.extracted ?? extractAnswer(`${result.title}. ${result.snippet}`);
-            if (!extracted) continue;
-            articleCandidates.push({
-              title: result.title,
-              url: fetched?.url ?? result.url,
-              answer: extracted.answer,
-              sentence: extracted.sentence,
-              score: result.score + extracted.score,
-            });
+            await addAnswerCandidatesFromResults(rankSearchResults(searchResults));
           }
 
+          const rankedResults = rankSearchResults(searchResults);
           articleCandidates.sort((a, b) => b.score - a.score);
           const lines = [
             "Knowledge base search result.",

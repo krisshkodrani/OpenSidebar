@@ -946,6 +946,68 @@ describe("Tool Registration", () => {
     expect(result).toContain("Service Portal knowledge search");
   });
 
+  test("search_knowledge_base preserves structured Service Portal result snippets", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `<main><h1>Knowledge Home</h1></main>`;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (value.includes("/api/now/sp/page") && value.includes("kb_search")) {
+        return new Response(
+          JSON.stringify({
+            result: {
+              data: {
+                results: [
+                  {
+                    title: "Article 47",
+                    sys_id: "b0d93d962b227210de74f462fe91bf7a",
+                    snippet:
+                      "Company growth planning says the number of yearly hires is 100, reflecting sustained growth.",
+                  },
+                ],
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-structured-service-portal-result",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "Each year, how many new hires does the company typically make?",
+            query: "new hires annual",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Answer candidate: 100");
+    expect(result).toContain(
+      "sys_kb_id=b0d93d962b227210de74f462fe91bf7a",
+    );
+  });
+
   test("open_servicenow_module resolves and opens a ServiceNow module", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45a4f1329f1221001e021a1cf67fcfe5";
