@@ -6,16 +6,17 @@ export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   ProviderMode,
   string
 > = {
-  openrouter: "accounts/fireworks/routers/kimi-k2p5-turbo",
-  "openrouter-groq": "accounts/fireworks/routers/kimi-k2p5-turbo",
-  "openai-groq": "accounts/fireworks/routers/kimi-k2p5-turbo",
-  fireworks: "accounts/fireworks/routers/kimi-k2p5-turbo",
-  "fireworks-deepseek": "accounts/fireworks/routers/kimi-k2p5-turbo",
+  openrouter: "accounts/fireworks/routers/kimi-k2p6-turbo",
+  "openrouter-groq": "accounts/fireworks/routers/kimi-k2p6-turbo",
+  "openai-groq": "accounts/fireworks/routers/kimi-k2p6-turbo",
+  fireworks: "accounts/fireworks/routers/kimi-k2p6-turbo",
+  "fireworks-deepseek": "accounts/fireworks/routers/kimi-k2p6-turbo",
   moonshot: "kimi-k2.6",
   xiaomi: "mimo-v2-omni",
 };
 
 const FIREWORKS_EXECUTOR_MODELS = new Set([
+  "accounts/fireworks/routers/kimi-k2p6-turbo",
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "qwen/qwen3-vl-30b-a3b-instruct",
   "qwen/qwen3-vl-30b-a3b-thinking",

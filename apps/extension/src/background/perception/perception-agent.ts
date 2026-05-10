@@ -43,7 +43,7 @@ import type {
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 const OPENAI_API_URL = "https://api.fireworks.ai/inference/v1/chat/completions";
-const OPENAI_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
+const OPENAI_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p6-turbo";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_PERCEPTION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
@@ -52,7 +52,7 @@ const XIAOMI_API_URL = "https://api.xiaomimimo.com/v1/chat/completions";
 const XIAOMI_PERCEPTION_MODEL = "mimo-v2-omni";
 const FIREWORKS_API_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
+const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p6-turbo";
 const PERCEPTION_TIMEOUT_MS = 20_000;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 800;
@@ -132,7 +132,7 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
         ? "openai-groq"
         : "openrouter");
 
-  // Fireworks-backed modes: use Kimi K2.5 Turbo for perception
+  // Fireworks-backed modes: use Kimi K2.6 Turbo for perception
   if (
     (mode === "fireworks" || mode === "fireworks-deepseek") &&
     settings.fireworksApiKey

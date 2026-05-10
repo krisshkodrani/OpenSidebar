@@ -157,7 +157,7 @@ describe("perceive() [legacy]", () => {
       const result = await perceive(makeInput());
       expect(result.cached).toBe(false);
       expect(result.interpretation).toContain("No API key");
-      expect(result.model).toBe("accounts/fireworks/routers/kimi-k2p5-turbo");
+      expect(result.model).toBe("accounts/fireworks/routers/kimi-k2p6-turbo");
     } finally {
       cleanup();
     }

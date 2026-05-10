@@ -19,7 +19,7 @@ const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_PERCEPTION_MODEL = "x-ai/grok-4.1-fast";
 const FIREWORKS_API_URL =
   "https://api.fireworks.ai/inference/v1/chat/completions";
-const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo";
+const FIREWORKS_PERCEPTION_MODEL = "accounts/fireworks/routers/kimi-k2p6-turbo";
 const MOONSHOT_API_URL = "https://api.moonshot.ai/v1/chat/completions";
 const MOONSHOT_PERCEPTION_MODEL = "kimi-k2.6";
 const XIAOMI_API_URL = "https://api.xiaomimimo.com/v1/chat/completions";

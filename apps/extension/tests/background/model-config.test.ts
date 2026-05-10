@@ -9,7 +9,7 @@ describe("LLM model config", () => {
   test("uses checked-in defaults", () => {
     expect(LLM_MODEL_CONFIG).toEqual(DEFAULT_LLM_MODEL_CONFIG);
     expect(LLM_MODEL_CONFIG.executor).toBe(
-      "accounts/fireworks/routers/kimi-k2p5-turbo",
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
     );
     expect(LLM_MODEL_CONFIG.deepseek.planner).toBe("deepseek-v4-flash");
   });

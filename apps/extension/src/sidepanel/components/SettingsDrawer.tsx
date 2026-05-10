@@ -1023,7 +1023,7 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
                   }
                   className={inputCls}
                 >
-                  <option value="fireworks">Fireworks AI (Kimi K2.5)</option>
+                  <option value="fireworks">Fireworks AI (Kimi K2.6)</option>
                   <option value="fireworks-deepseek">
                     Fireworks + DeepSeek
                   </option>
