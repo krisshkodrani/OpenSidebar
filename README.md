@@ -76,16 +76,27 @@ npm run dev
 ## Development
 
 ```bash
-npm run dev        # Extension + local server + trace viewer
-npm run build      # Production build
-npm test           # Extension unit + integration tests
-npm run test:backend
-npm run test:e2e:smoke
-npm run test:e2e:interactions
-npm run test:e2e:runtime
-npm run lint       # ESLint
-npm run release:verify
-npm run fmt        # Prettier
+npm run dev                  # Extension + local server + trace viewer
+npm run build                # Production build
+npm test                     # Extension unit + integration tests
+npm run test:backend         # Backend tests
+npm run test:e2e:smoke       # Easy staged E2E cases
+npm run test:e2e:interactions # Medium staged E2E cases
+npm run test:e2e:runtime     # Hard staged E2E cases
+npm run lint                 # ESLint
+npm run release:verify       # Local release gate
+npm run fmt                  # Prettier
+```
+
+The package scripts are thin entry points over Nx targets. Use Nx directly when you want to run one target or project explicitly:
+
+```bash
+npx nx run extension:dev
+npx nx run extension:build
+npx nx run extension:test
+npx nx run backend:test
+npx nx run-many -t lint
+npx nx run-many -t typecheck
 ```
 
 ## Testing
@@ -116,8 +127,7 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 - `skills/` - reusable runtime workflow guidance and tool-discipline policies
 - `scripts/` - repo-level build, observability, and maintenance scripts
 - `docs/` - stable product and developer documentation
-- `evals/` - evaluation assets and golden datasets
-- `traces/` - local trace workspace used by debugging tools and the trace viewer
+- `traces/` - local generated trace workspace used by debugging tools and the trace viewer
 
 ## Trace Viewer
 
