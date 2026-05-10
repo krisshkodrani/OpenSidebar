@@ -34,6 +34,16 @@ export function formatPricingBadge(model: ProviderModelOption): string {
 
 export const FIREWORKS_MODELS: ProviderModelOption[] = [
   {
+    id: "accounts/fireworks/routers/kimi-k2p6-turbo",
+    name: "Kimi K2.6 Turbo",
+    promptPrice: 0.99 / 1_000_000,
+    completionPrice: 4.94 / 1_000_000,
+    supportsVision: true,
+    provider: "fireworks",
+    source: "curated",
+    effectiveDate: "2026-05-09",
+  },
+  {
     id: "accounts/fireworks/routers/kimi-k2p5-turbo",
     name: "Kimi K2.5 Turbo",
     promptPrice: 0.99 / 1_000_000,

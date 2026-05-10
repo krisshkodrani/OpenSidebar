@@ -20,10 +20,10 @@ describe("LLM pricing table", () => {
     ).toBe(true);
   });
 
-  test("uses refreshed Fireworks Kimi K2.5 Turbo pricing", () => {
+  test("uses refreshed Fireworks Kimi K2.6 Turbo pricing", () => {
     const pricing = findModelPricing(
       "fireworks",
-      "accounts/fireworks/routers/kimi-k2p5-turbo",
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
     );
     expect(pricing).toMatchObject({
       inputUsdPerMillion: 0.99,

@@ -46,6 +46,7 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(
       FIREWORKS_MODELS.filter(
         (model) =>
+          model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
           model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
           model.id === "qwen/qwen3-vl-30b-a3b-instruct",
       ),
@@ -72,6 +73,7 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(
       FIREWORKS_MODELS.filter(
         (model) =>
+          model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
           model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
           model.id === "qwen/qwen3-vl-30b-a3b-instruct",
       ),
