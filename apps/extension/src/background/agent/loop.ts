@@ -5632,13 +5632,80 @@ export class AgentLoop {
     if (this.selectedSkillId !== "servicenow-record-form") return false;
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return false;
     if (!this.hasTaskLevelServiceNowSubmitIntent()) return false;
-    return Boolean(
-      detectTrustedFormFillStepCompletion({
-        toolName: params.toolName,
-        toolArgs: params.toolArgs,
-        toolResult: params.toolResult,
-      }),
+    const signal = detectTrustedFormFillStepCompletion({
+      toolName: params.toolName,
+      toolArgs: params.toolArgs,
+      toolResult: params.toolResult,
+    });
+    if (!signal) return false;
+    const missingFields =
+      this.getMissingTrustedServiceNowAutoSubmitFields(params);
+    if (missingFields.length > 0) {
+      this.traceRecorder?.recordEvent("trusted_form_auto_submit_blocked", {
+        turn: this.turnCount,
+        reason: "missing_requested_fields",
+        missingFields,
+        trustedTool: ToolName.CONFIGURE_SERVICENOW_FORM,
+      });
+      return false;
+    }
+    return true;
+  }
+
+  private getMissingTrustedServiceNowAutoSubmitFields(params: {
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+  }): string[] {
+    const expectedFields = extractFieldValuePairs(
+      this.getServiceNowRecordWorkflowText(),
     );
+    if (expectedFields.length === 0) return [];
+
+    const normalizeField = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/[^a-z0-9 _-]+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const normalizeValue = (value: string) => {
+      let normalized = value.trim();
+      if (/^\((empty|none|null)\)$/i.test(normalized)) return "";
+      normalized = normalized
+        .replace(/^"([\s\S]*)"$/, "$1")
+        .replace(/^'([\s\S]*)'$/, "$1")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      return normalized;
+    };
+    const configuredRows = [
+      ...params.toolResult.matchAll(
+        /(?:^|\n)- (.+?)\s+\(([^)]+)\) =\s*([\s\S]*?)(?=\n- .+?\s+\([^)]+\) =|\nServiceNow form fields discovered|\nCurrent URL|\nCurrent title|\nMismatches:|$)/g,
+      ),
+    ].map((match) => ({
+      field: match[1] ?? "",
+      systemName: match[2] ?? "",
+      value: match[3] ?? "",
+    }));
+
+    return expectedFields
+      .filter((expected) => {
+        const expectedField = normalizeField(expected.field);
+        if (!expectedField) return true;
+        const row = configuredRows.find(
+          (entry) =>
+            normalizeField(entry.field) === expectedField ||
+            normalizeField(entry.systemName) === expectedField,
+        );
+        if (!row) return true;
+        const expectedValue = normalizeValue(expected.value);
+        if (!expectedValue) {
+          return normalizeValue(row.value) !== "";
+        }
+        const actualValue = normalizeValue(row.value);
+        return actualValue !== expectedValue;
+      })
+      .map((field) => field.field);
   }
 
   private async maybeAutoSubmitTrustedServiceNowForm(params: {

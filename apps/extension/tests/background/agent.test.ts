@@ -1561,6 +1561,65 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("ServiceNow auto-submit waits when requested fields are missing from helper evidence", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new change request with a value of "CHG0000021" for field "Number", a value of "" for field "Service offering", a value of "Line one\nLine two" for field "Implementation plan", a value of "Moderate" for field "Risk", and a value of "Successful" for field "Close code". Fill the form with the requested field values: Number="CHG0000021"; Service offering=empty; Implementation plan="Line one\nLine two"; Risk="Moderate"; Close code="Successful". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
+
+    expect(
+      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: {
+          fields: [
+            { field: "Number", value: "CHG0000021" },
+            { field: "Risk", value: "Moderate" },
+          ],
+          submit: false,
+        },
+        toolResult:
+          "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Number (number) = CHG0000021\n" +
+          "- Risk (risk) = Moderate",
+      }),
+    ).toBe(false);
+
+    expect(
+      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: {
+          fields: [
+            { field: "Number", value: "CHG0000021" },
+            { field: "Risk", value: "Moderate" },
+            { field: "Service offering", value: "" },
+            { field: "Implementation plan", value: "Line one\nLine two" },
+            { field: "Close code", value: "Successful" },
+          ],
+          submit: false,
+        },
+        toolResult:
+          "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Number (number) = CHG0000021\n" +
+          "- Service offering (service_offering) =  (empty) \n" +
+          "- Implementation plan (implementation_plan) = Line one\n" +
+          "Line two\n" +
+          "- Risk (risk) = Moderate\n" +
+          "- Close code (close_code) = Successful",
+      }),
+    ).toBe(true);
+  });
+
   test("ServiceNow submit intent is scoped to fill-only plan steps", () => {
     const agent = new AgentLoop(
       "test-key",
