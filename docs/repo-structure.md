@@ -43,6 +43,15 @@ From the repo root:
 - `npm run ci:local`: local mirror of GitHub CI
 - `npm run release:verify`: release alias for `npm run ci:local`
 
+Use direct Nx commands for project-scoped work:
+
+- `npx nx run extension:dev`: extension dev target
+- `npx nx run extension:build`: extension production build
+- `npx nx run extension:test`: extension unit and integration tests
+- `npx nx run backend:test`: backend tests
+- `npx nx run-many -t lint`: all lint targets
+- `npx nx run-many -t typecheck`: all typecheck targets
+
 ## Compatibility Notes
 
 - Root `vite.config.ts` and `vitest.config.ts` remain as thin shims so existing root commands still work.

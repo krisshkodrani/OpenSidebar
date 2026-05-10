@@ -213,6 +213,17 @@ Structured perception uses the unified v6 contract:
 | `npm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
 | `npm run fmt`   | you want formatting only              | formats extension source and shared packages |
 
+The npm scripts are the stable day-to-day entry points. Use direct Nx commands when you need to address a specific project target:
+
+| Command                    | Use this when                              |
+| -------------------------- | ------------------------------------------ |
+| `npx nx run extension:dev` | you only want the extension dev target     |
+| `npx nx run extension:build` | you only want the extension production build |
+| `npx nx run extension:test` | you only want extension unit/integration tests |
+| `npx nx run backend:test`  | you only want backend tests                |
+| `npx nx run-many -t lint`  | you want all lint targets                  |
+| `npx nx run-many -t typecheck` | you want all typecheck targets          |
+
 ### Tests
 
 | Command                      | Use this when                             | Notes                                          |
