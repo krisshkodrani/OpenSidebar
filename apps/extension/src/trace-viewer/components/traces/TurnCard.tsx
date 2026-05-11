@@ -9,6 +9,8 @@ import TurnLLMOutputSection from "./TurnLLMOutputSection";
 import TurnToolResultsSection from "./TurnToolResultsSection";
 import TurnSnapshotSection from "./TurnSnapshotSection";
 import TurnProgressState from "./TurnProgressState";
+import type { TraceEvidenceSignal } from "../../analysis";
+import { buildTraceEvidenceSignalsForTurn } from "../../analysis";
 import {
   shortModel,
   formatDuration,
@@ -20,9 +22,15 @@ interface TurnCardProps {
   entry: TraceEntry;
   index: number;
   sessionId: string;
+  previousEntry?: TraceEntry;
 }
 
-export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
+export default function TurnCard({
+  entry,
+  index,
+  sessionId,
+  previousEntry,
+}: TurnCardProps) {
   const turnNum = entry.turnNumber ?? index + 1;
   const model = entry.llmRequest?.model ?? "";
   const llmResponse = entry.llmResponse;
@@ -43,6 +51,10 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
 
   // Generate decision summary from tool calls
   const decisionSummary = generateDecisionSummary(toolCalls, toolExecutions);
+  const evidenceSignals = buildTraceEvidenceSignalsForTurn(
+    entry,
+    previousEntry,
+  );
 
   return (
     <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
@@ -115,6 +127,10 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
             {decisionSummary}
           </div>
         </div>
+      )}
+
+      {evidenceSignals.length > 0 && (
+        <TurnEvidenceAnnotations signals={evidenceSignals} />
       )}
 
       {/* Body */}
@@ -190,6 +206,45 @@ export default function TurnCard({ entry, index, sessionId }: TurnCardProps) {
         </CollapsibleSection>
 
         {progressState && <TurnProgressState progressState={progressState} />}
+      </div>
+    </div>
+  );
+}
+
+function signalVariant(signal: TraceEvidenceSignal) {
+  if (signal.severity === "error") return "error" as const;
+  if (signal.severity === "warning") return "max_turns" as const;
+  return "type" as const;
+}
+
+function TurnEvidenceAnnotations({
+  signals,
+}: {
+  signals: TraceEvidenceSignal[];
+}) {
+  return (
+    <div className="px-3.5 py-2 bg-trace-bg border-b border-trace-border/60">
+      <div className="flex items-start gap-2">
+        <span className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-trace-muted shrink-0">
+          Evidence
+        </span>
+        <div className="flex min-w-0 flex-wrap gap-1.5">
+          {signals.slice(0, 5).map((signal) => (
+            <Tooltip
+              key={signal.id}
+              content={signal.detail || signal.label}
+            >
+              <span className="cursor-help">
+                <Badge variant={signalVariant(signal)}>{signal.label}</Badge>
+              </span>
+            </Tooltip>
+          ))}
+          {signals.length > 5 && (
+            <span className="text-[11px] text-trace-muted">
+              +{signals.length - 5} more
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

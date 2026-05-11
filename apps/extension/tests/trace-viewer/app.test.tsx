@@ -20,6 +20,9 @@ vi.mock("../../src/trace-viewer/components/ViewerErrorBoundary", () => ({
 vi.mock("../../src/trace-viewer/components/traces/FleetOverview", () => ({
   default: () => <div>FleetOverview</div>,
 }));
+vi.mock("../../src/trace-viewer/components/traces/FleetInsights", () => ({
+  default: () => <div>FleetInsights</div>,
+}));
 vi.mock("../../src/trace-viewer/components/traces/FilterBar", () => ({
   default: () => <div>FilterBar</div>,
 }));
@@ -28,6 +31,12 @@ vi.mock("../../src/trace-viewer/components/traces/SessionsTableView", () => ({
 }));
 vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
   default: () => <div>RunsTableView</div>,
+}));
+vi.mock("../../src/trace-viewer/components/traces/MetricsTab", () => ({
+  default: () => <div>MetricsTab</div>,
+}));
+vi.mock("../../src/trace-viewer/components/traces/DocsTab", () => ({
+  default: () => <div>DocsTab</div>,
 }));
 vi.mock(
   "../../src/trace-viewer/components/traces/UnifiedSessionsTableView",
@@ -168,6 +177,37 @@ describe("trace-viewer App", () => {
     });
   });
 
+  test("renders metrics view from top-level hash route", async () => {
+    window.location.hash = "#top=metrics";
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(useStore.getState().activeTopLevelView).toBe("metrics");
+      expect(container.textContent).toContain("MetricsTab");
+      expect(container.textContent).not.toContain("FleetOverview");
+      expect(container.textContent).not.toContain("FleetInsights");
+    });
+  });
+
+  test("renders docs view from top-level hash route", async () => {
+    window.location.hash = "#top=docs";
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(useStore.getState().activeTopLevelView).toBe("docs");
+      expect(container.textContent).toContain("DocsTab");
+      expect(container.textContent).not.toContain("FilterBar");
+      expect(container.textContent).not.toContain("FleetOverview");
+      expect(container.textContent).not.toContain("FleetInsights");
+    });
+  });
+
   test("renders sessions as the default trace list", async () => {
     mockUseTraceData.mockReturnValue({
       sessions: [
@@ -205,6 +245,7 @@ describe("trace-viewer App", () => {
     await waitFor(() => {
       expect(useStore.getState().traceListMode).toBe("sessions");
       expect(container.textContent).toContain("UnifiedSessionsTableView");
+      expect(container.textContent).toContain("FleetInsights");
     });
   });
 

@@ -63,6 +63,7 @@ export default function InvestigationSummary({
   const logs = useStore((s) => s.sessionLogs);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const analysisInput = useMemo(
     () => ({
@@ -92,6 +93,18 @@ export default function InvestigationSummary({
     await navigator.clipboard?.writeText(report);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
+  };
+  const handleCopyLink = async () => {
+    const params = new URLSearchParams();
+    params.set("session", session.sessionId);
+    if (investigation.firstBadTurn != null) {
+      params.set("view", "turns");
+      params.set("turn", String(investigation.firstBadTurn));
+    }
+    const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`;
+    await navigator.clipboard?.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 1200);
   };
 
   return (
@@ -135,6 +148,13 @@ export default function InvestigationSummary({
             className="text-[11px] text-trace-muted hover:text-trace-accent transition-colors"
           >
             {copied ? "Copied" : "Copy context"}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            className="text-[11px] text-trace-muted hover:text-trace-accent transition-colors"
+          >
+            {copiedLink ? "Link copied" : "Copy link"}
           </button>
         </div>
       </div>

@@ -131,6 +131,9 @@ export default function TurnList() {
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
           const entry = filtered[virtualRow.index];
+          const previousEntry = entries.find(
+            (candidate) => candidate.turnNumber === entry.turnNumber - 1,
+          );
           const isFocused = virtualRow.index === focusedIdx;
           const turnNum = entry.turnNumber ?? virtualRow.index + 1;
           return (
@@ -157,6 +160,7 @@ export default function TurnList() {
                   entry={entry}
                   index={virtualRow.index}
                   sessionId={sessionId}
+                  previousEntry={previousEntry}
                 />
               </div>
             </div>

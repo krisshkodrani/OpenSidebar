@@ -307,6 +307,7 @@ export function validateTraceBundle(
       );
     }
     const seenTurns = new Set<number>();
+    let previousTurn: number | null = null;
     for (const entry of entries) {
       const result = validateTraceRecord(entry, {
         sessionId,
@@ -336,6 +337,32 @@ export function validateTraceBundle(
             turnNumber: entry.turnNumber,
           },
         );
+      }
+      if (typeof entry.turnNumber === "number") {
+        if (previousTurn != null && entry.turnNumber < previousTurn) {
+          push(
+            issues,
+            "warning",
+            "out_of_order_turn",
+            `Turn ${entry.turnNumber} appears after turn ${previousTurn}`,
+            {
+              sessionId,
+              turnNumber: entry.turnNumber,
+            },
+          );
+        } else if (previousTurn != null && entry.turnNumber > previousTurn + 1) {
+          push(
+            issues,
+            "warning",
+            "missing_turn_gap",
+            `Trace jumps from turn ${previousTurn} to ${entry.turnNumber}`,
+            {
+              sessionId,
+              turnNumber: entry.turnNumber,
+            },
+          );
+        }
+        previousTurn = entry.turnNumber;
       }
       seenTurns.add(entry.turnNumber);
       if (

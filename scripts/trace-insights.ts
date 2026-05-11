@@ -61,6 +61,16 @@ export interface TraceInsightsSummary {
   toolCalls: number;
   toolFailures: number;
   toolFailureRate: number;
+  llmRequests: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  requestCost: number;
+  averagePromptTokens: number;
+  averageCompletionTokens: number;
+  averageTotalTokens: number;
+  totalLlmDurationMs: number;
+  averageLlmDurationMs: number;
 }
 
 export interface TraceInsightsFacets {
@@ -114,6 +124,18 @@ function asString(value: unknown): string {
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function usageNumber(
+  usage: Record<string, unknown> | null | undefined,
+  keys: string[],
+): number {
+  if (!usage) return 0;
+  for (const key of keys) {
+    const value = asNumber(usage[key]);
+    if (value > 0) return value;
+  }
+  return 0;
 }
 
 function isSuccessOutcome(outcome: unknown): boolean {
@@ -373,6 +395,13 @@ export function buildTraceInsights({
   let totalDurationMs = 0;
   let toolCalls = 0;
   let toolFailures = 0;
+  let llmRequests = 0;
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let totalTokens = 0;
+  let requestCost = 0;
+  let totalLlmDurationMs = 0;
+  let llmDurationCount = 0;
   const processedRunEvents = new Set<string>();
 
   for (const session of selected) {
@@ -452,6 +481,37 @@ export function buildTraceInsights({
     }
 
     for (const entry of entries) {
+      if (entry.llmRequest || entry.llmResponse) {
+        llmRequests += 1;
+      }
+      const response =
+        entry.llmResponse && typeof entry.llmResponse === "object"
+          ? (entry.llmResponse as Record<string, unknown>)
+          : null;
+      const usage =
+        response?.usage && typeof response.usage === "object"
+          ? (response.usage as Record<string, unknown>)
+          : null;
+      const entryPromptTokens = usageNumber(usage, [
+        "prompt_tokens",
+        "input_tokens",
+      ]);
+      const entryCompletionTokens = usageNumber(usage, [
+        "completion_tokens",
+        "output_tokens",
+      ]);
+      promptTokens += entryPromptTokens;
+      completionTokens += entryCompletionTokens;
+      totalTokens +=
+        usageNumber(usage, ["total_tokens"]) ||
+        entryPromptTokens + entryCompletionTokens;
+      requestCost += usageNumber(usage, ["cost"]);
+      const durationMs = asNumber(response?.durationMs);
+      if (durationMs > 0) {
+        totalLlmDurationMs += durationMs;
+        llmDurationCount += 1;
+      }
+
       const executions = Array.isArray(entry.toolExecutions)
         ? entry.toolExecutions
         : [];
@@ -556,6 +616,18 @@ export function buildTraceInsights({
       toolCalls,
       toolFailures,
       toolFailureRate: toolCalls === 0 ? 0 : toolFailures / toolCalls,
+      llmRequests,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      requestCost,
+      averagePromptTokens: llmRequests === 0 ? 0 : promptTokens / llmRequests,
+      averageCompletionTokens:
+        llmRequests === 0 ? 0 : completionTokens / llmRequests,
+      averageTotalTokens: llmRequests === 0 ? 0 : totalTokens / llmRequests,
+      totalLlmDurationMs,
+      averageLlmDurationMs:
+        llmDurationCount === 0 ? 0 : totalLlmDurationMs / llmDurationCount,
     },
     facets,
     tools: finalizeMetricRows(tools),

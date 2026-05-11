@@ -45,6 +45,16 @@ describe("trace insights", () => {
         "s1",
         [
           {
+            llmRequest: { model: "openai/gpt-5.4-mini" },
+            llmResponse: {
+              durationMs: 1200,
+              usage: {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+                cost: 0.01,
+              },
+            },
             toolExecutions: [
               {
                 toolName: "click",
@@ -60,6 +70,15 @@ describe("trace insights", () => {
         "s2",
         [
           {
+            llmRequest: { model: "openai/gpt-5.4-mini" },
+            llmResponse: {
+              durationMs: 1800,
+              usage: {
+                input_tokens: 200,
+                output_tokens: 50,
+                cost: 0.02,
+              },
+            },
             toolExecutions: [
               {
                 toolName: "click",
@@ -92,6 +111,12 @@ describe("trace insights", () => {
       totalTurns: 5,
       toolCalls: 2,
       toolFailures: 1,
+      llmRequests: 2,
+      promptTokens: 300,
+      completionTokens: 70,
+      totalTokens: 370,
+      requestCost: 0.03,
+      totalLlmDurationMs: 3000,
     });
     expect(result.tools[0]).toMatchObject({
       id: "click",

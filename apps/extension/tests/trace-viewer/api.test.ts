@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import {
   deleteAllTraces,
+  fetchHarnessRatchet,
   fetchRunTraceEvents,
   fetchSessionLogs,
+  fetchTraceIndexStatus,
   fetchTraceInsights,
   fetchTraceSessions,
   screenshotUrl,
@@ -87,6 +89,22 @@ describe("trace-viewer api", () => {
     expect(url).toContain("failure=tool_execution");
     expect(url).toContain("eventType=circuit_breaker");
     expect(url).not.toContain("model=all");
+  });
+
+  test("fetchTraceIndexStatus reads index status endpoint", async () => {
+    await fetchTraceIndexStatus();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toBe("/api/trace-index/status");
+  });
+
+  test("fetchHarnessRatchet reads ratchet endpoint", async () => {
+    await fetchHarnessRatchet();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toBe("/api/harness-ratchet");
   });
 
   test("deleteAllTraces sends DELETE request", async () => {

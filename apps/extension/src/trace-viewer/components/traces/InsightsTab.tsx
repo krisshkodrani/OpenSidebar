@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  fetchHarnessRatchet,
   fetchTraceInsights,
+  type HarnessRatchetCandidate,
   type TraceInsightsMetricRow,
   type TraceInsightsQuery,
   type TraceInsightsResponse,
@@ -17,7 +19,14 @@ import {
 import Badge from "../Badge";
 import LoadingSpinner from "../LoadingSpinner";
 
-type InsightSection = "failures" | "tools" | "skills" | "runs" | "models" | "events";
+type InsightSection =
+  | "ratchet"
+  | "failures"
+  | "tools"
+  | "skills"
+  | "runs"
+  | "models"
+  | "events";
 
 interface InsightsTabProps {
   onSelectSession: (sessionId: string) => void;
@@ -25,6 +34,7 @@ interface InsightsTabProps {
 }
 
 const SECTIONS: Array<{ id: InsightSection; label: string }> = [
+  { id: "ratchet", label: "Ratchet" },
   { id: "failures", label: "Failures" },
   { id: "tools", label: "Tools" },
   { id: "skills", label: "Skills" },
@@ -54,6 +64,16 @@ function emptyInsights(): TraceInsightsResponse {
       toolCalls: 0,
       toolFailures: 0,
       toolFailureRate: 0,
+      llmRequests: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      requestCost: 0,
+      averagePromptTokens: 0,
+      averageCompletionTokens: 0,
+      averageTotalTokens: 0,
+      totalLlmDurationMs: 0,
+      averageLlmDurationMs: 0,
     },
     facets: {
       runs: [],
@@ -88,6 +108,7 @@ export default function InsightsTab({
   const [eventType, setEventType] = useState("all");
   const [query, setQuery] = useState("");
   const [insights, setInsights] = useState<TraceInsightsResponse>(emptyInsights);
+  const [ratchet, setRatchet] = useState<HarnessRatchetCandidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,6 +163,20 @@ export default function InsightsTab({
       cancelled = true;
     };
   }, [requestFilters]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchHarnessRatchet()
+      .then((result) => {
+        if (!cancelled) setRatchet(result);
+      })
+      .catch(() => {
+        if (!cancelled) setRatchet([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applyRun = (runId: string) => {
     setFilter("runId", runId);
@@ -233,6 +268,12 @@ export default function InsightsTab({
           <div className="rounded border border-state-error/25 bg-state-error/10 px-3 py-2 text-sm text-state-error">
             Failed to load insights: {error}
           </div>
+        ) : section === "ratchet" ? (
+          <RatchetTable
+            rows={ratchet}
+            onSelectSession={onSelectSession}
+            onFocusRun={applyRun}
+          />
         ) : section === "runs" ? (
           <RunsInsightTable
             rows={insights.runs}
@@ -378,6 +419,116 @@ function MetricTable({
               </button>
             )}
           </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function severityClass(severity: HarnessRatchetCandidate["severity"]): string {
+  if (severity === "high") return "text-state-error";
+  if (severity === "medium") return "text-state-warning";
+  return "text-trace-muted";
+}
+
+function RatchetTable({
+  rows,
+  onSelectSession,
+  onFocusRun,
+}: {
+  rows: HarnessRatchetCandidate[];
+  onSelectSession: (sessionId: string) => void;
+  onFocusRun: (runId: string) => void;
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  if (rows.length === 0) {
+    return (
+      <div className="py-10 text-center text-sm text-trace-muted">
+        No ratchet candidates found in the current SQLite index.
+      </div>
+    );
+  }
+
+  const copyBrief = async (row: HarnessRatchetCandidate) => {
+    const brief = [
+      `Harness ratchet candidate: ${row.title}`,
+      `Layer: ${row.harnessLayer}`,
+      `Severity: ${row.severity}`,
+      `Count: ${row.count}`,
+      row.failureRate == null
+        ? null
+        : `Failure rate: ${Math.round(row.failureRate * 100)}%`,
+      row.sampleSessionId ? `Sample session: ${row.sampleSessionId}` : null,
+      row.sampleRunId ? `Sample run: ${row.sampleRunId}` : null,
+      `Evidence query: ${row.evidenceQuery}`,
+      `Suggested action: ${row.suggestedAction}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await navigator.clipboard?.writeText(brief);
+    setCopiedId(row.id);
+    window.setTimeout(() => setCopiedId(null), 1200);
+  };
+
+  return (
+    <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
+      <div className="grid grid-cols-[minmax(220px,1.7fr)_80px_90px_80px_minmax(160px,1fr)_minmax(130px,0.8fr)] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
+        <span>Candidate</span>
+        <span>Layer</span>
+        <span>Severity</span>
+        <span>Count</span>
+        <span>Evidence</span>
+        <span>Action</span>
+      </div>
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          className="grid grid-cols-[minmax(220px,1.7fr)_80px_90px_80px_minmax(160px,1fr)_minmax(130px,0.8fr)] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-trace-text">{row.title}</div>
+            <div className="mt-0.5 truncate text-[10px] text-trace-muted">
+              {row.suggestedAction}
+            </div>
+          </div>
+          <span className="text-trace-subtle">{row.harnessLayer}</span>
+          <span className={`font-semibold ${severityClass(row.severity)}`}>
+            {row.severity}
+          </span>
+          <span className="text-trace-subtle">
+            {row.count}
+            {row.failureRate == null
+              ? ""
+              : ` / ${Math.round(row.failureRate * 100)}%`}
+          </span>
+          <span className="flex min-w-0 gap-2">
+            {row.sampleSessionId && (
+              <button
+                type="button"
+                onClick={() => onSelectSession(row.sampleSessionId!)}
+                className="font-mono text-[10px] text-trace-accent-light hover:underline"
+              >
+                {row.sampleSessionId.slice(0, 8)}
+              </button>
+            )}
+            {row.sampleRunId && (
+              <button
+                type="button"
+                onClick={() => onFocusRun(row.sampleRunId!)}
+                className="font-mono text-[10px] text-brand-live hover:underline"
+              >
+                {row.sampleRunId.slice(0, 8)}
+              </button>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => void copyBrief(row)}
+            className="text-left text-[11px] text-trace-accent-light hover:underline"
+          >
+            {copiedId === row.id ? "Copied" : "Copy brief"}
+          </button>
         </div>
       ))}
     </div>

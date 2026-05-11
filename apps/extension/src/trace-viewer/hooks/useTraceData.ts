@@ -15,7 +15,7 @@ export function useTraceData() {
   const setLogsWarning = useStore((s) => s.setLogsWarning);
   const setTracesLoading = useStore((s) => s.setTracesLoading);
   const setTracesError = useStore((s) => s.setTracesError);
-  const entriesLoading = useRef(false);
+  const detailRequestSeq = useRef(0);
   const didInitLoading = useRef(false);
   const didInitialRefresh = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -99,10 +99,13 @@ export function useTraceData() {
 
   useEffect(() => {
     if (!currentSessionId) return;
-    if (entriesLoading.current) return;
-    entriesLoading.current = true;
+    const requestId = detailRequestSeq.current + 1;
+    detailRequestSeq.current = requestId;
 
     setLogsWarning(null);
+    setCurrentEntries([]);
+    setCurrentRunEvents([]);
+    setSessionLogs([]);
     const currentSession = sessions.find(
       (session) => session.sessionId === currentSessionId,
     );
@@ -117,20 +120,35 @@ export function useTraceData() {
         ? api.fetchRunTraceEvents(runId).catch(() => [])
         : Promise.resolve([]),
       api.fetchSessionLogs(currentSessionId).catch((err) => {
+        if (
+          detailRequestSeq.current !== requestId ||
+          useStore.getState().currentSessionId !== currentSessionId
+        ) {
+          return [] as never[];
+        }
         setLogsWarning(`Failed to load logs: ${err}`);
         return [] as never[];
       }),
     ])
       .then(([entries, runEvents, logs]) => {
+        if (
+          detailRequestSeq.current !== requestId ||
+          useStore.getState().currentSessionId !== currentSessionId
+        ) {
+          return;
+        }
         setCurrentEntries(entries || []);
         setCurrentRunEvents(runEvents || []);
         setSessionLogs(logs || []);
       })
       .catch((err) => {
+        if (
+          detailRequestSeq.current !== requestId ||
+          useStore.getState().currentSessionId !== currentSessionId
+        ) {
+          return;
+        }
         setTracesError(`Failed to load turns: ${err}`);
-      })
-      .finally(() => {
-        entriesLoading.current = false;
       });
   }, [
     currentSessionId,

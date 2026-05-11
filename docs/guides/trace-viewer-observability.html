@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSidebar Trace Viewer Observability</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --panel: #111827;
+        --panel-2: #172033;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --line: #263244;
+        --accent: #38bdf8;
+        --ok: #34d399;
+        --warn: #f59e0b;
+        --bad: #fb7185;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 32px 20px 44px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font-size: 32px;
+        line-height: 1.1;
+        margin-bottom: 12px;
+      }
+      h2 {
+        font-size: 18px;
+        margin-bottom: 10px;
+      }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .lead {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 18px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+      .signal-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin: 18px 0;
+      }
+      .signal strong {
+        display: block;
+        font-size: 22px;
+      }
+      .signal span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+      .step {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        min-height: 150px;
+      }
+      .step .num {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border: 1px solid color-mix(in srgb, var(--accent), transparent 50%);
+        border-radius: 6px;
+        color: var(--accent);
+        font-weight: 700;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 11px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: var(--panel-2);
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      td {
+        background: var(--panel);
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 8px;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .ok {
+        color: var(--ok);
+      }
+      @media (max-width: 860px) {
+        .hero,
+        .flow,
+        .signal-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="card">
+          <div class="eyebrow">OpenSidebar Trace Viewer</div>
+          <h1>Observability for harness engineering</h1>
+          <p class="lead">
+            The viewer is not just a log browser. It is the place where a concrete
+            failure becomes evidence, repeated evidence becomes a ratchet
+            candidate, and the resulting fix is measured against fleet health.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Core Philosophy</h2>
+          <p>
+            <strong>One trace explains a failure.</strong><br />
+            <strong>The fleet explains whether it matters.</strong>
+          </p>
+          <p>
+            Good investigations move between those two views without losing the
+            thread.
+          </p>
+        </div>
+      </section>
+
+      <section class="signal-grid">
+        <div class="signal card">
+          <strong>Metrics</strong>
+          <span>Request volume, tokens, cost, latency, index coverage.</span>
+        </div>
+        <div class="signal card">
+          <strong>Insights</strong>
+          <span>Failure, tool, skill, run, model, and event patterns.</span>
+        </div>
+        <div class="signal card">
+          <strong>Ratchet</strong>
+          <span>Repeated failures converted into harness improvement briefs.</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Investigation Loop</h2>
+        <div class="flow">
+          <div class="step">
+            <div class="num">1</div>
+            <h3>Start With Fleet Health</h3>
+            <p>Check success rate, tool failure rate, token/cost, latency, and model mix.</p>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <h3>Pick A Pattern</h3>
+            <p>Use Insights or Ratchet to choose a repeated, expensive, or severe failure mode.</p>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <h3>Open Evidence</h3>
+            <p>Inspect the sample trace: turns, tools, screenshots, logs, and integrity warnings.</p>
+          </div>
+          <div class="step">
+            <div class="num">4</div>
+            <h3>Ratchet</h3>
+            <p>Name the harness layer, implement the permanent fix, and measure the pattern again.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Surface Map</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Question</th>
+              <th>Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag">Sessions</span></td>
+              <td>What happened in one execution?</td>
+              <td>Open a trace and inspect its evidence turn by turn.</td>
+            </tr>
+            <tr>
+              <td><span class="tag">Runs</span></td>
+              <td>How did a broader run behave?</td>
+              <td>Compare sessions grouped by run and drill into outliers.</td>
+            </tr>
+            <tr>
+              <td><span class="tag">Insights</span></td>
+              <td>Where are patterns forming?</td>
+              <td>Aggregate failures, tools, skills, runs, models, and events.</td>
+            </tr>
+            <tr>
+              <td><span class="tag">Metrics</span></td>
+              <td>Is the system getting healthier?</td>
+              <td>Track request count, tokens, cost, latency, and trace index coverage.</td>
+            </tr>
+            <tr>
+              <td><span class="tag">Docs</span></td>
+              <td>How should users think?</td>
+              <td>Teach the workflow directly in the product.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>What Good Looks Like</h2>
+        <p>
+          A strong viewer session ends with a sentence like:
+          <span class="ok">"This is a tool-layer ServiceNow failure affecting 169 calls; here is a sample trace and the copied ratchet brief."</span>
+        </p>
+        <p>
+          A weak viewer session ends with:
+          <span class="warn">"The model failed again."</span>
+          The viewer should make that answer feel incomplete.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -216,6 +216,29 @@ describe("trace validation", () => {
       ]),
     );
   });
+
+  test("detects missing and out-of-order turn continuity issues", () => {
+    const issues = validateTraceBundle({
+      sessions: [session({ outcome: "completed", failureCode: "none" })],
+      entriesBySession: new Map([
+        [
+          "session-1",
+          [
+            entry({ turnNumber: 1 }),
+            entry({ turnNumber: 3 }),
+            entry({ turnNumber: 2 }),
+          ],
+        ],
+      ]),
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "missing_turn_gap", turnNumber: 3 }),
+        expect.objectContaining({ code: "out_of_order_turn", turnNumber: 2 }),
+      ]),
+    );
+  });
 });
 
 describe("trace redaction", () => {
