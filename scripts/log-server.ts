@@ -49,6 +49,11 @@ import {
   buildTraceInsights,
   type TraceInsightsFilters,
 } from "./trace-insights";
+import {
+  buildHarnessRatchetCandidates,
+  buildTraceInsightsFromSqlite,
+  getTraceIndexStatus,
+} from "./trace-sqlite-store";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -612,6 +617,21 @@ const server = createServer(
     // GET /api/trace-insights — aggregate sessions, tools, skills, runs, models, failures, events
     if (url.pathname === "/api/trace-insights" && req.method === "GET") {
       try {
+        const filters = traceInsightsFilters(url.searchParams);
+        let sqliteInsights = null;
+        try {
+          sqliteInsights = buildTraceInsightsFromSqlite(PROJECT_ROOT, filters);
+        } catch (err) {
+          console.warn(
+            "SQLite trace insights unavailable, falling back to JSONL:",
+            err,
+          );
+        }
+        if (sqliteInsights) {
+          sendJson(res, sqliteInsights);
+          return;
+        }
+
         const sessions = await readAllTraceSessions();
         const entriesBySession = new Map<string, TraceEntryLike[]>();
         const runEventsByRun = new Map<string, TraceEntryLike[]>();
@@ -636,11 +656,31 @@ const server = createServer(
             sessions,
             entriesBySession,
             runEventsByRun,
-            filters: traceInsightsFilters(url.searchParams),
+            filters,
           }),
         );
       } catch (err) {
         sendText(res, `Error reading trace insights: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/trace-index/status — SQLite observability index health and coverage
+    if (url.pathname === "/api/trace-index/status" && req.method === "GET") {
+      try {
+        sendJson(res, getTraceIndexStatus(PROJECT_ROOT));
+      } catch (err) {
+        sendText(res, `Error reading trace index status: ${err}`, 500);
+      }
+      return;
+    }
+
+    // GET /api/harness-ratchet — repeated trace failures that should become harness work
+    if (url.pathname === "/api/harness-ratchet" && req.method === "GET") {
+      try {
+        sendJson(res, buildHarnessRatchetCandidates(PROJECT_ROOT));
+      } catch (err) {
+        sendText(res, `Error reading harness ratchet candidates: ${err}`, 500);
       }
       return;
     }

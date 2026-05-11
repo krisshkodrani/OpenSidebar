@@ -73,8 +73,8 @@ export default function FleetInsights({ onSelectSession }: FleetInsightsProps) {
             Fleet Insights
           </div>
           <div className="mt-0.5 text-[12px] text-trace-muted">
-            {analysis.failedSessions}/{analysis.totalSessions} failed ·{" "}
-            {pct(analysis.successRate)} success · avg{" "}
+            {analysis.failedSessions}/{analysis.totalSessions} failed /{" "}
+            {pct(analysis.successRate)} success / avg{" "}
             {analysis.averageTurns.toFixed(1)} turns
           </div>
         </div>

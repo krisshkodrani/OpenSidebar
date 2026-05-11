@@ -12,6 +12,7 @@ import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
 import BackendPanel from "./components/BackendPanel";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
+import FleetInsights from "./components/traces/FleetInsights";
 import FilterBar from "./components/traces/FilterBar";
 import ErrorBanner from "./components/ErrorBanner";
 import LoadingSpinner from "./components/LoadingSpinner";
@@ -29,6 +30,8 @@ import PromptsTab from "./components/traces/PromptsTab";
 import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
 import RunsTableView from "./components/traces/RunsTableView";
 import InsightsTab from "./components/traces/InsightsTab";
+import MetricsTab from "./components/traces/MetricsTab";
+import DocsTab from "./components/traces/DocsTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import type { Subview, TopLevelView } from "./store/types";
 
@@ -64,7 +67,13 @@ const VALID_SUBVIEWS = new Set([
   "logs",
 ]);
 
-const VALID_TOP_LEVEL_VIEWS = new Set(["sessions", "runs", "insights"]);
+const VALID_TOP_LEVEL_VIEWS = new Set([
+  "sessions",
+  "runs",
+  "insights",
+  "metrics",
+  "docs",
+]);
 
 // App
 
@@ -484,10 +493,19 @@ function ViewerBody({
         active={activeTopLevelView}
         onChange={setActiveTopLevelView}
       />
-      <FilterBar onFiltersChanged={refreshSessions} />
-      {activeTopLevelView !== "insights" && (
+      {activeTopLevelView !== "docs" && (
+        <FilterBar onFiltersChanged={refreshSessions} />
+      )}
+      {activeTopLevelView !== "insights" &&
+        activeTopLevelView !== "metrics" &&
+        activeTopLevelView !== "docs" && (
         <FleetOverview onFiltersChanged={refreshSessions} />
       )}
+      {activeTopLevelView !== "insights" &&
+        activeTopLevelView !== "metrics" &&
+        activeTopLevelView !== "docs" && (
+          <FleetInsights onSelectSession={selectSession} />
+        )}
       {tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
@@ -500,6 +518,10 @@ function ViewerBody({
         <RunsTableView onSelectSession={selectSession} />
       ) : activeTopLevelView === "insights" ? (
         <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
+      ) : activeTopLevelView === "metrics" ? (
+        <MetricsTab />
+      ) : activeTopLevelView === "docs" ? (
+        <DocsTab />
       ) : (
         <UnifiedSessionsTableView
           onSelect={selectSession}
@@ -520,10 +542,12 @@ function TopLevelTabs({
 }) {
   const sessions = useStore((s) => s.sessions);
   const runGroups = useStore((s) => s.runGroups);
-  const tabs: Array<{ id: TopLevelView; label: string; count: number }> = [
+  const tabs: Array<{ id: TopLevelView; label: string; count?: number }> = [
     { id: "sessions", label: "Sessions", count: sessions.length },
     { id: "runs", label: "Runs", count: runGroups.length },
     { id: "insights", label: "Insights", count: sessions.length },
+    { id: "metrics", label: "Metrics", count: sessions.length },
+    { id: "docs", label: "Docs" },
   ];
 
   return (
@@ -543,7 +567,7 @@ function TopLevelTabs({
                 : "bg-transparent text-trace-muted hover:text-trace-text"
             }`}
           >
-            {tab.label} ({tab.count})
+            {tab.count == null ? tab.label : `${tab.label} (${tab.count})`}
           </button>
         ))}
       </div>

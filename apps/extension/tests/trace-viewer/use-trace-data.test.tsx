@@ -50,6 +50,16 @@ async function waitFor(check: () => void, attempts = 10) {
   throw lastError;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("useTraceData", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -245,5 +255,132 @@ describe("useTraceData", () => {
       expect(api.fetchRunTraceEvents).toHaveBeenCalledWith("run-1");
       expect(useStore.getState().currentRunEvents).toHaveLength(1);
     });
+  });
+
+  test("ignores stale detail data when selected session changes before load completes", async () => {
+    const sessionOneEntries = deferred<any[]>();
+    const sessionTwoEntries = deferred<any[]>();
+    const sessionOneLogs = deferred<any[]>();
+    const sessionTwoLogs = deferred<any[]>();
+    const sessionOneRunEvents = deferred<any[]>();
+    const sessionTwoRunEvents = deferred<any[]>();
+
+    vi.mocked(api.fetchTraceSessions).mockResolvedValue([
+      {
+        sessionId: "session-1",
+        runId: "run-1",
+        startTime: 100,
+        endTime: 200,
+        query: "Objective: first",
+        startUrl: "https://example.com/one",
+        outcome: "completed",
+        turnCount: 1,
+        summary: "done",
+        metrics: null,
+      },
+      {
+        sessionId: "session-2",
+        runId: "run-2",
+        startTime: 300,
+        endTime: 400,
+        query: "Objective: second",
+        startUrl: "https://example.com/two",
+        outcome: "completed",
+        turnCount: 1,
+        summary: "done",
+        metrics: null,
+      },
+    ] as any);
+    vi.mocked(api.fetchTraceEntries).mockImplementation((sessionId) =>
+      sessionId === "session-1"
+        ? sessionOneEntries.promise
+        : sessionTwoEntries.promise,
+    );
+    vi.mocked(api.fetchSessionLogs).mockImplementation((sessionId) =>
+      sessionId === "session-1" ? sessionOneLogs.promise : sessionTwoLogs.promise,
+    );
+    vi.mocked(api.fetchRunTraceEvents).mockImplementation((runId) =>
+      runId === "run-1"
+        ? sessionOneRunEvents.promise
+        : sessionTwoRunEvents.promise,
+    );
+
+    await act(async () => {
+      root.render(<HookHarness />);
+    });
+    await waitFor(() => {
+      expect(useStore.getState().sessions).toHaveLength(2);
+    });
+
+    await act(async () => {
+      useStore.getState().setCurrentSessionId("session-1");
+    });
+    await flushAsyncWork();
+    expect(api.fetchTraceEntries).toHaveBeenCalledWith("session-1");
+
+    await act(async () => {
+      useStore.getState().setCurrentSessionId("session-2");
+    });
+    await flushAsyncWork();
+    expect(api.fetchTraceEntries).toHaveBeenCalledWith("session-2");
+
+    sessionTwoEntries.resolve([{ sessionId: "session-2", turnNumber: 1 }]);
+    sessionTwoLogs.resolve([
+      {
+        ts: "2026-04-15T10:00:00.000Z",
+        lvl: "INFO",
+        src: "background",
+        cat: "trace",
+        msg: "new",
+      },
+    ]);
+    sessionTwoRunEvents.resolve([{ runId: "run-2", type: "new" }]);
+    await waitFor(() => {
+      expect(useStore.getState().currentEntries).toEqual([
+        { sessionId: "session-2", turnNumber: 1 },
+      ]);
+      expect(useStore.getState().currentRunEvents).toEqual([
+        { runId: "run-2", type: "new" },
+      ]);
+      expect(useStore.getState().sessionLogs).toEqual([
+        {
+          ts: "2026-04-15T10:00:00.000Z",
+          lvl: "INFO",
+          src: "background",
+          cat: "trace",
+          msg: "new",
+        },
+      ]);
+    });
+
+    sessionOneEntries.resolve([{ sessionId: "session-1", turnNumber: 1 }]);
+    sessionOneLogs.resolve([
+      {
+        ts: "2026-04-15T09:00:00.000Z",
+        lvl: "ERROR",
+        src: "background",
+        cat: "trace",
+        msg: "old",
+      },
+    ]);
+    sessionOneRunEvents.resolve([{ runId: "run-1", type: "old" }]);
+    await flushAsyncWork();
+
+    expect(useStore.getState().currentSessionId).toBe("session-2");
+    expect(useStore.getState().currentEntries).toEqual([
+      { sessionId: "session-2", turnNumber: 1 },
+    ]);
+    expect(useStore.getState().currentRunEvents).toEqual([
+      { runId: "run-2", type: "new" },
+    ]);
+    expect(useStore.getState().sessionLogs).toEqual([
+      {
+        ts: "2026-04-15T10:00:00.000Z",
+        lvl: "INFO",
+        src: "background",
+        cat: "trace",
+        msg: "new",
+      },
+    ]);
   });
 });

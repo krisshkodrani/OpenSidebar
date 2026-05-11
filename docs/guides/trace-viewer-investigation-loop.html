@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trace Viewer Investigation Loop</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c1222;
+        --panel: #111827;
+        --panel-2: #182235;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --line: #2a3446;
+        --accent: #38bdf8;
+        --green: #34d399;
+        --yellow: #fbbf24;
+        --red: #fb7185;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 30px 20px 44px;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+      h1 {
+        font-size: 30px;
+        line-height: 1.12;
+        margin-bottom: 10px;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .lead {
+        max-width: 820px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+      .two {
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+      }
+      .loop {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin: 18px 0;
+      }
+      .node {
+        min-height: 154px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel-2);
+        padding: 13px;
+      }
+      .node b {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        margin-bottom: 10px;
+        border: 1px solid color-mix(in srgb, var(--accent), transparent 45%);
+        border-radius: 6px;
+        color: var(--accent);
+      }
+      .node p,
+      li {
+        color: var(--muted);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: var(--panel-2);
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .good {
+        color: var(--green);
+      }
+      .warn {
+        color: var(--yellow);
+      }
+      .bad {
+        color: var(--red);
+      }
+      @media (max-width: 940px) {
+        .two,
+        .loop {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="grid">
+      <section class="card">
+        <div class="eyebrow">Failure Investigation</div>
+        <h1>How to investigate one failure without losing the fleet</h1>
+        <p class="lead">
+          The viewer should keep users in a productive loop: choose a meaningful
+          pattern, inspect one trace deeply, identify the harness layer, and
+          measure whether the fix changed the aggregate behavior.
+        </p>
+      </section>
+
+      <section class="loop">
+        <div class="node">
+          <b>1</b>
+          <h3>Metric Signal</h3>
+          <p>Look for movement in success rate, tokens, latency, cost, or tool failure rate.</p>
+        </div>
+        <div class="node">
+          <b>2</b>
+          <h3>Pattern</h3>
+          <p>Use Insights or Ratchet to avoid chasing a one-off trace too early.</p>
+        </div>
+        <div class="node">
+          <b>3</b>
+          <h3>Sample Trace</h3>
+          <p>Open a representative session and read the evidence turn by turn.</p>
+        </div>
+        <div class="node">
+          <b>4</b>
+          <h3>Layer</h3>
+          <p>Name the fix layer before editing: tool, skill, policy, verifier, prompt, or context.</p>
+        </div>
+        <div class="node">
+          <b>5</b>
+          <h3>Ratchet</h3>
+          <p>Copy the brief, implement the fix, and watch the aggregate pattern after reindex.</p>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <div class="card">
+          <h2>Investigation Checklist</h2>
+          <ul>
+            <li>Start from Metrics when the question is performance, cost, latency, or volume.</li>
+            <li>Start from Ratchet when the question is repeated failure and harness improvement.</li>
+            <li>Use sample-session links to validate the pattern against concrete evidence.</li>
+            <li>Reject fixes that only make one fixture pass but do not address the repeated behavior.</li>
+            <li>After the fix, rebuild the SQLite index and compare the same metric again.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2>Decision Rule</h2>
+          <p>
+            If the trace is confusing but the fleet is clean, keep investigating
+            locally. If the same signature repeats across the fleet, create a
+            ratchet candidate and treat it as harness work.
+          </p>
+          <p>
+            <span class="good">Evidence first.</span>
+            <span class="warn">Layer second.</span>
+            <span class="bad">Blame the model last.</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Failure Layer Map</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Layer</th>
+              <th>Typical Signal</th>
+              <th>Likely Fix</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge">Tool</span></td>
+              <td>Repeated failed calls for one primitive.</td>
+              <td>Improve the primitive, controller, selector policy, or result validation.</td>
+            </tr>
+            <tr>
+              <td><span class="badge">Skill</span></td>
+              <td>Workflow succeeds manually but the agent misses stable sequencing.</td>
+              <td>Add reusable sequencing and evidence expectations.</td>
+            </tr>
+            <tr>
+              <td><span class="badge">Policy</span></td>
+              <td>Many max-turn or stopped sessions in the same shape.</td>
+              <td>Adjust planning, continuation, recovery, or decomposition rules.</td>
+            </tr>
+            <tr>
+              <td><span class="badge">Verifier</span></td>
+              <td>Agent claims success but trace evidence is weak or contradictory.</td>
+              <td>Add stricter act-check-act verification or failure admission.</td>
+            </tr>
+            <tr>
+              <td><span class="badge">Context</span></td>
+              <td>High utilization, dropped messages, or noisy tool output.</td>
+              <td>Improve compaction, progressive disclosure, or output offloading.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

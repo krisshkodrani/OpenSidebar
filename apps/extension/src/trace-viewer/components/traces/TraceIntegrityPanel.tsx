@@ -63,6 +63,11 @@ export default function TraceIntegrityPanel({
   const errors = issues.filter((issue) => issue.severity === "error");
   const warnings = issues.filter((issue) => issue.severity === "warning");
   const stableTurns = entries.filter((entry) => Boolean(entry.turnId)).length;
+  const continuityIssues = issues.filter((issue) =>
+    ["duplicate_turn", "missing_turn_gap", "out_of_order_turn"].includes(
+      issue.code,
+    ),
+  );
   const eventCount = entries.reduce(
     (count, entry) => count + (entry.events?.length ?? 0),
     0,
@@ -104,14 +109,19 @@ export default function TraceIntegrityPanel({
           tone={warnings.length > 0 ? "warning" : "success"}
         />
         <IntegrityStat
-          label="Stable Turns"
+          label="Turn IDs"
           value={`${stableTurns}/${entries.length}`}
           tone={stableTurns === entries.length ? "success" : "warning"}
         />
         <IntegrityStat
-          label="Signals"
-          value={eventCount + toolExecutionCount}
+          label="Continuity"
+          value={continuityIssues.length === 0 ? "ok" : continuityIssues.length}
+          tone={continuityIssues.length === 0 ? "success" : "warning"}
         />
+      </div>
+
+      <div className="mt-2 text-[11px] text-trace-muted">
+        Signals indexed: {eventCount + toolExecutionCount}
       </div>
 
       {topIssues.length > 0 && (

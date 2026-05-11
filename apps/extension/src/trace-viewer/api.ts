@@ -111,6 +111,16 @@ export interface TraceInsightsResponse {
     toolCalls: number;
     toolFailures: number;
     toolFailureRate: number;
+    llmRequests: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    requestCost: number;
+    averagePromptTokens: number;
+    averageCompletionTokens: number;
+    averageTotalTokens: number;
+    totalLlmDurationMs: number;
+    averageLlmDurationMs: number;
   };
   facets: {
     runs: string[];
@@ -130,6 +140,45 @@ export interface TraceInsightsResponse {
   runs: TraceInsightsRunRow[];
 }
 
+export interface TraceIndexStatus {
+  available: boolean;
+  source: "sqlite" | "jsonl";
+  dbPath: string;
+  indexedAt: number | null;
+  hotTraceDays: number;
+  sessions: number;
+  hotSessions: number;
+  archivedSessions: number;
+  turns: number;
+  tools: number;
+  runEvents: number;
+  screenshots: number;
+  oldestSessionDay: string | null;
+  newestSessionDay: string | null;
+}
+
+export interface HarnessRatchetCandidate {
+  id: string;
+  title: string;
+  harnessLayer:
+    | "tool"
+    | "skill"
+    | "prompt"
+    | "policy"
+    | "verifier"
+    | "context"
+    | "unknown";
+  severity: "low" | "medium" | "high";
+  count: number;
+  failureRate?: number;
+  firstSeen?: string | null;
+  lastSeen?: string | null;
+  sampleSessionId?: string;
+  sampleRunId?: string;
+  evidenceQuery: string;
+  suggestedAction: string;
+}
+
 export async function fetchTraceInsights(
   filters: TraceInsightsQuery,
 ): Promise<TraceInsightsResponse> {
@@ -140,6 +189,14 @@ export async function fetchTraceInsights(
   }
   const query = params.toString();
   return fetchJson(`/api/trace-insights${query ? `?${query}` : ""}`);
+}
+
+export async function fetchTraceIndexStatus(): Promise<TraceIndexStatus> {
+  return fetchJson("/api/trace-index/status");
+}
+
+export async function fetchHarnessRatchet(): Promise<HarnessRatchetCandidate[]> {
+  return fetchJson("/api/harness-ratchet");
 }
 
 export async function fetchTraceEntries(

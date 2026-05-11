@@ -104,7 +104,7 @@ function pushSignal(
   signals.push(signal);
 }
 
-function collectEntrySignals(
+export function buildTraceEvidenceSignalsForTurn(
   entry: TraceEntry,
   previous: TraceEntry | undefined,
 ): TraceEvidenceSignal[] {
@@ -342,7 +342,7 @@ export function buildTraceEvidenceTimeline(
   for (let index = 0; index < input.entries.length; index++) {
     const entry = input.entries[index];
     const signals = [
-      ...collectEntrySignals(entry, input.entries[index - 1]),
+      ...buildTraceEvidenceSignalsForTurn(entry, input.entries[index - 1]),
       ...collectRunSignals(entry.turnNumber, runEvents),
       ...collectLogSignals(entry.turnNumber, logs),
     ].sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
