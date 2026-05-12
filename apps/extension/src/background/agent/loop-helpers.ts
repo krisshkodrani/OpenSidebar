@@ -595,6 +595,13 @@ function countUserEnteredFormValues(
     .length;
 }
 
+function isServiceNowSnapshot(snapshot: DomSnapshot | null | undefined): boolean {
+  if (!snapshot) return false;
+  return /\bservice-now\.com\b|service\s*now/i.test(
+    `${snapshot.url}\n${snapshot.title}\n${snapshot.pageContent}`,
+  );
+}
+
 /**
  * Detect record-creation UIs that signal a successful submit by resetting from a
  * populated "Create ABC123" form to the next blank "Create ABC124" form.
@@ -621,6 +628,13 @@ export function detectFormSubmissionResetSuccess(params: {
   if (
     toolName !== ToolName.CLICK_ELEMENT &&
     toolName !== ToolName.PRESS_KEY &&
+    toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
+  ) {
+    return null;
+  }
+  if (
+    (isServiceNowSnapshot(preActionSnapshot) ||
+      isServiceNowSnapshot(currentSnapshot)) &&
     toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
   ) {
     return null;
@@ -699,6 +713,12 @@ export function shouldTrackFormSubmissionReset(params: {
   if (
     toolName !== ToolName.CLICK_ELEMENT &&
     toolName !== ToolName.PRESS_KEY &&
+    toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
+  ) {
+    return false;
+  }
+  if (
+    isServiceNowSnapshot(preActionSnapshot) &&
     toolName !== ToolName.CONFIGURE_SERVICENOW_FORM
   ) {
     return false;

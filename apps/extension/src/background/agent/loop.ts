@@ -282,7 +282,10 @@ import {
   type SequentialToolDispatchOutput,
   type SequentialToolDispatchHost,
 } from "./sequential-tool-dispatch";
-import { collectTurnToolOutcomeRecords } from "./turn-tool-outcomes";
+import {
+  collectTurnToolOutcomeRecords,
+  type TurnToolOutcomeRecord,
+} from "./turn-tool-outcomes";
 import {
   refreshPostToolSnapshot,
   type PostToolSnapshotRefreshHost,
@@ -325,6 +328,13 @@ type ParsedServiceNowModuleRequest = {
   path: string[];
 };
 
+type ServiceNowMissingFieldSearchEvidence = {
+  findMisses: number;
+  hiddenFullLabelMiss: boolean;
+  hiddenMissTokens: Set<string>;
+  configureFieldMissing: boolean;
+};
+
 function cleanServiceNowModuleLabel(value: string): string {
   return value
     .replace(/[\u201c\u201d]/g, '"')
@@ -333,6 +343,21 @@ function cleanServiceNowModuleLabel(value: string): string {
     .replace(/^the\s+/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeServiceNowModuleEvidenceText(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function serviceNowModuleLabelTokens(value: string): string[] {
+  return normalizeServiceNowModuleEvidenceText(value)
+    .split(" ")
+    .filter((token) => token.length >= 3);
 }
 
 export function extractServiceNowModuleRequest(
@@ -357,6 +382,68 @@ export function extractServiceNowModuleRequest(
     }
   }
   return null;
+}
+
+export function extractServiceNowFormMissingFieldLabels(
+  toolResult: string,
+): string[] {
+  const labels = new Set<string>();
+  for (const match of toolResult.matchAll(/^\s*-\s*(.+?): field not found\b/gim)) {
+    const label = match[1]?.replace(/\s+/g, " ").trim();
+    if (label) labels.add(label);
+  }
+  return [...labels];
+}
+
+export function buildServiceNowMissingFieldInfeasibleSummary(
+  labels: string[],
+): string {
+  const cleanLabels = labels
+    .map((label) => label.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (cleanLabels.length === 1) {
+    return `I cannot complete this because the requested field "${cleanLabels[0]}" is not available on this ServiceNow form.`;
+  }
+  return `I cannot complete this because the requested fields ${cleanLabels
+    .map((label) => `"${label}"`)
+    .join(", ")} are not available on this ServiceNow form.`;
+}
+
+function serviceNowFieldSearchTokens(label: string): string[] {
+  return label
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3);
+}
+
+function isNegativeFindElementResult(result: string): boolean {
+  return /\bText ".+?" not found on this page\./i.test(result);
+}
+
+function isNegativeInspectHiddenResult(result: string): boolean {
+  return /\bNo hidden elements found matching\b/i.test(result);
+}
+
+function inferServiceNowCreateRecordUrlFromListUrl(rawUrl: string): string | null {
+  if (!rawUrl.trim()) return null;
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const targetMatch = url.pathname.match(/\/target\/([^/]+)/i);
+  const decodedTarget = targetMatch
+    ? decodeURIComponent(targetMatch[1] ?? "")
+    : `${url.pathname.replace(/^\//, "")}${url.search}`;
+  const listMatch = decodedTarget.match(
+    /(?:^|\/)([a-z][a-z0-9_]*?)_list\.do\b/i,
+  );
+  const table = listMatch?.[1];
+  if (!table) return null;
+  return `${url.origin}/${table}.do?sys_id=-1`;
 }
 
 // Re-export submodules for barrel compatibility
@@ -1152,6 +1239,8 @@ export class AgentLoop {
       | "multi_return_step_advanced"
       | "submit_form_reset_success"
       | "trusted_form_submit_success"
+      | "trusted_list_sort_success"
+      | "trusted_list_filter_success"
       | undefined,
     traceData: Record<string, unknown> = {},
   ): void {
@@ -1943,7 +2032,7 @@ export class AgentLoop {
       return false;
     }
 
-    if (this.rejectDoneForMissingRequiredEvidence(toolCallId)) {
+    if (this.rejectDoneForMissingRequiredEvidence(toolCallId, summary)) {
       return false;
     }
 
@@ -2029,8 +2118,17 @@ export class AgentLoop {
     });
   }
 
-  private rejectDoneForMissingRequiredEvidence(toolCallId: string): boolean {
-    const missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
+  private rejectDoneForMissingRequiredEvidence(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    let missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
+    if (
+      missingRequiredEvidence.length > 0 &&
+      this.maybeInferServiceNowModuleNavigationEvidence(summary)
+    ) {
+      missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
+    }
     if (missingRequiredEvidence.length === 0) return false;
 
     this.doneRejections++;
@@ -2052,6 +2150,79 @@ export class AgentLoop {
         `done() REJECTED: Missing required typed evidence: ${missingRequiredEvidence.join(", ")}.\n\n` +
         "Use the selected workflow tool to complete and verify the action before calling done().",
     });
+    return true;
+  }
+
+  private maybeInferServiceNowModuleNavigationEvidence(summary: string): boolean {
+    if (this.selectedSkillId !== "servicenow-module-navigation") return false;
+    const request = extractServiceNowModuleRequest(this.originalQuery);
+    if (!request) return false;
+    const snapshot = this.context.getSnapshot();
+    if (!snapshot) return false;
+
+    const pageText = normalizeServiceNowModuleEvidenceText(
+      [
+        snapshot.title,
+        snapshot.url,
+        snapshot.visibleContent,
+        snapshot.pageContent,
+        summary,
+      ].join("\n"),
+    );
+    const serviceNowPage =
+      /servicenow/i.test(snapshot.title) ||
+      /service-now|servicenow|nowplatform/i.test(snapshot.url) ||
+      /\.do(?:\?|$)|_list\.do\b/i.test(snapshot.url);
+    if (!serviceNowPage) return false;
+
+    const leaf = request.path.at(-1);
+    if (!leaf) return false;
+    const leafTokens = serviceNowModuleLabelTokens(leaf);
+    if (
+      leafTokens.length === 0 ||
+      !leafTokens.every((token) => pageText.includes(token))
+    ) {
+      return false;
+    }
+
+    const now = new Date().toISOString();
+    const detail = {
+      application: request.application,
+      path: request.path,
+      inferredFrom: "current_page_on_done",
+      title: snapshot.title,
+      url: snapshot.url,
+    };
+    const added = this.evidenceAccumulator.addMany([
+      {
+        type: "navigation_reached",
+        source: ToolName.DONE,
+        confidence: "medium",
+        observedAt: now,
+        supportsTaskGoal: true,
+        detail,
+      },
+      {
+        type: "goal_state_verified",
+        source: ToolName.DONE,
+        confidence: "medium",
+        observedAt: now,
+        supportsTaskGoal: true,
+        detail,
+      },
+    ]);
+    if (added === 0) return false;
+
+    this.traceRecorder?.recordEvent(
+      "module_navigation_evidence_inferred_from_done",
+      {
+        selectedSkillId: this.selectedSkillId,
+        application: request.application,
+        path: request.path,
+        title: snapshot.title,
+        url: snapshot.url,
+      },
+    );
     return true;
   }
 
@@ -5009,6 +5180,7 @@ export class AgentLoop {
       plan.currentIndex < 0 ||
       plan.currentIndex >= plan.subtasks.length
     ) {
+      if (!this.isPureListFilterWorkflowRequest()) return null;
       this.log.info("agent", "trusted list filter completed planless workflow", {
         turn: this.turnCount,
         mode: params.mode,
@@ -5059,6 +5231,16 @@ export class AgentLoop {
     return { finalSummary, newIndex };
   }
 
+  private isPureListFilterWorkflowRequest(): boolean {
+    const taskText = `${this.originalQuery}\n${this.planSteps
+      .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
+      .join("\n")}`;
+    if (!taskText.trim()) return true;
+    return !/\b(?:delete|remove|mark|update|close|assign|order|submit|select|approve|reject|duplicate|duplicated|total|sum|return|investment|manage)\b/i.test(
+      taskText,
+    );
+  }
+
   private hasTrustedServiceNowSubmitIntent(text?: string): boolean {
     const intentText =
       text ??
@@ -5107,23 +5289,97 @@ export class AgentLoop {
     );
   }
 
+  private currentServiceNowPlanStepForbidsSubmit(): boolean {
+    const plan = this.context.getPlanStatusRaw();
+    if (
+      !plan ||
+      plan.currentIndex < 0 ||
+      plan.currentIndex >= plan.subtasks.length
+    ) {
+      return false;
+    }
+    const currentSubtask = plan.subtasks[plan.currentIndex];
+    const currentStep = this.planSteps[plan.currentIndex];
+    const localText = [
+      currentSubtask?.description,
+      currentStep?.objective,
+      currentStep?.successCriteria,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
+    return /\b(?:do not submit|not submit|submit action has not been clicked|has not been submitted)\b/i.test(
+      localText,
+    );
+  }
+
   private isTaskLevelServiceNowRecordWorkflow(): boolean {
-    if (this.selectedSkillId !== "servicenow-record-form") return false;
     const text = this.getServiceNowRecordWorkflowText();
     if (
+      this.selectedSkillId === "servicenow-record-form" &&
       /\bObjective:\s*Complete the workflow for the original request\b/i.test(
         text,
       )
     ) {
       return true;
     }
-    return (
-      extractFieldValuePairs(text).length > 0 &&
-      /\b(?:ServiceNow|incident|change request|problem|record)\b/i.test(text) &&
+    if (extractFieldValuePairs(text).length === 0) return false;
+    const hasRecordIntent =
       /\b(?:create|new|submit|submitted|created record|confirmation)\b/i.test(
+        text,
+      );
+    const hasRecordLanguage =
+      /\b(?:ServiceNow|incident|change request|problem|record|user|hardware asset|asset)\b/i.test(
+        text,
+      );
+    if (!hasRecordIntent || !hasRecordLanguage) return false;
+    if (this.selectedSkillId === "servicenow-record-form") return true;
+
+    const snapshot = this.context.getSnapshot();
+    const groundedInServiceNow =
+      /service-now\.com|servicenow\.com/i.test(
+        `${this.context.getCurrentUrl() ?? ""}\n${snapshot?.url ?? ""}`,
+      ) ||
+      /\b(?:Create|New record)\b[\s\S]{0,80}\b(?:Incident|Problem|Change Request|User|Hardware Asset)\b/i.test(
+        `${snapshot?.title ?? ""}\n${snapshot?.pageContent ?? ""}`,
+      );
+    if (!groundedInServiceNow) return false;
+
+    return (
+      !/\b(?:service catalog|catalog item|request item|cart|checkout|list filter|sort list|dashboard|chart)\b/i.test(
         text,
       )
     );
+  }
+
+  private isLikelyServiceNowRecordFieldWorkflow(): boolean {
+    const text = this.getServiceNowRecordWorkflowText();
+    if (extractFieldValuePairs(text).length === 0) return false;
+    if (
+      this.selectedSkillId === "servicenow-record-form" &&
+      this.isTaskLevelServiceNowRecordWorkflow()
+    ) {
+      return true;
+    }
+
+    const snapshot = this.context.getSnapshot();
+    const url = `${this.context.getCurrentUrl() ?? ""}\n${snapshot?.url ?? ""}`;
+    const pageText = [
+      snapshot?.title,
+      snapshot?.visibleContent,
+      snapshot?.pageContent,
+    ]
+      .filter((part): part is string => typeof part === "string")
+      .join("\n");
+    const hasRecordIntent =
+      /\b(?:create|new|submit|submitted|created record|confirmation)\b/i.test(
+        text,
+      );
+    const hasServiceNowGrounding =
+      /\bServiceNow\b/i.test(text) ||
+      /service-now\.com|servicenow\.com/i.test(url) ||
+      /\b(?:User|Incident|Problem|Change Request)\b/i.test(pageText);
+
+    return hasRecordIntent && hasServiceNowGrounding;
   }
 
   private getServiceNowRecordWorkflowText(): string {
@@ -5379,6 +5635,124 @@ export class AgentLoop {
     );
   }
 
+  private assessServiceNowMissingFieldInfeasibility(
+    toolOutcomes: TurnToolOutcomeRecord[],
+    searchEvidence: Map<string, ServiceNowMissingFieldSearchEvidence>,
+  ): string | null {
+    if (!this.isLikelyServiceNowRecordFieldWorkflow()) return null;
+    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
+
+    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
+    if (fields.length === 0) return null;
+
+    for (const field of fields) {
+      const label = field.field.replace(/\s+/g, " ").trim();
+      if (!label) continue;
+      const evidence =
+        searchEvidence.get(label) ??
+        ({
+          findMisses: 0,
+          hiddenFullLabelMiss: false,
+          hiddenMissTokens: new Set<string>(),
+          configureFieldMissing: false,
+        } satisfies ServiceNowMissingFieldSearchEvidence);
+      const tokens = serviceNowFieldSearchTokens(label);
+
+      for (const outcome of toolOutcomes) {
+        if (outcome.toolName === ToolName.CONFIGURE_SERVICENOW_FORM) {
+          if (
+            extractServiceNowFormMissingFieldLabels(outcome.resultContent)
+              .map((missing) => missing.toLowerCase())
+              .includes(label.toLowerCase())
+          ) {
+            evidence.configureFieldMissing = true;
+          }
+          continue;
+        }
+
+        if (outcome.toolName === ToolName.FIND_ELEMENT) {
+          const text =
+            typeof outcome.args.text === "string" ? outcome.args.text : "";
+          if (
+            text.trim().toLowerCase() === label.toLowerCase() &&
+            isNegativeFindElementResult(outcome.resultContent)
+          ) {
+            evidence.findMisses += 1;
+          }
+          continue;
+        }
+
+        if (outcome.toolName === ToolName.INSPECT_HIDDEN) {
+          const pattern =
+            typeof outcome.args.pattern === "string"
+              ? outcome.args.pattern.trim().toLowerCase()
+              : "";
+          if (
+            pattern === label.toLowerCase() &&
+            isNegativeInspectHiddenResult(outcome.resultContent)
+          ) {
+            evidence.hiddenFullLabelMiss = true;
+            continue;
+          }
+          if (
+            pattern &&
+            tokens.includes(pattern) &&
+            isNegativeInspectHiddenResult(outcome.resultContent)
+          ) {
+            evidence.hiddenMissTokens.add(pattern);
+          }
+        }
+      }
+
+      searchEvidence.set(label, evidence);
+      const hiddenSearchCovered =
+        tokens.length > 0 &&
+        tokens.every((token) => evidence.hiddenMissTokens.has(token));
+      if (
+        evidence.configureFieldMissing ||
+        (evidence.hiddenFullLabelMiss && evidence.hiddenMissTokens.size > 0) ||
+        (evidence.hiddenFullLabelMiss && hiddenSearchCovered) ||
+        (evidence.findMisses > 0 &&
+          (hiddenSearchCovered ||
+            evidence.hiddenFullLabelMiss ||
+            evidence.hiddenMissTokens.size > 0)) ||
+        evidence.findMisses >= 2
+      ) {
+        return buildServiceNowMissingFieldInfeasibleSummary([label]);
+      }
+    }
+
+    return null;
+  }
+
+  private getServiceNowMissingFieldAdmissionSummary(
+    text: string | null,
+  ): string | null {
+    if (!text) return null;
+    if (!this.isLikelyServiceNowRecordFieldWorkflow()) return null;
+    if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
+
+    const lower = text.toLowerCase();
+    const hasStrongMissingFieldAdmission =
+      /\bfield (?:doesn't|does not|didn't|did not) exist\b/.test(lower) ||
+      /\b(?:couldn't|could not|cannot|can't) find\b[\s\S]{0,120}\bfield\b/.test(
+        lower,
+      ) ||
+      /\bfield\b[\s\S]{0,80}\bnot found\b[\s\S]{0,80}\bform\b/.test(lower) ||
+      /\bhelper\b[\s\S]{0,120}\b(?:couldn't|could not|cannot|can't) find\b/.test(
+        lower,
+      );
+    if (!hasStrongMissingFieldAdmission) return null;
+
+    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
+    const missing = fields.find((field) =>
+      lower.includes(field.field.toLowerCase()),
+    );
+    return missing
+      ? buildServiceNowMissingFieldInfeasibleSummary([missing.field])
+      : null;
+  }
+
   private startServiceNowRecordControllerTraceTurn(fieldCount: number): void {
     if (!this.traceRecorder) return;
 
@@ -5437,9 +5811,12 @@ export class AgentLoop {
   ): Promise<LoopResult | null> {
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return null;
     if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
+    if (this.currentServiceNowPlanStepForbidsSubmit()) return null;
 
-    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
+    const workflowText = this.getServiceNowRecordWorkflowText();
+    const fields = extractFieldValuePairs(workflowText);
     if (fields.length === 0) return null;
+    const moduleRequest = extractServiceNowModuleRequest(workflowText);
 
     this.statusHandler(AgentStatus.ACTING, "Configuring ServiceNow form...");
     this.log.info("agent", "ServiceNow record form controller started", {
@@ -5462,6 +5839,135 @@ export class AgentLoop {
         toolArgs: fillArgs,
         toolResult: fill.result,
       });
+      if (
+        (!fill.ok || !fillSignal) &&
+        this.isServiceNowRecordFormLoadMiss(fill.result) &&
+        moduleRequest
+      ) {
+        const navigationArgs = {
+          application: moduleRequest.application,
+          path: moduleRequest.path,
+        };
+        const navigationToolCall: ToolCall = {
+          id: `controller_${crypto.randomUUID()}`,
+          type: "function",
+          function: {
+            name: ToolName.OPEN_SERVICENOW_MODULE,
+            arguments: JSON.stringify(navigationArgs),
+          },
+        } as ToolCall;
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_navigation_started",
+          {
+            turn: this.turnCount,
+            application: moduleRequest.application,
+            path: moduleRequest.path,
+          },
+        );
+        const navigationStartedAt = Date.now();
+        const navigationResult = await this.executeToolCall(
+          navigationToolCall,
+          tabId,
+        );
+        const navigationOk = !navigationResult.startsWith("Error:");
+        this.traceRecorder?.recordToolExecution(
+          navigationToolCall.id,
+          ToolName.OPEN_SERVICENOW_MODULE,
+          navigationArgs,
+          navigationResult,
+          navigationOk,
+          Date.now() - navigationStartedAt,
+          RiskLevel.MEDIUM,
+          navigationOk ? undefined : navigationResult,
+        );
+        this.context.addMessage({
+          role: "tool",
+          content: navigationResult,
+          tool_call_id: navigationToolCall.id,
+        });
+        if (navigationOk) {
+          await waitForDomReady(tabId, {
+            timeoutMs: 1_500,
+            waitForElements: true,
+          });
+          fill = await this.executeServiceNowRecordControllerTool({
+            tabId,
+            args: fillArgs,
+            label: "Configure ServiceNow form after module navigation",
+            eventName: "servicenow_record_controller_fill_after_navigation_started",
+          });
+          fillSignal = detectTrustedFormFillStepCompletion({
+            toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+            toolArgs: fillArgs,
+            toolResult: fill.result,
+          });
+          if (
+            (!fill.ok || !fillSignal) &&
+            this.isServiceNowRecordFormLoadMiss(fill.result)
+          ) {
+            const createRecordUrl =
+              await this.resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
+            if (createRecordUrl) {
+              const navigateArgs = { url: createRecordUrl };
+              const navigateToolCall: ToolCall = {
+                id: `controller_${crypto.randomUUID()}`,
+                type: "function",
+                function: {
+                  name: ToolName.NAVIGATE,
+                  arguments: JSON.stringify(navigateArgs),
+                },
+              } as ToolCall;
+              this.traceRecorder?.recordEvent(
+                "servicenow_record_controller_create_navigation_started",
+                {
+                  turn: this.turnCount,
+                  url: createRecordUrl,
+                },
+              );
+              const createNavigationStartedAt = Date.now();
+              const createNavigationResult = await this.executeToolCall(
+                navigateToolCall,
+                tabId,
+              );
+              const createNavigationOk =
+                !createNavigationResult.startsWith("Error:");
+              this.traceRecorder?.recordToolExecution(
+                navigateToolCall.id,
+                ToolName.NAVIGATE,
+                navigateArgs,
+                createNavigationResult,
+                createNavigationOk,
+                Date.now() - createNavigationStartedAt,
+                RiskLevel.MEDIUM,
+                createNavigationOk ? undefined : createNavigationResult,
+              );
+              this.context.addMessage({
+                role: "tool",
+                content: createNavigationResult,
+                tool_call_id: navigateToolCall.id,
+              });
+              if (createNavigationOk) {
+                await waitForDomReady(tabId, {
+                  timeoutMs: 2_000,
+                  waitForElements: true,
+                });
+                fill = await this.executeServiceNowRecordControllerTool({
+                  tabId,
+                  args: fillArgs,
+                  label: "Configure ServiceNow form after opening create record",
+                  eventName:
+                    "servicenow_record_controller_fill_after_create_navigation_started",
+                });
+                fillSignal = detectTrustedFormFillStepCompletion({
+                  toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+                  toolArgs: fillArgs,
+                  toolResult: fill.result,
+                });
+              }
+            }
+          }
+        }
+      }
       const maxFormLoadRetries = 5;
       for (
         let attempt = 1;
@@ -5495,6 +6001,29 @@ export class AgentLoop {
         });
       }
       if (!fill.ok || !fillSignal) {
+        const missingFieldLabels = extractServiceNowFormMissingFieldLabels(
+          fill.result,
+        );
+        if (missingFieldLabels.length > 0) {
+          const summary =
+            buildServiceNowMissingFieldInfeasibleSummary(missingFieldLabels);
+          this.traceRecorder?.recordEvent(
+            "servicenow_record_controller_infeasible",
+            {
+              turn: this.turnCount,
+              phase: "fill",
+              missingFieldLabels,
+            },
+          );
+          this.completeTaskResult(summary);
+          return {
+            outcome: "completed",
+            turnCount: this.turnCount,
+            summary,
+            failure: { category: "none", code: "none" },
+            metrics: this.getMetrics(),
+          };
+        }
         this.traceRecorder?.recordEvent(
           "servicenow_record_controller_deferred",
           {
@@ -5532,12 +6061,21 @@ export class AgentLoop {
         mode: "sequential",
       });
 
-      if (submit.ok && !completion) {
+      const submitRejected = this.isServiceNowSubmitRejected(submit.result);
+      const submitStayedOnCreateForm =
+        this.isServiceNowSubmitStayedOnCreateForm(submit.result);
+      if (
+        submit.ok &&
+        !completion &&
+        (!submitRejected || submitStayedOnCreateForm)
+      ) {
         this.traceRecorder?.recordEvent(
           "servicenow_record_controller_submit_retry_queued",
           {
             turn: this.turnCount,
-            reason: "untrusted_submit_result",
+            reason: submitStayedOnCreateForm
+              ? "same_create_form_after_submit"
+              : "untrusted_submit_result",
           },
         );
         await waitForDomReady(tabId, { timeoutMs: 500, waitForElements: true });
@@ -5584,6 +6122,14 @@ export class AgentLoop {
             },
           );
         }
+      } else if (submit.ok && !completion && submitRejected) {
+        this.traceRecorder?.recordEvent(
+          "servicenow_record_controller_submit_retry_abandoned",
+          {
+            turn: this.turnCount,
+            reason: "submit_rejected_by_servicenow",
+          },
+        );
       }
       if (!submit.ok || !completion) {
         this.traceRecorder?.recordEvent(
@@ -5624,6 +6170,49 @@ export class AgentLoop {
     }
   }
 
+  private isServiceNowSubmitRejected(toolResult: string): boolean {
+    return /\bSubmit diagnostics:\b/i.test(toolResult) ||
+      /\b(?:Invalid update|mandatory|required|cannot be blank|not submitted)\b/i.test(
+        toolResult,
+      );
+  }
+
+  private isServiceNowSubmitStayedOnCreateForm(toolResult: string): boolean {
+    return /\bsubmit did not leave the create form\b/i.test(toolResult);
+  }
+
+  private async resolveServiceNowCreateRecordUrlFromCurrentList(
+    tabId: number,
+  ): Promise<string | null> {
+    const candidates: string[] = [];
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.url) candidates.push(tab.url);
+    } catch {
+      // Fall through to frame URL probing below.
+    }
+
+    try {
+      const frameResults = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: () => window.location.href,
+      });
+      for (const frameResult of frameResults as Array<{ result?: unknown }>) {
+        if (typeof frameResult.result === "string") {
+          candidates.push(frameResult.result);
+        }
+      }
+    } catch {
+      // Frame URL probing is best-effort; the tab URL may still be enough.
+    }
+
+    for (const candidate of candidates) {
+      const createUrl = inferServiceNowCreateRecordUrlFromListUrl(candidate);
+      if (createUrl) return createUrl;
+    }
+    return null;
+  }
+
   private shouldAutoSubmitTrustedServiceNowForm(params: {
     toolName: string;
     toolArgs?: Record<string, unknown>;
@@ -5632,6 +6221,7 @@ export class AgentLoop {
     if (this.selectedSkillId !== "servicenow-record-form") return false;
     if (!this.isTaskLevelServiceNowRecordWorkflow()) return false;
     if (!this.hasTaskLevelServiceNowSubmitIntent()) return false;
+    if (this.currentServiceNowPlanStepForbidsSubmit()) return false;
     const signal = detectTrustedFormFillStepCompletion({
       toolName: params.toolName,
       toolArgs: params.toolArgs,
@@ -5703,7 +6293,15 @@ export class AgentLoop {
           return normalizeValue(row.value) !== "";
         }
         const actualValue = normalizeValue(row.value);
-        return actualValue !== expectedValue;
+        if (actualValue === expectedValue) return false;
+        if (
+          actualValue.length >= 3 &&
+          (expectedValue.includes(actualValue) ||
+            actualValue.includes(expectedValue))
+        ) {
+          return false;
+        }
+        return true;
       })
       .map((field) => field.field);
   }
@@ -6614,6 +7212,10 @@ export class AgentLoop {
 
     // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
+    const serviceNowMissingFieldSearchEvidence = new Map<
+      string,
+      ServiceNowMissingFieldSearchEvidence
+    >();
 
     const resetEscalationWorkingMemory = (options?: {
       resetProgressSignals?: boolean;
@@ -6624,6 +7226,7 @@ export class AgentLoop {
       this.stagnation.resetEscalation();
       subgoalAttempts.length = 0;
       recentOutcomes.length = 0;
+      serviceNowMissingFieldSearchEvidence.clear();
       consecutiveTextOnly = 0;
       recentSuccesses.length = 0;
       if (options?.resetProgressSignals) {
@@ -6913,6 +7516,27 @@ export class AgentLoop {
           doneSignaled = true;
           this.completeTaskResult(summary, options);
         };
+        const missingFieldAdmissionSummary =
+          this.getServiceNowMissingFieldAdmissionSummary(cleanContent);
+        if (missingFieldAdmissionSummary) {
+          signalCompletedResult(missingFieldAdmissionSummary);
+          this.traceRecorder?.recordEvent(
+            "servicenow_record_missing_field_admission_completed",
+            {
+              turn: this.turnCount,
+              summary: missingFieldAdmissionSummary,
+            },
+          );
+          await this.traceRecorder?.endTurn();
+          return {
+            outcome: "completed",
+            turnCount: this.turnCount,
+            summary: missingFieldAdmissionSummary,
+            failure: { category: "none", code: "none" },
+            metrics: this.getMetrics(),
+            evidence: this.evidenceAccumulator.toArray(),
+          };
+        }
         let domModified = false;
         let visuallyModified = false;
         let lastDomAffectingToolName: string | null = null;
@@ -7033,6 +7657,30 @@ export class AgentLoop {
             messages: recentMessages,
             snapshot: this.context.getSnapshot(),
           });
+          const missingFieldInfeasibleSummary =
+            this.assessServiceNowMissingFieldInfeasibility(
+              turnToolOutcomes,
+              serviceNowMissingFieldSearchEvidence,
+            );
+          if (missingFieldInfeasibleSummary) {
+            signalCompletedResult(missingFieldInfeasibleSummary);
+            this.traceRecorder?.recordEvent(
+              "servicenow_record_missing_field_infeasible",
+              {
+                turn: this.turnCount,
+                summary: missingFieldInfeasibleSummary,
+              },
+            );
+            await this.traceRecorder?.endTurn();
+            return {
+              outcome: "completed",
+              turnCount: this.turnCount,
+              summary: missingFieldInfeasibleSummary,
+              failure: { category: "none", code: "none" },
+              metrics: this.getMetrics(),
+              evidence: this.evidenceAccumulator.toArray(),
+            };
+          }
           const overlayRecoveryCompletion =
             buildOverlayRecoveryCompletionSummary({
               originalQuery: this.originalQuery,
@@ -7510,7 +8158,14 @@ export class AgentLoop {
               const taskContractMultiReturn = !this.nodeId
                 ? (buildTaskContract(this.originalQuery).multiReturnCount ?? 0)
                 : 0;
-              if (explicitSuccessSignal && taskContractMultiReturn < 2) {
+              const explicitStepCount = countExplicitSteps(
+                this.originalQuery || "",
+              );
+              if (
+                explicitSuccessSignal &&
+                taskContractMultiReturn < 2 &&
+                explicitStepCount < 2
+              ) {
                 const summary = [
                   `- Verified "${explicitSuccessSignal}" is visible on the page.`,
                   `- URL: ${snap.url}`,
@@ -7545,6 +8200,17 @@ export class AgentLoop {
                 doneSignaled = true;
 
                 this.broadcastFinalMetrics();
+              } else if (explicitSuccessSignal && explicitStepCount >= 2) {
+                this.traceRecorder?.recordEvent(
+                  "explicit_success_auto_complete_blocked",
+                  {
+                    turn: this.turnCount,
+                    signal: explicitSuccessSignal,
+                    url: snap.url,
+                    reason: "multi_step_original_query",
+                    explicitStepCount,
+                  },
+                );
               } else if (
                 explicitSuccessSignal &&
                 taskContractMultiReturn >= 2 &&

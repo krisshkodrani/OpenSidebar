@@ -83,7 +83,9 @@ vi.mock("../../src/background/llm", () => ({
 
 import {
   AgentLoop,
+  buildServiceNowMissingFieldInfeasibleSummary,
   countVisibleListDetailActions,
+  extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
   getListDetailDoneRejection,
   getListDetailWorkflowBlock,
@@ -1328,6 +1330,42 @@ describe("AgentLoop", () => {
     expect(completion).toBeNull();
   });
 
+  test("trusted list filter helper does not planlessly finish follow-up mutations", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-filter-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Filter Expense Lines where Short description contains "#SERIES-123", then delete duplicate expense lines with no task.';
+
+    const completion = (agent as any).maybeCompleteTrustedListFilterStep({
+      toolName: ToolName.APPLY_LIST_FILTER,
+      toolArgs: {
+        conditions: [
+          {
+            field: "Short description",
+            operator: "contains",
+            value: "#SERIES-123",
+          },
+        ],
+      },
+      toolResult:
+        "Applied fm_expense_line list filter.\n" +
+        "Query state: sysparm_query=short_description=#SERIES-123\n" +
+        'Conditions:\n- Short description contains "#SERIES-123" -> short_description=#SERIES-123',
+      mode: "sequential",
+    });
+
+    expect(completion).toBeNull();
+  });
+
   test("catalog order snapshot completion accepts visible request confirmation", () => {
     const onStatus = vi.fn();
     const onMessage = vi.fn();
@@ -1561,6 +1599,68 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("ServiceNow record workflow detection recovers from unrelated planner skill on create forms", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "paginated-record-lookup",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new problem with a value of "Email system is down again" for field "Problem statement", a value of "Software" for field "Category", and a value of "3 - Low" for field "Impact".';
+    (agent as any).context.getCurrentUrl = vi.fn(
+      () =>
+        "https://example.service-now.com/now/nav/ui/classic/params/target/problem.do",
+    );
+    (agent as any).context.getSnapshot = vi.fn(() => ({
+      title: "Create PRB0051156 | Problem | ServiceNow",
+      url: "https://example.service-now.com/now/nav/ui/classic/params/target/problem.do",
+      elements: [],
+      pageContent: "Problem New record Problem statement Category Impact",
+      visibleContent: "Problem New record",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    expect((agent as any).isTaskLevelServiceNowRecordWorkflow()).toBe(true);
+
+    const userAgent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "paginated-record-lookup",
+      },
+    );
+    (userAgent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name", a value of "Lovelace" for field "Last name", and a value of "English" for field "Preferred language".';
+    (userAgent as any).context.getCurrentUrl = vi.fn(
+      () =>
+        "https://example.service-now.com/now/nav/ui/classic/params/target/sys_user.do",
+    );
+    (userAgent as any).context.getSnapshot = vi.fn(() => ({
+      title: "New Record | User | ServiceNow",
+      url: "https://example.service-now.com/now/nav/ui/classic/params/target/sys_user.do",
+      elements: [],
+      pageContent: "User New record First name Last name Preferred language",
+      visibleContent: "User New record",
+      scrollPosition: { top: 0, left: 0, height: 1000, width: 1000 },
+      viewportHeight: 800,
+      timestamp: Date.now(),
+    }));
+
+    expect((userAgent as any).isTaskLevelServiceNowRecordWorkflow()).toBe(true);
+  });
+
   test("ServiceNow auto-submit waits when requested fields are missing from helper evidence", () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1618,6 +1718,107 @@ describe("AgentLoop", () => {
           "- Close code (close_code) = Successful",
       }),
     ).toBe(true);
+  });
+
+  test("ServiceNow auto-submit respects fill-only local plan steps", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
+    (agent as any).planSubtasks = [
+      {
+        description:
+          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective:
+          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
+        successCriteria:
+          "Each requested field has the specified value; the final submit action has not been clicked yet.",
+      },
+    ];
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
+      currentIndex: 0,
+      subtasks: (agent as any).planSubtasks,
+    }));
+
+    expect(
+      (agent as any).shouldAutoSubmitTrustedServiceNowForm({
+        toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+        toolArgs: {
+          fields: [
+            {
+              field: "Problem statement",
+              value: "Email system is down again",
+            },
+          ],
+          submit: false,
+        },
+        toolResult:
+          "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Problem statement (short_description) = Email system is down again",
+      }),
+    ).toBe(false);
+  });
+
+  test("ServiceNow record controller does not over-complete fill-only local plan steps", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Create a new problem with a value of "Email system is down again" for field "Problem statement". Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet. Submit the form and verify the created record or confirmation is visible.';
+    (agent as any).planSubtasks = [
+      {
+        description:
+          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
+        status: "running",
+        turnsUsed: 0,
+        turnBudget: 0,
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective:
+          'Fill the form with the requested field values: Problem statement="Email system is down again". Do not submit the form yet.',
+        successCriteria:
+          "Each requested field has the specified value; the final submit action has not been clicked yet.",
+      },
+    ];
+    (agent as any).context.getPlanStatusRaw = vi.fn(() => ({
+      currentIndex: 0,
+      subtasks: (agent as any).planSubtasks,
+    }));
+    const executeToolCall = vi.spyOn(agent as any, "executeToolCall");
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result).toBeNull();
+    expect(executeToolCall).not.toHaveBeenCalled();
   });
 
   test("ServiceNow submit intent is scoped to fill-only plan steps", () => {
@@ -1753,6 +1954,270 @@ describe("AgentLoop", () => {
     ).toMatchObject({ submit: false });
   });
 
+  test("ServiceNow record controller opens requested module before retrying a missing form", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada Lovelace" for field "Name". Submit the form and verify the created record.';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        'Successfully navigated to the "Users" module of the "Organization" application.',
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Configured:\n" +
+          "- Name (name) = Ada Lovelace",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form record: USR0012345\n" +
+          "Current title: User | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toContain("USR0012345");
+    expect(executeToolCall).toHaveBeenCalledTimes(4);
+    expect(executeToolCall.mock.calls[1][0].function.name).toBe(
+      ToolName.OPEN_SERVICENOW_MODULE,
+    );
+    expect(
+      JSON.parse(executeToolCall.mock.calls[1][0].function.arguments),
+    ).toEqual({
+      application: "Organization",
+      path: ["Users"],
+    });
+  });
+
+  test("ServiceNow record controller opens a create form from a requested module list", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url:
+        "https://workarena.service-now.com/now/nav/ui/classic/params/target/" +
+        encodeURIComponent("sys_user_list.do?sysparm_userpref_module=abc"),
+      title: "Users | ServiceNow",
+      groupId: -1,
+    }));
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        'Successfully navigated to the "Users" module of the "Organization" application.',
+      )
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        "Navigated to https://workarena.service-now.com/sys_user.do?sys_id=-1. Page has loaded.",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form sys_id: 0123456789abcdef0123456789abcdef\n" +
+          "Current title: User | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(executeToolCall).toHaveBeenCalledTimes(6);
+    expect(executeToolCall.mock.calls[3][0].function.name).toBe(
+      ToolName.NAVIGATE,
+    );
+    expect(
+      JSON.parse(executeToolCall.mock.calls[3][0].function.arguments),
+    ).toEqual({
+      url: "https://workarena.service-now.com/sys_user.do?sys_id=-1",
+    });
+  });
+
+  test("ServiceNow record controller opens a create form from a framed module list", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Objective: Complete the workflow for the original request: Navigate to the "Users" module of the "Organization" application. Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarena.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async () => [
+      { result: "https://workarena.service-now.com/now/nav/ui/home" },
+      {
+        result:
+          "https://workarena.service-now.com/sys_user_list.do?sysparm_userpref_module=abc",
+      },
+    ]);
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        'Successfully navigated to the "Users" module of the "Organization" application.',
+      )
+      .mockResolvedValueOnce(
+        "Error: Could not find a ServiceNow record form on the current page.",
+      )
+      .mockResolvedValueOnce(
+        "Navigated to https://workarena.service-now.com/sys_user.do?sys_id=-1. Page has loaded.",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
+      )
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: gsftSubmit (sysverb_insert)\n" +
+          "Submitted ServiceNow form sys_id: 0123456789abcdef0123456789abcdef\n" +
+          "Current title: User | ServiceNow",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith({
+      target: { tabId: 123, allFrames: true },
+      func: expect.any(Function),
+    });
+    expect(executeToolCall).toHaveBeenCalledTimes(6);
+    expect(
+      JSON.parse(executeToolCall.mock.calls[3][0].function.arguments),
+    ).toEqual({
+      url: "https://workarena.service-now.com/sys_user.do?sys_id=-1",
+    });
+  });
+
+  test("ServiceNow record controller does not blindly retry a rejected submit", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name". Submit the form and verify the created record.';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\nConfigured:\n- First name (first_name) = Ada",
+      )
+      .mockResolvedValueOnce(
+        "ServiceNow form configuration incomplete.\n" +
+          "Mismatches:\n" +
+          "- submitted record sys_id 0123456789abcdef0123456789abcdef was not found in ServiceNow\n" +
+          "Submit diagnostics:\n" +
+          "- Error Message Invalid update\n" +
+          "Clicked submit control: Submit\n" +
+          "Submit method: click (sysverb_insert)",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result).toBeNull();
+    expect(executeToolCall).toHaveBeenCalledTimes(2);
+  });
+
+  test("ServiceNow record controller reports infeasible when requested field is absent", async () => {
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "Blue" for field "Half popular". Submit the form and verify the created record.';
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "ServiceNow form configuration incomplete.\n" +
+          "Configured:\n" +
+          "- First name (first_name) = Ada\n" +
+          "Mismatches:\n" +
+          "- Half popular: field not found",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result?.outcome).toBe("completed");
+    expect(result?.summary).toBe(
+      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
+    );
+    expect(onMessage).toHaveBeenCalledWith(result?.summary, []);
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+  });
+
   test("ServiceNow record controller keeps retrying delayed form frames", async () => {
     const agent = new AgentLoop(
       "test-key",
@@ -1878,7 +2343,9 @@ describe("AgentLoop", () => {
         "Configured ServiceNow form.\n" +
           "Clicked submit control: Submit\n" +
           "Submit method: gsftSubmit (sysverb_insert)\n" +
-          "submit did not leave the create form for INC0036113",
+          "submit did not leave the create form for INC0036113\n" +
+          "Submit diagnostics:\n" +
+          "- Error Message Invalid update",
       )
       .mockResolvedValueOnce(configured)
       .mockResolvedValueOnce(
@@ -1983,6 +2450,55 @@ describe("AgentLoop", () => {
       application: "Configuration",
       path: ["Database Instances", "HBase"],
     });
+  });
+
+  test("ServiceNow module navigation done can infer evidence from the reached page", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-module-navigation",
+      },
+    );
+    (agent as any).originalQuery =
+      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
+    (agent as any).context.setSnapshot({
+      title: "HBase Instances | ServiceNow",
+      url: "https://example.service-now.com/cmdb_ci_hbase_instance_list.do",
+      elements: [],
+      visibleContent: "HBase Instances",
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const rejected = (agent as any).rejectDoneForMissingRequiredEvidence(
+      "tool-call-1",
+      "Opened the HBase Instances module.",
+    );
+
+    expect(rejected).toBe(false);
+    expect((agent as any).getMissingRequiredEvidenceTypes()).toEqual([]);
+    const evidence = (agent as any).evidenceAccumulator.toArray();
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "navigation_reached",
+          source: ToolName.DONE,
+          confidence: "medium",
+          supportsTaskGoal: true,
+        }),
+        expect.objectContaining({
+          type: "goal_state_verified",
+          source: ToolName.DONE,
+          confidence: "medium",
+          supportsTaskGoal: true,
+        }),
+      ]),
+    );
   });
 
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
@@ -4301,6 +4817,256 @@ Showing 6-10 of 50`,
       "Buy the first two items from the procurement list and mark them complete.";
 
     expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+  });
+
+  test("extracts ServiceNow missing field labels from form helper mismatches", () => {
+    const result = [
+      "ServiceNow form configuration incomplete.",
+      "Configured:",
+      "- First name (first_name) = Derek-Shawn",
+      "Mismatches:",
+      "- Half popular: field not found",
+      "- Half popular: field not found",
+      "- Business phone: expected 123, found 456",
+    ].join("\n");
+
+    expect(extractServiceNowFormMissingFieldLabels(result)).toEqual([
+      "Half popular",
+    ]);
+  });
+
+  test("builds a ServiceNow infeasible summary naming unavailable fields", () => {
+    expect(
+      buildServiceNowMissingFieldInfeasibleSummary(["Half popular"]),
+    ).toContain('"Half popular"');
+    expect(
+      buildServiceNowMissingFieldInfeasibleSummary([
+        "Half popular",
+        "Watch in",
+      ]),
+    ).toBe(
+      'I cannot complete this because the requested fields "Half popular", "Watch in" are not available on this ServiceNow form.',
+    );
+  });
+
+  test("recognizes bounded ServiceNow missing field search as infeasible", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "Blue" for field "Half popular". Submit the form and verify the created record.';
+
+    const state = new Map();
+    const first = (agent as any).assessServiceNowMissingFieldInfeasibility(
+      [
+        {
+          toolName: ToolName.FIND_ELEMENT,
+          args: { text: "Half popular" },
+          resultContent: 'Text "Half popular" not found on this page.',
+        },
+        {
+          toolName: ToolName.INSPECT_HIDDEN,
+          args: { pattern: "half" },
+          resultContent:
+            'No hidden elements found matching "half" (scanned in 12ms).',
+        },
+      ],
+      state,
+    );
+    expect(first).toBe(
+      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
+    );
+
+    const second = (agent as any).assessServiceNowMissingFieldInfeasibility(
+      [
+        {
+          toolName: ToolName.INSPECT_HIDDEN,
+          args: { pattern: "popular" },
+          resultContent:
+            'No hidden elements found matching "popular" (scanned in 12ms).',
+        },
+      ],
+      state,
+    );
+
+    expect(second).toBe(
+      'I cannot complete this because the requested field "Half popular" is not available on this ServiceNow form.',
+    );
+  });
+
+  test("recognizes exact hidden miss plus find miss for ServiceNow missing fields", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Young ago". Submit the form and verify the created record.';
+
+    const state = new Map();
+    expect(
+      (agent as any).assessServiceNowMissingFieldInfeasibility(
+        [
+          {
+            toolName: ToolName.INSPECT_HIDDEN,
+            args: { pattern: "Young ago" },
+            resultContent:
+              'No hidden elements found matching "Young ago" (scanned in 12ms).',
+          },
+        ],
+        state,
+      ),
+    ).toBeNull();
+
+    expect(
+      (agent as any).assessServiceNowMissingFieldInfeasibility(
+        [
+          {
+            toolName: ToolName.FIND_ELEMENT,
+            args: { text: "Young ago" },
+            resultContent: 'Text "Young ago" not found on this page.',
+          },
+        ],
+        state,
+      ),
+    ).toBe(
+      'I cannot complete this because the requested field "Young ago" is not available on this ServiceNow form.',
+    );
+  });
+
+  test("recognizes full-label and token hidden misses for ServiceNow missing fields", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Tree action". Submit the form and verify the created record.';
+
+    const state = new Map();
+    for (const pattern of ["Tree action", "tree"]) {
+      const result = (agent as any).assessServiceNowMissingFieldInfeasibility(
+        [
+          {
+            toolName: ToolName.INSPECT_HIDDEN,
+            args: { pattern },
+            resultContent: `No hidden elements found matching "${pattern}" (scanned in 12ms).`,
+          },
+        ],
+        state,
+      );
+      if (pattern === "Tree action") {
+        expect(result).toBeNull();
+      } else {
+        expect(result).toBe(
+          'I cannot complete this because the requested field "Tree action" is not available on this ServiceNow form.',
+        );
+      }
+    }
+
+    expect(
+      (agent as any).assessServiceNowMissingFieldInfeasibility(
+        [
+          {
+            toolName: ToolName.INSPECT_HIDDEN,
+            args: { pattern: "action" },
+            resultContent:
+              'No hidden elements found matching "action" (scanned in 12ms).',
+          },
+        ],
+        state,
+      ),
+    ).toBe(
+      'I cannot complete this because the requested field "Tree action" is not available on this ServiceNow form.',
+    );
+  });
+
+  test("recognizes ServiceNow missing fields without selected skill after handoff", () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "strategy" for field "About back". Submit the form and verify the created record.';
+    setPlanContext(agent, {
+      subtasks: [],
+      planSteps: [],
+      snapshotText:
+        "User New record User ID First name Last name Language Business phone Mobile phone Submit",
+    });
+
+    const state = new Map();
+    expect(
+      (agent as any).assessServiceNowMissingFieldInfeasibility(
+        [
+          {
+            toolName: ToolName.INSPECT_HIDDEN,
+            args: { pattern: "About back" },
+            resultContent:
+              'No hidden elements found matching "About back" (scanned in 12ms).',
+          },
+          {
+            toolName: ToolName.INSPECT_HIDDEN,
+            args: { pattern: "about" },
+            resultContent:
+              'No hidden elements found matching "about" (scanned in 12ms).',
+          },
+        ],
+        state,
+      ),
+    ).toBe(
+      'I cannot complete this because the requested field "About back" is not available on this ServiceNow form.',
+    );
+  });
+
+  test("recognizes ServiceNow missing field admissions with tool calls", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-record-form",
+      },
+    );
+    (agent as any).originalQuery =
+      'Create a new user with a value of "Ada" for field "First name" and a value of "we" for field "Degree someone". Submit the form and verify the created record.';
+
+    expect(
+      (agent as any).getServiceNowMissingFieldAdmissionSummary(
+        'The "Degree someone" field does not exist on the ServiceNow User form. Let me try Personalize Form.',
+      ),
+    ).toBe(
+      'I cannot complete this because the requested field "Degree someone" is not available on this ServiceNow form.',
+    );
+    expect(
+      (agent as any).getServiceNowMissingFieldAdmissionSummary(
+        '"Degree someone" is not visible yet, so I will search hidden fields.',
+      ),
+    ).toBeNull();
   });
 
   test("bypasses stale plan rejection when the page already shows final submission confirmation", () => {
