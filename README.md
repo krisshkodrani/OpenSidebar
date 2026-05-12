@@ -49,7 +49,7 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
 npm install
-npm run build
+npm run dist
 ```
 
 ### Load in Chrome
@@ -65,24 +65,38 @@ npm run build
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
-### Local Backend
+### Two Normal Modes
 
-The extension can run without local backend APIs, but development usually starts the unified local server so traces, the trace viewer, profile lookup, and durable task state all use one process.
+Use npm scripts for day-to-day work. Nx is the internal task runner behind those scripts.
+
+Production/manual extension build:
+
+```bash
+npm run dist
+```
+
+This writes the loadable Chrome extension to `dist/`. Load or reload that folder in Chrome.
+
+Development stack:
 
 ```bash
 npm run dev
 ```
 
+This starts the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
+
 ## Development
 
 ```bash
-npm run dev                  # Extension + local server + trace viewer
-npm run build                # Production build
+npm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
+npm run dist                 # Standalone production/manual extension build into dist/
+npm run build                # Alias for the production build
 npm test                     # Extension unit + integration tests
 npm run test:backend         # Backend tests
 npm run test:e2e:smoke       # Easy staged E2E cases
 npm run test:e2e:interactions # Medium staged E2E cases
 npm run test:e2e:runtime     # Hard staged E2E cases
+npm run traces:compact       # Backfill SQLite, then delete raw traces older than 7 days
 npm run lint                 # ESLint
 npm run release:verify       # Local release gate
 npm run fmt                  # Prettier
@@ -140,6 +154,21 @@ npm run logs
 ```
 
 Open `http://127.0.0.1:7589/viewer`.
+
+Trace storage is split into a long-lived SQLite viewer store and short-lived raw debug files:
+
+- `.artifacts/trace-index.sqlite` is the trace viewer store.
+- `traces/` and `logs/` hold recent raw JSONL/screenshot evidence for local Codex/debug work.
+- Raw files default to a 7-day retention window; SQLite keeps the queryable copy.
+
+Maintenance commands:
+
+```bash
+npm run traces:index                # backfill or repair .artifacts/trace-index.sqlite
+npm run traces:delete-old           # dry run; default raw-file window is 7 days
+npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+npm run traces:compact              # index, then delete old raw files
+```
 
 ## Documentation
 

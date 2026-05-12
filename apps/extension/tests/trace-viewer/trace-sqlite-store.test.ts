@@ -13,6 +13,15 @@ import {
   buildHarnessRatchetCandidates,
   buildTraceInsightsFromSqlite,
   getTraceIndexStatus,
+  insertRunTraceEventToSqlite,
+  insertTraceTurnToSqlite,
+  readRunRawJsonlFromSqlite,
+  readRunTraceEventsFromSqlite,
+  readTraceEntriesFromSqlite,
+  readTraceRawJsonlFromSqlite,
+  readTraceSessionsFromSqlite,
+  upsertRunTraceManifestToSqlite,
+  upsertTraceSessionToSqlite,
 } from "../../../../scripts/trace-sqlite-store";
 
 function writeJsonl(path: string, records: unknown[]) {
@@ -130,5 +139,57 @@ describe("trace sqlite store", () => {
     expect(candidates.map((candidate) => candidate.id)).toContain(
       "context:pressure",
     );
+  });
+
+  test("ingests live trace records and exposes raw JSONL from sqlite", () => {
+    upsertTraceSessionToSqlite(
+      root,
+      {
+        sessionId: "live-session",
+        runId: "live-run",
+        startTime: Date.UTC(2026, 4, 12),
+        endTime: Date.UTC(2026, 4, 12, 0, 1),
+        query: "Live objective",
+        startUrl: "https://example.com/live",
+        outcome: "completed",
+        turnCount: 1,
+      },
+      { dbPath },
+    );
+    insertTraceTurnToSqlite(
+      root,
+      {
+        sessionId: "live-session",
+        runId: "live-run",
+        turnNumber: 1,
+        llmRequest: { model: "live-model", modelTier: "executor" },
+        llmResponse: {
+          durationMs: 50,
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        },
+        toolExecutions: [{ toolName: "click", success: true }],
+      },
+      { dbPath },
+    );
+    upsertRunTraceManifestToSqlite(
+      root,
+      { runId: "live-run", query: "Live objective" },
+      { dbPath },
+    );
+    insertRunTraceEventToSqlite(
+      root,
+      { runId: "live-run", type: "node.completed", role: "executor", turn: 1 },
+      { dbPath },
+    );
+
+    expect(
+      readTraceSessionsFromSqlite(root, dbPath)?.some(
+        (session) => session.sessionId === "live-session",
+      ),
+    ).toBe(true);
+    expect(readTraceEntriesFromSqlite(root, "live-session", dbPath)).toHaveLength(1);
+    expect(readRunTraceEventsFromSqlite(root, "live-run", dbPath)).toHaveLength(1);
+    expect(readTraceRawJsonlFromSqlite(root, "live-session", dbPath)).toHaveLength(2);
+    expect(readRunRawJsonlFromSqlite(root, "live-run", dbPath)).toHaveLength(2);
   });
 });

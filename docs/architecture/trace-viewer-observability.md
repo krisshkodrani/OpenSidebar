@@ -1,27 +1,26 @@
 # Trace Viewer Observability
 
-Date: 2026-05-11
+Date: 2026-05-12
 
 Scope: Trace Viewer metrics, trace indexing, and retention direction.
 
 ## Goal
 
-The Trace Viewer should help engineers move from a failing browser-agent run to a clear diagnosis and action. Raw trace files remain the source of truth for evidence. Queryable metrics and archives should make that evidence faster to find without weakening trust in the underlying trace.
+The Trace Viewer should help engineers move from a failing browser-agent run to a clear diagnosis and action. SQLite is the long-lived viewer store. Raw trace files are short-lived local evidence for Codex/debugging and are retained for 7 days by default.
 
 ## Storage Model
 
-- Raw JSONL traces remain canonical evidence.
-- SQLite should be a rebuildable index and metrics cache, not the only copy of trace evidence.
-- The viewer should tolerate a missing or stale SQLite index by falling back to JSONL scanning.
-- Archive metadata should point back to the raw trace bundle location.
+- SQLite stores normalized trace rows plus raw JSON copies for viewer queries and copy/paste evidence.
+- Raw JSONL traces stay in `traces/` only for the hot debug window.
+- The viewer should read SQLite first and tolerate missing raw files after pruning.
+- `traces:index` remains the repair/backfill path when SQLite needs to be rebuilt from hot JSONL.
 
 ## Hot And Cold Policy
 
-- Hot traces: last 7 days.
-- Cold traces: older than 7 days, moved to an archive location.
-- Default behavior should archive, not delete.
-- Deletion should require an explicit retention setting or command.
-- Archived sessions should remain discoverable through SQLite metadata.
+- Hot raw traces: last 7 days.
+- Older raw traces: deleted by explicit CLI after SQLite coverage checks.
+- SQLite sessions remain discoverable after raw JSONL and screenshots are pruned.
+- Screenshots are hot debug artifacts in this phase; old sessions may show expired screenshots.
 
 ## Suggested SQLite Tables
 
@@ -29,8 +28,9 @@ The Trace Viewer should help engineers move from a failing browser-agent run to 
 - `trace_turns`: session id, turn number, model, provider, request tokens, response tokens, total tokens, cost, duration, context utilization, perception status.
 - `trace_tools`: session id, turn number, tool name, success, duration, error signature.
 - `trace_events`: session id or run id, turn number, event type, severity, reason/signature.
-- `trace_artifacts`: session id, artifact type, hot path, archive path, size bytes, archived at.
-- `trace_ingest_state`: source file, mtime, size, indexed at, checksum or version marker.
+- `trace_run_manifests`: run id and raw manifest JSON.
+- `trace_artifacts`: session id, artifact type, hot path, size bytes, mtime.
+- `trace_index_meta`: indexed/ingested timestamps and schema version.
 
 ## Metrics Page
 
@@ -46,29 +46,35 @@ The Metrics page should use the same aggregate contract whether data comes from 
 - tool calls and tool failure rate
 - model mix
 
-## Archive Flow
+## Retention Flow
 
-1. Index or refresh trace metadata.
-2. Select sessions older than 7 days.
-3. Move their raw turn files, run files, screenshots, and session logs to a dated archive folder.
-4. Mark archived paths in SQLite.
-5. Keep session-level rows queryable.
-6. Restore/open archived raw evidence on demand when a developer drills into a cold session.
+1. Ingest trace records into SQLite as the local log server receives them.
+2. Keep appending raw JSONL for short-lived debugging.
+3. Run `traces:index` to backfill or repair SQLite from raw files.
+4. Run `traces:delete-old` to preview raw files older than 7 days.
+5. Run `traces:delete-old -- --apply` only after the SQLite coverage gate passes.
 
-The first archive command is:
+The normal maintenance command is:
 
 ```sh
 npm run traces:index
-npm run traces:archive
-npm run traces:archive -- --apply
+npm run traces:delete-old
+npm run traces:delete-old -- --apply
+npm run traces:compact
 ```
 
-`traces:index` builds `.artifacts/trace-index.sqlite` as a rebuildable SQLite cache from raw JSONL traces. `traces:archive` uses a 7-day hot window by default and performs a dry run unless `--apply` is passed.
+`traces:index` backfills `.artifacts/trace-index.sqlite` from raw JSONL traces. `traces:delete-old` uses a 7-day raw-file window by default and performs a dry run unless `--apply` is passed. `traces:compact` indexes first, then deletes old raw files.
+
+Operationally:
+
+- Keep `traces/` and `logs/` small enough for active debugging.
+- Treat `.artifacts/trace-index.sqlite` as the viewer store.
+- Change the raw-file window with `npm run traces:delete-old -- --hot-days <days>` when needed.
 
 ## Implementation Order
 
 1. Fix viewer trust bugs so selected sessions cannot show stale evidence.
 2. Add request/token/cost metrics to the current JSONL-backed insights endpoint.
 3. Add the Metrics page.
-4. Add the SQLite index as a cache behind the same endpoint contract.
-5. Add the 7-day archive command and cold-session restore/open path.
+4. Add SQLite as the primary store behind the same endpoint contract.
+5. Add the 7-day delete command with SQLite coverage checks.

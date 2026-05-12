@@ -53,6 +53,16 @@ import {
   buildHarnessRatchetCandidates,
   buildTraceInsightsFromSqlite,
   getTraceIndexStatus,
+  insertRunTraceEventToSqlite,
+  insertTraceTurnToSqlite,
+  readRunRawJsonlFromSqlite,
+  readRunTraceEventsFromSqlite,
+  readTraceEntriesFromSqlite,
+  readTraceRawJsonlFromSqlite,
+  readTraceSessionsFromSqlite,
+  recordTraceArtifactInSqlite,
+  upsertRunTraceManifestToSqlite,
+  upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
@@ -145,6 +155,9 @@ function sendFile(
 /* ── Normalization helpers ─────────────────────────────────── */
 
 async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
+  const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT);
+  if (sqliteSessions && sqliteSessions.length > 0) return sqliteSessions;
+
   if (!existsSync(TRACE_INDEX)) return [];
   const raw = await readFile(TRACE_INDEX, "utf-8");
   return raw
@@ -164,6 +177,9 @@ async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
 }
 
 async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
+  const sqliteEntries = readTraceEntriesFromSqlite(PROJECT_ROOT, sessionId);
+  if (sqliteEntries && sqliteEntries.length > 0) return sqliteEntries;
+
   const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
   if (!existsSync(traceFile)) return [];
   const raw = await readFile(traceFile, "utf-8");
@@ -182,6 +198,9 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
 }
 
 async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
+  const sqliteEvents = readRunTraceEventsFromSqlite(PROJECT_ROOT, runId);
+  if (sqliteEvents && sqliteEvents.length > 0) return sqliteEvents;
+
   const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
   if (!existsSync(traceFile)) return [];
   const raw = await readFile(traceFile, "utf-8");
@@ -395,7 +414,15 @@ const server = createServer(
               const base64 = dataUrl.replace(/^data:image\/[a-z]+;base64,/, "");
               const buffer = Buffer.from(base64, "base64");
               const filename = `${sessionId}-T${turnNumber}.jpg`;
-              await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+              const filepath = join(SCREENSHOT_DIR, filename);
+              await writeFile(filepath, buffer);
+              recordTraceArtifactInSqlite(PROJECT_ROOT, {
+                path: filepath,
+                kind: "screenshot",
+                sessionId,
+                sizeBytes: buffer.length,
+                mtimeMs: Date.now(),
+              });
             } catch {
               /* best-effort */
             }
@@ -422,7 +449,15 @@ const server = createServer(
                   );
                   const buffer = Buffer.from(base64, "base64");
                   const filename = `${sessionId}-T${turnNumber}-pan${i}.jpg`;
-                  await writeFile(join(SCREENSHOT_DIR, filename), buffer);
+                  const filepath = join(SCREENSHOT_DIR, filename);
+                  await writeFile(filepath, buffer);
+                  recordTraceArtifactInSqlite(PROJECT_ROOT, {
+                    path: filepath,
+                    kind: "screenshot",
+                    sessionId,
+                    sizeBytes: buffer.length,
+                    mtimeMs: Date.now(),
+                  });
                   // Replace inline data URL with file reference
                   shot.dataUrl = `/api/traces/${sessionId}/screenshots/${turnNumber}-pan${i}`;
                 } catch {
@@ -435,6 +470,7 @@ const server = createServer(
 
         const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
         await appendFile(traceFile, JSON.stringify(entry) + "\n");
+        insertTraceTurnToSqlite(PROJECT_ROOT, entry as TraceEntryLike);
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Trace error: ${err}`, 500);
@@ -447,6 +483,11 @@ const server = createServer(
       try {
         const session = normalizeAgentSessionRecord(await parseJsonBody(req));
         await appendFile(TRACE_INDEX, JSON.stringify(session) + "\n");
+        const sessionId =
+          typeof session.sessionId === "string" ? session.sessionId : "";
+        upsertTraceSessionToSqlite(PROJECT_ROOT, session, {
+          traceFile: sessionId ? join(TRACE_DIR, `${sessionId}.jsonl`) : undefined,
+        });
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Trace session error: ${err}`, 500);
@@ -477,6 +518,13 @@ const server = createServer(
         const filename = `${sessionId}-T${turnNumber}.jpg`;
         const filepath = join(SCREENSHOT_DIR, filename);
         await writeFile(filepath, buffer);
+        recordTraceArtifactInSqlite(PROJECT_ROOT, {
+          path: filepath,
+          kind: "screenshot",
+          sessionId,
+          sizeBytes: buffer.length,
+          mtimeMs: Date.now(),
+        });
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Screenshot save error: ${err}`, 500);
@@ -495,6 +543,7 @@ const server = createServer(
         }
         const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
         await appendFile(traceFile, JSON.stringify(event) + "\n");
+        insertRunTraceEventToSqlite(PROJECT_ROOT, event as TraceEntryLike);
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Run trace error: ${err}`, 500);
@@ -507,6 +556,7 @@ const server = createServer(
       try {
         const manifest = normalizeRunManifestRecord(await parseJsonBody(req));
         await appendFile(RUN_TRACE_INDEX, JSON.stringify(manifest) + "\n");
+        upsertRunTraceManifestToSqlite(PROJECT_ROOT, manifest as TraceEntryLike);
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Run manifest error: ${err}`, 500);
@@ -800,36 +850,63 @@ const server = createServer(
     }
 
     // GET /api/traces/:sessionId — get all turns for a session
+    const runRawMatch = url.pathname.match(
+      /^\/api\/run-traces\/([a-zA-Z0-9_-]+)\/raw-jsonl$/,
+    );
+    if (runRawMatch && req.method === "GET") {
+      try {
+        const runId = runRawMatch[1];
+        const sqliteLines = readRunRawJsonlFromSqlite(PROJECT_ROOT, runId);
+        if (sqliteLines && sqliteLines.length > 0) {
+          sendText(res, `${sqliteLines.join("\n")}\n`, 200);
+          return;
+        }
+        const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
+        if (!existsSync(traceFile)) {
+          sendText(res, "", 404);
+          return;
+        }
+        sendFile(res, traceFile, "application/x-ndjson; charset=utf-8");
+      } catch (err) {
+        sendText(res, `Error reading raw run trace: ${err}`, 500);
+      }
+      return;
+    }
+
+    const traceRawMatch = url.pathname.match(
+      /^\/api\/traces\/([a-zA-Z0-9_-]+)\/raw-jsonl$/,
+    );
+    if (traceRawMatch && req.method === "GET") {
+      try {
+        const sessionId = traceRawMatch[1];
+        const sqliteLines = readTraceRawJsonlFromSqlite(PROJECT_ROOT, sessionId);
+        if (sqliteLines && sqliteLines.length > 0) {
+          sendText(res, `${sqliteLines.join("\n")}\n`, 200);
+          return;
+        }
+        const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
+        if (!existsSync(traceFile)) {
+          sendText(res, "", 404);
+          return;
+        }
+        sendFile(res, traceFile, "application/x-ndjson; charset=utf-8");
+      } catch (err) {
+        sendText(res, `Error reading raw trace: ${err}`, 500);
+      }
+      return;
+    }
+
     const runTraceMatch = url.pathname.match(
       /^\/api\/run-traces\/([a-zA-Z0-9_-]+)$/,
     );
     if (runTraceMatch && req.method === "GET") {
       try {
         const runId = runTraceMatch[1];
-        const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
-        if (!existsSync(traceFile)) {
-          sendJson(res, []);
-          return;
-        }
-        const raw = await readFile(traceFile, "utf-8");
-        const events = raw
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            try {
-              return JSON.parse(line);
-            } catch {
-              return null;
-            }
-          })
-          .map((event) => (event ? normalizeRunEventRecord(event) : null))
-          .filter(Boolean)
-          .sort((a, b) =>
+        const events = (await readRunTraceEvents(runId)).sort((a, b) =>
             String((a as any).ts ?? (a as any).recordedAt ?? "").localeCompare(
               String((b as any).ts ?? (b as any).recordedAt ?? ""),
             ),
-          );
+        );
         sendJson(res, events);
       } catch (err) {
         sendText(res, `Error reading run trace: ${err}`, 500);
@@ -841,25 +918,7 @@ const server = createServer(
     if (traceMatch && req.method === "GET") {
       try {
         const sessionId = traceMatch[1];
-        const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
-        if (!existsSync(traceFile)) {
-          sendJson(res, []);
-          return;
-        }
-        const raw = await readFile(traceFile, "utf-8");
-        const entries = raw
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => {
-            try {
-              return JSON.parse(line);
-            } catch {
-              return null;
-            }
-          })
-          .map((entry) => (entry ? normalizeAgentTurnRecord(entry) : null))
-          .filter(Boolean);
+        const entries = await readTraceEntries(sessionId);
         sendJson(res, entries);
       } catch (err) {
         sendText(res, `Error reading trace: ${err}`, 500);

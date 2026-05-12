@@ -1,80 +1,114 @@
 import React from "react";
 
-const principles = [
+const workflowCards = [
   {
-    label: "Concrete",
-    value: "Open one trace",
-    detail: "A failure is only understood when the exact turns and evidence are visible.",
+    title: "Install",
+    command: "npm install",
+    detail: "Install workspace dependencies once after cloning or pulling dependency changes.",
   },
   {
-    label: "Comparative",
-    value: "Check the fleet",
-    detail: "A trace matters more when the same pattern repeats across sessions or runs.",
+    title: "Build Extension",
+    command: "npm run dist",
+    detail: "Writes the loadable Chrome extension to dist/. Load or reload that folder in Chrome.",
   },
   {
-    label: "Actionable",
-    value: "Name the layer",
-    detail: "Every repeated failure should point at a tool, skill, policy, verifier, prompt, or context fix.",
-  },
-];
-
-const workflow = [
-  {
-    step: "1",
-    title: "Start With The Fleet",
-    detail:
-      "Use Metrics and Insights to see whether a failure is isolated, frequent, expensive, or getting worse.",
+    title: "Run Dev Stack",
+    command: "npm run dev",
+    detail: "Starts local services, this viewer, Vite/CRXJS, and writes dist-dev/ for Chrome.",
   },
   {
-    step: "2",
-    title: "Open One Concrete Trace",
-    detail:
-      "Use the sample session links to inspect turns, evidence annotations, screenshots, logs, and integrity signals.",
-  },
-  {
-    step: "3",
-    title: "Name The Harness Layer",
-    detail:
-      "Classify the fix as tool, skill, policy, verifier, prompt, or context work before changing code.",
-  },
-  {
-    step: "4",
-    title: "Ratchet The Learning",
-    detail:
-      "Copy a brief, implement the permanent fix, and come back to Metrics to check whether the pattern moved.",
+    title: "Maintain Traces",
+    command: "npm run traces:compact",
+    detail: "Backfills SQLite, then deletes raw trace files older than 7 days.",
   },
 ];
 
-const docs = [
+const commandRows = [
   {
-    title: "Why HTML-Style Docs Belong Here",
-    body:
-      "Trace investigation is dense: failures, turns, tools, screenshots, costs, models, and candidate fixes need to sit side by side. Markdown is good for storage, but the viewer can use HTML layout to make the system readable.",
+    command: "npm run dev",
+    use: "Start local development services",
+    notes: "Load dist-dev/ while the shell is running.",
   },
   {
-    title: "The Viewer Philosophy",
-    body:
-      "One trace explains a failure. The fleet explains whether it matters. A good observability surface must support both without forcing the user to switch tools.",
+    command: "npm run dist",
+    use: "Create a standalone extension build",
+    notes: "Chrome Load unpacked path: dist/",
   },
   {
-    title: "What To Teach New Users",
-    body:
-      "Do not start by blaming the model. Start with repeated evidence, inspect one sample deeply, then choose the harness layer where the permanent fix belongs.",
+    command: "npm run build",
+    use: "CI-compatible production build name",
+    notes: "Equivalent production build path as dist/",
+  },
+  {
+    command: "npm test",
+    use: "Run fast extension/backend tests",
+    notes: "Use focused Vitest commands while iterating.",
+  },
+  {
+    command: "npm run traces:delete-old",
+    use: "Preview old raw trace deletion",
+    notes: "Dry run by default; 7-day raw-file window.",
+  },
+  {
+    command: "npm run traces:delete-old -- --apply",
+    use: "Delete old raw trace files",
+    notes: "Requires matching SQLite rows before deleting JSONL, screenshots, run files, and logs.",
+  },
+  {
+    command: "npm run traces:index",
+    use: "Backfill or repair SQLite",
+    notes: "Writes .artifacts/trace-index.sqlite from raw JSONL.",
+  },
+  {
+    command: "npm run traces:compact",
+    use: "Normal trace maintenance",
+    notes: "Index first, then delete old raw files.",
   },
 ];
 
-const readingPages = [
+const storageRows = [
   {
-    title: "Failure Investigation",
-    summary:
-      "Start wide, then go deep. Metrics and Ratchet decide what is worth opening; Session detail explains the exact failure.",
-    href: "docs/guides/trace-viewer-investigation-loop.html",
+    path: "traces/",
+    role: "Hot trace evidence",
+    policy: "Recent session JSONL and run JSONL files. Keep this small for active debugging.",
   },
   {
-    title: "Harness Observability",
-    summary:
-      "The viewer is a harness engineering tool: traces become evidence, evidence becomes ratchet candidates, fixes are measured back in the fleet.",
-    href: "docs/guides/trace-viewer-observability.html",
+    path: "logs/",
+    role: "Hot session logs",
+    policy: "Local structured logs linked to active trace sessions.",
+  },
+  {
+    path: ".artifacts/trace-archive/",
+    role: "Legacy raw archive",
+    policy: "Deprecated archive location from the previous maintenance flow.",
+  },
+  {
+    path: ".artifacts/trace-index.sqlite",
+    role: "Trace viewer store",
+    policy: "Long-lived query store populated live by the log server and repairable from hot JSONL.",
+  },
+];
+
+const viewerRows = [
+  {
+    surface: "Metrics",
+    question: "Is the system healthy?",
+    use: "Sessions, runs, token and cost totals, model mix, latency, and index coverage.",
+  },
+  {
+    surface: "Insights",
+    question: "Where are patterns forming?",
+    use: "Failures, tools, skills, models, events, and repeated ratchet candidates.",
+  },
+  {
+    surface: "Session",
+    question: "What exactly happened?",
+    use: "Turn-by-turn screenshots, tool output, logs, costs, and integrity warnings.",
+  },
+  {
+    surface: "Ratchet",
+    question: "What should become permanent?",
+    use: "Copyable briefs for tool, skill, policy, verifier, prompt, or context fixes.",
   },
 ];
 
@@ -84,119 +118,91 @@ export default function DocsTab() {
       <div className="mx-auto max-w-6xl space-y-4">
         <section className="rounded border border-trace-border bg-trace-panel px-4 py-4">
           <div className="text-[10px] uppercase tracking-[0.22em] text-trace-muted">
-            Viewer Guide
+            Condensed Operator Guide
           </div>
-          <div className="mt-2 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mt-2 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div>
               <h1 className="text-2xl font-semibold text-trace-text">
-                Dense HTML docs for harness observability
+                OpenSidebar development in two modes
               </h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-trace-subtle">
-                The trace viewer should teach the investigation loop directly in
-                the product: evaluate the fleet, inspect a sample, classify the
-                harness layer, and turn repeated evidence into a permanent
-                ratchet.
+                Use npm scripts as the stable interface. Nx is the internal task
+                runner. For manual Chrome dev testing, keep <Code>npm run dev</Code>{" "}
+                running and load <Code>dist-dev/</Code>. For a standalone build,
+                load <Code>dist/</Code>.
               </p>
             </div>
-            <div className="grid gap-2 text-[12px]">
-              {principles.map((item) => (
-                <Signal
-                  key={item.label}
-                  label={item.label}
-                  value={item.value}
-                  detail={item.detail}
-                />
-              ))}
+            <div className="rounded border border-trace-border bg-trace-bg px-3 py-3 text-[12px] leading-5 text-trace-subtle">
+              <div className="font-semibold text-trace-text">Current rule</div>
+              <div className="mt-1">
+                <Code>npm run dev</Code> writes <Code>dist-dev/</Code>.{" "}
+                <Code>npm run dist</Code> writes <Code>dist/</Code>.
+              </div>
             </div>
           </div>
         </section>
 
         <section className="grid gap-3 lg:grid-cols-4">
-          {workflow.map((item) => (
-            <div
-              key={item.step}
-              className="rounded border border-trace-border bg-trace-bg px-3 py-3"
-            >
-              <div className="flex h-7 w-7 items-center justify-center rounded border border-trace-accent/40 bg-trace-accent/15 text-sm font-semibold text-trace-accent-light">
-                {item.step}
-              </div>
-              <h2 className="mt-3 text-sm font-semibold text-trace-text">
-                {item.title}
-              </h2>
-              <p className="mt-1 text-[12px] leading-5 text-trace-subtle">
-                {item.detail}
-              </p>
-            </div>
-          ))}
-        </section>
-
-        <section className="grid gap-3 lg:grid-cols-3">
-          {docs.map((item) => (
+          {workflowCards.map((item) => (
             <article
               key={item.title}
-              className="rounded border border-trace-border bg-trace-panel px-3 py-3"
+              className="rounded border border-trace-border bg-trace-bg px-3 py-3"
             >
               <h2 className="text-sm font-semibold text-trace-text">
                 {item.title}
               </h2>
+              <div className="mt-2 font-mono text-[11px] text-trace-accent-light">
+                {item.command}
+              </div>
               <p className="mt-2 text-[12px] leading-5 text-trace-subtle">
-                {item.body}
+                {item.detail}
               </p>
             </article>
           ))}
         </section>
 
-        <section className="grid gap-3 lg:grid-cols-2">
-          {readingPages.map((page) => (
-            <article
-              key={page.title}
-              className="rounded border border-trace-border bg-trace-bg px-4 py-3"
-            >
-              <div className="text-[10px] uppercase tracking-[0.18em] text-trace-muted">
-                Standalone HTML
-              </div>
-              <h2 className="mt-2 text-sm font-semibold text-trace-text">
-                {page.title}
-              </h2>
-              <p className="mt-2 text-[12px] leading-5 text-trace-subtle">
-                {page.summary}
-              </p>
-              <div className="mt-3 font-mono text-[10px] text-trace-muted">
-                {page.href}
-              </div>
-            </article>
-          ))}
-        </section>
+        <GuideTable
+          title="Command Reference"
+          columns={["Command", "Use", "Notes"]}
+          rows={commandRows.map((row) => [
+            <Code key="command">{row.command}</Code>,
+            row.use,
+            row.notes,
+          ])}
+        />
 
-        <section className="rounded border border-trace-border bg-trace-bg px-4 py-4">
-          <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-trace-muted">
-            How To Read The Viewer
-          </div>
-          <div className="overflow-hidden rounded border border-trace-border">
-            <div className="grid grid-cols-[140px_minmax(180px,1fr)_minmax(220px,1.4fr)] gap-3 border-b border-trace-border bg-trace-panel px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
-              <span>Surface</span>
-              <span>Question</span>
-              <span>Use It For</span>
-            </div>
-            <DocRow
-              surface="Metrics"
-              question="Is the system healthy?"
-              use="Request volume, token/cost, latency, model mix, index coverage."
+        <GuideTable
+          title="Trace Storage Policy"
+          columns={["Path", "Role", "Policy"]}
+          rows={storageRows.map((row) => [
+            <Code key="path">{row.path}</Code>,
+            row.role,
+            row.policy,
+          ])}
+        />
+
+        <GuideTable
+          title="How To Read The Viewer"
+          columns={["Surface", "Question", "Use It For"]}
+          rows={viewerRows.map((row) => [row.surface, row.question, row.use])}
+        />
+
+        <section className="rounded border border-trace-border bg-trace-panel px-4 py-4">
+          <h2 className="text-sm font-semibold text-trace-text">
+            Investigation Discipline
+          </h2>
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <Principle
+              label="Start wide"
+              detail="Use Metrics and Insights first. A failure matters more when it repeats across sessions."
             />
-            <DocRow
-              surface="Insights"
-              question="Where are patterns forming?"
-              use="Failures, tools, skills, runs, models, events, and ratchet candidates."
+            <Principle
+              label="Inspect one trace"
+              detail="Open a concrete sample and verify the turn evidence, screenshots, tool output, and logs."
             />
-            <DocRow
-              surface="Session"
-              question="What exactly happened?"
-              use="Turn-by-turn evidence, screenshots, tool outputs, logs, and integrity warnings."
-            />
-            <DocRow
-              surface="Ratchet"
-              question="What should become permanent?"
-              use="Repeated failures converted into copyable harness improvement briefs."
+            <Principle
+              label="Name the layer"
+              detail="Classify fixes as tool, skill, policy, verifier, prompt, context, or harness before editing."
             />
           </div>
         </section>
@@ -205,40 +211,52 @@ export default function DocsTab() {
   );
 }
 
-function Signal({
-  label,
-  value,
-  detail,
+function GuideTable({
+  title,
+  columns,
+  rows,
 }: {
-  label: string;
-  value: string;
-  detail: string;
+  title: string;
+  columns: string[];
+  rows: React.ReactNode[][];
 }) {
   return (
-    <div className="rounded border border-trace-border bg-trace-bg px-3 py-2">
+    <section className="rounded border border-trace-border bg-trace-bg px-4 py-4">
+      <h2 className="mb-3 text-sm font-semibold text-trace-text">{title}</h2>
+      <div className="overflow-x-auto rounded border border-trace-border">
+        <div className="min-w-[720px]">
+          <div className="grid grid-cols-[190px_minmax(180px,1fr)_minmax(240px,1.4fr)] gap-3 border-b border-trace-border bg-trace-panel px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
+            {columns.map((column) => (
+              <span key={column}>{column}</span>
+            ))}
+          </div>
+          {rows.map((row, index) => (
+            <div
+              key={index}
+              className="grid grid-cols-[190px_minmax(180px,1fr)_minmax(240px,1.4fr)] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
+            >
+              <span className="font-semibold text-trace-text">{row[0]}</span>
+              <span className="text-trace-subtle">{row[1]}</span>
+              <span className="text-trace-subtle">{row[2]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Principle({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div className="rounded border border-trace-border bg-trace-bg px-3 py-3">
       <div className="text-[10px] uppercase tracking-[0.16em] text-trace-muted">
         {label}
       </div>
-      <div className="mt-1 font-semibold text-trace-text">{value}</div>
-      <div className="mt-1 text-[11px] leading-4 text-trace-subtle">{detail}</div>
+      <p className="mt-2 text-[12px] leading-5 text-trace-subtle">{detail}</p>
     </div>
   );
 }
 
-function DocRow({
-  surface,
-  question,
-  use,
-}: {
-  surface: string;
-  question: string;
-  use: string;
-}) {
-  return (
-    <div className="grid grid-cols-[140px_minmax(180px,1fr)_minmax(220px,1.4fr)] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0">
-      <span className="font-semibold text-trace-text">{surface}</span>
-      <span className="text-trace-subtle">{question}</span>
-      <span className="text-trace-subtle">{use}</span>
-    </div>
-  );
+function Code({ children }: { children: React.ReactNode }) {
+  return <code className="font-mono text-trace-accent-light">{children}</code>;
 }
