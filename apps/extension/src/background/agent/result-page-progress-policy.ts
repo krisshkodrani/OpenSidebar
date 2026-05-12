@@ -283,7 +283,9 @@ export function assessResultPageProgress(input: {
     : undefined;
 
   if (input.toolName === ToolName.NAVIGATE && requestedCandidate) {
-    input.state.visitedCandidateUrls.add(requestedUrl);
+    const requestedCandidateKey =
+      normalizeUrlKey(requestedCandidate.url) ?? requestedCandidate.url;
+    input.state.visitedCandidateUrls.add(requestedCandidateKey);
     return { action: "none", reason: "allow_requested_candidate" };
   }
 
