@@ -13,7 +13,7 @@ Use this checklist when preparing a new OpenSidebar release.
 From the repo root:
 
 ```bash
-npm run release:verify
+npm run verify
 ```
 
 This runs:
@@ -65,4 +65,4 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## Current Known Caveat
 
-- Real-browser E2E and WorkArena handoff runs are not part of `release:verify`; run the relevant E2E gate explicitly for risky runtime changes.
+- Real-browser E2E and WorkArena handoff runs are not part of `npm run verify`; run the relevant E2E gate explicitly for risky runtime changes.

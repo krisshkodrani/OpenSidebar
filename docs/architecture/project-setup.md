@@ -38,13 +38,20 @@ opensidebar/
 npm install
 npm run dev
 npm run dist
+npm test
+npm run verify
+npm run doctor
+```
+
+Advanced CI and release aliases remain available for tooling:
+
+```bash
 npm run ci:lint
 npm run typecheck
 npm run ci:test
 npm run ci:build
 npm run ci:dist
 npm run ci:local
-npm run test:backend
 npm run release:verify
 ```
 
@@ -61,7 +68,7 @@ npm run prompts:build
 OpenSidebar can write traces and logs for local debugging.
 
 ```bash
-npm run logs
+npm run dev
 ```
 
 The trace viewer is available at `http://127.0.0.1:7589/viewer`.

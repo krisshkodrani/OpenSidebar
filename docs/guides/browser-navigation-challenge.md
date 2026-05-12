@@ -48,7 +48,7 @@ If stuck for 5+ actions, try execute_js to inspect hidden elements or read_page 
 Start the log drain before the run so you can watch in real time:
 
 ```bash
-npm run logs        # start log drain server (in a separate terminal)
+npm run dev         # start local server, trace viewer, and dev extension build
 npm run logs:tail   # tail live output
 ```
 

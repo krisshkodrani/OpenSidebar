@@ -42,10 +42,10 @@ For each task, the runtime can:
 
 ## Logs and Traces
 
-If you run the local log server, OpenSidebar records traces and structured logs for debugging.
+If you run the local dev stack, OpenSidebar records traces and structured logs for debugging.
 
 ```bash
-npm run logs
+npm run dev
 ```
 
 Open the trace viewer at `http://127.0.0.1:7589/viewer`.
