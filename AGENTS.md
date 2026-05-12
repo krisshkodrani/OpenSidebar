@@ -121,18 +121,10 @@ When implementing non-trivial code changes, use this workflow:
 
 1. Implement the requested change.
 2. Run the relevant tests/typechecks/lints.
-3. Run the direct DeepSeek review script on the final diff.
-4. Treat DeepSeek as an adversarial reviewer and second-opinion doctor, not as an automatic author or final authority.
-5. For each DeepSeek finding:
-   - **Accept** if it identifies a concrete bug, missed edge case, security issue, brittle selector, race condition, or maintainability problem.
-   - **Reject** if it is style-only, speculative, increases complexity without clear benefit, or conflicts with stronger local evidence and Codex is confident in the implementation.
-6. Apply accepted fixes.
-7. Re-run tests.
-8. Summarize:
-   - what was implemented,
-   - what DeepSeek found,
-   - what was accepted/rejected,
-   - final test result.
+3. Self-review the final diff against the reviewer focus list below.
+4. Apply accepted fixes from that self-review.
+5. Re-run the affected tests.
+6. Summarize what was implemented, what was reviewed, and the final test result.
 
 ### When to skip the review
 
@@ -144,33 +136,9 @@ Skip the review workflow for:
 
 When in doubt, run the review.
 
-### Direct DeepSeek commands
+### Reviewer focus
 
-Do not use a DeepSeek MCP reviewer. Use the repo script directly:
-
-- Working diff: `npm run review:deepseek -- --working --allow-remote`
-- Staged diff before commit: `npm run review:deepseek -- --staged --allow-remote`
-- Last commit: `npm run review:deepseek -- --last --allow-remote`
-
-For `/goal` work, include the goal objective and any concise verification evidence when useful:
-
-```sh
-npm run review:deepseek -- --working --allow-remote --objective "Complete the active /goal objective" --evidence .artifacts/e2e/example-report.md
-```
-
-The script requires `DEEPSEEK_API_KEY` in the environment or `.env`, refuses remote review unless `--allow-remote` is passed, and writes review artifacts under `.artifacts/reviews/`.
-
-### Reviewer fallback
-
-If the direct DeepSeek review script is unavailable (e.g., missing `DEEPSEEK_API_KEY`, network failure, rate limit, or empty result):
-
-- Self-review the diff against the same [reviewer focus list](#deepseek-reviewer-focus).
-- Note the direct review failure and self-review result in the summary.
-- The agreement gate still applies: tests must pass, and any self-identified issues must be addressed or explicitly rejected with reasoning.
-
-### DeepSeek reviewer focus
-
-Ask DeepSeek to review especially for:
+Review especially for:
 
 - correctness bugs
 - async/race conditions
@@ -187,7 +155,7 @@ Ask DeepSeek to review especially for:
 Do not merge or finalize until:
 
 - tests pass, and
-- either DeepSeek approves, or Codex explicitly explains why remaining DeepSeek objections are rejected. DeepSeek is advisory; a confident Codex rejection is acceptable when supported by tests, code context, and concrete reasoning.
+- any self-identified issues are addressed or explicitly rejected with reasoning.
 
 ## Product And E2E Design Rules
 
