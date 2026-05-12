@@ -1,4 +1,5 @@
-import { MessageSource, type RuntimeMessage } from "../types";
+import { MessageSource } from "../types";
+import type { RuntimeMessage } from "../types";
 
 export interface UiRuntimeTab {
   id?: number;

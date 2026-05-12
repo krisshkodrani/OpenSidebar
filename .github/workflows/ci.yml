@@ -34,5 +34,5 @@ jobs:
       - name: Build project
         run: npm run ci:build
 
-      - name: Verify dist folder
+      - name: Verify extension artifact
         run: npm run ci:dist

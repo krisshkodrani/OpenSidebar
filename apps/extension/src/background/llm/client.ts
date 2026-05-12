@@ -18,6 +18,9 @@ import { LLM_MODEL_CONFIG } from "./model-config";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 
+const HEADER_PASTE_ARTIFACTS = /[\u200B-\u200D\uFEFF]/g;
+const WRAPPING_QUOTES = /^[`"'\u201C\u201D\u2018\u2019]+|[`"'\u201C\u201D\u2018\u2019]+$/g;
+
 /** Delay that can be cancelled via an AbortSignal. */
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   if (!signal) return new Promise((r) => setTimeout(r, ms));
@@ -58,6 +61,53 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const GROQ_MODEL_PLANNER = LLM_MODEL_CONFIG.groq.planner;
 export const GROQ_MODEL_PERCEPTION = LLM_MODEL_CONFIG.groq.perception;
 
+function normalizeHeaderCredential(value: string): string {
+  return value
+    .replace(HEADER_PASTE_ARTIFACTS, "")
+    .trim()
+    .replace(WRAPPING_QUOTES, "");
+}
+
+function assertIso88591HeaderValue(
+  name: string,
+  value: string,
+  providerId: ProviderConfig["providerId"],
+): string {
+  for (const ch of value) {
+    if (ch.charCodeAt(0) > 0xff) {
+      const providerName = getProviderDisplayName(providerId);
+      throw new Error(
+        `${providerName} request header "${name}" contains a non-ISO-8859-1 character. Re-paste the API key/header as plain text in Settings.`,
+      );
+    }
+  }
+  return value;
+}
+
+function sanitizeApiKeyForHeader(
+  apiKey: string,
+  providerId: ProviderConfig["providerId"],
+): string {
+  return assertIso88591HeaderValue(
+    "Authorization",
+    normalizeHeaderCredential(apiKey),
+    providerId,
+  );
+}
+
+function buildJsonHeaders(provider: ProviderConfig): Record<string, string> {
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${provider.apiKey}`,
+    ...provider.headers,
+  };
+
+  for (const [name, value] of Object.entries(headers)) {
+    assertIso88591HeaderValue(name, value, provider.providerId);
+  }
+  return headers;
+}
+
 /** Moonshot direct API */
 const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
 export const MOONSHOT_MODEL_EXECUTOR =
@@ -80,7 +130,7 @@ export const DEEPSEEK_MODEL_PLANNER_PRO = LLM_MODEL_CONFIG.deepseek.plannerPro;
 function openAIProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: OPENAI_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
     headers: {},
     providerId: "fireworks",
   };
@@ -89,7 +139,7 @@ function openAIProvider(apiKey: string): ProviderConfig {
 function groqProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: GROQ_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "groq"),
     headers: {},
     providerId: "groq",
   };
@@ -108,7 +158,7 @@ export const isVLCapable = isExecutorVLCapable;
 function fireworksProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: FIREWORKS_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "fireworks"),
     headers: {},
     providerId: "fireworks",
   };
@@ -117,7 +167,7 @@ function fireworksProvider(apiKey: string): ProviderConfig {
 function moonshotProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: MOONSHOT_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "moonshot"),
     headers: {},
     providerId: "moonshot",
   };
@@ -126,7 +176,7 @@ function moonshotProvider(apiKey: string): ProviderConfig {
 function xiaomiProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: XIAOMI_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "xiaomi"),
     headers: {},
     providerId: "xiaomi",
   };
@@ -135,7 +185,7 @@ function xiaomiProvider(apiKey: string): ProviderConfig {
 function deepseekProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: DEEPSEEK_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "deepseek"),
     headers: {},
     providerId: "deepseek",
   };
@@ -184,7 +234,7 @@ export function applyNitro(model: string, useNitro?: boolean): string {
 function openRouterProvider(apiKey: string): ProviderConfig {
   return {
     baseUrl: OPENROUTER_BASE_URL,
-    apiKey,
+    apiKey: sanitizeApiKeyForHeader(apiKey, "openrouter"),
     headers: {
       "HTTP-Referer": "https://github.com/OpenSidebar/OpenSidebar",
       "X-Title": "OpenSidebar",
@@ -831,11 +881,7 @@ export class LLMClient {
       url: slot.provider.baseUrl,
       init: {
         ...init,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${slot.provider.apiKey}`,
-          ...slot.provider.headers,
-        },
+        headers: buildJsonHeaders(slot.provider),
         body: JSON.stringify(shapedBody),
       },
     };
@@ -998,11 +1044,7 @@ export class LLMClient {
     try {
       let requestInitBase: RequestInit = {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${provider.apiKey}`,
-          ...provider.headers,
-        },
+        headers: buildJsonHeaders(provider),
       };
 
       let response: Response;
@@ -1074,11 +1116,7 @@ export class LLMClient {
             });
             requestInitBase = {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${provider.apiKey}`,
-                ...provider.headers,
-              },
+              headers: buildJsonHeaders(provider),
             };
             continue; // Re-enter the while(true) loop with new provider
           }
@@ -1253,11 +1291,7 @@ export class LLMClient {
     try {
       let requestInitBase: RequestInit = {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${provider.apiKey}`,
-          ...provider.headers,
-        },
+        headers: buildJsonHeaders(provider),
       };
 
       let response: Response;
@@ -1329,11 +1363,7 @@ export class LLMClient {
             });
             requestInitBase = {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${provider.apiKey}`,
-                ...provider.headers,
-              },
+              headers: buildJsonHeaders(provider),
             };
             continue; // Re-enter the while(true) loop with new provider
           }

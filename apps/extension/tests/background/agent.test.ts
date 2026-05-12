@@ -1454,6 +1454,7 @@ describe("AgentLoop", () => {
     vi.spyOn(agent as any, "executeToolCall").mockResolvedValue(
       "Configured catalog item.\nClicked submit control: Add to Cart",
     );
+    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockResolvedValue(0);
 
     await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
       toolName: ToolName.CONFIGURE_CATALOG_ITEM,
@@ -1506,6 +1507,7 @@ describe("AgentLoop", () => {
       .mockResolvedValue(
         "Configured catalog item.\nClicked submit control: Add to Cart",
       );
+    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockResolvedValue(0);
 
     await (agent as any).maybeAutoSubmitConfiguredCatalogItem({
       toolName: ToolName.CONFIGURE_CATALOG_ITEM,
@@ -1520,6 +1522,57 @@ describe("AgentLoop", () => {
     expect(
       JSON.parse(executeToolCall.mock.calls[0][0].function.arguments),
     ).toEqual({ quantity: "10", submit: true, continueToCheckout: true });
+  });
+
+  test("catalog order direct submit completes from refreshed order status", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "catalog-order-workflow",
+      },
+    );
+    (agent as any).originalQuery =
+      'Go to the hardware store and order 1 "Development Laptop (PC)" with configuration {\'Please specify an operating system\': \'Windows 8\'}';
+    vi.spyOn(agent as any, "refreshSnapshotWithRetry").mockImplementation(
+      async () => {
+        (agent as any).context.setSnapshot({
+          title: "Order Status: REQ0024319 | ServiceNow",
+          url: "https://example.service-now.com/checkout",
+          visibleContent:
+            "Order Status REQ0024319 Thank you, your request has been submitted",
+          pageContent:
+            "Order Status REQ0024319 Thank you, your request has been submitted",
+          elements: [],
+        });
+        return 0;
+      },
+    );
+
+    const completion = await (
+      agent as any
+    ).maybeCompleteTrustedCatalogOrderSubmit({
+      toolName: ToolName.CONFIGURE_CATALOG_ITEM,
+      toolArgs: { quantity: "1", submit: true },
+      toolResult:
+        "Configured catalog item.\n" +
+        "Configured:\n" +
+        "- Catalog item=Development Laptop (PC)\n" +
+        "- Please specify an operating system=Windows 8\n" +
+        "- Quantity=1",
+      tabId: 123,
+      mode: "sequential",
+    });
+
+    expect(completion?.finalSummary).toContain("REQ0024319");
+    expect(completion?.finalSummary).toContain("Development Laptop (PC)");
+    expect(completion?.finalSummary).toContain(
+      "Requested configuration verified before submission.",
+    );
   });
 
   test("catalog order helper waits when explicit configuration fields are missing", async () => {
@@ -2450,6 +2503,72 @@ describe("AgentLoop", () => {
       application: "Configuration",
       path: ["Database Instances", "HBase"],
     });
+  });
+
+  test("atomic ServiceNow module controller retries transient module lookup misses once", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-module-navigation",
+      },
+    );
+    (agent as any).originalQuery =
+      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
+    (agent as any).planSteps = [
+      {
+        objective: "Open the requested ServiceNow application navigator module",
+        successCriteria:
+          "The current ServiceNow page is the Configuration > Database Instances > HBase module",
+      },
+    ];
+
+    const executeToolCall = vi
+      .spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Error: Could not resolve ServiceNow module (lookup_timeout)",
+      )
+      .mockImplementationOnce(async () => {
+        (agent as any).evidenceAccumulator.addMany([
+          {
+            type: "navigation_reached",
+            source: ToolName.OPEN_SERVICENOW_MODULE,
+            confidence: "high",
+            observedAt: new Date().toISOString(),
+            supportsTaskGoal: true,
+            detail: {
+              application: "Configuration",
+              path: ["Database Instances", "HBase"],
+            },
+          },
+          {
+            type: "goal_state_verified",
+            source: ToolName.OPEN_SERVICENOW_MODULE,
+            confidence: "high",
+            observedAt: new Date().toISOString(),
+            supportsTaskGoal: true,
+            detail: {
+              application: "Configuration",
+              path: ["Database Instances", "HBase"],
+            },
+          },
+        ]);
+        return [
+          "Opened ServiceNow module.",
+          "Application: Configuration",
+          "Module: HBase",
+        ].join("\n");
+      });
+
+    const result = await (agent as any).maybeRunAtomicSkillController(123);
+
+    expect(result?.outcome).toBe("completed");
+    expect(executeToolCall).toHaveBeenCalledTimes(2);
+    expect(executeToolCall.mock.calls[1][0].id).toMatch(/^atomic_retry_/);
   });
 
   test("ServiceNow module navigation done can infer evidence from the reached page", () => {

@@ -6,8 +6,9 @@ import path from "path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const isProduction = mode === "production";
   const outDir =
-    mode === "production"
+    isProduction
       ? path.resolve(__dirname, "../../dist")
       : path.resolve(__dirname, "../../dist-dev");
 
@@ -36,7 +37,14 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 750,
       rollupOptions: {
         input: {
-          "overlay-harness": path.resolve(__dirname, "src/overlay/index.tsx"),
+          ...(isProduction
+            ? {
+                "overlay-harness": path.resolve(
+                  __dirname,
+                  "src/overlay/index.tsx",
+                ),
+              }
+            : {}),
           "trace-viewer": path.resolve(
             __dirname,
             "src/trace-viewer/index.html",

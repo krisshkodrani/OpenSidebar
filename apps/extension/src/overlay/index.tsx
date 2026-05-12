@@ -1,5 +1,6 @@
 import React from "react";
-import { createRoot, type Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
+import type { Root } from "react-dom/client";
 import App from "../sidepanel/App";
 import sidepanelCss from "../sidepanel/index.css?inline";
 import {

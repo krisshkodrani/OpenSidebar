@@ -309,6 +309,27 @@ describe("LLMClient construction & tier switching", () => {
     expect(plannerInfo.model).toBe(MODEL_PLANNER);
   });
 
+  test("strips common paste artifacts from API keys before building headers", async () => {
+    const client = new LLMClient(
+      "\uFEFF\u201Ctest-api-key\u200B\u201D",
+    );
+    let headers = new Headers();
+    mockFetch((_url, init) => {
+      headers = new Headers(init!.headers);
+      return jsonApiResponse("OK");
+    });
+
+    await client.complete(baseRequest());
+
+    expect(headers.get("Authorization")).toBe("Bearer test-api-key");
+  });
+
+  test("rejects API keys with non-header-safe Unicode before fetch", () => {
+    expect(() => new LLMClient("test-api-key\u{1F511}")).toThrow(
+      /request header "Authorization" contains a non-ISO-8859-1 character/,
+    );
+  });
+
   test("xiaomi mode preserves Xiaomi provider and model IDs across tier switching", () => {
     const client = makeClient({
       providerMode: "xiaomi",

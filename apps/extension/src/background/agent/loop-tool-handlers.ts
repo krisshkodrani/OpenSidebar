@@ -4,7 +4,8 @@ import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { formatStepLabel } from "./step-labels";
-import { ToolResultCache, type CacheType } from "./tool-cache";
+import { ToolResultCache } from "./tool-cache";
+import type { CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
 import { ESCALATION_REFLECTION } from "./loop-prompts";
@@ -87,6 +88,9 @@ export interface AgentLoopToolHandlerHost {
   maybeCompleteTrustedListFilterStep(params: any): {
     finalSummary: string;
   } | null;
+  maybeCompleteTrustedCatalogOrderSubmit(params: any): Promise<{
+    finalSummary: string;
+  } | null>;
   maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
   middleware: any;
   originalQuery: string;
@@ -1166,6 +1170,25 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedListFilterCompletion.finalSummary,
+    };
+  }
+
+  const trustedCatalogOrderCompletion =
+    await loop.maybeCompleteTrustedCatalogOrderSubmit({
+      toolName,
+      toolArgs: args,
+      toolResult: result,
+      tabId,
+      mode: "sequential",
+    });
+  if (trustedCatalogOrderCompletion) {
+    return {
+      prevElementCount,
+      domModified,
+      visuallyModified,
+      lastDomAffectingToolName,
+      breakLoop: true,
+      completedSummary: trustedCatalogOrderCompletion.finalSummary,
     };
   }
 

@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
-import { analyzeTraceFleet, type TraceFleetCluster } from "../../analysis";
+import { analyzeTraceFleet } from "../../analysis";
+import type { TraceFleetCluster } from "../../analysis";
 import { useStore } from "../../store";
 import { formatCost } from "../../utils";
 import Badge from "../Badge";

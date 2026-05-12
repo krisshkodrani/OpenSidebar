@@ -1,4 +1,5 @@
-import { AgentStatus, type AgentStep, type SessionMetrics } from "../../types";
+import { AgentStatus } from "../../types";
+import type { AgentStep, SessionMetrics } from "../../types";
 import type { logger } from "../../utils";
 import type { CompletionResponse } from "../llm/types";
 import type { BroadcastMessage } from "./agent-broadcast";

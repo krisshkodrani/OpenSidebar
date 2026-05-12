@@ -9,7 +9,8 @@ import { stripThinkTags } from "../llm";
 import { ActionEffect } from "./stagnation";
 import { ACTION_EFFECT } from "./constants";
 import { CACHEABLE_TOOLS } from "../tools/metadata";
-import { ToolResultCache, type CacheType } from "./tool-cache";
+import { ToolResultCache } from "./tool-cache";
+import type { CacheType } from "./tool-cache";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
