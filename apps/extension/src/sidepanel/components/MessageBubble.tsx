@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { marked, type Tokens } from "marked";
+import { marked } from "marked";
+import type { Tokens } from "marked";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -132,10 +133,7 @@ function extractJsonText(raw: string): string | null {
 
 function cleanAssistantContent(content: string): string {
   const cleaned = content
-    .replace(
-      /\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi,
-      "",
-    )
+    .replace(/\*\*(?:Think|Observe|Verify)\*\*[\s\S]*?(?=\*\*Act\*\*|$)/gi, "")
     .replace(/\*\*Act\*\*:?[ \t]*/gi, "")
     .replace(/\\n/g, "\n")
     .trim();
@@ -247,19 +245,18 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
     <div className="text-xs text-warm-500 dark:text-warm-400 tabular-nums space-y-0.5">
       <div className="flex items-center gap-1.5 flex-wrap">
         <span>{formatTokensCompact(metrics.totalTokens)} tokens</span>
-        <span className="text-warm-300 dark:text-warm-600">Â·</span>
+        <span className="text-warm-300 dark:text-warm-600">/</span>
         <span>
           {metrics.totalCost > 0 ? formatCostCompact(metrics.totalCost) : "--"}
           {metrics.totalCost > 0 && costMode === "estimated" ? " (est.)" : ""}
           {metrics.totalCost > 0 && costMode === "mixed" ? " (mixed)" : ""}
         </span>
-        <span className="text-warm-300 dark:text-warm-600">Â·</span>
+        <span className="text-warm-300 dark:text-warm-600">/</span>
         <span>LLM {formatTimeCompact(metrics.totalLlmTimeMs)}</span>
-        {(metrics.visionCallCount ?? 0) +
-          (metrics.cachedVisionCallCount ?? 0) >
+        {(metrics.visionCallCount ?? 0) + (metrics.cachedVisionCallCount ?? 0) >
           0 && (
           <>
-            <span className="text-warm-300 dark:text-warm-600">Â·</span>
+            <span className="text-warm-300 dark:text-warm-600">/</span>
             <span>
               Vision {metrics.visionCallCount ?? 0}
               {(metrics.cachedVisionCallCount ?? 0) > 0
@@ -268,7 +265,7 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
             </span>
           </>
         )}
-        <span className="text-warm-300 dark:text-warm-600">Â·</span>
+        <span className="text-warm-300 dark:text-warm-600">/</span>
         <span>
           Total {formatTimeCompact(metrics.totalSessionTimeMs)}
           {(metrics.imagePromptCount ?? 0) > 0
@@ -282,7 +279,7 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
       </div>
       {perceptionDecision && (
         <div>
-          Perception {perceptionDecision.mode} Â· {perceptionDecision.reason}
+          Perception {perceptionDecision.mode} / {perceptionDecision.reason}
         </div>
       )}
       {showBreakdown && (
@@ -298,7 +295,7 @@ function MetricsSummary({ metrics }: { metrics: SessionMetrics }) {
               </span>
               {data.cost > 0 && (
                 <>
-                  <span className="text-warm-300 dark:text-warm-600">Â·</span>
+                  <span className="text-warm-300 dark:text-warm-600">/</span>
                   <span>{formatCostCompact(data.cost)}</span>
                 </>
               )}
@@ -512,7 +509,9 @@ export const MessageBubble = React.memo(function MessageBubble({
   const showDetailsByDefault = useStore(
     (s) => s.settings.showMessageDetailsByDefault ?? false,
   );
-  const voiceOutputEnabled = useStore((s) => s.settings.enableVoiceOutput ?? false);
+  const voiceOutputEnabled = useStore(
+    (s) => s.settings.enableVoiceOutput ?? false,
+  );
   const groqApiKey = useStore((s) => s.settings.groqApiKey);
   const openaiApiKey = useStore((s) => s.settings.openaiApiKey);
   const geminiApiKey = useStore((s) => s.settings.geminiApiKey);
@@ -559,9 +558,9 @@ export const MessageBubble = React.memo(function MessageBubble({
     const MAX_VISIBLE = 3;
     if (labels.length > MAX_VISIBLE) {
       const tail = labels.slice(-MAX_VISIBLE);
-      return `... +${labels.length - MAX_VISIBLE} â†’ ${tail.join(" â†’ ")}`;
+      return `... +${labels.length - MAX_VISIBLE} -> ${tail.join(" -> ")}`;
     }
-    return labels.join(" â†’ ");
+    return labels.join(" -> ");
   }, [
     isUser,
     renderedHtml,
@@ -650,22 +649,30 @@ export const MessageBubble = React.memo(function MessageBubble({
         </div>
       )}
 
-      {/* TTS speaker icon â€” assistant messages with content */}
-      {voiceOutputEnabled && (groqApiKey || openaiApiKey || geminiApiKey) && !isUser && renderedHtml && !message.isStreaming && (
-        <div className="flex items-center gap-1.5 mt-1">
-          <button
-            onClick={() => tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")}
-            className="p-1 rounded-md text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 transition-colors"
-            aria-label={tts.isSpeaking ? "Stop speaking" : "Read aloud"}
-            title={tts.isSpeaking ? "Stop" : "Read aloud"}
-          >
-            {tts.isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          </button>
-          {tts.error && (
-            <span className="text-[10px] text-red-500 dark:text-red-400">{tts.error}</span>
-          )}
-        </div>
-      )}
+      {/* TTS speaker icon for assistant messages with content */}
+      {voiceOutputEnabled &&
+        (groqApiKey || openaiApiKey || geminiApiKey) &&
+        !isUser &&
+        renderedHtml &&
+        !message.isStreaming && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <button
+              onClick={() =>
+                tts.isSpeaking ? tts.stop() : tts.speak(message.content || "")
+              }
+              className="p-1 rounded-md text-warm-400 hover:text-warm-600 dark:hover:text-warm-300 hover:bg-warm-100 dark:hover:bg-warm-800 transition-colors"
+              aria-label={tts.isSpeaking ? "Stop speaking" : "Read aloud"}
+              title={tts.isSpeaking ? "Stop" : "Read aloud"}
+            >
+              {tts.isSpeaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
+            {tts.error && (
+              <span className="text-[10px] text-red-500 dark:text-red-400">
+                {tts.error}
+              </span>
+            )}
+          </div>
+        )}
 
       {showDetailsByDefault && message.toolCalls.length > 0 && (
         <div className="flex flex-col gap-2 w-full max-w-[92%] mt-1">

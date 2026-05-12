@@ -172,6 +172,49 @@ describe("SidePanel Store", () => {
         expect(messages[1].isStreaming).toBe(false);
     });
 
+    test("loadMessagesFromStorage removes duplicate completion cards", async () => {
+        const completionData = {
+            taskId: "t1",
+            status: "completed" as const,
+            summary: "Done",
+            totalTurnsUsed: 1,
+            totalTimeMs: 1000,
+            subtaskResults: [],
+            urlHistory: [],
+        };
+        const storedMessages = [
+            {
+                id: "m1",
+                role: "assistant" as const,
+                content: "Done",
+                timestamp: 1000,
+                toolCalls: [],
+                isStreaming: false,
+                completionData,
+            },
+            {
+                id: "m2",
+                role: "assistant" as const,
+                content: "Done",
+                timestamp: 1001,
+                toolCalls: [],
+                isStreaming: false,
+                completionData: { ...completionData, totalTimeMs: 1100 },
+            },
+        ];
+
+        (chrome.storage.local.get as any) = vi.fn(async () => ({
+            "chatMessages:ws-test": storedMessages,
+        }));
+
+        await useStore.getState().loadMessagesFromStorage();
+
+        const messages = useStore.getState().messages;
+        expect(messages).toHaveLength(1);
+        expect(messages[0].id).toBe("m1");
+        expect(messages[0].completionData?.taskId).toBe("t1");
+    });
+
     test("loadMessagesFromStorage handles empty storage", async () => {
         (chrome.storage.session.get as any) = vi.fn(async () => ({}));
 
