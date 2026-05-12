@@ -3,6 +3,7 @@ import "../setup";
 import { useStore } from "../../src/sidepanel/store";
 import { initializeBridge } from "../../src/sidepanel/bridge";
 import { AgentStatus, MessageSource } from "../../src/types";
+import type { TaskCompletionMessage } from "../../src/types";
 
 /**
  * Helper: capture the listener registered via chrome.runtime.onMessage.addListener
@@ -322,6 +323,48 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().taskProgress).toBeNull();
         expect(useStore.getState().messages[0].completionData).toEqual(payload);
         expect(useStore.getState().messages[0].isStreaming).toBe(false);
+    });
+
+    test("TASK_COMPLETION does not append duplicate completion cards after reconnect replay", () => {
+        const payload: TaskCompletionMessage["payload"] = {
+            taskId: "t1",
+            status: "completed",
+            summary: "Done",
+            totalTurnsUsed: 10,
+            totalTimeMs: 1000,
+            subtaskResults: [],
+            urlHistory: [],
+        };
+        const existingPayload = { ...payload, totalTimeMs: 900 };
+        useStore.getState().addMessage({
+            id: "a1",
+            role: "assistant",
+            content: "Done",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: false,
+            completionData: existingPayload,
+        });
+        useStore.getState().setAgentRunning(true);
+
+        setupBridge();
+        send("AGENT_STEP", {
+            update: false,
+            step: {
+                id: "replayed-step",
+                type: "tool",
+                label: "Task complete",
+                status: "running",
+                timestamp: Date.now(),
+            },
+        });
+        send("TASK_COMPLETION", payload);
+
+        const completionMessages = useStore
+            .getState()
+            .messages.filter((message) => message.completionData?.taskId === "t1");
+        expect(completionMessages).toHaveLength(1);
+        expect(useStore.getState().messages).toHaveLength(1);
     });
 
     test("STREAM_CHUNK delta appends to streaming message", () => {

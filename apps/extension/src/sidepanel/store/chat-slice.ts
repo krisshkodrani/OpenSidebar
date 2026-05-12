@@ -1,4 +1,4 @@
-import type { ChatEntry, Citation } from "../../types";
+import type { ChatEntry, Citation, TaskCompletionMessage } from "../../types";
 import { logger } from "../../utils";
 import { clearTTSCache } from "../hooks/useTextToSpeech";
 import { uiRuntime } from "../runtime";
@@ -37,6 +37,41 @@ function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
     const toSave = stripScreenshots(trimmed);
     uiRuntime.storage.local.set({ [key]: toSave }).catch(() => {});
   }, 300);
+}
+
+function sameTaskCompletion(
+  a: TaskCompletionMessage["payload"] | undefined,
+  b: TaskCompletionMessage["payload"],
+): boolean {
+  if (!a) return false;
+  if (a.taskId && b.taskId) return a.taskId === b.taskId;
+  return (
+    a.status === b.status &&
+    a.totalTurnsUsed === b.totalTurnsUsed &&
+    a.summary === b.summary
+  );
+}
+
+function isReplayCompletionTailMessage(
+  message: ChatEntry,
+  payload: TaskCompletionMessage["payload"],
+): boolean {
+  if (message.role !== "assistant") return false;
+  if (sameTaskCompletion(message.completionData, payload)) return true;
+  if (message.isStreaming && message.content.trim() === "") return true;
+  return message.content.trim() === payload.summary.trim();
+}
+
+function dedupeCompletionMessages(messages: ChatEntry[]): ChatEntry[] {
+  const seenTaskIds = new Set<string>();
+  return messages.filter((message) => {
+    const taskId =
+      message.role === "assistant" ? message.completionData?.taskId : null;
+    if (!taskId) return true;
+    if (seenTaskIds.has(taskId)) return false;
+    seenTaskIds.add(taskId);
+    return true;
+  });
 }
 
 /** Flush pending debounced messages to storage immediately. */
@@ -130,7 +165,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           last.content = chunk.replaceContent;
         } else {
           // No streaming message exists (e.g. task completion summary arriving
-          // after stream was already finalized) — create one so it's visible.
+          // after stream was already finalized) - create one so it's visible.
           state.messages.push({
             id: crypto.randomUUID(),
             role: "assistant",
@@ -180,6 +215,32 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
 
   setCompletionOnLastMessage: (payload) => {
     set((state) => {
+      const existingIndex = state.messages.findIndex(
+        (message) =>
+          message.role === "assistant" &&
+          sameTaskCompletion(message.completionData, payload),
+      );
+      if (existingIndex !== -1) {
+        const existing = state.messages[existingIndex];
+        existing.completionData = payload;
+        existing.isStreaming = false;
+        if (!existing.content && payload.summary) {
+          existing.content = payload.summary;
+        }
+
+        let userMessageSeen = false;
+        state.messages = state.messages.filter((message, index) => {
+          if (index <= existingIndex) return true;
+          if (message.role === "user") {
+            userMessageSeen = true;
+            return true;
+          }
+          if (userMessageSeen) return true;
+          return !isReplayCompletionTailMessage(message, payload);
+        });
+        return;
+      }
+
       for (let i = state.messages.length - 1; i >= 0; i--) {
         const message = state.messages[i];
         if (message.role !== "assistant") continue;
@@ -189,6 +250,17 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           message.content = payload.summary;
         }
         break;
+      }
+      if (!state.messages.some((message) => message.completionData === payload)) {
+        state.messages.push({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: payload.summary,
+          timestamp: Date.now(),
+          toolCalls: [],
+          isStreaming: false,
+          completionData: payload,
+        });
       }
     });
     persistMessages(get().messages, get().activeWorkspaceId);
@@ -221,8 +293,9 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           return;
         }
       }
-      // Don't create ghost bubbles for late-arriving steps after stream finalized
-      if (!get().isAgentRunning) return;
+      // Don't create ghost bubbles for late-arriving or replayed steps after
+      // stream finalization/completion.
+      if (!get().isAgentRunning || get().taskCompletion) return;
       state.messages.push({
         id: crypto.randomUUID(),
         role: "assistant",
@@ -285,8 +358,10 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       const key = chatStorageKey(wsId);
       const result = await uiRuntime.storage.local.get(key);
       if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
-        const stored = (result[key] as ChatEntry[]).map((msg) =>
-          msg.isStreaming ? { ...msg, isStreaming: false } : msg,
+        const stored = dedupeCompletionMessages(
+          (result[key] as ChatEntry[]).map((msg) =>
+            msg.isStreaming ? { ...msg, isStreaming: false } : msg,
+          ),
         );
         const current = get().messages;
         // Non-destructive merge: if in-memory messages exist and are newer
@@ -298,7 +373,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
           if (lastCurrent >= lastStored) {
             logger.debug(
               "ui",
-              "Skipping storage load — in-memory messages are newer",
+              "Skipping storage load - in-memory messages are newer",
               {
                 inMemoryCount: current.length,
                 storedCount: stored.length,

@@ -74,28 +74,16 @@ export function InputArea({
     [settings, updateSettings],
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const prevHeightRef = useRef<number>(0);
 
-  // Smooth auto-resize
   const MAX_HEIGHT = 120;
   const resizeTextarea = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
 
-    const prev = prevHeightRef.current;
-
-    el.style.transition = "none";
-    el.style.overflowY = "hidden";
-    el.style.height = "0px";
+    el.style.height = "auto";
     const scrollH = Math.min(el.scrollHeight, MAX_HEIGHT);
-    el.style.height = (prev || scrollH) + "px";
-
-    void el.offsetHeight;
-    el.style.transition = "height 0.15s ease";
     el.style.height = scrollH + "px";
     el.style.overflowY = scrollH >= MAX_HEIGHT ? "auto" : "hidden";
-
-    prevHeightRef.current = scrollH;
   }, []);
 
   useEffect(() => {
@@ -111,7 +99,7 @@ export function InputArea({
     }
   }, [transcript, setInputText, clearTranscript]);
 
-  // Alt+V keyboard shortcut — toggle voice recording from anywhere in the panel
+  // Alt+V keyboard shortcut - toggle voice recording from anywhere in the panel
   useEffect(() => {
     if (!voiceEnabled) return;
     const handler = (e: KeyboardEvent) => {
@@ -206,12 +194,12 @@ export function InputArea({
   }
 
   return (
-    <div className="bg-warm-50 dark:bg-warm-900 relative border-t border-warm-200 dark:border-warm-800">
+    <div className="bg-warm-50 dark:bg-warm-900 relative shrink-0 border-t border-warm-200 dark:border-warm-800">
       {/* Risk banner when autonomous mode is on */}
       {autonomousMode && !isAgentRunning && (
         <div className="mx-2 mt-1 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
           <ShieldAlert size={12} className="shrink-0" />
-          <span>Autonomous mode — agent acts without asking</span>
+          <span>Autonomous mode - agent acts without asking</span>
         </div>
       )}
       <div className="p-2">
@@ -227,25 +215,29 @@ export function InputArea({
                 current run continues.
               </div>
             </div>
-            <div className="input-glow relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-all">
+            <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_32px] items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-colors">
               <textarea
                 ref={textareaRef}
                 value={inputText}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder="Guide the agent..."
-                className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
+                className="block w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm leading-5 text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
                 rows={1}
               />
-              {hasText && (
-                <button
-                  onClick={handleSubmit}
-                  className="w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-primary-600 hover:bg-primary-700 text-white"
-                  aria-label="Send guidance"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              )}
+              <button
+                onClick={handleSubmit}
+                disabled={!hasText}
+                className={clsx(
+                  "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-primary-600 text-white",
+                  hasText
+                    ? "hover:bg-primary-700"
+                    : "opacity-0 pointer-events-none",
+                )}
+                aria-label="Send guidance"
+              >
+                <ArrowUp size={16} />
+              </button>
             </div>
             <p className="px-1 text-[10px] text-warm-400 dark:text-warm-500 select-none">
               Guidance is sent into the current run. Press{" "}
@@ -257,18 +249,18 @@ export function InputArea({
           </div>
         ) : (
           <>
-            <div className="input-glow relative flex items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-all">
+            <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-colors">
               <textarea
                 ref={textareaRef}
                 value={inputText}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
                 placeholder="What can I help with?"
-                className="w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
+                className="block w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm leading-5 text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
                 rows={1}
               />
               <div className="flex items-end gap-1">
-                {/* Mic button — always visible when voice is enabled (Alt+V) */}
+                {/* Mic button - always visible when voice is enabled (Alt+V) */}
                 {voiceEnabled && (
                   <button
                     onClick={() =>
@@ -299,39 +291,41 @@ export function InputArea({
                     )}
                   </button>
                 )}
-                {/* Send button — appears when text is present */}
-                {hasText && (
-                  <button
-                    onClick={handleSubmit}
-                    className="w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-warm-700 hover:bg-warm-800 dark:bg-warm-300 dark:hover:bg-warm-200 text-white dark:text-warm-900"
-                    aria-label="Send message"
-                  >
-                    <ArrowUp size={16} />
-                  </button>
-                )}
+                {/* Send button - appears when text is present */}
+                <button
+                  onClick={handleSubmit}
+                  disabled={!hasText}
+                  className={clsx(
+                    "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-warm-700 dark:bg-warm-300 text-white dark:text-warm-900",
+                    hasText
+                      ? "hover:bg-warm-800 dark:hover:bg-warm-200"
+                      : "opacity-0 pointer-events-none",
+                  )}
+                  aria-label="Send message"
+                >
+                  <ArrowUp size={16} />
+                </button>
               </div>
             </div>
             {/* STT status / error */}
-            {(sttError || isRecording || isTranscribing) && (
-              <div className="px-1 mt-1 flex items-center gap-1.5">
-                {sttError ? (
+            <div className="px-1 mt-1 flex h-4 items-center gap-1.5 overflow-hidden">
+              {sttError ? (
+                <span className="text-[11px] text-red-500 dark:text-red-400">
+                  {sttError}
+                </span>
+              ) : isRecording ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                   <span className="text-[11px] text-red-500 dark:text-red-400">
-                    {sttError}
+                    Recording... press Alt+V or tap mic to stop
                   </span>
-                ) : isRecording ? (
-                  <>
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-[11px] text-red-500 dark:text-red-400">
-                      Recording... press Alt+V or tap mic to stop
-                    </span>
-                  </>
-                ) : isTranscribing ? (
-                  <span className="text-[11px] text-warm-400 dark:text-warm-500">
-                    Transcribing...
-                  </span>
-                ) : null}
-              </div>
-            )}
+                </>
+              ) : isTranscribing ? (
+                <span className="text-[11px] text-warm-400 dark:text-warm-500">
+                  Transcribing...
+                </span>
+              ) : null}
+            </div>
             {/* Footer row: autonomy popover */}
             <div className="flex items-center mt-1.5 px-1 relative">
               <div className="relative">
