@@ -969,6 +969,55 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
   },
 };
 
+export const APPLY_LIST_ACTION_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.APPLY_LIST_ACTION,
+    description:
+      "Select visible rows in a ServiceNow list/table by record identifiers or unique row text, apply a visible selected-row action such as Delete or Mark as Duplicate, and optionally confirm the resulting dialog. Use after inspect_table has identified the exact target rows.",
+    parameters: {
+      type: "object",
+      properties: {
+        records: {
+          type: "array",
+          description:
+            "Visible record numbers or unique row text snippets identifying rows to select.",
+          items: {
+            type: "string",
+            description: "One visible record number or unique row text snippet.",
+          },
+        },
+        action: {
+          type: "string",
+          description:
+            'Visible selected-row action label, e.g. "Delete", "Delete with preview", or "Mark as Duplicate".',
+        },
+        relatedRecord: {
+          type: "string",
+          description:
+            'Optional related/reference record value required by the action modal, e.g. the other problem number for "Duplicate of".',
+        },
+        relatedField: {
+          type: "string",
+          description:
+            'Optional visible/reference field label or system field name for relatedRecord, e.g. "Duplicate of" or "duplicate_of".',
+        },
+        table: {
+          type: "string",
+          description:
+            "Optional visible list title or system table name when several lists are present.",
+        },
+        confirm: {
+          type: "boolean",
+          description:
+            "Whether to click a confirmation button in a resulting dialog. Defaults to true.",
+        },
+      },
+      required: ["records", "action"],
+    },
+  },
+};
+
 export const INSPECT_CATALOG_ITEM_DEF: ToolDefinition = {
   type: "function",
   function: {
@@ -997,6 +1046,11 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
     parameters: {
       type: "object",
       properties: {
+        expectedItem: {
+          type: "string",
+          description:
+            "Expected visible catalog item/product name. When provided, the helper verifies the current item heading/title before submitting and refuses mismatched lookalike items.",
+        },
         quantity: {
           type: "string",
           description: "Quantity to set when a quantity control exists.",

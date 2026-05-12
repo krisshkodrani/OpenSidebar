@@ -387,6 +387,22 @@ export interface ApplyListSortArgs {
   run?: boolean;
 }
 
+/** Arguments for apply_list_action */
+export interface ApplyListActionArgs {
+  /** Visible record identifiers or unique row text snippets to select */
+  records: string[];
+  /** Visible selected-row action label, e.g. Delete or Mark as Duplicate */
+  action: string;
+  /** Optional related/reference record value required by the action modal */
+  relatedRecord?: string;
+  /** Optional visible/reference field label or system field name for relatedRecord */
+  relatedField?: string;
+  /** Optional visible list/table title or system table name */
+  table?: string;
+  /** Confirm a resulting modal/dialog. Defaults to true. */
+  confirm?: boolean;
+}
+
 /** Arguments for inspect_catalog_item */
 export interface InspectCatalogItemArgs {
   /** Maximum configurable controls to return (default: 40, max: 80) */
@@ -411,6 +427,8 @@ export interface ConfigureCatalogCheckbox {
 
 /** Arguments for configure_catalog_item */
 export interface ConfigureCatalogItemArgs {
+  /** Expected visible catalog item name; submit is refused if the current item does not match */
+  expectedItem?: string;
   /** Quantity to set when a quantity control exists */
   quantity?: number | string;
   /** Text inputs or textareas to fill by label */
@@ -509,6 +527,7 @@ export type ToolArgsMap = {
   [ToolName.INSPECT_FILTER_STATE]: InspectFilterStateArgs;
   [ToolName.APPLY_LIST_FILTER]: ApplyListFilterArgs;
   [ToolName.APPLY_LIST_SORT]: ApplyListSortArgs;
+  [ToolName.APPLY_LIST_ACTION]: ApplyListActionArgs;
   [ToolName.INSPECT_CATALOG_ITEM]: InspectCatalogItemArgs;
   [ToolName.CONFIGURE_CATALOG_ITEM]: ConfigureCatalogItemArgs;
   [ToolName.CONFIGURE_SERVICENOW_FORM]: ConfigureServiceNowFormArgs;

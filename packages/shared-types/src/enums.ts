@@ -70,6 +70,7 @@ export enum ToolName {
   INSPECT_FILTER_STATE = "inspect_filter_state",
   APPLY_LIST_FILTER = "apply_list_filter",
   APPLY_LIST_SORT = "apply_list_sort",
+  APPLY_LIST_ACTION = "apply_list_action",
   INSPECT_CATALOG_ITEM = "inspect_catalog_item",
   CONFIGURE_CATALOG_ITEM = "configure_catalog_item",
   CONFIGURE_SERVICENOW_FORM = "configure_servicenow_form",
