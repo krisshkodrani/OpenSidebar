@@ -34,7 +34,7 @@ npx tsx scripts/workarena-setup.ts
 Build the extension:
 
 ```powershell
-npm run build
+npm run dist
 ```
 
 Pass criteria:

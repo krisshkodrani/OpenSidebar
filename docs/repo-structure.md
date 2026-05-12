@@ -37,12 +37,17 @@ From the repo root:
 
 - `npm run dev`: extension dev stack with logs, trace viewer, and loadable `dist-dev/`
 - `npm run dist`: production/manual extension build into `dist/`
-- `npm run build`: CI-compatible production build alias
 - `npm test`: extension unit and integration tests
+- `npm run verify`: local confidence gate for lint, typecheck, tests, build, and dist validation
+- `npm run doctor`: setup diagnosis for new users and coding agents
+
+Advanced aliases remain available for targeted work:
+
+- `npm run build`: compatibility alias for `npm run dist`
 - `npm run test:backend`: backend tests
 - `npm run test:e2e`: browser E2E validation
-- `npm run ci:local`: local mirror of GitHub CI
-- `npm run release:verify`: release alias for `npm run ci:local`
+- `npm run ci:local`: compatibility alias for `npm run verify`
+- `npm run release:verify`: release alias for `npm run verify`
 
 Use direct Nx commands for project-scoped work:
 

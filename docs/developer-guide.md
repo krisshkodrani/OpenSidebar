@@ -4,7 +4,17 @@ This is the quickest accurate map of the current codebase.
 
 ## Start Here
 
-Most development work falls into one of these workflows:
+Most development work starts with the same small command set:
+
+```bash
+npm run dev      # run the local app stack
+npm run dist     # build the standalone unpacked extension
+npm test         # run fast tests
+npm run verify   # run the full local confidence gate
+npm run doctor   # diagnose local setup
+```
+
+After that, development work usually falls into one of these workflows:
 
 1. Run the extension locally with logs and traces.
 2. Run fast tests while iterating.
@@ -93,7 +103,7 @@ When to use this:
 Debug tool execution, planner/executor behavior, or E2E failures.
 
 ```bash
-npm run logs
+npm run dev
 npm run traces
 ```
 
@@ -237,8 +247,17 @@ Structured perception uses the unified v6 contract:
 | --------------- | ------------------------------------- | -------------------------------------------- |
 | `npm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
 | `npm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
-| `npm run build` | CI or habit expects the build name    | alias-equivalent production build            |
+| `npm test`      | you want fast local tests             | extension + backend unit/integration tests   |
+| `npm run verify` | you want pre-commit confidence       | lint + typecheck + tests + build + dist check |
+| `npm run doctor` | you want setup diagnosis             | checks deps, builds, local server, and trace DB |
+
+Advanced local commands:
+
+| Command         | Use this when                         | Notes                                        |
+| --------------- | ------------------------------------- | -------------------------------------------- |
+| `npm run build` | CI or habit expects the build name    | compatibility alias for `npm run dist`       |
 | `npm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
+| `npm run typecheck` | you want TypeScript project checks | all typecheck targets                        |
 | `npm run fmt`   | you want formatting only              | formats extension source and shared packages |
 
 The npm scripts are the stable day-to-day entry points. Use direct Nx commands when you need to address a specific project target:
@@ -256,7 +275,7 @@ The npm scripts are the stable day-to-day entry points. Use direct Nx commands w
 
 | Command                      | Use this when                             | Notes                                          |
 | ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `npm test`                   | you want the normal fast extension suite  | excludes backend and browser E2E runs          |
+| `npm test`                   | you want the normal fast test suite       | extension and backend tests; excludes browser E2E |
 | `npm run test:backend`       | you changed backend routes or persistence | backend-only Vitest run                        |
 | `npm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
 | `npm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
@@ -265,8 +284,9 @@ The npm scripts are the stable day-to-day entry points. Use direct Nx commands w
 | `npx tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
 | `npx tsx scripts/workarena-handoff.ts` | you need a manual real WorkArena handoff run | requires `--allow-servicenow-reset`; token-spending |
 | `npx tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
-| `npm run ci:local`           | you want the GitHub CI gate locally       | lint + typecheck + tests + build + dist check  |
-| `npm run release:verify`     | you want the release gate                 | aliases `npm run ci:local`                     |
+| `npm run verify`             | you want the local confidence gate        | lint + typecheck + tests + build + dist check  |
+| `npm run ci:local`           | a tool expects the old CI alias           | aliases `npm run verify`                       |
+| `npm run release:verify`     | a tool expects the old release alias      | aliases `npm run verify`                       |
 | `npx vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).
@@ -275,7 +295,7 @@ For the path from guarded WorkArena smoke runs to category-balanced graded evalu
 
 | Command               | Use this when                            | Notes                             |
 | --------------------- | ---------------------------------------- | --------------------------------- |
-| `npm run logs`        | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
+| `npm run dev`         | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
 | `npm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
 | `npm run logs:errors` | you only care about errors               | filters by log level              |
 | `npm run traces`      | you want trace CLI queries               | session list, turns, stats        |
@@ -286,5 +306,5 @@ For the path from guarded WorkArena smoke runs to category-balanced graded evalu
 ## Development Notes
 
 - Prefer `rg` for search.
-- Prompt changes usually require `npm run build` because prompts are compiled into `packages/prompts/src/generated.ts`.
+- Prompt changes usually require `npm run dist` because prompts are compiled into `packages/prompts/src/generated.ts`.
 - If docs disagree with code, update the docs after checking the runtime source of truth.

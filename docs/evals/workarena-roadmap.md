@@ -104,7 +104,7 @@ Exit criteria:
 - The extension is rebuilt after runtime changes before any `--no-build` WorkArena command.
 - The run notes record any unrelated dirty worktree state.
 - Focused tests for changed runtime areas pass.
-- `npm run build` and `npm run ci:lint` pass, with known warnings explicitly recorded.
+- `npm run dist` and `npm run ci:lint` pass, with known warnings explicitly recorded.
 
 ### R1. Harness Readiness
 

@@ -65,40 +65,44 @@ npm run dist
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
-### Two Normal Modes
+### Main Commands
 
 Use npm scripts for day-to-day work. Nx is the internal task runner behind those scripts.
 
-Production/manual extension build:
-
 ```bash
-npm run dist
+npm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
+npm run dist     # Standalone production/manual extension build into dist/
+npm test         # Extension and backend unit/integration tests
+npm run verify   # Full local confidence gate before commit or push
+npm run doctor   # Diagnose local setup and show next commands
 ```
 
-This writes the loadable Chrome extension to `dist/`. Load or reload that folder in Chrome.
+Use `npm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
 
-Development stack:
+Use `npm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
 
-```bash
-npm run dev
-```
-
-This starts the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
+`npm run dev` includes the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
 
 ## Development
+
+Main commands:
 
 ```bash
 npm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
 npm run dist                 # Standalone production/manual extension build into dist/
-npm run build                # Alias for the production build
-npm test                     # Extension unit + integration tests
-npm run test:backend         # Backend tests
-npm run test:e2e:smoke       # Easy staged E2E cases
-npm run test:e2e:interactions # Medium staged E2E cases
-npm run test:e2e:runtime     # Hard staged E2E cases
-npm run traces:compact       # Backfill SQLite, then delete raw traces older than 7 days
+npm test                     # Extension and backend unit/integration tests
+npm run verify               # Lint, typecheck, tests, build, and dist check
+npm run doctor               # Local setup diagnosis
+```
+
+Advanced commands:
+
+```bash
+npm run build                # Compatibility alias for npm run dist
 npm run lint                 # ESLint
-npm run release:verify       # Local release gate
+npm run typecheck            # TypeScript project checks
+npm run e2e                  # Normal staged browser E2E sequence
+npm run traces:compact       # Backfill SQLite, then delete raw traces older than 7 days
 npm run fmt                  # Prettier
 ```
 
@@ -149,8 +153,6 @@ Every agent session can be inspected in the built-in trace viewer.
 
 ```bash
 npm run dev
-# or
-npm run logs
 ```
 
 Open `http://127.0.0.1:7589/viewer`.

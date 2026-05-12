@@ -43,6 +43,16 @@ Try one of these:
 
 ## Development Mode
 
+Most local development uses five commands:
+
+```bash
+npm run dev      # start the local app stack
+npm run dist     # build the standalone unpacked extension
+npm test         # run fast tests
+npm run verify   # run the full local confidence gate
+npm run doctor   # diagnose local setup
+```
+
 ```bash
 npm run dev
 ```
