@@ -83,7 +83,7 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
     cachedInputUsdPerMillion: 0.16,
     effectiveDate: "2026-05-09",
     sourceUrl: "https://fireworks.ai/pricing",
-    confidence: "manual",
+    confidence: "best_effort",
   },
   {
     providerId: "fireworks",
