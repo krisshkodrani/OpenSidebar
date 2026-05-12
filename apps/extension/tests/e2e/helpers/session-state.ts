@@ -31,6 +31,7 @@ export interface PlaywrightStorageState {
 
 export interface StorageStateImportOptions {
   finalUrl?: string;
+  navigationTimeoutMs?: number;
 }
 
 export interface StorageStateImportResult {
@@ -188,6 +189,7 @@ export async function importPlaywrightStorageState(
   const state = normalizePlaywrightStorageState(raw);
   const cookies = state.cookies ?? [];
   const origins = state.origins ?? [];
+  const navigationTimeoutMs = options.navigationTimeoutMs ?? 90_000;
 
   if (cookies.length > 0) {
     await page.setCookie(...cookies.map(toPuppeteerCookie));
@@ -202,7 +204,10 @@ export async function importPlaywrightStorageState(
       continue;
     }
 
-    await page.goto(origin.origin, { waitUntil: "domcontentloaded" });
+    await page.goto(origin.origin, {
+      waitUntil: "domcontentloaded",
+      timeout: navigationTimeoutMs,
+    });
     await page.evaluate(
       (payload) => {
         for (const entry of payload.localStorageEntries) {
@@ -219,7 +224,10 @@ export async function importPlaywrightStorageState(
   }
 
   if (options.finalUrl) {
-    await page.goto(options.finalUrl, { waitUntil: "domcontentloaded" });
+    await page.goto(options.finalUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: navigationTimeoutMs,
+    });
   }
 
   return {
