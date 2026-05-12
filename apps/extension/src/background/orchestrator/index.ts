@@ -4755,6 +4755,7 @@ export class Orchestrator {
               });
               node.status = "completed";
               node.result = compactResultSummary;
+              node.userFacingResult = result.summary;
               this.recordCompletedPhase(task, node.description);
               this.maybeRecordReviewedItem(task, node);
               this.maybeRecordExtractedFacts(task, node, compactResultSummary);
@@ -6151,9 +6152,9 @@ export class Orchestrator {
     if (
       task.planClassification?.isSingleNode &&
       failed === 0 &&
-      lastCompleted?.result
+      (lastCompleted?.userFacingResult || lastCompleted?.result)
     ) {
-      return lastCompleted.result;
+      return lastCompleted.userFacingResult || lastCompleted.result || "";
     }
 
     // Multi-node completed: aggregate results from all completed nodes.
@@ -6162,8 +6163,9 @@ export class Orchestrator {
     // report both"). Only the combined results satisfy the full task.
     if (completedNodes.length > 1 && lastCompleted?.result) {
       const nodeResults = completedNodes
-        .filter((n) => n.result && n.result.trim())
-        .map((n) => n.result!.trim());
+        .map((n) => n.userFacingResult || n.result || "")
+        .filter((result) => result.trim())
+        .map((result) => result.trim());
 
       // If the last node's result already covers all prior results
       // (e.g. it explicitly mentions all key data), use it alone.
@@ -6180,8 +6182,11 @@ export class Orchestrator {
       return lastResult;
     }
 
-    if (completedNodes.length > 0 && lastCompleted?.result) {
-      return lastCompleted.result;
+    if (
+      completedNodes.length > 0 &&
+      (lastCompleted?.userFacingResult || lastCompleted?.result)
+    ) {
+      return lastCompleted.userFacingResult || lastCompleted.result || "";
     }
 
     if (failed > 0 && lastFailed?.error) {

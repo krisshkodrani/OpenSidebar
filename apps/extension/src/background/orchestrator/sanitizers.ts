@@ -341,6 +341,9 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
     node.handoffFromNodeId = raw.handoffFromNodeId;
   }
   if (typeof raw.result === "string") node.result = raw.result;
+  if (typeof raw.userFacingResult === "string") {
+    node.userFacingResult = raw.userFacingResult;
+  }
   if (typeof raw.error === "string") node.error = raw.error;
   return node;
 }

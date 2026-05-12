@@ -143,6 +143,67 @@ function cleanAssistantContent(content: string): string {
   return extractJsonText(cleaned) ?? cleaned;
 }
 
+interface KeyValueLine {
+  label: string;
+  value: string;
+  source: string;
+}
+
+function matchKeyValueLine(line: string): KeyValueLine | null {
+  const source = line.replace(/[ \t]+$/, "");
+  const match = /^\s*\*\*([^*\n:][^*\n:]{0,80}):\*\*\s*(.+?)\s*$/.exec(source);
+  if (!match) return null;
+  return {
+    label: match[1].trim(),
+    value: match[2].trim(),
+    source,
+  };
+}
+
+function formatKeyValueRun(run: KeyValueLine[]): string[] {
+  if (run.length < 2) return run.map((item) => item.source);
+  const rows = run.map((item) => {
+    const valueHtml = marked.parseInline(item.value) as string;
+    return `<div><dt>${escapeHtml(item.label)}</dt><dd>${valueHtml}</dd></div>`;
+  });
+  return [`<dl class="completion-kv">${rows.join("")}</dl>`];
+}
+
+function enhanceCompletionMarkdown(markdown: string): string {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const output: string[] = [];
+  let keyValueRun: KeyValueLine[] = [];
+
+  const flushKeyValueRun = () => {
+    if (keyValueRun.length === 0) return;
+    output.push(...formatKeyValueRun(keyValueRun));
+    keyValueRun = [];
+  };
+
+  for (const line of lines) {
+    const keyValueLine = matchKeyValueLine(line);
+    if (keyValueLine) {
+      keyValueRun.push(keyValueLine);
+      continue;
+    }
+    flushKeyValueRun();
+    output.push(line);
+  }
+  flushKeyValueRun();
+
+  return output.join("\n");
+}
+
+function renderAssistantMarkdown(
+  content: string,
+  options: { enhanceKeyValueBlocks?: boolean } = {},
+): string {
+  const markdown = options.enhanceKeyValueBlocks
+    ? enhanceCompletionMarkdown(content)
+    : content;
+  return sanitizeHtml(marked.parse(markdown) as string);
+}
+
 function formatTokensCompact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
@@ -270,17 +331,25 @@ function CompletionSummary({
       <XCircle size={13} className="text-red-500 shrink-0" />
     );
 
-  const accentClass =
+  const accentBarClass =
     data.status === "completed"
-      ? "border-green-400"
+      ? "bg-green-400"
       : data.status === "partial"
-        ? "border-yellow-400"
-        : "border-red-400";
+        ? "bg-yellow-400"
+        : "bg-red-400";
+  const cardClass =
+    data.status === "completed"
+      ? "border-green-200 dark:border-green-900/60"
+      : data.status === "partial"
+        ? "border-yellow-200 dark:border-yellow-900/60"
+        : "border-red-200 dark:border-red-900/60";
   const detailParts = [
     data.subtaskResults?.length
       ? `${data.subtaskResults.length} ${data.subtaskResults.length === 1 ? "step" : "steps"}`
       : null,
-    data.metrics ? `${formatTokensCompact(data.metrics.totalTokens)} tokens` : null,
+    data.metrics
+      ? `${formatTokensCompact(data.metrics.totalTokens)} tokens`
+      : null,
   ].filter(Boolean);
   const hasDetails = Boolean(
     (data.subtaskResults && data.subtaskResults.length > 0) || data.metrics,
@@ -289,7 +358,9 @@ function CompletionSummary({
   const summaryHtml = useMemo(
     () =>
       cleanedSummary
-        ? sanitizeHtml(marked.parse(cleanedSummary) as string)
+        ? renderAssistantMarkdown(cleanedSummary, {
+            enhanceKeyValueBlocks: true,
+          })
         : "",
     [cleanedSummary],
   );
@@ -302,38 +373,54 @@ function CompletionSummary({
   };
 
   return (
-    <div className={clsx("border-l-2 pl-3 text-sm", accentClass)}>
-      {/* Status line */}
-      <div className="flex items-center gap-1.5 mb-1.5">
-        {statusIcon}
-        <span className="text-xs font-medium text-warm-500 dark:text-warm-400">
-          {data.status === "completed"
-            ? "Done"
-            : data.status === "partial"
-              ? "Partially done"
-              : "Failed"}
-        </span>
-      </div>
-
-      {/* Summary â€” markdown rendered, conversational */}
-      {cleanedSummary && (
-        <div className="relative group/summary">
-          <div
-            className="prose-chat text-warm-700 dark:text-warm-200"
-            dangerouslySetInnerHTML={{ __html: summaryHtml }}
-          />
+    <div
+      className={clsx(
+        "relative w-full rounded-lg border bg-white/85 p-3.5 text-sm shadow-sm shadow-warm-900/5 dark:bg-warm-900/75 dark:shadow-black/20",
+        cardClass,
+      )}
+    >
+      <div
+        className={clsx(
+          "absolute inset-y-2 left-0 w-0.5 rounded-r",
+          accentBarClass,
+        )}
+      />
+      <div className="mb-3 flex items-center gap-2 pl-1">
+        <div className="flex min-w-0 items-center gap-1.5">
+          {statusIcon}
+          <span className="text-xs font-semibold text-warm-600 dark:text-warm-300">
+            {data.status === "completed"
+              ? "Done"
+              : data.status === "partial"
+                ? "Partially done"
+                : "Failed"}
+          </span>
+        </div>
+        {cleanedSummary && (
           <button
+            type="button"
             onClick={handleCopy}
-            className="absolute top-0 right-0 p-1 rounded text-warm-400 hover:text-warm-600 dark:hover:text-warm-200 opacity-0 group-hover/summary:opacity-100 transition-opacity"
+            className="ml-auto rounded-md p-1.5 text-warm-400 transition-colors hover:bg-warm-100 hover:text-warm-700 dark:hover:bg-warm-800 dark:hover:text-warm-100"
             title="Copy summary"
+            aria-label="Copy summary"
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
           </button>
+        )}
+      </div>
+
+      {/* Summary markdown rendered, conversational */}
+      {cleanedSummary && (
+        <div className="pl-1">
+          <div
+            className="prose-chat completion-summary text-warm-800 dark:text-warm-100"
+            dangerouslySetInnerHTML={{ __html: summaryHtml }}
+          />
         </div>
       )}
 
       {hasDetails && (
-        <div className="mt-2 pt-1">
+        <div className="mt-3 border-t border-warm-200/70 pt-2 dark:border-warm-800">
           <button
             onClick={() => setDetailsOpen((v) => !v)}
             className="flex items-center gap-1 text-xs text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 transition-colors"
@@ -447,7 +534,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (message.isStreaming) return "";
     const cleaned = cleanAssistantContent(message.content);
     if (!cleaned) return "";
-    return sanitizeHtml(marked.parse(cleaned) as string);
+    return renderAssistantMarkdown(cleaned);
   }, [message.content, message.isStreaming, isUser]);
 
   // Human-readable summary for tool-only turns (no LLM text output)

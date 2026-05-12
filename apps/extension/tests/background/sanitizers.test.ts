@@ -309,11 +309,16 @@ describe("sanitizeTaskNode", () => {
     expect(node!.handoffFromNodeId).toBe("node-0");
   });
 
-  test("preserves optional result and error", () => {
+  test("preserves optional result, userFacingResult, and error", () => {
     const node = sanitizeTaskNode(
-      validTaskNode({ result: "success", error: "some warning" }),
+      validTaskNode({
+        result: "success",
+        userFacingResult: "full answer",
+        error: "some warning",
+      }),
     );
     expect(node!.result).toBe("success");
+    expect(node!.userFacingResult).toBe("full answer");
     expect(node!.error).toBe("some warning");
   });
 
