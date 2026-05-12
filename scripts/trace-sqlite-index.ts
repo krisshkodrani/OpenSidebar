@@ -165,6 +165,12 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_trace_run_events_type
       ON trace_run_events(type);
 
+    CREATE TABLE IF NOT EXISTS trace_run_manifests (
+      run_id TEXT PRIMARY KEY,
+      raw_json TEXT,
+      indexed_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS trace_artifacts (
       path TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -395,6 +401,13 @@ export function indexTracesToSqlite(
       @run_id, @ordinal, @type, @role, @turn_number, @ts, @raw_json
     )
   `);
+  const upsertRunManifest = db.prepare(`
+    INSERT INTO trace_run_manifests (run_id, raw_json, indexed_at)
+    VALUES (@run_id, @raw_json, @indexed_at)
+    ON CONFLICT(run_id) DO UPDATE SET
+      raw_json=excluded.raw_json,
+      indexed_at=excluded.indexed_at
+  `);
   const insertArtifact = db.prepare(`
     INSERT OR REPLACE INTO trace_artifacts (
       path, kind, archive_state, session_id, run_id, size_bytes, mtime_ms
@@ -408,7 +421,7 @@ export function indexTracesToSqlite(
 
   const tx = db.transaction(() => {
     db.exec(
-      "DELETE FROM trace_sessions; DELETE FROM trace_turns; DELETE FROM trace_tools; DELETE FROM trace_run_events; DELETE FROM trace_artifacts;",
+      "DELETE FROM trace_sessions; DELETE FROM trace_turns; DELETE FROM trace_tools; DELETE FROM trace_run_events; DELETE FROM trace_run_manifests; DELETE FROM trace_artifacts;",
     );
 
     for (const [sessionId, indexedSession] of sessions) {
@@ -529,6 +542,19 @@ export function indexTracesToSqlite(
           ts: asString(line.record.ts) || asString(line.record.recordedAt) || null,
           raw_json: line.raw,
         });
+      });
+    }
+
+    for (const line of [
+      ...readJsonl<Record<string, unknown>>(join(runDir, "index.jsonl")),
+      ...readJsonl<Record<string, unknown>>(archiveRunIndex),
+    ]) {
+      const runId = asString(line.record?.runId);
+      if (!runId || !line.raw) continue;
+      upsertRunManifest.run({
+        run_id: runId,
+        raw_json: line.raw,
+        indexed_at: indexedAt,
       });
     }
 

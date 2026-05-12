@@ -26,9 +26,20 @@ npm run dev
 
 What it starts:
 
-- extension build/watch
-- log server
+- local server/backend/log server
 - trace viewer at `http://127.0.0.1:7589/viewer`
+- Vite/CRXJS dev process
+- loadable dev extension output in `dist-dev/`
+
+For manual dev testing, load `dist-dev/` in `chrome://extensions/` after `npm run dev` prints the CRXJS instruction. Keep that shell running while testing.
+
+For a standalone production/manual extension build, run:
+
+```bash
+npm run dist
+```
+
+Then load or reload the unpacked extension from `dist/` in `chrome://extensions/`.
 
 ### Run fast tests
 
@@ -89,6 +100,22 @@ npm run traces
 Viewer:
 
 - `http://127.0.0.1:7589/viewer`
+
+Trace retention:
+
+- SQLite is the viewer store: `.artifacts/trace-index.sqlite`.
+- Hot raw evidence in `traces/` and `logs/` is kept for local Codex/debug work.
+- The default raw-file window is 7 days.
+- Trace endpoints ingest into SQLite in real time; `traces:index` is the repair/backfill path.
+
+Maintenance commands:
+
+```bash
+npm run traces:index                # backfill or repair SQLite from raw JSONL
+npm run traces:delete-old           # dry run: raw files older than 7 days
+npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+npm run traces:compact              # index, then delete old raw files
+```
 
 ## Current Runtime
 
@@ -208,8 +235,9 @@ Structured perception uses the unified v6 contract:
 
 | Command         | Use this when                         | Notes                                        |
 | --------------- | ------------------------------------- | -------------------------------------------- |
-| `npm run dev`   | you want the main local stack running | starts build/watch, log server, trace viewer |
-| `npm run build` | you need fresh production assets      | required before loading `dist/` manually     |
+| `npm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
+| `npm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
+| `npm run build` | CI or habit expects the build name    | alias-equivalent production build            |
 | `npm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
 | `npm run fmt`   | you want formatting only              | formats extension source and shared packages |
 
@@ -251,6 +279,9 @@ For the path from guarded WorkArena smoke runs to category-balanced graded evalu
 | `npm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
 | `npm run logs:errors` | you only care about errors               | filters by log level              |
 | `npm run traces`      | you want trace CLI queries               | session list, turns, stats        |
+| `npm run traces:index` | you want to backfill or repair the SQLite trace store | writes `.artifacts/trace-index.sqlite` |
+| `npm run traces:delete-old` | you want to preview 7-day raw-file deletion | dry run by default |
+| `npm run traces:compact` | you want normal trace maintenance | indexes, then deletes old raw files after coverage checks |
 
 ## Development Notes
 

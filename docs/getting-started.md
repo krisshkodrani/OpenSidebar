@@ -14,7 +14,7 @@ Get OpenSidebar running in a few minutes.
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
 npm install
-npm run build
+npm run dist
 ```
 
 ## Load in Chrome
@@ -49,9 +49,25 @@ npm run dev
 
 This starts:
 
-- the extension build
-- the local log server
+- the local server/backend/log server
 - the trace viewer at `http://127.0.0.1:7589/viewer`
+- the Vite/CRXJS dev process
+- a loadable dev extension under `dist-dev/`
+
+When the shell prints the CRXJS instruction, load `dist-dev/` in `chrome://extensions/` and keep `npm run dev` running. For a standalone build that does not depend on the dev server, run `npm run dist` and load `dist/`.
+
+## Trace Maintenance
+
+The trace viewer reads `.artifacts/trace-index.sqlite`. Recent raw JSONL,
+screenshots, and session logs stay in `traces/` and `logs/` for local debugging,
+with a default 7-day raw-file window.
+
+```bash
+npm run traces:index                # backfill or repair SQLite
+npm run traces:delete-old           # dry run; raw files older than 7 days
+npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+npm run traces:compact              # index, then delete old raw files
+```
 
 ## Next Steps
 
