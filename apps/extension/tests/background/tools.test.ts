@@ -35,6 +35,7 @@ beforeEach(() => {
     title: "Start",
     groupId: -1,
   }));
+  (chrome.tabs as any).update = vi.fn(async () => ({}));
   (chrome.tabs as any).goBack = vi.fn(async () => {});
   (chrome.scripting as any).executeScript = vi.fn(async () => [
     { result: undefined },
@@ -88,6 +89,40 @@ describe("Tool Registration", () => {
         expect(Array.isArray(def.function.parameters.required)).toBe(true);
       }
     }
+  });
+
+  test("inspect_table summarizes duplicate row candidates", async () => {
+    document.body.innerHTML = `
+      <table>
+        <thead>
+          <tr><th>Number</th><th>Problem statement</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>PRB0051146</td><td>Feeling get moment. #SERIES-25b45e1f-0</td><td>Assess</td></tr>
+          <tr><td>PRB0051145</td><td>Feeling get moment. #SERIES-25b45e1f-0</td><td>Assess</td></tr>
+        </tbody>
+      </table>
+    `;
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "inspect-table-duplicates",
+        type: "function",
+        function: {
+          name: ToolName.INSPECT_TABLE,
+          arguments: JSON.stringify({ maxRows: 10 }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain("Duplicate candidates:");
+    expect(result).toContain("Feeling get moment. #SERIES-25b45e1f-0");
+    expect(result).toContain("records PRB0051146, PRB0051145");
+    expect(result).toContain("apply_list_action");
   });
 
   test("navigate tool accepts url or query parameter", () => {
@@ -226,6 +261,70 @@ describe("Tool Registration", () => {
     expect(result).toContain("Knowledge base search result.");
     expect(result).toContain("Answer candidate: 300");
     expect(result).toContain('Completion hint: call done with summary "300"');
+  });
+
+  test("search_knowledge_base rejects numeric shell values without topical evidence", async () => {
+    window.history.pushState({}, "", "/kb?id=kb_home");
+    document.body.innerHTML = `
+      <main>
+        <a href="/kb?id=kb_article_view&sys_kb_id=shell">Email outage</a>
+      </main>
+    `;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url: any) => {
+      const value = String(url);
+      if (
+        value.includes("/api/now/table/kb_knowledge") &&
+        value.includes("sys_id%3Dshell")
+      ) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                number: "KB000",
+                short_description: "Email outage",
+                text: "<p>Widget value count is 0 for approvals. sys_domain is global. currentPage is 0.</p>",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (value.includes("/api/now/table/kb_knowledge")) {
+        return new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("<html><body>Knowledge portal shell</body></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    });
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { frameId: 0, result: await details.func(...details.args) },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "knowledge-search-shell-zero",
+        type: "function",
+        function: {
+          name: ToolName.SEARCH_KNOWLEDGE_BASE,
+          arguments: JSON.stringify({
+            question:
+              "What is the floor count for the main office building? Please answer with a numeric value.",
+            query: "main office building floor count",
+            answerType: "number",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain(
+      "No answer candidate found in the ranked knowledge results.",
+    );
+    expect(result).not.toContain("Answer candidate: 0");
   });
 
   test("search_knowledge_base ranks ServiceNow table fallback records locally", async () => {
@@ -1265,6 +1364,41 @@ describe("Tool Registration", () => {
     expect(result).toContain("Navigator:");
   });
 
+  test("open_servicenow_module opens Reports View/Run through stable route", async () => {
+    const targetUrl =
+      "https://workarenapublic18.service-now.com/report_home.do?jvar_selected_tab=myReports";
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new Error("metadata should not be required"),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/now/nav/ui/home",
+      title: "Home | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async () => []);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "open-reports-view-run-direct",
+        type: "function",
+        function: {
+          name: ToolName.OPEN_SERVICENOW_MODULE,
+          arguments: JSON.stringify({
+            application: "Reports",
+            path: ["View/Run"],
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain("Winning path: reports_view_run_direct");
+    expect(result).toContain("Target: report_home.do?jvar_selected_tab=myReports");
+  });
+
   test("open_servicenow_module uses an already-open ServiceNow navigator module href", async () => {
     const target =
       "cmdb_ci_db_hbase_instance_list.do?sysparm_userpref_module=45";
@@ -1913,6 +2047,60 @@ describe("Tool Registration", () => {
     expect(result).toContain(`sysparm_query=${query}`);
   });
 
+  test("apply_list_filter maps contains operators to ServiceNow LIKE predicates", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/incident_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Incidents | ServiceNow";
+    document.body.innerHTML = "";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Incidents | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-filter-contains",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            conditions: [
+              {
+                field: "Short description",
+                operator: "contains",
+                value: "#SERIES-abc123",
+              },
+            ],
+          }),
+        },
+      },
+      123,
+    );
+
+    const query = "short_descriptionLIKE#SERIES-abc123";
+    const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
+    const targetUrl = `https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
+    expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
+    expect(result).toContain(`sysparm_query=${query}`);
+    expect(result).toContain("Short description contains");
+  });
+
   test("apply_list_filter encodes incident choice and reference filters from a list URL without table DOM", async () => {
     const serviceNowUrl =
       "https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/incident_list.do";
@@ -2170,6 +2358,82 @@ describe("Tool Registration", () => {
     expect(result).not.toContain("unknown_field:Model");
   });
 
+  test("apply_list_filter maps problem statement to short_description without matching state", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/now/nav/ui/classic/params/target/problem_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Problems | ServiceNow";
+    document.body.innerHTML = "";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/sys_dictionary?")) {
+        return new Response(
+          JSON.stringify({
+            result: [
+              {
+                element: "state",
+                column_label: "State",
+                internal_type: "choice",
+                reference: "",
+              },
+              {
+                element: "short_description",
+                column_label: "Problem statement",
+                internal_type: "string",
+                reference: "",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Problems | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.tabs as any).update = vi.fn(async () => ({}));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-problem-statement-filter",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_FILTER,
+          arguments: JSON.stringify({
+            conditions: [
+              {
+                field: "Problem statement",
+                operator: "contains",
+                value: "#SERIES-abc",
+              },
+            ],
+            table: "problem",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(result).toContain(
+      "sysparm_query=short_descriptionLIKE#SERIES-abc",
+    );
+    expect(result).not.toContain("stateLIKE");
+  });
+
   test("apply_list_filter resolves catalog choice labels and title references", async () => {
     const serviceNowUrl =
       "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/sc_cat_item_list.do";
@@ -2376,6 +2640,7 @@ describe("Tool Registration", () => {
           name: ToolName.APPLY_LIST_FILTER,
           arguments: JSON.stringify({
             join: "AND",
+            table: "alm_hardware_list",
             conditions: [
               { field: "Asset function", operator: "is", value: "Secondary" },
               { field: "Model category", operator: "is", value: "Computer" },
@@ -2593,6 +2858,339 @@ describe("Tool Registration", () => {
     expect(result).not.toContain("unknown_field:Closed by");
   });
 
+  test("apply_list_action selects ServiceNow rows and confirms a visible action", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/incident_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Incidents | ServiceNow";
+    document.body.innerHTML = `
+            <select id="action-select">
+              <option value="">Actions on selected rows...</option>
+              <option value="delete">Delete</option>
+            </select>
+            <table class="data_list_table">
+              <tbody>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>INC0010001</td>
+                  <td>Keep this row</td>
+                </tr>
+                <tr>
+                  <td><input type="checkbox" /></td>
+                  <td>INC0010002</td>
+                  <td>Delete this row</td>
+                </tr>
+              </tbody>
+            </table>
+        `;
+    document
+      .querySelector("#action-select")
+      ?.addEventListener("change", () => {
+        const dialog = document.createElement("div");
+        dialog.setAttribute("role", "dialog");
+        dialog.innerHTML = `<button id="confirm-delete">Delete</button>`;
+        document.body.append(dialog);
+      });
+    const confirmClicks: string[] = [];
+    document.addEventListener("click", (event) => {
+      const target = event.target as HTMLElement;
+      if (target.id === "confirm-delete") confirmClicks.push("delete");
+    });
+
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Incidents | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-action",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_ACTION,
+          arguments: JSON.stringify({
+            records: ["INC0010002"],
+            action: "Delete",
+          }),
+        },
+      },
+      123,
+    );
+
+    const checkboxes = document.querySelectorAll<HTMLInputElement>(
+      "input[type='checkbox']",
+    );
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[1].checked).toBe(true);
+    expect((document.querySelector("#action-select") as HTMLSelectElement).value)
+      .toBe("delete");
+    expect(confirmClicks).toEqual(["delete"]);
+    expect(result).toContain('Applied ServiceNow list action "Delete"');
+    expect(result).toContain("Selected rows: INC0010002");
+    expect(result).toContain("Confirmed dialog: true");
+  });
+
+  test("apply_list_action discovers ServiceNow rows without tbody wrappers", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/problem_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Problems | ServiceNow";
+    document.body.innerHTML = `
+            <select id="action-select">
+              <option value="">Actions on selected rows...</option>
+              <option value="duplicate">Mark as Duplicate</option>
+            </select>
+            <table class="data_list_table">
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>PRB0050163</td>
+                <td>Similar air bag fish. #SERIES-abc</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>PRB0050160</td>
+                <td>Night second source. #SERIES-abc</td>
+              </tr>
+            </table>
+        `;
+
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Problems | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-action-direct-rows",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_ACTION,
+          arguments: JSON.stringify({
+            records: ["PRB0050160"],
+            action: "Mark as Duplicate",
+            table: "problem",
+            confirm: false,
+          }),
+        },
+      },
+      123,
+    );
+
+    const checkboxes = document.querySelectorAll<HTMLInputElement>(
+      "input[type='checkbox']",
+    );
+    expect(checkboxes[0].checked).toBe(false);
+    expect(checkboxes[1].checked).toBe(true);
+    expect((document.querySelector("#action-select") as HTMLSelectElement).value)
+      .toBe("duplicate");
+    expect(result).toContain(
+      'Applied ServiceNow list action "Mark as Duplicate"',
+    );
+    expect(result).toContain("Selected rows: PRB0050160");
+  });
+
+  test("apply_list_action fills a related ServiceNow reference before confirming", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/problem_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Problems | ServiceNow";
+    document.body.innerHTML = `
+            <select id="action-select">
+              <option value="">Actions on selected rows...</option>
+              <option value="duplicate">Mark as Duplicate</option>
+            </select>
+            <table class="data_list_table">
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>PRB0050163</td>
+                <td>Similar air bag fish. #SERIES-abc</td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>PRB0050160</td>
+                <td>Similar air bag fish. #SERIES-abc</td>
+              </tr>
+            </table>
+        `;
+    document
+      .querySelector("#action-select")
+      ?.addEventListener("change", () => {
+        const dialog = document.createElement("div");
+        dialog.setAttribute("role", "dialog");
+        dialog.innerHTML = `
+          <label for="sys_display.problem.duplicate_of">Duplicate of</label>
+          <input id="problem.duplicate_of" name="problem.duplicate_of" type="hidden" />
+          <input id="sys_display.problem.duplicate_of" name="sys_display.problem.duplicate_of" type="search" />
+          <button id="confirm-duplicate">OK</button>
+        `;
+        document.body.append(dialog);
+      });
+    const setValueCalls: any[] = [];
+    (window as any).g_form = {
+      setValue: vi.fn((field: string, sysId: string, display: string) => {
+        setValueCalls.push([field, sysId, display]);
+      }),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            result: [{ sys_id: "target-sys-id", number: "PRB0050163" }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Problems | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (options: any) => [
+      {
+        frameId: 0,
+        result: await options.func(options.args[0]),
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-action-related-record",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_ACTION,
+          arguments: JSON.stringify({
+            records: ["PRB0050160"],
+            action: "Mark as Duplicate",
+            relatedRecord: "PRB0050163",
+            relatedField: "Duplicate of",
+            table: "problem",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(setValueCalls).toEqual([
+      ["duplicate_of", "target-sys-id", "PRB0050163"],
+    ]);
+    expect(
+      (
+        document.querySelector(
+          "#sys_display\\.problem\\.duplicate_of",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("PRB0050163");
+    expect(result).toContain("Related record: duplicate_of = PRB0050163");
+    expect(result).toContain("Confirmed dialog: true");
+  });
+
+  test("apply_list_action applies generic problem duplicate fallback when rows are hidden", async () => {
+    const serviceNowUrl =
+      "https://workarenapublic17.service-now.com/problem_list.do";
+    window.location.href = serviceNowUrl;
+    document.title = "Problems | ServiceNow";
+    document.body.innerHTML = "";
+
+    const patchBodies: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes("/api/now/table/problem?")) {
+        const query = new URL(url).searchParams.get("sysparm_query") || "";
+        const number = query.includes("PRB0050163")
+          ? "PRB0050163"
+          : "PRB0050160";
+        const sysId =
+          number === "PRB0050163" ? "related-sys-id" : "target-sys-id";
+        return new Response(JSON.stringify({ result: [{ sys_id: sysId, number }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/api/now/table/problem/target-sys-id")) {
+        patchBodies.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ result: { sys_id: "target-sys-id" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ result: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: serviceNowUrl,
+      title: "Problems | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async () => [
+      {
+        frameId: 0,
+        result: {
+          ok: false,
+          reason: "rows_not_found",
+          table: "problem",
+          missing: ["PRB0050160"],
+          sampledRows: [],
+        },
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "apply-action-duplicate-fallback",
+        type: "function",
+        function: {
+          name: ToolName.APPLY_LIST_ACTION,
+          arguments: JSON.stringify({
+            records: ["PRB0050160"],
+            action: "Mark as Duplicate",
+            relatedRecord: "PRB0050163",
+            relatedField: "Duplicate of",
+            table: "problem",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(patchBodies).toEqual([
+      {
+        duplicate_of: "related-sys-id",
+        resolution_code: "duplicate",
+        state: "Closed",
+      },
+    ]);
+    expect(result).toContain(
+      'Applied ServiceNow record action "Mark as Duplicate"',
+    );
+    expect(result).toContain("Related record: duplicate_of = PRB0050163");
+  });
+
   test("configure_catalog_item fills catalog controls and clicks submit", async () => {
     document.title = "Standard Laptop | ServiceNow";
     document.body.innerHTML = `
@@ -2762,6 +3360,69 @@ describe("Tool Registration", () => {
     expect(result).toContain("How long do you need it for ?=1 week");
   });
 
+  test("configure_catalog_item refuses to submit a mismatched expected item", async () => {
+    document.title = "Development Laptop (PC) | ServiceNow";
+    document.body.innerHTML = `
+            <h1>Development Laptop (PC)</h1>
+            <label for="quantity">Quantity</label>
+            <input id="quantity" name="quantity" value="1" />
+            <button id="order">Order Now</button>
+        `;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    const orderButton = document.getElementById("order")!;
+    orderButton.addEventListener("click", () => {
+      orderButton.setAttribute("data-clicked", "true");
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/catalog_item",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            expectedItem: "Developer Laptop (Mac)",
+            quantity: "6",
+            submit: true,
+            submitButton: "Order Now",
+          }),
+        },
+      },
+      123,
+    );
+
+    expect((document.getElementById("quantity") as HTMLInputElement).value).toBe(
+      "6",
+    );
+    expect(orderButton.getAttribute("data-clicked")).toBeNull();
+    expect(result).toContain("Catalog item configuration incomplete.");
+    expect(result).toContain(
+      "Catalog item mismatch: expected Developer Laptop (Mac); visible Development Laptop (PC).",
+    );
+    rectSpy.mockRestore();
+  });
+
   test("configure_catalog_item resolves unassociated ServiceNow variable labels by page order", async () => {
     document.title = "Loaner Laptop | ServiceNow";
     document.body.innerHTML = `
@@ -2857,7 +3518,9 @@ describe("Tool Registration", () => {
             <label type="radio" name="IO:ssd" checked="false">500 GB [add $300.00]</label>
             <input id="IO:ssd_checked_radio" name="IO:ssd_checked_radio" type="hidden" value="" />
             <div class="question_text">Please specify an operating system</div>
-            <input id="IO:os_windows8" name="IO:os" type="radio" value="windows8" style="display:none" />
+            <input id="IO:os_windows8" name="IO:os" type="radio" value="law, around, book" style="display:none" />
+            <label type="radio" name="IO:os" checked="false">Windows 8</label>
+            <input id="IO:os_windows8_canonical" name="IO:os" type="radio" value="windows8" style="display:none" />
             <label type="radio" name="IO:os" checked="false">Windows 8</label>
             <input id="IO:os_ubuntu" name="IO:os" type="radio" value="ubuntu" style="display:none" checked />
             <label type="radio" name="IO:os" checked="true">Ubuntu [subtract $100.00]</label>
@@ -2932,12 +3595,19 @@ describe("Tool Registration", () => {
     ).toBe("IO:ssd_250");
     expect(
       (document.getElementById("IO:os_windows8") as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (
+        document.getElementById(
+          "IO:os_windows8_canonical",
+        ) as HTMLInputElement
+      ).checked,
     ).toBe(
       true,
     );
     expect(
       (document.getElementById("IO:os_checked_radio") as HTMLInputElement).value,
-    ).toBe("IO:os_windows8");
+    ).toBe("IO:os_windows8_canonical");
     expect(values["IO:ssd"]).toBe("250");
     expect(values["IO:os"]).toBe("windows8");
     expect(result).toContain("Configured catalog item.");
@@ -4324,6 +4994,489 @@ describe("Tool Registration", () => {
     }
   });
 
+  test("configure_servicenow_form rejects reference display values without committed sys_id", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/sys_user.do",
+    );
+    document.title = "New Record | User | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.sys_user.department">Department</label>
+            <input
+                id="sys_display.sys_user.department"
+                name="sys_display.sys_user.department"
+                role="combobox"
+            />
+            <input id="sys_user.department" name="sys_user.department" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.sys_user.department",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "sys_user.department",
+    ) as HTMLInputElement;
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["department"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "cmn_department" }),
+      getLabelOf: () => "Department",
+      getValue: () => "",
+      setValue: () => {},
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ result: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/sys_user.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-display-only-rejected",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Department", value: "IT" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(displayInput.value).toBe("IT");
+      expect(result).toContain("ServiceNow form configuration incomplete.");
+      expect(result).toContain("Mismatches:");
+      expect(result).toContain(
+        "Department (department) = IT; expected IT; reference value not resolved",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form resolves ServiceNow references with single-field lookup", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/sys_user.do",
+    );
+    document.title = "New Record | User | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.sys_user.department">Department</label>
+            <input
+                id="sys_display.sys_user.department"
+                name="sys_display.sys_user.department"
+                role="combobox"
+            />
+            <input id="sys_user.department" name="sys_user.department" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.sys_user.department",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "sys_user.department",
+    ) as HTMLInputElement;
+    const departmentSysId = "0123456789abcdef0123456789abcdef";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["department"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "cmn_department" }),
+      getLabelOf: () => "Department",
+      getValue: () => hiddenInput.value,
+      setValue: (_field: string, value: string, display: string) => {
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const text = String(url);
+      const result = text.includes("sysparm_query=name%3DIT")
+        ? [{ sys_id: departmentSysId, name: "IT" }]
+        : [];
+      return new Response(JSON.stringify({ result }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/sys_user.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-single-field-lookup",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Department", value: "IT" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(hiddenInput.value).toBe(departmentSysId);
+      expect(displayInput.value).toBe("IT");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain("Department (department) = IT");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form treats suggestion lookups as text fields", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create INC0035910 | Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="incident.short_description">Short description</label>
+            <input id="incident.short_description" name="incident.short_description" />
+            <a
+                id="lookup.incident.short_description"
+                name="lookup.incident.short_description"
+                role="button"
+                title="Suggestion"
+            >Suggestion</a>
+        `;
+    const input = document.getElementById(
+      "incident.short_description",
+    ) as HTMLInputElement;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["short_description"],
+      getControl: () => input,
+      getLabelOf: () => "Short description",
+      getValue: () => input.value,
+      setValue: (_field: string, value: string) => {
+        input.value = value;
+      },
+    };
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...(details.args || [])), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-suggestion-text-field",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [
+                {
+                  field: "Short description",
+                  value: "EMAIL Server Down Again",
+                },
+              ],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(input.value).toBe("EMAIL Server Down Again");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain(
+        "Short description (short_description) = EMAIL Server Down Again",
+      );
+      expect(result).not.toContain("reference value not resolved");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      (window as any).g_form = originalGForm;
+    }
+  });
+
+  test("configure_servicenow_form resolves common department reference fields", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/sys_user.do",
+    );
+    document.title = "New Record | User | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.sys_user.department">Department</label>
+            <input
+                id="sys_display.sys_user.department"
+                name="sys_display.sys_user.department"
+                role="combobox"
+            />
+            <input id="sys_user.department" name="sys_user.department" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.sys_user.department",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "sys_user.department",
+    ) as HTMLInputElement;
+    const departmentSysId = "fedcba9876543210fedcba9876543210";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["department"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getLabelOf: () => "Department",
+      getValue: () => hiddenInput.value,
+      setValue: (_field: string, value: string, display: string) => {
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const text = String(url);
+      const result = text.includes("sysparm_query=name%3DIT")
+        ? [{ sys_id: departmentSysId, name: "IT" }]
+        : [];
+      return new Response(JSON.stringify({ result }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/sys_user.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-common-department-reference",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Department", value: "IT" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(hiddenInput.value).toBe(departmentSysId);
+      expect(displayInput.value).toBe("IT");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).toContain("Department (department) = IT");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form trusts hidden reference sys_id over display getValue", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/sys_user.do",
+    );
+    document.title = "New Record | User | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.sys_user.department">Department</label>
+            <input
+                id="sys_display.sys_user.department"
+                name="sys_display.sys_user.department"
+                role="combobox"
+            />
+            <input id="sys_user.department" name="sys_user.department" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.sys_user.department",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "sys_user.department",
+    ) as HTMLInputElement;
+    const departmentSysId = "abcdefabcdefabcdefabcdefabcdefab";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["department"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "cmn_department" }),
+      getLabelOf: () => "Department",
+      getValue: () => "IT",
+      setValue: (_field: string, value: string, display: string) => {
+        hiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+      const text = String(url);
+      const result = text.includes("sysparm_query=name%3DIT")
+        ? [{ sys_id: departmentSysId, name: "IT" }]
+        : [];
+      return new Response(JSON.stringify({ result }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/sys_user.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-hidden-sys-id",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Department", value: "IT" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(hiddenInput.value).toBe(departmentSysId);
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
+  test("configure_servicenow_form commits reference sys_id to real hidden input before sys_original", async () => {
+    (window as any).happyDOM.setURL(
+      "https://workarenapublic16.service-now.com/incident.do",
+    );
+    document.title = "Create Incident | ServiceNow";
+    document.body.innerHTML = `
+            <label for="sys_display.incident.caller_id">Caller</label>
+            <input
+                id="sys_display.incident.caller_id"
+                name="sys_display.incident.caller_id"
+                role="combobox"
+            />
+            <input id="sys_original.incident.caller_id" name="sys_original.incident.caller_id" type="hidden" />
+            <input id="incident.caller_id" name="incident.caller_id" type="hidden" />
+        `;
+    const displayInput = document.getElementById(
+      "sys_display.incident.caller_id",
+    ) as HTMLInputElement;
+    const originalHiddenInput = document.getElementById(
+      "sys_original.incident.caller_id",
+    ) as HTMLInputElement;
+    const hiddenInput = document.getElementById(
+      "incident.caller_id",
+    ) as HTMLInputElement;
+    const sysId = "0123456789abcdef0123456789abcdef";
+    const originalFetch = globalThis.fetch;
+    const originalGForm = (window as any).g_form;
+    (window as any).g_form = {
+      getFieldNames: () => ["caller_id"],
+      getControl: () => hiddenInput,
+      getDisplayBox: () => displayInput,
+      getGlideUIElement: () => ({ reference: "sys_user" }),
+      getLabelOf: () => "Caller",
+      getValue: () => originalHiddenInput.value || "Joe Employee",
+      setValue: (_field: string, value: string, display: string) => {
+        originalHiddenInput.value = value;
+        displayInput.value = display;
+      },
+    };
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            result: [{ sys_id: sysId, name: "Joe Employee" }],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    ) as any;
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic16.service-now.com/incident.do",
+      title: document.title,
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      { result: await details.func(...details.args), frameId: 0 },
+    ]);
+
+    try {
+      const result = await toolRegistry.execute(
+        {
+          id: "configure-servicenow-reference-real-hidden",
+          type: "function",
+          function: {
+            name: ToolName.CONFIGURE_SERVICENOW_FORM,
+            arguments: JSON.stringify({
+              fields: [{ field: "Caller", value: "Joe Employee" }],
+              submit: false,
+            }),
+          },
+        },
+        123,
+      );
+
+      expect(hiddenInput.value).toBe(sysId);
+      expect(originalHiddenInput.value).toBe(sysId);
+      expect(displayInput.value).toBe("Joe Employee");
+      expect(result).toContain("Configured ServiceNow form.");
+      expect(result).not.toContain("Mismatches:");
+    } finally {
+      globalThis.fetch = originalFetch;
+      (window as any).g_form = originalGForm;
+      (window as any).happyDOM.setURL("https://example.com/");
+    }
+  });
+
   test("configure_servicenow_form reveals ServiceNow form sections before filling hidden fields", async () => {
     (window as any).happyDOM.setURL(
       "https://workarenapublic16.service-now.com/alm_hardware.do",
@@ -4648,6 +5801,87 @@ describe("Tool Registration", () => {
     rectSpy.mockRestore();
   });
 
+  test("configure_catalog_item defers quantity to cart when item page has no quantity control", async () => {
+    let bodyText = "Service Catalog\niPad pro\nQuantity\nAdd to Cart";
+    let addClicked = false;
+    let checkoutClicked = false;
+    document.title = "iPad pro | Service Catalog";
+    document.body.innerHTML = `
+            <button id="add">Add to Cart</button>
+        `;
+    Object.defineProperty(document.body, "innerText", {
+      configurable: true,
+      get: () => bodyText,
+    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 20,
+        top: 0,
+        right: 100,
+        bottom: 20,
+        left: 0,
+        toJSON: () => ({}),
+      } as DOMRect);
+    document.getElementById("add")!.addEventListener("click", () => {
+      addClicked = true;
+      bodyText = "Shopping Cart\niPad pro\nQuantity\nProceed to Checkout";
+      document.body.innerHTML = `
+              <label for="cart_quantity">Quantity</label>
+              <input id="cart_quantity" name="cart_quantity" value="1" />
+              <button id="checkout">Proceed to Checkout</button>
+          `;
+      document.getElementById("checkout")!.addEventListener("click", () => {
+        checkoutClicked = true;
+        bodyText = "Checkout\niPad pro\nQuantity 3";
+      });
+    });
+    (chrome.tabs as any).get = vi.fn(async () => ({
+      id: 123,
+      url: "https://workarenapublic18.service-now.com/checkout",
+      title: "Checkout | ServiceNow",
+      groupId: -1,
+    }));
+    (chrome.scripting.executeScript as any) = vi.fn(async (details: any) => [
+      {
+        result: await details.func(...(details.args || [])),
+        frameId: 0,
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      {
+        id: "configure-catalog",
+        type: "function",
+        function: {
+          name: ToolName.CONFIGURE_CATALOG_ITEM,
+          arguments: JSON.stringify({
+            quantity: "3",
+            submit: true,
+            submitButton: "Add to Cart",
+            continueToCheckout: true,
+          }),
+        },
+      },
+      123,
+    );
+
+    expect(addClicked).toBe(true);
+    expect((document.getElementById("cart_quantity") as HTMLInputElement).value).toBe(
+      "3",
+    );
+    expect(checkoutClicked).toBe(true);
+    expect(result).toContain(
+      "Quantity=3 (defer to cart/checkout; no item-page quantity control)",
+    );
+    expect(result).toContain("Configured cart quantity: 3");
+    expect(result).toContain("Clicked cart checkout control");
+    rectSpy.mockRestore();
+  });
+
   test("configure_catalog_item prefers direct order over add-to-cart checkout when both are visible", async () => {
     let orderClicked = false;
     let addClicked = false;
@@ -4763,6 +5997,9 @@ describe("Tool Registration", () => {
       expect(result).toContain("(empty)");
       expect(result).toContain("count=4");
       expect(result).toContain("percent=5.970149253731343");
+      expect(result).toContain(
+        "Numeric summary: min=(empty): 4; max=Software: 63; difference_to_max=59; order_extra_quantity_to_raise_min_to_max=59; final_target_quantity=63",
+      );
     } finally {
       (window as any).Highcharts = originalHighcharts;
     }
@@ -4809,6 +6046,9 @@ describe("Tool Registration", () => {
       expect(result).toContain("Catalog item fulfillment automation coverage");
       expect(result).toContain("Fully automated");
       expect(result).toContain("count=14");
+      expect(result).toContain(
+        "Numeric summary: min=Manual: 6; max=Fully automated: 14; difference_to_max=8; order_extra_quantity_to_raise_min_to_max=8; final_target_quantity=14",
+      );
     } finally {
       (window as any).Highcharts = originalHighcharts;
     }

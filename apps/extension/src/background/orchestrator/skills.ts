@@ -415,6 +415,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "apply_list_filter",
       "inspect_table",
       "inspect_filter_state",
+      "apply_list_action",
       "read_page",
       "update_notes",
     ],
@@ -477,6 +478,46 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
   },
   {
+    id: "list-row-action-workflow",
+    name: "List Row Action Workflow",
+    description:
+      "Select rows in a ServiceNow list/table and apply a selected-row action such as delete or mark duplicate.",
+    tags: ["workflow", "list", "table", "row-action"],
+    triggers: [
+      "delete selected rows",
+      "delete records",
+      "mark duplicates",
+      "selected rows action",
+      "list action",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "inspect_table",
+      "apply_list_action",
+      "inspect_filter_state",
+      "read_page",
+      "update_notes",
+    ],
+    discouragedTools: [
+      "find_element",
+      "click_element",
+      "select_option",
+      "type_text",
+      "inspect_hidden",
+      "xray_page",
+      "click_coordinates",
+      "done",
+    ],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    notes: [
+      "Use inspect_table first to identify exact row identifiers and avoid acting on the wrong record.",
+      "Use apply_list_action when the target rows and selected-row action are visible in a ServiceNow list.",
+      "Do not infer hidden row identities; if the row cannot be uniquely identified, inspect or filter the list first.",
+      "Completion requires evidence that the action ran and the affected rows or resulting status changed.",
+    ],
+  },
+  {
     id: "catalog-order-workflow",
     name: "Catalog Order Workflow",
     description:
@@ -493,8 +534,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     ],
     maturity: "candidate",
     preferredTools: [
-      "inspect_catalog_item",
       "configure_catalog_item",
+      "inspect_catalog_item",
       "set_checkbox",
       "type_text",
       "select_option",
@@ -1067,7 +1108,7 @@ const SKILL_BODIES: Record<
       "3. If inspect_chart returns the requested label and value, answer from that evidence without clicking or refreshing the chart.",
       "4. Keep the workflow read-only: do not click Run, Refresh, report edit, drilldown, export, filter, or navigation controls just to reveal data.",
       "5. If inspect_chart lacks the requested value, read_page and read_element only to locate accessible chart text or labels.",
-      "6. Store the extracted value and its evidence in notes when the workflow has more than one step.",
+      "6. Store the extracted value and its evidence in notes when the workflow has more than one step. If a later action asks for extra items so one quantity matches another final quantity, store both the final target quantity and the extra quantity difference.",
       "7. For single-value questions, call done with exactly one numeric value and the requested unit; do not include supporting counts, totals, axis ranges, dates, or chart timestamps in the final answer.",
       "8. For label-and-count questions, call done with exactly 'Label: count' using one numeric count; do not repeat the count or include percentages, totals, axis ranges, dates, or tie details.",
       "9. Call done only when the final answer contains the requested value and names the chart/category it came from while the report/dashboard remains in a stable view state.",
@@ -1107,6 +1148,7 @@ const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Prefer inspect_chart before any other chart investigation.",
+        "For min-to-max quantity tasks, distinguish final_target_quantity from order_extra_quantity_to_raise_min_to_max; use the extra quantity for an order of additional items.",
         "Avoid click_element, navigate, hover_element, and click_coordinates for read-only chart value tasks unless recovery is required.",
       ],
       completionChecks: [
@@ -1220,17 +1262,60 @@ const SKILL_BODIES: Record<
       ],
     },
   },
+  "list-row-action-workflow": {
+    procedureMarkdown: [
+      "1. Use inspect_table to identify the exact visible row identifiers or unique row text for the target records.",
+      "2. If the target rows are not uniquely visible, filter or inspect further before mutating the list.",
+      "3. For actions that relate one row to another, such as marking a duplicate, select the row to change and pass the other record as relatedRecord with relatedField when known.",
+      "4. Call apply_list_action with the exact target row identifiers and the requested selected-row action.",
+      "5. Confirm the dialog only when it matches the requested action and any required reference field has been filled.",
+      "6. Re-inspect the list or result state before calling done.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Exact target row identifiers",
+      "Related/reference record when the action requires one",
+      "Selected-row action applied",
+      "Post-action list or status evidence",
+    ],
+    commonFailures: [
+      {
+        signal: "acting before the target rows are uniquely identified",
+        recovery:
+          "inspect or filter the list until each target row can be named exactly",
+      },
+      {
+        signal: "opening row details instead of using the selected-row action",
+        recovery:
+          "return to the list, select the row checkbox, and apply the visible list action",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Identify rows, apply selected-row action, confirm if appropriate, verify changed state.",
+      ],
+      toolDiscipline: [
+        "Use apply_list_action after inspect_table identifies the target rows.",
+        'For "mark duplicate" workflows, do not open the row manually; call apply_list_action with one duplicate row in records and the other duplicate row in relatedRecord.',
+        "Do not use hidden selectors or guessed row IDs when the row is not visible.",
+      ],
+      completionChecks: [
+        "The requested selected-row action ran on the intended rows and the list or status reflects the change.",
+      ],
+    },
+  },
   "catalog-order-workflow": {
     procedureMarkdown: [
-      "1. Use inspect_catalog_item to read product name, quantity controls, options, price/summary, and order controls.",
-      "2. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, dropdown/radio-like options, checkbox states, and text requirements in one verified action.",
-      "3. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
-      "4. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
-      "5. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
-      "6. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
-      "7. Continue until a request/order/cart confirmation is visible, then verify the confirmed line count and quantity match the request before calling done.",
-      "8. Treat an Order Status page with a REQ request number as the final confirmation page; do not click request, item, or RITM links from it just to inspect.",
-      "9. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
+      "1. For ServiceNow module paths such as Reports > View/Run or Self-Service > Service Catalog, call open_servicenow_module before manual All-menu navigation.",
+      "2. If the target item name and requested quantity/options are already known and the item detail page is open, call configure_catalog_item immediately; pass expectedItem and submit=true when the order/request control is expected on the page.",
+      "3. Use inspect_catalog_item only when the item identity, quantity controls, options, price/summary, or order controls are still unknown.",
+      "4. On a catalog item detail page, prefer configure_catalog_item to set requested quantity, dropdown/radio-like options, checkbox states, and text requirements in one verified action. When the requested item name is known, pass it as expectedItem so lookalike catalog items are refused before submit.",
+      "5. If configure_catalog_item reports missing controls, fall back to manual controls for only the missing fields.",
+      "6. Re-inspect catalog state to verify the configuration before submitting when the helper did not submit.",
+      "7. After Add to Cart, inspect the cart/order state before checkout; if checkout controls are visible, do not configure or add the same item again.",
+      "8. Click the appropriate order, cart, checkout, or request control, or set submit=true in configure_catalog_item when the order/request button is visible.",
+      "9. Continue until a request/order/cart confirmation is visible, then verify the confirmed line count and quantity match the request before calling done.",
+      "10. Treat an Order Status page with a REQ request number as the final confirmation page; do not click request, item, or RITM links from it just to inspect.",
+      "11. Do not open requested-item/detail links just to inspect after a request is submitted; if you do, return to the request/order confirmation page before calling done.",
     ].join("\n"),
     requiredEvidence: [
       "Requested item and configuration",
@@ -1254,7 +1339,11 @@ const SKILL_BODIES: Record<
         "Inspect item, configure requested options, verify configuration, submit, verify confirmation.",
       ],
       toolDiscipline: [
-        "Prefer inspect_catalog_item after each page transition so visible quantity/options/order controls are not missed.",
+        "For named ServiceNow module navigation inside a catalog-order task, prefer open_servicenow_module before clicking All, typing into navigator search, or using global search.",
+        "When ordering an item chosen from prior evidence such as a chart, carry forward the exact item name and pass it to configure_catalog_item as expectedItem.",
+        "When the request says to order extra items so an existing quantity reaches a target, configure the extra difference quantity, not the final target quantity.",
+        "Do not call read_page or inspect_catalog_item on a catalog detail page when the target item and quantity/options are already known; call configure_catalog_item instead.",
+        "Use inspect_catalog_item after a page transition only when visible quantity/options/order controls are unknown or configure_catalog_item reports missing controls.",
         "Prefer configure_catalog_item over separate select_option, radio-option clicks, set_checkbox, type_text, and submit clicks when the requested configuration is explicit, including dropdown/select/radio-like values.",
         "Once the cart contains the requested item and Proceed to Checkout is visible, avoid Add to Cart and repeated configure_catalog_item calls for that same item.",
         "Once an Order Status page with a REQ number is visible, avoid clicking request/item links and call done from that confirmation page.",
@@ -1865,6 +1954,7 @@ const SKILL_BODIES: Record<
       "4. Do not submit while any requested field reports a mismatch or missing field.",
       "5. Submit by calling configure_servicenow_form with submit=true after all requested fields are verified; then verify a record detail, reset-to-next-record signal, or confirmation.",
       "6. If the helper reports missing fields, re-ground the form/module and retry once with corrected labels before falling back manually.",
+      "7. If a requested field is still absent after helper readback plus bounded page/hidden-field search, do not submit a partial record; answer that the task is infeasible and name the missing field.",
     ].join("\n"),
     requiredEvidence: [
       "Requested field/value mapping",
@@ -1907,6 +1997,7 @@ const SKILL_BODIES: Record<
       failureRecovery: [
         "If reference lookup fails, re-read the helper mismatch and retry with the visible display value from the prompt.",
         "If validation errors appear after submit, repair the named fields and submit once more.",
+        "If the requested field does not exist on the record form after bounded search, stop and report the missing field as the reason instead of cycling.",
       ],
     },
   },
@@ -2516,6 +2607,8 @@ const listFilterPattern =
   /\b(filter|condition builder|filter builder|show records where|query list|apply [^.\n]{0,80}filter|add [^.\n]{0,80}condition)\b/i;
 const listSortPattern =
   /\b(sort|order by|ascending|descending|sort column|sort [^.\n]{0,80}list|sort [^.\n]{0,80}table)\b/i;
+const listRowActionPattern =
+  /\b(delete|remove|mark [^.\n]{0,80}duplicate|selected rows?|list action|row action|actions? on selected rows?)\b/i;
 const catalogOrderPattern =
   /\b(service catalog|catalog item|request item|hardware store|hardware catalog|catalog option|optional software|add to cart|order now|place order|submit order|request [^.\n]{0,80}catalog|order\s+\d+\s+"[^"]{3,120}"\s+with\s+configuration)\b/i;
 const serviceNowModuleNavigationPattern =
@@ -2978,6 +3071,10 @@ export function resolveSkillToolProfile(
     return "form_fill";
   }
 
+  if (descriptor.id === "list-row-action-workflow") {
+    return "form_fill";
+  }
+
   if (descriptor.id === "chart-value-extraction") {
     return "read_only";
   }
@@ -3352,6 +3449,20 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "chart-value-extraction",
       "Task asks for a concrete value from a chart or dashboard and should use structured chart evidence before answering.",
+    );
+    if (selection) return selection;
+  }
+
+  if (
+    listRowActionPattern.test(corpus) &&
+    /\b(list|table|records?|rows?|incidents?|tickets?|results?|selected)\b/i.test(
+      corpus,
+    )
+  ) {
+    const selection = selectEnabledSkill(
+      input,
+      "list-row-action-workflow",
+      "Task requires selecting list/table rows and applying a selected-row action.",
     );
     if (selection) return selection;
   }

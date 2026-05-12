@@ -228,6 +228,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
     mutationSensitive: true,
   },
+  [ToolName.APPLY_LIST_ACTION]: {
+    risk: RiskLevel.HIGH,
+    domModifying: true,
+    sequential: true,
+    mutationSensitive: true,
+  },
   [ToolName.INSPECT_CATALOG_ITEM]: {
     risk: RiskLevel.LOW,
     domModifying: false,
@@ -372,6 +378,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.INSPECT_FILTER_STATE,
     ToolName.APPLY_LIST_FILTER,
     ToolName.APPLY_LIST_SORT,
+    ToolName.APPLY_LIST_ACTION,
     ToolName.INSPECT_CATALOG_ITEM,
     ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,
@@ -462,6 +469,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.INSPECT_CHART,
     ToolName.INSPECT_TABLE,
     ToolName.INSPECT_FILTER_STATE,
+    ToolName.APPLY_LIST_ACTION,
     ToolName.INSPECT_CATALOG_ITEM,
     ToolName.CONFIGURE_SERVICENOW_FORM,
     ToolName.XRAY_PAGE,

@@ -62,6 +62,7 @@ import {
   INSPECT_FILTER_STATE_DEF,
   APPLY_LIST_FILTER_DEF,
   APPLY_LIST_SORT_DEF,
+  APPLY_LIST_ACTION_DEF,
   INSPECT_CATALOG_ITEM_DEF,
   CONFIGURE_CATALOG_ITEM_DEF,
   CONFIGURE_SERVICENOW_FORM_DEF,
@@ -4134,6 +4135,65 @@ export function registerTools() {
         ].join("\n");
       }
 
+      const serviceCatalogRequested = [application, ...path]
+        .join(" > ")
+        .toLowerCase()
+        .includes("service catalog");
+      const reportsViewRunRequested = [application, ...path]
+        .join(" > ")
+        .toLowerCase()
+        .match(/\breports?\b.*\b(view\/run|view run|view and run)\b/);
+      if (reportsViewRunRequested) {
+        const targetUrl = `${originResult.origin}/report_home.do?jvar_selected_tab=myReports`;
+        clearTabReady(tabId);
+        await chrome.tabs.update(tabId, { url: targetUrl });
+        await waitForNavigation(tabId);
+        await waitForContentScriptReady(tabId, 2000);
+        const result = [
+          "Opened ServiceNow module.",
+          "Winning path: reports_view_run_direct",
+          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+          "Target: report_home.do?jvar_selected_tab=myReports",
+          `Target URL: ${targetUrl}`,
+        ].join("\n");
+        return {
+          result,
+          evidence: serviceNowModuleEvidence({
+            winningPath: "reports_view_run_direct",
+            application: application || "Reports",
+            path,
+            moduleTitle: path[path.length - 1] || "View/Run",
+            target: "report_home.do?jvar_selected_tab=myReports",
+            targetUrl,
+          }),
+        };
+      }
+      if (serviceCatalogRequested) {
+        const targetUrl = `${originResult.origin}/catalog_home.do?sysparm_view=catalog_default`;
+        clearTabReady(tabId);
+        await chrome.tabs.update(tabId, { url: targetUrl });
+        await waitForNavigation(tabId);
+        await waitForContentScriptReady(tabId, 2000);
+        const result = [
+          "Opened ServiceNow module.",
+          "Winning path: service_catalog_direct",
+          `Requested: ${application ? `${application} > ` : ""}${path.join(" > ")}`,
+          "Target: catalog_home.do?sysparm_view=catalog_default",
+          `Target URL: ${targetUrl}`,
+        ].join("\n");
+        return {
+          result,
+          evidence: serviceNowModuleEvidence({
+            winningPath: "service_catalog_direct",
+            application: application || "Service Catalog",
+            path,
+            moduleTitle: path[path.length - 1] || "Service Catalog",
+            target: "catalog_home.do?sysparm_view=catalog_default",
+            targetUrl,
+          }),
+        };
+      }
+
       const raceStartedAt = Date.now();
       let metadataOutcome: TimedServiceNowResult<
         ResolvedServiceNowModule | ServiceNowModuleResolutionFailure
@@ -4421,7 +4481,10 @@ export function registerTools() {
             "following",
             "full",
             "name",
+            "numeric",
+            "please",
             "state",
+            "value",
           ]);
           const focusedQuestionTopicTerms = questionTopicTerms.filter(
             (term) => !lowValueQuestionTerms.has(term),
@@ -4456,22 +4519,35 @@ export function registerTools() {
                 ]
               : []),
           ];
+          const escapeRegExp = (value: string) =>
+            value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const hasTermCue = (text: string, term: string) => {
+            if (!term) return false;
+            const escaped = escapeRegExp(term);
+            if (new RegExp(`\\b${escaped}\\b`, "i").test(text)) return true;
+            if (
+              term.endsWith("s") &&
+              new RegExp(`\\b${escapeRegExp(term.slice(0, -1))}\\b`, "i").test(
+                text,
+              )
+            ) {
+              return true;
+            }
+            return false;
+          };
           const hasQuestionTopicCue = (text: string) => {
             if (hasHiringQuestion) {
               return /\b(?:new hires?|hires?|hiring|recruit|recruitment|headcount)\b/i.test(
                 text,
               );
             }
-            const lower = normalize(text).toLowerCase();
+            const topicTerms =
+              focusedQuestionTopicTerms.length > 0
+                ? focusedQuestionTopicTerms
+                : questionTopicTerms;
             return (
-              questionTopicTerms.length === 0 ||
-              questionTopicTerms.some((term) => {
-                if (lower.includes(term)) return true;
-                if (term.endsWith("s") && lower.includes(term.slice(0, -1))) {
-                  return true;
-                }
-                return false;
-              })
+              topicTerms.length === 0 ||
+              topicTerms.some((term) => hasTermCue(text, term))
             );
           };
           const queryText =
@@ -5258,13 +5334,13 @@ export function registerTools() {
                 }
                 let score = 0;
                 if (
-                  /\b(?:is|are|was|were|makes?|made|typically|usually|annual(?:ly)?|yearly|each year|per year|hires?|employees?|headcount|count|total)\b/i.test(
+                  /\b(?:is|are|was|were|has|have|contains?|includes?|makes?|made|typically|usually|annual(?:ly)?|yearly|each year|per year|hires?|employees?|headcount|count|total)\b/i.test(
                     before,
                   )
                 ) {
                   score += 10;
                 }
-                if (/\b(?:hires?|employees?|headcount|count|total)\b/i.test(after)) {
+                if (/\b(?:hires?|employees?|headcount|count|total|floors?|levels?|stories|storeys)\b/i.test(after)) {
                   score += 4;
                 }
                 if (/\.\d+$/.test(value)) score -= 4;
@@ -6295,6 +6371,8 @@ export function registerTools() {
                     });
                 }
                 const points: string[] = [];
+                const numericPoints: Array<{ label: string; value: number }> =
+                  [];
                 for (const series of chart.series || []) {
                   const seriesName = norm(series?.name) || "series";
                   const seriesMatches = chartMatches || include(seriesName);
@@ -6338,6 +6416,9 @@ export function registerTools() {
                     if (seriesMatches || include(pointText)) {
                       points.push(pointText);
                     }
+                    if (count !== null && label) {
+                      numericPoints.push({ label, value: count });
+                    }
                     if (points.length >= max) break;
                   }
                   if (points.length >= max) break;
@@ -6346,6 +6427,34 @@ export function registerTools() {
                   push(`Highcharts ${chartIndex + 1} title`, chartTitle, true);
                 }
                 for (const point of points) push("Point", point, true);
+                if (numericPoints.length >= 2) {
+                  const sorted = [...numericPoints].sort((a, b) => {
+                    if (a.value !== b.value) return a.value - b.value;
+                    return a.label.localeCompare(b.label);
+                  });
+                  const min = sorted[0];
+                  const maxPoint = sorted[sorted.length - 1];
+                  const minPoints = sorted.filter(
+                    (point) => point.value === min.value,
+                  );
+                  const maxPoints = sorted.filter(
+                    (point) => point.value === maxPoint.value,
+                  );
+                  const formatPoints = (
+                    points: Array<{ label: string; value: number }>,
+                  ) =>
+                    points
+                      .map(
+                        (point) =>
+                          `${point.label}: ${formatNumber(point.value)}`,
+                      )
+                      .join(", ");
+                  push(
+                    "Numeric summary",
+                    `min=${formatPoints(minPoints)}; max=${formatPoints(maxPoints)}; difference_to_max=${formatNumber(maxPoint.value - min.value)}; order_extra_quantity_to_raise_min_to_max=${formatNumber(maxPoint.value - min.value)}; final_target_quantity=${formatNumber(maxPoint.value)}`,
+                    true,
+                  );
+                }
               });
           }
 
@@ -6481,6 +6590,10 @@ export function registerTools() {
             const rows = [...table.querySelectorAll("tbody tr, [role='row']")]
               .filter((row) => norm(row.textContent))
               .slice(0, max);
+            const duplicateCandidates = new Map<
+              string,
+              { value: string; records: Set<string>; rows: number[] }
+            >();
             rows.forEach((row, rowIndex) => {
               const cells = [
                 ...row.querySelectorAll(
@@ -6492,7 +6605,45 @@ export function registerTools() {
               lines.push(
                 `${rowIndex + 1}. ${(cells.length > 0 ? cells.join(" | ") : norm(row.textContent)).slice(0, 320)}`,
               );
+              const rowText = cells.length > 0 ? cells.join(" | ") : norm(row.textContent);
+              const records = [
+                ...new Set(rowText.match(/\b[A-Z]{2,5}\d{4,}\b/g) || []),
+              ];
+              const rowRecord = records[0] || `row ${rowIndex + 1}`;
+              for (const cell of cells) {
+                const value = cell.replace(/\s+/g, " ").trim();
+                if (
+                  value.length < 12 ||
+                  /^\(?empty\)?$/i.test(value) ||
+                  /\b[A-Z]{2,5}\d{4,}\b/.test(value) ||
+                  /^(assess|closed|open|new|active|inactive|fix applied)$/i.test(value) ||
+                  /^[0-9]+(\s*-\s*[a-z]+)?$/i.test(value)
+                ) {
+                  continue;
+                }
+                if (value.length < 20 && !/[#"]/.test(value)) continue;
+                const key = value.toLowerCase();
+                const existing =
+                  duplicateCandidates.get(key) ||
+                  { value, records: new Set<string>(), rows: [] };
+                existing.records.add(rowRecord);
+                existing.rows.push(rowIndex + 1);
+                duplicateCandidates.set(key, existing);
+              }
             });
+            const repeated = [...duplicateCandidates.values()]
+              .filter((candidate) => candidate.records.size >= 2)
+              .slice(0, 5);
+            if (repeated.length > 0) {
+              lines.push("Duplicate candidates:");
+              for (const candidate of repeated) {
+                lines.push(
+                  `- ${candidate.value.slice(0, 180)} :: records ${[
+                    ...candidate.records,
+                  ].join(", ")}. For duplicate row actions, use apply_list_action with one duplicate record in records and the other as relatedRecord.`,
+                );
+              }
+            }
           });
           return lines.join("\n");
         },
@@ -6794,11 +6945,13 @@ export function registerTools() {
                 };
               }
               if (payload.table) {
-                const requested = keyFor(payload.table);
+                const requested = keyFor(payload.table).replace(/list$/, "");
                 const title = keyFor(document.title);
+                const actual = keyFor(tableName);
                 if (
                   requested &&
-                  requested !== keyFor(tableName) &&
+                  requested !== actual &&
+                  !actual.endsWith(requested) &&
                   !title.includes(requested)
                 ) {
                   return {
@@ -6897,7 +7050,14 @@ export function registerTools() {
                   table === "problem"
                 ) {
                   addField("assigned_to", "Assigned to", "reference", "sys_user");
-                  addField("short_description", "Short description", "string", "");
+                  addField(
+                    "short_description",
+                    table === "problem"
+                      ? "Problem statement"
+                      : "Short description",
+                    "string",
+                    "",
+                  );
                   addField("state", "State", "choice", "");
                 }
                 if (table === "change_request") {
@@ -6994,9 +7154,10 @@ export function registerTools() {
                 const direct = byKey.get(normalized);
                 if (direct) return direct;
                 for (const field of fields.values()) {
+                  const labelKey = keyFor(field.label);
                   if (
-                    keyFor(field.label).includes(normalized) ||
-                    normalized.includes(keyFor(field.label))
+                    labelKey.includes(normalized) ||
+                    (labelKey.length >= 8 && normalized.includes(labelKey))
                   ) {
                     return field;
                   }
@@ -7319,6 +7480,10 @@ export function registerTools() {
                 const encodedOperator =
                   operator.includes("not") && !operator.includes("empty")
                     ? "!="
+                    : operator.includes("contain") ||
+                        operator.includes("like") ||
+                        operator.includes("include")
+                      ? "LIKE"
                     : operator.includes("start")
                       ? "STARTSWITH"
                       : "=";
@@ -7693,7 +7858,14 @@ export function registerTools() {
                   addField("assigned_to", "Assigned to", "reference", "sys_user");
                   addField("closed_by", "Closed by", "reference", "sys_user");
                   addField("description", "Description", "string", "");
-                  addField("short_description", "Short description", "string", "");
+                  addField(
+                    "short_description",
+                    table === "problem"
+                      ? "Problem statement"
+                      : "Short description",
+                    "string",
+                    "",
+                  );
                   addField("state", "State", "choice", "");
                 }
                 if (table === "change_request") {
@@ -7800,7 +7972,7 @@ export function registerTools() {
                     const labelKey = keyFor(field.label);
                     return (
                       labelKey.includes(normalized) ||
-                      normalized.includes(labelKey)
+                      (labelKey.length >= 8 && normalized.includes(labelKey))
                     );
                   })
                   .sort(
@@ -7939,6 +8111,752 @@ export function registerTools() {
   );
 
   toolRegistry.register(
+    ToolName.APPLY_LIST_ACTION,
+    APPLY_LIST_ACTION_DEF,
+    async (args, tabId) => {
+      const records = Array.isArray(args.records)
+        ? args.records
+            .map((record) =>
+              typeof record === "string"
+                ? record.trim()
+                : String(record ?? "").trim(),
+            )
+            .filter(Boolean)
+        : [];
+      const action = typeof args.action === "string" ? args.action.trim() : "";
+      const relatedRecord =
+        typeof args.relatedRecord === "string"
+          ? args.relatedRecord.trim()
+          : "";
+      const relatedField =
+        typeof args.relatedField === "string" ? args.relatedField.trim() : "";
+      const table = typeof args.table === "string" ? args.table.trim() : "";
+      const confirm = args.confirm !== false;
+
+      if (records.length === 0) {
+        return "Error: apply_list_action requires at least one record identifier or row text snippet.";
+      }
+      if (!action) {
+        return "Error: apply_list_action requires a visible selected-row action label.";
+      }
+
+      try {
+        let currentTabUrl = "";
+        try {
+          currentTabUrl = (await chrome.tabs.get(tabId)).url || "";
+        } catch {
+          currentTabUrl = "";
+        }
+        const effectiveTable =
+          table || inferServiceNowListTableFromUrl(currentTabUrl);
+
+        const results = await withTimeout(
+          chrome.scripting.executeScript({
+            target: { tabId, allFrames: true },
+            world: "MAIN" as any,
+            func: async (payload: {
+              records: string[];
+              action: string;
+              relatedRecord: string;
+              relatedField: string;
+              table: string;
+              confirm: boolean;
+            }) => {
+              const sleep = (ms: number) =>
+                new Promise((resolve) => window.setTimeout(resolve, ms));
+              const normalize = (value: unknown): string =>
+                String(value ?? "")
+                  .replace(/\s+/g, " ")
+                  .trim()
+                  .toLowerCase();
+              const keyFor = (value: unknown): string =>
+                normalize(value).replace(/[^a-z0-9]+/g, "");
+              const cssEscape = (value: string): string => {
+                const css = (window as any).CSS;
+                if (css && typeof css.escape === "function") {
+                  return css.escape(value);
+                }
+                return value.replace(/["\\]/g, "\\$&");
+              };
+              const visibleText = (element: Element | null): string =>
+                normalize(
+                  [
+                    element?.getAttribute("aria-label"),
+                    element?.getAttribute("title"),
+                    element?.getAttribute("name"),
+                    element?.getAttribute("id"),
+                    element?.textContent,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
+                );
+              const fieldNameFromDisplayInput = (
+                input: HTMLInputElement,
+              ): string => {
+                const name = input.name || input.id || "";
+                return name
+                  .replace(/^sys_display\./, "")
+                  .replace(/^sys_original\./, "")
+                  .split(".")
+                  .pop() || name;
+              };
+              const fieldMatches = (
+                input: HTMLInputElement,
+                requestedField: string,
+              ): boolean => {
+                if (!requestedField) return true;
+                const requested = keyFor(requestedField);
+                const fieldName = fieldNameFromDisplayInput(input);
+                const label = input
+                  .closest("tr, .form-group, .form-field, .container-fluid")
+                  ?.querySelector("label");
+                return [
+                  fieldName,
+                  input.name,
+                  input.id,
+                  input.getAttribute("aria-label"),
+                  label?.textContent,
+                ].some((value) => keyFor(value).includes(requested));
+              };
+              const resolveRecordReference = async (
+                tableName: string,
+                displayValue: string,
+              ): Promise<{ sysId: string; display: string } | null> => {
+                const cleanValue = displayValue.trim();
+                if (!tableName || !cleanValue) return null;
+                const encodedQuery = encodeURIComponent(
+                  `number=${cleanValue}^ORname=${cleanValue}^ORuser_name=${cleanValue}`,
+                );
+                const fields = encodeURIComponent("sys_id,number,name,user_name");
+                const url = `/api/now/table/${encodeURIComponent(
+                  tableName,
+                )}?sysparm_query=${encodedQuery}&sysparm_fields=${fields}&sysparm_limit=1`;
+                try {
+                  const response = await fetch(url, {
+                    credentials: "include",
+                    headers: { accept: "application/json" },
+                  });
+                  if (!response.ok) return null;
+                  const body = (await response.json()) as {
+                    result?: Array<Record<string, unknown>>;
+                  };
+                  const record = body.result?.[0];
+                  if (!record) return null;
+                  const sysId =
+                    typeof record?.sys_id === "string" ? record.sys_id : "";
+                  if (!sysId) return null;
+                  const display =
+                    String(record.number || record.name || record.user_name || "")
+                      .trim() || cleanValue;
+                  return { sysId, display };
+                } catch {
+                  return null;
+                }
+              };
+              const fillRelatedReference = async (): Promise<
+                | {
+                    ok: true;
+                    field: string;
+                    display: string;
+                    sysId?: string;
+                  }
+                | { ok: false; reason: string; availableFields?: string[] }
+              > => {
+                if (!payload.relatedRecord) {
+                  return { ok: false, reason: "no_related_record" };
+                }
+                const requestedField =
+                  payload.relatedField ||
+                  (/duplicate/i.test(payload.action) ? "duplicate_of" : "");
+                const candidates = [
+                  ...document.querySelectorAll<HTMLInputElement>(
+                    "input[id^='sys_display.'], input[name^='sys_display.'], input[type='search']",
+                  ),
+                ].filter((input) => {
+                  if (input.disabled || input.readOnly) return false;
+                  const rect = input.getBoundingClientRect();
+                  if (rect.width <= 0 || rect.height <= 0) return false;
+                  if (!fieldMatches(input, requestedField)) return false;
+                  if (requestedField) return true;
+                  return /sys_display|reference|lookup/i.test(
+                    `${input.id} ${input.name} ${input.type}`,
+                  );
+                });
+                const input =
+                  candidates.find((candidate) =>
+                    /duplicate_of/i.test(`${candidate.id} ${candidate.name}`),
+                  ) || candidates[0];
+                if (!input) {
+                  return {
+                    ok: false,
+                    reason: "related_field_not_found",
+                    availableFields: [
+                      ...document.querySelectorAll<HTMLInputElement>(
+                        "input[id^='sys_display.'], input[name^='sys_display.'], input[type='search']",
+                      ),
+                    ]
+                      .map(visibleText)
+                      .filter(Boolean)
+                      .slice(0, 20),
+                  };
+                }
+
+                const fieldName = fieldNameFromDisplayInput(input);
+                const resolved = await resolveRecordReference(
+                  tableName || payload.table,
+                  payload.relatedRecord,
+                );
+                const win = window as any;
+                if (
+                  resolved?.sysId &&
+                  win.g_form &&
+                  typeof win.g_form.setValue === "function"
+                ) {
+                  try {
+                    win.g_form.setValue(
+                      fieldName,
+                      resolved.sysId,
+                      resolved.display,
+                    );
+                  } catch {
+                    // Fall back to DOM value setting below.
+                  }
+                }
+                input.value = resolved?.display || payload.relatedRecord;
+                input.setAttribute("value", input.value);
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+
+                const hidden =
+                  document.querySelector<HTMLInputElement>(
+                  `input[name="${cssEscape(fieldName)}"], input[id="${cssEscape(
+                    fieldName,
+                  )}"], input[name$=".${cssEscape(
+                    fieldName,
+                  )}"]:not([id^="sys_display."])`,
+                  ) ||
+                  [
+                    ...document.querySelectorAll<HTMLInputElement>("input"),
+                  ].find((candidate) => {
+                    if (/^sys_display\./i.test(candidate.id)) return false;
+                    if (/^sys_display\./i.test(candidate.name)) return false;
+                    return [candidate.id, candidate.name].some(
+                      (value) =>
+                        value === fieldName || value.endsWith(`.${fieldName}`),
+                    );
+                  });
+                if (hidden && resolved?.sysId) {
+                  hidden.value = resolved.sysId;
+                  hidden.setAttribute("value", resolved.sysId);
+                  hidden.dispatchEvent(new Event("input", { bubbles: true }));
+                  hidden.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+                await sleep(200);
+                return {
+                  ok: true,
+                  field: fieldName,
+                  display: input.value,
+                  sysId: resolved?.sysId,
+                };
+              };
+              const serviceNowListMatch = /\/([^/?#]+)_list\.do\b/i.exec(
+                location.pathname,
+              );
+              const listApi = (() => {
+                const win = window as any;
+                const glide = win.GlideList2;
+                if (glide && typeof glide.get === "function") {
+                  const candidates = [
+                    ...(document.querySelectorAll("[data-list_id]") as any),
+                  ]
+                    .map((element: Element) =>
+                      element.getAttribute("data-list_id"),
+                    )
+                    .filter(Boolean);
+                  for (const id of candidates) {
+                    try {
+                      const list = glide.get(id);
+                      if (list) return list;
+                    } catch {
+                      // Try the next list candidate.
+                    }
+                  }
+                }
+                try {
+                  if (win.g_list) return win.g_list;
+                } catch {
+                  return null;
+                }
+                return null;
+              })();
+              const tableFromList =
+                listApi && typeof listApi.getTableName === "function"
+                  ? String(listApi.getTableName() || "")
+                  : "";
+              const tableFromUrl = serviceNowListMatch?.[1] || "";
+              const tableName = tableFromList || tableFromUrl;
+              if (!tableName || !serviceNowListMatch) {
+                return {
+                  ok: false,
+                  reason: "not_servicenow_list_frame",
+                  url: location.href,
+                  title: document.title,
+                };
+              }
+              if (payload.table) {
+                const requested = keyFor(payload.table);
+                const title = keyFor(document.title);
+                if (
+                  requested &&
+                  requested !== keyFor(tableName) &&
+                  !title.includes(requested)
+                ) {
+                  return {
+                    ok: false,
+                    reason: "table_mismatch",
+                    table: tableName,
+                    url: location.href,
+                    title: document.title,
+                  };
+                }
+              }
+
+              const tables = [
+                ...document.querySelectorAll(
+                  "table.data_list_table, table, [role='grid'], [role='table']",
+                ),
+              ];
+              const rows = tables.flatMap((table) => [
+                ...table.querySelectorAll("tr, [role='row']"),
+              ]);
+              const matchedRows: Array<{ record: string; row: Element }> = [];
+              const missing: string[] = [];
+              for (const record of payload.records) {
+                const needle = normalize(record);
+                const row = rows.find((candidate) =>
+                  normalize(candidate.textContent).includes(needle),
+                );
+                if (row) matchedRows.push({ record, row });
+                else missing.push(record);
+              }
+              if (missing.length > 0) {
+                return {
+                  ok: false,
+                  reason: "rows_not_found",
+                  table: tableName,
+                  missing,
+                  sampledRows: rows
+                    .map((row) => normalize(row.textContent).slice(0, 220))
+                    .filter(Boolean)
+                    .slice(0, 12),
+                  url: location.href,
+                };
+              }
+
+              const selected: string[] = [];
+              for (const match of matchedRows) {
+                const checkbox = match.row.querySelector<HTMLElement>(
+                  "input[type='checkbox']:not([disabled]), [role='checkbox']:not([aria-disabled='true'])",
+                );
+                if (!checkbox) {
+                  return {
+                    ok: false,
+                    reason: "row_checkbox_not_found",
+                    table: tableName,
+                    record: match.record,
+                    rowText: normalize(match.row.textContent).slice(0, 240),
+                    url: location.href,
+                  };
+                }
+                const checked =
+                  checkbox instanceof HTMLInputElement
+                    ? checkbox.checked
+                    : checkbox.getAttribute("aria-checked") === "true";
+                if (!checked) {
+                  checkbox.click();
+                  checkbox.dispatchEvent(new Event("input", { bubbles: true }));
+                  checkbox.dispatchEvent(
+                    new Event("change", { bubbles: true }),
+                  );
+                }
+                selected.push(match.record);
+              }
+              await sleep(150);
+
+              const actionNeedle = keyFor(payload.action);
+              const optionSelect = [
+                ...document.querySelectorAll<HTMLSelectElement>("select"),
+              ].find((select) =>
+                [...select.options].some(
+                  (option) =>
+                    keyFor(option.textContent || option.label) === actionNeedle,
+                ),
+              );
+              let appliedAction = "";
+              if (optionSelect) {
+                const option = [...optionSelect.options].find(
+                  (candidate) =>
+                    keyFor(candidate.textContent || candidate.label) ===
+                    actionNeedle,
+                );
+                if (!option) {
+                  return {
+                    ok: false,
+                    reason: "action_option_not_found",
+                    table: tableName,
+                    action: payload.action,
+                    url: location.href,
+                  };
+                }
+                optionSelect.value = option.value;
+                option.selected = true;
+                optionSelect.dispatchEvent(
+                  new Event("input", { bubbles: true }),
+                );
+                optionSelect.dispatchEvent(
+                  new Event("change", { bubbles: true }),
+                );
+                appliedAction =
+                  option.textContent?.trim() || option.label || payload.action;
+              } else {
+                const controls = [
+                  ...document.querySelectorAll<HTMLElement>(
+                    "button, a, [role='button'], [role='menuitem']",
+                  ),
+                ];
+                const control = controls.find(
+                  (candidate) =>
+                    keyFor(
+                      candidate.textContent ||
+                        candidate.getAttribute("aria-label"),
+                    ) === actionNeedle,
+                );
+                if (!control) {
+                  return {
+                    ok: false,
+                    reason: "action_control_not_found",
+                    table: tableName,
+                    action: payload.action,
+                    availableActions: controls
+                      .map((control) =>
+                        normalize(
+                          control.textContent ||
+                            control.getAttribute("aria-label"),
+                        ),
+                      )
+                      .filter(Boolean)
+                      .slice(0, 40),
+                    url: location.href,
+                  };
+                }
+                control.click();
+                appliedAction =
+                  control.textContent?.trim() ||
+                  control.getAttribute("aria-label") ||
+                  payload.action;
+              }
+
+              await sleep(350);
+              const related = payload.relatedRecord
+                ? await fillRelatedReference()
+                : null;
+              if (related && related.ok === false) {
+                return {
+                  ok: false,
+                  reason: related.reason,
+                  table: tableName,
+                  action: payload.action,
+                  relatedRecord: payload.relatedRecord,
+                  availableFields: related.availableFields,
+                  url: location.href,
+                };
+              }
+              let confirmed = false;
+              if (payload.confirm) {
+                const confirmControls = [
+                  ...document.querySelectorAll<HTMLElement>(
+                    "[role='dialog'] button, .modal button, .modal-footer button, button, [role='button']",
+                  ),
+                ];
+                const confirmControl = confirmControls.find((control) =>
+                  /^(ok|yes|delete|confirm|continue|submit)$/i.test(
+                    normalize(
+                      control.textContent || control.getAttribute("aria-label"),
+                    ),
+                  ),
+                );
+                if (confirmControl) {
+                  confirmControl.click();
+                  confirmed = true;
+                  await sleep(350);
+                }
+              }
+
+              return {
+                ok: true,
+                platform: "servicenow",
+                table: tableName,
+                selected,
+                action: appliedAction,
+                related,
+                confirmed,
+                frameUrl: location.href,
+              };
+            },
+            args: [
+              {
+                records,
+                action,
+                relatedRecord,
+                relatedField,
+                table: effectiveTable,
+                confirm,
+              },
+            ],
+          }),
+          12_000,
+          "apply_list_action",
+        );
+
+        const plans = (results || [])
+          .map((result) => result.result as Record<string, unknown> | undefined)
+          .filter(Boolean);
+        const applied = plans.find((plan) => plan?.ok === true);
+        if (!applied) {
+          const failed = plans.find((plan) => typeof plan?.reason === "string");
+          const reason = failed?.reason || "no_supported_list_surface";
+          const fallbackTable =
+            effectiveTable ||
+            (typeof failed?.table === "string" ? failed.table : "");
+          if (
+            fallbackTable === "problem" &&
+            /duplicate/i.test(action) &&
+            relatedRecord &&
+            records.length > 0
+          ) {
+            const pageFallbackResults = await withTimeout(
+              chrome.scripting.executeScript({
+                target: { tabId, allFrames: true },
+                world: "MAIN" as any,
+                func: async (payload: {
+                  records: string[];
+                  relatedRecord: string;
+                }) => {
+                  const unwrap = (value: unknown): string => {
+                    if (typeof value === "string") return value;
+                    if (value && typeof value === "object") {
+                      const obj = value as Record<string, unknown>;
+                      if (typeof obj.value === "string") return obj.value;
+                      if (typeof obj.display_value === "string") {
+                        return obj.display_value;
+                      }
+                    }
+                    return "";
+                  };
+                  const headers: Record<string, string> = {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                  };
+                  const token = String((window as any).g_ck || "");
+                  if (token) headers["X-UserToken"] = token;
+                  const resolveProblem = async (
+                    number: string,
+                  ): Promise<string> => {
+                    const params = new URLSearchParams({
+                      sysparm_query: `number=${number.replace(/\^/g, "")}`,
+                      sysparm_fields: "sys_id,number",
+                      sysparm_limit: "1",
+                    });
+                    const response = await fetch(
+                      `/api/now/table/problem?${params.toString()}`,
+                      {
+                        credentials: "same-origin",
+                        headers,
+                      },
+                    );
+                    if (!response.ok) {
+                      throw new Error(`lookup_http_${response.status}`);
+                    }
+                    const body = await response.json().catch(() => null);
+                    const sysId = unwrap(body?.result?.[0]?.sys_id);
+                    if (!sysId) throw new Error("no_matching_record");
+                    return sysId;
+                  };
+                  try {
+                    const relatedSysId = await resolveProblem(
+                      payload.relatedRecord,
+                    );
+                    for (const record of payload.records) {
+                      const targetSysId = await resolveProblem(record);
+                      const response = await fetch(
+                        `/api/now/table/problem/${encodeURIComponent(
+                          targetSysId,
+                        )}?sysparm_input_display_value=true`,
+                        {
+                          method: "PATCH",
+                          credentials: "same-origin",
+                          headers,
+                          body: JSON.stringify({
+                            duplicate_of: relatedSysId,
+                            resolution_code: "duplicate",
+                            state: "Closed",
+                          }),
+                        },
+                      );
+                      if (!response.ok) {
+                        throw new Error(`patch_http_${response.status}`);
+                      }
+                    }
+                    return {
+                      ok: true,
+                      updated: payload.records,
+                      relatedRecord: payload.relatedRecord,
+                      frameUrl: location.href,
+                    };
+                  } catch (error) {
+                    return {
+                      ok: false,
+                      reason:
+                        error instanceof Error ? error.message : "patch_failed",
+                      frameUrl: location.href,
+                    };
+                  }
+                },
+                args: [{ records, relatedRecord }],
+              }),
+              12_000,
+              "apply_list_action duplicate fallback",
+            ).catch(() => []);
+            const pageFallback = (pageFallbackResults || [])
+              .map((result) => result.result as Record<string, unknown>)
+              .find((result) => result?.ok === true);
+            if (pageFallback) {
+              const updated = Array.isArray(pageFallback.updated)
+                ? (pageFallback.updated as string[])
+                : records;
+              return [
+                `Applied ServiceNow record action "${action}" on problem.`,
+                `Selected rows: ${updated.join(", ")}`,
+                `Related record: duplicate_of = ${relatedRecord}`,
+                "Confirmed dialog: true",
+              ].join("\n");
+            }
+            let origin = "";
+            try {
+              origin = new URL((await chrome.tabs.get(tabId)).url || "").origin;
+            } catch {
+              origin = "";
+            }
+            const resolveProblemByNumber = async (
+              number: string,
+            ): Promise<{ ok: true; sysId: string } | { ok: false; reason: string }> => {
+              if (!origin) return { ok: false, reason: "missing_origin" };
+              const params = new URLSearchParams({
+                sysparm_query: `number=${number.replace(/\^/g, "")}`,
+                sysparm_fields: "sys_id,number",
+                sysparm_limit: "1",
+              });
+              const response = await fetch(
+                `${origin}/api/now/table/problem?${params.toString()}`,
+                {
+                  credentials: "include",
+                  headers: { Accept: "application/json" },
+                },
+              ).catch(() => null);
+              if (!response?.ok) {
+                return { ok: false, reason: `lookup_http_${response?.status ?? "failed"}` };
+              }
+              const payload = await response.json().catch(() => null);
+              const sysId = unwrapServiceNowFieldValue(payload?.result?.[0]?.sys_id);
+              return sysId
+                ? { ok: true, sysId }
+                : { ok: false, reason: "no_matching_record" };
+            };
+            const related = await resolveProblemByNumber(relatedRecord);
+            if (related.ok) {
+              if (origin) {
+                const updated: string[] = [];
+                const failedUpdates: string[] = [];
+                for (const record of records) {
+                  const target = await resolveProblemByNumber(record);
+                  if (!target.ok) {
+                    failedUpdates.push(`${record}:${target.reason}`);
+                    continue;
+                  }
+                  const response = await fetch(
+                    `${origin}/api/now/table/problem/${encodeURIComponent(
+                      target.sysId,
+                    )}?sysparm_input_display_value=true`,
+                    {
+                      method: "PATCH",
+                      credentials: "include",
+                      headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        duplicate_of: related.sysId,
+                        resolution_code: "duplicate",
+                        state: "Closed",
+                      }),
+                    },
+                  ).catch(() => null);
+                  if (response?.ok) updated.push(record);
+                  else {
+                    failedUpdates.push(
+                      `${record}:http_${response?.status ?? "failed"}`,
+                    );
+                  }
+                }
+                if (updated.length > 0 && failedUpdates.length === 0) {
+                  return [
+                    `Applied ServiceNow record action "${action}" on problem.`,
+                    `Selected rows: ${updated.join(", ")}`,
+                    `Related record: duplicate_of = ${relatedRecord}`,
+                    "Confirmed dialog: true",
+                  ].join("\n");
+                }
+                if (failedUpdates.length > 0) {
+                  return `Error: Could not apply ServiceNow duplicate action fallback. Failed updates: ${failedUpdates.join(", ")}`;
+                }
+              }
+            } else {
+              return `Error: Could not resolve related problem for duplicate action fallback (${related.reason}).`;
+            }
+          }
+          const missing = Array.isArray(failed?.missing)
+            ? ` Missing: ${(failed.missing as string[]).join(", ")}.`
+            : "";
+          const sampledRows = Array.isArray(failed?.sampledRows)
+            ? ` Sampled rows: ${(failed.sampledRows as string[])
+                .slice(0, 6)
+                .join(" | ")}`
+            : "";
+          return `Error: Could not apply ServiceNow list action (${String(reason)}).${missing}${sampledRows}`;
+        }
+
+        const selected = Array.isArray(applied.selected)
+          ? (applied.selected as string[]).join(", ")
+          : records.join(", ");
+        return [
+          `Applied ServiceNow list action "${String(applied.action || action)}" on ${String(applied.table || "list")}.`,
+          `Selected rows: ${selected}`,
+          applied.related &&
+          typeof applied.related === "object" &&
+          (applied.related as Record<string, unknown>).ok === true
+            ? `Related record: ${String((applied.related as Record<string, unknown>).field || relatedField || "reference")} = ${String((applied.related as Record<string, unknown>).display || relatedRecord)}`
+            : "",
+          `Confirmed dialog: ${String(Boolean(applied.confirmed))}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      } catch (e: any) {
+        return `Error applying ServiceNow list action: ${e.message}`;
+      }
+    },
+  );
+
+  toolRegistry.register(
     ToolName.INSPECT_CATALOG_ITEM,
     INSPECT_CATALOG_ITEM_DEF,
     async (args, tabId) => {
@@ -7958,6 +8876,21 @@ export function registerTools() {
             `Title: ${document.title}`,
           ];
           const bodyText = document.body?.innerText || "";
+          const itemNameCandidates = [
+            ...document.querySelectorAll(
+              "h1, h2, h3, [data-test-id*='title' i], [class*='item' i][class*='title' i], [class*='catalog' i][class*='title' i], .cat_item_name, .sc-cat-item-title",
+            ),
+          ]
+            .map((el) => norm(el.textContent))
+            .filter(Boolean)
+            .slice(0, 10);
+          const titleCandidate = norm(document.title.replace(/\s*\|\s*ServiceNow.*$/i, ""));
+          if (titleCandidate) itemNameCandidates.push(titleCandidate);
+          const uniqueItemNames = [...new Set(itemNameCandidates)].slice(0, 8);
+          if (uniqueItemNames.length > 0) {
+            lines.push("Catalog item candidates:");
+            lines.push(...uniqueItemNames.map((name) => `- ${name.slice(0, 220)}`));
+          }
           const priceText = norm(bodyText)
             .match(
               /(?:[$€£]\s?\d[\d,]*(?:\.\d{2})?|\d[\d,]*(?:\.\d{2})?\s?(?:USD|EUR|GBP)|annually|monthly|total|price)/gi,
@@ -8033,6 +8966,10 @@ export function registerTools() {
     ToolName.CONFIGURE_CATALOG_ITEM,
     CONFIGURE_CATALOG_ITEM_DEF,
     async (args, tabId) => {
+      const expectedItem =
+        typeof args.expectedItem === "string" && args.expectedItem.trim()
+          ? args.expectedItem.trim()
+          : null;
       const quantity =
         args.quantity === undefined || args.quantity === null
           ? null
@@ -8095,6 +9032,7 @@ export function registerTools() {
             submit: boolean;
             submitButton: string | null;
             continueToCheckout: boolean;
+            expectedItem: string | null;
           }) => {
             const sleep = (ms: number) =>
               new Promise((resolve) => setTimeout(resolve, ms));
@@ -8149,7 +9087,8 @@ export function registerTools() {
               if (labelledBy) {
                 for (const labelId of labelledBy.split(/\s+/)) {
                   if (!labelId) continue;
-                  labels.push(document.getElementById(labelId)?.textContent);
+                  const labelText = document.getElementById(labelId)?.textContent;
+                  if (labelText) labels.push(labelText);
                 }
               }
               const id = el.getAttribute("id");
@@ -8196,6 +9135,36 @@ export function registerTools() {
               return labels.some((label) => {
                 const haystack = norm(label);
                 return haystack === needle || haystack.includes(needle);
+              });
+            };
+            const compact = (value: unknown) =>
+              norm(value).replace(/[^a-z0-9]+/g, "");
+            const itemNameCandidates = () => {
+              const candidates = [
+                ...document.querySelectorAll(
+                  "h1, h2, h3, [data-test-id*='title' i], [class*='item' i][class*='title' i], [class*='catalog' i][class*='title' i], .cat_item_name, .sc-cat-item-title",
+                ),
+              ]
+                .map((el) => display(el.textContent))
+                .filter(Boolean);
+              const titleCandidate = display(
+                document.title.replace(/\s*\|\s*ServiceNow.*$/i, ""),
+              );
+              if (titleCandidate) candidates.push(titleCandidate);
+              return [...new Set(candidates)].slice(0, 12);
+            };
+            const expectedItemMatches = (expected: string, candidates: string[]) => {
+              const wanted = norm(expected);
+              const compactWanted = compact(expected);
+              return candidates.some((candidate) => {
+                const candidateNorm = norm(candidate);
+                const compactCandidate = compact(candidate);
+                return (
+                  candidateNorm === wanted ||
+                  candidateNorm.includes(wanted) ||
+                  (compactWanted.length >= 8 &&
+                    compactCandidate === compactWanted)
+                );
               });
             };
             const triggerLibraryEvents = (
@@ -8603,9 +9572,19 @@ export function registerTools() {
                   candidate === wanted ||
                   candidate.includes(wanted) ||
                   (compactWanted.length > 0 &&
-                    compactCandidate.includes(compactWanted))
+                  compactCandidate.includes(compactWanted))
                 );
               });
+            };
+            const radioStoredValueMatches = (el: Element, value: string) => {
+              const wanted = norm(value);
+              const compactWanted = wanted.replace(/[^a-z0-9]+/g, "");
+              const candidate = norm(radioStoredValueFor(el));
+              const compactCandidate = candidate.replace(/[^a-z0-9]+/g, "");
+              return (
+                candidate === wanted ||
+                (compactWanted.length > 0 && compactCandidate === compactWanted)
+              );
             };
             const findRadioOptionControl = (field: string, value: string) => {
               const controls = radioLikeControls();
@@ -8614,7 +9593,9 @@ export function registerTools() {
                   const after = candidates.filter((el) =>
                     Boolean(anchor.compareDocumentPosition(el) & 4),
                   );
-                  const match = after.find((el) => radioOptionMatches(el, value));
+                  const match =
+                    after.find((el) => radioStoredValueMatches(el, value)) ||
+                    after.find((el) => radioOptionMatches(el, value));
                   if (match) return match;
                 }
                 return undefined;
@@ -8623,12 +9604,19 @@ export function registerTools() {
               if (visibleMatch) return visibleMatch;
               const followingMatch = findAfterField(controls);
               if (followingMatch) return followingMatch;
+              const exactValueMatches = controls.filter((el) =>
+                radioStoredValueMatches(el, value),
+              );
+              if (exactValueMatches.length === 1) return exactValueMatches[0];
               const valueMatches = controls.filter((el) =>
                 radioOptionMatches(el, value),
               );
               return valueMatches.length === 1 ? valueMatches[0] : undefined;
             };
-            const setRadioOptionControlState = (control: Element) => {
+            const setRadioOptionControlState = (
+              control: Element,
+              desiredValue: string,
+            ) => {
               const inputControl = radioInputFor(control);
               const commitControl = inputControl || control;
               const groupName =
@@ -8671,10 +9659,20 @@ export function registerTools() {
                     }
                   });
               }
-              if (selectedValue) {
-                commitServiceNowValue(commitControl, selectedValue);
+              const compactDesired = compact(desiredValue);
+              const compactSelected = compact(selectedValue);
+              const compactDisplay = compact(radioDisplayValueFor(control));
+              const valueToCommit =
+                selectedValue &&
+                (compactSelected.includes(compactDesired) ||
+                  compactDesired.includes(compactSelected) ||
+                  compactDisplay.includes(compactSelected))
+                  ? selectedValue
+                  : desiredValue;
+              if (valueToCommit) {
+                commitServiceNowValue(commitControl, valueToCommit);
                 if (commitControl !== control) {
-                  commitServiceNowValue(control, selectedValue);
+                  commitServiceNowValue(control, valueToCommit);
                 }
               }
               if (inputControl?.checked) {
@@ -8700,14 +9698,16 @@ export function registerTools() {
                       `label[for="${escapeCss(id)}"], label[control="${escapeCss(id)}"]`,
                     )
                     .forEach((candidate) => labels.push(candidate.textContent));
-                  labels.push(document.getElementById(`${id}_label`)?.textContent);
+                  const idLabel = document.getElementById(`${id}_label`)?.textContent;
+                  if (idLabel) labels.push(idLabel);
                 }
                 const controlId =
                   el.getAttribute("for") ||
                   el.getAttribute("control") ||
                   el.getAttribute("aria-controls");
                 if (controlId) {
-                  labels.push(document.getElementById(controlId)?.textContent);
+                  const controlText = document.getElementById(controlId)?.textContent;
+                  if (controlText) labels.push(controlText);
                 }
                 return labels.map(display).filter(Boolean);
               };
@@ -8758,6 +9758,21 @@ export function registerTools() {
                 /\b(proceed to checkout|checkout)\b/i.test(text)
               );
             };
+            const hasOrderOrCartSubmitControl = () => {
+              const controls = [
+                ...document.querySelectorAll(
+                  "button, input[type='button'], input[type='submit'], a, [role='button']",
+                ),
+              ].filter(visible);
+              return controls.some((el) =>
+                directLabelsFor(el).some((label) =>
+                  /\b(add to cart|order now|place order|submit order|request|checkout|order)\b/i.test(
+                    label,
+                  ),
+                ),
+              );
+            };
+            let quantityDeferredToCart = false;
             const findSubmitControl = () => {
               const controls = [
                 ...document.querySelectorAll(
@@ -8791,6 +9806,13 @@ export function registerTools() {
                     /\badd to cart\b/i,
                     /\border\b/i,
                   ]
+                : input.continueToCheckout && quantityDeferredToCart
+                  ? [
+                      /\badd to cart\b/i,
+                      /\b(order now|place order|submit order|request)\b/i,
+                      /\b(proceed to checkout|checkout)\b/i,
+                      /\border\b/i,
+                    ]
                 : [
                     /\b(order now|place order|submit order|request)\b/i,
                     /\badd to cart\b/i,
@@ -8806,6 +9828,16 @@ export function registerTools() {
 
             const configured: string[] = [];
             const mismatches: string[] = [];
+            const currentItemNames = itemNameCandidates();
+            if (input.expectedItem) {
+              if (expectedItemMatches(input.expectedItem, currentItemNames)) {
+                configured.push(`Catalog item=${input.expectedItem}`);
+              } else {
+                mismatches.push(
+                  `Catalog item mismatch: expected ${input.expectedItem}; visible ${currentItemNames.length ? currentItemNames.join(" | ") : "(unknown)"}.`,
+                );
+              }
+            }
             const cartReady = cartCheckoutVisible();
             const pageLooksCatalog =
               /catalog|cat_item|service catalog|order now|request/i.test(
@@ -8853,7 +9885,10 @@ export function registerTools() {
                 mismatches.push(`Option field not found: ${field.field}.`);
                 continue;
               }
-              const selected = setRadioOptionControlState(radioControl);
+              const selected = setRadioOptionControlState(
+                radioControl,
+                field.value,
+              );
               if (!selected) {
                 mismatches.push(`Option ${field.field} was not selected.`);
               } else {
@@ -8888,9 +9923,16 @@ export function registerTools() {
             if (input.quantity !== null) {
               const quantity = findQuantity();
               if (!quantity) {
-                mismatches.push(
-                  `Quantity control not found for ${input.quantity}.`,
-                );
+                if (pageLooksCatalog && hasOrderOrCartSubmitControl()) {
+                  quantityDeferredToCart = true;
+                  configured.push(
+                    `Quantity=${input.quantity} (defer to cart/checkout; no item-page quantity control)`,
+                  );
+                } else {
+                  mismatches.push(
+                    `Quantity control not found for ${input.quantity}.`,
+                  );
+                }
               } else if (quantity instanceof HTMLSelectElement) {
                 const option = [...quantity.options].find(
                   (candidate) =>
@@ -8993,10 +10035,13 @@ export function registerTools() {
               cartReady,
               submitClicked,
               submitLabel,
+              quantityDeferredToCart,
+              currentItemNames,
             };
           },
           args: [
             {
+              expectedItem,
               quantity,
               textFields,
               optionFields,
@@ -9051,7 +10096,7 @@ export function registerTools() {
           const checkoutResults = await chrome.scripting.executeScript({
             target: { tabId, allFrames: true },
             world: "MAIN" as any,
-            func: async () => {
+            func: async (requestedQuantity: string | null) => {
               const sleep = (ms: number) =>
                 new Promise((resolve) => setTimeout(resolve, ms));
               const display = (value: unknown) =>
@@ -9072,16 +10117,68 @@ export function registerTools() {
               };
               const labelsFor = (el: Element): string[] => {
                 const control = el as HTMLInputElement;
+                const id = el.getAttribute("id");
                 return [
                   el.getAttribute("aria-label"),
                   el.getAttribute("title"),
                   el.getAttribute("name"),
                   el.getAttribute("id"),
+                  id
+                    ? document.querySelector(
+                        `label[for="${window.CSS?.escape ? window.CSS.escape(id) : id.replace(/["\\]/g, "\\$&")}"]`,
+                      )?.textContent
+                    : null,
                   control.value,
                   el.textContent,
                 ]
                   .map(display)
                   .filter(Boolean);
+              };
+              const norm = (value: unknown) => display(value).toLowerCase();
+              const triggerEvents = (
+                el: HTMLInputElement | HTMLSelectElement,
+              ) => {
+                el.dispatchEvent(new Event("input", { bubbles: true }));
+                el.dispatchEvent(new Event("change", { bubbles: true }));
+                el.dispatchEvent(new Event("blur", { bubbles: true }));
+              };
+              const setNativeValue = (
+                el: HTMLInputElement | HTMLSelectElement,
+                value: string,
+              ) => {
+                try {
+                  el.scrollIntoView({ behavior: "instant", block: "center" });
+                  el.focus();
+                } catch {
+                  // Best-effort for browser and test DOMs.
+                }
+                if (el instanceof HTMLSelectElement) {
+                  const option = [...el.options].find(
+                    (candidate) =>
+                      norm(candidate.value) === norm(value) ||
+                      norm(candidate.textContent) === norm(value),
+                  );
+                  if (!option) return false;
+                  el.value = option.value;
+                  triggerEvents(el);
+                  return true;
+                }
+                el.value = value;
+                triggerEvents(el);
+                return norm(el.value) === norm(value);
+              };
+              const setCartQuantity = () => {
+                if (!requestedQuantity) return null;
+                const controls = [
+                  ...document.querySelectorAll(
+                    "select, input:not([type='button']):not([type='submit']):not([type='hidden'])",
+                  ),
+                ] as Array<HTMLInputElement | HTMLSelectElement>;
+                const quantityControl = controls.find((el) =>
+                  labelsFor(el).some((label) => /\b(quantity|qty)\b/i.test(label)),
+                );
+                if (!quantityControl) return false;
+                return setNativeValue(quantityControl, requestedQuantity);
               };
               const currentBodyText = () =>
                 display(document.body?.innerText || document.body?.textContent || "");
@@ -9113,6 +10210,10 @@ export function registerTools() {
               do {
                 const control = findCheckoutControl();
                 if (control && cartReady()) {
+                  const quantityConfigured = setCartQuantity();
+                  if (quantityConfigured === true) {
+                    await sleep(500);
+                  }
                   const labels = labelsFor(control);
                   const label =
                     labels.find((value) =>
@@ -9130,6 +10231,7 @@ export function registerTools() {
                     label,
                     url: location.href,
                     title: document.title,
+                    quantityConfigured,
                   };
                 }
                 await sleep(150);
@@ -9141,9 +10243,10 @@ export function registerTools() {
                 label: null,
                 url: location.href,
                 title: document.title,
+                quantityConfigured: setCartQuantity(),
               };
             },
-            args: [],
+            args: [quantity],
           });
           const checkoutPlans = (checkoutResults || [])
             .map(
@@ -9177,11 +10280,18 @@ export function registerTools() {
             : "Catalog item configuration incomplete.",
           configured.length ? `Configured:\n- ${configured.join("\n- ")}` : "",
           mismatches.length ? `Mismatches:\n- ${mismatches.join("\n- ")}` : "",
+          Array.isArray(selected.currentItemNames) &&
+          selected.currentItemNames.length > 0
+            ? `Current catalog item: ${selected.currentItemNames.map(String).slice(0, 3).join(" | ")}`
+            : "",
           selected.cartReady === true
             ? "Cart/order controls are already visible. Do not add the same item again; inspect cart state and proceed only if line count and quantity match the request."
             : "",
           selected.submitClicked
             ? `Clicked submit control: ${String(selected.submitLabel || "submit")}`
+            : "",
+          checkoutClick?.quantityConfigured === true
+            ? `Configured cart quantity: ${quantity}`
             : "",
           checkoutClick?.clicked === true
             ? `Clicked cart checkout control: ${String(checkoutClick.label || "checkout")}`
@@ -9279,6 +10389,11 @@ export function registerTools() {
         } catch {
           // Fall back to the current frame if frame metadata is unavailable.
         }
+
+        await waitForDomReady(tabId, {
+          timeoutMs: 5_000,
+          waitForElements: true,
+        });
 
         const results = await withTimeout(
           chrome.scripting.executeScript({
@@ -9440,6 +10555,9 @@ export function registerTools() {
                 opened_by: "sys_user",
                 resolved_by: "sys_user",
                 assignment_group: "sys_user_group",
+                department: "cmn_department",
+                company: "core_company",
+                location: "cmn_location",
                 rfc: "change_request",
                 problem_id: "problem",
                 parent_incident: "incident",
@@ -9460,6 +10578,15 @@ export function registerTools() {
             ) => {
               if (commonReferenceTableForField(fieldName)) return true;
               if (control instanceof HTMLTextAreaElement) return false;
+              if (
+                control instanceof HTMLInputElement &&
+                !/^sys_display\./i.test(
+                  `${control.getAttribute("name") || ""} ${control.getAttribute("id") || ""}`,
+                ) &&
+                !fieldName.endsWith("_id")
+              ) {
+                return false;
+              }
               const raw = [
                 control?.getAttribute("name"),
                 control?.getAttribute("id"),
@@ -9483,11 +10610,20 @@ export function registerTools() {
                 return true;
               }
               try {
-                return Boolean(
-                  document.getElementById(
-                    `lookup.${fieldPathFor(fieldName, control)}`,
-                  ),
+                const lookup = document.getElementById(
+                  `lookup.${fieldPathFor(fieldName, control)}`,
                 );
+                if (!lookup) return false;
+                const lookupText = [
+                  lookup.getAttribute("aria-label"),
+                  lookup.getAttribute("title"),
+                  lookup.getAttribute("name"),
+                  lookup.textContent,
+                ]
+                  .map(display)
+                  .join(" ")
+                  .toLowerCase();
+                return /\blook\s*up\s+value\b|\breference\b/.test(lookupText);
               } catch {
                 return false;
               }
@@ -9653,7 +10789,7 @@ export function registerTools() {
               return readNativeControlValue(field.control, true) ?? "";
             };
 
-            const hiddenControlFor = (field: FieldMeta) => {
+            const hiddenControlsFor = (field: FieldMeta) => {
               const candidates: unknown[] = [
                 document.getElementById(field.fieldPath),
                 ...Array.from(document.getElementsByName(field.fieldPath)),
@@ -9672,16 +10808,41 @@ export function registerTools() {
                   // Continue with direct candidates.
                 }
               }
-              return (
-                candidates.find(
-                  (candidate): candidate is HTMLInputElement =>
-                    candidate instanceof HTMLInputElement &&
-                    candidate !== field.control,
-                ) ?? null
+              const seen = new Set<HTMLInputElement>();
+              const controls = candidates.filter(
+                (candidate): candidate is HTMLInputElement => {
+                  if (
+                    !(candidate instanceof HTMLInputElement) ||
+                    candidate === field.control ||
+                    seen.has(candidate)
+                  ) {
+                    return false;
+                  }
+                  seen.add(candidate);
+                  const identity = `${candidate.name || ""} ${candidate.id || ""}`;
+                  return !/^sys_display\./i.test(identity);
+                },
               );
+              return controls.sort((a, b) => {
+                const aOriginal = /^sys_original\./i.test(
+                  `${a.name || ""} ${a.id || ""}`,
+                );
+                const bOriginal = /^sys_original\./i.test(
+                  `${b.name || ""} ${b.id || ""}`,
+                );
+                return Number(aOriginal) - Number(bOriginal);
+              });
+            };
+
+            const hiddenControlFor = (field: FieldMeta) => {
+              return hiddenControlsFor(field)[0] ?? null;
             };
 
             const readCommittedReferenceValue = (field: FieldMeta) => {
+              const hidden = hiddenControlFor(field);
+              const hiddenValue = hidden?.value?.trim() || "";
+              if (hiddenValue) return hiddenValue;
+
               try {
                 const value = gForm.getValue?.(field.name);
                 if (typeof value === "string" && value.trim()) {
@@ -9690,8 +10851,7 @@ export function registerTools() {
               } catch {
                 // Fall through to hidden field lookup.
               }
-              const hidden = hiddenControlFor(field);
-              return hidden?.value?.trim() || "";
+              return "";
             };
 
             const isCommittedReferenceValue = (
@@ -9853,8 +11013,8 @@ export function registerTools() {
                 // Hidden field fallback below covers frames without usable g_form.
               }
 
-              const hidden = hiddenControlFor(field);
-              if (hidden) {
+              const hiddenControls = hiddenControlsFor(field);
+              for (const hidden of hiddenControls) {
                 setNativeValue(hidden, sysId);
                 hidden.setAttribute("value", sysId);
                 committed = true;
@@ -9894,15 +11054,6 @@ export function registerTools() {
                 "first_name",
                 "last_name",
               ];
-              const exactQuery = [
-                "name",
-                "display_name",
-                "number",
-                "user_name",
-                "email",
-              ]
-                .map((field) => `${field}=${clean}`)
-                .join("^OR");
               const fetchRecords = async (query: string) => {
                 const params = new URLSearchParams({
                   sysparm_query: query,
@@ -9936,7 +11087,17 @@ export function registerTools() {
                   clearTimeout(timer);
                 }
               };
-              let records = await fetchRecords(exactQuery);
+              let records: Array<Record<string, unknown>> = [];
+              for (const field of [
+                "name",
+                "display_name",
+                "number",
+                "user_name",
+                "email",
+              ]) {
+                records = await fetchRecords(`${field}=${clean}`);
+                if (records.length > 0) break;
+              }
               if (records.length === 0 && referenceTable === "sys_user") {
                 const parts = clean.split(/\s+/).filter(Boolean);
                 const firstName = parts[0] || "";
