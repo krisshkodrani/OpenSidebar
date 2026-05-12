@@ -1012,6 +1012,51 @@ export async function handleGenericSequentialToolCall(
     tool_call_id: toolCall.id,
   });
 
+  if (toolName === ToolName.CONFIGURE_SERVICENOW_FORM) {
+    const missingFieldLabels = [
+      ...new Set(
+        result
+          .split(/\r?\n/)
+          .map((line) => line.match(/^\s*-\s+(.+?):\s*field not found\b/i))
+          .filter((match): match is RegExpMatchArray => Boolean(match))
+          .map((match) => match[1].replace(/\s+/g, " ").trim())
+          .filter((label) => label.length > 0),
+      ),
+    ].filter((label) =>
+      new RegExp(
+        `\\b${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+        "i",
+      ).test(loop.originalQuery),
+    );
+    if (
+      missingFieldLabels.length > 0 &&
+      (loop.selectedSkillId === "servicenow-record-form" ||
+        /\bServiceNow\b/i.test(loop.originalQuery))
+    ) {
+      const quoted = missingFieldLabels.map((label) => `"${label}"`);
+      const summary =
+        missingFieldLabels.length === 1
+          ? `I cannot complete this because the requested field ${quoted[0]} is not available on this ServiceNow form.`
+          : `I cannot complete this because the requested fields ${quoted.join(", ")} are not available on this ServiceNow form.`;
+      loop.traceRecorder?.recordEvent(
+        "servicenow_record_missing_field_configure_completed",
+        {
+          turn: loop.turnCount,
+          fields: missingFieldLabels,
+          mode: "sequential",
+        },
+      );
+      return {
+        prevElementCount,
+        domModified,
+        visuallyModified,
+        lastDomAffectingToolName,
+        breakLoop: true,
+        completedSummary: summary,
+      };
+    }
+  }
+
   if (
     loop.selectedSkillId === "search-answer-extraction" &&
     toolName === ToolName.SEARCH_KNOWLEDGE_BASE
