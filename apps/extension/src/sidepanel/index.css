@@ -26,6 +26,7 @@ body,
 .prose-chat {
   line-height: 1.5;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .prose-chat p {
@@ -38,6 +39,109 @@ body,
 
 .prose-chat p:last-child {
   margin-bottom: 0;
+}
+
+.prose-chat.completion-summary {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.58;
+}
+
+.prose-chat.completion-summary p {
+  margin: 0.45em 0;
+}
+
+.prose-chat.completion-summary p:first-child {
+  margin-top: 0;
+}
+
+.prose-chat.completion-summary strong:first-child {
+  font-weight: 650;
+}
+
+.prose-chat.completion-summary > :first-child {
+  margin-top: 0;
+}
+
+.prose-chat.completion-summary > :last-child {
+  margin-bottom: 0;
+}
+
+.prose-chat.completion-summary h1,
+.prose-chat.completion-summary h2,
+.prose-chat.completion-summary h3 {
+  color: #111827;
+  letter-spacing: 0;
+}
+
+.prose-chat.completion-summary h1 {
+  font-size: 1rem;
+  line-height: 1.35;
+  margin: 0 0 0.65rem;
+}
+
+.prose-chat.completion-summary h2 {
+  font-size: 0.96rem;
+  line-height: 1.38;
+  margin: 0 0 0.6rem;
+}
+
+.prose-chat.completion-summary h3 {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0.95rem 0 0.35rem;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.prose-chat.completion-summary hr {
+  margin: 0.75rem 0;
+}
+
+.prose-chat.completion-summary ul,
+.prose-chat.completion-summary ol {
+  margin: 0.35rem 0 0.65rem;
+  padding-left: 1.15rem;
+}
+
+.prose-chat.completion-summary li {
+  margin: 0.22rem 0;
+  padding-left: 0.05rem;
+}
+
+.completion-kv {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.8rem;
+}
+
+.completion-kv > div {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 38%) minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+}
+
+.completion-kv dt {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.completion-kv dd {
+  color: #1f2937;
+  margin: 0;
+  min-width: 0;
+  line-height: 1.42;
+}
+
+@media (max-width: 380px) {
+  .completion-kv > div {
+    grid-template-columns: 1fr;
+    gap: 0.08rem;
+  }
 }
 
 .prose-chat code {
@@ -154,6 +258,23 @@ body,
 .dark .prose-chat blockquote {
   border-left-color: rgba(255, 255, 255, 0.2);
   color: rgba(255, 255, 255, 0.6);
+}
+
+.dark .prose-chat.completion-summary h1,
+.dark .prose-chat.completion-summary h2 {
+  color: #f8fafc;
+}
+
+.dark .prose-chat.completion-summary h3 {
+  color: #cbd5e1;
+}
+
+.dark .completion-kv dt {
+  color: #94a3b8;
+}
+
+.dark .completion-kv dd {
+  color: #e5e7eb;
 }
 
 .dark .prose-chat hr {

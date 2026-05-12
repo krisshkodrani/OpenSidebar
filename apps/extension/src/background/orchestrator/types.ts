@@ -93,6 +93,8 @@ export interface TaskNode {
   status: "pending" | "running" | "completed" | "failed" | "skipped";
   retries: number;
   result?: string;
+  /** Full executor answer intended for final user-facing completion output. */
+  userFacingResult?: string;
   error?: string;
   /** Condensed action history from the executor for same-tab handoff */
   trajectory?: string[];

@@ -678,6 +678,59 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.status).toBe("completed");
   });
 
+  test("preserves full user-facing completion summaries beyond compact handoff length", async () => {
+    const longSummary = [
+      "## Job Posting Summary",
+      "",
+      "**Position:** Administrative Assistant in the Juridicum Library  ",
+      "**Employment Type:** Part-time, substitute employee  ",
+      "**Location:** Altenberger Strasse 69, 4040 Linz (JKU Campus)",
+      "",
+      "### Duties",
+      "- Ordering book requests and eBook requests",
+      "- Invoice processing and budget management",
+      "- Information desk service and reservations",
+      "- Managing books, journals, reading areas, and storage rooms",
+      "- Communicating with institutes of the Juridicum faculty",
+      "",
+      "### Contact",
+      "Hofraetin Mag.a Sieglinde Hable",
+      "Phone: +43 732 2468 3656",
+      "Email: sieglinde.hable@jku.at",
+      "",
+      "This final sentence must remain visible after the five hundred character boundary.",
+    ].join("\n");
+
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "Read and summarize the current page"),
+    ];
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: longSummary,
+      metrics: undefined,
+    });
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Summarize this page"));
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+
+    expect(completion?.payload?.summary).toBe(longSummary);
+    expect(completion?.payload?.summary.length).toBeGreaterThan(500);
+    expect(completion?.payload?.summary).toContain(
+      "This final sentence must remain visible",
+    );
+    expect(
+      completion?.payload?.subtaskResults?.[0]?.result.length,
+    ).toBeLessThanOrEqual(500);
+  });
+
   test("does not use global-goal shortcut when the remaining node is an action step", async () => {
     const first = makeNode("n1", "Reveal Widget X SKU");
     first.successCriteria = "Widget X SKU is visible.";
