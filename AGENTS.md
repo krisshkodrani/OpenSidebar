@@ -218,6 +218,8 @@ Treat WorkArena as a high-signal evaluator, not as the product goal. A WorkArena
 
 Do not chase 100% WorkArena by adding task-id branches, seed branches, hidden expected values, or runner shortcuts. The intended path is to solve as much as possible through reusable runtime behavior and generic skills, then leave truly organization-specific procedures to user-authored custom skills.
 
+Prefer a useful, transferable 80% WorkArena score over a brittle 100% score from benchmark-shaped heuristics. Before keeping a WorkArena-motivated fix, ask whether the behavior would help on another realistic enterprise app or website with the same workflow shape. Avoid product-name vocabularies, fixture nouns, seed-specific entities, prompt literals, and validator artifacts in runtime logic. If a domain adapter is necessary, ground it in stable public platform semantics, such as ServiceNow form, table, frame, catalog, or URL conventions, and keep it separate from generic browser policy.
+
 When ServiceNow or WorkArena exposes a stable workflow shape, prefer these fix layers in order:
 
 - tool/runtime primitive for repeated page operations;

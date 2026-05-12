@@ -20,6 +20,10 @@ function normalize(value: unknown): string {
     .toLowerCase();
 }
 
+function normalizeForMatch(value: unknown): string {
+  return normalize(value).replace(/[^a-z0-9]+/g, "");
+}
+
 function targetId(args: Record<string, unknown>): number | null {
   if (typeof args.id === "number" && Number.isFinite(args.id)) return args.id;
   if (typeof args.id === "string") {
@@ -57,15 +61,17 @@ function isConfirmationDrillInTarget(element: TaggedElement | undefined): boolea
       element.attributes?.href,
       element.attributes?.["aria-label"],
       element.attributes?.title,
+      element.attributes?.name,
+      element.attributes?.id,
     ].join(" "),
   );
-  if (element.tagName.toLowerCase() !== "a" && element.role !== "link") {
-    return false;
-  }
   return (
     /\b(req|ritm)\d+\b/.test(label) ||
-    /\b(standard laptop|lenovo|requested item|request item)\b/.test(label) ||
-    /\b(sc_req_item\.do|sysparm_sys_id|sys_id=)\b/.test(label)
+    /\b(requested item|request item)\b/.test(label) ||
+    /\b(sc_req_item\.do|sysparm_sys_id|sys_id=)\b/.test(label) ||
+    /\b(back to catalog|continue shopping|home|back_to_catalog|continue_shopping|goto_home|redirect_home)\b/.test(
+      label,
+    )
   );
 }
 
@@ -76,6 +82,14 @@ function explicitCatalogConfigurationFields(query: string | null | undefined): s
     if (field) fields.add(field);
   }
   return [...fields];
+}
+
+function explicitCatalogRequestedItem(query: string | null | undefined): string | null {
+  const text = String(query ?? "");
+  const quoted = [...text.matchAll(/["']([^"']{2,160})["']/g)]
+    .map((match) => match[1]?.replace(/\s+/g, " ").trim())
+    .filter((value): value is string => !!value && !value.includes(":"));
+  return quoted[0] ?? null;
 }
 
 function isCatalogItemConfigurationPage(snapshot: DomSnapshot): boolean {
@@ -119,6 +133,99 @@ function isManualCatalogOptionOrSubmitTarget(
   );
 }
 
+function isLikelyCatalogItemLink(
+  element: TaggedElement | undefined,
+  snapshot: DomSnapshot,
+): boolean {
+  if (!element) return false;
+  const href = normalize(element.attributes?.href);
+  const label = normalize(
+    [
+      element.text,
+      element.role,
+      element.tagName,
+      element.attributes?.href,
+      element.attributes?.["aria-label"],
+      element.attributes?.title,
+    ].join(" "),
+  );
+  const pageText = normalize(
+    [
+      snapshot.title,
+      snapshot.url,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+    ].join(" "),
+  );
+  const linkLike = /\blink\b/.test(label);
+  const catalogLikePage = /\b(catalog|store|shop|products?|items?)\b/.test(
+    pageText,
+  );
+  const itemLikeHref =
+    /\b(servicecatalog_cat_item_view|catalog[_/-]?item|cat_item|product|products|item[_/-]?view)\b/.test(
+      href,
+    );
+  return (
+    linkLike &&
+    normalize(element.text).length >= 2 &&
+    (itemLikeHref || catalogLikePage)
+  );
+}
+
+function snapshotContainsRequestedItem(
+  snapshot: DomSnapshot,
+  requestedItem: string,
+): boolean {
+  const requested = normalizeForMatch(requestedItem);
+  if (!requested) return false;
+  const text = normalizeForMatch(
+    [
+      snapshot.title,
+      snapshot.url,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      ...snapshot.elements.map((element) => element.text),
+    ].join(" "),
+  );
+  return text.includes(requested);
+}
+
+export function assessCatalogOrderItemSelectionClick(
+  input: CatalogOrderConfigurationClickInput,
+): string | null {
+  if (input.selectedSkillId !== "catalog-order-workflow") return null;
+  if (input.toolName !== ToolName.CLICK_ELEMENT) return null;
+  if (!input.snapshot || isCatalogItemConfigurationPage(input.snapshot)) return null;
+  if (isOrderConfirmationPage(input.snapshot)) return null;
+
+  const requestedItem = explicitCatalogRequestedItem(input.originalQuery);
+  if (!requestedItem || !snapshotContainsRequestedItem(input.snapshot, requestedItem)) {
+    return null;
+  }
+
+  const id = targetId(input.args);
+  if (id === null) return null;
+  const target = input.snapshot.elements.find((element) => element.tag === id);
+  if (!isLikelyCatalogItemLink(target, input.snapshot)) return null;
+
+  const requested = normalizeForMatch(requestedItem);
+  const clicked = normalizeForMatch(
+    [
+      target?.text,
+      target?.attributes?.["aria-label"],
+      target?.attributes?.title,
+    ].join(" "),
+  );
+  if (!requested || clicked.includes(requested) || requested.includes(clicked)) {
+    return null;
+  }
+
+  return (
+    `BLOCKED: the requested catalog item is "${requestedItem}", but this click targets "${target?.text ?? "another item"}". ` +
+    "Click the visible requested item exactly, or use find_element/search to locate the requested catalog item before configuring it."
+  );
+}
+
 export function assessCatalogOrderConfigurationClick(
   input: CatalogOrderConfigurationClickInput,
 ): string | null {
@@ -147,8 +254,26 @@ export function assessCatalogOrderPostConfirmationClick(
   input: CatalogOrderPostConfirmationClickInput,
 ): string | null {
   if (input.selectedSkillId !== "catalog-order-workflow") return null;
-  if (input.toolName !== ToolName.CLICK_ELEMENT) return null;
   if (!input.snapshot || !isOrderConfirmationPage(input.snapshot)) return null;
+
+  if (
+    input.toolName === ToolName.GO_BACK ||
+    input.toolName === ToolName.NAVIGATE ||
+    input.toolName === ToolName.OPEN_SERVICENOW_MODULE
+  ) {
+    return (
+      "BLOCKED: request/order confirmation is already visible on this page. " +
+      "Do not navigate away or restart the catalog order after submission; " +
+      "call done() from the current confirmation page with the request number, item, quantity, and configuration evidence."
+    );
+  }
+
+  if (
+    input.toolName !== ToolName.CLICK_ELEMENT &&
+    input.toolName !== ToolName.READ_ELEMENT
+  ) {
+    return null;
+  }
 
   const id = targetId(input.args);
   if (id === null) return null;
