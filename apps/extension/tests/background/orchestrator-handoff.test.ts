@@ -75,7 +75,12 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Planner assumptions (validate against current page before acting):");
     expect(instruction).toContain("Execution policy:");
     expect(instruction).toContain("Executor result (executor): Address completed");
-    expect(instruction).toContain("Execute only the current step objective.");
+    expect(instruction).toContain(
+      "complete every requirement stated in the Objective and Success criteria",
+    );
+    expect(instruction).toContain(
+      "do not call done() while an explicit requested step remains unfinished",
+    );
   });
 
   test("omits empty task-state and reality sections from executor instruction", () => {

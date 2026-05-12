@@ -595,8 +595,8 @@ describe("detectFormSubmissionResetSuccess", () => {
         prevCount: 5,
         currentCount: 4,
       },
-      toolName: ToolName.CLICK_ELEMENT,
-      toolArgs: { id: 40 },
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { submit: true },
     });
 
     expect(signal).toMatchObject({
@@ -604,6 +604,93 @@ describe("detectFormSubmissionResetSuccess", () => {
       currentRecordId: "INC0034275",
       filledFieldsBeforeSubmit: 3,
     });
+  });
+
+  it("does not trust a raw ServiceNow submit click as a validator-grade reset", () => {
+    const preSubmit = makeSnapshot({
+      title: "Create CHG0042187 | Change Request | ServiceNow",
+      pageContent: "Change Request New record Submit",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "CHG0000021",
+          attributes: { id: "change_request.number", value: "CHG0000021" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 21,
+          tagName: "textarea",
+          role: "textbox",
+          text: "Implementation plan text",
+          attributes: { id: "change_request.implementation_plan" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const afterSubmit = makeSnapshot({
+      title: "Create CHG0042188 | Change Request | ServiceNow",
+      pageContent: "Change Request New record Submit",
+      elements: [
+        {
+          tag: 20,
+          tagName: "input",
+          role: "text",
+          text: "CHG0042188",
+          attributes: { id: "change_request.number", value: "CHG0042188" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 40,
+          tagName: "button",
+          role: "button",
+          text: "Submit",
+          attributes: { id: "sysverb_insert", type: "submit" },
+          rect: { x: 0, y: 0, width: 10, height: 10, pageY: 0 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const signal = detectFormSubmissionResetSuccess({
+      currentStepDescription:
+        "Submit the form and verify the created record or confirmation is visible.",
+      currentStepSuccessCriteria:
+        "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+      preActionSnapshot: preSubmit,
+      currentSnapshot: afterSubmit,
+      actionEffect: {
+        deltaPercent: 0.7,
+        urlChanged: true,
+        currentUrl: "https://example.service-now.com/change_request.do",
+        elementsAdded: 5,
+        elementsRemoved: 3,
+        prevCount: 5,
+        currentCount: 4,
+      },
+      toolName: ToolName.CLICK_ELEMENT,
+      toolArgs: { id: 40 },
+    });
+
+    expect(signal).toBeNull();
   });
 
   it("prefers the ServiceNow create-form title over stale number fields", () => {
@@ -696,8 +783,8 @@ describe("detectFormSubmissionResetSuccess", () => {
         prevCount: 5,
         currentCount: 4,
       },
-      toolName: ToolName.CLICK_ELEMENT,
-      toolArgs: { id: 40 },
+      toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
+      toolArgs: { submit: true },
     });
 
     expect(signal?.previousRecordId).toBe("INC0034429");

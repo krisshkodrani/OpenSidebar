@@ -8,6 +8,7 @@ import {
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
 import {
   assessCatalogOrderConfigurationClick,
+  assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
 } from "./catalog-order-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
@@ -473,15 +474,46 @@ export async function executeParallelToolCalls(
         }
       }
 
+      const snapshot = host.context.getSnapshot();
+      const catalogPostConfirmationBlock =
+        assessCatalogOrderPostConfirmationClick({
+          selectedSkillId: host.selectedSkillId,
+          toolName,
+          args,
+          snapshot,
+        });
+      if (catalogPostConfirmationBlock) {
+        host.log.warn("agent", "Catalog post-confirmation action blocked", {
+          turn: host.turnCount,
+          tool: toolName,
+          id: args.id,
+          mode: "parallel",
+        });
+        host.traceRecorder?.recordEvent(
+          "catalog_post_confirmation_action_blocked",
+          {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            mode: "parallel",
+          },
+        );
+        return {
+          toolCall,
+          result: null,
+          error: catalogPostConfirmationBlock,
+        };
+      }
+
       if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
-        const snapshot = host.context.getSnapshot();
         const target = snapshot?.elements.find((el: any) => el.tag === args.id);
         const catalogConfirmationClickBlock =
-          assessCatalogOrderPostConfirmationClick({
+          assessCatalogOrderItemSelectionClick({
             selectedSkillId: host.selectedSkillId,
             toolName,
             args,
             snapshot,
+            originalQuery: host.originalQuery,
           }) ||
           assessCatalogOrderConfigurationClick({
             selectedSkillId: host.selectedSkillId,

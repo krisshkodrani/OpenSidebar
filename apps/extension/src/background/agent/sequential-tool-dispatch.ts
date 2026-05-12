@@ -6,6 +6,7 @@ import {
 import { assessAmbiguousChoiceClickGuard } from "./ambiguous-choice-policy";
 import {
   assessCatalogOrderConfigurationClick,
+  assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
 } from "./catalog-order-policy";
 import {
@@ -817,15 +818,48 @@ export async function executeSequentialToolCalls(
       }
     }
 
+    const snapshot = this.context.getSnapshot();
+    const catalogPostConfirmationBlock =
+      assessCatalogOrderPostConfirmationClick({
+        selectedSkillId: this.selectedSkillId,
+        toolName,
+        args,
+        snapshot,
+      });
+    if (catalogPostConfirmationBlock) {
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: catalogPostConfirmationBlock,
+      });
+      this.log.warn("agent", "Catalog post-confirmation action blocked", {
+        turn: this.turnCount,
+        tool: toolName,
+        id: args.id,
+        mode: "sequential",
+      });
+      this.traceRecorder?.recordEvent(
+        "catalog_post_confirmation_action_blocked",
+        {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          mode: "sequential",
+        },
+      );
+      continue;
+    }
+
     if (toolName === ToolName.CLICK_ELEMENT && typeof args.id === "number") {
       const snapshot = this.context.getSnapshot();
       const target = snapshot?.elements.find((el: any) => el.tag === args.id);
       const catalogConfirmationClickBlock =
-        assessCatalogOrderPostConfirmationClick({
+        assessCatalogOrderItemSelectionClick({
           selectedSkillId: this.selectedSkillId,
           toolName,
           args,
           snapshot,
+          originalQuery: this.originalQuery,
         }) ||
         assessCatalogOrderConfigurationClick({
           selectedSkillId: this.selectedSkillId,
@@ -1242,5 +1276,6 @@ export async function executeSequentialToolCalls(
     lastDomAffectingToolName,
     doneSignaled,
     doneSummary,
+    resultPageProgress,
   };
 }
