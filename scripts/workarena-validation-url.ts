@@ -49,6 +49,22 @@ function isSubmittedRecordDetailUrl(value: string): boolean {
   return /\.do\?[^#]*\bsys_id=[0-9a-f]{32}\b/i.test(decoded);
 }
 
+function isSubmittedCatalogRequestUrl(value: string): boolean {
+  const decoded = decodeUrlLike(value).toLowerCase();
+  return (
+    /\/(?:sc_request|sc_req_item)\.do\?[^#]*\bsys_id=[0-9a-f]{32}\b/i.test(
+      decoded,
+    ) ||
+    /\/com\.glideapp\.servicecatalog_checkout_view_v2\.do\?[^#]*\bsysparm_sys_id=[0-9a-f]{32}\b/i.test(
+      decoded,
+    )
+  );
+}
+
+function isRecordTaskUrlPath(value: string | null): boolean {
+  return Boolean(value && /\.do$/i.test(value));
+}
+
 function canonicalizeClassicServiceNowUrl(value: string): string {
   const parsed = parseUrl(value);
   if (!parsed) return value;
@@ -65,6 +81,25 @@ function canonicalizeClassicServiceNowUrl(value: string): string {
   return `${parsed.origin}/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
 }
 
+function directCatalogCheckoutUrl(value: string): string | null {
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+
+  const decoded = decodeUrlLike(value);
+  const directMatch = decoded.match(
+    /^https?:\/\/[^/]+\/(com\.glideapp\.servicecatalog_checkout_view_v2\.do\?[^#]*\bsysparm_sys_id=[0-9a-f]{32}\b[^#]*)/i,
+  );
+  if (directMatch) {
+    return value;
+  }
+
+  const wrappedMatch = decoded.match(
+    /^https?:\/\/[^/]+\/now\/nav\/ui\/classic\/params\/target\/(com\.glideapp\.servicecatalog_checkout_view_v2\.do\?[^#]*\bsysparm_sys_id=[0-9a-f]{32}\b[^#]*)/i,
+  );
+  if (!wrappedMatch) return null;
+  return `${parsed.origin}/${wrappedMatch[1]}`;
+}
+
 function uniqueCandidates(
   entries: Array<{ source: string; url: string | null | undefined }>,
 ): Array<{ source: string; url: string }> {
@@ -73,14 +108,19 @@ function uniqueCandidates(
 
   for (const entry of entries) {
     if (!entry.url) continue;
+    const directCheckoutUrl = directCatalogCheckoutUrl(entry.url);
     const canonicalUrl = canonicalizeClassicServiceNowUrl(entry.url);
-    const variants =
-      canonicalUrl === entry.url
+    const variants = [
+      ...(directCheckoutUrl
+        ? [{ source: `${entry.source}:direct-checkout`, url: directCheckoutUrl }]
+        : []),
+      ...(canonicalUrl === entry.url
         ? [{ source: entry.source, url: entry.url }]
         : [
             { source: `${entry.source}:canonical`, url: canonicalUrl },
             { source: entry.source, url: entry.url },
-          ];
+          ]),
+    ];
     for (const variant of variants) {
       if (!parseUrl(variant.url) || seen.has(variant.url)) continue;
       seen.add(variant.url);
@@ -89,6 +129,23 @@ function uniqueCandidates(
   }
 
   return result;
+}
+
+function preferSubmittedCatalogUrls(
+  entries: Array<{ source: string; url: string }>,
+): Array<{ source: string; url: string }> {
+  const submittedCatalogEntries = entries.filter((entry) =>
+    isSubmittedCatalogRequestUrl(entry.url),
+  );
+  if (submittedCatalogEntries.length === 0) return entries;
+
+  const submitted = new Set(
+    submittedCatalogEntries.map((entry) => `${entry.source}\n${entry.url}`),
+  );
+  return [
+    ...submittedCatalogEntries,
+    ...entries.filter((entry) => !submitted.has(`${entry.source}\n${entry.url}`)),
+  ];
 }
 
 export function selectValidationUrl(input: {
@@ -104,17 +161,19 @@ export function selectValidationUrl(input: {
   const expectedPath = workArenaUrlPath(expectedUrl);
   const preferTaskUrlAfterSubmittedRecord = hasSubmittedRecordIdentity(
     input.submittedRecordNumber,
+  ) && isRecordTaskUrlPath(expectedPath);
+  const entries = preferSubmittedCatalogUrls(
+    uniqueCandidates([
+      { source: "finalOpenSidebarUrl", url: input.finalOpenSidebarUrl },
+      ...input.frameUrls.map((url, index) => ({
+        source: `frameUrl:${index + 1}`,
+        url,
+      })),
+      { source: "browserActiveUrl", url: input.browserActiveUrl },
+      { source: "importedPageUrl", url: input.importedPageUrl },
+      { source: "startUrl", url: input.startUrl },
+    ]),
   );
-  const entries = uniqueCandidates([
-    { source: "finalOpenSidebarUrl", url: input.finalOpenSidebarUrl },
-    ...input.frameUrls.map((url, index) => ({
-      source: `frameUrl:${index + 1}`,
-      url,
-    })),
-    { source: "browserActiveUrl", url: input.browserActiveUrl },
-    { source: "importedPageUrl", url: input.importedPageUrl },
-    { source: "startUrl", url: input.startUrl },
-  ]);
 
   const candidates: ValidationUrlCandidate[] = [];
   for (const entry of entries) {
@@ -128,6 +187,7 @@ export function selectValidationUrl(input: {
       reason = "origin_mismatch";
     } else if (
       preferTaskUrlAfterSubmittedRecord &&
+      !isSubmittedCatalogRequestUrl(entry.url) &&
       isSubmittedRecordDetailUrl(entry.url)
     ) {
       reason = "submitted_record_detail_url";
@@ -135,6 +195,7 @@ export function selectValidationUrl(input: {
       const candidatePath = workArenaUrlPath(entry.url);
       const isFinalOpenSidebarUrl = entry.source.startsWith("finalOpenSidebarUrl");
       if (
+        !isSubmittedCatalogRequestUrl(entry.url) &&
         !isFinalOpenSidebarUrl &&
         expectedPath &&
         (!candidatePath || !candidatePath.includes(expectedPath))

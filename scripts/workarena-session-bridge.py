@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 
 BRIDGE_PATH = Path(__file__).with_name("workarena-bridge.py")
@@ -40,6 +40,36 @@ if os.environ.get("HUGGING_FACE_HUB_TOKEN") and not os.environ.get("HF_TOKEN"):
     os.environ["HF_TOKEN"] = os.environ["HUGGING_FACE_HUB_TOKEN"]
 
 
+def patch_workarena_instance_reachability() -> None:
+    """Retry transient ServiceNow reachability checks during BrowserGym reset."""
+
+    import requests
+    from browsergym.workarena.config import SNOW_BROWSER_TIMEOUT
+    from browsergym.workarena.instance import SNowInstance
+
+    if getattr(SNowInstance, "_opensidebar_reachability_patch", False):
+        return
+
+    def _check_is_reachable_with_retry(self):  # type: ignore[no-untyped-def]
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                requests.get(self.snow_url, timeout=SNOW_BROWSER_TIMEOUT)
+                return
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                last_error = exc
+                if attempt < 3:
+                    time.sleep(attempt)
+
+        detail = f" Last error: {last_error}" if last_error else ""
+        raise RuntimeError(
+            f"ServiceNow instance at {self.snow_url} is not reachable. Please check the URL.{detail}"
+        )
+
+    SNowInstance._check_is_reachable = _check_is_reachable_with_retry
+    SNowInstance._opensidebar_reachability_patch = True
+
+
 class WorkArenaSession:
     def __init__(self) -> None:
         self.env = None
@@ -49,6 +79,57 @@ class WorkArenaSession:
         self.env_id: str | None = None
         self.seed: int | None = None
         self.created_at_ms: int | None = None
+
+    def _align_subtask_instances(self, task: Any) -> dict[str, Any]:
+        """Keep compositional subtasks bound to the reset task's ServiceNow instance."""
+
+        root_instance = getattr(task, "instance", None)
+        root_url = getattr(root_instance, "snow_url", None)
+        if root_instance is None or not isinstance(root_url, str) or not root_url:
+            return {"attempted": False, "reason": "no_root_instance"}
+
+        visited: set[int] = set()
+        changed: list[dict[str, Any]] = []
+
+        def visit(candidate: Any, path: str) -> None:
+            if candidate is None:
+                return
+            identity = id(candidate)
+            if identity in visited:
+                return
+            visited.add(identity)
+
+            candidate_instance = getattr(candidate, "instance", None)
+            candidate_url = getattr(candidate_instance, "snow_url", None)
+            if (
+                candidate is not task
+                and candidate_instance is not None
+                and isinstance(candidate_url, str)
+                and candidate_url
+                and candidate_url != root_url
+            ):
+                setattr(candidate, "instance", root_instance)
+                changed.append(
+                    {
+                        "path": path,
+                        "taskClass": type(candidate).__name__,
+                        "from": candidate_url,
+                        "to": root_url,
+                    }
+                )
+
+            subtasks = getattr(candidate, "subtasks", None)
+            if isinstance(subtasks, list):
+                for index, subtask in enumerate(subtasks):
+                    visit(subtask, f"{path}.subtasks[{index}]")
+
+        visit(task, "task")
+        return {
+            "attempted": True,
+            "rootUrl": root_url,
+            "checked": len(visited),
+            "changed": changed,
+        }
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -128,6 +209,7 @@ class WorkArenaSession:
         import gymnasium as gym
 
         import browsergym.workarena  # noqa: F401
+        patch_workarena_instance_reachability()
 
         seed = message.get("seed", 42)
         if not isinstance(seed, int):
@@ -149,6 +231,7 @@ class WorkArenaSession:
             phase = "task_metadata"
             browser_env = self.env.unwrapped
             task = browser_env.task
+            instance_alignment = self._align_subtask_instances(task)
             self.task_id = task_id
             self.env_id = env_id
             self.seed = seed
@@ -193,6 +276,9 @@ class WorkArenaSession:
                 "activeUrl": self.obs.get("url"),
                 "openPages": list(self.obs.get("open_pages_urls", [])),
                 "openPageTitles": list(self.obs.get("open_pages_titles", [])),
+            },
+            "diagnostics": {
+                "instanceAlignment": instance_alignment,
             },
             "state": self.state_summary(),
         }
@@ -289,6 +375,183 @@ class WorkArenaSession:
             "ok": True,
             "requestedUrl": active_url,
             "activeUrl": synced_url,
+        }
+
+    def _record_detail_url_from_sync(
+        self,
+        active_url: str | None,
+        record_sync: dict[str, Any],
+    ) -> str | None:
+        if not isinstance(active_url, str) or not active_url:
+            return None
+        if not isinstance(record_sync, dict) or record_sync.get("ok") is not True:
+            return None
+
+        sys_id = record_sync.get("sysId")
+        if not isinstance(sys_id, str) or not re.fullmatch(
+            r"[0-9a-f]{32}", sys_id, re.IGNORECASE
+        ):
+            return None
+
+        parsed = urlparse(active_url)
+        decoded_path = unquote(parsed.path)
+        decoded_query = unquote(parsed.query)
+        synced_table = record_sync.get("table")
+        target_match = re.search(
+            r"/now/nav/ui/classic/params/target/([^?#]+\.do)(?:\?([^#]*))?",
+            decoded_path + (f"?{decoded_query}" if decoded_query else ""),
+            re.IGNORECASE,
+        )
+        if target_match:
+            table_path = target_match.group(1)
+            target_query = target_match.group(2) or ""
+        else:
+            table_path = decoded_path.lstrip("/")
+            target_query = decoded_query
+
+        if table_path not in ("sc_request.do", "sc_req_item.do"):
+            table_path = (
+                f"{synced_table}.do"
+                if synced_table in ("sc_request", "sc_req_item")
+                else table_path
+            )
+        if table_path not in ("sc_request.do", "sc_req_item.do"):
+            return None
+        if re.search(r"\bsys_id=[0-9a-f]{32}\b", target_query, re.IGNORECASE):
+            return None
+        if (
+            synced_table not in ("sc_request", "sc_req_item")
+            and not re.search(
+                r"\bsysparm_query=number%?=?|number=", target_query, re.IGNORECASE
+            )
+        ):
+            return None
+
+        return f"{parsed.scheme}://{parsed.netloc}/{table_path}?sys_id={sys_id}"
+
+    def _sync_record_detail_url(
+        self,
+        active_url: str | None,
+        record_sync: dict[str, Any],
+    ) -> dict[str, Any]:
+        if isinstance(active_url, str):
+            decoded_active_url = unquote(active_url)
+            if re.search(
+                r"/com\.glideapp\.servicecatalog_checkout_view_v2\.do\?[^#]*\bsysparm_sys_id=[0-9a-f]{32}\b",
+                decoded_active_url,
+                re.IGNORECASE,
+            ):
+                return {
+                    "attempted": False,
+                    "reason": "catalog_checkout_url_already_has_sysparm_sys_id",
+                }
+
+        record_url = self._record_detail_url_from_sync(active_url, record_sync)
+        if record_url is None:
+            return {
+                "attempted": False,
+                "reason": "no_record_detail_url_rewrite",
+            }
+        sync = self._sync_page_url(record_url)
+        return {
+            **sync,
+            "recordDetailRewrite": True,
+            "originalUrl": active_url,
+        }
+
+    def _resolve_catalog_request_record_id(
+        self,
+        submitted_record_number: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(submitted_record_number, str) or not re.fullmatch(
+            r"REQ\d+", submitted_record_number.strip(), re.IGNORECASE
+        ):
+            return {
+                "attempted": False,
+                "reason": "not_catalog_request_number",
+            }
+
+        record_number = submitted_record_number.strip().upper()
+        browser_env = self.env.unwrapped
+        task = getattr(browser_env, "task", None)
+        instance = getattr(task, "instance", None)
+        context = getattr(browser_env, "context", None)
+        page = getattr(browser_env, "page", None)
+        if page is None and context is not None:
+            pages = getattr(context, "pages", [])
+            page = pages[0] if pages else None
+
+        records: list[dict[str, Any]] = []
+        source = "none"
+        workarena_api_candidate_count = None
+        if instance is not None:
+            try:
+                from browsergym.workarena.api.utils import table_api_call
+
+                response = table_api_call(
+                    instance=instance,
+                    table="sc_request",
+                    params={
+                        "sysparm_query": f"number={record_number}^ORDERBYDESCsys_created_on",
+                        "sysparm_fields": "sys_id,number,sys_created_on,sys_updated_on",
+                        "sysparm_limit": "5",
+                    },
+                    wait_for_record=True,
+                    max_retries=20,
+                    raise_on_wait_expired=False,
+                )
+                api_records = response.get("result") if isinstance(response, dict) else []
+                workarena_api_candidate_count = (
+                    len(api_records) if isinstance(api_records, list) else None
+                )
+                if isinstance(api_records, list):
+                    records = [
+                        record for record in api_records if isinstance(record, dict)
+                    ]
+                    source = "workarena_table_api"
+            except Exception:
+                records = []
+
+        if not records and page is not None:
+            records = self._query_submitted_record_from_page_session(
+                page=page,
+                table_name="sc_request",
+                record_number=record_number,
+                direct_sys_id=None,
+            )
+            source = "browser_session_rest_api"
+
+        if not records:
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "table": "sc_request",
+                "workarenaApiCandidateCount": workarena_api_candidate_count,
+                "error": "Catalog request number was not found in ServiceNow.",
+            }
+
+        first_record = records[0]
+        sys_id = first_record.get("sys_id")
+        if not isinstance(sys_id, str) or not sys_id:
+            return {
+                "attempted": True,
+                "ok": False,
+                "recordNumber": record_number,
+                "table": "sc_request",
+                "candidateCount": len(records),
+                "error": "Catalog request record did not include a sys_id.",
+            }
+
+        return {
+            "attempted": True,
+            "ok": True,
+            "recordNumber": record_number,
+            "table": "sc_request",
+            "sysId": sys_id,
+            "candidateCount": len(records),
+            "workarenaApiCandidateCount": workarena_api_candidate_count,
+            "source": source,
         }
 
     def _import_storage_state(
@@ -475,6 +738,34 @@ class WorkArenaSession:
             "title": title,
         }
 
+    def _find_submitted_record_task(self, task: Any) -> Any:
+        if task is None:
+            return None
+        session_key = getattr(task, "session_sys_id_field", None)
+        table_name = getattr(task, "table_name", None)
+        if isinstance(session_key, str) and session_key and isinstance(table_name, str) and table_name:
+            return task
+
+        subtasks = getattr(task, "subtasks", None)
+        if not isinstance(subtasks, list):
+            return task
+
+        valid_index = getattr(task, "valid_index", None)
+        if isinstance(valid_index, int) and 0 <= valid_index < len(subtasks):
+            candidate = subtasks[valid_index]
+            session_key = getattr(candidate, "session_sys_id_field", None)
+            table_name = getattr(candidate, "table_name", None)
+            if isinstance(session_key, str) and session_key and isinstance(table_name, str) and table_name:
+                return candidate
+
+        for candidate in subtasks:
+            session_key = getattr(candidate, "session_sys_id_field", None)
+            table_name = getattr(candidate, "table_name", None)
+            if isinstance(session_key, str) and session_key and isinstance(table_name, str) and table_name:
+                return candidate
+
+        return task
+
     def _sync_submitted_record_id(self, submitted_record_number: Any) -> dict[str, Any]:
         if not isinstance(submitted_record_number, str) or not submitted_record_number:
             return {
@@ -503,9 +794,12 @@ class WorkArenaSession:
 
         browser_env = self.env.unwrapped
         task = getattr(browser_env, "task", None)
-        session_key = getattr(task, "session_sys_id_field", None)
-        table_name = getattr(task, "table_name", None)
-        instance = getattr(task, "instance", None)
+        record_task = self._find_submitted_record_task(task)
+        session_key = getattr(record_task, "session_sys_id_field", None)
+        table_name = getattr(record_task, "table_name", None)
+        instance = getattr(record_task, "instance", None)
+        record_task_name = type(record_task).__name__ if record_task is not None else None
+        instance_url = getattr(instance, "snow_url", None)
         if not isinstance(session_key, str) or not session_key:
             return {
                 "attempted": True,
@@ -513,6 +807,7 @@ class WorkArenaSession:
                 "recordNumber": record_number,
                 "sysId": direct_sys_id,
                 "error": "Active WorkArena task does not expose session_sys_id_field.",
+                "taskClass": type(task).__name__ if task is not None else None,
             }
         if not isinstance(table_name, str) or not table_name or instance is None:
             return {
@@ -521,6 +816,7 @@ class WorkArenaSession:
                 "recordNumber": record_number,
                 "sysId": direct_sys_id,
                 "sessionKey": session_key,
+                "recordTaskClass": record_task_name,
                 "error": "Active WorkArena task does not expose a queryable ServiceNow table.",
             }
 
@@ -537,8 +833,17 @@ class WorkArenaSession:
                 "sysId": direct_sys_id,
                 "sessionKey": session_key,
                 "table": table_name,
+                "recordTaskClass": record_task_name,
                 "error": "No BrowserGym page is available for record id sync.",
             }
+        try:
+            page_url = page.url
+        except Exception:
+            page_url = None
+        page_origin = None
+        if isinstance(page_url, str) and page_url:
+            parsed_page_url = urlparse(page_url)
+            page_origin = f"{parsed_page_url.scheme}://{parsed_page_url.netloc}"
 
         try:
             existing = page.evaluate(
@@ -555,6 +860,7 @@ class WorkArenaSession:
                 "sysId": direct_sys_id or existing,
                 "sessionKey": session_key,
                 "table": table_name,
+                "recordTaskClass": record_task_name,
                 "existing": True,
             }
 
@@ -579,6 +885,16 @@ class WorkArenaSession:
                 raise_on_wait_expired=False,
             )
             records = response.get("result") if isinstance(response, dict) else []
+            workarena_api_candidate_count = len(records) if isinstance(records, list) else None
+            record_source = "workarena_table_api"
+            if (not isinstance(records, list) or len(records) == 0) and page is not None:
+                records = self._query_submitted_record_from_page_session(
+                    page=page,
+                    table_name=table_name,
+                    record_number=record_number,
+                    direct_sys_id=direct_sys_id,
+                )
+                record_source = "browser_session_rest_api"
             if not isinstance(records, list) or len(records) == 0:
                 return {
                     "attempted": True,
@@ -587,6 +903,10 @@ class WorkArenaSession:
                     "sysId": direct_sys_id,
                     "sessionKey": session_key,
                     "table": table_name,
+                    "recordTaskClass": record_task_name,
+                    "instanceUrl": instance_url,
+                    "pageOrigin": page_origin,
+                    "workarenaApiCandidateCount": workarena_api_candidate_count,
                     "error": "Submitted record identity was not found in ServiceNow.",
                 }
             first_record = records[0] if isinstance(records[0], dict) else {}
@@ -601,6 +921,7 @@ class WorkArenaSession:
                     "sysId": direct_sys_id,
                     "sessionKey": session_key,
                     "table": table_name,
+                    "recordTaskClass": record_task_name,
                     "error": "Submitted record identity did not include a sys_id.",
                 }
 
@@ -616,10 +937,15 @@ class WorkArenaSession:
                 "recordNumber": record_number,
                 "sessionKey": session_key,
                 "table": table_name,
+                "recordTaskClass": record_task_name,
+                "instanceUrl": instance_url,
+                "pageOrigin": page_origin,
+                "workarenaApiCandidateCount": workarena_api_candidate_count,
                 "sysId": sys_id,
                 "candidateCount": len(records),
                 "sysCreatedOn": first_record.get("sys_created_on"),
                 "sysUpdatedOn": first_record.get("sys_updated_on"),
+                "source": record_source,
                 "existing": False,
             }
         except Exception as exc:  # noqa: BLE001 - preserve validation diagnostics.
@@ -629,8 +955,66 @@ class WorkArenaSession:
                 "recordNumber": record_number,
                 "sessionKey": session_key,
                 "table": table_name,
+                "recordTaskClass": record_task_name,
                 "error": f"{type(exc).__name__}: {str(exc)[:1000]}",
             }
+
+    def _query_submitted_record_from_page_session(
+        self,
+        page: Any,
+        table_name: str,
+        record_number: str | None,
+        direct_sys_id: str | None,
+    ) -> list[dict[str, Any]]:
+        if direct_sys_id is None and record_number is None:
+            return []
+
+        try:
+            records = page.evaluate(
+                """async payload => {
+                    const table = encodeURIComponent(payload.tableName);
+                    const fields = "sys_id,number,sys_created_on,sys_updated_on";
+                    const headers = { Accept: "application/json" };
+                    if (window.g_ck) headers["X-UserToken"] = String(window.g_ck);
+                    let url;
+                    if (payload.directSysId) {
+                        url = `/api/now/table/${table}/${encodeURIComponent(payload.directSysId)}?sysparm_fields=${fields}`;
+                    } else {
+                        const params = new URLSearchParams({
+                            sysparm_query: `number=${payload.recordNumber}^ORDERBYDESCsys_created_on`,
+                            sysparm_fields: fields,
+                            sysparm_limit: "5",
+                        });
+                        url = `/api/now/table/${table}?${params.toString()}`;
+                    }
+
+                    for (let attempt = 0; attempt < 8; attempt += 1) {
+                        const response = await fetch(url, {
+                            credentials: "same-origin",
+                            headers,
+                        });
+                        if (response.ok) {
+                            const payload = await response.json();
+                            const result = payload && payload.result;
+                            if (Array.isArray(result) && result.length > 0) return result;
+                            if (result && typeof result === "object" && result.sys_id) return [result];
+                        }
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                    return [];
+                }""",
+                {
+                    "tableName": table_name,
+                    "recordNumber": record_number,
+                    "directSysId": direct_sys_id,
+                },
+            )
+        except Exception:
+            return []
+
+        if not isinstance(records, list):
+            return []
+        return [record for record in records if isinstance(record, dict)]
 
     def validate(
         self,
@@ -686,6 +1070,13 @@ class WorkArenaSession:
                 }
 
             record_sync = self._sync_submitted_record_id(submitted_record_number)
+            if record_sync.get("ok") is not True:
+                catalog_record_sync = self._resolve_catalog_request_record_id(
+                    submitted_record_number
+                )
+                if catalog_record_sync.get("ok") is True:
+                    record_sync = catalog_record_sync
+            record_url_sync = self._sync_record_detail_url(active_url, record_sync)
             answer_sync = self._sync_assistant_answer(final_answer)
             reward, done, user_message, info = self.env.unwrapped._task_validate()
             validation_details = info if isinstance(info, dict) else {}
@@ -695,6 +1086,7 @@ class WorkArenaSession:
                 "storageSync": storage_sync,
                 "reloadSync": reload_sync,
                 "recordSync": record_sync,
+                "recordUrlSync": record_url_sync,
                 "answerSync": answer_sync,
             }
             return {
@@ -740,23 +1132,26 @@ class WorkArenaSession:
             }
 
         answer = final_answer.strip()
+        task = getattr(browser_env, "task", None)
+        role = "infeasible" if hasattr(task, "infeasible_reasons") else "assistant"
         messages = getattr(chat, "messages", [])
         if (
             isinstance(messages, list)
             and messages
             and isinstance(messages[-1], dict)
-            and messages[-1].get("role") == "assistant"
+            and messages[-1].get("role") == role
             and messages[-1].get("message") == answer
         ):
             return {
                 "attempted": True,
                 "ok": True,
                 "existing": True,
+                "role": role,
                 "messageLength": len(answer),
             }
 
         try:
-            chat.add_message(role="assistant", msg=answer)
+            chat.add_message(role=role, msg=answer)
         except Exception:
             if not isinstance(messages, list):
                 return {
@@ -764,12 +1159,13 @@ class WorkArenaSession:
                     "ok": False,
                     "error": "BrowserGym chat messages are not mutable.",
                 }
-            messages.append({"role": "assistant", "message": answer})
+            messages.append({"role": role, "message": answer})
 
         return {
             "attempted": True,
             "ok": True,
             "existing": False,
+            "role": role,
             "messageLength": len(answer),
         }
 
