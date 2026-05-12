@@ -127,6 +127,7 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
       ToolName.CONFIGURE_SERVICENOW_FORM,
       ToolName.APPLY_LIST_FILTER,
       ToolName.APPLY_LIST_SORT,
+      ToolName.APPLY_LIST_ACTION,
       ToolName.CONFIGURE_CATALOG_ITEM,
       ToolName.CREATE_TAB,
       ToolName.CLOSE_TAB,
@@ -164,8 +165,8 @@ describe("MUTATION_SENSITIVE_TOOLS", () => {
     }
   });
 
-  test("has exactly 19 entries", () => {
-    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(19);
+  test("has exactly 20 entries", () => {
+    expect(MUTATION_SENSITIVE_TOOLS.size).toBe(20);
   });
 
   test("is a subset of tools with risk >= MEDIUM or explicit side-effects", () => {

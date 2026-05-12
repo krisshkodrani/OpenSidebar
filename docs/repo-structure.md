@@ -35,8 +35,9 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
 
 From the repo root:
 
-- `npm run dev`: extension dev stack with logs and trace viewer
-- `npm run build`: production extension build into `dist/`
+- `npm run dev`: extension dev stack with logs, trace viewer, and loadable `dist-dev/`
+- `npm run dist`: production/manual extension build into `dist/`
+- `npm run build`: CI-compatible production build alias
 - `npm test`: extension unit and integration tests
 - `npm run test:backend`: backend tests
 - `npm run test:e2e`: browser E2E validation

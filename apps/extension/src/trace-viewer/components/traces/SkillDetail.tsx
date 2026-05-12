@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { fetchSkillContract, type SkillContract } from "../../api";
+import { fetchSkillContract } from "../../api";
+import type { SkillContract } from "../../api";
 import Badge from "../Badge";
 import LoadingSpinner from "../LoadingSpinner";
 import ErrorBanner from "../ErrorBanner";

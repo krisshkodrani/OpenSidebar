@@ -23,7 +23,7 @@ This runs:
 - extension tests
 - backend tests
 - production build
-- dist artifact verification
+- extension artifact verification for the generated `dist/` manifest, side panel, trace viewer, service worker import, icons, content scripts, web-accessible resources, and Vite manifest
 
 ## 3. Run Final E2E Validation
 
@@ -52,10 +52,9 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## 4. Validate Release Artifacts
 
-- Confirm the built extension exists under `dist/`
-- Confirm `dist/manifest.json` exists and has the expected version
-- Spot-check `dist/src/sidepanel/index.html`
-- Spot-check `dist/src/trace-viewer/index.html`
+- Confirm `npm run ci:dist` passes.
+- Confirm `dist/manifest.json` has the expected version.
+- Spot-check the loaded extension from `dist/` in Chrome.
 
 ## 5. Publish
 
@@ -66,4 +65,4 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## Current Known Caveat
 
-- `npx tsc -b` is not yet a release gate because there is still pre-existing extension type debt in the background/orchestrator codepath. Release verification currently relies on lint, tests, and production build instead.
+- Real-browser E2E and WorkArena handoff runs are not part of `release:verify`; run the relevant E2E gate explicitly for risky runtime changes.

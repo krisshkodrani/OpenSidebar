@@ -1,4 +1,5 @@
-import { RiskLevel, ToolName, type AgentStep } from "../../types";
+import { RiskLevel, ToolName } from "../../types";
+import type { AgentStep } from "../../types";
 import type { PreToolDecision } from "./middleware";
 
 export function getPreToolDeniedReason(

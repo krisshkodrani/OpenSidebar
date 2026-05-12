@@ -1,7 +1,8 @@
 ﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
-import { uiRuntime, type UiRuntimeKeepalivePort } from "./runtime";
+import { uiRuntime } from "./runtime";
+import type { UiRuntimeKeepalivePort } from "./runtime";
 
 type StoreApi = typeof useStore;
 

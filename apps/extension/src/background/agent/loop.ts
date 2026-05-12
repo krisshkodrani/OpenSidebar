@@ -74,7 +74,7 @@ import {
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { MutationLedger } from "./mutation-ledger";
-import { type MoneyTableAggregate } from "./money-table-aggregate";
+import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   getAutocompleteSuggestionDoneRejection,
   isTextLikeInputElement,
@@ -5455,38 +5455,60 @@ export class AgentLoop {
     this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
     this.turnCount++;
     this.startServiceNowRecordControllerTraceTurn(fields.length);
-    const toolCall: ToolCall = {
-      id: `atomic_${crypto.randomUUID()}`,
-      type: "function",
-      function: {
-        name: preferredTool,
-        arguments: JSON.stringify(args),
-      },
-    } as ToolCall;
+    const executeAtomicToolCall = async (
+      idPrefix: string,
+    ): Promise<string> => {
+      const toolCall: ToolCall = {
+        id: `${idPrefix}_${crypto.randomUUID()}`,
+        type: "function",
+        function: {
+          name: preferredTool,
+          arguments: JSON.stringify(args),
+        },
+      } as ToolCall;
+      const startedAt = Date.now();
+      const result = await this.executeToolCall(toolCall, tabId);
+      const durationMs = Date.now() - startedAt;
+      this.traceRecorder?.recordToolExecution(
+        toolCall.id,
+        preferredTool,
+        args,
+        result,
+        !result.startsWith("Error:"),
+        durationMs,
+        RiskLevel.MEDIUM,
+        result.startsWith("Error:") ? result : undefined,
+      );
+      this.context.addMessage({
+        role: "tool",
+        content: result,
+        tool_call_id: toolCall.id,
+      });
+      return result;
+    };
 
-    const startedAt = Date.now();
     this.traceRecorder?.recordEvent("atomic_skill_controller_started", {
       turn: this.turnCount,
       selectedSkillId: contract.id,
       preferredTool,
     });
-    const result = await this.executeToolCall(toolCall, tabId);
-    const durationMs = Date.now() - startedAt;
-    this.traceRecorder?.recordToolExecution(
-      toolCall.id,
-      preferredTool,
-      args,
-      result,
-      !result.startsWith("Error:"),
-      durationMs,
-      RiskLevel.MEDIUM,
-      result.startsWith("Error:") ? result : undefined,
-    );
-    this.context.addMessage({
-      role: "tool",
-      content: result,
-      tool_call_id: toolCall.id,
-    });
+    let result = await executeAtomicToolCall("atomic");
+    if (
+      preferredTool === ToolName.OPEN_SERVICENOW_MODULE &&
+      this.getMissingRequiredEvidenceTypes().length > 0 &&
+      this.isRetryableServiceNowModuleControllerMiss(result)
+    ) {
+      this.traceRecorder?.recordEvent("atomic_skill_controller_retry", {
+        turn: this.turnCount,
+        selectedSkillId: contract.id,
+        preferredTool,
+      });
+      await waitForDomReady(tabId, {
+        timeoutMs: 1500,
+        waitForElements: true,
+      });
+      result = await executeAtomicToolCall("atomic_retry");
+    }
 
     const missing = this.getMissingRequiredEvidenceTypes();
     if (missing.length > 0) {
@@ -5551,6 +5573,15 @@ export class AgentLoop {
       metrics: this.getMetrics(),
       evidence: this.evidenceAccumulator.toArray(),
     };
+  }
+
+  private isRetryableServiceNowModuleControllerMiss(result: string): boolean {
+    return (
+      /^Error:/i.test(result) &&
+      /\b(?:lookup_timeout|metadata_unavailable|navigator_candidate_not_found|snapshot_[a-z_]*not_found|bridge|content script|timeout)\b/i.test(
+        result,
+      )
+    );
   }
 
   private async executeServiceNowRecordControllerTool(params: {
@@ -6623,6 +6654,61 @@ export class AgentLoop {
     return true;
   }
 
+  private isTrustedCatalogConfigurationResult(params: {
+    toolName: string;
+    toolResult: string;
+  }): boolean {
+    if (this.selectedSkillId !== "catalog-order-workflow") return false;
+    if (params.toolName !== ToolName.CONFIGURE_CATALOG_ITEM) return false;
+    if (!/\b(order|request|cart|checkout)\b/i.test(this.originalQuery)) {
+      return false;
+    }
+    if (!/^Configured catalog item\./i.test(params.toolResult)) return false;
+    if (
+      /\b(?:Error:|incomplete|Missing|Mismatches|could not|not found)\b/i.test(
+        params.toolResult,
+      )
+    ) {
+      return false;
+    }
+    return this.catalogConfigurationEvidenceCoversRequest(params.toolResult);
+  }
+
+  private markTrustedCatalogOrderSubmission(configuredResult: string): void {
+    this.trustedCatalogOrderSubmission = {
+      itemName: this.extractExpectedCatalogItemNameFromQuery(),
+      quantity: this.extractExpectedCatalogQuantityFromQuery(),
+      configuredResult,
+      submittedAtTurn: this.turnCount,
+    };
+  }
+
+  async maybeCompleteTrustedCatalogOrderSubmit(params: {
+    toolName: string;
+    toolArgs?: Record<string, unknown>;
+    toolResult: string;
+    tabId: number;
+    mode: "parallel" | "sequential";
+  }): Promise<{ finalSummary: string } | null> {
+    if (params.toolArgs?.submit !== true) return null;
+    if (!this.isTrustedCatalogConfigurationResult(params)) return null;
+
+    this.markTrustedCatalogOrderSubmission(params.toolResult);
+    const previousElementCount = this.context.getSnapshot()?.elements.length;
+    await this.refreshSnapshotWithRetry(
+      params.tabId,
+      previousElementCount ?? -1,
+    );
+    const completion = this.maybeCompleteCatalogOrderFromSnapshot();
+    if (!completion) return null;
+    this.traceRecorder?.recordEvent("trusted_catalog_order_submit_completed", {
+      turn: this.turnCount,
+      mode: params.mode,
+      trustedTool: params.toolName,
+    });
+    return { finalSummary: completion.summary };
+  }
+
   private async maybeAutoSubmitConfiguredCatalogItem(params: {
     toolName: string;
     toolArgs?: Record<string, unknown>;
@@ -6694,14 +6780,17 @@ export class AgentLoop {
     });
     if (
       !/^Error:/i.test(result) &&
-      !/\b(?:incomplete|Missing|Mismatches|could not|not found)\b/i.test(result)
+      !/\b(?:incomplete|Missing|Mismatches|could not|not found)\b/i.test(
+        result,
+      ) &&
+      this.isTrustedCatalogConfigurationResult(params)
     ) {
-      this.trustedCatalogOrderSubmission = {
-        itemName: this.extractExpectedCatalogItemNameFromQuery(),
-        quantity: this.extractExpectedCatalogQuantityFromQuery(),
-        configuredResult: params.toolResult,
-        submittedAtTurn: this.turnCount,
-      };
+      this.markTrustedCatalogOrderSubmission(params.toolResult);
+      const previousElementCount = this.context.getSnapshot()?.elements.length;
+      await this.refreshSnapshotWithRetry(
+        params.tabId,
+        previousElementCount ?? -1,
+      );
     }
   }
 

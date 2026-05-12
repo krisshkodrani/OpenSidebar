@@ -1,4 +1,5 @@
-import { AgentStatus, type ToolCall } from "../../types";
+import { AgentStatus } from "../../types";
+import type { ToolCall } from "../../types";
 import type { logger } from "../../utils";
 import { validateToolCalls } from "../security";
 import type { CompletionResponse } from "../llm/types";
