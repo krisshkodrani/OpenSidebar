@@ -66,8 +66,8 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.WAIT)).toBe(true);
     });
 
-    test("has exactly 21 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(21);
+    test("has exactly 22 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(22);
     });
   });
 
@@ -120,6 +120,14 @@ describe("Tool Metadata", () => {
       expect(
         classifyRisk(ToolName.GET_PROFILE_FIELDS, {
           fields: ["sensitive.date_of_birth"],
+        }),
+      ).toBe(RiskLevel.HIGH);
+    });
+
+    test("get_candidate_profile becomes HIGH risk when private fields are requested", () => {
+      expect(
+        classifyRisk(ToolName.GET_CANDIDATE_PROFILE, {
+          include_private: true,
         }),
       ).toBe(RiskLevel.HIGH);
     });
@@ -193,6 +201,8 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.SELECT_OPTION);
       expect(tools).toContain(ToolName.APPLY_LIST_FILTER);
       expect(tools).toContain(ToolName.GET_PROFILE_FIELDS);
+      expect(tools).toContain(ToolName.SUGGEST_FORM_ANSWERS);
+      expect(tools).toContain(ToolName.ANSWER_CANDIDATE_QUESTION);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).not.toContain(ToolName.CREATE_TAB);
       expect(tools).not.toContain(ToolName.GO_BACK);

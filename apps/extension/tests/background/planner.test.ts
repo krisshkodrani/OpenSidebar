@@ -1862,6 +1862,63 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("collapses Ashby job application fill plans and preserves original supplied fields", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Fill the Name field with Kris Shkodrani",
+                        successCriteria: "Name input contains Kris Shkodrani",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill the Email field with kshkodrani@gmail.com",
+                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const query = [
+            "Fill the application but dont send using these data",
+            "| Field | Copy This |",
+            "|---|---|",
+            "| Name | Kris Shkodrani |",
+            "| Email | kshkodrani@gmail.com |",
+            "| Earliest Start Date | 2026-06-01 |",
+            "",
+            "## Why Do You Care About Langfuse?",
+            "",
+            "FINAL_LITERAL_MARKER answer must be copied verbatim.",
+        ].join("\n");
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            query,
+            "Senior Product Engineer @ Langfuse",
+            "https://jobs.ashbyhq.com/langfuse/example/application",
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes[0].selectedSkillId).toBe(
+            "ashby-job-application-assistant",
+        );
+        expect(result.nodes[0].description).toContain("2026-06-01");
+        expect(result.nodes[0].description).toContain("FINAL_LITERAL_MARKER");
+        expect(result.nodes[0].successCriteria).toContain(
+            "not merely an intermediate",
+        );
+    });
+
     test("fallback executor nodes expose workflow inspector tools", () => {
         const nodes = buildFallbackNodes(
             "Tell me the value shown in the dashboard chart.",
@@ -2259,6 +2316,22 @@ describe("selectPrimarySkill", () => {
         );
     });
 
+    test("exposes Ashby job application skill policy and form-fill profile", () => {
+        const contract = getLoadedSkillContract("ashby-job-application-assistant");
+
+        expect(contract?.procedureMarkdown).toContain("Ashby job application");
+        expect(contract?.procedureMarkdown).toContain("question-style labels");
+        expect(getSkillToolPolicy("ashby-job-application-assistant")?.preferredTools)
+            .toContain(ToolName.UPLOAD_FILE);
+        expect(
+            resolveSkillToolProfile(
+                "ashby-job-application-assistant",
+                "Fill the Ashby application fields but do not submit.",
+                "Requested fields are filled and Submit Application is not clicked.",
+            ),
+        ).toBe("form_fill");
+    });
+
     test("respects disabled skill packs in keyword matcher selection", () => {
         const input = {
             query:
@@ -2452,6 +2525,37 @@ describe("selectPrimarySkill", () => {
                 pageUrl: "https://example.com/job-board",
             })?.id,
         ).toBe("list-detail-review-loop");
+    });
+
+    test("routes Ashby applications to the Ashby-specific skill", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Fill this application but do not submit using the provided field table.",
+                objective:
+                    "Fill the Name, Salary Expectation, EU Work Permit, and Why Do You Care About Langfuse fields.",
+                successCriteria:
+                    "Ashby application fields contain the exact supplied values and Submit Application is not clicked.",
+                pageTitle: "Senior Product Engineer @ Langfuse | Ashby",
+                pageUrl:
+                    "https://jobs.ashbyhq.com/langfuse/a2c4e24c-21d1-4a9f-8d46-422d0592efd6/application",
+            })?.id,
+        ).toBe("ashby-job-application-assistant");
+    });
+
+    test("keeps non-Ashby job applications on the generic job skill", () => {
+        expect(
+            selectPrimarySkill({
+                query:
+                    "Complete this career application using my supplied resume and answers, but do not submit.",
+                objective:
+                    "Fill the resume, cover letter, and work authorization fields.",
+                successCriteria:
+                    "Application is prepared and waiting for submit approval.",
+                pageTitle: "Frontend Engineer Application",
+                pageUrl: "https://careers.example.com/frontend-engineer/apply",
+            })?.id,
+        ).toBe("job-application-assistant");
     });
 
     test("matches chart value extraction workflows", () => {
@@ -3293,5 +3397,5 @@ describe("TaskPlanner.validateDone", () => {
 // Done Guard integration tests require their own mock.module to control
 // both TaskPlanner (via complete) and AgentLoop (via completeStream).
 // Due to bun's process-global mock.module behavior, these tests only pass
-// reliably when run in isolation: `bun test tests/background/planner.test.ts`
+// reliably when run in isolation: `pnpm exec vitest run apps/extension/tests/background/planner.test.ts`
 // The TaskPlanner unit tests above cover all planner logic paths.

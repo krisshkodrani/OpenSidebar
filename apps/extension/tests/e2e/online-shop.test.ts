@@ -1,7 +1,7 @@
 /**
  * E2E: Online Shopping — add item, apply coupon, complete checkout.
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

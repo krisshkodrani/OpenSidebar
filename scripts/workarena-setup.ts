@@ -55,7 +55,7 @@ function main(): void {
   run(VENV_PYTHON, ["-m", "playwright", "install", "chromium"]);
 
   console.log("\n[workarena:setup] Complete. Run:");
-  console.log("[workarena:setup]   npm run benchmark:workarena:doctor");
+  console.log("[workarena:setup]   pnpm exec tsx scripts/workarena-doctor.ts");
 }
 
 main();

@@ -1,8 +1,7 @@
 /**
  * Log Query CLI — query the JSONL log file produced by the log server.
  *
- * Usage: bun run scripts/log-query.ts <command> [args]
- * Or:    bun run logs:query <command> [args]
+ * Usage: pnpm exec tsx scripts/log-query.ts <command> [args]
  *
  * Commands:
  *   tail [N]          Last N entries (default 50)
@@ -63,7 +62,7 @@ function formatEntry(e: LogEntry): string {
 function readEntries(): LogEntry[] {
   if (!existsSync(LOG_FILE)) {
     console.error(`Log file not found: ${LOG_FILE}`);
-    console.error("Start the local server first: npm run logs");
+    console.error("Start the local server first: pnpm run logs");
     process.exit(1);
   }
 
@@ -142,7 +141,7 @@ function showHelp(): void {
   console.log(`
 ${c.cyan}OpenSidebar Log Query${c.reset}
 
-Usage: bun run logs:query <command> [args]
+Usage: pnpm exec tsx scripts/log-query.ts <command> [args]
 
 Commands:
   tail [N]          Show last N entries (default 50)
@@ -155,10 +154,10 @@ Commands:
   help              Show this help
 
 Examples:
-  bun run logs:query since 5m
-  bun run logs:query search "snapshot"
-  bun run logs:query category agent
-  bun run logs:query level ERROR
+  pnpm exec tsx scripts/log-query.ts since 5m
+  pnpm exec tsx scripts/log-query.ts search "snapshot"
+  pnpm exec tsx scripts/log-query.ts category agent
+  pnpm exec tsx scripts/log-query.ts level ERROR
 `);
 }
 

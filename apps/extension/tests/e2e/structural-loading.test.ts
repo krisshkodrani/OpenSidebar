@@ -11,7 +11,7 @@
  * - A "Compose Message" button that opens a composer panel
  * - The agent must click the button, verify the composer opened, and report done
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

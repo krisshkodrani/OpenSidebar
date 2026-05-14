@@ -103,7 +103,7 @@ function scoreTask(task: TaskInfo): { score: number; rationale: string[] } {
 }
 
 function handoffCommand(taskId: string, seed: number): string {
-  return `npm run benchmark:workarena:handoff -- --task ${taskId} --seed ${seed} --allow-servicenow-reset`;
+  return `pnpm exec tsx scripts/workarena-handoff.ts --task ${taskId} --seed ${seed} --allow-servicenow-reset`;
 }
 
 function rankCandidates(

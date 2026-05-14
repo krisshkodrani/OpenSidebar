@@ -5,9 +5,9 @@
  * 14-hour vitest run that can hang on resource leaks.
  *
  * Usage:
- *   npx tsx scripts/run-e2e-progressive.ts            # run all
- *   npx tsx scripts/run-e2e-progressive.ts login       # run only matching
- *   npx tsx scripts/run-e2e-progressive.ts --resume    # skip already-reported tests
+ *   pnpm exec tsx scripts/run-e2e-progressive.ts            # run all
+ *   pnpm exec tsx scripts/run-e2e-progressive.ts login       # run only matching
+ *   pnpm exec tsx scripts/run-e2e-progressive.ts --resume    # skip already-reported tests
  */
 
 import { execSync, spawn } from "child_process";
@@ -29,7 +29,7 @@ function runWithTimeout(
       cwd: opts.cwd,
       env: opts.env as NodeJS.ProcessEnv,
       stdio: ["pipe", "pipe", "pipe"],
-      shell: true,
+      shell: false,
       windowsHide: true,
     });
 
@@ -63,6 +63,8 @@ function runWithTimeout(
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const VITEST_CLI = path.resolve(PROJECT_ROOT, "node_modules/vitest/vitest.mjs");
 
 const E2E_DIR = path.resolve(__dirname, "../apps/extension/tests/e2e");
 const TRACE_DIR = path.resolve(__dirname, "../traces");
@@ -719,7 +721,7 @@ async function main() {
   // Build first
   console.log("Building extension...");
   try {
-    execSync("npm run build", { cwd: path.resolve(__dirname, ".."), stdio: "pipe" });
+    execSync("corepack pnpm run build", { cwd: PROJECT_ROOT, stdio: "pipe" });
     console.log("Build OK\n");
   } catch (e: any) {
     console.error("Build failed:", e.stderr?.toString().slice(-500));
@@ -783,10 +785,10 @@ async function main() {
 
     const timeoutMs = Math.max(720_000, prompts.length * 240_000);
     const runResult = await runWithTimeout(
-      "npx",
-      ["vitest", "run", "--config", CONFIG, filePath],
+      process.execPath,
+      [VITEST_CLI, "run", "--config", CONFIG, filePath],
       {
-        cwd: path.resolve(__dirname, ".."),
+        cwd: PROJECT_ROOT,
         timeout: timeoutMs,
         env: { ...process.env, FORCE_COLOR: "0" },
       },

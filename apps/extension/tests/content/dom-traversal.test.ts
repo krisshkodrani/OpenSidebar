@@ -71,6 +71,19 @@ describe("querySelectorAllDeep", () => {
     const results = querySelectorAllDeep(root, "button");
     expect(results).toHaveLength(1);
   });
+
+  test("ignores the OpenSidebar E2E overlay host and shadow controls", () => {
+    setBody('<button id="page-button">Page Button</button>');
+    const host = document.createElement("div");
+    host.id = "opensidebar-harness-host";
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = '<button id="overlay-button">Overlay Button</button>';
+    document.body.appendChild(host);
+
+    const results = querySelectorAllDeep(document, "button");
+
+    expect(results.map((el) => el.id)).toEqual(["page-button"]);
+  });
 });
 
 // ========================================================================

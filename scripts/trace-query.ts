@@ -1,8 +1,8 @@
 /**
  * Trace Query CLI — query trace files produced by the log server.
  *
- * Usage: bun run scripts/trace-query.ts <command> [args]
- * Or:    bun run traces <command> [args]
+ * Usage: pnpm exec tsx scripts/trace-query.ts <command> [args]
+ * Or:    pnpm run traces -- <command> [args]
  *
  * Commands:
  *   list                          List all recorded sessions
@@ -143,7 +143,25 @@ interface TraceEntryRecord {
 }
 
 function readIndex(): TraceSessionRecord[] {
-  return readJsonlFile<TraceSessionRecord>(INDEX_FILE);
+  const indexed = readJsonlFile<TraceSessionRecord>(INDEX_FILE);
+  const sessionsById = new Map<string, TraceSessionRecord>();
+  for (const session of indexed) {
+    if (session.sessionId) sessionsById.set(session.sessionId, session);
+  }
+
+  if (existsSync(TRACE_DIR)) {
+    for (const file of readdirSync(TRACE_DIR)) {
+      if (!file.endsWith(".jsonl") || file === "index.jsonl") continue;
+      const sessionId = file.replace(/\.jsonl$/, "");
+      if (sessionsById.has(sessionId)) continue;
+      const orphan = synthesizeSessionFromTraceFile(sessionId);
+      if (orphan) sessionsById.set(sessionId, orphan);
+    }
+  }
+
+  return [...sessionsById.values()].sort(
+    (a, b) => (a.startTime ?? 0) - (b.startTime ?? 0),
+  );
 }
 
 function readTrace(sessionId: string): TraceEntryRecord[] {
@@ -152,13 +170,109 @@ function readTrace(sessionId: string): TraceEntryRecord[] {
     console.error(`${c.red}Trace file not found: ${file}${c.reset}`);
     process.exit(1);
   }
-  return readJsonlFile<TraceEntryRecord>(file);
+  return dedupeTraceEntries(readJsonlFile<TraceEntryRecord>(file));
 }
 
 function tryReadTrace(sessionId: string): TraceEntry[] | null {
   const file = join(TRACE_DIR, `${sessionId}.jsonl`);
   if (!existsSync(file)) return null;
-  return readJsonlFile<TraceEntry>(file);
+  return dedupeTraceEntries(readJsonlFile<TraceEntry>(file));
+}
+
+function dedupeTraceEntries<T extends { turnId?: string; turnNumber?: number }>(
+  entries: T[],
+): T[] {
+  const byTurn = new Map<string, T>();
+  for (const entry of entries) {
+    const key =
+      typeof entry.turnId === "string" && entry.turnId.length > 0
+        ? entry.turnId
+        : typeof entry.turnNumber === "number"
+          ? `turn:${entry.turnNumber}`
+          : `row:${byTurn.size}`;
+    byTurn.set(key, entry);
+  }
+  return [...byTurn.values()].sort(
+    (a, b) => (a.turnNumber ?? 0) - (b.turnNumber ?? 0),
+  );
+}
+
+function synthesizeSessionFromTraceFile(
+  sessionId: string,
+): TraceSessionRecord | null {
+  const entries = readTrace(sessionId);
+  if (entries.length === 0) return null;
+  const first = entries[0] as TraceEntryRecord & Record<string, unknown>;
+  const last = entries[entries.length - 1] as TraceEntryRecord &
+    Record<string, unknown>;
+  const firstRequest = first.llmRequest as
+    | (TraceEntryRecord["llmRequest"] & {
+        messages?: Array<{ role?: string; content?: string | null }>;
+      })
+    | undefined;
+  const firstUserMessage =
+    firstRequest?.messages?.find((message) => message.role === "user")
+      ?.content ?? "";
+  const doneSummary = extractDoneSummary(last);
+  const tokenTotals = entries.reduce(
+    (acc, entry) => {
+      const usage = (entry.llmResponse as any)?.usage;
+      const totalTokens =
+        typeof usage?.total_tokens === "number"
+          ? usage.total_tokens
+          : typeof usage?.totalTokens === "number"
+            ? usage.totalTokens
+            : 0;
+      const totalCost =
+        typeof usage?.cost === "number"
+          ? usage.cost
+          : typeof usage?.totalCost === "number"
+            ? usage.totalCost
+            : 0;
+      acc.totalTokens += totalTokens;
+      acc.totalCost += totalCost;
+      return acc;
+    },
+    { totalTokens: 0, totalCost: 0 },
+  );
+
+  return {
+    schemaVersion: first.schemaVersion,
+    traceKind: "agent.session",
+    runId: first.runId,
+    correlationId: first.correlationId,
+    sessionId,
+    startTime: first.timestamp ?? Date.parse(String(first.recordedAt ?? "")),
+    endTime: last.timestamp ?? Date.parse(String(last.recordedAt ?? "")),
+    query: firstUserMessage || "(raw trace file without session index)",
+    startUrl: first.snapshot?.url ?? "",
+    outcome: doneSummary ? "completed_raw" : "raw_turns",
+    failureCategory: doneSummary ? "none" : "unknown",
+    failureCode: doneSummary ? "none" : "missing_session_index",
+    turnCount: entries.length,
+    summary: doneSummary || "Raw turn file exists but no session index record was written.",
+    metrics: {
+      totalTokens: tokenTotals.totalTokens,
+      totalCost: tokenTotals.totalCost,
+    },
+  };
+}
+
+function extractDoneSummary(entry: TraceEntryRecord): string | null {
+  for (const toolCall of entry.llmResponse?.toolCalls ?? []) {
+    const name = (toolCall as any)?.function?.name ?? (toolCall as any)?.name;
+    if (name !== "done") continue;
+    const rawArgs =
+      (toolCall as any)?.function?.arguments ?? (toolCall as any)?.arguments;
+    if (typeof rawArgs !== "string") continue;
+    try {
+      const parsed = JSON.parse(rawArgs) as { summary?: unknown };
+      return typeof parsed.summary === "string" ? parsed.summary : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function formatTime(ms: number): string {
@@ -1592,7 +1706,7 @@ function cmdHelp() {
   console.log(`
 ${c.bold}Trace Query CLI${c.reset}
 
-Usage: bun run traces <command> [args]
+Usage: pnpm run traces -- <command> [args]
 
 Commands:
   list                          List all recorded sessions

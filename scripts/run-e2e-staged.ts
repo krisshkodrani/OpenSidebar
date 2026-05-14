@@ -11,16 +11,18 @@ import {
   E2E_SUITE_ORDER,
   type E2ESuiteName,
 } from "../apps/extension/tests/e2e/suites";
+import { isE2ESuiteFlagEnabled } from "../apps/extension/tests/e2e/helpers/e2e-config";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const E2E_DIR = path.resolve(PROJECT_ROOT, "apps/extension/tests/e2e");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
+const VITEST_CLI = path.resolve(PROJECT_ROOT, "node_modules/vitest/vitest.mjs");
 
 const OPTIONAL_E2E_GATES = [
   {
-    envVar: "E2E_BACKEND_DURABLE",
+    flag: "backend-durable",
     files: [
       "backend-durable-resume.test.ts",
       "structured-progress-resume.test.ts",
@@ -104,7 +106,7 @@ function runWithStreaming(
     const child = spawn(cmd, args, {
       cwd,
       stdio: "inherit",
-      shell: true,
+      shell: false,
       windowsHide: true,
     });
 
@@ -132,10 +134,10 @@ function printOptionalGateStatus(suites: E2ESuiteName[]): void {
     const gatedFiles = gate.files.filter((file) => plannedFiles.has(file));
     if (gatedFiles.length === 0) continue;
 
-    const enabled = process.env[gate.envVar] === "true";
+    const enabled = isE2ESuiteFlagEnabled(gate.flag);
     const state = enabled ? "enabled" : "disabled";
     console.log(
-      `\n[e2e:staged] Optional gate ${gate.envVar}=${enabled ? "true" : "false"} -> ${gate.description} ${state}.`,
+      `\n[e2e:staged] Optional gate ${gate.flag}=${enabled ? "true" : "false"} -> ${gate.description} ${state}.`,
     );
 
     if (!enabled) {
@@ -159,13 +161,13 @@ async function main(): Promise<void> {
 
   if (build) {
     console.log("\n[e2e:staged] Building extension before staged run...");
-    execSync("cmd /c npm run build", {
+    execSync("corepack pnpm run build", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
     });
     console.log("\n[e2e:staged] Building E2E fixtures before staged run...");
-    execSync("cmd /c npm run fixtures:build", {
+    execSync("corepack pnpm run fixtures:build", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
@@ -178,8 +180,8 @@ async function main(): Promise<void> {
     );
     console.log(`\n[e2e:staged] Running ${suite.toUpperCase()} suite...`);
     const exitCode = await runWithStreaming(
-      "npx",
-      ["vitest", "run", "--config", CONFIG, ...testFiles],
+      process.execPath,
+      [VITEST_CLI, "run", "--config", CONFIG, ...testFiles],
       path.resolve(PROJECT_ROOT, "apps/extension"),
     );
     if (exitCode !== 0) {

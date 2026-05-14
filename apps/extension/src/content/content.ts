@@ -21,7 +21,13 @@ import {
 } from "../types";
 import { buildSnapshot } from "./snapshot";
 import { executeAction } from "./actions";
-import { isElementVisible, dismissElement, addDynamicTag, resetStableIds } from "./tagging";
+import {
+  isElementVisible,
+  dismissElement,
+  addDynamicTag,
+  resetStableIds,
+  isOwnElement,
+} from "./tagging";
 import {
   classifyValueKind,
   isSensitiveInput,
@@ -156,6 +162,249 @@ if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
 // --- Overlay Detection Helpers ---
 
 const AGENT_BORDER_ID = "opensidebar-agent-border";
+const E2E_OVERLAY_HOST_ID = "opensidebar-harness-host";
+const E2E_OVERLAY_CONFIG_ID = "opensidebar-overlay-config";
+const E2E_OVERLAY_SEND_MESSAGE_EVENT = "opensidebar:overlay:send-message";
+const E2E_OVERLAY_RECEIVE_MESSAGE_EVENT = "opensidebar:overlay:receive-message";
+const E2E_OVERLAY_SEND_RESPONSE_EVENT = "opensidebar:overlay:send-response";
+const E2E_OVERLAY_STORAGE_REQUEST_EVENT = "opensidebar:overlay:storage-request";
+const E2E_OVERLAY_STORAGE_RESPONSE_EVENT =
+  "opensidebar:overlay:storage-response";
+const E2E_OVERLAY_MOUNT_EVENT = "opensidebar:overlay:mount";
+const E2E_OVERLAY_DISPOSE_EVENT = "opensidebar:overlay:dispose";
+let e2eOverlayBridgeInstalled = false;
+let e2eOverlayMounted = false;
+
+type E2EOverlayMountPayload = {
+  scriptUrl: string;
+  extensionBaseUrl?: string;
+  workspaceId: string;
+  tab: {
+    id?: number;
+    url?: string;
+    title?: string;
+    active?: boolean;
+    windowId?: number;
+  };
+  window?: {
+    id?: number;
+  };
+};
+
+type E2EOverlayStorageAreaName = "local" | "sync" | "session";
+
+type E2EOverlayStorageRequestDetail = {
+  requestId?: string;
+  area?: E2EOverlayStorageAreaName;
+  operation?: "get" | "set" | "remove";
+  keys?: string | string[] | Record<string, unknown> | null;
+  items?: Record<string, unknown>;
+};
+
+function getE2EOverlayExtensionBaseUrl(
+  payload: E2EOverlayMountPayload,
+): string | undefined {
+  if (
+    payload.extensionBaseUrl &&
+    !payload.extensionBaseUrl.startsWith("chrome-extension://invalid/")
+  ) {
+    return payload.extensionBaseUrl;
+  }
+  try {
+    return new URL("/", payload.scriptUrl).toString();
+  } catch {
+    return payload.extensionBaseUrl;
+  }
+}
+
+function upsertE2EOverlayConfig(payload: E2EOverlayMountPayload): void {
+  const existing = document.getElementById(E2E_OVERLAY_CONFIG_ID);
+  const config =
+    existing instanceof HTMLScriptElement
+      ? existing
+      : document.createElement("script");
+  config.id = E2E_OVERLAY_CONFIG_ID;
+  config.type = "application/json";
+  config.textContent = JSON.stringify({
+    scriptUrl: payload.scriptUrl,
+    glass: true,
+    runtimeOptions: {
+      storageMode: "chrome-bridge",
+      extensionBaseUrl: getE2EOverlayExtensionBaseUrl(payload),
+      tab: payload.tab,
+      window: payload.window,
+      e2ePanelConfig: {
+        targetTabId: payload.tab.id ?? null,
+        workspaceId: payload.workspaceId,
+      },
+    },
+  });
+  if (!config.parentNode) {
+    document.documentElement.appendChild(config);
+  }
+}
+
+function waitForE2EOverlayHost(timeoutMs: number = 15_000): Promise<void> {
+  if (document.getElementById(E2E_OVERLAY_HOST_ID)) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      reject(new Error("Timed out waiting for E2E overlay host."));
+    }, timeoutMs);
+    const observer = new MutationObserver(() => {
+      if (!document.getElementById(E2E_OVERLAY_HOST_ID)) return;
+      clearTimeout(timer);
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+function dispatchE2EOverlayRuntimeMessage(message: RuntimeMessage): void {
+  if (!e2eOverlayMounted) return;
+  window.dispatchEvent(
+    new CustomEvent(E2E_OVERLAY_RECEIVE_MESSAGE_EVENT, {
+      detail: { message },
+    }),
+  );
+}
+
+function dispatchE2EOverlayResponse(
+  requestId: string,
+  response?: unknown,
+  error?: unknown,
+): void {
+  window.dispatchEvent(
+    new CustomEvent(E2E_OVERLAY_SEND_RESPONSE_EVENT, {
+      detail: {
+        requestId,
+        response,
+        error:
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : undefined,
+      },
+    }),
+  );
+}
+
+function dispatchE2EOverlayStorageResponse(
+  requestId: string,
+  response?: Record<string, unknown>,
+  error?: unknown,
+): void {
+  window.dispatchEvent(
+    new CustomEvent(E2E_OVERLAY_STORAGE_RESPONSE_EVENT, {
+      detail: {
+        requestId,
+        response,
+        error:
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : undefined,
+      },
+    }),
+  );
+}
+
+function storageAreaForE2EOverlay(
+  areaName: E2EOverlayStorageAreaName,
+): chrome.storage.StorageArea {
+  return chrome.storage[areaName];
+}
+
+function ensureE2EOverlayBridge(): void {
+  if (e2eOverlayBridgeInstalled) return;
+  e2eOverlayBridgeInstalled = true;
+  window.addEventListener(E2E_OVERLAY_SEND_MESSAGE_EVENT, (event) => {
+    const detail = (
+      event as CustomEvent<{ message?: unknown; requestId?: string }>
+    ).detail;
+    if (!detail?.requestId) return;
+    chrome.runtime
+      .sendMessage(detail.message)
+      .then((response) =>
+        dispatchE2EOverlayResponse(detail.requestId!, response),
+      )
+      .catch((error) =>
+        dispatchE2EOverlayResponse(detail.requestId!, undefined, error),
+      );
+  });
+  window.addEventListener(E2E_OVERLAY_STORAGE_REQUEST_EVENT, (event) => {
+    const detail = (event as CustomEvent<E2EOverlayStorageRequestDetail>)
+      .detail;
+    const requestId = detail?.requestId;
+    if (!requestId || !detail.area || !detail.operation) return;
+    const area = storageAreaForE2EOverlay(detail.area);
+    const run = async (): Promise<Record<string, unknown>> => {
+      if (detail.operation === "get") {
+        return (await area.get(detail.keys as any)) as unknown as Record<
+          string,
+          unknown
+        >;
+      }
+      if (detail.operation === "set") {
+        await area.set(detail.items ?? {});
+        return {};
+      }
+      await area.remove(detail.keys as any);
+      return {};
+    };
+    run()
+      .then((response) =>
+        dispatchE2EOverlayStorageResponse(requestId, response),
+      )
+      .catch((error) =>
+        dispatchE2EOverlayStorageResponse(requestId, undefined, error),
+      );
+  });
+}
+
+async function mountE2EOverlay(
+  payload: E2EOverlayMountPayload,
+): Promise<{ ok: true; loaded: boolean }> {
+  ensureE2EOverlayBridge();
+  upsertE2EOverlayConfig(payload);
+  const existingHost = document.getElementById(E2E_OVERLAY_HOST_ID);
+  if (existingHost) {
+    window.dispatchEvent(new CustomEvent(E2E_OVERLAY_MOUNT_EVENT));
+    await waitForE2EOverlayHost();
+    e2eOverlayMounted = true;
+    removeE2ERail();
+    removeFloatingAgentCue();
+    return { ok: true, loaded: true };
+  }
+  if (payload.scriptUrl) {
+    // The E2E helper injects a small loader with chrome.scripting. This message
+    // only prepares config and bridge state before the loader imports the module.
+    return { ok: true, loaded: false };
+  } else {
+    window.dispatchEvent(new CustomEvent(E2E_OVERLAY_MOUNT_EVENT));
+  }
+  await waitForE2EOverlayHost();
+  e2eOverlayMounted = true;
+  removeE2ERail();
+  removeFloatingAgentCue();
+  return { ok: true, loaded: true };
+}
+
+function unmountE2EOverlay(): { ok: true } {
+  window.dispatchEvent(new CustomEvent(E2E_OVERLAY_DISPOSE_EVENT));
+  document.getElementById(E2E_OVERLAY_HOST_ID)?.remove();
+  document.getElementById(E2E_OVERLAY_CONFIG_ID)?.remove();
+  e2eOverlayMounted = false;
+  return { ok: true };
+}
 
 /**
  * Detect elements that cover >15% of the viewport via fixed/absolute positioning.
@@ -180,6 +429,7 @@ export function detectViewportCoveringOverlays(): {
     if (performance.now() - start > OVERLAY_SCAN_BUDGET_MS) break;
     if (!(raw instanceof HTMLElement)) continue;
     if (raw.id === AGENT_BORDER_ID) continue;
+    if (isOwnElement(raw)) continue;
     if (!isElementVisible(raw)) continue;
 
     let style: CSSStyleDeclaration;
@@ -443,7 +693,8 @@ function autoDismissModals(): DismissResult {
       logger.info("tools", "Skipped app-content overlay", {
         tag: el.tagName,
         classes: el.className.toString().slice(0, 50),
-        interactive: el.querySelectorAll("a[href],button,input,textarea,select").length,
+        interactive: el.querySelectorAll("a[href],button,input,textarea,select")
+          .length,
       });
       continue;
     }
@@ -480,7 +731,8 @@ function autoDismissModals(): DismissResult {
       logger.info("tools", "Skipped app-content covering element", {
         coverage: Math.round(coverage),
         tag: el.tagName,
-        interactive: el.querySelectorAll("a[href],button,input,textarea,select").length,
+        interactive: el.querySelectorAll("a[href],button,input,textarea,select")
+          .length,
       });
       continue;
     }
@@ -505,12 +757,16 @@ function autoDismissModals(): DismissResult {
     } else {
       dismissElement(el);
       dismissed++;
-      logger.info("tools", isBackdropElement(el)
-        ? "Hid backdrop overlay"
-        : "Hid covering overlay (no close button)", {
-        coverage: Math.round(coverage),
-        tag: el.tagName,
-      });
+      logger.info(
+        "tools",
+        isBackdropElement(el)
+          ? "Hid backdrop overlay"
+          : "Hid covering overlay (no close button)",
+        {
+          coverage: Math.round(coverage),
+          tag: el.tagName,
+        },
+      );
     }
   }
 
@@ -561,6 +817,16 @@ function autoDismissModals(): DismissResult {
 if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(
     (message: RuntimeMessage, _sender, sendResponse) => {
+      const messageType = message.type as string;
+      if (messageType === "E2E_CONTENT_READY_PING") {
+        sendResponse?.({
+          ok: true,
+          href: window.location.href,
+          readyState: document.readyState,
+        });
+        return true;
+      }
+
       if (message.type === "E2E_RAIL_UPDATE") {
         e2eRailState = {
           ...e2eRailState,
@@ -581,8 +847,28 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         return true;
       }
 
+      if (messageType === "E2E_OVERLAY_MOUNT") {
+        void mountE2EOverlay(
+          (message as unknown as { payload: E2EOverlayMountPayload }).payload,
+        )
+          .then((response) => sendResponse?.(response))
+          .catch((error) =>
+            sendResponse?.({
+              ok: false,
+              detail: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        return true;
+      }
+
+      if (messageType === "E2E_OVERLAY_UNMOUNT") {
+        sendResponse?.(unmountE2EOverlay());
+        return true;
+      }
+
       // Only accept messages from our own background service worker
       if (message.source !== MessageSource.BACKGROUND) return;
+      dispatchE2EOverlayRuntimeMessage(message);
 
       if (message.type === "AGENT_ACTIVITY") {
         agentSessionActive = message.payload.active;
@@ -623,9 +909,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             ? message.payload.currentIndex
             : 0;
         currentPlanProgress =
-          subtasks.length > 0
-            ? { currentIndex, total: subtasks.length }
-            : null;
+          subtasks.length > 0 ? { currentIndex, total: subtasks.length } : null;
         e2eRailState = {
           ...e2eRailState,
           planItems: subtasks
@@ -717,7 +1001,10 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "SCROLL_TO_POSITION") {
-        window.scrollTo({ top: message.payload.y, behavior: "instant" as ScrollBehavior });
+        window.scrollTo({
+          top: message.payload.y,
+          behavior: "instant" as ScrollBehavior,
+        });
         requestAnimationFrame(() => {
           sendResponse({
             type: "SCROLL_TO_POSITION_RESPONSE",
@@ -852,9 +1139,7 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
             dismissedTexts = result.capturedTexts;
           }
 
-          const snapshot = buildSnapshot(
-            message.payload.refresh,
-          );
+          const snapshot = buildSnapshot(message.payload.refresh);
 
           // Archivist: attach captured overlay text to snapshot for LLM context
           if (dismissedTexts.length > 0) {
@@ -909,14 +1194,16 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         }, 10_000);
         try {
           const res = executeAction(toolName, args);
-          Promise.resolve(res).then(respond).catch((err: any) => {
-            console.error("[content] TOOL_EXECUTE error:", toolName, err);
-            respond({
-              success: false,
-              result: `Tool error: ${err?.message || err}`,
-              navigated: false,
+          Promise.resolve(res)
+            .then(respond)
+            .catch((err: any) => {
+              console.error("[content] TOOL_EXECUTE error:", toolName, err);
+              respond({
+                success: false,
+                result: `Tool error: ${err?.message || err}`,
+                navigated: false,
+              });
             });
-          });
         } catch (err: any) {
           console.error("[content] TOOL_EXECUTE sync error:", toolName, err);
           respond({
@@ -946,7 +1233,10 @@ const RECORDING_BORDER_EDGE_GLOW = [
 let skillRecordingActive = false;
 let skillRecordingAbort: AbortController | null = null;
 let skillRecordingLastHref = window.location.href;
-const skillRecordingInputTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+const skillRecordingInputTimers = new WeakMap<
+  Element,
+  ReturnType<typeof setTimeout>
+>();
 
 function startSkillRecording() {
   if (skillRecordingActive) return;
@@ -970,8 +1260,12 @@ function startSkillRecording() {
     capture: true,
     signal,
   });
-  window.addEventListener("popstate", checkSkillRecordingNavigation, { signal });
-  window.addEventListener("hashchange", checkSkillRecordingNavigation, { signal });
+  window.addEventListener("popstate", checkSkillRecordingNavigation, {
+    signal,
+  });
+  window.addEventListener("hashchange", checkSkillRecordingNavigation, {
+    signal,
+  });
 }
 
 function stopSkillRecording() {
@@ -1021,11 +1315,15 @@ function handleSkillRecordingInput(event: Event) {
 function captureSkillRecordingField(el: HTMLElement) {
   if (!skillRecordingActive || !isEditableElement(el)) return;
   pulseSkillRecordingElement(el, "field");
-  const input = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+  const input = el as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement;
   const label = getElementLabel(el);
   const inputType =
     el instanceof HTMLInputElement ? el.type : el.tagName.toLowerCase();
-  const value = "value" in input ? String(input.value || "") : el.textContent || "";
+  const value =
+    "value" in input ? String(input.value || "") : el.textContent || "";
   const sensitive = isSensitiveInput(inputType);
 
   if (el instanceof HTMLSelectElement) {
@@ -1056,7 +1354,10 @@ function checkSkillRecordingNavigationSoon() {
 }
 
 function checkSkillRecordingNavigation() {
-  if (!skillRecordingActive || window.location.href === skillRecordingLastHref) {
+  if (
+    !skillRecordingActive ||
+    window.location.href === skillRecordingLastHref
+  ) {
     return;
   }
   skillRecordingLastHref = window.location.href;
@@ -1111,7 +1412,8 @@ function getElementLabel(el: HTMLElement): string {
     if (label?.textContent?.trim()) return label.textContent.trim();
   }
   const wrappingLabel = el.closest("label");
-  if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.trim();
+  if (wrappingLabel?.textContent?.trim())
+    return wrappingLabel.textContent.trim();
   const labelledBy = el.getAttribute("aria-labelledby");
   if (labelledBy) {
     const text = labelledBy
@@ -1123,7 +1425,9 @@ function getElementLabel(el: HTMLElement): string {
   }
   const placeholder = el.getAttribute("placeholder");
   if (placeholder?.trim()) return placeholder.trim();
-  const text = (el.innerText || el.textContent || "").trim().replace(/\s+/g, " ");
+  const text = (el.innerText || el.textContent || "")
+    .trim()
+    .replace(/\s+/g, " ");
   if (text) return text;
   return el.getAttribute("name") || el.id || el.tagName.toLowerCase();
 }
@@ -1931,7 +2235,21 @@ function ensureE2ERailStyles() {
   document.documentElement.appendChild(style);
 }
 
+function isE2EOverlayPanelMounted(): boolean {
+  return (
+    e2eOverlayMounted || Boolean(document.getElementById(E2E_OVERLAY_HOST_ID))
+  );
+}
+
+function removeE2ERail() {
+  document.getElementById(E2E_RAIL_ID)?.remove();
+}
+
 async function renderE2ERail() {
+  if (isE2EOverlayPanelMounted()) {
+    removeE2ERail();
+    return;
+  }
   if (!(await isE2ERailEnabled())) return;
   ensureE2ERailStyles();
 
@@ -2010,7 +2328,8 @@ async function renderE2ERail() {
     planList.replaceChildren(
       ...(e2eRailState.planItems.length > 0
         ? e2eRailState.planItems.slice(0, 5)
-        : ["Waiting for plan/progress."]).map((item) => {
+        : ["Waiting for plan/progress."]
+      ).map((item) => {
         const li = document.createElement("li");
         li.textContent = item;
         li.title = item;
@@ -2087,8 +2406,16 @@ function hideFloatingCue() {
   }, 220);
 }
 
+function removeFloatingAgentCue() {
+  document.getElementById(BORDER_ID)?.remove();
+  document.getElementById(FLOATING_WRAP_ID)?.remove();
+}
+
 /** Update the step label text above the floating stop button */
-function updateFloatingStepLabel(label: string, status: "running" | "done" | "error") {
+function updateFloatingStepLabel(
+  label: string,
+  status: "running" | "done" | "error",
+) {
   currentFloatingStep = { label, status };
   const el = document.getElementById(STEP_LABEL_ID);
   if (!el) return;
@@ -2132,6 +2459,11 @@ function setAgentBorder(
 ) {
   const existing = document.getElementById(BORDER_ID);
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
+
+  if (isE2EOverlayPanelMounted()) {
+    removeFloatingAgentCue();
+    return;
+  }
 
   if (active) {
     // No animation — just a persistent "agent is active" indicator.
@@ -2213,7 +2545,9 @@ function setAgentBorder(
       const labelEl = document.getElementById(STEP_LABEL_ID);
       if (labelEl) {
         const dot = labelEl.querySelector("span") as HTMLSpanElement | null;
-        const text = labelEl.querySelector("[data-label]") as HTMLSpanElement | null;
+        const text = labelEl.querySelector(
+          "[data-label]",
+        ) as HTMLSpanElement | null;
         labelEl.setAttribute("data-status", outcome.status);
         if (dot) {
           dot.style.animation = "none";

@@ -114,7 +114,7 @@
   {
     "id": "orchestrator.verifier.system",
     "version": "v2",
-    "hash": "56e8ffa6",
+    "hash": "2a2f92ef",
     "description": "Primary verifier system prompt for executor outcome validation.",
     "sourcePath": "prompts/runtime/orchestrator/verifier_system.md"
   },

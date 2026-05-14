@@ -8,7 +8,7 @@
  * Turn 1: Set ticket to In Progress + add a comment
  * Turn 2: Did the comment post? What does the activity feed show?
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-verify.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-verify.test.ts
  */
 
 import {

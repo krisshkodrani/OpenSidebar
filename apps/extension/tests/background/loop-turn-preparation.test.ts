@@ -95,7 +95,14 @@ describe("prepareLlmTurnRequest", () => {
       traceRecorder: null,
     });
 
-    expect(result.messages).toBe(messages);
+    expect(result.messages).not.toBe(messages);
+    expect(result.messages[0]?.content).toContain(
+      "## Available Tool Capabilities",
+    );
+    expect(result.messages[0]?.content).toContain(
+      "click_elements: click_element",
+    );
+    expect(result.messages[1]).toBe(messages[1]);
     expect(result.tools).toEqual([allTools[1]]);
     expect(result.previousElementCount).toBe(3);
     expect(log.info).toHaveBeenCalledWith(
@@ -120,7 +127,11 @@ describe("prepareLlmTurnRequest", () => {
       getInterpretation: vi.fn(() => "The page is ready."),
       getLastScreenshot: vi.fn(() => "data:image/jpeg;base64,abc"),
       getPanoramicShots: vi.fn(() => [
-        { dataUrl: "data:image/jpeg;base64,pan", scrollY: 100, label: "bottom" },
+        {
+          dataUrl: "data:image/jpeg;base64,pan",
+          scrollY: 100,
+          label: "bottom",
+        },
       ]),
     });
 
@@ -171,7 +182,13 @@ describe("prepareLlmTurnRequest", () => {
       }),
       "data:image/jpeg;base64,abc",
       expect.stringContaining("1 buttons"),
-      [{ dataUrl: "data:image/jpeg;base64,pan", scrollY: 100, label: "bottom" }],
+      [
+        {
+          dataUrl: "data:image/jpeg;base64,pan",
+          scrollY: 100,
+          label: "bottom",
+        },
+      ],
     );
   });
 });

@@ -9,24 +9,24 @@
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/dist"],
       "options": {
-        "cwd": "{workspaceRoot}",
-        "command": "npm --prefix apps/extension/tests/e2e/fixtures/online-shop-pro run build"
+        "cwd": "{projectRoot}",
+        "command": "vite build"
       }
     },
     "serve": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "cwd": "{workspaceRoot}",
-        "command": "npm --prefix apps/extension/tests/e2e/fixtures/online-shop-pro run dev"
+        "cwd": "{projectRoot}",
+        "command": "vite --host 127.0.0.1"
       }
     },
     "preview": {
       "executor": "nx:run-commands",
       "cache": false,
       "options": {
-        "cwd": "{workspaceRoot}",
-        "command": "npm --prefix apps/extension/tests/e2e/fixtures/online-shop-pro run preview"
+        "cwd": "{projectRoot}",
+        "command": "vite preview --host 127.0.0.1"
       }
     }
   }

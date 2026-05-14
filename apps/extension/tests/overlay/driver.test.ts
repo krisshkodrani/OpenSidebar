@@ -12,7 +12,9 @@ import {
 
 const harnesses: OverlayUiRuntimeHarness[] = [];
 
-function trackHarness(harness: OverlayUiRuntimeHarness): OverlayUiRuntimeHarness {
+function trackHarness(
+  harness: OverlayUiRuntimeHarness,
+): OverlayUiRuntimeHarness {
   harnesses.push(harness);
   return harness;
 }
@@ -52,7 +54,9 @@ describe("overlay driver", () => {
   });
 
   test("observes outbound UI messages from the overlay runtime", async () => {
-    const harness = trackHarness(createOverlayUiRuntimeHarness());
+    const harness = trackHarness(
+      createOverlayUiRuntimeHarness({ onSendMessage: () => ({ ok: true }) }),
+    );
     const messages: unknown[] = [];
     const unsubscribe = subscribeOverlayUiMessages((message) => {
       messages.push(message);
@@ -79,7 +83,9 @@ describe("overlay driver", () => {
   test("reads the mounted overlay runtime handle when present", () => {
     const harness = trackHarness(createOverlayUiRuntimeHarness());
     (
-      window as Window & { __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness }
+      window as Window & {
+        __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness;
+      }
     ).__opensidebarOverlayRuntime = harness;
 
     expect(getOverlayRuntimeHarness()).toBe(harness);

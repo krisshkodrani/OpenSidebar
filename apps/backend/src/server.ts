@@ -4,8 +4,8 @@
  * Provides local durable run state (SQLite)
  * for the OpenSidebar Chrome extension.
  *
- * Usage: npx tsx apps/backend/src/server.ts
- * Or:    npm run backend
+ * Usage: pnpm exec tsx apps/backend/src/server.ts
+ * Or:    pnpm run backend:standalone
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -16,6 +16,7 @@ import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { handleHealth } from "./routes/health.js";
 import { handleProfileRoutes } from "./routes/profile.js";
+import { handleRealtimeRoutes } from "./routes/realtime.js";
 import { handleTaskRunRoutes } from "./routes/task-runs.js";
 import type { BackendConfig } from "./types.js";
 
@@ -50,6 +51,17 @@ function parseJsonBody(req: IncomingMessage): Promise<unknown> {
       } catch (err) {
         reject(err);
       }
+    });
+    req.on("error", reject);
+  });
+}
+
+function parseTextBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => {
+      resolve(Buffer.concat(chunks).toString("utf-8"));
     });
     req.on("error", reject);
   });
@@ -119,6 +131,21 @@ export async function handleBackendRequest(
         searchParams,
         method,
         parseJsonBody,
+        parseTextBody,
+        sendJson,
+        sendEmpty,
+        sendError,
+      });
+      return;
+    }
+
+    if (pathname.startsWith("/realtime")) {
+      await handleRealtimeRoutes(req, res, {
+        pathname,
+        searchParams,
+        method,
+        parseJsonBody,
+        parseTextBody,
         sendJson,
         sendEmpty,
         sendError,
@@ -132,6 +159,7 @@ export async function handleBackendRequest(
         searchParams,
         method,
         parseJsonBody,
+        parseTextBody,
         sendJson,
         sendEmpty,
         sendError,
@@ -191,6 +219,7 @@ export type RouteContext = {
   searchParams: URLSearchParams;
   method: string;
   parseJsonBody: typeof parseJsonBody;
+  parseTextBody: typeof parseTextBody;
   sendJson: typeof sendJson;
   sendEmpty: typeof sendEmpty;
   sendError: typeof sendError;

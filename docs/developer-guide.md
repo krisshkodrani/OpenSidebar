@@ -7,11 +7,11 @@ This is the quickest accurate map of the current codebase.
 Most development work starts with the same small command set:
 
 ```bash
-npm run dev      # run the local app stack
-npm run dist     # build the standalone unpacked extension
-npm test         # run fast tests
-npm run verify   # run the full local confidence gate
-npm run doctor   # diagnose local setup
+pnpm run dev      # run the local app stack
+pnpm run dist     # build the standalone unpacked extension
+pnpm test         # run fast tests
+pnpm run verify   # run the full local confidence gate
+pnpm run doctor   # diagnose local setup
 ```
 
 After that, development work usually falls into one of these workflows:
@@ -31,7 +31,7 @@ When to use this:
 Work on the extension with the log server and trace viewer available.
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 What it starts:
@@ -41,12 +41,12 @@ What it starts:
 - Vite/CRXJS dev process
 - loadable dev extension output in `dist-dev/`
 
-For manual dev testing, load `dist-dev/` in `chrome://extensions/` after `npm run dev` prints the CRXJS instruction. Keep that shell running while testing.
+For manual dev testing, load `dist-dev/` in `chrome://extensions/` after `pnpm run dev` prints the CRXJS instruction. Keep that shell running while testing.
 
 For a standalone production/manual extension build, run:
 
 ```bash
-npm run dist
+pnpm run dist
 ```
 
 Then load or reload the unpacked extension from `dist/` in `chrome://extensions/`.
@@ -57,13 +57,13 @@ When to use this:
 Validate normal code changes without launching Chrome.
 
 ```bash
-npm test
+pnpm test
 ```
 
 Run a single file:
 
 ```bash
-npx vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
+pnpm exec vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
 ```
 
 ### Run E2E tests
@@ -78,7 +78,7 @@ Prerequisites:
 - successful build assets
 
 ```bash
-npm run test:e2e:staged
+pnpm run test:e2e:staged
 ```
 
 Related surfaces:
@@ -86,16 +86,30 @@ Related surfaces:
 - fixtures in `apps/extension/tests/e2e/fixtures/`
 - helper utilities in `apps/extension/tests/e2e/helpers/`
 - local reports in `.artifacts/e2e/e2e-report-YYYY-MM-DD.md`
+- E2E config defaults in `apps/extension/tests/e2e/helpers/e2e-config.ts`
+
+The supported public E2E environment surface is intentionally small:
+
+| Env var | Purpose |
+| --- | --- |
+| `E2E_PROFILE` | Selects defaults: `local`, `ci`, `debug`, `video`, or `headed`. |
+| `E2E_PROVIDER` | Selects the agent provider. Default is `fireworks`. |
+| `E2E_MODEL` | Overrides the executor model for focused runs. |
+| `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`. |
+| `E2E_SUITE_FLAGS` | Comma-separated optional gates such as `backend-durable`, `backend-profile`, `memory-long`, `diagnostic`, or `single-process`. |
+| `E2E_ARTIFACTS` | Comma-separated artifact/browser flags such as `video`, `screenshots`, `panel`, `detached-panel`, `no-panel`, `headed`, or `headless`. |
+
+Older `E2E_*` names are temporary compatibility aliases and should not be used in new commands.
 
 Routine E2E is divided by purpose rather than difficulty:
 
 | Suite              | Command                                  | Purpose                                                                                          |
 | ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Smoke              | `npm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
-| Interactions       | `npm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
-| Runtime            | `npm run test:e2e:runtime`               | Planning, continuation, recovery, and durable state regressions                                  |
-| WorkArena setup    | `npx tsx scripts/workarena-doctor.ts`    | Local WorkArena readiness and gated dataset access checks                                       |
-| WorkArena handoff  | `npx tsx scripts/workarena-handoff.ts`   | Manual real ServiceNow handoff run; requires explicit reset flag                                |
+| Smoke              | `pnpm run test:e2e:smoke`                 | Cheap confidence for core browser-agent behavior                                                 |
+| Interactions       | `pnpm run test:e2e:interactions`          | Page interaction, navigation, overlays, form, and shopping regressions                           |
+| Runtime            | `pnpm run test:e2e:runtime`               | Planning, continuation, recovery, and durable state regressions                                  |
+| WorkArena setup    | `pnpm exec tsx scripts/workarena-doctor.ts`    | Local WorkArena readiness and gated dataset access checks                                       |
+| WorkArena handoff  | `pnpm exec tsx scripts/workarena-handoff.ts`   | Manual real ServiceNow handoff run; requires explicit reset flag                                |
 
 ### Inspect traces and logs
 
@@ -103,8 +117,8 @@ When to use this:
 Debug tool execution, planner/executor behavior, or E2E failures.
 
 ```bash
-npm run dev
-npm run traces
+pnpm run dev
+pnpm run traces
 ```
 
 Viewer:
@@ -121,10 +135,10 @@ Trace retention:
 Maintenance commands:
 
 ```bash
-npm run traces:index                # backfill or repair SQLite from raw JSONL
-npm run traces:delete-old           # dry run: raw files older than 7 days
-npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
-npm run traces:compact              # index, then delete old raw files
+pnpm run traces:index                # backfill or repair SQLite from raw JSONL
+pnpm run traces:delete-old           # dry run: raw files older than 7 days
+pnpm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+pnpm run traces:compact              # index, then delete old raw files
 ```
 
 ## Current Runtime
@@ -237,7 +251,7 @@ Structured perception uses the unified v6 contract:
 - log server: `scripts/log-server.ts`
 - trace viewer: `apps/extension/src/trace-viewer/`
 - trace files: `traces/`
-- query CLI: `npm run traces`
+- query CLI: `pnpm run traces`
 
 ## Command Reference
 
@@ -245,49 +259,49 @@ Structured perception uses the unified v6 contract:
 
 | Command         | Use this when                         | Notes                                        |
 | --------------- | ------------------------------------- | -------------------------------------------- |
-| `npm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
-| `npm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
-| `npm test`      | you want fast local tests             | extension + backend unit/integration tests   |
-| `npm run verify` | you want pre-commit confidence       | lint + typecheck + tests + build + dist check |
-| `npm run doctor` | you want setup diagnosis             | checks deps, builds, local server, and trace DB |
+| `pnpm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
+| `pnpm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
+| `pnpm test`      | you want fast local tests             | extension + backend unit/integration tests   |
+| `pnpm run verify` | you want pre-commit confidence       | lint + typecheck + tests + build + dist check |
+| `pnpm run doctor` | you want setup diagnosis             | checks deps, builds, local server, and trace DB |
 
 Advanced local commands:
 
 | Command         | Use this when                         | Notes                                        |
 | --------------- | ------------------------------------- | -------------------------------------------- |
-| `npm run build` | CI or habit expects the build name    | compatibility alias for `npm run dist`       |
-| `npm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
-| `npm run typecheck` | you want TypeScript project checks | all typecheck targets                        |
-| `npm run fmt`   | you want formatting only              | formats extension source and shared packages |
+| `pnpm run build` | you want the production build name    | runs the extension production build           |
+| `pnpm run lint`  | you want a lint pass                  | source-focused ESLint run                    |
+| `pnpm run typecheck` | you want TypeScript project checks | all typecheck targets                        |
+| `pnpm run fmt`   | you want formatting only              | formats extension source and shared packages |
 
-The npm scripts are the stable day-to-day entry points. Use direct Nx commands when you need to address a specific project target:
+The pnpm package scripts are the stable day-to-day entry points. Use direct Nx commands when you need to address a specific project target:
 
 | Command                    | Use this when                              |
 | -------------------------- | ------------------------------------------ |
-| `npx nx run extension:dev` | you only want the extension dev target     |
-| `npx nx run extension:build` | you only want the extension production build |
-| `npx nx run extension:test` | you only want extension unit/integration tests |
-| `npx nx run backend:test`  | you only want backend tests                |
-| `npx nx run-many -t lint`  | you want all lint targets                  |
-| `npx nx run-many -t typecheck` | you want all typecheck targets          |
+| `pnpm exec nx run extension:dev` | you only want the extension dev target     |
+| `pnpm exec nx run extension:build` | you only want the extension production build |
+| `pnpm exec nx run extension:test` | you only want extension unit/integration tests |
+| `pnpm exec nx run backend:test`  | you only want backend tests                |
+| `pnpm exec nx run-many -t lint`  | you want all lint targets                  |
+| `pnpm exec nx run-many -t typecheck` | you want all typecheck targets          |
 
 ### Tests
 
 | Command                      | Use this when                             | Notes                                          |
 | ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `npm test`                   | you want the normal fast test suite       | extension and backend tests; excludes browser E2E |
-| `npm run test:backend`       | you changed backend routes or persistence | backend-only Vitest run                        |
-| `npm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
-| `npm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
-| `npm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
-| `npx tsx scripts/workarena-first-task.ts` | you need a safe first real WorkArena candidate | metadata-only; no reset or LLM calls |
-| `npx tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
-| `npx tsx scripts/workarena-handoff.ts` | you need a manual real WorkArena handoff run | requires `--allow-servicenow-reset`; token-spending |
-| `npx tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
-| `npm run verify`             | you want the local confidence gate        | lint + typecheck + tests + build + dist check  |
-| `npm run ci:local`           | a tool expects the old CI alias           | aliases `npm run verify`                       |
-| `npm run release:verify`     | a tool expects the old release alias      | aliases `npm run verify`                       |
-| `npx vitest run <file>`      | you want one focused test file            | useful during iteration                        |
+| `pnpm test`                   | you want the normal fast test suite       | extension and backend tests; excludes browser E2E |
+| `pnpm run test:backend`       | you changed backend routes or persistence | backend-only Vitest run                        |
+| `pnpm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
+| `pnpm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
+| `pnpm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |
+| `pnpm exec tsx scripts/workarena-first-task.ts` | you need a safe first real WorkArena candidate | metadata-only; no reset or LLM calls |
+| `pnpm exec tsx scripts/workarena-category-coverage.ts` | you need to verify local analog coverage for every WorkArena category | metadata-only; writes `.artifacts/e2e/` report |
+| `pnpm exec tsx scripts/workarena-handoff.ts` | you need a manual real WorkArena handoff run | requires `--allow-servicenow-reset`; token-spending |
+| `pnpm exec tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
+| `pnpm run verify`             | you want the local confidence gate        | lint + typecheck + tests + build + dist check  |
+| `pnpm run ci:local`           | you want the CI-equivalent local gate     | lint + typecheck + tests + build + dist check  |
+| `pnpm run release:verify`     | you want release confidence              | lint + typecheck + tests + build + dist check  |
+| `pnpm exec vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).
 
@@ -295,16 +309,16 @@ For the path from guarded WorkArena smoke runs to category-balanced graded evalu
 
 | Command               | Use this when                            | Notes                             |
 | --------------------- | ---------------------------------------- | --------------------------------- |
-| `npm run dev`         | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
-| `npm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
-| `npm run logs:errors` | you only care about errors               | filters by log level              |
-| `npm run traces`      | you want trace CLI queries               | session list, turns, stats        |
-| `npm run traces:index` | you want to backfill or repair the SQLite trace store | writes `.artifacts/trace-index.sqlite` |
-| `npm run traces:delete-old` | you want to preview 7-day raw-file deletion | dry run by default |
-| `npm run traces:compact` | you want normal trace maintenance | indexes, then deletes old raw files after coverage checks |
+| `pnpm run dev`         | you want the log server and trace viewer | viewer at `127.0.0.1:7589/viewer` |
+| `pnpm run logs:tail`   | you want recent logs quickly             | last 50 entries                   |
+| `pnpm run logs:errors` | you only care about errors               | filters by log level              |
+| `pnpm run traces`      | you want trace CLI queries               | session list, turns, stats        |
+| `pnpm run traces:index` | you want to backfill or repair the SQLite trace store | writes `.artifacts/trace-index.sqlite` |
+| `pnpm run traces:delete-old` | you want to preview 7-day raw-file deletion | dry run by default |
+| `pnpm run traces:compact` | you want normal trace maintenance | indexes, then deletes old raw files after coverage checks |
 
 ## Development Notes
 
 - Prefer `rg` for search.
-- Prompt changes usually require `npm run dist` because prompts are compiled into `packages/prompts/src/generated.ts`.
+- Prompt changes usually require `pnpm run dist` because prompts are compiled into `packages/prompts/src/generated.ts`.
 - If docs disagree with code, update the docs after checking the runtime source of truth.

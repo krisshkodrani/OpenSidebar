@@ -7,15 +7,25 @@
 
 import type { WebWorker, Page } from "puppeteer";
 import type { ExtensionContext } from "./browser";
-import { openHelperPage, reloadExtension } from "./browser";
+import {
+  closeNonExtensionPages,
+  closeE2EPanel,
+  ensureE2EPanel,
+  getE2EPanelMode,
+  openHelperPage,
+  reloadExtension,
+} from "./browser";
 import {
   E2E_SEED_PENDING_INTERACTION_MESSAGE_TYPE,
   E2E_TEST_API_ENABLED_STORAGE_KEY,
 } from "../../../src/background/e2e-test-api";
+import { readE2EConfig } from "./e2e-config";
 
 type TaskCompletionState = "completed" | "partial" | "failed" | "none";
 
-function isTerminalTaskCompletionStatus(status: unknown): status is "completed" | "partial" | "failed" {
+function isTerminalTaskCompletionStatus(
+  status: unknown,
+): status is "completed" | "partial" | "failed" {
   return status === "completed" || status === "partial" || status === "failed";
 }
 
@@ -23,8 +33,11 @@ function getLatestTaskCompletionEvent(events: any[]): any | null {
   return (
     [...events]
       .reverse()
-      .find((event: any) => event.type === "TASK_COMPLETION" && isTerminalTaskCompletionStatus(event.status)) ??
-    null
+      .find(
+        (event: any) =>
+          event.type === "TASK_COMPLETION" &&
+          isTerminalTaskCompletionStatus(event.status),
+      ) ?? null
   );
 }
 
@@ -34,6 +47,69 @@ function getLatestTaskCompletionState(events: any[]): TaskCompletionState {
   if (completion?.status === "partial") return "partial";
   if (completion?.status === "failed") return "failed";
   return "none";
+}
+
+function describeTaskCompletionEvent(event: any): string {
+  const status = String(event?.status ?? event?.completionStatus ?? "unknown");
+  const detail =
+    event?.detail ??
+    event?.terminationReason ??
+    event?.payload?.summary ??
+    event?.payload?.detail ??
+    "unknown";
+  return `task_${status}:${detail}`;
+}
+
+function isTerminalAgentStatusEvent(event: any): boolean {
+  if (event?.type !== "AGENT_STATUS") return false;
+  if (event.status === "ERROR") return true;
+  return (
+    event.status === "IDLE" &&
+    isTerminalTaskCompletionStatus(event.completionStatus)
+  );
+}
+
+function getLatestTerminalWaitEvent(events: any[]): any | null {
+  return (
+    [...events].reverse().find((event: any) => {
+      if (
+        event.type === "TASK_COMPLETION" &&
+        isTerminalTaskCompletionStatus(event.status)
+      ) {
+        return true;
+      }
+      return isTerminalAgentStatusEvent(event);
+    }) ?? null
+  );
+}
+
+function describeTerminalWaitEvent(event: any): string {
+  if (event?.type === "TASK_COMPLETION") {
+    return describeTaskCompletionEvent(event);
+  }
+
+  const status = String(event?.status ?? "unknown").toLowerCase();
+  const completionStatus =
+    typeof event?.completionStatus === "string"
+      ? `_${event.completionStatus}`
+      : "";
+  const detail =
+    event?.detail ??
+    event?.payload?.detail ??
+    event?.payload?.summary ??
+    event?.payload?.error ??
+    "unknown";
+  return `agent_${status}${completionStatus}:${detail}`;
+}
+
+function throwIfTaskAlreadyFinished(events: any[], waitLabel: string): void {
+  const terminal = getLatestTerminalWaitEvent(events);
+  if (!terminal) return;
+  throw new Error(
+    `${waitLabel} ended early because the task already finished: ${describeTerminalWaitEvent(
+      terminal,
+    )}`,
+  );
 }
 
 function hasIdleAfterTerminalCompletion(events: any[]): boolean {
@@ -51,11 +127,192 @@ function hasIdleAfterTerminalCompletion(events: any[]): boolean {
 }
 
 function isTransientPageEvaluationError(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : String(error ?? "");
+  const message = error instanceof Error ? error.message : String(error ?? "");
   return /\b(?:execution context was destroyed|cannot find context|context destroyed|frame was detached|navigating|navigation)\b/i.test(
     message,
   );
+}
+
+const PANEL_PROMPT_SUBMIT_TIMEOUT_MS = 15_000;
+const SERVICE_WORKER_EVALUATE_TIMEOUT_MS = 3_000;
+const RESET_CLEANUP_OPERATION_TIMEOUT_MS = 5_000;
+
+function withE2ETimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function warnResetCleanup(label: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`[e2e] Reset cleanup skipped ${label}: ${detail}`);
+}
+
+function panelRootLookupScript(mode: "overlay" | "detached"): string {
+  if (mode === "overlay") {
+    return `
+      const host = document.getElementById("opensidebar-harness-host");
+      const root = host && host.shadowRoot;
+    `;
+  }
+  return "const root = document;";
+}
+
+function panelTextareaReadyExpression(mode: "overlay" | "detached"): string {
+  return `(() => {
+    ${panelRootLookupScript(mode)}
+    return Boolean(root && root.querySelector("textarea"));
+  })()`;
+}
+
+function panelSubmitReadyExpression(mode: "overlay" | "detached"): string {
+  return `(() => {
+    ${panelRootLookupScript(mode)}
+    const textarea = root && root.querySelector("textarea");
+    const button =
+      root &&
+      root.querySelector('button[aria-label="Send message"], button[aria-label="Send guidance"]');
+    return Boolean(
+      textarea &&
+      textarea.value.trim().length > 0 &&
+      button &&
+      !(button instanceof HTMLButtonElement && button.disabled)
+    );
+  })()`;
+}
+
+function panelSetPromptExpression(
+  mode: "overlay" | "detached",
+  message: string,
+): string {
+  return `(() => new Promise((resolve) => {
+    ${panelRootLookupScript(mode)}
+    const textarea = root && root.querySelector("textarea");
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      resolve({ ok: false, reason: "textarea-missing" });
+      return;
+    }
+    const value = ${JSON.stringify(message)};
+    textarea.focus();
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    if (setter) {
+      setter.call(textarea, value);
+    } else {
+      textarea.value = value;
+    }
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const button =
+          root &&
+          root.querySelector('button[aria-label="Send message"], button[aria-label="Send guidance"]');
+        resolve({
+          ok: true,
+          value: textarea.value,
+          buttonDisabled:
+            button instanceof HTMLButtonElement ? button.disabled : null,
+        });
+      });
+    });
+  }))()`;
+}
+
+function panelFocusTextareaExpression(mode: "overlay" | "detached"): string {
+  return `(() => {
+    ${panelRootLookupScript(mode)}
+    const textarea = root && root.querySelector("textarea");
+    if (!(textarea instanceof HTMLTextAreaElement)) return false;
+    textarea.focus();
+    return true;
+  })()`;
+}
+
+async function getPuppeteerPageForChromeTab(
+  ctx: ExtensionContext,
+  tabId: number,
+): Promise<Page | null> {
+  const helperPage = await openHelperPage(ctx);
+  const tabUrl = await helperPage.evaluate(`(async () => {
+    try {
+      const tab = await chrome.tabs.get(${JSON.stringify(tabId)});
+      return tab.url || null;
+    } catch {
+      return null;
+    }
+  })()`);
+  if (typeof tabUrl !== "string" || tabUrl.length === 0) return null;
+
+  const pages = await ctx.browser.pages();
+  return (
+    pages.find((page) => !page.isClosed() && page.url() === tabUrl) ?? null
+  );
+}
+
+async function submitPromptOnPanelPage(
+  page: Page,
+  mode: "overlay" | "detached",
+  message: string,
+): Promise<void> {
+  await page.bringToFront().catch(() => {});
+  await page.waitForFunction(panelTextareaReadyExpression(mode), {
+    timeout: PANEL_PROMPT_SUBMIT_TIMEOUT_MS,
+  });
+  const result = await page.evaluate(panelSetPromptExpression(mode, message));
+  if (!result || typeof result !== "object" || !(result as any).ok) {
+    throw new Error(
+      `E2E panel prompt injection failed: ${(result as any)?.reason ?? "unknown"}`,
+    );
+  }
+  await page.waitForFunction(panelSubmitReadyExpression(mode), {
+    timeout: PANEL_PROMPT_SUBMIT_TIMEOUT_MS,
+  });
+  await page.evaluate(panelFocusTextareaExpression(mode));
+  await page.keyboard.press("Enter");
+}
+
+async function submitUserChatThroughE2EPanel(
+  ctx: ExtensionContext,
+  message: string,
+  tabId: number,
+): Promise<boolean> {
+  const mode = getE2EPanelMode();
+  if (mode === "off") return false;
+
+  if (mode === "detached") {
+    const panelPage = ctx.detachedPanelPage;
+    if (!panelPage || panelPage.isClosed()) {
+      throw new Error("Detached E2E panel is not available for prompt input.");
+    }
+    await submitPromptOnPanelPage(panelPage, "detached", message);
+    return true;
+  }
+
+  const targetPage = await getPuppeteerPageForChromeTab(ctx, tabId);
+  if (!targetPage) {
+    throw new Error(`Could not find Puppeteer page for tab ${tabId}.`);
+  }
+  await submitPromptOnPanelPage(targetPage, "overlay", message);
+  return true;
 }
 
 /**
@@ -66,9 +323,11 @@ function isTransientPageEvaluationError(error: unknown): boolean {
  * This avoids needing a visible helper page tab for event collection.
  */
 export async function setupEventMonitor(worker: WebWorker): Promise<void> {
-  const eventBufferLimit = process.env.E2E_DIAGNOSTIC === "true" ? 2_000 : 400;
-  await worker.evaluate(async (bufferLimit: number) => {
-    const g = self as any;
+  const eventBufferLimit = readE2EConfig().diagnostic ? 2_000 : 400;
+  const script = `
+(async () => {
+    const bufferLimit = ${JSON.stringify(eventBufferLimit)};
+    const g = self;
     if (g.__e2eEventMonitorInstalled) {
       g.__agentEvents = [];
       g.__e2eEventBufferLimit = bufferLimit;
@@ -90,28 +349,32 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
 
     g.__agentEvents = [];
     g.__e2eEventBufferLimit = bufferLimit;
-    const runtime = g.chrome.runtime;
-    const origSend = runtime.sendMessage.bind(runtime);
-    g.__e2eOrigSendMessage = origSend;
-    runtime.sendMessage = function (...args: any[]) {
-      const message = args[0];
+    const captureMessage = (message, channel) => {
       if (message && typeof message === "object" && typeof message.type === "string") {
         const t = message.type;
+        const lowerType = t.toLowerCase();
         if (
           t === "AGENT_STATUS" ||
+          t === "USER_CHAT_ACCEPTED" ||
+          t === "AGENT_ACTIVITY" ||
           t === "AGENT_STEP" ||
           t === "TASK_PROGRESS" ||
           t === "TASK_COMPLETION" ||
           t === "STREAM_CHUNK" ||
           t === "APPROVAL_REQUEST" ||
           t === "CLARIFICATION_REQUEST" ||
-          t === "TASK_RECOVERY"
+          t === "TASK_RECOVERY" ||
+          lowerType.includes("memory")
         ) {
           g.__agentEvents.push({
             type: t,
+            channel,
             status: message?.payload?.status,
             completionStatus: message?.payload?.completionStatus,
             detail: message?.payload?.detail,
+            active: message?.payload?.active ?? null,
+            outcome: message?.payload?.outcome ?? null,
+            laneTelemetry: message?.payload?.laneTelemetry ?? null,
             stepLabel: message?.payload?.step?.label,
             stepDetail: message?.payload?.step?.detail,
             workspaceId: message?.workspaceId ?? null,
@@ -131,10 +394,27 @@ export async function setupEventMonitor(worker: WebWorker): Promise<void> {
           if (g.__agentEvents.length > g.__e2eEventBufferLimit) g.__agentEvents.shift();
         }
       }
+    };
+
+    const runtime = g.chrome.runtime;
+    const origSend = runtime.sendMessage.bind(runtime);
+    g.__e2eOrigSendMessage = origSend;
+    runtime.sendMessage = function (...args) {
+      captureMessage(args[0], "runtime");
       return origSend(...args);
     };
+    if (g.chrome?.tabs?.sendMessage) {
+      const origTabsSend = g.chrome.tabs.sendMessage.bind(g.chrome.tabs);
+      g.__e2eOrigTabsSendMessage = origTabsSend;
+      g.chrome.tabs.sendMessage = function (...args) {
+        captureMessage(args[1], "tabs");
+        return origTabsSend(...args);
+      };
+    }
     g.__e2eEventMonitorInstalled = true;
-  }, eventBufferLimit);
+})()
+  `;
+  await worker.evaluate(script);
 }
 
 /**
@@ -144,10 +424,46 @@ export async function getMonitoredEvents(
   worker: WebWorker,
   last: number = 30,
 ): Promise<any[]> {
-  return worker.evaluate((n: number) => {
-    const events = (self as any).__agentEvents ?? [];
-    return events.slice(-n);
-  }, last);
+  return withE2ETimeout(
+    worker.evaluate((n: number) => {
+      const events = (self as any).__agentEvents ?? [];
+      return events.slice(-n);
+    }, last),
+    SERVICE_WORKER_EVALUATE_TIMEOUT_MS,
+    "Monitored event read",
+  );
+}
+
+export async function getAgentActivityEvents(
+  worker: WebWorker,
+  last: number = 80,
+  workspaceId?: string | null,
+): Promise<any[]> {
+  const events = await getMonitoredEvents(worker, last);
+  return events.filter(
+    (event: any) =>
+      event.type === "AGENT_ACTIVITY" &&
+      (workspaceId == null ||
+        event.workspaceId == null ||
+        event.workspaceId === workspaceId),
+  );
+}
+
+export async function getMemoryEvents(
+  worker: WebWorker,
+  last: number = 80,
+  workspaceId?: string | null,
+): Promise<any[]> {
+  const events = await getMonitoredEvents(worker, last);
+  return events.filter((event: any) => {
+    const type = String(event?.type ?? "").toLowerCase();
+    return (
+      type.includes("memory") &&
+      (workspaceId == null ||
+        event.workspaceId == null ||
+        event.workspaceId === workspaceId)
+    );
+  });
 }
 
 export async function waitForMonitoredEvent(
@@ -168,6 +484,7 @@ export async function waitForMonitoredEvent(
           );
     const match = [...events].reverse().find(predicate);
     if (match) return match;
+    throwIfTaskAlreadyFinished(events, "Wait for monitored event");
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`Timed out after ${timeoutMs}ms waiting for monitored event`);
@@ -210,7 +527,11 @@ export async function requestSnapshot(
             },
             (response: any) => {
               if ((globalThis as any).chrome.runtime.lastError) {
-                reject(new Error((globalThis as any).chrome.runtime.lastError.message));
+                reject(
+                  new Error(
+                    (globalThis as any).chrome.runtime.lastError.message,
+                  ),
+                );
               } else {
                 resolve(response?.payload ?? response);
               }
@@ -219,7 +540,10 @@ export async function requestSnapshot(
         });
       }, tabId);
     } catch (err: any) {
-      if (attempt < maxRetries && err.message?.includes("Receiving end does not exist")) {
+      if (
+        attempt < maxRetries &&
+        err.message?.includes("Receiving end does not exist")
+      ) {
         await new Promise((r) => globalThis.setTimeout(r, 1000));
         continue;
       }
@@ -242,7 +566,11 @@ export async function sendToolExecute(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await worker.evaluate(
-        async (tid: number, tool: string, toolArgs: Record<string, unknown>) => {
+        async (
+          tid: number,
+          tool: string,
+          toolArgs: Record<string, unknown>,
+        ) => {
           return new Promise((resolve, reject) => {
             const requestId = crypto.randomUUID();
             (globalThis as any).chrome.tabs.sendMessage(
@@ -251,11 +579,19 @@ export async function sendToolExecute(
                 type: "TOOL_EXECUTE",
                 requestId,
                 source: "background",
-                payload: { toolName: tool, args: toolArgs, toolCallId: requestId },
+                payload: {
+                  toolName: tool,
+                  args: toolArgs,
+                  toolCallId: requestId,
+                },
               },
               (response: any) => {
                 if ((globalThis as any).chrome.runtime.lastError) {
-                  reject(new Error((globalThis as any).chrome.runtime.lastError.message));
+                  reject(
+                    new Error(
+                      (globalThis as any).chrome.runtime.lastError.message,
+                    ),
+                  );
                 } else {
                   resolve(response?.payload ?? response);
                 }
@@ -268,7 +604,10 @@ export async function sendToolExecute(
         args,
       );
     } catch (err: any) {
-      if (attempt < maxRetries && err.message?.includes("Receiving end does not exist")) {
+      if (
+        attempt < maxRetries &&
+        err.message?.includes("Receiving end does not exist")
+      ) {
         await new Promise((r) => globalThis.setTimeout(r, 1000));
         continue;
       }
@@ -297,7 +636,9 @@ export async function sendDismissModals(
         },
         (response: any) => {
           if ((globalThis as any).chrome.runtime.lastError) {
-            reject(new Error((globalThis as any).chrome.runtime.lastError.message));
+            reject(
+              new Error((globalThis as any).chrome.runtime.lastError.message),
+            );
           } else {
             resolve(response?.payload ?? response);
           }
@@ -316,10 +657,12 @@ export async function navigateAndWait(
   url: string,
   options: { timeoutMs?: number } = {},
 ): Promise<void> {
+  await page.bringToFront().catch(() => {});
   await page.goto(url, {
     waitUntil: "domcontentloaded",
     ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
   });
+  await page.bringToFront().catch(() => {});
   // Give content script time to initialize
   await new Promise((r) => setTimeout(r, 1000));
 }
@@ -334,14 +677,38 @@ export async function sendUserChat(
   workspaceId: string | null = null,
 ): Promise<string> {
   const effectiveWorkspaceId = workspaceId ?? `e2e-${crypto.randomUUID()}`;
+  await ensureE2EPanel(ctx, tabId, effectiveWorkspaceId);
+  const panelSubmitStartedAt = Date.now();
+  const sentViaPanel = await submitUserChatThroughE2EPanel(ctx, message, tabId);
+  if (sentViaPanel) {
+    const expectedText = message.trim();
+    await waitForMonitoredEvent(
+      ctx.serviceWorker,
+      (event: any) =>
+        event.type === "USER_CHAT_ACCEPTED" &&
+        event.timestamp >= panelSubmitStartedAt &&
+        event.payload?.text === expectedText,
+      20_000,
+      effectiveWorkspaceId,
+    );
+    return effectiveWorkspaceId;
+  }
+
   const helperPage = await openHelperPage(ctx);
   await helperPage.evaluate(
     async (msg: string, tid: number, wsId: string | null) => {
+      const messageId = crypto.randomUUID();
       await chrome.runtime.sendMessage({
         type: "USER_CHAT",
         requestId: crypto.randomUUID(),
         source: "sidepanel",
-        payload: { text: msg, tabId: tid, workspaceId: wsId },
+        payload: {
+          text: msg,
+          tabId: tid,
+          workspaceId: wsId,
+          messageId,
+          timestamp: Date.now(),
+        },
       });
     },
     message,
@@ -413,6 +780,7 @@ export async function seedPendingInteraction(
   interactionId: string;
 }> {
   const workspaceId = input.workspaceId ?? `e2e-${crypto.randomUUID()}`;
+  await ensureE2EPanel(ctx, input.tabId, workspaceId);
   const helperPage = await openHelperPage(ctx);
   const response = await helperPage.evaluate(
     async (
@@ -537,21 +905,18 @@ export async function waitForLocalCheckpointPersisted(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const found = await helperPage.evaluate(
-      async (wsId: string) => {
-        const localData = await chrome.storage.local.get(null);
-        const checkpoints =
-          (localData["opensidebar:orchestrator:checkpoints"] as
-            | Record<string, unknown>
-            | undefined) ?? {};
-        const hasOrchestratorCheckpoint = Boolean(checkpoints[wsId]);
-        const hasTurnCheckpoint = Object.keys(localData).some((key) =>
-          key.startsWith(`opensidebar:turn-checkpoint:${wsId}:`),
-        );
-        return hasOrchestratorCheckpoint || hasTurnCheckpoint;
-      },
-      workspaceId,
-    );
+    const found = await helperPage.evaluate(async (wsId: string) => {
+      const localData = await chrome.storage.local.get(null);
+      const checkpoints =
+        (localData["opensidebar:orchestrator:checkpoints"] as
+          | Record<string, unknown>
+          | undefined) ?? {};
+      const hasOrchestratorCheckpoint = Boolean(checkpoints[wsId]);
+      const hasTurnCheckpoint = Object.keys(localData).some((key) =>
+        key.startsWith(`opensidebar:turn-checkpoint:${wsId}:`),
+      );
+      return hasOrchestratorCheckpoint || hasTurnCheckpoint;
+    }, workspaceId);
 
     if (found) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
@@ -590,9 +955,7 @@ export async function clearLocalCheckpointsForWorkspace(
   }, workspaceId);
 }
 
-export async function getUserTabUrls(
-  worker: WebWorker,
-): Promise<string[]> {
+export async function getUserTabUrls(worker: WebWorker): Promise<string[]> {
   return worker.evaluate(async () => {
     const tabs = await (globalThis as any).chrome.tabs.query({});
     return tabs
@@ -610,11 +973,21 @@ export async function waitForTabCount(
   worker: WebWorker,
   expectedCount: number,
   timeoutMs: number = 20_000,
+  workspaceId?: string | null,
 ): Promise<string[]> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const urls = await getUserTabUrls(worker);
     if (urls.length === expectedCount) return urls;
+    const rawEvents = await getMonitoredEvents(worker, 120);
+    const events =
+      workspaceId == null
+        ? rawEvents
+        : rawEvents.filter(
+            (event: any) =>
+              event.workspaceId == null || event.workspaceId === workspaceId,
+          );
+    throwIfTaskAlreadyFinished(events, `Wait for ${expectedCount} user tabs`);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(
@@ -627,9 +1000,13 @@ export async function waitForTabCount(
  * Call between test cases to reset state.
  */
 export async function clearMonitoredEvents(worker: WebWorker): Promise<void> {
-  await worker.evaluate(() => {
-    (self as any).__agentEvents = [];
-  });
+  await withE2ETimeout(
+    worker.evaluate(() => {
+      (self as any).__agentEvents = [];
+    }),
+    SERVICE_WORKER_EVALUATE_TIMEOUT_MS,
+    "Monitored event clear",
+  );
 }
 
 /**
@@ -803,48 +1180,63 @@ export async function settleWorkspaceBetweenTurns(
  */
 export async function resetExtensionState(
   ctx: ExtensionContext,
-): Promise<void> {
-  if (!ctx.browser.connected) return;
+): Promise<Page | null> {
+  if (!ctx.browser.connected) return null;
 
-  await setupEventMonitor(ctx.serviceWorker);
+  await closeE2EPanel(ctx).catch((error) =>
+    warnResetCleanup("E2E panel close", error),
+  );
+  await withE2ETimeout(
+    setupEventMonitor(ctx.serviceWorker),
+    RESET_CLEANUP_OPERATION_TIMEOUT_MS,
+    "Event monitor setup",
+  ).catch((error) => warnResetCleanup("event monitor setup", error));
   const helperPage = await openHelperPage(ctx);
   try {
-    await helperPage.evaluate(async () => {
-      await chrome.runtime.sendMessage({
-        type: "STOP_AGENT",
-        requestId: crypto.randomUUID(),
-        source: "sidepanel",
-        payload: {},
-      });
-    });
+    await withE2ETimeout(
+      helperPage.evaluate(async () => {
+        await chrome.runtime.sendMessage({
+          type: "STOP_AGENT",
+          requestId: crypto.randomUUID(),
+          source: "sidepanel",
+          payload: {},
+        });
+      }),
+      RESET_CLEANUP_OPERATION_TIMEOUT_MS,
+      "Stop agent cleanup",
+    );
   } catch {
     // Agent may not be running — that's fine
   }
-  await waitForAgentIdle(ctx.serviceWorker);
+  await waitForAgentIdle(ctx.serviceWorker).catch((error) =>
+    warnResetCleanup("agent idle wait", error),
+  );
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   const cleanupPage = await openHelperPage(ctx);
-  await cleanupPage.evaluate(async () => {
-    const sessionData = await chrome.storage.session.get(null);
-    const keys = Object.keys(sessionData).filter(
-      (key) => key === "agent_context" || key.startsWith("agent_context:"),
-    );
-    if (keys.length > 0) {
-      await chrome.storage.session.remove(keys);
-    }
-  });
+  await withE2ETimeout(
+    cleanupPage.evaluate(async () => {
+      const sessionData = await chrome.storage.session.get(null);
+      const keys = Object.keys(sessionData).filter(
+        (key) => key === "agent_context" || key.startsWith("agent_context:"),
+      );
+      if (keys.length > 0) {
+        await chrome.storage.session.remove(keys);
+      }
+    }),
+    RESET_CLEANUP_OPERATION_TIMEOUT_MS,
+    "Session cleanup",
+  ).catch((error) => warnResetCleanup("session storage cleanup", error));
 
-  await clearMonitoredEvents(ctx.serviceWorker);
+  await clearMonitoredEvents(ctx.serviceWorker).catch((error) =>
+    warnResetCleanup("event clear", error),
+  );
   // Close ALL non-extension pages and open a fresh one.
   // Navigating to about:blank leaves the tab in a state where content scripts
   // can't inject, causing bridge disconnects on subsequent tests.
-  const pages = await ctx.browser.pages();
-  const nonExtPages = pages.filter((p) => !p.url().startsWith("chrome-extension://"));
-  for (const p of nonExtPages) {
-    await p.close().catch(() => {});
-  }
+  await closeNonExtensionPages(ctx);
   // Ensure at least one page exists for the next test
-  await ctx.browser.newPage();
+  return ctx.browser.newPage();
 }
 
 /**
@@ -933,9 +1325,14 @@ export async function waitForTaskCompletion(
   return {
     ok: false,
     reason:
-      getLatestTaskCompletionState(await getMonitoredEvents(ctx.serviceWorker, 80).then((all) =>
-        all.filter((event: any) => event.workspaceId == null || event.workspaceId === workspaceId),
-      )) === "partial"
+      getLatestTaskCompletionState(
+        await getMonitoredEvents(ctx.serviceWorker, 80).then((all) =>
+          all.filter(
+            (event: any) =>
+              event.workspaceId == null || event.workspaceId === workspaceId,
+          ),
+        ),
+      ) === "partial"
         ? "task_partial"
         : "timeout",
     events: await getMonitoredEvents(ctx.serviceWorker, 80),
@@ -992,29 +1389,27 @@ export async function waitForOutcome<T>(
       .reverse()
       .find((e: any) => e.type === "AGENT_STATUS");
 
+    if (lastTaskCompletion?.status === "partial") {
+      return {
+        ok: false,
+        reason: "task_partial",
+        result: successfulResult ?? lastResult,
+        events,
+      };
+    }
+
+    if (lastTaskCompletion?.status === "failed") {
+      return {
+        ok: false,
+        reason: `task_failed:${lastTaskCompletion.detail || lastTaskCompletion.payload?.summary || "unknown"}`,
+        result: successfulResult ?? lastResult,
+        events,
+      };
+    }
+
     if (successfulResult) {
       const taskCompleted = lastTaskCompletion?.status === "completed";
-      const taskPartial = lastTaskCompletion?.status === "partial";
-      const taskFailed = lastTaskCompletion?.status === "failed";
       const agentIdle = lastStatus?.status === "IDLE";
-
-      if (taskPartial) {
-        return {
-          ok: false,
-          reason: "task_partial",
-          result: successfulResult,
-          events,
-        };
-      }
-
-      if (taskFailed) {
-        return {
-          ok: false,
-          reason: "task_failed",
-          result: successfulResult,
-          events,
-        };
-      }
 
       if (taskCompleted) {
         return { ok: true, reason: "done", result: successfulResult, events };
@@ -1055,15 +1450,22 @@ export async function waitForOutcome<T>(
   return {
     ok: false,
     reason:
-      getLatestTaskCompletionState(events) === "partial" ? "task_partial" : "timeout",
+      getLatestTaskCompletionState(events) === "partial"
+        ? "task_partial"
+        : "timeout",
     result: successfulResult ?? lastResult,
     events,
   };
 }
 
 export const __testOnly = {
+  describeTaskCompletionEvent,
+  describeTerminalWaitEvent,
   getLatestTaskCompletionEvent,
   getLatestTaskCompletionState,
+  getLatestTerminalWaitEvent,
   hasIdleAfterTerminalCompletion,
+  isTerminalAgentStatusEvent,
   isTerminalTaskCompletionStatus,
+  throwIfTaskAlreadyFinished,
 };

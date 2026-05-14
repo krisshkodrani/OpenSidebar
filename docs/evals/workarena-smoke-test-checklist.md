@@ -28,13 +28,13 @@ This task is preferred for the first run because it is navigation/menu-oriented 
 Install or refresh the local WorkArena Python environment:
 
 ```powershell
-npx tsx scripts/workarena-setup.ts
+pnpm exec tsx scripts/workarena-setup.ts
 ```
 
 Build the extension:
 
 ```powershell
-npm run dist
+pnpm run dist
 ```
 
 Pass criteria:
@@ -47,7 +47,7 @@ Pass criteria:
 Run the doctor without pending-access allowances:
 
 ```powershell
-npx tsx scripts/workarena-doctor.ts
+pnpm exec tsx scripts/workarena-doctor.ts
 ```
 
 Pass criteria:
@@ -71,7 +71,7 @@ Stop if:
 Confirm the first-run candidate:
 
 ```powershell
-npx tsx scripts/workarena-first-task.ts --seed 0
+pnpm exec tsx scripts/workarena-first-task.ts --seed 0
 ```
 
 Pass criteria:
@@ -86,7 +86,7 @@ Pass criteria:
 Run a real BrowserGym reset and teardown without starting OpenSidebar:
 
 ```powershell
-npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu --seed 0 --show-browser
+pnpm exec tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu --seed 0 --show-browser
 ```
 
 Pass criteria:
@@ -111,7 +111,7 @@ Stop if:
 Exercise the held-session bridge reset, export, validation, and teardown path:
 
 ```powershell
-npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser
+pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser
 ```
 
 Pass criteria:
@@ -135,7 +135,7 @@ Stop if:
 Run the first live OpenSidebar agent handoff with conservative limits:
 
 ```powershell
-npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser --max-turns 12 --timeout-ms 300000
+pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --show-browser --max-turns 12 --timeout-ms 300000
 ```
 
 Pass criteria:
@@ -164,7 +164,7 @@ Stop if:
 Validate generated WorkArena reports:
 
 ```powershell
-npx tsx scripts/workarena-validate-reports.ts
+pnpm exec tsx scripts/workarena-validate-reports.ts
 ```
 
 Pass criteria:

@@ -19,8 +19,7 @@ export const CLICK_DEF: ToolDefinition = {
         },
         count: {
           type: "integer",
-          description:
-            "Click count (default 1, max 10).",
+          description: "Click count (default 1, max 10).",
         },
       },
       required: ["id"],
@@ -63,8 +62,7 @@ export const SCROLL_PAGE_DEF: ToolDefinition = {
       properties: {
         y: {
           type: "integer",
-          description:
-            "Absolute Y position (from @y hints).",
+          description: "Absolute Y position (from @y hints).",
         },
         direction: {
           type: "string",
@@ -370,8 +368,7 @@ export const PRESS_KEY_DEF: ToolDefinition = {
             description: "A modifier key.",
             enum: ["ctrl", "shift", "alt", "meta"],
           },
-          description:
-            "Modifier keys to hold.",
+          description: "Modifier keys to hold.",
         },
       },
       required: ["key"],
@@ -440,13 +437,65 @@ export const ESCALATE_DEF: ToolDefinition = {
   function: {
     name: ToolName.ESCALATE,
     description:
-      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic.",
+      "Switch to the planner model for complex reasoning. Use when stuck on riddles, puzzles, math, or multi-step logic. Do not use this only because an action tool seems missing until you have checked the Available Tool Capabilities catalog in the system prompt.",
     parameters: {
       type: "object",
       properties: {
         reason: {
           type: "string",
           description: "Why the current model can't handle this.",
+        },
+        reasonCode: {
+          type: "string",
+          description:
+            "Structured escalation reason. Use missing_tool only when the Available Tool Capabilities catalog lacks the required capability.",
+          enum: [
+            "stuck",
+            "complex_reasoning",
+            "missing_tool",
+            "blocked",
+            "other",
+          ],
+        },
+        requiredCapability: {
+          type: "string",
+          description:
+            "For reasonCode=missing_tool, the absent capability needed to proceed.",
+          enum: [
+            "read_page_state",
+            "find_elements",
+            "inspect_hidden_structure",
+            "interact_with_page",
+            "click_elements",
+            "fill_text_fields",
+            "set_binary_controls",
+            "select_options",
+            "submit_forms",
+            "navigate_pages",
+            "manage_tabs",
+            "execute_javascript",
+            "handle_overlays",
+            "upload_files",
+            "drag_and_drop",
+            "update_notes",
+            "use_profile_data",
+            "service_now_forms",
+            "list_and_table_workflows",
+          ],
+        },
+        availableCapabilitiesSeenByExecutor: {
+          type: "array",
+          description:
+            "Optional capabilities the executor believes are available from the current catalog.",
+          items: {
+            type: "string",
+            description: "One capability name from the current catalog.",
+          },
+        },
+        blockingAction: {
+          type: "string",
+          description:
+            "The concrete next action that cannot be performed without escalation.",
         },
       },
       required: ["reason"],
@@ -513,10 +562,170 @@ export const GET_PROFILE_FIELDS_DEF: ToolDefinition = {
             description: "Field path relative to the profile root.",
           },
           description:
-            "Exact profile field paths to retrieve, e.g. [\"identity.first_name\", \"identity.last_name\"].",
+            'Exact profile field paths to retrieve, e.g. ["identity.first_name", "identity.last_name"].',
         },
       },
       required: ["fields"],
+    },
+  },
+};
+
+export const LIST_APPLICATION_PACKAGES_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.LIST_APPLICATION_PACKAGES,
+    description:
+      "List prepared local JobAgent application packages. Returns metadata only, not private draft text. Requires JobAgent MCP enabled in Settings.",
+    parameters: {
+      type: "object",
+      properties: {
+        status_filter: {
+          type: "string",
+          description: "Optional substring filter for package status.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const GET_APPLICATION_PACKAGE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GET_APPLICATION_PACKAGE,
+    description:
+      "Get grounded JobAgent package metadata, risks, selected CV path, notes, and prepared local application text. Requires JobAgent MCP enabled in Settings.",
+    parameters: {
+      type: "object",
+      properties: {
+        package_key: {
+          type: "string",
+          description: "JobAgent application package key.",
+        },
+        include_text: {
+          type: "boolean",
+          description:
+            "Whether to include prepared local application text. Defaults to true.",
+        },
+      },
+      required: ["package_key"],
+    },
+  },
+};
+
+export const SUGGEST_FORM_ANSWERS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.SUGGEST_FORM_ANSWERS,
+    description:
+      "Suggest grounded answers for detected job application form fields from a JobAgent package and local candidate profile. Does not fill or submit the page.",
+    parameters: {
+      type: "object",
+      properties: {
+        package_key: {
+          type: "string",
+          description: "JobAgent application package key.",
+        },
+        fields: {
+          type: "array",
+          description:
+            "Visible field labels or detected field objects from the current application form.",
+          items: {
+            type: "string",
+            description:
+              "One visible field label or concise detected field summary.",
+          },
+        },
+      },
+      required: ["package_key", "fields"],
+    },
+  },
+};
+
+export const GET_CANDIDATE_PROFILE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.GET_CANDIDATE_PROFILE,
+    description:
+      "Return selected local candidate profile fields from JobAgent. Private fields are redacted unless include_private is true.",
+    parameters: {
+      type: "object",
+      properties: {
+        fields: {
+          type: "array",
+          description:
+            "Candidate profile fields to return. Empty returns the default public subset.",
+          items: {
+            type: "string",
+            description: "One candidate profile field name.",
+          },
+        },
+        include_private: {
+          type: "boolean",
+          description:
+            "Whether to include private fields. Use only when the user explicitly asks for private profile data.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const ANSWER_CANDIDATE_QUESTION_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.ANSWER_CANDIDATE_QUESTION,
+    description:
+      "Answer an ad hoc application question from local JobAgent profile/package context. May use JobAgent's configured model provider; otherwise falls back to local grounded answers.",
+    parameters: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "Exact application question to answer.",
+        },
+        package_key: {
+          type: "string",
+          description: "Optional JobAgent application package key.",
+        },
+      },
+      required: ["question"],
+    },
+  },
+};
+
+export const RECORD_APPLICATION_STATUS_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.RECORD_APPLICATION_STATUS,
+    description:
+      "Append a reviewed status update to a local JobAgent package log. This never submits an application.",
+    parameters: {
+      type: "object",
+      properties: {
+        package_key: {
+          type: "string",
+          description: "JobAgent application package key.",
+        },
+        status: {
+          type: "string",
+          description: "Reviewed local application status.",
+          enum: [
+            "reviewing",
+            "ready",
+            "filled-awaiting-submit",
+            "submitted-by-user",
+            "applied",
+            "archived",
+            "duplicate-risk",
+          ],
+        },
+        note: {
+          type: "string",
+          description: "Optional status note.",
+        },
+      },
+      required: ["package_key", "status"],
     },
   },
 };
@@ -624,8 +833,7 @@ export const RIGHT_CLICK_DEF: ToolDefinition = {
   type: "function",
   function: {
     name: ToolName.RIGHT_CLICK,
-    description:
-      "Right-click on an element (dispatches contextmenu event).",
+    description: "Right-click on an element (dispatches contextmenu event).",
     parameters: {
       type: "object",
       properties: {
@@ -795,8 +1003,7 @@ export const INSPECT_HIDDEN_DEF: ToolDefinition = {
       properties: {
         pattern: {
           type: "string",
-          description:
-            "Case-insensitive text filter.",
+          description: "Case-insensitive text filter.",
         },
         maxResults: {
           type: "integer",
@@ -819,11 +1026,13 @@ export const INSPECT_CHART_DEF: ToolDefinition = {
       properties: {
         pattern: {
           type: "string",
-          description: "Case-insensitive text filter for chart labels or series.",
+          description:
+            "Case-insensitive text filter for chart labels or series.",
         },
         maxResults: {
           type: "integer",
-          description: "Max labels, rows, or points to return (default: 30, max: 100).",
+          description:
+            "Max labels, rows, or points to return (default: 30, max: 100).",
         },
       },
       required: [],
@@ -842,7 +1051,8 @@ export const INSPECT_TABLE_DEF: ToolDefinition = {
       properties: {
         maxRows: {
           type: "integer",
-          description: "Max visible rows to summarize per table/list (default: 10, max: 50).",
+          description:
+            "Max visible rows to summarize per table/list (default: 10, max: 50).",
         },
       },
       required: [],
@@ -865,7 +1075,8 @@ export const INSPECT_FILTER_STATE_DEF: ToolDefinition = {
         },
         maxResults: {
           type: "integer",
-          description: "Max controls or condition rows to return (default: 30, max: 80).",
+          description:
+            "Max controls or condition rows to return (default: 30, max: 80).",
         },
       },
       required: [],
@@ -892,15 +1103,18 @@ export const APPLY_LIST_FILTER_DEF: ToolDefinition = {
             properties: {
               field: {
                 type: "string",
-                description: 'Visible field label or system field name, e.g. "Caller" or "caller_id".',
+                description:
+                  'Visible field label or system field name, e.g. "Caller" or "caller_id".',
               },
               operator: {
                 type: "string",
-                description: 'Operator text such as "is", "is empty", "is not", or "starts with". Defaults to "is".',
+                description:
+                  'Operator text such as "is", "is empty", "is not", or "starts with". Defaults to "is".',
               },
               value: {
                 type: "string",
-                description: "Display value to filter by. Use an empty string for empty-value filters.",
+                description:
+                  "Display value to filter by. Use an empty string for empty-value filters.",
               },
             },
             required: ["field"],
@@ -909,15 +1123,18 @@ export const APPLY_LIST_FILTER_DEF: ToolDefinition = {
         join: {
           type: "string",
           enum: ["AND", "OR"],
-          description: "How to join multiple conditions. Use OR when the request says conditions are alternatives.",
+          description:
+            "How to join multiple conditions. Use OR when the request says conditions are alternatives.",
         },
         table: {
           type: "string",
-          description: "Optional visible list title or system table name when several lists are present.",
+          description:
+            "Optional visible list title or system table name when several lists are present.",
         },
         run: {
           type: "boolean",
-          description: "Whether to run/navigate the filter after building it. Defaults to true.",
+          description:
+            "Whether to run/navigate the filter after building it. Defaults to true.",
         },
       },
       required: ["conditions"],
@@ -944,7 +1161,8 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
             properties: {
               field: {
                 type: "string",
-                description: 'Visible field label or system field name, e.g. "Number" or "calendar_duration".',
+                description:
+                  'Visible field label or system field name, e.g. "Number" or "calendar_duration".',
               },
               direction: {
                 type: "string",
@@ -957,11 +1175,13 @@ export const APPLY_LIST_SORT_DEF: ToolDefinition = {
         },
         table: {
           type: "string",
-          description: "Optional visible list title or system table name when several lists are present.",
+          description:
+            "Optional visible list title or system table name when several lists are present.",
         },
         run: {
           type: "boolean",
-          description: "Whether to run/navigate the sort after building it. Defaults to true.",
+          description:
+            "Whether to run/navigate the sort after building it. Defaults to true.",
         },
       },
       required: ["sorts"],
@@ -984,7 +1204,8 @@ export const APPLY_LIST_ACTION_DEF: ToolDefinition = {
             "Visible record numbers or unique row text snippets identifying rows to select.",
           items: {
             type: "string",
-            description: "One visible record number or unique row text snippet.",
+            description:
+              "One visible record number or unique row text snippet.",
           },
         },
         action: {
@@ -1029,7 +1250,8 @@ export const INSPECT_CATALOG_ITEM_DEF: ToolDefinition = {
       properties: {
         maxControls: {
           type: "integer",
-          description: "Max configurable controls to return (default: 40, max: 80).",
+          description:
+            "Max configurable controls to return (default: 40, max: 80).",
         },
       },
       required: [],
@@ -1057,14 +1279,16 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
         },
         textFields: {
           type: "array",
-          description: "Text inputs or textareas to fill by visible label, aria-label, name, or id.",
+          description:
+            "Text inputs or textareas to fill by visible label, aria-label, name, or id.",
           items: {
             type: "object",
             description: "One text field/value pair to fill.",
             properties: {
               field: {
                 type: "string",
-                description: 'Field label, e.g. "Additional software requirements".',
+                description:
+                  'Field label, e.g. "Additional software requirements".',
               },
               value: {
                 type: "string",
@@ -1084,7 +1308,8 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
             properties: {
               field: {
                 type: "string",
-                description: 'Dropdown field label, e.g. "How long do you need it for ?".',
+                description:
+                  'Dropdown field label, e.g. "How long do you need it for ?".',
               },
               value: {
                 type: "string",
@@ -1096,7 +1321,8 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
         },
         checkboxes: {
           type: "array",
-          description: "Checkboxes to set by visible label, aria-label, name, or id.",
+          description:
+            "Checkboxes to set by visible label, aria-label, name, or id.",
           items: {
             type: "object",
             description: "One checkbox state to apply.",
@@ -1120,7 +1346,8 @@ export const CONFIGURE_CATALOG_ITEM_DEF: ToolDefinition = {
         },
         submitButton: {
           type: "string",
-          description: 'Optional visible submit button label, e.g. "Order Now".',
+          description:
+            'Optional visible submit button label, e.g. "Order Now".',
         },
         continueToCheckout: {
           type: "boolean",
@@ -1158,7 +1385,7 @@ export const CONFIGURE_SERVICENOW_FORM_DEF: ToolDefinition = {
               value: {
                 type: "string",
                 description:
-                  'Value to set. Use an empty string to clear an optional field.',
+                  "Value to set. Use an empty string to clear an optional field.",
               },
             },
             required: ["field", "value"],

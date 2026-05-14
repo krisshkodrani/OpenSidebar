@@ -48,8 +48,8 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 ```bash
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
-npm install
-npm run dist
+pnpm install
+pnpm run dist
 ```
 
 ### Load in Chrome
@@ -67,64 +67,64 @@ npm run dist
 
 ### Main Commands
 
-Use npm scripts for day-to-day work. Nx is the internal task runner behind those scripts.
+Use package scripts through pnpm for day-to-day work. Nx is the internal task runner behind those scripts.
 
 ```bash
-npm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
-npm run dist     # Standalone production/manual extension build into dist/
-npm test         # Extension and backend unit/integration tests
-npm run verify   # Full local confidence gate before commit or push
-npm run doctor   # Diagnose local setup and show next commands
+pnpm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
+pnpm run dist     # Standalone production/manual extension build into dist/
+pnpm test         # Extension and backend unit/integration tests
+pnpm run verify   # Full local confidence gate before commit or push
+pnpm run doctor   # Diagnose local setup and show next commands
 ```
 
-Use `npm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
+Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
 
-Use `npm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
+Use `pnpm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
 
-`npm run dev` includes the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
+`pnpm run dev` includes the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
 
 ## Development
 
 Main commands:
 
 ```bash
-npm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
-npm run dist                 # Standalone production/manual extension build into dist/
-npm test                     # Extension and backend unit/integration tests
-npm run verify               # Lint, typecheck, tests, build, and dist check
-npm run doctor               # Local setup diagnosis
+pnpm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
+pnpm run dist                 # Standalone production/manual extension build into dist/
+pnpm test                     # Extension and backend unit/integration tests
+pnpm run verify               # Lint, typecheck, tests, build, and dist check
+pnpm run doctor               # Local setup diagnosis
 ```
 
 Advanced commands:
 
 ```bash
-npm run build                # Compatibility alias for npm run dist
-npm run lint                 # ESLint
-npm run typecheck            # TypeScript project checks
-npm run e2e                  # Normal staged browser E2E sequence
-npm run traces:compact       # Backfill SQLite, then delete raw traces older than 7 days
-npm run fmt                  # Prettier
+pnpm run build                # Production extension build
+pnpm run lint                 # ESLint
+pnpm run typecheck            # TypeScript project checks
+pnpm run e2e                  # Normal staged browser E2E sequence
+pnpm run traces:compact       # Backfill SQLite, then delete raw traces older than 7 days
+pnpm run fmt                  # Prettier
 ```
 
 The package scripts are thin entry points over Nx targets. Use Nx directly when you want to run one target or project explicitly:
 
 ```bash
-npx nx run extension:dev
-npx nx run extension:build
-npx nx run extension:test
-npx nx run backend:test
-npx nx run-many -t lint
-npx nx run-many -t typecheck
+pnpm exec nx run extension:dev
+pnpm exec nx run extension:build
+pnpm exec nx run extension:test
+pnpm exec nx run backend:test
+pnpm exec nx run-many -t lint
+pnpm exec nx run-many -t typecheck
 ```
 
 ## Testing
 
 - Use staged E2E runs by default:
-  - `npm run test:e2e:smoke` for cheap confidence on core browser-agent behavior
-  - `npm run test:e2e:interactions` for page interaction and navigation regressions
-  - `npm run test:e2e:runtime` for orchestration, continuation, recovery, and memory regressions
-- Use `npm run test:e2e` or `npm run test:e2e:staged` for the normal budgeted sequence: smoke, interactions, then runtime.
-- Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `npx tsx scripts/workarena-doctor.ts` and `npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
+  - `pnpm run test:e2e:smoke` for cheap confidence on core browser-agent behavior
+  - `pnpm run test:e2e:interactions` for page interaction and navigation regressions
+  - `pnpm run test:e2e:runtime` for orchestration, continuation, recovery, and memory regressions
+- Use `pnpm run test:e2e` or `pnpm run test:e2e:staged` for the normal budgeted sequence: smoke, interactions, then runtime.
+- Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
 ## Harness And Skill Philosophy
@@ -152,7 +152,7 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 Every agent session can be inspected in the built-in trace viewer.
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Open `http://127.0.0.1:7589/viewer`.
@@ -166,10 +166,10 @@ Trace storage is split into a long-lived SQLite viewer store and short-lived raw
 Maintenance commands:
 
 ```bash
-npm run traces:index                # backfill or repair .artifacts/trace-index.sqlite
-npm run traces:delete-old           # dry run; default raw-file window is 7 days
-npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
-npm run traces:compact              # index, then delete old raw files
+pnpm run traces:index                # backfill or repair .artifacts/trace-index.sqlite
+pnpm run traces:delete-old           # dry run; default raw-file window is 7 days
+pnpm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+pnpm run traces:compact              # index, then delete old raw files
 ```
 
 ## Documentation

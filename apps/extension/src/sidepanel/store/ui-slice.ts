@@ -49,8 +49,10 @@ export const createUiSlice: SliceCreator<UiSlice> = (set, get) => ({
     });
     // Load persisted state for the new workspace (messages + agent status).
     if (id != null) {
-      get().loadAgentStateFromStorage();
-      get().loadMessagesFromStorage();
+      get()
+        .loadMessagesFromStorage()
+        .then(() => get().loadAgentStateFromStorage())
+        .catch(() => {});
     }
   },
 });

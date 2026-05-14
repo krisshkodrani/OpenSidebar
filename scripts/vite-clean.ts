@@ -43,10 +43,11 @@ async function run(): Promise<void> {
         path.resolve("node_modules/vite/bin/vite.js"),
         ...args,
       ], { stdio: "inherit" })
-    : spawnWithExited("npx", ["vite", ...args], {
-        stdio: "inherit",
-        shell: true,
-      });
+    : spawnWithExited(
+        process.execPath,
+        [path.resolve("node_modules/vite/bin/vite.js"), ...args],
+        { stdio: "inherit" },
+      );
 
   // Use killTree for proper Windows process tree killing
   let shuttingDown = false;

@@ -164,27 +164,27 @@ function main(): void {
     steps.push(
       skippedStep(
         "extension build",
-        "cmd /c npm run build",
+        "corepack pnpm run build",
         "--no-build supplied",
       ),
     );
     steps.push(
       skippedStep(
         "fixture build",
-        "cmd /c npm run fixtures:build",
+        "corepack pnpm run fixtures:build",
         "--no-build supplied",
       ),
     );
   } else {
-    steps.push(runStep("extension build", "cmd /c npm run build"));
-    steps.push(runStep("fixture build", "cmd /c npm run fixtures:build"));
+    steps.push(runStep("extension build", "corepack pnpm run build"));
+    steps.push(runStep("fixture build", "corepack pnpm run fixtures:build"));
   }
 
-  steps.push(runStep("arena registry validation", "cmd /c npm run e2e:arena:check"));
+  steps.push(runStep("arena registry validation", "corepack pnpm exec tsx scripts/e2e-arena.ts"));
   steps.push(
     runStep(
       "WorkArena category coverage",
-      "cmd /c npm run benchmark:workarena:category-coverage",
+      "corepack pnpm exec tsx scripts/workarena-category-coverage.ts",
     ),
   );
 
@@ -192,7 +192,7 @@ function main(): void {
     steps.push(
       runStep(
         `local execution contract: ${task.id}`,
-        `cmd /c npm run benchmark:workarena:local -- --task ${task.id}`,
+        `corepack pnpm exec tsx scripts/workarena-local-execution.ts --task ${task.id}`,
       ),
     );
   }
@@ -200,26 +200,26 @@ function main(): void {
   steps.push(
     runStep(
       "browser attach strategy",
-      "cmd /c npm run benchmark:workarena:browser-strategy",
+      "corepack pnpm exec tsx scripts/workarena-browser-strategy.ts",
     ),
   );
   steps.push(
     runStep(
       "held-session protocol",
-      "cmd /c npm run benchmark:workarena:held-session -- --task workarena.servicenow.all-menu",
+      "corepack pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu",
     ),
   );
   steps.push(
     runStep(
       "session state import E2E",
-      "cmd /c npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/session-state-import.test.ts",
+      "corepack pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/session-state-import.test.ts",
       resolve(PROJECT_ROOT, "apps/extension"),
     ),
   );
   steps.push(
     runStep(
       "workarena report validation",
-      "cmd /c npm run benchmark:workarena:validate-reports",
+      "corepack pnpm exec tsx scripts/workarena-validate-reports.ts",
     ),
   );
 
@@ -228,14 +228,14 @@ function main(): void {
     steps.push(
       runStep(
         "local WorkArena-gap agent E2E",
-        `cmd /c npm run test:e2e:workarena --${buildArg}`,
+        `corepack pnpm exec tsx scripts/run-e2e-arena.ts --tag ${args.tag}${buildArg}`,
       ),
     );
   } else {
     steps.push(
       skippedStep(
         "local WorkArena-gap agent E2E",
-        "cmd /c npm run test:e2e:workarena",
+        `corepack pnpm exec tsx scripts/run-e2e-arena.ts --tag ${args.tag}`,
         "pass --agent to run token-spending local agent E2E",
       ),
     );

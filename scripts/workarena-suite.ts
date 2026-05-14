@@ -33,6 +33,8 @@ import {
   type WorkArenaSuiteTarget,
 } from "./workarena-suite-lib.js";
 
+const TSX_CLI = resolve(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+
 function loadTaskList(args: WorkArenaSuiteArgs): ListResult {
   return runWorkArenaBridge<ListResult>(["list", "--suite", args.suite], {
     timeoutMs: 120_000,
@@ -42,7 +44,7 @@ function loadTaskList(args: WorkArenaSuiteArgs): ListResult {
 function runBuildIfNeeded(args: WorkArenaSuiteArgs): void {
   if (args.noBuild || args.dryRun) return;
   console.log("\n[workarena:suite] Building extension once before suite run...");
-  execSync("cmd /c npm run build", {
+  execSync("corepack pnpm run build", {
     cwd: PROJECT_ROOT,
     stdio: "inherit",
     windowsHide: true,
@@ -81,7 +83,7 @@ function runHandoff(
 ): { reportPath: string | null; exitCode: number | null } {
   const suffix = suiteAttemptReportSuffix(generatedAt, target.seed, attempt);
   const commandArgs = [
-    "tsx",
+    TSX_CLI,
     "scripts/workarena-handoff.ts",
     "--task",
     target.task.id,
@@ -101,10 +103,10 @@ function runHandoff(
   console.log(
     `\n[workarena:suite] Running ${target.task.id} seed ${target.seed} attempt ${attempt}/${args.retries + 1}`,
   );
-  const result = spawnSync("npx", commandArgs, {
+  const result = spawnSync(process.execPath, commandArgs, {
     cwd: PROJECT_ROOT,
     stdio: "inherit",
-    shell: process.platform === "win32",
+    shell: false,
     windowsHide: true,
     env: {
       ...process.env,

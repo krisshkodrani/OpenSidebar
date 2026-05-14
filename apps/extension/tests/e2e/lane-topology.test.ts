@@ -45,6 +45,25 @@ type ModeResult = {
   traceFiles: string[];
 };
 
+function expectAcceptedVerification(
+  entries: ReturnType<typeof readRunTraceEventsForTraceFile>,
+  mode: "full" | "standard" | "simple",
+) {
+  expect(entries.length, `${mode} should record node verification`).toBeGreaterThan(
+    0,
+  );
+  const first = entries[0];
+  expect(first.data?.decision, `${mode} verification decision`).toBe("accept");
+  expect(
+    typeof first.data?.confidence,
+    `${mode} verification confidence type`,
+  ).toBe("number");
+  expect(
+    first.data?.failureType ?? null,
+    `${mode} should not record a failure type`,
+  ).toBeNull();
+}
+
 async function runSimplePageTask(
   mode: "full" | "standard" | "simple",
 ): Promise<ModeResult> {
@@ -74,7 +93,9 @@ async function runSimplePageTask(
   );
   expect(traceFiles.length).toBeGreaterThan(0);
   const turns = traceFiles.flatMap((filePath) => readTrace(filePath));
-  const runEvents = readRunTraceEventsForTraceFile(traceFiles[0]);
+  const runEvents = traceFiles.flatMap((filePath) =>
+    readRunTraceEventsForTraceFile(filePath),
+  );
   const summary = extractDoneSummary(traceFiles);
 
   await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);
@@ -150,15 +171,9 @@ describe.skipIf(!h.apiKey)("E2E: Lane topology", () => {
     });
     expect(simplePlannerCalls).toBe(0);
     expect(standardPlannerCalls).toBeGreaterThan(0);
-    expect(simpleNodeVerified[0]?.data?.reason).toContain(
-      "Verifier skipped by lane topology",
-    );
-    expect(standardNodeVerified[0]?.data?.reason).toContain(
-      "Verifier skipped by lane topology",
-    );
-    expect(fullNodeVerified[0]?.data?.reason).not.toContain(
-      "Verifier skipped by lane topology",
-    );
+    expectAcceptedVerification(simpleNodeVerified, "simple");
+    expectAcceptedVerification(standardNodeVerified, "standard");
+    expectAcceptedVerification(fullNodeVerified, "full");
     expect(simple.summary.toLowerCase()).toContain("transformer");
     expect(simplePlannerCalls).toBeLessThanOrEqual(fullPlannerCalls);
 

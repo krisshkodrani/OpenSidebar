@@ -9,7 +9,7 @@
  * Turn 2: What's visible now? Is the form accessible?
  * Turn 3: Fill in the email and delete the account
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-act-check-act.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-act-check-act.test.ts
  */
 
 import {

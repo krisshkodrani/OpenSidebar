@@ -3,7 +3,7 @@
  *
  * Tests: form validation recovery, impossible task graceful stop.
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

@@ -1,6 +1,8 @@
-import { ToolName } from "../../types";
+import { DomSnapshot, ToolName } from "../../types";
 
-export type ConsequentialActionKind = "job_application_submit";
+export type ConsequentialActionKind =
+  | "job_application_submit"
+  | "communication_send";
 
 export type ConsequentialActionConsentMode =
   | "explicit_go"
@@ -21,6 +23,13 @@ export interface ConsequentialActionApprovalDecision {
   consentMode: ConsequentialActionConsentMode;
 }
 
+export interface ConsequentialFinalActionBlockInput {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  taskText: string;
+  actionLabel: string;
+}
+
 export function classifyConsequentialActionConsentMode(
   taskText: string,
 ): ConsequentialActionConsentMode {
@@ -28,7 +37,7 @@ export function classifyConsequentialActionConsentMode(
     /\b(?:wait for|ask for|request|get)\s+(?:my\s+|user\s+)?(?:approval|confirmation|permission|go-ahead)\b/i.test(
       taskText,
     ) ||
-    /\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
+    /\b(?:prepare|fill|draft|stage|review)\b[\s\S]{0,100}\b(?:but\s+)?(?:do not|don't|dont|without)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
       taskText,
     )
   ) {
@@ -36,7 +45,7 @@ export function classifyConsequentialActionConsentMode(
   }
 
   if (
-    /\b(?:do not|don't|never)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
+    /\b(?:do not|don't|dont|never)\s+(?:submit|send|post|publish|buy|purchase|place|delete|confirm|approve)\b/i.test(
       taskText,
     )
   ) {
@@ -78,6 +87,56 @@ export function assessConsequentialActionApproval(
   };
 }
 
+export function assessConsequentialFinalActionBlock(
+  input: ConsequentialFinalActionBlockInput,
+): string | null {
+  const taskText = input.taskText.toLowerCase();
+
+  if (
+    isCommunicationWorkflow(taskText) &&
+    isCommunicationSendAction(input.toolName, input.args, input.actionLabel) &&
+    isDraftOnlyCommunicationTask(taskText)
+  ) {
+    return (
+      "This task is draft-only. Do not click the Send/Post/Reply control. " +
+      "Leave the message composed in the editor and verify it remains unsent."
+    );
+  }
+
+  return null;
+}
+
+export function assessDraftOnlyCompletionViolation(params: {
+  taskText: string;
+  summary: string;
+  snapshot?: DomSnapshot | null;
+}): string | null {
+  const taskText = params.taskText.toLowerCase();
+  if (!isDraftOnlyCommunicationTask(taskText)) return null;
+
+  const snapshotText = [
+    params.snapshot?.title,
+    params.snapshot?.url,
+    params.snapshot?.visibleContent,
+    params.snapshot?.pageContent,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  if (hasStrongCommunicationSentEvidence(snapshotText)) {
+    return "The page shows the message was sent, but the task required an unsent draft.";
+  }
+
+  if (
+    hasStrongCommunicationSentEvidence(params.summary) &&
+    !hasDraftPreservedEvidence(params.summary)
+  ) {
+    return "The completion summary says the message was sent, but the task required an unsent draft.";
+  }
+
+  return null;
+}
+
 function isJobApplicationWorkflow(taskText: string): boolean {
   return (
     /\b(job|career|position|vacancy|cv|resume)\b/.test(taskText) ||
@@ -102,5 +161,69 @@ function isJobApplicationSubmitAction(
   return (
     /\b(submit|send|finish|complete)\b/.test(label) ||
     /\bapply\b.*\b(application|form)\b/.test(label)
+  );
+}
+
+function isCommunicationWorkflow(taskText: string): boolean {
+  return /\b(reply|respond|email|e-mail|message|thread|comment|post|compose|draft)\b/.test(
+    taskText,
+  );
+}
+
+function isCommunicationSendAction(
+  toolName: ToolName,
+  args: Record<string, unknown>,
+  actionLabel: string,
+): boolean {
+  if (toolName !== ToolName.CLICK_ELEMENT) return false;
+  if (args.id == null) return false;
+
+  const label = actionLabel.toLowerCase();
+  return /\b(send|post|reply)\b/.test(label);
+}
+
+function isDraftOnlyCommunicationTask(taskText: string): boolean {
+  if (!isCommunicationWorkflow(taskText)) return false;
+
+  if (
+    /\b(?:do not|don't|dont|never)\s+(?:click\s+)?(?:send|post|reply|submit|publish)\b/i.test(
+      taskText,
+    ) ||
+    /\b(?:leave|keep)\b[\s\S]{0,80}\b(?:unsent|as\s+(?:a\s+)?draft|in\s+drafts?)\b/i.test(
+      taskText,
+    ) ||
+    /\b(?:unsent|draft-only|draft only)\b/i.test(taskText)
+  ) {
+    return true;
+  }
+
+  return (
+    /\b(?:draft|compose|write|prepare)\b[\s\S]{0,80}\b(?:reply|response|email|e-mail|message|comment|post)\b/i.test(
+      taskText,
+    ) &&
+    !/\b(?:send|post|publish)\b[\s\S]{0,80}\b(?:reply|response|email|e-mail|message|comment|post|it)\b/i.test(
+      taskText,
+    ) &&
+    !/\b(?:reply|response|email|e-mail|message|comment|post)\b[\s\S]{0,80}\b(?:sent|posted|published)\b/i.test(
+      taskText,
+    )
+  );
+}
+
+function hasStrongCommunicationSentEvidence(text: string): boolean {
+  return /\b(?:message|reply|email|e-mail|comment|post)\b[\s\S]{0,50}\b(?:sent|posted|submitted|published)\b/i.test(
+    text,
+  ) ||
+    /\b(?:sent|posted|submitted|published)\b[\s\S]{0,50}\b(?:message|reply|email|e-mail|comment|post)\b/i.test(
+      text,
+    ) ||
+    /\b(?:sent just now|message sent|sent mail|send confirmation|successfully sent|successfully posted)\b/i.test(
+      text,
+    );
+}
+
+function hasDraftPreservedEvidence(text: string): boolean {
+  return /\b(?:unsent|not sent|not been sent|draft|drafted|remains in the editor|left in the editor)\b/i.test(
+    text,
   );
 }

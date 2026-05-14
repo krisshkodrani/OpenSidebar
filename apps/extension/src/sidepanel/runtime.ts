@@ -43,6 +43,7 @@ export interface UiRuntimeStorage {
 
 export interface UiRuntimePort {
   source: MessageSource.SIDEPANEL | MessageSource.UI;
+  e2ePanelConfig?: E2EPanelConfig | null;
   getUrl(path: string): string;
   sendMessage<TResponse = unknown>(message: unknown): Promise<TResponse>;
   subscribeMessages(listener: (message: RuntimeMessage) => void): () => void;
@@ -59,6 +60,65 @@ export interface UiRuntimePort {
   createTab(url: string, options?: { active?: boolean }): Promise<UiRuntimeTab>;
   requestPermissions(permissions: string[]): Promise<boolean>;
   storage: UiRuntimeStorage;
+}
+
+export const E2E_DETACHED_PANEL_TARGET_TAB_PARAM = "e2eTargetTabId";
+export const E2E_DETACHED_PANEL_WORKSPACE_PARAM = "e2eWorkspaceId";
+
+export interface E2EPanelConfig {
+  targetTabId: number | null;
+  workspaceId: string | null;
+}
+
+export type E2EDetachedPanelConfig = E2EPanelConfig;
+
+function parsePositiveInteger(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function getE2EDetachedPanelConfig(): E2EDetachedPanelConfig | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const targetTabId = parsePositiveInteger(
+    params.get(E2E_DETACHED_PANEL_TARGET_TAB_PARAM),
+  );
+  const workspaceId =
+    params.get(E2E_DETACHED_PANEL_WORKSPACE_PARAM)?.trim() || null;
+  if (targetTabId == null && workspaceId == null) return null;
+  return { targetTabId, workspaceId };
+}
+
+export function getE2EPanelConfig(): E2EPanelConfig | null {
+  return uiRuntime.e2ePanelConfig ?? getE2EDetachedPanelConfig();
+}
+
+function getOverlayExtensionBaseUrl(): string | null {
+  if (typeof document === "undefined") return null;
+  const raw = document.getElementById("opensidebar-overlay-config")
+    ?.textContent;
+  if (!raw) return null;
+  try {
+    const config = JSON.parse(raw) as {
+      runtimeOptions?: { extensionBaseUrl?: unknown };
+    };
+    const baseUrl = config.runtimeOptions?.extensionBaseUrl;
+    if (
+      typeof baseUrl === "string" &&
+      baseUrl &&
+      !baseUrl.startsWith("chrome-extension://invalid/")
+    ) {
+      return baseUrl;
+    }
+  } catch {
+    // Ignore malformed test harness config and fall back below.
+  }
+  return null;
+}
+
+function resolveFromExtensionBase(baseUrl: string, path: string): string {
+  return new URL(path.replace(/^\/+/, ""), baseUrl).toString();
 }
 
 function normalizeTab(tab: chrome.tabs.Tab | null | undefined): UiRuntimeTab | null {
@@ -102,7 +162,14 @@ export const chromeUiRuntimePort: UiRuntimePort = {
       typeof chrome !== "undefined" &&
       typeof chrome.runtime?.getURL === "function"
     ) {
-      return chrome.runtime.getURL(path);
+      const url = chrome.runtime.getURL(path);
+      if (!url.startsWith("chrome-extension://invalid/")) {
+        return url;
+      }
+    }
+    const overlayBaseUrl = getOverlayExtensionBaseUrl();
+    if (overlayBaseUrl) {
+      return resolveFromExtensionBase(overlayBaseUrl, path);
     }
     return path;
   },
@@ -128,6 +195,18 @@ export const chromeUiRuntimePort: UiRuntimePort = {
   },
 
   async getActiveTab() {
+    const detachedPanelTargetTabId = getE2EDetachedPanelConfig()?.targetTabId;
+    if (detachedPanelTargetTabId != null) {
+      try {
+        const tab = normalizeTab(
+          await chrome.tabs.get(detachedPanelTargetTabId),
+        );
+        if (tab) return tab;
+      } catch {
+        // Fall back to the normal active-tab query if the E2E target tab closed.
+      }
+    }
+
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,

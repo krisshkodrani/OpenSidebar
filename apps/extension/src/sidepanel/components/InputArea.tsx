@@ -1,69 +1,100 @@
-import React, { useRef, useEffect, useCallback, useState } from "react";
-import { clsx } from "clsx";
-import {
-  ArrowUp,
-  Play,
-  ShieldAlert,
-  ShieldCheck,
-  ChevronDown,
-  Check,
-  Mic,
-  Loader2,
-} from "lucide-react";
+import React, { useCallback } from "react";
+import { ShieldAlert } from "lucide-react";
 import { useStore } from "../store";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
 import { ClarificationOverlay } from "./ClarificationOverlay";
 import {
   applyInteractionMode,
-  InteractionMode,
   getInteractionMode,
-  getInteractionModeDescription,
-  getInteractionModeLabel,
+  type InteractionMode,
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
-import { useSpeechToText } from "../hooks/useSpeechToText";
+import { useOpenAIRealtimeVoice } from "../hooks/useOpenAIRealtimeVoice";
+import { useComposerTextarea } from "../hooks/useComposerTextarea";
+import { useRealtimeVoiceAnnouncements } from "../hooks/useRealtimeVoiceAnnouncements";
 import { uiRuntime } from "../runtime";
+import { ComposerBox } from "./input/ComposerBox";
+import { InteractionModeMenu } from "./input/InteractionModeMenu";
+
+interface InputAreaProps {
+  onSend: (text: string) => void;
+  onSendFeedback: (text: string) => void;
+  onStop: () => void;
+  onOpenSettings: () => void;
+}
+
+function PendingInteractionShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="border-t border-warm-200 bg-warm-50 p-2 dark:border-warm-800 dark:bg-warm-900">
+      {children}
+    </div>
+  );
+}
+
+function RealtimeVoiceStatusLine({
+  error,
+  isListening,
+  status,
+}: {
+  error: string | null;
+  isListening: boolean;
+  status: "idle" | "connecting" | "ready" | "listening" | "error";
+}) {
+  return (
+    <div className="mt-1 flex h-4 items-center gap-1.5 overflow-hidden px-1">
+      {error ? (
+        <span className="text-[11px] text-red-500 dark:text-red-400">
+          {error}
+        </span>
+      ) : isListening ? (
+        <>
+          <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-[11px] text-red-500 dark:text-red-400">
+            OpenAI Realtime listening... press Alt+V or tap mic to stop
+          </span>
+        </>
+      ) : status === "connecting" ? (
+        <span className="text-[11px] text-warm-400 dark:text-warm-500">
+          Connecting OpenAI Realtime...
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 export function InputArea({
   onSend,
   onSendFeedback,
   onStop,
-  onOpenSettings: _onOpenSettings,
-}: {
-  onSend: (text: string) => void;
-  onSendFeedback: (text: string) => void;
-  onStop: () => void;
-  onOpenSettings: () => void;
-}) {
+}: InputAreaProps) {
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
   const pendingClarification = useStore((s) => s.pendingClarification);
+  const taskCompletion = useStore((s) => s.taskCompletion);
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+
   const interactionMode = getInteractionMode(settings);
   const autonomousMode = interactionMode === "autonomous";
-  const [autonomyMenuOpen, setAutonomyMenuOpen] = useState(false);
-
-  // Voice input (STT)
-  const voiceEnabled = settings?.enableVoiceInput ?? false;
-  const stt = useSpeechToText({
-    groqApiKey: settings?.groqApiKey,
-    openaiApiKey: settings?.openaiApiKey,
-    geminiApiKey: settings?.geminiApiKey,
+  const realtimeVoiceEnabled = settings.voiceMode === "openai_realtime";
+  const realtimeVoice = useOpenAIRealtimeVoice({
+    startTask: onSend,
+    sendGuidance: onSendFeedback,
+    stopTask: onStop,
   });
-  const {
-    transcript,
-    clearTranscript,
-    isRecording,
-    isTranscribing,
-    startRecording,
-    stopRecording,
-    error: sttError,
-  } = stt;
+
+  useRealtimeVoiceAnnouncements({
+    enabled: realtimeVoiceEnabled,
+    pendingApproval,
+    pendingClarification,
+    speakHarnessUpdate: realtimeVoice.speakHarnessUpdate,
+    taskCompletion,
+    toggleListening: realtimeVoice.toggleListening,
+  });
 
   const setInteractionMode = useCallback(
     (mode: InteractionMode) => {
@@ -73,137 +104,76 @@ export function InputArea({
     },
     [settings, updateSettings],
   );
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const MAX_HEIGHT = 120;
-  const resizeTextarea = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-
-    el.style.height = "auto";
-    const scrollH = Math.min(el.scrollHeight, MAX_HEIGHT);
-    el.style.height = scrollH + "px";
-    el.style.overflowY = scrollH >= MAX_HEIGHT ? "auto" : "hidden";
-  }, []);
-
-  useEffect(() => {
-    resizeTextarea();
-  }, [inputText, resizeTextarea]);
-
-  // Populate input when voice transcript arrives
-  useEffect(() => {
-    if (transcript) {
-      const current = useStore.getState().inputText;
-      setInputText(current ? `${current} ${transcript}` : transcript);
-      clearTranscript();
-    }
-  }, [transcript, setInputText, clearTranscript]);
-
-  // Alt+V keyboard shortcut - toggle voice recording from anywhere in the panel
-  useEffect(() => {
-    if (!voiceEnabled) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.altKey && !e.ctrlKey && e.key === "v") {
-        e.preventDefault();
-        if (isRecording) {
-          stopRecording();
-        } else if (!isTranscribing) {
-          startRecording();
-        }
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [
-    voiceEnabled,
-    isRecording,
-    isTranscribing,
-    startRecording,
-    stopRecording,
-  ]);
-
-  // Auto-dismiss STT errors after 5 seconds
-  useEffect(() => {
-    if (!sttError) return;
-    const timer = setTimeout(() => clearTranscript(), 5000);
-    return () => clearTimeout(timer);
-  }, [sttError, clearTranscript]);
 
   const hasText = inputText.trim().length > 0;
-
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!hasText) return;
-
     if (isAgentRunning) {
       onSendFeedback(inputText);
     } else {
       onSend(inputText);
     }
     setInputText("");
-  };
+  }, [
+    hasText,
+    inputText,
+    isAgentRunning,
+    onSend,
+    onSendFeedback,
+    setInputText,
+  ]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputText(e.target.value);
-  };
+  const composer = useComposerTextarea({
+    isAgentRunning,
+    inputText,
+    interactionPending: Boolean(
+      pendingApproval || pendingEscalation || pendingClarification,
+    ),
+    onSubmit: handleSubmit,
+    onStop,
+  });
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
+  const handleInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setInputText(event.target.value);
+    },
+    [setInputText],
+  );
 
-  // Escape-to-stop: global keyboard shortcut
-  useEffect(() => {
-    if (!isAgentRunning) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onStop();
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [isAgentRunning, onStop]);
-
-  // Approval overlay replaces the entire input area
   if (pendingApproval) {
     return (
-      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
+      <PendingInteractionShell>
         <ApprovalOverlay />
-      </div>
+      </PendingInteractionShell>
     );
   }
 
-  // Escalation overlay replaces the entire input area
   if (pendingEscalation) {
     return (
-      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
+      <PendingInteractionShell>
         <EscalationOverlay />
-      </div>
+      </PendingInteractionShell>
     );
   }
 
-  // Clarification overlay replaces the entire input area
   if (pendingClarification) {
     return (
-      <div className="p-2 bg-warm-50 dark:bg-warm-900 border-t border-warm-200 dark:border-warm-800">
+      <PendingInteractionShell>
         <ClarificationOverlay />
-      </div>
+      </PendingInteractionShell>
     );
   }
 
   return (
-    <div className="bg-warm-50 dark:bg-warm-900 relative shrink-0 border-t border-warm-200 dark:border-warm-800">
-      {/* Risk banner when autonomous mode is on */}
-      {autonomousMode && !isAgentRunning && (
-        <div className="mx-2 mt-1 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+    <div className="relative shrink-0 border-t border-warm-200 bg-warm-50 dark:border-warm-800 dark:bg-warm-900">
+      {autonomousMode && !isAgentRunning ? (
+        <div className="mx-2 mt-1 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
           <ShieldAlert size={12} className="shrink-0" />
           <span>Autonomous mode - agent acts without asking</span>
         </div>
-      )}
+      ) : null}
+
       <div className="p-2">
-        {/* Running-state panel: prominent stop + optional feedback input */}
         {isAgentRunning ? (
           <div className="space-y-1.5">
             <div className="px-1">
@@ -215,33 +185,25 @@ export function InputArea({
                 current run continues.
               </div>
             </div>
-            <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_32px] items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-colors">
-              <textarea
-                ref={textareaRef}
-                value={inputText}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Guide the agent..."
-                className="block w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm leading-5 text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
-                rows={1}
-              />
-              <button
-                onClick={handleSubmit}
-                disabled={!hasText}
-                className={clsx(
-                  "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-primary-600 text-white",
-                  hasText
-                    ? "hover:bg-primary-700"
-                    : "opacity-0 pointer-events-none",
-                )}
-                aria-label="Send guidance"
-              >
-                <ArrowUp size={16} />
-              </button>
-            </div>
-            <p className="px-1 text-[10px] text-warm-400 dark:text-warm-500 select-none">
+            <ComposerBox
+              hasText={hasText}
+              inputRef={composer.textareaRef}
+              isGuidance
+              onBlur={composer.handleBlur}
+              onChange={handleInputChange}
+              onFocus={composer.handleFocus}
+              onKeyDown={composer.handleKeyDown}
+              onSubmit={handleSubmit}
+              placeholder="Guide the agent..."
+              realtimeVoiceEnabled={realtimeVoiceEnabled}
+              realtimeVoiceListening={realtimeVoice.isListening}
+              realtimeVoiceStatus={realtimeVoice.status}
+              toggleRealtimeVoice={realtimeVoice.toggleListening}
+              value={inputText}
+            />
+            <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
               Guidance is sent into the current run. Press{" "}
-              <kbd className="px-1 py-0.5 rounded bg-warm-200/60 dark:bg-warm-700/60 text-warm-500 dark:text-warm-400 font-mono text-[9px]">
+              <kbd className="rounded bg-warm-200/60 px-1 py-0.5 font-mono text-[9px] text-warm-500 dark:bg-warm-700/60 dark:text-warm-400">
                 Esc
               </kbd>{" "}
               to stop immediately.
@@ -249,244 +211,36 @@ export function InputArea({
           </div>
         ) : (
           <>
-            <div className="input-glow relative grid grid-cols-[minmax(0,1fr)_auto] items-end gap-1.5 bg-warm-100 dark:bg-warm-800 p-1.5 rounded-2xl ring-1 ring-warm-200/60 dark:ring-warm-700/60 transition-colors">
-              <textarea
-                ref={textareaRef}
-                value={inputText}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="What can I help with?"
-                className="block w-full bg-transparent border-none outline-none resize-none max-h-[120px] min-h-[36px] py-1.5 text-sm leading-5 text-warm-800 dark:text-warm-100 placeholder:text-warm-400 dark:placeholder:text-warm-500"
-                rows={1}
+            <ComposerBox
+              hasText={hasText}
+              inputRef={composer.textareaRef}
+              isGuidance={false}
+              onBlur={composer.handleBlur}
+              onChange={handleInputChange}
+              onFocus={composer.handleFocus}
+              onKeyDown={composer.handleKeyDown}
+              onSubmit={handleSubmit}
+              placeholder="What can I help with?"
+              realtimeVoiceEnabled={realtimeVoiceEnabled}
+              realtimeVoiceListening={realtimeVoice.isListening}
+              realtimeVoiceStatus={realtimeVoice.status}
+              toggleRealtimeVoice={realtimeVoice.toggleListening}
+              value={inputText}
+            />
+            {realtimeVoiceEnabled ? (
+              <RealtimeVoiceStatusLine
+                error={realtimeVoice.error}
+                isListening={realtimeVoice.isListening}
+                status={realtimeVoice.status}
               />
-              <div className="flex items-end gap-1">
-                {/* Mic button - always visible when voice is enabled (Alt+V) */}
-                {voiceEnabled && (
-                  <button
-                    onClick={() =>
-                      isRecording ? stopRecording() : startRecording()
-                    }
-                    disabled={isTranscribing}
-                    title={
-                      isRecording
-                        ? "Stop recording (Alt+V)"
-                        : "Voice input (Alt+V)"
-                    }
-                    className={clsx(
-                      "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center",
-                      isRecording
-                        ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-                        : isTranscribing
-                          ? "bg-warm-400 text-white cursor-wait"
-                          : "bg-warm-300 hover:bg-warm-400 dark:bg-warm-600 dark:hover:bg-warm-500 text-warm-700 dark:text-warm-200",
-                    )}
-                    aria-label={
-                      isRecording ? "Stop recording" : "Start voice input"
-                    }
-                  >
-                    {isTranscribing ? (
-                      <Loader2 size={16} className="animate-spin" />
-                    ) : (
-                      <Mic size={16} />
-                    )}
-                  </button>
-                )}
-                {/* Send button - appears when text is present */}
-                <button
-                  onClick={handleSubmit}
-                  disabled={!hasText}
-                  className={clsx(
-                    "w-8 h-8 mb-0.5 rounded-full transition-colors flex-shrink-0 flex items-center justify-center bg-warm-700 dark:bg-warm-300 text-white dark:text-warm-900",
-                    hasText
-                      ? "hover:bg-warm-800 dark:hover:bg-warm-200"
-                      : "opacity-0 pointer-events-none",
-                  )}
-                  aria-label="Send message"
-                >
-                  <ArrowUp size={16} />
-                </button>
-              </div>
+            ) : null}
+            <div className="relative mt-1.5 flex items-center px-1">
+              <InteractionModeMenu
+                mode={interactionMode}
+                onChange={setInteractionMode}
+              />
             </div>
-            {/* STT status / error */}
-            <div className="px-1 mt-1 flex h-4 items-center gap-1.5 overflow-hidden">
-              {sttError ? (
-                <span className="text-[11px] text-red-500 dark:text-red-400">
-                  {sttError}
-                </span>
-              ) : isRecording ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                  <span className="text-[11px] text-red-500 dark:text-red-400">
-                    Recording... press Alt+V or tap mic to stop
-                  </span>
-                </>
-              ) : isTranscribing ? (
-                <span className="text-[11px] text-warm-400 dark:text-warm-500">
-                  Transcribing...
-                </span>
-              ) : null}
-            </div>
-            {/* Footer row: autonomy popover */}
-            <div className="flex items-center mt-1.5 px-1 relative">
-              <div className="relative">
-                <button
-                  onClick={() => setAutonomyMenuOpen((v) => !v)}
-                  className={clsx(
-                    "flex items-center gap-1.5 text-[11px] py-0.5 px-1.5 rounded-md transition-colors",
-                    autonomousMode
-                      ? "text-amber-700 dark:text-amber-300"
-                      : "text-warm-500 dark:text-warm-400 hover:text-warm-700 dark:hover:text-warm-200",
-                  )}
-                >
-                  {autonomousMode ? (
-                    <ShieldAlert size={10} className="shrink-0" />
-                  ) : (
-                    <ShieldCheck size={10} className="shrink-0" />
-                  )}
-                  <span>{getInteractionModeLabel(interactionMode)}</span>
-                  <ChevronDown size={10} className="shrink-0" />
-                </button>
-                {autonomyMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40 bg-black/15"
-                      onClick={() => setAutonomyMenuOpen(false)}
-                    />
-                    <div className="absolute bottom-full left-0 mb-1.5 w-64 bg-warm-50 dark:bg-warm-800 border border-warm-200 dark:border-warm-700 rounded-lg shadow-lg z-50 overflow-hidden">
-                      <button
-                        onClick={() => {
-                          setInteractionMode("confirm_all");
-                          setAutonomyMenuOpen(false);
-                        }}
-                        className={clsx(
-                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          interactionMode === "confirm_all"
-                            ? "bg-warm-100 dark:bg-warm-700/50"
-                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                        )}
-                      >
-                        <ShieldCheck
-                          size={14}
-                          className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">
-                            Ask before acting
-                          </div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">
-                            {getInteractionModeDescription("confirm_all")}
-                          </div>
-                        </div>
-                        {interactionMode === "confirm_all" && (
-                          <Check
-                            size={14}
-                            className="shrink-0 mt-0.5 text-primary-500"
-                          />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setInteractionMode("confirm_high_risk_only");
-                          setAutonomyMenuOpen(false);
-                        }}
-                        className={clsx(
-                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          interactionMode === "confirm_high_risk_only"
-                            ? "bg-warm-100 dark:bg-warm-700/50"
-                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                        )}
-                      >
-                        <ShieldAlert
-                          size={14}
-                          className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">
-                            Ask for risky actions
-                          </div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">
-                            {getInteractionModeDescription(
-                              "confirm_high_risk_only",
-                            )}
-                          </div>
-                        </div>
-                        {interactionMode === "confirm_high_risk_only" && (
-                          <Check
-                            size={14}
-                            className="shrink-0 mt-0.5 text-primary-500"
-                          />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setInteractionMode("confirm_plans_only");
-                          setAutonomyMenuOpen(false);
-                        }}
-                        className={clsx(
-                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          interactionMode === "confirm_plans_only"
-                            ? "bg-warm-100 dark:bg-warm-700/50"
-                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                        )}
-                      >
-                        <ShieldCheck
-                          size={14}
-                          className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">
-                            Confirm plans only
-                          </div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">
-                            {getInteractionModeDescription(
-                              "confirm_plans_only",
-                            )}
-                          </div>
-                        </div>
-                        {interactionMode === "confirm_plans_only" && (
-                          <Check
-                            size={14}
-                            className="shrink-0 mt-0.5 text-primary-500"
-                          />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setInteractionMode("autonomous");
-                          setAutonomyMenuOpen(false);
-                        }}
-                        className={clsx(
-                          "w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors",
-                          interactionMode === "autonomous"
-                            ? "bg-warm-100 dark:bg-warm-700/50"
-                            : "hover:bg-warm-100 dark:hover:bg-warm-700/30",
-                        )}
-                      >
-                        <Play
-                          size={14}
-                          className="shrink-0 mt-0.5 text-warm-500 dark:text-warm-400"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium text-warm-800 dark:text-warm-100">
-                            Act without asking
-                          </div>
-                          <div className="text-[10px] text-warm-500 dark:text-warm-400 mt-0.5">
-                            {getInteractionModeDescription("autonomous")}
-                          </div>
-                        </div>
-                        {interactionMode === "autonomous" && (
-                          <Check
-                            size={14}
-                            className="shrink-0 mt-0.5 text-primary-500"
-                          />
-                        )}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            <p className="text-center text-[10px] text-warm-400 dark:text-warm-500 mt-1 select-none">
+            <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">
               AI can make mistakes. Please double-check responses.
             </p>
           </>

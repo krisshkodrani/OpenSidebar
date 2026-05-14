@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { __testOnly as e2eUtilsTestOnly } from "../e2e/helpers/utils";
+import {
+  __testOnly as e2eUtilsTestOnly,
+  waitForMonitoredEvent,
+  waitForTabCount,
+} from "../e2e/helpers/utils";
 import { closeExtension } from "../e2e/helpers/browser";
 import {
   collectFormTraceMetrics,
@@ -33,9 +37,99 @@ describe("e2e helper semantics", () => {
       { type: "AGENT_STATUS", status: "IDLE", timestamp: 120 },
     ];
 
-    expect(e2eUtilsTestOnly.isTerminalTaskCompletionStatus("failed")).toBe(true);
-    expect(e2eUtilsTestOnly.getLatestTaskCompletionState(events)).toBe("failed");
+    expect(e2eUtilsTestOnly.isTerminalTaskCompletionStatus("failed")).toBe(
+      true,
+    );
+    expect(e2eUtilsTestOnly.getLatestTaskCompletionState(events)).toBe(
+      "failed",
+    );
     expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(events)).toBe(true);
+  });
+
+  it("describes terminal task completion for fail-fast E2E waits", () => {
+    const events = [
+      {
+        type: "TASK_COMPLETION",
+        status: "failed",
+        payload: { summary: "Failed to fetch" },
+      },
+    ];
+
+    expect(e2eUtilsTestOnly.describeTaskCompletionEvent(events[0])).toBe(
+      "task_failed:Failed to fetch",
+    );
+    expect(() =>
+      e2eUtilsTestOnly.throwIfTaskAlreadyFinished(
+        events,
+        "Wait for 2 user tabs",
+      ),
+    ).toThrow(/Wait for 2 user tabs.*task_failed:Failed to fetch/);
+    expect(() =>
+      e2eUtilsTestOnly.throwIfTaskAlreadyFinished([], "Wait for 2 user tabs"),
+    ).not.toThrow();
+  });
+
+  it("treats terminal agent status as a fail-fast wait condition", () => {
+    const events = [
+      {
+        type: "AGENT_STATUS",
+        status: "ERROR",
+        detail: "Failed to fetch",
+      },
+    ];
+
+    expect(e2eUtilsTestOnly.isTerminalAgentStatusEvent(events[0])).toBe(true);
+    expect(e2eUtilsTestOnly.describeTerminalWaitEvent(events[0])).toBe(
+      "agent_error:Failed to fetch",
+    );
+    expect(() =>
+      e2eUtilsTestOnly.throwIfTaskAlreadyFinished(
+        events,
+        "Wait for monitored event",
+      ),
+    ).toThrow(/Wait for monitored event.*agent_error:Failed to fetch/);
+  });
+
+  it("aborts waitForMonitoredEvent on terminal agent failure", async () => {
+    const worker = {
+      evaluate: vi.fn(async () => [
+        {
+          type: "AGENT_STATUS",
+          status: "ERROR",
+          detail: "Failed to fetch",
+          workspaceId: "ws-1",
+        },
+      ]),
+    };
+
+    await expect(
+      waitForMonitoredEvent(worker as any, () => false, 10_000, "ws-1"),
+    ).rejects.toThrow(/Wait for monitored event.*agent_error:Failed to fetch/);
+    expect(worker.evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts waitForTabCount on terminal idle failure", async () => {
+    const worker = {
+      evaluate: vi.fn(async (_fn: unknown, arg?: unknown) => {
+        if (typeof arg === "number") {
+          return [
+            {
+              type: "AGENT_STATUS",
+              status: "IDLE",
+              completionStatus: "failed",
+              detail: "Failed to fetch",
+              workspaceId: "ws-1",
+            },
+          ];
+        }
+        return ["https://example.test/only-tab"];
+      }),
+    };
+
+    await expect(
+      waitForTabCount(worker as any, 2, 10_000, "ws-1"),
+    ).rejects.toThrow(/Wait for 2 user tabs.*agent_idle_failed:Failed to fetch/);
+    expect(worker.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it("requires idle after terminal completion for turn handoff", () => {
@@ -48,8 +142,12 @@ describe("e2e helper semantics", () => {
       { type: "AGENT_STATUS", status: "IDLE", timestamp: 250 },
     ];
 
-    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleBeforeCompletion)).toBe(false);
-    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleAfterCompletion)).toBe(true);
+    expect(
+      e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleBeforeCompletion),
+    ).toBe(false);
+    expect(
+      e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(idleAfterCompletion),
+    ).toBe(true);
   });
 
   it("filters trace files by workspace id", () => {
@@ -69,8 +167,13 @@ describe("e2e helper semantics", () => {
         "utf-8",
       );
 
-      expect(filterTraceFilesByWorkspace([match, miss], "ws-1")).toEqual([match]);
-      expect(filterTraceFilesByWorkspace([match, miss], null)).toEqual([match, miss]);
+      expect(filterTraceFilesByWorkspace([match, miss], "ws-1")).toEqual([
+        match,
+      ]);
+      expect(filterTraceFilesByWorkspace([match, miss], null)).toEqual([
+        match,
+        miss,
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

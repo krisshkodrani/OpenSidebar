@@ -7,6 +7,7 @@ import type { PerceptionAgent } from "../perception/perception-agent";
 import type { ContextManager } from "./context";
 import type { ContextMetrics } from "./context-types";
 import { TraceRecorder } from "./trace";
+import { withToolCapabilityCatalog } from "./tool-capabilities";
 
 type TurnPreparationLogger = Pick<typeof logger, "info">;
 
@@ -41,8 +42,8 @@ export type LlmTurnPreparationResult = {
 export async function prepareLlmTurnRequest(
   deps: LlmTurnPreparationDeps,
 ): Promise<LlmTurnPreparationResult> {
-  const messages = deps.context.getPrompt();
   const tools = deps.selectTools(deps.allTools);
+  const messages = withToolCapabilityCatalog(deps.context.getPrompt(), tools);
   const metrics = deps.context.getPromptMetricsFrom(messages);
   const previousElementCount =
     deps.previousElementCount < 0

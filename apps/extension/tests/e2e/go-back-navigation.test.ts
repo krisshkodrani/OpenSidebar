@@ -5,7 +5,7 @@
  * Tests: navigate, go_back, read_page across real browser history entries.
  * Exercises the navigation bridge (state persistence across page loads).
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

@@ -5,7 +5,7 @@
  * completes a checkout on /shop, then navigates to /summarize and
  * summarizes the Transformer Architecture article.
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/sequential-tasks.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/sequential-tasks.test.ts
  */
 
 import {

@@ -16,17 +16,9 @@ interface Check {
 
 function runVersion(command: string, args: string[]): string {
   const executable =
-    command === "npm" && process.env.npm_execpath
-      ? process.execPath
-      : process.platform === "win32" && command === "npm"
-        ? "npm.cmd"
-        : command;
-  const resolvedArgs =
-    command === "npm" && process.env.npm_execpath
-      ? [process.env.npm_execpath, ...args]
-      : args;
+    process.platform === "win32" && command === "pnpm" ? "pnpm.cmd" : command;
   try {
-    return execFileSync(executable, resolvedArgs, {
+    return execFileSync(executable, args, {
       cwd: ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
@@ -70,7 +62,7 @@ async function checkLocalServer(): Promise<Check> {
     return {
       level: "warn",
       label: "local server",
-      detail: `not running; start it with npm run dev`,
+      detail: `not running; start it with pnpm run dev`,
     };
   }
 }
@@ -82,7 +74,7 @@ function printCheck(check: Check): void {
 
 async function main(): Promise<void> {
   const nodeVersion = runVersion("node", ["--version"]);
-  const npmVersion = runVersion("npm", ["--version"]);
+  const pnpmVersion = runVersion("pnpm", ["--version"]);
   const checks: Check[] = [
     {
       level: nodeVersion === "not available" ? "warn" : "ok",
@@ -90,37 +82,37 @@ async function main(): Promise<void> {
       detail: nodeVersion,
     },
     {
-      level: npmVersion === "not available" ? "warn" : "ok",
-      label: "npm",
-      detail: npmVersion,
+      level: pnpmVersion === "not available" ? "warn" : "ok",
+      label: "pnpm",
+      detail: pnpmVersion,
     },
     {
       level: fileExists("node_modules") ? "ok" : "warn",
       label: "dependencies",
       detail: fileExists("node_modules")
         ? "node_modules exists"
-        : "missing; run npm install",
+        : "missing; run pnpm install",
     },
     {
       level: fileExists("dist/manifest.json") ? "ok" : "warn",
       label: "dist",
       detail: fileExists("dist/manifest.json")
         ? "production extension build exists"
-        : "missing; run npm run dist",
+        : "missing; run pnpm run dist",
     },
     {
       level: fileExists("dist-dev/manifest.json") ? "ok" : "warn",
       label: "dist-dev",
       detail: fileExists("dist-dev/manifest.json")
         ? "dev extension build exists"
-        : "missing until npm run dev has built once",
+        : "missing until pnpm run dev has built once",
     },
     {
       level: fileExists(".artifacts/trace-index.sqlite") ? "ok" : "warn",
       label: "trace sqlite",
       detail: fileExists(".artifacts/trace-index.sqlite")
         ? `.artifacts/trace-index.sqlite (${fileSize(".artifacts/trace-index.sqlite")})`
-        : "missing; run npm run traces:index after traces exist",
+        : "missing; run pnpm run traces:index after traces exist",
     },
     await checkLocalServer(),
   ];
@@ -130,11 +122,11 @@ async function main(): Promise<void> {
   checks.forEach(printCheck);
   console.log("");
   console.log("Main commands:");
-  console.log("  npm run dev      start local dev stack and load dist-dev/");
-  console.log("  npm run dist     build standalone extension into dist/");
-  console.log("  npm test         run fast tests");
-  console.log("  npm run verify   run the full local confidence gate");
-  console.log("  npm run doctor   diagnose this local setup");
+  console.log("  pnpm run dev      start local dev stack and load dist-dev/");
+  console.log("  pnpm run dist     build standalone extension into dist/");
+  console.log("  pnpm test         run fast tests");
+  console.log("  pnpm run verify   run the full local confidence gate");
+  console.log("  pnpm run doctor   diagnose this local setup");
 }
 
 main().catch((error) => {

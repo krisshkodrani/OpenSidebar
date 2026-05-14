@@ -2,7 +2,11 @@ export type E2EDefaultSuiteName =
   | "smoke"
   | "interaction-regression"
   | "runtime-regression";
-export type E2EFocusSuiteName = "nightly-legacy" | "overlay-harness";
+export type E2EFocusSuiteName =
+  | "nightly-legacy"
+  | "overlay-harness"
+  | "memory-regression"
+  | "multi-turn-workflows";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
@@ -31,6 +35,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   ],
   "runtime-regression": [
     "approval-recovery.test.ts",
+    "ashby-job-application.test.ts",
     "backend-durable-resume.test.ts",
     "continuation-abandon-restart.test.ts",
     "continuation-act-check-act.test.ts",
@@ -55,6 +60,12 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "faq-accordion.test.ts",
   ],
   "overlay-harness": ["overlay-harness.test.ts"],
+  "memory-regression": [
+    "memory-current-vs-historical.test.ts",
+    "memory-long-turn-dossier.test.ts",
+    "memory-recall-dashboard.test.ts",
+  ],
+  "multi-turn-workflows": ["multi-turn-workflows.test.ts"],
 };
 
 export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
@@ -66,6 +77,8 @@ export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
 export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "nightly-legacy",
   "overlay-harness",
+  "memory-regression",
+  "multi-turn-workflows",
 ];
 
 export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [

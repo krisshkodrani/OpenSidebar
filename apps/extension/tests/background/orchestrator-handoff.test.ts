@@ -265,6 +265,60 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("JOB APPLICATION POLICY:");
   });
 
+  test("preserves long job application original request literals", () => {
+    const node = makeNode([]);
+    const longAnswer = [
+      "I care about Langfuse because it solves one of the most important practical problems in AI product engineering.",
+      "",
+      "My recent work has been focused on exactly this kind of problem space.",
+      "",
+      "FINAL_LITERAL_MARKER should remain visible after the normal compact-query cutoff.",
+    ].join("\n");
+    const originalQuery = [
+      "Fill the application but dont send using these data",
+      "| Field | Copy This |",
+      "|---|---|",
+      "| Name | Kris Shkodrani |",
+      "| Earliest Start Date | 2026-06-01 |",
+      "",
+      "## Why Do You Care About Langfuse?",
+      "",
+      longAnswer,
+    ].join("\n");
+
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      "Fill the job application fields",
+      originalQuery,
+    );
+
+    expect(instruction).toContain("FINAL_LITERAL_MARKER");
+    expect(instruction).toContain(
+      "I care about Langfuse because it solves one of the most important practical problems in AI product engineering.\n\nMy recent work",
+    );
+    expect(instruction).toContain("preserve paragraph breaks and wording exactly");
+  });
+
+  test("adds Ashby-specific application policy for Ashby skill nodes", () => {
+    const node = makeNode([]);
+    node.selectedSkillId = "ashby-job-application-assistant";
+
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      "Fill the Ashby application but do not submit",
+      "Use the provided Why Do You Care About Langfuse answer exactly.",
+    );
+
+    expect(instruction).toContain("ASHBY APPLICATION POLICY:");
+    expect(instruction).toContain("question-style labels as fields to fill");
+    expect(instruction).toContain('read_element(attribute="value")');
+    expect(instruction).toContain("Submit Application");
+  });
+
   test("uses active plan objective override when provided", () => {
     const node = makeNode([]);
     const instruction = buildExecutorInstruction(

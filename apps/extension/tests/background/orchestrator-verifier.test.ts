@@ -65,7 +65,8 @@ describe("Orchestrator verifier fallback", () => {
       output:
         "I need clarification before proceeding: the correct workspace is not specified, and the page says to ask the user which workspace to open before clicking either option.",
       objective: "Open the workspace I should use for this project",
-      successCriteria: "The correct workspace is opened or the missing choice is clarified",
+      successCriteria:
+        "The correct workspace is opened or the missing choice is clarified",
       executorOutcome: "completed",
     });
 
@@ -114,7 +115,8 @@ describe("Orchestrator verifier fallback", () => {
 
   test("does not accept generic clarification text without a missing choice", () => {
     const decision = programmaticVerify({
-      output: "I need clarification before proceeding, but I cannot complete the task.",
+      output:
+        "I need clarification before proceeding, but I cannot complete the task.",
       objective: "Summarize this page",
       successCriteria: "The page is summarized",
       executorOutcome: "completed",
@@ -265,7 +267,8 @@ describe("programmaticVerify", () => {
     const result = programmaticVerify({
       output:
         "TICKET-4271 has been read and analyzed. The issue is that CSV export fails with a Request Timeout error after 30 seconds. Status is Open and priority is High.",
-      objective: "Read and analyze TICKET-4271 to determine if escalation is needed",
+      objective:
+        "Read and analyze TICKET-4271 to determine if escalation is needed",
       successCriteria:
         "Ticket details visible including title CSV Export Timeout, description, current status, and priority level",
       evidence: [
@@ -337,7 +340,8 @@ describe("programmaticVerify", () => {
       output:
         "Successfully opened the second item's store in a new tab. The new tab (ID: 1727714004) contains the OfficeHub store URL.",
       objective: "Open the second item's store in a new tab",
-      successCriteria: "New tab opened with store URL for second procurement item",
+      successCriteria:
+        "New tab opened with store URL for second procurement item",
       previousUrl: "https://example.com/procurement",
       currentUrl: "https://example.com/procurement",
       previousTitle: "Procurement List",
@@ -346,6 +350,36 @@ describe("programmaticVerify", () => {
     expect(result).not.toBeNull();
     expect(result!.decision).toBe("accept");
     expect(result!.reason).toContain("explicit completion evidence");
+  });
+
+  test("accepts superseding final state evidence when the trigger control disappears", () => {
+    const result = programmaticVerify({
+      output:
+        "Completed successfully. The previous Advance button is no longer visible; the page now shows the final code-entry state with code ALPHA-7492 and an input field.",
+      objective:
+        "Advance through the challenge until the code entry state appears",
+      successCriteria:
+        "Final code entry state is visible with the revealed code",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("superseding final");
+  });
+
+  test("does not accept a missing trigger control without replacement-state evidence", () => {
+    const result = programmaticVerify({
+      output:
+        "The Advance button is not visible anymore, but I cannot confirm what state replaced it.",
+      objective:
+        "Advance through the challenge until the code entry state appears",
+      successCriteria:
+        "Final code entry state is visible with the revealed code",
+      executorOutcome: "completed",
+    });
+
+    expect(result?.decision).not.toBe("accept");
   });
 
   test("returns accept for trusted ServiceNow form submit evidence", () => {
@@ -456,7 +490,8 @@ describe("programmaticVerify", () => {
 
   test("does not accept success plus DOM change when output contradicts the target step", () => {
     const result = programmaticVerify({
-      output: "Completed successfully. Verified Warehouse Gamma page 3 is visible.",
+      output:
+        "Completed successfully. Verified Warehouse Gamma page 3 is visible.",
       objective: "Navigate to Warehouse Beta page 2",
       successCriteria: "Warehouse Beta page 2 visible",
       previousUrl: "https://example.com/go-back?step=1",

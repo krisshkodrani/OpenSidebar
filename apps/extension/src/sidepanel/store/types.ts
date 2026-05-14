@@ -41,6 +41,7 @@ export interface ChatSlice {
   setCompletionOnLastMessage: (
     payload: TaskCompletionMessage["payload"],
   ) => void;
+  applyTaskCompletion: (payload: TaskCompletionMessage["payload"]) => void;
   finalizeStream: (citations?: Citation[]) => void;
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;
@@ -89,7 +90,9 @@ export interface AgentSlice {
   clearLatestStepLabel: () => void;
   setTaskRecovery: (recovery: TaskRecoveryState) => void;
   clearTaskRecovery: () => void;
-  setDurableRunStatus: (status: DurableRunStatusMessage["payload"] | null) => void;
+  setDurableRunStatus: (
+    status: DurableRunStatusMessage["payload"] | null,
+  ) => void;
   clearDurableRunStatus: () => void;
   setSessionMetrics: (metrics: SessionMetrics) => void;
   clearSessionMetrics: () => void;

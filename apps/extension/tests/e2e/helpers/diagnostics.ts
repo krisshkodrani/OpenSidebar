@@ -47,12 +47,7 @@ export async function startLogServer(): Promise<void> {
     // Not running — start it
   }
 
-  const command = process.platform === "win32" ? process.execPath : "npx";
-  const args =
-    process.platform === "win32"
-      ? [TSX_CLI, LOG_SERVER_SCRIPT]
-      : ["tsx", LOG_SERVER_SCRIPT];
-  logServerProcess = spawn(command, args, {
+  logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,

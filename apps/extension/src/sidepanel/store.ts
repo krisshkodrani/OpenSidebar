@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { createChatSlice } from "./store/chat-slice";
 import { createAgentSlice } from "./store/agent-slice";
@@ -10,7 +10,7 @@ import type { Store } from "./store/types";
 
 export type { Store } from "./store/types";
 
-export const useStore = create<Store>()(
+export const useStore: UseBoundStore<StoreApi<Store>> = create<Store>()(
   immer((...a) => ({
     ...createChatSlice(...a),
     ...createAgentSlice(...a),

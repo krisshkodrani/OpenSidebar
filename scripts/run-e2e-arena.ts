@@ -428,13 +428,13 @@ async function main(): Promise<void> {
 
   if (build) {
     console.log("\n[e2e:arena:run] Building extension before arena run...");
-    execSync("cmd /c npm run build", {
+    execSync("corepack pnpm run build", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
     });
     console.log("\n[e2e:arena:run] Building E2E fixtures before arena run...");
-    execSync("cmd /c npm run fixtures:build", {
+    execSync("corepack pnpm run fixtures:build", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,

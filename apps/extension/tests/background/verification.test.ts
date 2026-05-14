@@ -276,6 +276,23 @@ describe("assessWorkflowDoneGuard", () => {
     expect(result.blocked).toBe(false);
   });
 
+  test("does not apply unrelated workflow guards from chart skill instructions", () => {
+    const result = assessWorkflowDoneGuard({
+      query:
+        "Objective: Complete the workflow for the original request: Read the Overview tab and tell me Total Users, Revenue, and Bounce Rate. Do not change settings.\n" +
+        "Selected workflow skill:\n" +
+        "- chart-value-extraction: Extract requested values from dashboards or charts.\n" +
+        "Skill procedure:\n" +
+        "4. Keep the workflow read-only: do not click Run, Refresh, report edit, drilldown, export, filter, or navigation controls just to reveal data.\n" +
+        "Original user request (reference for specific values): Read the Overview tab and tell me Total Users, Revenue, and Bounce Rate. Do not change settings.",
+      summary: "Total Users: 12,847. Revenue: $48,392. Bounce Rate: 42.3%.",
+      selectedSkillId: "chart-value-extraction",
+      pageTitle: "Admin Dashboard",
+      pageUrl: "http://127.0.0.1/dashboard",
+    });
+    expect(result.blocked).toBe(false);
+  });
+
   test("rejects single chart answers with supporting numeric details", () => {
     const result = assessWorkflowDoneGuard({
       query:
@@ -303,7 +320,7 @@ describe("assessWorkflowDoneGuard", () => {
       query:
         'What is the maximum value in the "Open Request Items" chart? Give me both the label and the count. If there are many, pick one.',
       summary:
-        'Label: Standard Laptop. Count: 4. The maximum value is Standard Laptop with a count of 4.',
+        "Label: Standard Laptop. Count: 4. The maximum value is Standard Laptop with a count of 4.",
       selectedSkillId: "chart-value-extraction",
     });
     expect(result.blocked).toBe(true);
@@ -419,7 +436,7 @@ describe("assessWorkflowDoneGuard", () => {
       pageUrl:
         "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/incident_list.do",
       summary:
-        'Clicked the Number column header. The table is sorted by Number descending.',
+        "Clicked the Number column header. The table is sorted by Number descending.",
       selectedSkillId: "list-sort-workflow",
     });
     expect(result.blocked).toBe(true);

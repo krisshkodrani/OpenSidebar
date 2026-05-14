@@ -1,6 +1,10 @@
-import type { ChatEntry, Citation, TaskCompletionMessage } from "../../types";
+import {
+  AgentStatus,
+  type ChatEntry,
+  type Citation,
+  type TaskCompletionMessage,
+} from "../../types";
 import { logger } from "../../utils";
-import { clearTTSCache } from "../hooks/useTextToSpeech";
 import { uiRuntime } from "../runtime";
 import type { ChatSlice, SliceCreator } from "./types";
 
@@ -19,9 +23,18 @@ let persistTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /** Max messages to persist per workspace (prevents storage bloat) */
 const MAX_PERSISTED_MESSAGES = 200;
+const MIN_FULL_SUMMARY_DELTA = 24;
+
+const TERMINAL_PUNCTUATION_RE = /[.!?)\]}>"']$/;
+const TRAILING_FRAGMENT_RE =
+  /\b(?:and|or|the|a|an|of|for|to|with|without|in|on|at|by|from|as|into|through|including|such as|top|key|main)\s*$/i;
 
 function chatStorageKey(wsId: string | null): string {
   return `chatMessages:${wsId}`;
+}
+
+function agentStateKey(wsId: string): string {
+  return `agentState:${wsId}`;
 }
 
 function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
@@ -39,6 +52,19 @@ function persistMessages(messages: ChatEntry[], wsId: string | null = null) {
   }, 300);
 }
 
+function persistCompletedAgentState(wsId: string | null) {
+  if (wsId == null) return;
+  uiRuntime.storage.local
+    .set({
+      [agentStateKey(wsId)]: {
+        isRunning: false,
+        status: AgentStatus.IDLE,
+        detail: "Task complete",
+      },
+    })
+    .catch(() => {});
+}
+
 function sameTaskCompletion(
   a: TaskCompletionMessage["payload"] | undefined,
   b: TaskCompletionMessage["payload"],
@@ -50,6 +76,61 @@ function sameTaskCompletion(
     a.totalTurnsUsed === b.totalTurnsUsed &&
     a.summary === b.summary
   );
+}
+
+function normalizeSummaryForComparison(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function looksIncompleteSummary(summary: string): boolean {
+  const text = summary.trim();
+  if (text.length < 160) return false;
+
+  const lastLine = text.split("\n").at(-1)?.trim() ?? text;
+  return (
+    !TERMINAL_PUNCTUATION_RE.test(text) ||
+    /[:;,/-]\s*$/.test(lastLine) ||
+    TRAILING_FRAGMENT_RE.test(lastLine)
+  );
+}
+
+function shouldPreferVisibleCompletionContent(
+  visibleContent: string,
+  payloadSummary: string,
+): boolean {
+  const visible = visibleContent.trim();
+  const summary = payloadSummary.trim();
+  if (!visible) return false;
+  if (!summary) return true;
+  if (visible.length > summary.length && looksIncompleteSummary(summary)) {
+    return true;
+  }
+  if (visible.length <= summary.length + MIN_FULL_SUMMARY_DELTA) return false;
+
+  const normalizedVisible = normalizeSummaryForComparison(visible);
+  const normalizedSummary = normalizeSummaryForComparison(summary);
+  if (
+    normalizedVisible.length <=
+    normalizedSummary.length + MIN_FULL_SUMMARY_DELTA
+  ) {
+    return false;
+  }
+
+  return (
+    normalizedVisible.startsWith(normalizedSummary) ||
+    looksIncompleteSummary(summary)
+  );
+}
+
+function mergeCompletionWithVisibleContent(
+  message: ChatEntry,
+  payload: TaskCompletionMessage["payload"],
+): TaskCompletionMessage["payload"] {
+  if (message.role !== "assistant") return payload;
+  if (!shouldPreferVisibleCompletionContent(message.content, payload.summary)) {
+    return payload;
+  }
+  return { ...payload, summary: message.content.trim() };
 }
 
 function isReplayCompletionTailMessage(
@@ -72,6 +153,89 @@ function dedupeCompletionMessages(messages: ChatEntry[]): ChatEntry[] {
     seenTaskIds.add(taskId);
     return true;
   });
+}
+
+function applyCompletionToMessages(
+  state: { messages: ChatEntry[] },
+  payload: TaskCompletionMessage["payload"],
+): TaskCompletionMessage["payload"] {
+  const existingIndex = state.messages.findIndex(
+    (message) =>
+      message.role === "assistant" &&
+      sameTaskCompletion(message.completionData, payload),
+  );
+  if (existingIndex !== -1) {
+    const existing = state.messages[existingIndex];
+    const completionPayload = mergeCompletionWithVisibleContent(
+      existing,
+      payload,
+    );
+    existing.completionData = completionPayload;
+    existing.isStreaming = false;
+    if (!existing.content && completionPayload.summary) {
+      existing.content = completionPayload.summary;
+    }
+
+    let userMessageSeen = false;
+    state.messages = state.messages.filter((message, index) => {
+      if (index <= existingIndex) return true;
+      if (message.role === "user") {
+        userMessageSeen = true;
+        return true;
+      }
+      if (userMessageSeen) return true;
+      return (
+        !isReplayCompletionTailMessage(message, payload) &&
+        !isReplayCompletionTailMessage(message, completionPayload)
+      );
+    });
+    return completionPayload;
+  }
+
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const message = state.messages[i];
+    if (message.role !== "assistant") continue;
+    const completionPayload = mergeCompletionWithVisibleContent(
+      message,
+      payload,
+    );
+    message.completionData = completionPayload;
+    message.isStreaming = false;
+    if (!message.content && completionPayload.summary) {
+      message.content = completionPayload.summary;
+    }
+    return completionPayload;
+  }
+
+  state.messages.push({
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: payload.summary,
+    timestamp: Date.now(),
+    toolCalls: [],
+    isStreaming: false,
+    completionData: payload,
+  });
+  return payload;
+}
+
+function normalizeLoadedMessage(message: ChatEntry): ChatEntry {
+  const finalized = message.isStreaming
+    ? { ...message, isStreaming: false }
+    : message;
+  if (finalized.role !== "assistant" || !finalized.completionData) {
+    return finalized;
+  }
+
+  const completionData = mergeCompletionWithVisibleContent(
+    finalized,
+    finalized.completionData,
+  );
+  return {
+    ...finalized,
+    content: finalized.content || completionData.summary,
+    completionData,
+  };
 }
 
 /** Flush pending debounced messages to storage immediately. */
@@ -215,55 +379,30 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
 
   setCompletionOnLastMessage: (payload) => {
     set((state) => {
-      const existingIndex = state.messages.findIndex(
-        (message) =>
-          message.role === "assistant" &&
-          sameTaskCompletion(message.completionData, payload),
-      );
-      if (existingIndex !== -1) {
-        const existing = state.messages[existingIndex];
-        existing.completionData = payload;
-        existing.isStreaming = false;
-        if (!existing.content && payload.summary) {
-          existing.content = payload.summary;
-        }
-
-        let userMessageSeen = false;
-        state.messages = state.messages.filter((message, index) => {
-          if (index <= existingIndex) return true;
-          if (message.role === "user") {
-            userMessageSeen = true;
-            return true;
-          }
-          if (userMessageSeen) return true;
-          return !isReplayCompletionTailMessage(message, payload);
-        });
-        return;
-      }
-
-      for (let i = state.messages.length - 1; i >= 0; i--) {
-        const message = state.messages[i];
-        if (message.role !== "assistant") continue;
-        message.completionData = payload;
-        message.isStreaming = false;
-        if (!message.content && payload.summary) {
-          message.content = payload.summary;
-        }
-        break;
-      }
-      if (!state.messages.some((message) => message.completionData === payload)) {
-        state.messages.push({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: payload.summary,
-          timestamp: Date.now(),
-          toolCalls: [],
-          isStreaming: false,
-          completionData: payload,
-        });
-      }
+      applyCompletionToMessages(state, payload);
     });
     persistMessages(get().messages, get().activeWorkspaceId);
+  },
+
+  applyTaskCompletion: (payload) => {
+    set((state) => {
+      const completionPayload = applyCompletionToMessages(state, payload);
+      state.taskCompletion = completionPayload;
+      state.taskProgress = null;
+      state.isPlanning = false;
+      state.isAgentRunning = false;
+      state.stagnationState = null;
+      state.turnProgress = null;
+      state.pendingApproval = null;
+      state.pendingEscalation = null;
+      state.pendingPlanConfirmation = null;
+      state.pendingClarification = null;
+      state.taskRecovery = null;
+      state.laneTelemetry = null;
+      state.latestStepLabel = null;
+    });
+    persistMessages(get().messages, get().activeWorkspaceId);
+    persistCompletedAgentState(get().activeWorkspaceId);
   },
 
   finalizeStream: (citations?: Citation[]) => {
@@ -333,7 +472,6 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
   clearHistory: () =>
     set((state) => {
       state.messages = [];
-      clearTTSCache();
       logger.info("ui", "Chat history cleared");
       const wsId = get().activeWorkspaceId;
       if (wsId != null) {
@@ -359,9 +497,7 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       const result = await uiRuntime.storage.local.get(key);
       if (result[key] && Array.isArray(result[key]) && result[key].length > 0) {
         const stored = dedupeCompletionMessages(
-          (result[key] as ChatEntry[]).map((msg) =>
-            msg.isStreaming ? { ...msg, isStreaming: false } : msg,
-          ),
+          (result[key] as ChatEntry[]).map(normalizeLoadedMessage),
         );
         const current = get().messages;
         // Non-destructive merge: if in-memory messages exist and are newer
@@ -384,6 +520,19 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
         }
         set((state) => {
           state.messages = stored;
+          const latestCompletion = [...stored]
+            .reverse()
+            .find((message) => message.role === "assistant")?.completionData;
+          if (latestCompletion) {
+            state.taskCompletion = latestCompletion;
+            state.taskProgress = null;
+            state.isPlanning = false;
+            state.isAgentRunning = false;
+            state.agentStatus = AgentStatus.IDLE;
+            state.statusDetail = "Task complete";
+            state.stagnationState = null;
+            state.turnProgress = null;
+          }
         });
         logger.debug("ui", "Messages restored from storage", {
           count: stored.length,

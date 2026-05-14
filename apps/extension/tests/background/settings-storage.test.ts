@@ -418,4 +418,67 @@ describe("settings storage", () => {
     expect(payload.executorModel).toBeUndefined();
     expect(payload.perceptionMode).toBe("auto");
   });
+
+  test("stores JobAgent MCP token locally and strips leaked sync token", async () => {
+    const localSet = vi.fn(async () => {});
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.set = localSet as any;
+    chrome.storage.session.remove = vi.fn(async () => {}) as any;
+
+    await saveSettings({
+      openRouterApiKey: "",
+      fireworksApiKey: "fw-test",
+      maxTurns: 100,
+      theme: "system",
+      showSessionMetrics: true,
+      requireApprovals: true,
+      allowNavigation: true,
+      jobAgentMcpEnabled: true,
+      jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
+      jobAgentMcpToken: "local-dev-token",
+    });
+
+    expect(localSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobAgentMcpToken_local: "local-dev-token",
+      }),
+    );
+    expect(syncSet.mock.calls[0]?.[0]?.userSettings).toMatchObject({
+      jobAgentMcpEnabled: true,
+      jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
+    });
+    expect(syncSet.mock.calls[0]?.[0]?.userSettings.jobAgentMcpToken).toBeUndefined();
+
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "fireworks",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+        jobAgentMcpEnabled: true,
+        jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
+        jobAgentMcpToken: "leaked-sync-token",
+      },
+    })) as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      openRouterApiKey_local: "",
+      openaiApiKey_local: "",
+      groqApiKey_local: "",
+      geminiApiKey_local: "",
+      fireworksApiKey_local: "fw-test",
+      deepseekApiKey_local: "",
+      kimiApiKey_local: "",
+      xiaomiApiKey_local: "",
+      jobAgentMcpToken_local: "local-token",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.jobAgentMcpToken).toBe("local-token");
+    expect(settings?.jobAgentMcpEnabled).toBe(true);
+  });
 });

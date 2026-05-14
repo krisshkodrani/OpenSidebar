@@ -31,9 +31,12 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
     await h.page.bringToFront();
     const helper = await h.ctx.browser.newPage();
     try {
-      await helper.goto(`chrome-extension://${h.ctx.extensionId}/e2e-helper.html`, {
-        waitUntil: "domcontentloaded",
-      });
+      await helper.goto(
+        `chrome-extension://${h.ctx.extensionId}/e2e-helper.html`,
+        {
+          waitUntil: "domcontentloaded",
+        },
+      );
       await helper.evaluate(async () => {
         const existing =
           ((await chrome.storage.sync.get("userSettings")).userSettings as
@@ -68,7 +71,7 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
-    await waitForTabCount(h.ctx.serviceWorker, 2, 120_000);
+    await waitForTabCount(h.ctx.serviceWorker, 2, 120_000, workspaceId);
     await waitForMonitoredEvent(
       h.ctx.serviceWorker,
       (event) => event.type === "AGENT_STATUS" && event.status === "ACTING",
@@ -81,7 +84,8 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
     const outcome = await waitForTaskCompletion(h.ctx, 180_000, workspaceId);
     await h.printTraceSummary(workspaceId);
     const checkedItems = await h.page.evaluate(
-      () => ((window as any).__procurementChecked as string[] | undefined) ?? [],
+      () =>
+        ((window as any).__procurementChecked as string[] | undefined) ?? [],
     );
     const completion = [...outcome.events]
       .reverse()
@@ -93,7 +97,9 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
     );
 
     expect(outcome.ok).toBe(false);
-    expect(String(completion?.payload?.summary ?? "")).toContain("Stopped by user");
+    expect(String(completion?.payload?.summary ?? "")).toContain(
+      "Stopped by user",
+    );
     expect(["partial", "failed"]).toContain(String(completion?.status ?? ""));
     expect(checkedItems.length).toBeLessThan(2);
     expect(

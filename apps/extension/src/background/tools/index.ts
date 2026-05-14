@@ -69,6 +69,12 @@ import {
   XRAY_PAGE_DEF,
   UPDATE_NOTES_DEF,
   GET_PROFILE_FIELDS_DEF,
+  LIST_APPLICATION_PACKAGES_DEF,
+  GET_APPLICATION_PACKAGE_DEF,
+  SUGGEST_FORM_ANSWERS_DEF,
+  GET_CANDIDATE_PROFILE_DEF,
+  ANSWER_CANDIDATE_QUESTION_DEF,
+  RECORD_APPLICATION_STATUS_DEF,
   CREATE_WINDOW_DEF,
   UPDATE_PLAN_DEF,
 } from "./definitions";
@@ -77,6 +83,8 @@ import {
   executeContentTool,
   waitForNavigation,
 } from "./bridge";
+import { callConfiguredJobAgentMcpTool } from "../mcp/jobagent-client";
+import { loadSettings } from "../../utils/settings-storage";
 
 // Re-export submodules for barrel compatibility
 export * from "./registry";
@@ -12179,6 +12187,20 @@ export function registerTools() {
       return lines.join("\n");
     },
   );
+
+  for (const [name, definition] of [
+    [ToolName.LIST_APPLICATION_PACKAGES, LIST_APPLICATION_PACKAGES_DEF],
+    [ToolName.GET_APPLICATION_PACKAGE, GET_APPLICATION_PACKAGE_DEF],
+    [ToolName.SUGGEST_FORM_ANSWERS, SUGGEST_FORM_ANSWERS_DEF],
+    [ToolName.GET_CANDIDATE_PROFILE, GET_CANDIDATE_PROFILE_DEF],
+    [ToolName.ANSWER_CANDIDATE_QUESTION, ANSWER_CANDIDATE_QUESTION_DEF],
+    [ToolName.RECORD_APPLICATION_STATUS, RECORD_APPLICATION_STATUS_DEF],
+  ] as const) {
+    toolRegistry.register(name, definition, async (args, _tabId, signal) => {
+      const settings = (await loadSettings()) ?? ({} as UserSettings);
+      return callConfiguredJobAgentMcpTool(settings, name, args, signal);
+    });
+  }
 
   // Create window tool (intercepted by orchestrator before executor runs)
   toolRegistry.register(

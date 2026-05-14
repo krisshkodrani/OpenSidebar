@@ -342,10 +342,25 @@ body,
   animation: fade-in-up 0.35s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+.completion-meta-enter {
+  animation: completion-meta-in 0.18s ease-out both;
+}
+
 @keyframes fade-in-up {
   0% {
     opacity: 0;
     transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes completion-meta-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-2px);
   }
   100% {
     opacity: 1;
@@ -486,6 +501,10 @@ button:active:not(:disabled) {
   }
 
   .message-enter {
+    animation: none;
+  }
+
+  .completion-meta-enter {
     animation: none;
   }
 

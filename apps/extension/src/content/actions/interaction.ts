@@ -17,6 +17,7 @@ import {
   getVisibleText,
   addDynamicTag,
   getCheckboxOrRadioControl,
+  isOwnElement,
 } from "../tagging";
 import {
   staleIdError,
@@ -171,7 +172,76 @@ function centerMouseOptions(target: Element): MouseEventInit {
   };
 }
 
-function dispatchMouseActivation(target: Element, opts: MouseEventInit): void {
+const ACTIVATION_FOCUS_SELECTOR =
+  "input:not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [contenteditable='true'], [tabindex]:not([tabindex='-1'])";
+
+function findActivationFocusTarget(target: Element): HTMLElement | null {
+  if (!isHtmlElement(target)) return null;
+  return target.closest<HTMLElement>(ACTIVATION_FOCUS_SELECTOR);
+}
+
+type ActivationFocusState = {
+  focusTarget: HTMLElement | null;
+  wasFocused: boolean;
+};
+
+function focusActivationTarget(target: Element): ActivationFocusState {
+  const focusTarget = findActivationFocusTarget(target);
+  if (!focusTarget) return { focusTarget: null, wasFocused: false };
+
+  const wasFocused = focusTarget.ownerDocument.activeElement === focusTarget;
+
+  try {
+    focusTarget.focus({ preventScroll: true });
+  } catch {
+    focusTarget.focus();
+  }
+
+  return { focusTarget, wasFocused };
+}
+
+async function waitForActivationFocusFlush(target: Element): Promise<void> {
+  const view = target.ownerDocument?.defaultView ?? window;
+  await new Promise<void>((resolve) => view.setTimeout(resolve, 0));
+}
+
+function isGridCellActivationTarget(target: Element): boolean {
+  const tagName = target.tagName.toLowerCase();
+  const role = target.getAttribute("role")?.toLowerCase() ?? "";
+  if (
+    tagName !== "td" &&
+    tagName !== "th" &&
+    role !== "cell" &&
+    role !== "gridcell"
+  ) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest("table, [role='grid'], [role='table'], [role='treegrid']"),
+  );
+}
+
+function performElementClick(target: Element, opts: MouseEventInit): void {
+  if (isHtmlElement(target)) {
+    target.click();
+  } else {
+    target.dispatchEvent(
+      mouseEventForTarget(target, "click", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: 0,
+        ...opts,
+      }),
+    );
+  }
+}
+
+function dispatchMouseActivation(
+  target: Element,
+  opts: MouseEventInit,
+): ActivationFocusState {
   const hoverOpts = {
     bubbles: true,
     cancelable: true,
@@ -185,29 +255,41 @@ function dispatchMouseActivation(target: Element, opts: MouseEventInit): void {
   target.dispatchEvent(pointerEventForTarget(target, "pointerover", hoverOpts));
   target.dispatchEvent(mouseEventForTarget(target, "mouseover", hoverOpts));
   target.dispatchEvent(mouseEventForTarget(target, "mousemove", hoverOpts));
-  target.dispatchEvent(pointerEventForTarget(target, "pointerdown", downOpts));
-  target.dispatchEvent(mouseEventForTarget(target, "mousedown", downOpts));
+  let activationFocus: ActivationFocusState = {
+    focusTarget: null,
+    wasFocused: false,
+  };
+  const pointerDownAllowed = target.dispatchEvent(
+    pointerEventForTarget(target, "pointerdown", downOpts),
+  );
+  const mouseDownAllowed = target.dispatchEvent(
+    mouseEventForTarget(target, "mousedown", downOpts),
+  );
+  if (pointerDownAllowed && mouseDownAllowed) {
+    activationFocus = focusActivationTarget(target);
+  }
   target.dispatchEvent(pointerEventForTarget(target, "pointerup", upOpts));
   target.dispatchEvent(mouseEventForTarget(target, "mouseup", upOpts));
+  return activationFocus;
 }
 
-function dispatchClickActivation(
+async function dispatchClickActivation(
   target: Element,
   opts: MouseEventInit = centerMouseOptions(target),
-): void {
-  dispatchMouseActivation(target, opts);
-  if (isHtmlElement(target)) {
-    target.click();
-  } else {
-    target.dispatchEvent(
-      mouseEventForTarget(target, "click", {
-        bubbles: true,
-        cancelable: true,
-        button: 0,
-        buttons: 0,
-        ...opts,
-      }),
-    );
+  options: { stabilizeGridClick?: boolean } = {},
+): Promise<void> {
+  const activationFocus = dispatchMouseActivation(target, opts);
+  await waitForActivationFocusFlush(target);
+  performElementClick(target, opts);
+
+  if (
+    options.stabilizeGridClick &&
+    activationFocus.focusTarget &&
+    !activationFocus.wasFocused &&
+    isGridCellActivationTarget(target)
+  ) {
+    await waitForActivationFocusFlush(target);
+    performElementClick(target, opts);
   }
 }
 
@@ -258,7 +340,8 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   // pointer-events:none. elementFromPoint doesn't respect pointer-events.
   const isOwnOverlay = (node: Element | null): boolean =>
     !!node &&
-    (node.id === "opensidebar-agent-border" ||
+    (isOwnElement(node) ||
+      node.id === "opensidebar-agent-border" ||
       node.id === "opensidebar-e2e-rail" ||
       node.id === "opensidebar-stop-btn" ||
       Boolean(node.closest?.("#opensidebar-e2e-rail")) ||
@@ -371,7 +454,9 @@ export async function executeClick(args: ClickElementArgs): Promise<{
     if (blockerIsChild || targetInsideBlocker || targetInShadowOfBlocker) {
       for (let i = 0; i < count; i++) {
         rememberKeyboardTarget(el);
-        dispatchClickActivation(el);
+        await dispatchClickActivation(el, centerMouseOptions(el), {
+          stabilizeGridClick: count === 1,
+        });
         if (i < count - 1) {
           await new Promise((r) => setTimeout(r, 150));
         }
@@ -411,7 +496,9 @@ export async function executeClick(args: ClickElementArgs): Promise<{
   //
   for (let i = 0; i < count; i++) {
     rememberKeyboardTarget(el);
-    dispatchClickActivation(el);
+    await dispatchClickActivation(el, centerMouseOptions(el), {
+      stabilizeGridClick: count === 1,
+    });
 
     // Delay between clicks for multi-click (let event handlers process)
     if (i < count - 1) {
@@ -945,11 +1032,11 @@ export function executeSetCheckbox(args: SetCheckboxArgs): {
   };
 }
 
-export function executeClickCoordinates(args: ClickCoordinatesArgs): {
+export async function executeClickCoordinates(args: ClickCoordinatesArgs): Promise<{
   success: boolean;
   result: string;
   navigated: boolean;
-} {
+}> {
   const { x, y, description } = args;
 
   // Validate coordinates are within viewport
@@ -968,7 +1055,7 @@ export function executeClickCoordinates(args: ClickCoordinatesArgs): {
   rememberKeyboardTarget(el);
   const eventOpts = { bubbles: true, cancelable: true, clientX: x, clientY: y };
 
-  dispatchClickActivation(target, eventOpts);
+  await dispatchClickActivation(target, eventOpts);
 
   // Detect navigation
   const willNavigate =

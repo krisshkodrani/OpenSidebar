@@ -47,7 +47,7 @@ export default function BackendPanel() {
       <div className="flex-1 px-5 py-8">
         <ErrorBanner
           message="Backend service is offline"
-          hint="Start it with npm run dev or npm run logs"
+          hint="Start it with pnpm run dev or pnpm run logs"
           onRetry={loadHealth}
         />
       </div>

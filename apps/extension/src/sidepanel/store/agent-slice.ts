@@ -72,6 +72,31 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
       const result = await uiRuntime.storage.local.get(key);
       const stored = result[key] as PersistedAgentState | undefined;
       if (stored) {
+        const hasCompletion =
+          get().taskCompletion != null ||
+          get().messages.some(
+            (message) =>
+              message.role === "assistant" && message.completionData != null,
+          );
+        if (hasCompletion && stored.isRunning) {
+          set((state) => {
+            state.isAgentRunning = false;
+            state.agentStatus = AgentStatus.IDLE;
+            state.statusDetail = "Task complete";
+            state.isPlanning = false;
+            state.taskProgress = null;
+            state.turnProgress = null;
+          });
+          persistAgentState(get);
+          logger.debug(
+            "ui",
+            "Ignored stale running agent state after completion",
+            {
+              status: stored.status,
+            },
+          );
+          return;
+        }
         set((state) => {
           state.isAgentRunning = stored.isRunning;
           state.agentStatus = stored.status;

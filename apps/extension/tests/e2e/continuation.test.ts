@@ -9,7 +9,7 @@
  * Turn 2: Change it to decline, suggest Monday
  * Turn 3: Make it casual, mention Q3 slides
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation.test.ts
  */
 
 import {

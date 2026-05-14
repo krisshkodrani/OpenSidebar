@@ -27,7 +27,57 @@ type RailFeedItem = {
   timestamp: number;
 };
 
+const expectedWhyLangfuse = [
+  "I care about Langfuse because it solves one of the most important practical problems in AI product engineering. The work sits exactly at the boundary between developer experience and reliable AI systems.",
+  "",
+  "My recent work has been focused on browser agents, observability, and evaluation loops.",
+].join("\n");
+
 const scenarios: Record<string, Scenario> = {
+  ashby: {
+    fixturePath: "ashby-job-application",
+    label: "visible-ashby-demo",
+    maxTurns: 24,
+    prompt: [
+      "Fill this Ashby application but do not submit using these data.",
+      "| Field | Copy This |",
+      "|---|---|",
+      "| Name | Kris Shkodrani |",
+      "| Email | kshkodrani@gmail.com |",
+      "| LinkedIn URL | https://www.linkedin.com/in/krisshkodrani |",
+      "| Phone | +43 664 99503226 |",
+      "| Current Location | Linz, Austria |",
+      "| EU Work Permit | Yes |",
+      "| Salary Expectation | EUR 95,000-115,000 gross/year, negotiable depending on level, equity, and Berlin travel cadence |",
+      "| Earliest Start Date | 2026-06-01 |",
+      "",
+      "## Why Do You Care About Langfuse?",
+      "",
+      expectedWhyLangfuse,
+    ].join("\n"),
+    timeoutMs: 420_000,
+    success: (page) =>
+      page.evaluate((expected) => {
+        const draft = (window as any).ashbyApplicationDraft;
+        if (!draft || draft.submitted || (window as any).ashbyApplicationResult) {
+          return null;
+        }
+
+        const matches =
+          draft.name === "Kris Shkodrani" &&
+          draft.email === "kshkodrani@gmail.com" &&
+          draft.linkedIn === "https://www.linkedin.com/in/krisshkodrani" &&
+          draft.phone === "+43 664 99503226" &&
+          draft.currentLocation === "Linz, Austria" &&
+          draft.euWorkPermit === "Yes" &&
+          draft.salaryExpectation ===
+            "EUR 95,000-115,000 gross/year, negotiable depending on level, equity, and Berlin travel cadence" &&
+          draft.earliestStartDate === "2026-06-01" &&
+          draft.whyLangfuse === expected;
+
+        return matches ? draft : null;
+      }, expectedWhyLangfuse),
+  },
   login: {
     fixturePath: "login",
     label: "visible-login-demo",
@@ -57,6 +107,12 @@ function parseArg(name: string): string | null {
   return match ? match.slice(prefix.length) : null;
 }
 
+function parseBooleanArg(name: string, fallback = false): boolean {
+  const raw = parseArg(name);
+  if (raw == null) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw.toLowerCase());
+}
+
 async function closeHelperTab(harness: ReturnType<typeof createE2EHarness>) {
   const helper = harness.ctx.helperPage;
   if (helper && !helper.isClosed()) {
@@ -70,6 +126,46 @@ async function enableVisibleRail(harness: ReturnType<typeof createE2EHarness>) {
   await helper.evaluate(async (key: string) => {
     await chrome.storage.local.set({ [key]: true });
   }, E2E_VISIBLE_RAIL_STORAGE_KEY);
+}
+
+async function disableVisibleRail(harness: ReturnType<typeof createE2EHarness>) {
+  const helper = await openHelperPage(harness.ctx);
+  await helper.evaluate(async (key: string) => {
+    await chrome.storage.local.set({ [key]: false });
+  }, E2E_VISIBLE_RAIL_STORAGE_KEY);
+}
+
+async function logRealPanelProbe(page: Page, expectedPrompt: string) {
+  const probe = await page.evaluate((prompt: string) => {
+    const host = document.getElementById("opensidebar-harness-host");
+    const root = host?.shadowRoot?.getElementById("root");
+    const rect = host?.getBoundingClientRect();
+    const style = host ? getComputedStyle(host) : null;
+    const text = (root?.textContent ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const promptNeedle = prompt.replace(/\s+/g, " ").trim().slice(0, 80);
+    return {
+      mounted: Boolean(host),
+      dataGlass: host?.getAttribute("data-glass") ?? null,
+      rect: rect
+        ? {
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+          }
+        : null,
+      display: style?.display ?? null,
+      visibility: style?.visibility ?? null,
+      opacity: style?.opacity ?? null,
+      hasExpectedPrompt: promptNeedle ? text.includes(promptNeedle) : null,
+      showsWelcome: text.includes("Hi! What can I help with?"),
+      showsGuideInput: text.includes("Guide the agent"),
+      textSample: text.slice(0, 360),
+    };
+  }, expectedPrompt);
+  console.log(`[visible-demo] Real panel overlay: ${JSON.stringify(probe)}`);
 }
 
 function compactText(value: unknown): string {
@@ -278,10 +374,11 @@ async function waitForCompletionLog(
 }
 
 async function main() {
-  process.env.E2E_HEADLESS = "false";
+  process.env.E2E_PROFILE = process.env.E2E_PROFILE || "headed";
 
   const scenarioName = parseArg("scenario") ?? "login";
   const holdMs = Number(parseArg("holdMs") ?? "120000");
+  const legacyRail = parseBooleanArg("legacyRail", false);
   const scenario = scenarios[scenarioName];
   if (!scenario) {
     throw new Error(
@@ -297,7 +394,11 @@ async function main() {
   try {
     await h.beforeAllHook();
     await h.beforeEachHook();
-    await enableVisibleRail(h);
+    if (legacyRail) {
+      await enableVisibleRail(h);
+    } else {
+      await disableVisibleRail(h);
+    }
     await navigateAndWait(h.page, getFixtureUrl(scenario.fixturePath));
     await h.page.bringToFront();
 
@@ -305,12 +406,10 @@ async function main() {
     const workspaceId = await sendUserChat(h.ctx, scenario.prompt, tabId);
     await closeHelperTab(h);
     await h.page.bringToFront();
-    const stopRailUpdates = startRailUpdates(
-      h,
-      tabId,
-      workspaceId,
-      scenario.prompt,
-    );
+    await logRealPanelProbe(h.page, scenario.prompt);
+    const stopRailUpdates = legacyRail
+      ? startRailUpdates(h, tabId, workspaceId, scenario.prompt)
+      : () => {};
 
     console.log(`[visible-demo] Scenario: ${scenarioName}`);
     console.log(`[visible-demo] Prompt: ${scenario.prompt}`);

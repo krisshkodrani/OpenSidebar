@@ -35,28 +35,28 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
 
 From the repo root:
 
-- `npm run dev`: extension dev stack with logs, trace viewer, and loadable `dist-dev/`
-- `npm run dist`: production/manual extension build into `dist/`
-- `npm test`: extension unit and integration tests
-- `npm run verify`: local confidence gate for lint, typecheck, tests, build, and dist validation
-- `npm run doctor`: setup diagnosis for new users and coding agents
+- `pnpm run dev`: extension dev stack with logs, trace viewer, and loadable `dist-dev/`
+- `pnpm run dist`: production/manual extension build into `dist/`
+- `pnpm test`: extension unit and integration tests
+- `pnpm run verify`: local confidence gate for lint, typecheck, tests, build, and dist validation
+- `pnpm run doctor`: setup diagnosis for new users and coding agents
 
 Advanced aliases remain available for targeted work:
 
-- `npm run build`: compatibility alias for `npm run dist`
-- `npm run test:backend`: backend tests
-- `npm run test:e2e`: browser E2E validation
-- `npm run ci:local`: compatibility alias for `npm run verify`
-- `npm run release:verify`: release alias for `npm run verify`
+- `pnpm run build`: production extension build
+- `pnpm run test:backend`: backend tests
+- `pnpm run test:e2e`: browser E2E validation
+- `pnpm run ci:local`: CI-equivalent local confidence gate
+- `pnpm run release:verify`: release confidence gate
 
 Use direct Nx commands for project-scoped work:
 
-- `npx nx run extension:dev`: extension dev target
-- `npx nx run extension:build`: extension production build
-- `npx nx run extension:test`: extension unit and integration tests
-- `npx nx run backend:test`: backend tests
-- `npx nx run-many -t lint`: all lint targets
-- `npx nx run-many -t typecheck`: all typecheck targets
+- `pnpm exec nx run extension:dev`: extension dev target
+- `pnpm exec nx run extension:build`: extension production build
+- `pnpm exec nx run extension:test`: extension unit and integration tests
+- `pnpm exec nx run backend:test`: backend tests
+- `pnpm exec nx run-many -t lint`: all lint targets
+- `pnpm exec nx run-many -t typecheck`: all typecheck targets
 
 ## Compatibility Notes
 

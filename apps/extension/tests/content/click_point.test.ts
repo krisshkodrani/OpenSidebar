@@ -71,6 +71,161 @@ describe("Content Actions - Click Robustness", () => {
         expect(result.result).toContain("Clicked");
     });
 
+    test("focuses a focusable grid before clicking an inner cell", async () => {
+        document.body.innerHTML = `
+            <table id="grid" role="grid" tabindex="0">
+                <tbody>
+                    <tr>
+                        <td id="product">Widget A</td>
+                        <td id="q1">130</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        const grid = document.getElementById("grid") as HTMLTableElement;
+        const product = document.getElementById("product") as HTMLTableCellElement;
+        const q1 = document.getElementById("q1") as HTMLTableCellElement;
+        let selectedCell: string | null = null;
+        const focusedCellAtRender = selectedCell;
+
+        grid.addEventListener("focus", () => {
+            if (!focusedCellAtRender) selectedCell = "product";
+        });
+        q1.style.cursor = "pointer";
+        product.addEventListener("click", () => {
+            selectedCell = "product";
+            grid.focus();
+        });
+        q1.addEventListener("click", () => {
+            selectedCell = "q1";
+            grid.focus();
+        });
+
+        q1.getBoundingClientRect = () => ({
+            top: 100, left: 200, right: 300, bottom: 140, width: 100, height: 40, x: 200, y: 100, toJSON: () => { }
+        });
+        const originalElementFromPoint = document.elementFromPoint;
+        document.elementFromPoint = () => q1;
+
+        tagElements();
+        const tagMap = getTagMap();
+        let targetTag = -1;
+        for (const [tag, el] of tagMap) {
+            if (el.id === "q1") {
+                targetTag = tag;
+                break;
+            }
+        }
+        expect(targetTag).toBeGreaterThan(0);
+        const result = await executeAction(ToolName.CLICK_ELEMENT, { id: targetTag });
+
+        document.elementFromPoint = originalElementFromPoint;
+
+        expect(result.success).toBe(true);
+        expect(selectedCell).toBe("q1");
+        expect(document.activeElement).toBe(grid);
+    });
+
+    test("stabilizes grid cell selection after delayed focus initialization", async () => {
+        document.body.innerHTML = `
+            <table id="grid" role="grid" tabindex="0">
+                <tbody>
+                    <tr>
+                        <td id="product">Widget A</td>
+                        <td id="q1">130</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        const grid = document.getElementById("grid") as HTMLTableElement;
+        const q1 = document.getElementById("q1") as HTMLTableCellElement;
+        let selectedCell: string | null = null;
+        let pendingFocusInitializer = false;
+
+        grid.addEventListener("focus", () => {
+            pendingFocusInitializer = true;
+        });
+        q1.style.cursor = "pointer";
+        q1.addEventListener("click", () => {
+            selectedCell = "q1";
+            grid.focus();
+            if (pendingFocusInitializer) {
+                pendingFocusInitializer = false;
+                setTimeout(() => {
+                    selectedCell = "product";
+                }, 0);
+            }
+        });
+
+        q1.getBoundingClientRect = () => ({
+            top: 100, left: 200, right: 300, bottom: 140, width: 100, height: 40, x: 200, y: 100, toJSON: () => { }
+        });
+        const originalElementFromPoint = document.elementFromPoint;
+        document.elementFromPoint = () => q1;
+
+        tagElements();
+        let targetTag = -1;
+        for (const [tag, el] of getTagMap()) {
+            if (el.id === "q1") {
+                targetTag = tag;
+                break;
+            }
+        }
+        expect(targetTag).toBeGreaterThan(0);
+        const result = await executeAction(ToolName.CLICK_ELEMENT, { id: targetTag });
+
+        document.elementFromPoint = originalElementFromPoint;
+
+        expect(result.success).toBe(true);
+        expect(selectedCell).toBe("q1");
+    });
+
+    test("does not stabilize an already focused grid cell click", async () => {
+        document.body.innerHTML = `
+            <table id="grid" role="grid" tabindex="0">
+                <tbody>
+                    <tr>
+                        <td id="q1">130</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        const grid = document.getElementById("grid") as HTMLTableElement;
+        const q1 = document.getElementById("q1") as HTMLTableCellElement;
+        let clickCount = 0;
+
+        q1.style.cursor = "pointer";
+        q1.addEventListener("click", () => {
+            clickCount += 1;
+        });
+        q1.getBoundingClientRect = () => ({
+            top: 100, left: 200, right: 300, bottom: 140, width: 100, height: 40, x: 200, y: 100, toJSON: () => { }
+        });
+        const originalElementFromPoint = document.elementFromPoint;
+        document.elementFromPoint = () => q1;
+
+        tagElements();
+        let targetTag = -1;
+        for (const [tag, el] of getTagMap()) {
+            if (el.id === "q1") {
+                targetTag = tag;
+                break;
+            }
+        }
+        expect(targetTag).toBeGreaterThan(0);
+
+        grid.focus();
+        const result = await executeAction(ToolName.CLICK_ELEMENT, { id: targetTag });
+
+        document.elementFromPoint = originalElementFromPoint;
+
+        expect(result.success).toBe(true);
+        expect(clickCount).toBe(1);
+    });
+
     test("fails if element is completely occluded", async () => {
         // Create a button
         const btn = document.createElement("button");

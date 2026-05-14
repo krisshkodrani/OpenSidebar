@@ -510,7 +510,7 @@ function ViewerBody({
         <div className="px-5 py-4">
           <ErrorBanner
             message={`Failed to load sessions: ${tracesError}`}
-            hint="Ensure the local server is running (npm run logs)"
+            hint="Ensure the local server is running (pnpm run logs)"
             onRetry={refreshSessions}
           />
         </div>

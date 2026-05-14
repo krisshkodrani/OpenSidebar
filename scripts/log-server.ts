@@ -2,8 +2,8 @@
  * Log Drain Server — receives log entries from the extension via HTTP
  * and appends them to a JSONL file for querying.
  *
- * Usage: npx tsx scripts/log-server.ts
- * Or:    npm run logs
+ * Usage: pnpm exec tsx scripts/log-server.ts
+ * Or:    pnpm run logs
  */
 
 import {
@@ -469,7 +469,9 @@ const server = createServer(
         }
 
         const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
-        await appendFile(traceFile, JSON.stringify(entry) + "\n");
+        if (!hasTraceTurn(traceFile, entry)) {
+          await appendFile(traceFile, JSON.stringify(entry) + "\n");
+        }
         insertTraceTurnToSqlite(PROJECT_ROOT, entry as TraceEntryLike);
         sendEmpty(res, 204);
       } catch (err) {
@@ -1044,9 +1046,9 @@ const server = createServer(
         const hasDevArtifacts = existsSync(devArtifact);
 
         const message = hasDevArtifacts
-          ? "Trace viewer not found. The dist/ folder contains dev-mode artifacts (from 'npm run dev'). Please run 'npm run build' first to generate the production trace viewer. Expected at: " +
+          ? "Trace viewer not found. The dist/ folder contains dev-mode artifacts (from 'pnpm run dev'). Please run 'pnpm run build' first to generate the production trace viewer. Expected at: " +
             VIEWER_DIR
-          : "Trace viewer not found. Run 'npm run build' first. Expected at: " +
+          : "Trace viewer not found. Run 'pnpm run build' first. Expected at: " +
             VIEWER_DIR;
 
         sendText(res, message, 404);
@@ -1122,6 +1124,39 @@ server.listen(PORT, HOST, () => {
   console.log(`Backend API: http://${HOST}:${PORT}/api/backend/health`);
   console.log(`Press Ctrl+C to stop\n`);
 });
+
+function hasTraceTurn(
+  traceFile: string,
+  entry: Record<string, unknown>,
+): boolean {
+  const turnId = typeof entry.turnId === "string" ? entry.turnId : "";
+  const sessionId = typeof entry.sessionId === "string" ? entry.sessionId : "";
+  const turnNumber =
+    typeof entry.turnNumber === "number" ? entry.turnNumber : null;
+  if (!existsSync(traceFile) || (!turnId && (!sessionId || turnNumber == null))) {
+    return false;
+  }
+
+  try {
+    const lines = readFileSync(traceFile, "utf-8").split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line) as Record<string, unknown>;
+      if (turnId && record.turnId === turnId) return true;
+      if (
+        !turnId &&
+        record.sessionId === sessionId &&
+        record.turnNumber === turnNumber
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
 
 const shutdown = (signal: string) => {
   console.log(`\n[local-server] Received ${signal}. Shutting down...`);

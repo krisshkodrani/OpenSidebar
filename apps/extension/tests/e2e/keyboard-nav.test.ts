@@ -25,6 +25,19 @@ import {
 import { getFixtureUrl } from "./helpers/fixture-server";
 
 const h = createE2EHarness({ maxTurns: 25, testLabel: "keyboard-nav" });
+const EXPECTED_FINAL_DATA = [
+  ["Widget A", "999", "160", "190"],
+  ["Widget B", "180", "210", "240"],
+  ["Gadget C", "230", "260", "290"],
+  ["Service D", "280", "310", "340"],
+  ["Bundle E", "330", "360", "390"],
+];
+const EXPECTED_ONLY_EDIT = {
+  row: 0,
+  col: 1,
+  oldVal: "130",
+  newVal: "999",
+};
 
 describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
   beforeAll(() => h.beforeAllHook(), 60_000);
@@ -49,7 +62,7 @@ describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
         const result = await h.page.evaluate(
           () => (window as any).keyboardNavResult ?? null,
         );
-        if (result && result.editCount >= 1) return result;
+        if (result && result.currentData?.[0]?.[1] === "999") return result;
         return null;
       },
       240_000,
@@ -74,17 +87,9 @@ describe.skipIf(!h.apiKey)("E2E: Keyboard Navigation", () => {
     expect(outcome.ok, outcome.reason).toBe(true);
 
     const result = outcome.result as any;
-    expect(result.editCount).toBeGreaterThanOrEqual(1);
-    expect(result.currentData?.[0]?.[1]).toBe("999");
-    expect(
-      result.edits.some(
-        (edit: any) =>
-          edit.row === 0 &&
-          edit.col === 1 &&
-          edit.oldVal === "130" &&
-          edit.newVal === "999",
-      ),
-    ).toBe(true);
+    expect(result.currentData).toEqual(EXPECTED_FINAL_DATA);
+    expect(result.edits).toEqual([EXPECTED_ONLY_EDIT]);
+    expect(result.editCount).toBe(1);
 
     console.log(`\n[e2e] PASS — Spreadsheet edited`);
     console.log(`[e2e]   Edits: ${JSON.stringify(result.edits)}`);

@@ -1,9 +1,11 @@
-import React, { useCallback, useMemo } from "react";
-import { Loader2, Pause, Play, Square, AlertTriangle } from "lucide-react";
-import { AgentStatus, SessionMetrics } from "../../types";
-import { useStore } from "../store";
+import React, { useCallback } from "react";
+import { AlertTriangle, Loader2, Pause, Play, Square } from "lucide-react";
+import { AgentStatus, type SessionMetrics } from "../../types";
 import { logger } from "../../utils";
+import { usefulProgressLabel } from "../progress-labels";
 import { uiRuntime } from "../runtime";
+import { useStore } from "../store";
+import { useTaskUiState, type TaskRailTone } from "../task-ui-state";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -33,22 +35,23 @@ function costLabel(metrics: SessionMetrics): string {
 }
 
 function fallbackPrimaryLabel(status: AgentStatus, detail: string): string {
+  const detailLabel = usefulProgressLabel(detail);
   if (status === AgentStatus.WAITING_FOR_PAGE_LOAD) {
     return "Waiting for page to finish loading";
   }
   if (status === AgentStatus.THINKING) {
-    return detail || "Planning next steps";
+    return detailLabel || "Planning next step";
   }
   if (status === AgentStatus.ACTING) {
-    return detail || "Taking action on the page";
+    return detailLabel || "Taking action on the page";
   }
   if (status === AgentStatus.PAUSED) {
     return "Paused";
   }
   if (status === AgentStatus.ERROR) {
-    return detail || "Run failed";
+    return detailLabel || "Run failed";
   }
-  return detail || "Ready";
+  return detailLabel || "Ready";
 }
 
 interface PrimaryTaskLabelInput {
@@ -109,92 +112,28 @@ export function resolvePrimaryTaskLabel({
   if (!isAgentRunning && durableRunStatus?.canResume) {
     return "Recoverable durable run";
   }
-  if (latestStepLabel) return latestStepLabel;
+  const latestUsefulLabel = usefulProgressLabel(latestStepLabel);
+  if (latestUsefulLabel) return latestUsefulLabel;
   return fallbackPrimaryLabel(agentStatus, statusDetail);
 }
 
+function statusDotClass(tone: TaskRailTone) {
+  if (tone === "completed") return "bg-green-500";
+  if (tone === "failed") return "bg-red-500";
+  if (tone === "paused") return "bg-yellow-500";
+  return "bg-primary-500";
+}
+
+function statusDotLabel(tone: TaskRailTone) {
+  if (tone === "completed") return "Task completed";
+  if (tone === "failed") return "Task failed";
+  if (tone === "paused") return "Agent paused";
+  return "Agent idle";
+}
+
 export function PrimaryTaskRail() {
-  const agentStatus = useStore((s) => s.agentStatus);
-  const statusDetail = useStore((s) => s.statusDetail);
-  const isAgentRunning = useStore((s) => s.isAgentRunning);
-  const turnProgress = useStore((s) => s.turnProgress);
-  const sessionMetrics = useStore((s) => s.sessionMetrics);
+  const taskUi = useTaskUiState();
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
-  const stagnationState = useStore((s) => s.stagnationState);
-  const taskProgress = useStore((s) => s.taskProgress);
-  const taskCompletion = useStore((s) => s.taskCompletion);
-  const latestStepLabel = useStore((s) => s.latestStepLabel);
-  const pendingApproval = useStore((s) => s.pendingApproval);
-  const pendingEscalation = useStore((s) => s.pendingEscalation);
-  const pendingClarification = useStore((s) => s.pendingClarification);
-  const durableRunStatus = useStore((s) => s.durableRunStatus);
-
-  const isStalled = Boolean(stagnationState);
-  const isPaused = agentStatus === AgentStatus.PAUSED;
-  const canPause =
-    agentStatus === AgentStatus.THINKING ||
-    agentStatus === AgentStatus.ACTING ||
-    agentStatus === AgentStatus.WAITING_FOR_PAGE_LOAD;
-
-  const primaryLabel = useMemo(() => {
-    return resolvePrimaryTaskLabel({
-      latestStepLabel,
-      isStalled,
-      stagnantTurns: stagnationState?.stagnantTurns,
-      hasPendingApproval: Boolean(pendingApproval),
-      hasPendingEscalation: Boolean(pendingEscalation),
-      hasPendingClarification: Boolean(pendingClarification),
-      isAgentRunning,
-      taskCompletion,
-      durableRunStatus,
-      agentStatus,
-      statusDetail,
-    });
-  }, [
-    latestStepLabel,
-    isStalled,
-    stagnationState,
-    pendingApproval,
-    pendingEscalation,
-    pendingClarification,
-    isAgentRunning,
-    taskCompletion,
-    durableRunStatus,
-    agentStatus,
-    statusDetail,
-  ]);
-
-  const secondaryLabel = useMemo(() => {
-    if (isStalled) return "Intervention recommended";
-    if (pendingApproval) return "Review the proposed action below";
-    if (pendingEscalation) return "Choose how the agent should proceed";
-    if (pendingClarification) return "Answer the question below to continue";
-    if (taskProgress) {
-      return `Step ${taskProgress.currentIndex + 1} of ${taskProgress.subtasks.length}`;
-    }
-    if (!isAgentRunning && taskCompletion) {
-      return `${taskCompletion.totalTurnsUsed} turns used`;
-    }
-    if (!isAgentRunning && durableRunStatus?.canResume) {
-      return durableRunStatus.query;
-    }
-    if (agentStatus === AgentStatus.PAUSED) return "Run is paused";
-    if (agentStatus === AgentStatus.WAITING_FOR_PAGE_LOAD) {
-      return "Waiting for the page to settle before continuing";
-    }
-    return statusDetail;
-  }, [
-    isStalled,
-    pendingApproval,
-    pendingEscalation,
-    pendingClarification,
-    taskProgress,
-    isAgentRunning,
-    taskCompletion,
-    durableRunStatus,
-    agentStatus,
-    statusDetail,
-  ]);
 
   const handlePause = useCallback(async () => {
     try {
@@ -235,30 +174,27 @@ export function PrimaryTaskRail() {
     }
   }, []);
 
-  if (
-    !isAgentRunning &&
-    agentStatus === AgentStatus.IDLE &&
-    !taskCompletion &&
-    !durableRunStatus
-  ) {
+  if (!taskUi.showPrimaryRail) {
     return null;
   }
+
+  const { rail } = taskUi;
 
   return (
     <section
       aria-live="polite"
       aria-atomic="true"
-      className="mx-4 mt-2 rounded-xl border border-warm-200/80 bg-warm-50/90 px-3 py-2.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/65"
+      className="mx-4 mt-2 max-h-[30vh] overflow-hidden rounded-xl border border-warm-200/80 bg-warm-50/90 px-3 py-2.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/65"
     >
       <div className="flex items-start gap-3">
         <div className="mt-0.5 shrink-0">
-          {isStalled ? (
+          {rail.tone === "stalled" ? (
             <AlertTriangle
               size={15}
               className="text-amber-500"
               aria-label="Agent stalled"
             />
-          ) : isAgentRunning && !isPaused ? (
+          ) : rail.showSpinner ? (
             <Loader2
               size={15}
               className="animate-spin text-primary-500"
@@ -266,67 +202,51 @@ export function PrimaryTaskRail() {
             />
           ) : (
             <span
-              className={`mt-0.5 inline-flex h-2.5 w-2.5 rounded-full ${
-                taskCompletion?.status === "completed"
-                  ? "bg-green-500"
-                  : taskCompletion?.status === "failed" ||
-                      agentStatus === AgentStatus.ERROR
-                    ? "bg-red-500"
-                    : isPaused
-                      ? "bg-yellow-500"
-                      : "bg-primary-500"
-              }`}
+              className={`mt-0.5 inline-flex h-2.5 w-2.5 rounded-full ${statusDotClass(
+                rail.tone,
+              )}`}
               role="status"
-              aria-label={
-                taskCompletion?.status === "completed"
-                  ? "Task completed"
-                  : taskCompletion?.status === "failed" ||
-                      agentStatus === AgentStatus.ERROR
-                    ? "Task failed"
-                    : isPaused
-                      ? "Agent paused"
-                      : "Agent idle"
-              }
+              aria-label={statusDotLabel(rail.tone)}
             />
           )}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400">
-            {isAgentRunning ? "Now doing" : "Latest run"}
+            {rail.eyebrow}
           </div>
-          <div className="mt-0.5 text-sm font-medium leading-snug text-warm-800 dark:text-warm-100">
-            {primaryLabel}
+          <div className="mt-0.5 max-h-[16vh] overflow-y-auto pr-1 text-sm font-medium leading-snug text-warm-800 dark:text-warm-100">
+            {rail.primaryLabel}
           </div>
-          {secondaryLabel ? (
+          {rail.secondaryLabel ? (
             <div className="mt-0.5 text-xs leading-relaxed text-warm-500 dark:text-warm-400">
-              {secondaryLabel}
+              {rail.secondaryLabel}
             </div>
           ) : null}
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {durableRunStatus?.stopRequestedAt ? (
+            {rail.stopRequested ? (
               <span className="rounded-full border border-red-300/70 bg-red-50/80 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                 Stop requested
               </span>
             ) : null}
-            {turnProgress?.provider ? (
+            {rail.turnProgress?.provider ? (
               <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
-                {turnProgress.provider}
+                {rail.turnProgress.provider}
               </span>
             ) : null}
-            {turnProgress ? (
+            {rail.turnProgress ? (
               <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
-                {turnProgress.turn}/{turnProgress.maxTurns} turns
+                {rail.turnProgress.turn}/{rail.turnProgress.maxTurns} turns
               </span>
             ) : null}
             {showSessionMetrics &&
-            sessionMetrics &&
-            sessionMetrics.totalTokens > 0 ? (
+            rail.sessionMetrics &&
+            rail.sessionMetrics.totalTokens > 0 ? (
               <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
-                {formatTokens(sessionMetrics.totalTokens)}
-                {sessionMetrics.totalCost > 0
-                  ? ` · ${costLabel(sessionMetrics)}`
+                {formatTokens(rail.sessionMetrics.totalTokens)}
+                {rail.sessionMetrics.totalCost > 0
+                  ? ` / ${costLabel(rail.sessionMetrics)}`
                   : ""}
               </span>
             ) : null}
@@ -334,7 +254,7 @@ export function PrimaryTaskRail() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          {canPause ? (
+          {rail.canPause ? (
             <button
               onClick={() => void handlePause()}
               className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
@@ -344,7 +264,7 @@ export function PrimaryTaskRail() {
               Pause
             </button>
           ) : null}
-          {isPaused ? (
+          {rail.showResume ? (
             <button
               onClick={() => void handleResume()}
               className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
@@ -354,7 +274,7 @@ export function PrimaryTaskRail() {
               Resume
             </button>
           ) : null}
-          {isAgentRunning ? (
+          {rail.showStop ? (
             <button
               onClick={() => void handleStop()}
               className="inline-flex items-center gap-1 rounded-lg bg-red-500 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600"

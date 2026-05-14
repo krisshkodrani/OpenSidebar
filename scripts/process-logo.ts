@@ -5,7 +5,7 @@
  * Crop/color-correct the source externally before running this.
  *
  * Usage:
- *   npx tsx scripts/process-logo.ts [path-to-source]
+ *   pnpm exec tsx scripts/process-logo.ts [path-to-source]
  *
  * Default source: apps/extension/public/icons/logo-source.png
  * Output: apps/extension/public/icons/icon-{16,48,128}.png

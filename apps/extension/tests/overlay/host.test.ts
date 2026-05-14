@@ -75,4 +75,71 @@ describe("overlay host", () => {
       16,
     );
   });
+
+  test("docks the overlay left and right for dense pages", () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1400,
+    });
+
+    try {
+      const overlay = createOpenSidebarOverlayHost();
+      const dock = overlay.shadowRoot.querySelector(
+        "[data-osb-dock]",
+      ) as HTMLButtonElement;
+
+      expect(overlay.host.dataset.dock).toBe("right");
+      dock.click();
+      expect(overlay.host.dataset.dock).toBe("left");
+      expect(overlay.host.style.left).toBe("16px");
+      expect(dock.getAttribute("aria-label")).toContain("right side");
+
+      dock.click();
+      expect(overlay.host.dataset.dock).toBe("right");
+      expect(Number.parseFloat(overlay.host.style.left)).toBeGreaterThan(900);
+      expect(dock.getAttribute("aria-label")).toContain("left side");
+    } finally {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalWidth,
+      });
+    }
+  });
+
+  test("marks E2E glass overlays for scoped translucent styling", () => {
+    const overlay = createOpenSidebarOverlayHost({ glass: true });
+
+    expect(overlay.host.getAttribute("data-glass")).toBe("true");
+    expect(overlay.shadowRoot.textContent).toContain("backdrop-filter");
+  });
+
+  test("sizes the initial overlay to about 95vh while respecting gutters", () => {
+    const originalWidth = window.innerWidth;
+    const originalHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1400,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 1000,
+    });
+
+    try {
+      const overlay = createOpenSidebarOverlayHost();
+
+      expect(overlay.host.style.height).toBe("950px");
+      expect(overlay.host.style.top).toBe("25px");
+    } finally {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalWidth,
+      });
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: originalHeight,
+      });
+    }
+  });
 });

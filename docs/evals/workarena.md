@@ -11,21 +11,21 @@ For the first guarded live run after Hugging Face access is approved, use the sm
 The current integration supports guarded real WorkArena handoff runs, plus no-token setup checks and local rehearsal commands. It verifies local prerequisites, Hugging Face gated dataset access, BrowserGym session transfer, OpenSidebar execution, WorkArena validation, report schema validation, and trace-learning summaries.
 
 ```bash
-npx tsx scripts/workarena-doctor.ts
-npx tsx scripts/workarena-list.ts
-npx tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu
-npx tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu
-npx tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
-npx tsx scripts/workarena-browser-strategy.ts
-npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
-npx tsx scripts/workarena-first-task.ts
-npx tsx scripts/workarena-category-coverage.ts
-npx tsx scripts/workarena-trace-learning.ts
-npx tsx scripts/workarena-validate-reports.ts
-npx tsx scripts/workarena-grade.ts
-npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
-npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu
-npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-doctor.ts
+pnpm exec tsx scripts/workarena-list.ts
+pnpm exec tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
+pnpm exec tsx scripts/workarena-browser-strategy.ts
+pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-first-task.ts
+pnpm exec tsx scripts/workarena-category-coverage.ts
+pnpm exec tsx scripts/workarena-trace-learning.ts
+pnpm exec tsx scripts/workarena-validate-reports.ts
+pnpm exec tsx scripts/workarena-grade.ts
+pnpm exec tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
 
 The doctor command writes a JSON report to:
@@ -55,7 +55,7 @@ While access is pending, the doctor reports that the token is present and gated 
 Keep benchmark dependencies outside the tracked repo tree:
 
 ```bash
-npx tsx scripts/workarena-setup.ts
+pnpm exec tsx scripts/workarena-setup.ts
 ```
 
 Equivalent manual setup:
@@ -110,7 +110,7 @@ The doctor verifies:
 If you want setup-only readiness while Hugging Face access is still pending, allow pending HF access explicitly:
 
 ```bash
-npx tsx scripts/workarena-doctor.ts --allow-pending-hf
+pnpm exec tsx scripts/workarena-doctor.ts --allow-pending-hf
 ```
 
 With pending gated access, the doctor reports `Status: local setup ready; gated access pending`. That means local dependencies and browser setup are usable, but real ServiceNow resets remain blocked until dataset access is granted.
@@ -120,17 +120,17 @@ With pending gated access, the doctor reports `Status: local setup ready; gated 
 List task metadata without launching a browser or spending LLM tokens:
 
 ```bash
-npx tsx scripts/workarena-list.ts
+pnpm exec tsx scripts/workarena-list.ts
 ```
 
 Useful filters:
 
 ```bash
-npx tsx scripts/workarena-list.ts --suite atomic
-npx tsx scripts/workarena-list.ts --suite l2
-npx tsx scripts/workarena-list.ts --suite l3 --limit 100
-npx tsx scripts/workarena-list.ts --suite atomic --category form
-npx tsx scripts/workarena-list.ts --suite l2 --json
+pnpm exec tsx scripts/workarena-list.ts --suite atomic
+pnpm exec tsx scripts/workarena-list.ts --suite l2
+pnpm exec tsx scripts/workarena-list.ts --suite l3 --limit 100
+pnpm exec tsx scripts/workarena-list.ts --suite atomic --category form
+pnpm exec tsx scripts/workarena-list.ts --suite l2 --json
 ```
 
 Suites:
@@ -148,13 +148,13 @@ Suites:
 Launch one WorkArena BrowserGym task, collect the real task goal and initial URLs, then close and teardown. This does not start OpenSidebar and does not call an LLM provider.
 
 ```bash
-npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu
 ```
 
 For seeded L2/L3 tasks:
 
 ```bash
-npx tsx scripts/workarena-dry.ts --task workarena.servicenow.navigate-and-create-incident-l2 --seed 330
+pnpm exec tsx scripts/workarena-dry.ts --task workarena.servicenow.navigate-and-create-incident-l2 --seed 330
 ```
 
 The dry run contacts ServiceNow and may create temporary benchmark state as part of `env.reset()`. The command always attempts `env.close()` so WorkArena can run teardown.
@@ -162,7 +162,7 @@ The dry run contacts ServiceNow and may create temporary benchmark state as part
 Use pure metadata mode when you do not want to reset the environment:
 
 ```bash
-npx tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu --no-reset
+pnpm exec tsx scripts/workarena-dry.ts --task workarena.servicenow.all-menu --no-reset
 ```
 
 Dry-run reports are written to:
@@ -176,7 +176,7 @@ Dry-run reports are written to:
 Create a no-reset adapter contract for one task:
 
 ```bash
-npx tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu
 ```
 
 This command:
@@ -192,7 +192,7 @@ The plan records the task id, BrowserGym env id, seed, category, prompt source, 
 Use `--skip-doctor` only when iterating on adapter formatting and you do not want the Hugging Face access check:
 
 ```bash
-npx tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu --skip-doctor --no-report
+pnpm exec tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu --skip-doctor --no-report
 ```
 
 ## Guarded Reset Runner
@@ -200,7 +200,7 @@ npx tsx scripts/workarena-adapter.ts --task workarena.servicenow.all-menu --skip
 Prepare a real WorkArena reset without starting OpenSidebar:
 
 ```bash
-npx tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu
 ```
 
 By default this command refuses to reset ServiceNow. It runs the strict doctor check, writes a report, and explains the blocked state. This makes it safe to run while gated access is pending.
@@ -208,7 +208,7 @@ By default this command refuses to reset ServiceNow. It runs the strict doctor c
 After Hugging Face access is approved and you intentionally want to use a remote WorkArena instance, pass the explicit reset flag:
 
 ```bash
-npx tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-run.ts --task workarena.servicenow.all-menu --allow-servicenow-reset
 ```
 
 The guarded reset runner:
@@ -230,13 +230,13 @@ Reports are written to:
 Create an `agent-execution` contract report from an existing local WorkArena-gap fixture task:
 
 ```bash
-npx tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
+pnpm exec tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
 ```
 
 List available local WorkArena-style tasks:
 
 ```bash
-npx tsx scripts/workarena-local-execution.ts --list
+pnpm exec tsx scripts/workarena-local-execution.ts --list
 ```
 
 This command does not start a browser, OpenSidebar, ServiceNow, or an LLM provider. It converts a local arena task into the same report shape the real WorkArena handoff runner produces, with `prompt.source` set to `local_fixture_prompt` and the env id under `local-fixture/`.
@@ -254,7 +254,7 @@ Use this before ServiceNow approval to keep the result schema, report validator,
 Inspect the local BrowserGym and OpenSidebar browser-launch paths:
 
 ```bash
-npx tsx scripts/workarena-browser-strategy.ts
+pnpm exec tsx scripts/workarena-browser-strategy.ts
 ```
 
 This command is metadata-only. It does not reset BrowserGym, contact ServiceNow, start OpenSidebar, or call an LLM provider.
@@ -284,7 +284,7 @@ Strategy reports are written to:
 Inspect the long-lived bridge protocol that will keep BrowserGym alive while OpenSidebar acts in a separate extension browser:
 
 ```bash
-npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
 ```
 
 By default this is protocol-only. It starts the Python JSONL bridge, reads the `describe` response, writes a report, and exits without resetting BrowserGym or contacting ServiceNow.
@@ -292,7 +292,7 @@ By default this is protocol-only. It starts the Python JSONL bridge, reads the `
 After gated access is approved, the reset/export path can be exercised explicitly:
 
 ```bash
-npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu --allow-servicenow-reset
 ```
 
 The bridge protocol supports:
@@ -318,13 +318,13 @@ Held-session reports are written to:
 Validate generated WorkArena JSON reports without contacting ServiceNow:
 
 ```bash
-npx tsx scripts/workarena-validate-reports.ts
+pnpm exec tsx scripts/workarena-validate-reports.ts
 ```
 
 Validate a specific report:
 
 ```bash
-npx tsx scripts/workarena-validate-reports.ts --file .artifacts/e2e/workarena-run-YYYY-MM-DD-workarena.servicenow.all-menu.json
+pnpm exec tsx scripts/workarena-validate-reports.ts --file .artifacts/e2e/workarena-run-YYYY-MM-DD-workarena.servicenow.all-menu.json
 ```
 
 The validator covers:
@@ -346,14 +346,14 @@ The execution result schema reserves stable fields for task id, seed, real WorkA
 Aggregate latest dated WorkArena execution reports without contacting ServiceNow:
 
 ```bash
-npx tsx scripts/workarena-grade.ts
+pnpm exec tsx scripts/workarena-grade.ts
 ```
 
 By default, the grader uses the latest dated `agent-execution` reports under `.artifacts/e2e/`. Pass explicit files to grade a chosen batch, or use `--all` to include all historical execution reports:
 
 ```bash
-npx tsx scripts/workarena-grade.ts --file .artifacts/e2e/workarena-handoff-YYYY-MM-DD-workarena.servicenow.all-menu.json
-npx tsx scripts/workarena-grade.ts --all
+pnpm exec tsx scripts/workarena-grade.ts --file .artifacts/e2e/workarena-handoff-YYYY-MM-DD-workarena.servicenow.all-menu.json
+pnpm exec tsx scripts/workarena-grade.ts --all
 ```
 
 The grader writes:
@@ -370,19 +370,19 @@ Primary success uses WorkArena score when present. This avoids treating a Browse
 Run controlled batches through the existing handoff runner:
 
 ```bash
-npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20 --retries 0 --allow-servicenow-reset
 ```
 
 Useful non-mutating preview:
 
 ```bash
-npx tsx scripts/workarena-suite.ts --suite atomic --category menu --seeds 0 --dry-run --no-report
+pnpm exec tsx scripts/workarena-suite.ts --suite atomic --category menu --seeds 0 --dry-run --no-report
 ```
 
 Useful targeted rerun:
 
 ```bash
-npx tsx scripts/workarena-suite.ts --task workarena.servicenow.create-incident --seeds 0 --max-turns 20 --retries 0 --allow-servicenow-reset --no-build
+pnpm exec tsx scripts/workarena-suite.ts --task workarena.servicenow.create-incident --seeds 0 --max-turns 20 --retries 0 --allow-servicenow-reset --no-build
 ```
 
 The suite runner builds the extension once, then calls `workarena-handoff` with `--no-build` for each target. It writes:
@@ -399,7 +399,7 @@ Use `--resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-T
 After a WorkArena handoff batch, summarize the generated JSON reports and trace files into likely fix layers:
 
 ```bash
-npx tsx scripts/workarena-trace-learning.ts
+pnpm exec tsx scripts/workarena-trace-learning.ts
 ```
 
 The report is written to:
@@ -417,11 +417,11 @@ By default, pending reports with no trace files are skipped because they do not 
 Before attempting real WorkArena, run the local no-token checks individually:
 
 ```bash
-npx tsx scripts/workarena-category-coverage.ts
-npx tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
-npx tsx scripts/workarena-browser-strategy.ts
-npx tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
-npx tsx scripts/workarena-validate-reports.ts
+pnpm exec tsx scripts/workarena-category-coverage.ts
+pnpm exec tsx scripts/workarena-local-execution.ts --task workarena-gap.crm-ticket-escalation
+pnpm exec tsx scripts/workarena-browser-strategy.ts
+pnpm exec tsx scripts/workarena-held-session.ts --task workarena.servicenow.all-menu
+pnpm exec tsx scripts/workarena-validate-reports.ts
 ```
 
 These checks cover:
@@ -451,7 +451,7 @@ After doctor, list, adapter plan, guarded reset, dry run, held-session, and sess
 Before access is granted, prepare the first-run candidate:
 
 ```bash
-npx tsx scripts/workarena-first-task.ts
+pnpm exec tsx scripts/workarena-first-task.ts
 ```
 
 This is metadata-only. It does not reset ServiceNow, start OpenSidebar, or call an LLM provider. It ranks local WorkArena task metadata and prints the exact guarded handoff command to use after doctor reports `ready=true`.
@@ -459,13 +459,13 @@ This is metadata-only. It does not reset ServiceNow, start OpenSidebar, or call 
 Check local category coverage before the first real reset:
 
 ```bash
-npx tsx scripts/workarena-category-coverage.ts
+pnpm exec tsx scripts/workarena-category-coverage.ts
 ```
 
 This command compares the local arena task registry against the WorkArena category list and writes a markdown report under `.artifacts/e2e/`. The current local category pack covers every WorkArena category with at least one tagged local analog, including infeasible-context, data-driven reasoning, sophisticated-memory, service catalog, menu, list-filter, and list-sort coverage.
 
 ```bash
-npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
+pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
 
 ## Demo Session Server
@@ -473,7 +473,7 @@ npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed
 For filming, start a local control server that opens a visible held WorkArena session on command and keeps it alive until teardown:
 
 ```bash
-npm run workarena:demo -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
+pnpm run workarena:demo -- --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset
 ```
 
 Then open:
@@ -499,7 +499,7 @@ The handoff runner is manual-only. It refuses to reset WorkArena unless `--allow
 Use `--no-build` only when the extension is already built:
 
 ```bash
-npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build
+pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build
 ```
 
 Without the reset flag, the command only writes a blocked/pending report and does not contact ServiceNow.

@@ -19,9 +19,12 @@ const MAX_TASK_CONTEXT_NODES = 5;
 export const MAX_HANDOFF_DEPTH = 2;
 const MIN_ASSUMPTION_TOKEN_LEN = 4;
 const MAX_ORIGINAL_QUERY_EXCERPT = 420;
+const MAX_LITERAL_FORM_QUERY_EXCERPT = 6000;
 const LIST_DETAIL_REVIEW_SKILL_ID = "list-detail-review-loop";
 const CROSS_TAB_COMPARE_SKILL_ID = "cross-tab-compare";
 const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
+const JOB_APPLICATION_SKILL_ID = "job-application-assistant";
+const ASHBY_JOB_APPLICATION_SKILL_ID = "ashby-job-application-assistant";
 const MAX_RESULT_LEN = 500;
 const MAX_COMPACT_LIST_DETAIL_RESULT_LEN = 220;
 const MAX_PROGRESS_LIST_ITEMS = 4;
@@ -110,6 +113,9 @@ function compactOriginalQuery(
   activeObjective: string,
 ): string {
   const raw = originalQuery.trim();
+  if (shouldPreserveLiteralFormRequest(raw, activeObjective)) {
+    return raw.slice(0, MAX_LITERAL_FORM_QUERY_EXCERPT);
+  }
   if (raw.length <= MAX_ORIGINAL_QUERY_EXCERPT) return raw;
 
   const objectiveTokens = activeObjective
@@ -141,6 +147,26 @@ function compactOriginalQuery(
 
   const source = prioritized.length > 0 ? prioritized : candidateClauses;
   return source.join(" ").slice(0, MAX_ORIGINAL_QUERY_EXCERPT);
+}
+
+function shouldPreserveLiteralFormRequest(
+  originalQuery: string,
+  activeObjective: string,
+): boolean {
+  const corpus = `${originalQuery}\n${activeObjective}`;
+  const isFormOrApplicationTask =
+    /\b(?:fill|complete|prepare|application|apply|job|career|resume|cv|form|field|textarea)\b/i.test(
+      corpus,
+    );
+  if (!isFormOrApplicationTask) return false;
+
+  return (
+    /\|[^\n]*\|/.test(originalQuery) ||
+    /^\s*#{1,6}\s+\S/m.test(originalQuery) ||
+    /\b(?:copy this|using these data|these data|field\s*\|\s*copy|verbatim|exactly)\b/i.test(
+      originalQuery,
+    )
+  );
 }
 
 function formatSkillExecutionContract(node: TaskNode): string[] {
@@ -549,12 +575,33 @@ export function buildExecutorInstruction(
     );
   }
 
-  if (/\b(job|application|apply|cv|resume)\b/i.test(`${activeObjective}\n${originalQuery || ""}`)) {
+  const isJobApplicationSkill =
+    node.selectedSkillId === JOB_APPLICATION_SKILL_ID ||
+    node.selectedSkillId === ASHBY_JOB_APPLICATION_SKILL_ID;
+
+  if (
+    isJobApplicationSkill ||
+    /\b(job|application|apply|cv|resume)\b/i.test(
+      `${activeObjective}\n${originalQuery || ""}`,
+    )
+  ) {
     sections.push(
       "",
       "JOB APPLICATION POLICY:",
       '- Use profileFile: "cv" for saved CV/resume uploads.',
       "- Fill the application and verify required fields, but do not click the final submit/apply control until explicit approval is granted.",
+      "- Treat user-supplied application field values as literals. For long textarea answers, preserve paragraph breaks and wording exactly; do not summarize, rewrite, bulletize, or put one sentence on each line.",
+      '- Verify long textarea answers with read_element(attribute="value") before calling done().',
+    );
+  }
+
+  if (node.selectedSkillId === ASHBY_JOB_APPLICATION_SKILL_ID) {
+    sections.push(
+      "",
+      "ASHBY APPLICATION POLICY:",
+      "- Treat Ashby question-style labels as fields to fill, not as report prompts.",
+      "- Verify typed Ashby inputs and textareas with read_element(attribute=\"value\"); verify Yes/No choices from selected state or visible selected styling.",
+      "- If the page shows Submit Application and the user said not to submit, stop at ready state and report what was filled.",
     );
   }
 
