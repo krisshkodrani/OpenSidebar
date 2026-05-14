@@ -604,6 +604,9 @@ const MAX_HORIZON_EXPANSIONS = 30;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
 const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_RECENT_COMPLETION_HISTORY = 6;
+const MAX_RECENT_COMPLETION_CONTEXT_CHARS = 1400;
+const MAX_RECENT_COMPLETION_LINE_CHARS = 260;
 const MAX_PERSISTED_MESSAGES = 200;
 const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -639,6 +642,13 @@ export class Orchestrator {
       payload: TaskCompletionMessage["payload"];
       timestamp: number;
     }
+  >();
+  private recentCompletionHistory = new Map<
+    string,
+    Array<{
+      payload: TaskCompletionMessage["payload"];
+      timestamp: number;
+    }>
   >();
   private completionWaiters = new Map<
     string,
@@ -2474,11 +2484,6 @@ export class Orchestrator {
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
-      payload: { delta: "", done: false, replaceContent: summary },
-    });
-    this.sendMessage({
-      type: "STREAM_CHUNK",
-      workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
     });
 
@@ -3163,6 +3168,29 @@ export class Orchestrator {
     return this.tasksByWorkspace.size > 0;
   }
 
+  private getRecentCompletionContext(workspaceId: string): string {
+    const now = Date.now();
+    const freshEntries = (this.recentCompletionHistory.get(workspaceId) ?? [])
+      .filter((entry) => now - entry.timestamp < RECENT_COMPLETION_TTL_MS)
+      .slice(-MAX_RECENT_COMPLETION_HISTORY);
+    if (freshEntries.length === 0) {
+      this.recentCompletionHistory.delete(workspaceId);
+      return "";
+    }
+    this.recentCompletionHistory.set(workspaceId, freshEntries);
+    return freshEntries
+      .map((entry, index) => {
+        const summary = (entry.payload.summary || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, MAX_RECENT_COMPLETION_LINE_CHARS);
+        return summary ? `- Assistant result ${index + 1}: ${summary}` : "";
+      })
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, MAX_RECENT_COMPLETION_CONTEXT_CHARS);
+  }
+
   /**
    * Re-broadcast the current state for a workspace so the side panel can
    * recover transient UI state after a workspace switch.
@@ -3340,10 +3368,27 @@ export class Orchestrator {
       () => null,
     );
     const personalContextBrief = personalContext?.rendered || "";
+    const recentCompletionContext = this.getRecentCompletionContext(
+      input.workspaceId,
+    );
+    const conversationContextBrief = [
+      input.conversationContextBrief?.trim() || "",
+      recentCompletionContext,
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, MAX_RECENT_COMPLETION_CONTEXT_CHARS);
 
-    const plannerQuery = personalContextBrief
-      ? `${personalContextBrief}\n\nCURRENT REQUEST:\n${input.query}`
-      : input.query;
+    const plannerContextSections = [
+      conversationContextBrief
+        ? `RECENT WORKSPACE CONVERSATION:\n${conversationContextBrief}`
+        : "",
+      personalContextBrief,
+    ].filter(Boolean);
+    const plannerQuery =
+      plannerContextSections.length > 0
+        ? `${plannerContextSections.join("\n\n")}\n\nCURRENT REQUEST:\n${input.query}`
+        : input.query;
     const taskId = crypto.randomUUID();
     const laneTopology = resolveLaneTopologyFromSettings(input.settings);
     const task: OrchestratorTask = {
@@ -3355,6 +3400,7 @@ export class Orchestrator {
       query: input.query,
       turnNumber: 1,
       personalContextBrief: personalContextBrief || undefined,
+      conversationContextBrief: conversationContextBrief || undefined,
       status: "planning",
       createdAt: Date.now(),
       nodes: [],
@@ -4235,14 +4281,16 @@ export class Orchestrator {
                 thinking?: string,
               ) => {
                 // Only forward replaceContent, done, and thinking — skip raw text deltas
-                if (replaceContent !== undefined || done || thinking) {
+                const shouldForwardReplaceContent =
+                  replaceContent !== undefined && !done;
+                if (shouldForwardReplaceContent || done || thinking) {
                   this.sendMessage({
                     type: "STREAM_CHUNK",
                     workspaceId: task.workspaceId,
                     payload: {
                       delta: "",
                       done,
-                      ...(replaceContent !== undefined
+                      ...(shouldForwardReplaceContent
                         ? { replaceContent }
                         : {}),
                       ...(thinking ? { thinking } : {}),
@@ -4344,6 +4392,12 @@ export class Orchestrator {
           verificationTurnMode,
           task.personalContextBrief,
         );
+        if (task.conversationContextBrief) {
+          executorInstruction +=
+            "\n\nRecent workspace conversation:\n" +
+            task.conversationContextBrief +
+            "\nUse this only to resolve follow-up references and preserve facts from earlier turns; the current request remains authoritative.";
+        }
 
         // Inject predecessor trajectory for same-tab sequential nodes.
         // This gives the executor awareness of what happened before (e.g.
@@ -5645,17 +5699,10 @@ export class Orchestrator {
       task.finishedAt - (task.startedAt || task.createdAt);
     task.status = failed > 0 ? "failed" : "completed";
 
-    // Build summary and replace any accumulated reasoning with the clean result.
-    // Uses replaceContent to ensure a single clean bubble regardless of what was
-    // streamed during execution (intermediate reasoning, tool output, etc.).
+    // Build summary for the structured completion card. The final visible
+    // result is emitted only as TASK_COMPLETION so the UI does not briefly show
+    // a plain assistant bubble before converting it to a completion card.
     const summary = this.buildProgrammaticSummary(task);
-    if (summary && !task._streamHasContent) {
-      this.sendMessage({
-        type: "STREAM_CHUNK",
-        workspaceId: task.workspaceId,
-        payload: { delta: "", done: false, replaceContent: summary },
-      });
-    }
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
@@ -6325,6 +6372,14 @@ export class Orchestrator {
       payload,
       timestamp: Date.now(),
     });
+    if (payload.summary) {
+      const history = this.recentCompletionHistory.get(workspaceId) ?? [];
+      history.push({ payload, timestamp: Date.now() });
+      this.recentCompletionHistory.set(
+        workspaceId,
+        history.slice(-MAX_RECENT_COMPLETION_HISTORY),
+      );
+    }
     const waiters = this.completionWaiters.get(workspaceId);
     if (waiters) {
       for (const resolve of waiters) resolve(payload);
@@ -6345,6 +6400,7 @@ export class Orchestrator {
             timestamp: Date.now(),
             toolCalls: [],
             isStreaming: false,
+            completionData: payload,
           });
           const trimmed =
             messages.length > MAX_PERSISTED_MESSAGES

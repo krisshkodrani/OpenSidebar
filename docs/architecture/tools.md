@@ -215,10 +215,10 @@ See `apps/extension/src/background/agent/tool-recovery.ts` for the `recoverToolC
 
 ```bash
 # Run tool-related tests
-npx vitest run --grep "tool"
+pnpm exec vitest run --grep "tool"
 
 # Test specific tool execution
-npx vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
+pnpm exec vitest run --config apps/extension/vitest.config.ts apps/extension/tests/background/tools.test.ts
 ```
 
 ## Key Files

@@ -11,6 +11,7 @@ import {
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
 } from "./catalog-order-policy";
+import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
   assessListDetailWorkflow,
@@ -50,6 +51,7 @@ import { getPreToolDeniedReason } from "./sequential-pre-tool-gate";
 import { formatStepLabel } from "./step-labels";
 import {
   assessAutocompleteTextRewrite,
+  assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   validateTextEntryTarget,
@@ -60,6 +62,7 @@ type ToolExecutionMode = "parallel" | "sequential";
 
 export interface ParallelToolDispatchHost extends AgentLoopToolHandlerHost {
   getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
+  getConsequentialActionTaskText(): string;
   getWorkflowTabToolRedirect(params: {
     toolName: ToolName;
     args: Record<string, unknown>;
@@ -120,6 +123,31 @@ export async function executeParallelToolCalls(
         host.context.getSnapshot(),
       );
       host.recordSkillToolSelection(toolName, "parallel");
+
+      const planStatus = host.context.getPlanStatusRaw();
+      const currentStepIndex = planStatus?.currentIndex ?? -1;
+      if (toolName === ToolName.PRESS_KEY && typeof args.key === "string") {
+        const activeObjective =
+          planStatus?.subtasks[currentStepIndex]?.description ??
+          host.originalQuery;
+        const inlineNavigationBlock = assessInlineEditNavigationGuard({
+          activeToolProfile: host.getActiveToolProfileForStep(currentStepIndex),
+          selectedSkillId: host.selectedSkillId,
+          snapshot: host.context.getSnapshot(),
+          objectiveText: activeObjective,
+          key: args.key,
+        });
+        if (inlineNavigationBlock) {
+          host.log.warn("agent", "Inline edit navigation blocked", {
+            turn: host.turnCount,
+            tool: toolName,
+            key: args.key,
+            step: currentStepIndex,
+            mode: "parallel",
+          });
+          return { toolCall, result: inlineNavigationBlock, error: null };
+        }
+      }
 
       const repeatActionExempt =
         isListDetailReturnControlRepeatExempt({
@@ -393,8 +421,6 @@ export async function executeParallelToolCalls(
         typeof args.id === "number" &&
         typeof args.text === "string"
       ) {
-        const planStatus = host.context.getPlanStatusRaw();
-        const currentStepIndex = planStatus?.currentIndex ?? -1;
         const inlineRetarget = assessInlineEditTextEntryRetarget({
           activeToolProfile: host.getActiveToolProfileForStep(currentStepIndex),
           snapshot: host.context.getSnapshot(),
@@ -548,6 +574,35 @@ export async function executeParallelToolCalls(
         const activeObjective =
           planStatus?.subtasks[planStatus.currentIndex]?.description ??
           host.originalQuery;
+        const consequentialFinalActionBlock =
+          assessConsequentialFinalActionBlock({
+            toolName,
+            args,
+            taskText: host.getConsequentialActionTaskText(),
+            actionLabel: formatStepLabel(toolName, args, host.elementResolver),
+          });
+        if (consequentialFinalActionBlock) {
+          host.log.warn("agent", "Consequential final action blocked", {
+            turn: host.turnCount,
+            tool: toolName,
+            id: args.id,
+            mode: "parallel",
+          });
+          host.traceRecorder?.recordEvent(
+            "consequential_final_action_blocked",
+            {
+              turn: host.turnCount,
+              tool: toolName,
+              id: args.id,
+              mode: "parallel",
+            },
+          );
+          return {
+            toolCall,
+            result: consequentialFinalActionBlock,
+            error: null,
+          };
+        }
         const textEntryClickGuard = assessTextEntryClickGuard({
           objectiveText: activeObjective,
           element: target,

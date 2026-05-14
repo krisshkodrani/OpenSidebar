@@ -7,6 +7,7 @@ import {
   findAllNewTraceFiles,
 } from "../apps/extension/tests/e2e/helpers/diagnostics";
 import { createE2EHarness } from "../apps/extension/tests/e2e/helpers/harness";
+import { readE2EConfig } from "../apps/extension/tests/e2e/helpers/e2e-config";
 import {
   importPlaywrightStorageState,
   type StorageStateImportResult,
@@ -626,7 +627,7 @@ async function waitForAgentTerminal(
 function runBuildIfNeeded(args: HandoffArgs): void {
   if (args.noBuild) return;
   console.log("\n[workarena:handoff] Building extension before handoff run...");
-  execSync("cmd /c npm run build", {
+  execSync("corepack pnpm run build", {
     cwd: PROJECT_ROOT,
     stdio: "inherit",
     windowsHide: true,
@@ -914,8 +915,8 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       },
       agent: {
         provider: harness.providerMode,
-        executorModel: process.env.E2E_EXECUTOR_MODEL || null,
-        plannerModel: process.env.E2E_PLANNER_MODEL || null,
+        executorModel: readE2EConfig().model || null,
+        plannerModel: null,
         traceIds: metrics.traceIds,
         traceFiles: metrics.traceFiles,
         finalAnswer,

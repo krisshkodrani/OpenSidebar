@@ -9,11 +9,15 @@ import type { CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
 import { STRING_LIMITS, INVESTIGATION_TOOLS } from "./constants";
 import { ESCALATION_REFLECTION } from "./loop-prompts";
-import { extractDiscoveredTagIds, getSnapshotFingerprint } from "./loop-helpers";
+import {
+  extractDiscoveredTagIds,
+  getSnapshotFingerprint,
+} from "./loop-helpers";
 import {
   extractKnowledgeBaseAnswerCandidate,
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
+import { assessMissingToolEscalation } from "./tool-capabilities";
 
 function getTabUrl(tab: chrome.tabs.Tab): string {
   return tab.url || tab.pendingUrl || "";
@@ -69,6 +73,7 @@ export interface AgentLoopToolHandlerHost {
   escalateModel(): void;
   executeToolCall(toolCall: ToolCall, tabId: number): Promise<string>;
   getWorkspaceTabIds(): Promise<number[] | null>;
+  getActiveToolNamesForTurn?(): ToolName[];
   hasExplicitPageRead: boolean;
   hasReadPage: boolean;
   lastDomStep: AgentStep | null;
@@ -295,7 +300,8 @@ export function updateInlineEditVerificationState(
   }
 }
 
-export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleEscalateToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
   tabId: number,
@@ -310,6 +316,46 @@ export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
   prevElementCount: number;
 }> {
   const reason = (args.reason as string) || "";
+  const capabilityAssessment = assessMissingToolEscalation({
+    args,
+    availableToolNames: loop.getActiveToolNamesForTurn?.() ?? [],
+  });
+  if (capabilityAssessment.decision === "reject") {
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: capabilityAssessment.correction,
+    });
+    loop.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: "Escalation rejected: requested tool capability is available",
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
+    );
+    loop.log.info("agent", "ESCALATE rejected: capability available", {
+      turn: loop.turnCount,
+      reason,
+      requiredCapability: capabilityAssessment.requiredCapability,
+      matchedToolNames: capabilityAssessment.matchedToolNames,
+    });
+    loop.traceRecorder?.recordEvent("escalation_rejected", {
+      turn: loop.turnCount,
+      reason,
+      rejectionReason: capabilityAssessment.reason,
+      requiredCapability: capabilityAssessment.requiredCapability,
+      matchedToolNames: capabilityAssessment.matchedToolNames,
+    });
+    return {
+      escalationTier,
+      plannerModelStartTurn,
+      orientationPhase,
+      prevElementCount,
+    };
+  }
   if (escalationTier < 1) {
     loop.escalateModel();
     escalationTier = 1;
@@ -362,18 +408,15 @@ export async function handleEscalateToolCall(loop: AgentLoopToolHandlerHost,
   };
 }
 
-export function handleUpdateNotesToolCall(loop: AgentLoopToolHandlerHost,
+export function handleUpdateNotesToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   toolName: ToolName,
   args: Record<string, unknown>,
 ): void {
   const note = (args.note as string) || "";
   loop.context.appendWorkingNote(note);
-  loop.trackListDetailToolSuccess(
-    toolName,
-    args,
-    loop.context.getSnapshot(),
-  );
+  loop.trackListDetailToolSuccess(toolName, args, loop.context.getSnapshot());
   loop.context.addMessage({
     role: "tool",
     tool_call_id: toolCallId,
@@ -385,7 +428,8 @@ export function handleUpdateNotesToolCall(loop: AgentLoopToolHandlerHost,
   });
 }
 
-export async function handleWaitToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleWaitToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   toolName: ToolName,
   args: Record<string, unknown>,
@@ -396,10 +440,7 @@ export async function handleWaitToolCall(loop: AgentLoopToolHandlerHost,
   const reason = (args.reason as string) || "";
 
   // Signal WAITING status so the UI activity indicator stays visible
-  loop.statusHandler(
-    AgentStatus.WAITING_FOR_PAGE_LOAD,
-    `Waiting ${seconds}s…`,
-  );
+  loop.statusHandler(AgentStatus.WAITING_FOR_PAGE_LOAD, `Waiting ${seconds}s…`);
   await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
   loop.statusHandler(AgentStatus.THINKING, "Analyzing…");
 
@@ -418,12 +459,12 @@ export async function handleWaitToolCall(loop: AgentLoopToolHandlerHost,
   if (loop.planSubtasks.length > 0) {
     const planLines = loop.planSubtasks.map(
       (s: { status: string; description: string }, i: number) => {
-      const marker =
-        s.status === "completed"
-          ? "[done]"
-          : s.status === "running"
-            ? "[NOW]"
-            : "[pending]";
+        const marker =
+          s.status === "completed"
+            ? "[done]"
+            : s.status === "running"
+              ? "[NOW]"
+              : "[pending]";
         return `  ${i + 1}. ${marker} ${s.description}`;
       },
     );
@@ -434,7 +475,9 @@ export async function handleWaitToolCall(loop: AgentLoopToolHandlerHost,
     `\nCurrent page: "${snapshot?.title || "unknown"}" — ${snapshot?.url || "unknown"}`,
   );
   parts.push(`Turn: ${loop.turnCount} / ${loop.maxTurns}`);
-  parts.push(`\nReview the above → observe the page → decide your next action.`);
+  parts.push(
+    `\nReview the above → observe the page → decide your next action.`,
+  );
 
   loop.context.addMessage({
     role: "tool",
@@ -467,7 +510,8 @@ export async function handleWaitToolCall(loop: AgentLoopToolHandlerHost,
   return prevElementCount;
 }
 
-export function handleNavigateGuardToolCall(loop: AgentLoopToolHandlerHost,
+export function handleNavigateGuardToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
 ): boolean {
@@ -501,7 +545,8 @@ export function handleNavigateGuardToolCall(loop: AgentLoopToolHandlerHost,
   return true;
 }
 
-export async function handleListTabsToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleListTabsToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   tabId: number,
 ): Promise<void> {
@@ -547,7 +592,8 @@ export async function handleListTabsToolCall(loop: AgentLoopToolHandlerHost,
   });
 }
 
-export async function handleSwitchTabToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleSwitchTabToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   args: Record<string, unknown>,
   tabId: number,
@@ -667,7 +713,8 @@ export async function handleSwitchTabToolCall(loop: AgentLoopToolHandlerHost,
   return { tabId, prevElementCount };
 }
 
-export async function handleCloseTabToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleCloseTabToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   toolName: ToolName,
   args: Record<string, unknown>,
@@ -762,7 +809,8 @@ export async function handleCloseTabToolCall(loop: AgentLoopToolHandlerHost,
   });
 }
 
-export async function handleCreateTabToolCall(loop: AgentLoopToolHandlerHost,
+export async function handleCreateTabToolCall(
+  loop: AgentLoopToolHandlerHost,
   toolCallId: string,
   toolName: ToolName,
   args: Record<string, unknown>,
@@ -1300,4 +1348,3 @@ export async function handleGenericSequentialToolCall(
     completedSummary: null,
   };
 }
-

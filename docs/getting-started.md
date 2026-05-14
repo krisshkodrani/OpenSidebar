@@ -13,8 +13,8 @@ Get OpenSidebar running in a few minutes.
 ```bash
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
-npm install
-npm run dist
+pnpm install
+pnpm run dist
 ```
 
 ## Load in Chrome
@@ -46,15 +46,15 @@ Try one of these:
 Most local development uses five commands:
 
 ```bash
-npm run dev      # start the local app stack
-npm run dist     # build the standalone unpacked extension
-npm test         # run fast tests
-npm run verify   # run the full local confidence gate
-npm run doctor   # diagnose local setup
+pnpm run dev      # start the local app stack
+pnpm run dist     # build the standalone unpacked extension
+pnpm test         # run fast tests
+pnpm run verify   # run the full local confidence gate
+pnpm run doctor   # diagnose local setup
 ```
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 This starts:
@@ -64,7 +64,7 @@ This starts:
 - the Vite/CRXJS dev process
 - a loadable dev extension under `dist-dev/`
 
-When the shell prints the CRXJS instruction, load `dist-dev/` in `chrome://extensions/` and keep `npm run dev` running. For a standalone build that does not depend on the dev server, run `npm run dist` and load `dist/`.
+When the shell prints the CRXJS instruction, load `dist-dev/` in `chrome://extensions/` and keep `pnpm run dev` running. For a standalone build that does not depend on the dev server, run `pnpm run dist` and load `dist/`.
 
 ## Trace Maintenance
 
@@ -73,10 +73,10 @@ screenshots, and session logs stay in `traces/` and `logs/` for local debugging,
 with a default 7-day raw-file window.
 
 ```bash
-npm run traces:index                # backfill or repair SQLite
-npm run traces:delete-old           # dry run; raw files older than 7 days
-npm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
-npm run traces:compact              # index, then delete old raw files
+pnpm run traces:index                # backfill or repair SQLite
+pnpm run traces:delete-old           # dry run; raw files older than 7 days
+pnpm run traces:delete-old -- --apply # delete old raw files after SQLite coverage check
+pnpm run traces:compact              # index, then delete old raw files
 ```
 
 ## Next Steps

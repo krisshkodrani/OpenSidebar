@@ -732,10 +732,19 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     preferredTools: [
       "read_page",
       "read_element",
+      "find_element",
+      "list_application_packages",
+      "get_application_package",
+      "get_candidate_profile",
+      "suggest_form_answers",
+      "answer_candidate_question",
+      "get_profile_fields",
       "update_notes",
       "type_text",
       "select_option",
       "set_checkbox",
+      "upload_file",
+      "record_application_status",
       "click_element",
       "clarify",
     ],
@@ -743,10 +752,57 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     capabilityNeeds: ["read_context", "update_record", "verify_saved"],
     contextScope: "turn",
     verifierMode: "hybrid",
+    atomic: true,
     notes: [
       "Do not invent personal data, salary expectations, legal answers, or availability.",
+      "Copy user-supplied long-form answers exactly unless the user explicitly asks for rewriting.",
+      "Treat question-like application labels, such as why a company matters, as fields to fill rather than report prompts.",
       "Fill and verify requested fields, then summarize what is ready before final submit.",
       "Final application submission is a consequential action and must be approval-gated by runtime policy.",
+    ],
+  },
+  {
+    id: "ashby-job-application-assistant",
+    name: "Ashby Job Application Assistant",
+    description:
+      "Fill Ashby-hosted job applications by label, preserve supplied application answers exactly, verify live field values, and stop before Submit Application unless explicitly approved.",
+    tags: ["workflow", "jobs", "application", "forms", "ashby", "consent"],
+    triggers: [
+      "Ashby job application",
+      "jobs.ashbyhq.com application",
+      "Ashby application form",
+      "Submit Application on Ashby",
+    ],
+    maturity: "candidate",
+    preferredTools: [
+      "read_page",
+      "read_element",
+      "find_element",
+      "list_application_packages",
+      "get_application_package",
+      "get_candidate_profile",
+      "suggest_form_answers",
+      "answer_candidate_question",
+      "get_profile_fields",
+      "update_notes",
+      "type_text",
+      "select_option",
+      "set_checkbox",
+      "upload_file",
+      "record_application_status",
+      "click_element",
+      "clarify",
+    ],
+    discouragedTools: ["done", "click_coordinates", "press_key"],
+    capabilityNeeds: ["read_context", "update_record", "verify_saved"],
+    contextScope: "turn",
+    verifierMode: "hybrid",
+    atomic: true,
+    notes: [
+      "Ashby application labels may look like questions; fill them as fields and do not turn them into analysis tasks.",
+      "Copy long user-supplied answers exactly, including paragraph breaks and sentence grouping.",
+      "Verify text inputs and textareas through read_element(attribute=\"value\") before reporting ready state.",
+      "Submit Application is a final consequential action and must remain approval-gated.",
     ],
   },
   {
@@ -2052,12 +2108,17 @@ const SKILL_BODIES: Record<
     procedureMarkdown: [
       "1. Identify the job, role, company, and application page before filling fields.",
       "2. Read visible requirements and required fields; do not infer personal, legal, salary, sponsorship, availability, or eligibility answers that the user did not provide.",
-      "3. Fill fields only from the user's request, saved profile evidence, or visible page context.",
-      "4. Use update_notes to track missing user-supplied values and fields that are ready.",
-      "5. Re-read the application before final submission and verify the visible values or attached resume/CV state.",
-      "6. Stop before the final Submit/Send/Apply action unless the user has approved that exact final submission.",
-      "7. If approval is needed, summarize the target job and what will be submitted before requesting approval.",
-      "8. After approved submission, verify confirmation, application received state, or equivalent page feedback.",
+      "3. When JobAgent MCP is enabled, use its package/profile/form-answer tools for grounded application context; if unavailable, continue from the user's request, saved profile evidence, and visible page context.",
+      "4. Fill fields only from the user's request, JobAgent package/profile evidence, saved profile evidence, or visible page context.",
+      "5. Preserve user-supplied prose answers verbatim, including paragraph breaks, sentence grouping, punctuation, and spacing unless the user explicitly asks for rewriting.",
+      "6. Treat question-like application labels such as why you care about a company as form fields, not as instructions to produce a report or recommendation.",
+      "7. When the user supplies a field/value table or long application answer, keep the whole application fill as one workflow and preserve the original request as the source of truth.",
+      "8. Use update_notes to track missing user-supplied values and fields that are ready.",
+      "9. Re-read the application before final submission and verify the visible values or attached resume/CV state.",
+      '10. For textarea or long literal answers, verify the live value with read_element(attribute="value") before reporting ready state.',
+      "11. Stop before the final Submit/Send/Apply action unless the user has approved that exact final submission.",
+      "12. If approval is needed, summarize the target job and what will be submitted before requesting approval.",
+      "13. After approved submission, verify confirmation, application received state, or equivalent page feedback.",
     ].join("\n"),
     requiredEvidence: [
       "Target job/application identity",
@@ -2084,17 +2145,83 @@ const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Use read_page and read_element to verify required fields and final submit target.",
+        "Use JobAgent package/profile/form-answer tools when available, then verify every suggested value on the live page before treating it as done.",
         "Use type_text/select_option/set_checkbox for explicit values only.",
+        "Paste long user-supplied application answers as exact literals; do not rewrap them into bullets or one sentence per line.",
+        "Use upload_file with profileFile=\"cv\" when the user asks to use their saved CV or resume.",
         "Avoid press_key and click_coordinates for final application submission.",
       ],
       completionChecks: [
         "All known requested fields are filled or missing values are surfaced.",
+        "Long textarea answers match the user-supplied source text instead of a rewritten or reformatted version.",
         "The final submit action is either waiting for approval or was approved and verified.",
         "The final answer clearly states submitted vs ready-for-approval.",
       ],
       failureRecovery: [
         "If the application page shows validation errors, report the exact missing fields and do not submit.",
         "If the submit target is ambiguous, ask for confirmation before proceeding.",
+      ],
+    },
+  },
+  "ashby-job-application-assistant": {
+    procedureMarkdown: [
+      "1. Confirm the current page is an Ashby job application, usually from jobs.ashbyhq.com, Ashby page title text, or a visible Submit Application control.",
+      "2. Identify the role and company from the page title or header, then map every requested value to the visible Ashby field label before typing.",
+      "3. When JobAgent MCP is enabled, use its package/profile/form-answer tools for grounded Ashby answers, then verify those answers against live Ashby fields.",
+      "4. Treat Ashby prompts and labels, including question-style labels such as why the user cares about the company, as form fields to fill; do not answer them as a separate report task.",
+      "5. Fill all user-supplied fields in one application workflow when possible, especially field/value tables and follow-up requests for remaining fields.",
+      "6. Preserve user-supplied long-form answers verbatim, including paragraph breaks, sentence grouping, punctuation, and spacing.",
+      '7. Verify text inputs and textareas with read_element(attribute="value"); verify radio/select choices from live selected state or visible selected styling.',
+      "8. For resume/CV uploads, use upload_file with the provided file or profileFile=\"cv\", then verify the displayed attachment filename.",
+      "9. Never click Submit Application unless the user explicitly approved that exact final submission. If the task says do not send/submit, stop at ready state.",
+      "10. Report only the prepared/submitted state and missing fields; do not add fit analysis or best-match comparisons unless the user explicitly requested that report.",
+    ].join("\n"),
+    requiredEvidence: [
+      "Ashby application identity and target role/company",
+      "Requested field/value mapping from user request or saved profile",
+      "Live readback for typed inputs and long textareas",
+      "Radio/select state evidence for eligibility or work-permit answers",
+      "Attachment filename evidence when a resume/CV is requested",
+      "Submit Application approval or explicit prepare-only instruction",
+    ],
+    commonFailures: [
+      {
+        signal: "turning an Ashby question label into a final analysis report",
+        recovery:
+          "return to the application field mapping and fill the requested literal answer instead",
+      },
+      {
+        signal: "long textarea answer has been reformatted into one sentence per line",
+        recovery:
+          "clear the field, paste the exact source answer, and verify the value attribute",
+      },
+      {
+        signal: "the final Submit Application button is visible but approval is absent",
+        recovery:
+          "stop and report ready-for-approval state without clicking Submit Application",
+      },
+    ],
+    executionContract: {
+      sequencing: [
+        "Confirm Ashby page, map requested fields, fill explicit values, verify readback, verify ready state, then submit only after explicit approval.",
+      ],
+      toolDiscipline: [
+        "Use read_page/read_element to verify Ashby field labels and values before done.",
+        "Use JobAgent suggestions as source evidence only; page readback remains the execution truth.",
+        "Use type_text for literal text values and textareas; do not summarize, rewrite, bulletize, or sentence-wrap supplied answers.",
+        "Use click_element or set_checkbox for radio-style Yes/No choices, then verify selected state.",
+        "Use upload_file for Ashby resume/CV controls only when the user supplied a file or requested saved CV use.",
+        "Avoid press_key and click_coordinates for Submit Application.",
+      ],
+      completionChecks: [
+        "Every requested Ashby field is filled exactly or listed as missing.",
+        "Long textarea values match the user-supplied source text exactly.",
+        "Submit Application was not clicked unless explicitly approved.",
+        "Final answer states ready-for-review, waiting-for-approval, submitted, or blocked by missing fields.",
+      ],
+      failureRecovery: [
+        "If Ashby validation names missing fields, fill only values supplied by the user/profile and report the rest as missing.",
+        "If the field label is ambiguous, read nearby labels/help text and ask for clarification instead of guessing.",
       ],
     },
   },
@@ -2635,6 +2762,12 @@ const finalConsequentialActionPattern =
   /\b(?:submit|send|post|publish|buy|purchase|place order|delete|confirm|approve|apply)\b/i;
 const jobApplicationPattern =
   /\b(?:job|career|position|vacancy|resume|cv)\b[\s\S]{0,160}\b(?:apply|application|submit|form|cover letter|resume|cv)\b|\b(?:apply|application|submit)\b[\s\S]{0,160}\b(?:job|career|position|vacancy|resume|cv)\b/i;
+const jobApplicationPageUrlPattern =
+  /\b(?:jobs\.ashbyhq\.com|greenhouse\.io|lever\.co|workdayjobs\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|applytojob\.com)\b/i;
+const jobApplicationFieldPattern =
+  /\b(?:resume|cv|cover letter|linkedin|salary expectation|work authorization|work authorisation|work permit|sponsorship|earliest start date|notice period|why do you care|why .* company)\b/i;
+const ashbyJobApplicationPattern =
+  /\b(?:jobs\.ashbyhq\.com|ashbyhq|ashby(?:[-\s]+hosted)?\s+(?:job\s+)?application|ashby)\b/i;
 const transactionPattern =
   /\b(verify|confirm|check|delete account|dismiss popups?|inspect|status|activity feed|posted comment|ticket status)\b/i;
 const navigateReturnPattern =
@@ -2686,6 +2819,34 @@ function buildRoutingCorpus(input: SkillMatcherInput): string {
     ...(input.pageMarkers ?? []),
     ...(input.runtimeContext ?? []),
   ]);
+}
+
+function hasJobApplicationSignal(
+  input: SkillMatcherInput,
+  corpus: string,
+): boolean {
+  return (
+    jobApplicationPattern.test(corpus) ||
+    jobApplicationPageUrlPattern.test(input.pageUrl ?? "") ||
+    (/\bapplication\b/i.test(corpus) && jobApplicationFieldPattern.test(corpus))
+  );
+}
+
+function hasAshbyJobApplicationSignal(
+  input: SkillMatcherInput,
+  corpus: string,
+): boolean {
+  const ashbyCorpus = buildCorpus([
+    input.pageUrl,
+    input.pageTitle,
+    ...(input.pageMarkers ?? []),
+    ...(input.runtimeContext ?? []),
+  ]);
+  return (
+    /\bjobs\.ashbyhq\.com\b/i.test(input.pageUrl ?? "") ||
+    (ashbyJobApplicationPattern.test(`${ashbyCorpus}\n${corpus}`) &&
+      hasJobApplicationSignal(input, corpus))
+  );
 }
 
 function stripBenchmarkTaskIds(text: string): string {
@@ -3041,6 +3202,8 @@ export function resolveSkillToolProfile(
   }
 
   if (
+    descriptor.id === "job-application-assistant" ||
+    descriptor.id === "ashby-job-application-assistant" ||
     descriptor.id === "progressive-repeatable-form" ||
     descriptor.id === "multi-step-form-wizard"
   ) {
@@ -3362,6 +3525,14 @@ function selectPrimarySkillWithKeywordMatcher(
       /\b(?:fill|form|field|request|application|enrollment|intake|continue|next|review|submit|confirm|checkbox|select|radio)\b/i.test(
         stepCorpus,
       ));
+  const currentTaskLooksLikeJobApplication = hasJobApplicationSignal(
+    input,
+    corpus,
+  );
+  const currentTaskLooksLikeAshbyJobApplication = hasAshbyJobApplicationSignal(
+    input,
+    corpus,
+  );
   const currentStepNeedsTransactionalCheck =
     transactionPattern.test(stepCorpus);
   const matchesMultiTabChecklistWorkflow =
@@ -3391,6 +3562,24 @@ function selectPrimarySkillWithKeywordMatcher(
     if (selection) return selection;
   }
 
+  if (currentTaskLooksLikeAshbyJobApplication) {
+    const selection = selectEnabledSkill(
+      input,
+      "ashby-job-application-assistant",
+      "Task is an Ashby job application workflow and should fill requested fields literally, verify live field state, and approval-gate Submit Application.",
+    );
+    if (selection) return selection;
+  }
+
+  if (currentTaskLooksLikeJobApplication) {
+    const selection = selectEnabledSkill(
+      input,
+      "job-application-assistant",
+      "Task is a job application workflow and should prepare, verify, preserve supplied answers, and approval-gate final submission.",
+    );
+    if (selection) return selection;
+  }
+
   if (currentStepLooksLikeProgressiveRepeatableForm) {
     const selection = selectEnabledSkill(
       input,
@@ -3405,15 +3594,6 @@ function selectPrimarySkillWithKeywordMatcher(
       input,
       "multi-step-form-wizard",
       "Current step targets a multi-step or conditional form and should fill visible fields, re-ground after transitions, handle revealed fields, review, and submit when requested.",
-    );
-    if (selection) return selection;
-  }
-
-  if (jobApplicationPattern.test(corpus)) {
-    const selection = selectEnabledSkill(
-      input,
-      "job-application-assistant",
-      "Task is a job application workflow and should prepare, verify, and approval-gate final submission.",
     );
     if (selection) return selection;
   }

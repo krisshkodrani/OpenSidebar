@@ -282,6 +282,37 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: false,
   },
+  [ToolName.LIST_APPLICATION_PACKAGES]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.GET_APPLICATION_PACKAGE]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.SUGGEST_FORM_ANSWERS]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.GET_CANDIDATE_PROFILE]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.ANSWER_CANDIDATE_QUESTION]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: false,
+    sequential: false,
+  },
+  [ToolName.RECORD_APPLICATION_STATUS]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: false,
+    sequential: true,
+    mutationSensitive: true,
+  },
 
   // Window management
   [ToolName.CREATE_WINDOW]: {
@@ -361,6 +392,11 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.SCROLL_PAGE,
     ToolName.LIST_TABS,
     ToolName.GET_PROFILE_FIELDS,
+    ToolName.LIST_APPLICATION_PACKAGES,
+    ToolName.GET_APPLICATION_PACKAGE,
+    ToolName.SUGGEST_FORM_ANSWERS,
+    ToolName.GET_CANDIDATE_PROFILE,
+    ToolName.ANSWER_CANDIDATE_QUESTION,
     // System (always)
     ToolName.DONE,
     ToolName.ESCALATE,
@@ -393,6 +429,12 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.DISMISS_OVERLAYS,
     ToolName.CLICK_COORDINATES,
     ToolName.GET_PROFILE_FIELDS,
+    ToolName.LIST_APPLICATION_PACKAGES,
+    ToolName.GET_APPLICATION_PACKAGE,
+    ToolName.SUGGEST_FORM_ANSWERS,
+    ToolName.GET_CANDIDATE_PROFILE,
+    ToolName.ANSWER_CANDIDATE_QUESTION,
+    ToolName.RECORD_APPLICATION_STATUS,
     // System
     ToolName.DONE,
     ToolName.ESCALATE,

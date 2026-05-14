@@ -24,12 +24,14 @@ import {
 import { getFixtureUrl } from "./helpers/fixture-server";
 import { waitForBackendHealthy, waitForTaskRun } from "./helpers/backend";
 import { updateUserSettings } from "./helpers/utils";
+import { isE2ESuiteFlagEnabled } from "./helpers/e2e-config";
 
 const h = createE2EHarness({
   maxTurns: 24,
   testLabel: "backend-durable-resume",
 });
-const RUN_BACKEND_DURABLE_E2E = process.env.E2E_BACKEND_DURABLE === "true";
+const RUN_BACKEND_DURABLE_E2E =
+  isE2ESuiteFlagEnabled("backend-durable");
 
 describe.skipIf(!h.apiKey || !RUN_BACKEND_DURABLE_E2E)(
   "E2E: Backend Durable Resume",

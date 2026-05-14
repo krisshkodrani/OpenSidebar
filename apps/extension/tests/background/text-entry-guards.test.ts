@@ -3,6 +3,7 @@ import "../setup";
 
 import {
   assessAutocompleteTextRewrite,
+  assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   getAutocompleteSuggestionDoneRejection,
@@ -162,6 +163,80 @@ describe("text entry guards", () => {
         },
       }),
     ).toBeNull();
+  });
+
+  test("blocks navigation keys while inline editor still has the old value", () => {
+    const result = assessInlineEditNavigationGuard({
+      activeToolProfile: "edit_surface",
+      objectiveText:
+        "Click the Q1 Sales cell in the first data row, type 999, and press Enter to confirm the change",
+      key: "Tab",
+      snapshot: snapshot({
+        title: "Sheet",
+        url: "https://example.com/sheet",
+        elements: [
+          element({
+            tag: 44,
+            tagName: "input",
+            role: "textbox",
+            text: "130",
+            isVisible: true,
+            attributes: {
+              type: "text",
+              value: "130",
+              "aria-label": "Q1 Sales editor",
+            },
+          }),
+        ],
+      }),
+    });
+
+    expect(result).toContain('needs "999"');
+    expect(result).toContain('type_text({"id":44,"text":"999"})');
+  });
+
+  test("allows inline edit commit key after replacement value is typed", () => {
+    expect(
+      assessInlineEditNavigationGuard({
+        activeToolProfile: "edit_surface",
+        objectiveText: "Update the Q1 Sales cell in row 1 to 999",
+        key: "Enter",
+        snapshot: snapshot({
+          elements: [
+            element({
+              tag: 44,
+              tagName: "input",
+              text: "999",
+              isVisible: true,
+              attributes: { type: "text", value: "999" },
+            }),
+          ],
+        }),
+      }),
+    ).toBeNull();
+  });
+
+  test("keeps inline edit navigation guard active after profile widening", () => {
+    const result = assessInlineEditNavigationGuard({
+      activeToolProfile: "recover_from_stuck",
+      selectedSkillId: "inline-edit-surface",
+      objectiveText:
+        "Click the Q1 Sales cell in the first data row, type 999, and press Enter to confirm the change",
+      key: "Escape",
+      snapshot: snapshot({
+        elements: [
+          element({
+            tag: 44,
+            tagName: "input",
+            text: "130",
+            isVisible: true,
+            attributes: { type: "text", value: "130" },
+          }),
+        ],
+      }),
+    });
+
+    expect(result).toContain('needs "999"');
   });
 
   test("rewrites autocomplete text entry to a prefix", () => {

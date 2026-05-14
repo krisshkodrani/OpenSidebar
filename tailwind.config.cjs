@@ -1,6 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-    content: ["./apps/extension/src/**/*.{js,ts,jsx,tsx,html}"],
+    content: [
+        "./apps/extension/src/sidepanel/**/*.{js,ts,jsx,tsx,html}",
+        "./apps/extension/src/trace-viewer/**/*.{js,ts,jsx,tsx,html}",
+        "./apps/extension/src/overlay/**/*.{js,ts,jsx,tsx,html}",
+    ],
     darkMode: "class",
     theme: {
         extend: {

@@ -3,64 +3,64 @@ import React from "react";
 const workflowCards = [
   {
     title: "Install",
-    command: "npm install",
+    command: "pnpm install",
     detail: "Install workspace dependencies once after cloning or pulling dependency changes.",
   },
   {
     title: "Build Extension",
-    command: "npm run dist",
+    command: "pnpm run dist",
     detail: "Writes the loadable Chrome extension to dist/. Load or reload that folder in Chrome.",
   },
   {
     title: "Run Dev Stack",
-    command: "npm run dev",
+    command: "pnpm run dev",
     detail: "Starts local services, this viewer, Vite/CRXJS, and writes dist-dev/ for Chrome.",
   },
   {
     title: "Maintain Traces",
-    command: "npm run traces:compact",
+    command: "pnpm run traces:compact",
     detail: "Backfills SQLite, then deletes raw trace files older than 7 days.",
   },
 ];
 
 const commandRows = [
   {
-    command: "npm run dev",
+    command: "pnpm run dev",
     use: "Start local development services",
     notes: "Load dist-dev/ while the shell is running.",
   },
   {
-    command: "npm run dist",
+    command: "pnpm run dist",
     use: "Create a standalone extension build",
     notes: "Chrome Load unpacked path: dist/",
   },
   {
-    command: "npm run build",
+    command: "pnpm run build",
     use: "CI-compatible production build name",
     notes: "Equivalent production build path as dist/",
   },
   {
-    command: "npm test",
+    command: "pnpm test",
     use: "Run fast extension/backend tests",
     notes: "Use focused Vitest commands while iterating.",
   },
   {
-    command: "npm run traces:delete-old",
+    command: "pnpm run traces:delete-old",
     use: "Preview old raw trace deletion",
     notes: "Dry run by default; 7-day raw-file window.",
   },
   {
-    command: "npm run traces:delete-old -- --apply",
+    command: "pnpm run traces:delete-old -- --apply",
     use: "Delete old raw trace files",
     notes: "Requires matching SQLite rows before deleting JSONL, screenshots, run files, and logs.",
   },
   {
-    command: "npm run traces:index",
+    command: "pnpm run traces:index",
     use: "Backfill or repair SQLite",
     notes: "Writes .artifacts/trace-index.sqlite from raw JSONL.",
   },
   {
-    command: "npm run traces:compact",
+    command: "pnpm run traces:compact",
     use: "Normal trace maintenance",
     notes: "Index first, then delete old raw files.",
   },
@@ -126,8 +126,8 @@ export default function DocsTab() {
                 OpenSidebar development in two modes
               </h1>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-trace-subtle">
-                Use npm scripts as the stable interface. Nx is the internal task
-                runner. For manual Chrome dev testing, keep <Code>npm run dev</Code>{" "}
+                Use pnpm package scripts as the stable interface. Nx is the internal task
+                runner. For manual Chrome dev testing, keep <Code>pnpm run dev</Code>{" "}
                 running and load <Code>dist-dev/</Code>. For a standalone build,
                 load <Code>dist/</Code>.
               </p>
@@ -135,8 +135,8 @@ export default function DocsTab() {
             <div className="rounded border border-trace-border bg-trace-bg px-3 py-3 text-[12px] leading-5 text-trace-subtle">
               <div className="font-semibold text-trace-text">Current rule</div>
               <div className="mt-1">
-                <Code>npm run dev</Code> writes <Code>dist-dev/</Code>.{" "}
-                <Code>npm run dist</Code> writes <Code>dist/</Code>.
+                <Code>pnpm run dev</Code> writes <Code>dist-dev/</Code>.{" "}
+                <Code>pnpm run dist</Code> writes <Code>dist/</Code>.
               </div>
             </div>
           </div>

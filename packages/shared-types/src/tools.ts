@@ -479,6 +479,61 @@ export interface GetProfileFieldsArgs {
   fields: string[];
 }
 
+/** Arguments for list_application_packages */
+export interface ListApplicationPackagesArgs {
+  /** Optional substring filter for package status */
+  status_filter?: string;
+}
+
+/** Arguments for get_application_package */
+export interface GetApplicationPackageArgs {
+  /** JobAgent application package key */
+  package_key: string;
+  /** Include prepared local application text. Defaults to true in JobAgent. */
+  include_text?: boolean;
+}
+
+/** Arguments for suggest_form_answers */
+export interface SuggestFormAnswersArgs {
+  /** JobAgent application package key */
+  package_key: string;
+  /** Visible form labels or detected field objects */
+  fields: Array<string | Record<string, unknown>>;
+}
+
+/** Arguments for get_candidate_profile */
+export interface GetCandidateProfileArgs {
+  /** Candidate profile fields to return. Empty returns the default public subset. */
+  fields?: string[];
+  /** Include private fields. Requires high-risk approval. */
+  include_private?: boolean;
+}
+
+/** Arguments for answer_candidate_question */
+export interface AnswerCandidateQuestionArgs {
+  /** Application question to answer from local profile/package context */
+  question: string;
+  /** Optional JobAgent application package key */
+  package_key?: string;
+}
+
+/** Arguments for record_application_status */
+export interface RecordApplicationStatusArgs {
+  /** JobAgent application package key */
+  package_key: string;
+  /** Reviewed local status to append to the package log */
+  status:
+    | "reviewing"
+    | "ready"
+    | "filled-awaiting-submit"
+    | "submitted-by-user"
+    | "applied"
+    | "archived"
+    | "duplicate-risk";
+  /** Optional status note */
+  note?: string;
+}
+
 // --- Tool Routing Types ---
 
 /** Maps tool names to their execution handlers */
@@ -536,6 +591,12 @@ export type ToolArgsMap = {
   [ToolName.CLARIFY]: ClarifyArgs;
   [ToolName.UPDATE_NOTES]: UpdateNotesArgs;
   [ToolName.GET_PROFILE_FIELDS]: GetProfileFieldsArgs;
+  [ToolName.LIST_APPLICATION_PACKAGES]: ListApplicationPackagesArgs;
+  [ToolName.GET_APPLICATION_PACKAGE]: GetApplicationPackageArgs;
+  [ToolName.SUGGEST_FORM_ANSWERS]: SuggestFormAnswersArgs;
+  [ToolName.GET_CANDIDATE_PROFILE]: GetCandidateProfileArgs;
+  [ToolName.ANSWER_CANDIDATE_QUESTION]: AnswerCandidateQuestionArgs;
+  [ToolName.RECORD_APPLICATION_STATUS]: RecordApplicationStatusArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
 };

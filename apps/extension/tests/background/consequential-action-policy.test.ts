@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import {
   assessConsequentialActionApproval,
+  assessConsequentialFinalActionBlock,
+  assessDraftOnlyCompletionViolation,
   classifyConsequentialActionConsentMode,
 } from "../../src/background/agent/consequential-action-policy";
 import { ToolName } from "../../src/types";
@@ -44,6 +46,14 @@ describe("consequential action policy", () => {
     ).toBe("prepare_only");
   });
 
+  test("classifies dont-send final-action requests", () => {
+    expect(
+      classifyConsequentialActionConsentMode(
+        "Draft the reply in the editor but dont send it.",
+      ),
+    ).toBe("prepare_only");
+  });
+
   test("classifies explicit final-action requests", () => {
     expect(
       classifyConsequentialActionConsentMode(
@@ -58,5 +68,69 @@ describe("consequential action policy", () => {
         "Review the page and prepare the next step.",
       ),
     ).toBe("unclear");
+  });
+
+  test("blocks send clicks for draft-only communication tasks", () => {
+    const result = assessConsequentialFinalActionBlock({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 42 },
+      taskText:
+        "Read David's email and draft a short reply in the reply box. Don't click send.",
+      actionLabel: 'Click [42] button "Send"',
+    });
+
+    expect(result).toContain("draft-only");
+  });
+
+  test("blocks send clicks for plain draft communication tasks", () => {
+    const result = assessConsequentialFinalActionBlock({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 42 },
+      taskText: "Draft a reply to David about Monday at 11 AM.",
+      actionLabel: 'Click [42] button "Send"',
+    });
+
+    expect(result).toContain("draft-only");
+  });
+
+  test("allows send clicks when sending is the explicit communication goal", () => {
+    expect(
+      assessConsequentialFinalActionBlock({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 42 },
+        taskText: "Read David's email and send a short reply confirming Monday.",
+        actionLabel: 'Click [42] button "Send"',
+      }),
+    ).toBeNull();
+  });
+
+  test("rejects done when a draft-only message was sent", () => {
+    const result = assessDraftOnlyCompletionViolation({
+      taskText: "Draft a reply to David and do not send it.",
+      summary: "The message was sent to David.",
+      snapshot: {
+        title: "Sent",
+        url: "https://mail.example/sent",
+        elements: [],
+        pageContent: "Message sent to David <david@example.com>. Sent just now.",
+      },
+    });
+
+    expect(result).toContain("required an unsent draft");
+  });
+
+  test("accepts done when a draft-only message remains unsent", () => {
+    expect(
+      assessDraftOnlyCompletionViolation({
+        taskText: "Draft a reply to David and do not send it.",
+        summary: "The reply remains unsent as a draft in the editor.",
+        snapshot: {
+          title: "Inbox",
+          url: "https://mail.example/inbox",
+          elements: [],
+          pageContent: "Reply editor. Send button. Drafts 1.",
+        },
+      }),
+    ).toBeNull();
   });
 });

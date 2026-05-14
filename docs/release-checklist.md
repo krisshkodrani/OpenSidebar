@@ -13,7 +13,7 @@ Use this checklist when preparing a new OpenSidebar release.
 From the repo root:
 
 ```bash
-npm run verify
+pnpm run verify
 ```
 
 This runs:
@@ -32,17 +32,17 @@ Run at least one real-browser E2E validation against the release candidate after
 Recommended smoke gate:
 
 ```bash
-npm run test:e2e:smoke
+pnpm run test:e2e:smoke
 ```
 
 If the release changes are concentrated in a different area, run the relevant purpose suite in addition to smoke:
 
 | Change area | Recommended command |
 | ----------- | ------------------- |
-| Page actions, navigation, overlays, forms, shopping | `npm run test:e2e:interactions` |
-| Planner, continuation, recovery, backend durability | `npm run test:e2e:runtime` |
-| WorkArena setup, reporting, or ServiceNow handoff changes | `npx tsx scripts/workarena-doctor.ts` and `npx tsx scripts/workarena-validate-reports.ts` |
-| Real WorkArena confidence after intentional ServiceNow reset approval | `npx tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build` |
+| Page actions, navigation, overlays, forms, shopping | `pnpm run test:e2e:interactions` |
+| Planner, continuation, recovery, backend durability | `pnpm run test:e2e:runtime` |
+| WorkArena setup, reporting, or ServiceNow handoff changes | `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-validate-reports.ts` |
+| Real WorkArena confidence after intentional ServiceNow reset approval | `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset --no-build` |
 
 Real WorkArena handoff commands may mutate a remote ServiceNow benchmark instance and spend LLM tokens. Run them deliberately, and keep generated reports under `.artifacts/e2e/`.
 
@@ -52,7 +52,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## 4. Validate Release Artifacts
 
-- Confirm `npm run ci:dist` passes.
+- Confirm `pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
 - Spot-check the loaded extension from `dist/` in Chrome.
 
@@ -65,4 +65,4 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## Current Known Caveat
 
-- Real-browser E2E and WorkArena handoff runs are not part of `npm run verify`; run the relevant E2E gate explicitly for risky runtime changes.
+- Real-browser E2E and WorkArena handoff runs are not part of `pnpm run verify`; run the relevant E2E gate explicitly for risky runtime changes.

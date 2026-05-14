@@ -22,9 +22,10 @@ import {
   seedTemporaryProfile,
   type SeededProfile,
 } from "./helpers/profile";
+import { isE2ESuiteFlagEnabled } from "./helpers/e2e-config";
 
 const h = createE2EHarness({ maxTurns: 18, testLabel: "profile-checkout" });
-const RUN_BACKEND_PROFILE_E2E = process.env.E2E_BACKEND_PROFILE === "true";
+const RUN_BACKEND_PROFILE_E2E = isE2ESuiteFlagEnabled("backend-profile");
 
 describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
   "E2E: Profile Checkout",

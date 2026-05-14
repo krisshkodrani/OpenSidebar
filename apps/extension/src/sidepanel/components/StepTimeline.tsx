@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { AgentStep, ToolName } from "../../types";
 import { clsx } from "clsx";
+import { isGenericProgressLabel } from "../progress-labels";
 
 /** Map a tool name (from step label) to a specific icon */
 function toolIcon(step: AgentStep): React.ReactNode {
@@ -181,17 +182,23 @@ export const StepTimeline = React.memo(function StepTimeline({
   defaultCollapsed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const displaySteps = steps.filter(
+    (step) =>
+      !(step.type === "thinking" && isGenericProgressLabel(step.label)),
+  );
 
-  const hasRunning = steps.some((s) => s.status === "running");
+  const hasRunning = displaySteps.some((s) => s.status === "running");
   const collapseThreshold = hasRunning ? ACTIVE_VISIBLE_TAIL : COLLAPSE_THRESHOLD;
   const visibleTail = hasRunning ? ACTIVE_VISIBLE_TAIL : VISIBLE_TAIL;
-  const shouldCollapse = !expanded && steps.length > collapseThreshold;
-  const visibleSteps = shouldCollapse ? steps.slice(-visibleTail) : steps;
-  const hiddenCount = steps.length - visibleSteps.length;
-  const showMedia = expanded || (!shouldCollapse && steps.length <= 2);
+  const shouldCollapse = !expanded && displaySteps.length > collapseThreshold;
+  const visibleSteps = shouldCollapse
+    ? displaySteps.slice(-visibleTail)
+    : displaySteps;
+  const hiddenCount = displaySteps.length - visibleSteps.length;
+  const showMedia = expanded || (!shouldCollapse && displaySteps.length <= 2);
   const helperLabel = `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
 
-  if (steps.length === 0) return null;
+  if (displaySteps.length === 0) return null;
 
   return (
     <div className="max-w-[92%] mb-1">
@@ -205,7 +212,9 @@ export const StepTimeline = React.memo(function StepTimeline({
             <span>{helperLabel}</span>
           </button>
         )}
-        {expanded && hiddenCount === 0 && steps.length > collapseThreshold && (
+        {expanded &&
+        hiddenCount === 0 &&
+        displaySteps.length > collapseThreshold ? (
           <button
             onClick={() => setExpanded(false)}
             className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
@@ -213,7 +222,7 @@ export const StepTimeline = React.memo(function StepTimeline({
             <ChevronDown size={11} />
             <span>Collapse</span>
           </button>
-        )}
+        ) : null}
         {visibleSteps.map((step) => (
           <StepRow key={step.id} step={step} showMedia={showMedia} />
         ))}

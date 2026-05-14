@@ -6,6 +6,7 @@
  */
 
 import {
+  DEFAULT_JOBAGENT_MCP_URL,
   DEFAULT_ENABLED_SKILL_PACK_IDS,
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
@@ -25,6 +26,7 @@ const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
 const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
 const LOCAL_KIMI_KEY = "kimiApiKey_local";
 const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
+const LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
 
 export type SettingsStorageKeys =
   | string
@@ -135,6 +137,7 @@ export async function saveSettings(
     deepseekApiKey,
     kimiApiKey,
     xiaomiApiKey,
+    jobAgentMcpToken,
     ...rest
   } = normalized;
   await Promise.all([
@@ -147,6 +150,7 @@ export async function saveSettings(
       [LOCAL_DEEPSEEK_KEY]: deepseekApiKey ?? "",
       [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
       [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
+      [LOCAL_JOBAGENT_MCP_TOKEN_KEY]: jobAgentMcpToken ?? "",
     }),
     storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
@@ -171,6 +175,7 @@ export async function loadSettings(
       LOCAL_DEEPSEEK_KEY,
       LOCAL_KIMI_KEY,
       LOCAL_XIAOMI_KEY,
+      LOCAL_JOBAGENT_MCP_TOKEN_KEY,
     ]),
     // Check legacy session key for migration
     storage.session.get(SESSION_KEY).catch(() => ({}) as Record<string, unknown>),
@@ -192,6 +197,8 @@ export async function loadSettings(
   const kimiApiKey = (localResult[LOCAL_KIMI_KEY] as string | undefined) || "";
   const xiaomiApiKey =
     (localResult[LOCAL_XIAOMI_KEY] as string | undefined) || "";
+  const jobAgentMcpToken =
+    (localResult[LOCAL_JOBAGENT_MCP_TOKEN_KEY] as string | undefined) || "";
 
   if (
     !syncSettings &&
@@ -202,7 +209,8 @@ export async function loadSettings(
     !fireworksApiKey &&
     !deepseekApiKey &&
     !kimiApiKey &&
-    !xiaomiApiKey
+    !xiaomiApiKey &&
+    !jobAgentMcpToken
   ) {
     return null;
   }
@@ -224,6 +232,13 @@ export async function loadSettings(
   delete raw.contextWindowSize;
   delete raw.orchestratorMaxTotalTokens;
   delete raw.orchestratorMaxWorkers;
+  delete raw.enableVoiceInput;
+  delete raw.enableVoiceOutput;
+  delete raw.ttsProvider;
+  delete raw.ttsVoice;
+  delete raw.ttsStylePreset;
+  delete raw.autoVoiceResponse;
+  if (!raw.voiceMode) raw.voiceMode = "off";
 
   // Migrate legacy `provider` to `providerMode`
   if ("provider" in raw && !("providerMode" in raw)) {
@@ -234,6 +249,12 @@ export async function loadSettings(
     delete raw.provider;
   }
   if (!raw.providerMode) raw.providerMode = "fireworks";
+  if (typeof raw.jobAgentMcpEnabled !== "boolean") {
+    raw.jobAgentMcpEnabled = false;
+  }
+  if (typeof raw.jobAgentMcpUrl !== "string" || !raw.jobAgentMcpUrl.trim()) {
+    raw.jobAgentMcpUrl = DEFAULT_JOBAGENT_MCP_URL;
+  }
 
   // Migrate legacy unified-vision toggle to auto mode. The runtime chooses
   // unified VL only when page or task signals indicate vision is useful.
@@ -261,6 +282,7 @@ export async function loadSettings(
   delete raw.deepseekApiKey;
   delete raw.kimiApiKey;
   delete raw.xiaomiApiKey;
+  delete raw.jobAgentMcpToken;
 
   return {
     ...raw,
@@ -272,6 +294,7 @@ export async function loadSettings(
     deepseekApiKey: deepseekApiKey,
     kimiApiKey: kimiApiKey,
     xiaomiApiKey: xiaomiApiKey,
+    jobAgentMcpToken,
   } as UserSettings;
 }
 

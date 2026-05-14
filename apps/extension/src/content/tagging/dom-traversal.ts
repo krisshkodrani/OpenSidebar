@@ -14,6 +14,7 @@ const OWN_ELEMENT_IDS = new Set([
   "opensidebar-e2e-rail",
   "opensidebar-floating-wrap",
   "opensidebar-stop-btn",
+  "opensidebar-harness-host",
 ]);
 
 /** Check if an element was injected by our extension (not part of the page) */

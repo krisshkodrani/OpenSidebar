@@ -1,7 +1,7 @@
 /**
  * E2E: Navigation Challenge — click button 3 times, enter revealed code, submit.
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

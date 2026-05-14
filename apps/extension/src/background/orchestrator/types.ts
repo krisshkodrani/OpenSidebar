@@ -187,6 +187,8 @@ export interface OrchestratorTask {
   tabCoordination?: TaskTabCoordination;
   /** Task-relevant, user-authored non-secret profile context */
   personalContextBrief?: string;
+  /** Recent workspace chat context for follow-up requests. */
+  conversationContextBrief?: string;
   structuredProgress?: Record<string, TaskRunProgressInput>;
 }
 
@@ -210,4 +212,5 @@ export interface OrchestratorStartInput {
   workspaceId: string;
   settings: UserSettings;
   openRouterApiKey: string;
+  conversationContextBrief?: string;
 }

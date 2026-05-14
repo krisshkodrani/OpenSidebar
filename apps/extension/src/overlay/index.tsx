@@ -14,6 +14,10 @@ import {
   type OverlayUiRuntimeHarness,
 } from "./runtime";
 
+export const OPENSIDEBAR_OVERLAY_CONFIG_ID = "opensidebar-overlay-config";
+export const OPENSIDEBAR_OVERLAY_MOUNT_EVENT = "opensidebar:overlay:mount";
+export const OPENSIDEBAR_OVERLAY_DISPOSE_EVENT = "opensidebar:overlay:dispose";
+
 export interface OpenSidebarOverlayInstance {
   dispose(): void;
 }
@@ -23,6 +27,7 @@ export interface MountOpenSidebarOverlayOptions {
   runtimeHarness?: OverlayUiRuntimeHarness;
   runtimeOptions?: OverlayUiRuntimeOptions;
   sidepanelCss?: string;
+  glass?: boolean;
 }
 
 let activeInstance: OpenSidebarOverlayInstance | null = null;
@@ -42,6 +47,7 @@ export function mountOpenSidebarOverlay(
   }
   const overlayHost = createOpenSidebarOverlayHost({
     sidepanelCss: options.sidepanelCss ?? sidepanelCss,
+    glass: options.glass,
     onClose: () => {
       if (!disposing) activeInstance?.dispose();
     },
@@ -85,7 +91,7 @@ function mountWhenReady(): void {
   const readOptions = () =>
     typeof window === "undefined"
       ? undefined
-      : window.__opensidebarOverlayConfig;
+      : window.__opensidebarOverlayConfig ?? readConfigElement();
   if (document.readyState === "loading") {
     document.addEventListener(
       "DOMContentLoaded",
@@ -97,6 +103,17 @@ function mountWhenReady(): void {
   mountOpenSidebarOverlay(readOptions());
 }
 
+function readConfigElement(): MountOpenSidebarOverlayOptions | undefined {
+  const raw = document.getElementById(OPENSIDEBAR_OVERLAY_CONFIG_ID)
+    ?.textContent;
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as MountOpenSidebarOverlayOptions;
+  } catch {
+    return undefined;
+  }
+}
+
 declare global {
   interface Window {
     __opensidebarOverlay?: {
@@ -105,7 +122,7 @@ declare global {
     };
     __opensidebarOverlayConfig?: Pick<
       MountOpenSidebarOverlayOptions,
-      "runtimeOptions" | "sidepanelCss"
+      "runtimeOptions" | "sidepanelCss" | "glass"
     >;
     __opensidebarOverlayRuntime?: OverlayUiRuntimeHarness;
   }
@@ -118,5 +135,11 @@ if (typeof window !== "undefined") {
       activeInstance?.dispose();
     },
   };
+  window.addEventListener(OPENSIDEBAR_OVERLAY_MOUNT_EVENT, () => {
+    mountOpenSidebarOverlay(window.__opensidebarOverlayConfig ?? readConfigElement());
+  });
+  window.addEventListener(OPENSIDEBAR_OVERLAY_DISPOSE_EVENT, () => {
+    activeInstance?.dispose();
+  });
   mountWhenReady();
 }

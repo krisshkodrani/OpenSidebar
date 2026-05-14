@@ -5,6 +5,7 @@ import {
   MessageSource,
   AgentStatus,
   UserSettings,
+  ChatEntry,
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
@@ -101,7 +102,12 @@ chrome.sidePanel.setPanelBehavior({
 // 5. State — per-workspace agent loops
 const pendingSidePanelOpens = new Set<number>();
 const pendingUserChat = new Set<string>(); // per-workspace guard against concurrent USER_CHAT
-const queuedUserChat = new Map<string, { text: string; tabId: number }>(); // latest follow-up per workspace
+type UserChatPayload = Extract<RuntimeMessage, { type: "USER_CHAT" }>["payload"];
+const queuedUserChat = new Map<string, UserChatPayload>(); // latest follow-up per workspace
+const e2eOverlayTabsByWorkspace = new Map<string, number>();
+const MAX_WORKSPACE_CONTEXT_MESSAGES = 8;
+const MAX_WORKSPACE_CONTEXT_CHARS = 1600;
+const MAX_WORKSPACE_CONTEXT_LINE_CHARS = 260;
 const skillRecordingSessions = new Map<
   number,
   {
@@ -111,6 +117,63 @@ const skillRecordingSessions = new Map<
     events: SkillRecordingEvent[];
   }
 >();
+
+const originalRuntimeSendMessage =
+  chrome.runtime.sendMessage.bind(chrome.runtime);
+
+function isE2EWorkspaceId(workspaceId: string | null | undefined): boolean {
+  return typeof workspaceId === "string" && workspaceId.startsWith("e2e-");
+}
+
+function rememberE2EOverlayTarget(
+  workspaceId: string,
+  tabId: number,
+): void {
+  if (!isE2EWorkspaceId(workspaceId)) return;
+  if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
+  e2eOverlayTabsByWorkspace.set(workspaceId, tabId);
+}
+
+function mirrorRuntimeMessageToE2EOverlay(message: unknown): void {
+  if (!message || typeof message !== "object") return;
+  const runtimeMessage = message as Partial<RuntimeMessage> & {
+    payload?: { workspaceId?: string | null; tabId?: number };
+  };
+  if (runtimeMessage.source !== MessageSource.BACKGROUND) return;
+
+  const workspaceId =
+    typeof runtimeMessage.workspaceId === "string"
+      ? runtimeMessage.workspaceId
+      : runtimeMessage.payload?.workspaceId;
+  if (!workspaceId || !isE2EWorkspaceId(workspaceId)) return;
+
+  const tabId =
+    e2eOverlayTabsByWorkspace.get(workspaceId) ??
+    runtimeMessage.payload?.tabId;
+  if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
+
+  chrome.tabs.sendMessage(tabId, message).catch(() => {});
+}
+
+try {
+  chrome.runtime.sendMessage = ((...args: unknown[]) => {
+    const maybeMessage =
+      args.length === 1
+        ? args[0]
+        : args.find(
+            (arg) =>
+              arg &&
+              typeof arg === "object" &&
+              typeof (arg as { type?: unknown }).type === "string",
+          );
+    mirrorRuntimeMessageToE2EOverlay(maybeMessage);
+    return originalRuntimeSendMessage(...(args as [any]));
+  }) as typeof chrome.runtime.sendMessage;
+} catch (error) {
+  logger.warn("sidebar", "Failed to install E2E overlay message mirror", {
+    error,
+  });
+}
 
 /** Resolve a workspace ID from the payload or by tab lookup. Falls back to "default". */
 async function resolveWorkspaceId(
@@ -124,6 +187,31 @@ async function resolveWorkspaceId(
     tabId,
   });
   return "default";
+}
+
+function broadcastUserChatAccepted(
+  message: Extract<RuntimeMessage, { type: "USER_CHAT" }>,
+  workspaceId: string,
+): void {
+  const text = message.payload.text.trim();
+  if (!text) return;
+
+  chrome.runtime
+    .sendMessage({
+      type: "USER_CHAT_ACCEPTED",
+      requestId: crypto.randomUUID(),
+      source: MessageSource.BACKGROUND,
+      workspaceId,
+      payload: {
+        text,
+        tabId: message.payload.tabId,
+        workspaceId,
+        messageId: message.payload.messageId ?? message.requestId,
+        timestamp: message.payload.timestamp ?? Date.now(),
+        isFeedback: message.payload.isFeedback,
+      },
+    })
+    .catch(() => {});
 }
 
 /** Stop keepalive only when all loops are done */
@@ -528,6 +616,8 @@ chrome.runtime.onMessage.addListener(
           message.payload.tabId,
           wsId,
         );
+        rememberE2EOverlayTarget(resolvedWsId, message.payload.tabId);
+        broadcastUserChatAccepted(message, resolvedWsId);
         if (message.payload.isFeedback) {
           logger.debug("agent", "User feedback", {
             text: message.payload.text,
@@ -875,8 +965,71 @@ function broadcastUserSkillList(
     .catch(() => {});
 }
 
+function normalizeWorkspaceContextText(text: unknown): string {
+  return typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
+}
+
+function getStoredChatEntryText(entry: Partial<ChatEntry>): string {
+  const completionSummary =
+    typeof entry.completionData?.summary === "string"
+      ? entry.completionData.summary
+      : "";
+  return normalizeWorkspaceContextText(entry.content || completionSummary);
+}
+
+async function buildWorkspaceConversationContext(
+  workspaceId: string,
+  currentPayload: UserChatPayload,
+): Promise<string> {
+  const storageKey = `chatMessages:${workspaceId}`;
+  try {
+    const result = await chrome.storage.local.get(storageKey);
+    const stored = result[storageKey];
+    if (!Array.isArray(stored)) return "";
+
+    const currentText = normalizeWorkspaceContextText(currentPayload.text);
+    const priorMessages = (stored as Partial<ChatEntry>[])
+      .filter((entry) => {
+        if (entry.isStreaming) return false;
+        if (entry.role !== "user" && entry.role !== "assistant") return false;
+        if (currentPayload.messageId && entry.id === currentPayload.messageId) {
+          return false;
+        }
+        if (
+          entry.role === "user" &&
+          currentPayload.timestamp &&
+          typeof entry.timestamp === "number" &&
+          entry.timestamp >= currentPayload.timestamp &&
+          getStoredChatEntryText(entry) === currentText
+        ) {
+          return false;
+        }
+        return getStoredChatEntryText(entry).length > 0;
+      })
+      .slice(-MAX_WORKSPACE_CONTEXT_MESSAGES);
+
+    return priorMessages
+      .map((entry) => {
+        const role = entry.role === "user" ? "User" : "Assistant";
+        const text = getStoredChatEntryText(entry).slice(
+          0,
+          MAX_WORKSPACE_CONTEXT_LINE_CHARS,
+        );
+        return `- ${role}: ${text}`;
+      })
+      .join("\n")
+      .slice(0, MAX_WORKSPACE_CONTEXT_CHARS);
+  } catch (error) {
+    logger.debug("agent", "Failed to load workspace conversation context", {
+      workspaceId,
+      error,
+    });
+    return "";
+  }
+}
+
 async function handleUserChat(
-  payload: { text: string; tabId: number },
+  payload: UserChatPayload,
   workspaceId: string,
 ) {
   // Per-workspace guard: serialize concurrent requests instead of dropping them.
@@ -891,7 +1044,7 @@ async function handleUserChat(
   pendingUserChat.add(workspaceId);
 
   try {
-    let currentPayload: { text: string; tabId: number } | undefined = payload;
+    let currentPayload: UserChatPayload | undefined = payload;
     while (currentPayload) {
       const text = sanitizeUserInput(currentPayload.text);
       let agentQuery = text;
@@ -918,6 +1071,10 @@ async function handleUserChat(
       }
 
       logger.debug("agent", "User message", { text, tabId, workspaceId });
+      const conversationContextBrief = await buildWorkspaceConversationContext(
+        workspaceId,
+        currentPayload,
+      );
 
       // 1. Get Settings (API Keys) — use cache if populated, else load fresh
       const settings =
@@ -996,6 +1153,7 @@ async function handleUserChat(
           tabId,
           workspaceId,
           settings,
+          conversationContextBrief,
           // In non-OpenRouter modes openRouterApiKey may be empty — pass the
           // active provider key so LLMClient pools receive a valid key.
           openRouterApiKey: providerKeyStatus.activeKey || openRouterApiKey,

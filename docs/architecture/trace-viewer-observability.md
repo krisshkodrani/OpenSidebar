@@ -57,10 +57,10 @@ The Metrics page should use the same aggregate contract whether data comes from 
 The normal maintenance command is:
 
 ```sh
-npm run traces:index
-npm run traces:delete-old
-npm run traces:delete-old -- --apply
-npm run traces:compact
+pnpm run traces:index
+pnpm run traces:delete-old
+pnpm run traces:delete-old -- --apply
+pnpm run traces:compact
 ```
 
 `traces:index` backfills `.artifacts/trace-index.sqlite` from raw JSONL traces. `traces:delete-old` uses a 7-day raw-file window by default and performs a dry run unless `--apply` is passed. `traces:compact` indexes first, then deletes old raw files.
@@ -69,7 +69,7 @@ Operationally:
 
 - Keep `traces/` and `logs/` small enough for active debugging.
 - Treat `.artifacts/trace-index.sqlite` as the viewer store.
-- Change the raw-file window with `npm run traces:delete-old -- --hot-days <days>` when needed.
+- Change the raw-file window with `pnpm run traces:delete-old -- --hot-days <days>` when needed.
 
 ## Implementation Order
 

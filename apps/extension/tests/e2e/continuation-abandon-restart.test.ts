@@ -8,7 +8,7 @@
  * Turn 2: Scrap everything, start over with different data
  * Turn 3: Select category and submit
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-abandon-restart.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-abandon-restart.test.ts
  */
 
 import {

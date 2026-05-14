@@ -8,7 +8,7 @@
  * Turn 2: Navigate to email-compose, draft a reply citing those metrics
  * Turn 3: Refine the draft — add a note about bounce rate
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cross-page-compose.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cross-page-compose.test.ts
  */
 
 import {

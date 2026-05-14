@@ -2,7 +2,10 @@ import { describe, expect, test, vi } from "vitest";
 import { AgentStatus, MessageSource } from "../../src/types";
 import {
   createOverlayUiRuntimeHarness,
+  OVERLAY_SEND_RESPONSE_EVENT,
   OVERLAY_SEND_MESSAGE_EVENT,
+  OVERLAY_STORAGE_REQUEST_EVENT,
+  OVERLAY_STORAGE_RESPONSE_EVENT,
 } from "../../src/overlay/runtime";
 
 describe("overlay UI runtime", () => {
@@ -51,6 +54,61 @@ describe("overlay UI runtime", () => {
     expect(harness.getStorageSnapshot("local")).toEqual({ next: 42 });
   });
 
+  test("resolves extension URLs from configured base URL", () => {
+    const harness = createOverlayUiRuntimeHarness({
+      extensionBaseUrl: "chrome-extension://abcdefghijklmnop/",
+    });
+
+    expect(harness.port.getUrl("public/icons/icon-128.png")).toBe(
+      "chrome-extension://abcdefghijklmnop/public/icons/icon-128.png",
+    );
+  });
+
+  test("can proxy storage through overlay bridge events", async () => {
+    const harness = createOverlayUiRuntimeHarness({
+      storageMode: "chrome-bridge",
+    });
+    const stored: Record<string, unknown> = { existing: "value" };
+    const onStorageRequest = vi.fn((event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          requestId: string;
+          operation: "get" | "set" | "remove";
+          keys?: string | string[] | Record<string, unknown> | null;
+          items?: Record<string, unknown>;
+        }>
+      ).detail;
+      if (detail.operation === "get") {
+        window.dispatchEvent(
+          new CustomEvent(OVERLAY_STORAGE_RESPONSE_EVENT, {
+            detail: {
+              requestId: detail.requestId,
+              response: { existing: stored.existing },
+            },
+          }),
+        );
+      } else if (detail.operation === "set") {
+        Object.assign(stored, detail.items);
+        window.dispatchEvent(
+          new CustomEvent(OVERLAY_STORAGE_RESPONSE_EVENT, {
+            detail: { requestId: detail.requestId, response: {} },
+          }),
+        );
+      }
+    });
+    window.addEventListener(OVERLAY_STORAGE_REQUEST_EVENT, onStorageRequest);
+
+    await expect(harness.port.storage.local.get("existing")).resolves.toEqual({
+      existing: "value",
+    });
+    await harness.port.storage.local.set({ next: 42 });
+    expect(stored.next).toBe(42);
+    expect(onStorageRequest).toHaveBeenCalledTimes(2);
+
+    window.removeEventListener(OVERLAY_STORAGE_REQUEST_EVENT, onStorageRequest);
+    harness.dispose();
+  });
+
   test("records outbound messages and delivers background messages to subscribers", async () => {
     const onSendMessage = vi.fn(async () => ({ ok: true }));
     const harness = createOverlayUiRuntimeHarness({ onSendMessage });
@@ -90,5 +148,36 @@ describe("overlay UI runtime", () => {
     expect(eventSpy).toHaveBeenCalledTimes(1);
     expect(received).toEqual(["AGENT_STATUS"]);
     window.removeEventListener(OVERLAY_SEND_MESSAGE_EVENT, eventSpy);
+  });
+
+  test("resolves sendMessage through overlay bridge response events", async () => {
+    const harness = createOverlayUiRuntimeHarness();
+    const onSend = vi.fn((event: Event) => {
+      const detail = (
+        event as CustomEvent<{ requestId: string; message: unknown }>
+      ).detail;
+      window.dispatchEvent(
+        new CustomEvent(OVERLAY_SEND_RESPONSE_EVENT, {
+          detail: {
+            requestId: detail.requestId,
+            response: { workspaceId: "e2e-workspace" },
+          },
+        }),
+      );
+    });
+    window.addEventListener(OVERLAY_SEND_MESSAGE_EVENT, onSend);
+
+    await expect(
+      harness.port.sendMessage({
+        type: "SIDE_PANEL_OPENED",
+        source: harness.port.source,
+        requestId: "request-2",
+        payload: { tabId: 1 },
+      }),
+    ).resolves.toEqual({ workspaceId: "e2e-workspace" });
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    window.removeEventListener(OVERLAY_SEND_MESSAGE_EVENT, onSend);
+    harness.dispose();
   });
 });

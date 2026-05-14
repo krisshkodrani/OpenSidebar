@@ -11,7 +11,7 @@
  * This test validates that the DOM_READY_PROBE correctly waits for both
  * DOM mutations AND network requests to settle before capturing snapshots.
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

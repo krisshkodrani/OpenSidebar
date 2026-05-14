@@ -8,7 +8,7 @@
  * Turn 2: Remove it, add Pegasus 41 instead
  * Turn 3: Checkout with coupon + standard shipping
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cart-swap.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cart-swap.test.ts
  */
 
 import {

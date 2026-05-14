@@ -1,7 +1,7 @@
 /**
  * E2E: Summarize — read-only comprehension of a static page.
  *
- * Run: npm run test:e2e
+ * Run: pnpm run test:e2e
  */
 
 import {

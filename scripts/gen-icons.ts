@@ -1,6 +1,6 @@
 /**
  * Generate "OS" PNG icons for the Chrome extension.
- * Usage: bun scripts/gen-icons.ts
+ * Usage: pnpm exec tsx scripts/gen-icons.ts
  */
 import sharp from "sharp";
 import { mkdirSync } from "fs";

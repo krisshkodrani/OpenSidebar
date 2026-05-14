@@ -267,7 +267,10 @@ import {
   type AgentLoopMoneyTableHost,
 } from "./loop-money-table";
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
-import { assessConsequentialActionApproval } from "./consequential-action-policy";
+import {
+  assessConsequentialActionApproval,
+  assessDraftOnlyCompletionViolation,
+} from "./consequential-action-policy";
 import {
   addParallelToolResultsToContext,
   handleParallelVerificationGate,
@@ -290,6 +293,7 @@ import {
   refreshPostToolSnapshot,
   type PostToolSnapshotRefreshHost,
 } from "./post-tool-snapshot-refresh";
+import { getIncompleteDoneSummaryReason } from "./summary-completeness";
 
 export function isDoneSummaryAskingClarification(summary: string): boolean {
   const text = summary.trim();
@@ -388,7 +392,9 @@ export function extractServiceNowFormMissingFieldLabels(
   toolResult: string,
 ): string[] {
   const labels = new Set<string>();
-  for (const match of toolResult.matchAll(/^\s*-\s*(.+?): field not found\b/gim)) {
+  for (const match of toolResult.matchAll(
+    /^\s*-\s*(.+?): field not found\b/gim,
+  )) {
     const label = match[1]?.replace(/\s+/g, " ").trim();
     if (label) labels.add(label);
   }
@@ -425,7 +431,9 @@ function isNegativeInspectHiddenResult(result: string): boolean {
   return /\bNo hidden elements found matching\b/i.test(result);
 }
 
-function inferServiceNowCreateRecordUrlFromListUrl(rawUrl: string): string | null {
+function inferServiceNowCreateRecordUrlFromListUrl(
+  rawUrl: string,
+): string | null {
   if (!rawUrl.trim()) return null;
   let url: URL;
   try {
@@ -565,6 +573,8 @@ export class AgentLoop {
 
   /** Current turn count — exposed via getCurrentTurn() */
   private turnCount = 0;
+  /** Tool names exposed to the model for the current LLM turn. */
+  private activeToolNamesForTurn: ToolName[] = [];
   /** Original user query that started this loop */
   private originalQuery = "";
   public readonly enabledSkillPackIds?: string[];
@@ -1542,6 +1552,36 @@ export class AgentLoop {
     return true;
   }
 
+  private rejectDoneForDraftOnlyCompletionViolation(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const rejection = assessDraftOnlyCompletionViolation({
+      taskText: this.getConsequentialActionTaskText(),
+      summary,
+      snapshot: this.context.getSnapshot(),
+    });
+    if (!rejection) return false;
+
+    this.log.warn("agent", "DONE rejected: draft-only final state violated", {
+      turn: this.turnCount,
+      reason: rejection,
+    });
+    this.traceRecorder?.recordEvent("done_rejected_draft_only_violation", {
+      turn: this.turnCount,
+      reason: rejection,
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: ${rejection}\n\n` +
+        "Do not report completion for a draft-only task after sending/posting. " +
+        "If the message is still editable, leave it as an unsent draft and verify that state before calling done().",
+    });
+    return true;
+  }
+
   private async rejectDoneBeforePlanValidation(
     toolCallId: string,
     summary: string,
@@ -1560,6 +1600,10 @@ export class AgentLoop {
     }
 
     if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
+      return true;
+    }
+
+    if (this.rejectDoneForDraftOnlyCompletionViolation(toolCallId, summary)) {
       return true;
     }
 
@@ -1996,6 +2040,10 @@ export class AgentLoop {
     summary: string,
     tabId: number,
   ): Promise<boolean> {
+    if (this.rejectDoneForIncompleteUserFacingSummary(toolCallId, summary)) {
+      return false;
+    }
+
     if (await this.rejectDoneBeforePlanValidation(toolCallId, summary, tabId)) {
       return false;
     }
@@ -2037,6 +2085,47 @@ export class AgentLoop {
     }
 
     this.acceptDoneToolCall(summary, toolCallId);
+    return true;
+  }
+
+  private rejectDoneForIncompleteUserFacingSummary(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const runningIdx = this.planSubtasks.findIndex(
+      (step) => step.status === "running",
+    );
+    const taskContext = [
+      this.originalQuery,
+      runningIdx >= 0 ? this.planSubtasks[runningIdx]?.description : undefined,
+      runningIdx >= 0 ? this.planSteps[runningIdx]?.successCriteria : undefined,
+    ]
+      .filter(
+        (part): part is string => typeof part === "string" && part.length > 0,
+      )
+      .join("\n");
+    const reason = getIncompleteDoneSummaryReason({ summary, taskContext });
+    if (!reason) return false;
+
+    this.doneRejections++;
+    this.log.warn("agent", "DONE rejected: incomplete summary", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      reason,
+      summaryTail: summary.slice(-120),
+    });
+    this.traceRecorder?.recordEvent("done_rejected_incomplete_summary", {
+      rejections: this.doneRejections,
+      reason,
+      summaryTail: summary.slice(-120),
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        `done() REJECTED: The summary appears cut off (${reason}).\n\n` +
+        "YOUR NEXT ACTION: call done() again with a complete, concise summary using complete sentences. Do not continue browsing unless page evidence is missing.",
+    });
     return true;
   }
 
@@ -2153,7 +2242,9 @@ export class AgentLoop {
     return true;
   }
 
-  private maybeInferServiceNowModuleNavigationEvidence(summary: string): boolean {
+  private maybeInferServiceNowModuleNavigationEvidence(
+    summary: string,
+  ): boolean {
     if (this.selectedSkillId !== "servicenow-module-navigation") return false;
     const request = extractServiceNowModuleRequest(this.originalQuery);
     if (!request) return false;
@@ -2853,7 +2944,7 @@ export class AgentLoop {
     return this.requiresConsequentialActionApproval(toolName, args);
   }
 
-  private getConsequentialActionTaskText(): string {
+  public getConsequentialActionTaskText(): string {
     return buildConsequentialActionTaskText({
       planStatus: this.context.getPlanStatusRaw(),
       planSubtasks: this.planSubtasks,
@@ -3614,6 +3705,10 @@ export class AgentLoop {
    */
   private applyToolProfile(tools: ToolDefinition[]): ToolDefinition[] {
     return applyToolProfile(this as unknown as AgentLoopSkillToolsHost, tools);
+  }
+
+  public getActiveToolNamesForTurn(): ToolName[] {
+    return [...this.activeToolNamesForTurn];
   }
 
   /**
@@ -5032,8 +5127,7 @@ export class AgentLoop {
       .toLowerCase();
     const missing = sorts.filter((sort) => {
       const field = sort.field.toLowerCase();
-      const shortDirection =
-        sort.direction === "ascending" ? "asc" : "desc";
+      const shortDirection = sort.direction === "ascending" ? "asc" : "desc";
       return !normalizedResult.includes(`${field} ${shortDirection}`);
     });
     if (missing.length > 0) return null;
@@ -5167,8 +5261,7 @@ export class AgentLoop {
         ?.trim() ?? "Query state recorded by apply_list_filter.";
     const conditionSummary = conditions
       .map((condition) => {
-        const value =
-          condition.value.length > 0 ? ` ${condition.value}` : "";
+        const value = condition.value.length > 0 ? ` ${condition.value}` : "";
         return `${condition.field} ${condition.operator}${value}`;
       })
       .join("; ");
@@ -5181,11 +5274,15 @@ export class AgentLoop {
       plan.currentIndex >= plan.subtasks.length
     ) {
       if (!this.isPureListFilterWorkflowRequest()) return null;
-      this.log.info("agent", "trusted list filter completed planless workflow", {
-        turn: this.turnCount,
-        mode: params.mode,
-        conditionCount: conditions.length,
-      });
+      this.log.info(
+        "agent",
+        "trusted list filter completed planless workflow",
+        {
+          turn: this.turnCount,
+          mode: params.mode,
+          conditionCount: conditions.length,
+        },
+      );
       this.traceRecorder?.recordEvent("trusted_list_filter_success", {
         fromStep: -1,
         toStep: 0,
@@ -5344,10 +5441,8 @@ export class AgentLoop {
       );
     if (!groundedInServiceNow) return false;
 
-    return (
-      !/\b(?:service catalog|catalog item|request item|cart|checkout|list filter|sort list|dashboard|chart)\b/i.test(
-        text,
-      )
+    return !/\b(?:service catalog|catalog item|request item|cart|checkout|list filter|sort list|dashboard|chart)\b/i.test(
+      text,
     );
   }
 
@@ -5455,9 +5550,7 @@ export class AgentLoop {
     this.statusHandler(AgentStatus.ACTING, `Running ${contract.name}...`);
     this.turnCount++;
     this.startServiceNowRecordControllerTraceTurn(fields.length);
-    const executeAtomicToolCall = async (
-      idPrefix: string,
-    ): Promise<string> => {
+    const executeAtomicToolCall = async (idPrefix: string): Promise<string> => {
       const toolCall: ToolCall = {
         id: `${idPrefix}_${crypto.randomUUID()}`,
         type: "function",
@@ -5673,7 +5766,9 @@ export class AgentLoop {
     if (!this.isLikelyServiceNowRecordFieldWorkflow()) return null;
     if (!this.hasTaskLevelServiceNowSubmitIntent()) return null;
 
-    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
+    const fields = extractFieldValuePairs(
+      this.getServiceNowRecordWorkflowText(),
+    );
     if (fields.length === 0) return null;
 
     for (const field of fields) {
@@ -5775,7 +5870,9 @@ export class AgentLoop {
       );
     if (!hasStrongMissingFieldAdmission) return null;
 
-    const fields = extractFieldValuePairs(this.getServiceNowRecordWorkflowText());
+    const fields = extractFieldValuePairs(
+      this.getServiceNowRecordWorkflowText(),
+    );
     const missing = fields.find((field) =>
       lower.includes(field.field.toLowerCase()),
     );
@@ -5925,7 +6022,8 @@ export class AgentLoop {
             tabId,
             args: fillArgs,
             label: "Configure ServiceNow form after module navigation",
-            eventName: "servicenow_record_controller_fill_after_navigation_started",
+            eventName:
+              "servicenow_record_controller_fill_after_navigation_started",
           });
           fillSignal = detectTrustedFormFillStepCompletion({
             toolName: ToolName.CONFIGURE_SERVICENOW_FORM,
@@ -5985,7 +6083,8 @@ export class AgentLoop {
                 fill = await this.executeServiceNowRecordControllerTool({
                   tabId,
                   args: fillArgs,
-                  label: "Configure ServiceNow form after opening create record",
+                  label:
+                    "Configure ServiceNow form after opening create record",
                   eventName:
                     "servicenow_record_controller_fill_after_create_navigation_started",
                 });
@@ -6202,10 +6301,12 @@ export class AgentLoop {
   }
 
   private isServiceNowSubmitRejected(toolResult: string): boolean {
-    return /\bSubmit diagnostics:\b/i.test(toolResult) ||
+    return (
+      /\bSubmit diagnostics:\b/i.test(toolResult) ||
       /\b(?:Invalid update|mandatory|required|cannot be blank|not submitted)\b/i.test(
         toolResult,
-      );
+      )
+    );
   }
 
   private isServiceNowSubmitStayedOnCreateForm(toolResult: string): boolean {
@@ -6509,7 +6610,10 @@ export class AgentLoop {
       .filter(Boolean)
       .join("\n");
     const requestNumber = pageText.match(/\bREQ\d+\b/i)?.[0]?.toUpperCase();
-    if (!requestNumber || !/\border status\b|\brequest number\b/i.test(pageText)) {
+    if (
+      !requestNumber ||
+      !/\border status\b|\brequest number\b/i.test(pageText)
+    ) {
       return null;
     }
 
@@ -6595,20 +6699,23 @@ export class AgentLoop {
     return [...fields];
   }
 
-  private catalogConfigurationEvidenceCoversRequest(toolResult: string): boolean {
-    const expectedFields = this.extractExpectedCatalogConfigurationFieldsFromQuery();
+  private catalogConfigurationEvidenceCoversRequest(
+    toolResult: string,
+  ): boolean {
+    const expectedFields =
+      this.extractExpectedCatalogConfigurationFieldsFromQuery();
     if (expectedFields.length === 0) return true;
     const normalize = (value: string) =>
-      value
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "");
+      value.toLowerCase().replace(/[^a-z0-9]+/g, "");
     const evidence = normalize(toolResult);
     return expectedFields.every((field) => evidence.includes(normalize(field)));
   }
 
   private getFreshTrustedCatalogOrderSubmission(): TrustedCatalogOrderSubmission | null {
     if (!this.trustedCatalogOrderSubmission) return null;
-    return this.turnCount - this.trustedCatalogOrderSubmission.submittedAtTurn <= 6
+    return this.turnCount -
+      this.trustedCatalogOrderSubmission.submittedAtTurn <=
+      6
       ? this.trustedCatalogOrderSubmission
       : null;
   }
@@ -6617,7 +6724,9 @@ export class AgentLoop {
     submission: TrustedCatalogOrderSubmission | null,
   ): boolean {
     if (!submission) return false;
-    if (this.extractExpectedCatalogConfigurationFieldsFromQuery().length === 0) {
+    if (
+      this.extractExpectedCatalogConfigurationFieldsFromQuery().length === 0
+    ) {
       return false;
     }
     const itemName = this.extractExpectedCatalogItemNameFromQuery();
@@ -7510,10 +7619,15 @@ export class AgentLoop {
         context: this.context,
         allTools,
         // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
-        selectTools: (definitions) =>
-          this.applySkillToolRanking(
+        selectTools: (definitions) => {
+          const selected = this.applySkillToolRanking(
             this.applySkillToolSuppression(this.applyToolProfile(definitions)),
-          ),
+          );
+          this.activeToolNamesForTurn = selected.map(
+            (definition) => definition.function.name,
+          );
+          return selected;
+        },
         llm: this.llm,
         perception: this.perception,
         log: this.log,

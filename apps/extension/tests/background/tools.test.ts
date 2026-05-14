@@ -69,6 +69,19 @@ describe("Tool Registration", () => {
     }
   });
 
+  test("registers JobAgent MCP tools without submit_application", () => {
+    const registeredNames = new Set(
+      toolRegistry.getDefinitions().map((d) => d.function.name),
+    );
+    expect(registeredNames.has(ToolName.LIST_APPLICATION_PACKAGES)).toBe(true);
+    expect(registeredNames.has(ToolName.GET_APPLICATION_PACKAGE)).toBe(true);
+    expect(registeredNames.has(ToolName.SUGGEST_FORM_ANSWERS)).toBe(true);
+    expect(registeredNames.has(ToolName.GET_CANDIDATE_PROFILE)).toBe(true);
+    expect(registeredNames.has(ToolName.ANSWER_CANDIDATE_QUESTION)).toBe(true);
+    expect(registeredNames.has(ToolName.RECORD_APPLICATION_STATUS)).toBe(true);
+    expect(registeredNames.has("submit_application" as ToolName)).toBe(false);
+  });
+
   test("all definitions have type=function", () => {
     const defs = toolRegistry.getDefinitions();
     for (const def of defs) {
@@ -1102,9 +1115,7 @@ describe("Tool Registration", () => {
     );
 
     expect(result).toContain("Answer candidate: 100");
-    expect(result).toContain(
-      "sys_kb_id=b0d93d962b227210de74f462fe91bf7a",
-    );
+    expect(result).toContain("sys_kb_id=b0d93d962b227210de74f462fe91bf7a");
   });
 
   test("open_servicenow_module resolves and opens a ServiceNow module", async () => {
@@ -1396,7 +1407,9 @@ describe("Tool Registration", () => {
 
     expect(chrome.tabs.update).toHaveBeenCalledWith(123, { url: targetUrl });
     expect(result).toContain("Winning path: reports_view_run_direct");
-    expect(result).toContain("Target: report_home.do?jvar_selected_tab=myReports");
+    expect(result).toContain(
+      "Target: report_home.do?jvar_selected_tab=myReports",
+    );
   });
 
   test("open_servicenow_module uses an already-open ServiceNow navigator module href", async () => {
@@ -1473,9 +1486,9 @@ describe("Tool Registration", () => {
   test("open_servicenow_module emits evidence when the requested module is already open", async () => {
     const currentUrl =
       "https://workarenapublic18.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do%3Fsysparm_userpref_module%3Dd20";
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new Error("should not query metadata"),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("should not query metadata"));
     (chrome.tabs as any).get = vi.fn(async () => ({
       id: 123,
       url: currentUrl,
@@ -2159,7 +2172,8 @@ describe("Tool Registration", () => {
       123,
     );
 
-    const query = "priority=2^category=hardware^state=7^assignment_group=group123";
+    const query =
+      "priority=2^category=hardware^state=7^assignment_group=group123";
     const target = `incident_list.do?sysparm_query=${encodeURIComponent(query)}&sysparm_first_row=1&sysparm_view=`;
     const targetUrl = `https://workarenapublic14.service-now.com/now/nav/ui/classic/params/target/${encodeURIComponent(target)}`;
 
@@ -2428,9 +2442,7 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect(result).toContain(
-      "sysparm_query=short_descriptionLIKE#SERIES-abc",
-    );
+    expect(result).toContain("sysparm_query=short_descriptionLIKE#SERIES-abc");
     expect(result).not.toContain("stateLIKE");
   });
 
@@ -2592,7 +2604,10 @@ describe("Tool Registration", () => {
           JSON.stringify({
             result: [
               {
-                sys_id: { value: "computer-cat", display_value: "computer-cat" },
+                sys_id: {
+                  value: "computer-cat",
+                  display_value: "computer-cat",
+                },
                 name: { value: "Computer", display_value: "Computer" },
               },
             ],
@@ -2883,14 +2898,12 @@ describe("Tool Registration", () => {
               </tbody>
             </table>
         `;
-    document
-      .querySelector("#action-select")
-      ?.addEventListener("change", () => {
-        const dialog = document.createElement("div");
-        dialog.setAttribute("role", "dialog");
-        dialog.innerHTML = `<button id="confirm-delete">Delete</button>`;
-        document.body.append(dialog);
-      });
+    document.querySelector("#action-select")?.addEventListener("change", () => {
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      dialog.innerHTML = `<button id="confirm-delete">Delete</button>`;
+      document.body.append(dialog);
+    });
     const confirmClicks: string[] = [];
     document.addEventListener("click", (event) => {
       const target = event.target as HTMLElement;
@@ -2930,8 +2943,9 @@ describe("Tool Registration", () => {
     );
     expect(checkboxes[0].checked).toBe(false);
     expect(checkboxes[1].checked).toBe(true);
-    expect((document.querySelector("#action-select") as HTMLSelectElement).value)
-      .toBe("delete");
+    expect(
+      (document.querySelector("#action-select") as HTMLSelectElement).value,
+    ).toBe("delete");
     expect(confirmClicks).toEqual(["delete"]);
     expect(result).toContain('Applied ServiceNow list action "Delete"');
     expect(result).toContain("Selected rows: INC0010002");
@@ -2997,8 +3011,9 @@ describe("Tool Registration", () => {
     );
     expect(checkboxes[0].checked).toBe(false);
     expect(checkboxes[1].checked).toBe(true);
-    expect((document.querySelector("#action-select") as HTMLSelectElement).value)
-      .toBe("duplicate");
+    expect(
+      (document.querySelector("#action-select") as HTMLSelectElement).value,
+    ).toBe("duplicate");
     expect(result).toContain(
       'Applied ServiceNow list action "Mark as Duplicate"',
     );
@@ -3028,19 +3043,17 @@ describe("Tool Registration", () => {
               </tr>
             </table>
         `;
-    document
-      .querySelector("#action-select")
-      ?.addEventListener("change", () => {
-        const dialog = document.createElement("div");
-        dialog.setAttribute("role", "dialog");
-        dialog.innerHTML = `
+    document.querySelector("#action-select")?.addEventListener("change", () => {
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      dialog.innerHTML = `
           <label for="sys_display.problem.duplicate_of">Duplicate of</label>
           <input id="problem.duplicate_of" name="problem.duplicate_of" type="hidden" />
           <input id="sys_display.problem.duplicate_of" name="sys_display.problem.duplicate_of" type="search" />
           <button id="confirm-duplicate">OK</button>
         `;
-        document.body.append(dialog);
-      });
+      document.body.append(dialog);
+    });
     const setValueCalls: any[] = [];
     (window as any).g_form = {
       setValue: vi.fn((field: string, sysId: string, display: string) => {
@@ -3049,16 +3062,17 @@ describe("Tool Registration", () => {
     };
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            result: [{ sys_id: "target-sys-id", number: "PRB0050163" }],
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              result: [{ sys_id: "target-sys-id", number: "PRB0050163" }],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
@@ -3215,9 +3229,9 @@ describe("Tool Registration", () => {
     expect(
       (document.getElementById("software") as HTMLTextAreaElement).value,
     ).toBe("Trello, Salesforce");
-    expect((document.getElementById("duration") as HTMLSelectElement).value).toBe(
-      "1_week",
-    );
+    expect(
+      (document.getElementById("duration") as HTMLSelectElement).value,
+    ).toBe("1_week");
     expect(orderButton.getAttribute("data-clicked")).toBe("true");
     expect(orderButton.getAttribute("data-submitted-quantity")).toBe("10");
     expect(result).toContain("Configured catalog item.");
@@ -3328,9 +3342,9 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect((document.getElementById("quantity") as HTMLInputElement).value).toBe(
-      "6",
-    );
+    expect(
+      (document.getElementById("quantity") as HTMLInputElement).value,
+    ).toBe("6");
     expect(orderButton.getAttribute("data-clicked")).toBeNull();
     expect(result).toContain("Catalog item configuration incomplete.");
     expect(result).toContain(
@@ -3503,26 +3517,23 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect((document.getElementById("IO:ssd_250") as HTMLInputElement).checked).toBe(
-      true,
-    );
     expect(
-      (document.getElementById("IO:ssd_checked_radio") as HTMLInputElement).value,
+      (document.getElementById("IO:ssd_250") as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(
+      (document.getElementById("IO:ssd_checked_radio") as HTMLInputElement)
+        .value,
     ).toBe("IO:ssd_250");
     expect(
       (document.getElementById("IO:os_windows8") as HTMLInputElement).checked,
     ).toBe(false);
     expect(
-      (
-        document.getElementById(
-          "IO:os_windows8_canonical",
-        ) as HTMLInputElement
-      ).checked,
-    ).toBe(
-      true,
-    );
+      (document.getElementById("IO:os_windows8_canonical") as HTMLInputElement)
+        .checked,
+    ).toBe(true);
     expect(
-      (document.getElementById("IO:os_checked_radio") as HTMLInputElement).value,
+      (document.getElementById("IO:os_checked_radio") as HTMLInputElement)
+        .value,
     ).toBe("IO:os_windows8_canonical");
     expect(values["IO:ssd"]).toBe("250");
     expect(values["IO:os"]).toBe("windows8");
@@ -3602,9 +3613,7 @@ describe("Tool Registration", () => {
       (document.getElementById("IO:photoshop") as HTMLInputElement).value,
     ).toBe("false");
     expect(
-      document
-        .getElementById("ni.IO:photoshop_label")!
-        .getAttribute("checked"),
+      document.getElementById("ni.IO:photoshop_label")!.getAttribute("checked"),
     ).toBe("false");
     expect(result).toContain("Adobe Acrobat=checked");
     expect(result).toContain("Adobe Photoshop=unchecked");
@@ -3759,9 +3768,9 @@ describe("Tool Registration", () => {
     );
 
     expect(chrome.scripting.executeScript).toHaveBeenCalledTimes(1);
-    expect((chrome.scripting.executeScript as any).mock.calls[0][0].target).toEqual(
-      { tabId: 123 },
-    );
+    expect(
+      (chrome.scripting.executeScript as any).mock.calls[0][0].target,
+    ).toEqual({ tabId: 123 });
     expect(result).toContain("Configured ServiceNow form.");
   });
 
@@ -3818,9 +3827,9 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect((chrome.scripting.executeScript as any).mock.calls[0][0].target).toEqual(
-      { tabId: 123, frameIds: [5] },
-    );
+    expect(
+      (chrome.scripting.executeScript as any).mock.calls[0][0].target,
+    ).toEqual({ tabId: 123, frameIds: [5] });
     expect(result).toContain("Configured ServiceNow form.");
   });
 
@@ -4123,7 +4132,9 @@ describe("Tool Registration", () => {
       );
 
       expect(submitButton.getAttribute("data-clicked")).toBe("true");
-      expect(execution.result).toContain("ServiceNow form configuration incomplete.");
+      expect(execution.result).toContain(
+        "ServiceNow form configuration incomplete.",
+      );
       expect(execution.result).toContain("Submit diagnostics:");
       expect(execution.result).toContain(
         "Missing mandatory fields: Vendor (vendor)",
@@ -5641,8 +5652,7 @@ describe("Tool Registration", () => {
   });
 
   test("configure_catalog_item continues from add-to-cart to checkout when requested", async () => {
-    let bodyText =
-      "Service Catalog\nStandard Laptop\nQuantity\nAdd to Cart";
+    let bodyText = "Service Catalog\nStandard Laptop\nQuantity\nAdd to Cart";
     let addClicked = false;
     let checkoutClicked = false;
     document.title = "Standard Laptop | Service Catalog";
@@ -5673,7 +5683,8 @@ describe("Tool Registration", () => {
       } as DOMRect);
     document.getElementById("add")!.addEventListener("click", () => {
       addClicked = true;
-      bodyText = "Shopping Cart\nStandard Laptop\nQuantity 10\nProceed to Checkout";
+      bodyText =
+        "Shopping Cart\nStandard Laptop\nQuantity 10\nProceed to Checkout";
       document.body.innerHTML = `<button id="checkout">Proceed to Checkout</button>`;
       document.getElementById("checkout")!.addEventListener("click", () => {
         checkoutClicked = true;
@@ -5786,9 +5797,9 @@ describe("Tool Registration", () => {
     );
 
     expect(addClicked).toBe(true);
-    expect((document.getElementById("cart_quantity") as HTMLInputElement).value).toBe(
-      "3",
-    );
+    expect(
+      (document.getElementById("cart_quantity") as HTMLInputElement).value,
+    ).toBe("3");
     expect(checkoutClicked).toBe(true);
     expect(result).toContain(
       "Quantity=3 (defer to cart/checkout; no item-page quantity control)",
@@ -6054,6 +6065,12 @@ describe("Tool Registration", () => {
     expect(escalate).toBeDefined();
     expect(escalate!.function.parameters.required).toContain("reason");
     expect(escalate!.function.parameters.properties.reason.type).toBe("string");
+    expect(escalate!.function.parameters.properties.reasonCode.type).toBe(
+      "string",
+    );
+    expect(
+      escalate!.function.parameters.properties.requiredCapability.enum,
+    ).toContain("fill_text_fields");
   });
 
   test("escalate tool description mentions planner model and puzzles/riddles", () => {

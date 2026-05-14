@@ -117,14 +117,14 @@ Strong success criteria should let the agent continue independently. Weak or amb
 
 ## Code Review Workflow
 
-When implementing non-trivial code changes, use this workflow:
+For non-trivial code changes, use this lightweight local review workflow:
 
 1. Implement the requested change.
 2. Run the relevant tests/typechecks/lints.
-3. Self-review the final diff against the reviewer focus list below.
-4. Apply accepted fixes from that self-review.
-5. Re-run the affected tests.
-6. Summarize what was implemented, what was reviewed, and the final test result.
+3. Inspect the final diff against the reviewer focus list below.
+4. Fix any concrete issue found during that review.
+5. Re-run the affected checks when the fix changes behavior.
+6. Summarize what changed and which checks passed.
 
 ### When to skip the review
 
@@ -134,7 +134,7 @@ Skip the review workflow for:
 - Changes under ~30 net lines of code with no structural or behavioral impact.
 - Purely mechanical changes (e.g., renaming a symbol consistently across the codebase with no logic changes).
 
-When in doubt, run the review.
+When in doubt, do a quick self-review before finalizing.
 
 ### Reviewer focus
 
@@ -149,13 +149,6 @@ Review especially for:
 - missing act-check-act verification
 - security/session/auth mistakes
 - unnecessary complexity
-
-### Agreement gate
-
-Do not merge or finalize until:
-
-- tests pass, and
-- any self-identified issues are addressed or explicitly rejected with reasoning.
 
 ## Product And E2E Design Rules
 
@@ -218,19 +211,19 @@ After a full staged E2E run is green, WorkArena work should proceed from a guard
 
 ### Which environment to use
 
-- **WorkArena tasks** (ServiceNow, Notion) → use the staged E2E runner (`npm run test:e2e:staged`). These target benchmark fidelity and regression detection.
+- **WorkArena tasks** (ServiceNow, Notion) → use the staged E2E runner (`pnpm run test:e2e:staged`). These target benchmark fidelity and regression detection.
 - **Generic site tasks** (arbitrary pages) → use the Playwright harness. These target product correctness on real-world pages outside benchmarks.
 - **CI / headless** → mockAdapter. These target unit-level behavior and should run fast without a browser.
 - When fixing an agent-core bug, prefer verification that covers both benchmark-style WorkArena behavior and a generic non-WorkArena case when practical.
 
 Useful commands:
 
-- `npm run build`
-- `npm run test`
-- `npm run test:e2e:easy`
-- `npm run test:e2e:medium`
-- `npm run test:e2e:hard`
-- `npm run test:e2e:staged`
+- `pnpm run build`
+- `pnpm run test`
+- `pnpm run test:e2e:easy`
+- `pnpm run test:e2e:medium`
+- `pnpm run test:e2e:hard`
+- `pnpm run test:e2e:staged`
 
 ## E2E Runtime Defaults
 

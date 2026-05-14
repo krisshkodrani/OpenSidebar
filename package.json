@@ -2,6 +2,7 @@
   "name": "opensidebar",
   "version": "0.9.1",
   "type": "module",
+  "packageManager": "pnpm@11.1.0",
   "description": "AI-powered browser agent that can see, click, and navigate the web",
   "repository": {
     "type": "git",
@@ -22,7 +23,7 @@
     "manifest-v3"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "workspaces": [
     "apps/backend",
@@ -34,9 +35,9 @@
   "scripts": {
     "dev": "nx run tools:dev-stack",
     "dist": "nx run extension:build",
-    "build": "npm run dist",
+    "build": "nx run extension:build",
     "test": "nx run-many -t test --projects=extension,backend",
-    "verify": "npm run ci:lint && npm run typecheck && npm run ci:test && npm run ci:build && npm run ci:dist",
+    "verify": "nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension,backend && nx run extension:build && node scripts/check-dist.js",
     "doctor": "tsx scripts/doctor.ts",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
@@ -51,13 +52,14 @@
     "ci:test": "nx run-many -t test --projects=extension,backend",
     "ci:build": "nx run extension:build",
     "ci:dist": "node scripts/check-dist.js",
-    "ci:local": "npm run verify",
-    "release:verify": "npm run verify",
+    "ci:local": "nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension,backend && nx run extension:build && node scripts/check-dist.js",
+    "release:verify": "nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension,backend && nx run extension:build && node scripts/check-dist.js",
     "fmt": "prettier --write apps/extension/src/ packages/",
     "fixtures": "nx run tools:fixtures",
     "fixtures:build": "nx run fixture-online-shop-pro:build",
     "backend:standalone": "nx run backend:serve-standalone",
     "test:backend": "nx run backend:test",
+    "logs": "nx run tools:local-server",
     "logs:tail": "nx run tools:logs-tail",
     "logs:errors": "nx run tools:logs-errors",
     "test:e2e": "nx run extension:test-e2e-staged",
@@ -66,6 +68,7 @@
     "test:e2e:medium": "nx run extension:test-e2e-medium",
     "test:e2e:hard": "nx run extension:test-e2e-hard",
     "test:e2e:smoke": "nx run extension:test-e2e-easy",
+    "test:e2e:video": "tsx scripts/run-e2e-video-review.ts",
     "test:e2e:interactions": "nx run extension:test-e2e-medium",
     "test:e2e:runtime": "nx run extension:test-e2e-hard",
     "workarena:demo": "tsx scripts/workarena-demo-server.ts",
@@ -93,7 +96,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@crxjs/vite-plugin": "^2.3.0",
     "@happy-dom/global-registrator": "^20.5.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/better-sqlite3": "^7.6.13",

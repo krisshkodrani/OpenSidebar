@@ -17,7 +17,7 @@ export default function ErrorBanner({
       {hint && (
         <div className="mt-2">
           Make sure the local server is running:{" "}
-          <code className="text-trace-accent-light">npm run logs</code>
+          <code className="text-trace-accent-light">pnpm run logs</code>
         </div>
       )}
       {onRetry && (

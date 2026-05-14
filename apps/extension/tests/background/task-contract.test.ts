@@ -495,6 +495,42 @@ describe("task contract helpers", () => {
     ).toBe(true);
   });
 
+  test("does not synthesize aggregate review from job application prose fields", () => {
+    const query = [
+      "Fill the application but dont send using these data",
+      "| Field | Copy This |",
+      "|---|---|",
+      "| Name | Kris Shkodrani |",
+      "| Earliest Start Date | 2026-06-01 |",
+      "",
+      "## Why Do You Care About Langfuse?",
+      "",
+      "I care about Langfuse because it makes LLM applications observable, debuggable, evaluable, and trustworthy in production.",
+      "Tracing, prompt management, evaluations, latency, cost, and user trust all matter.",
+    ].join("\n");
+
+    const contract = buildTaskContract(query);
+    expect(contract.exhaustiveScopeLabel).toBeUndefined();
+    expect(contract.requiresAggregateReport).toBe(false);
+
+    const repaired = repairPlanCoverage({
+      query,
+      steps: [
+        {
+          objective: "Fill the supplied application fields and stop before submit.",
+          successCriteria:
+            "Application fields contain the supplied values and Submit Application has not been clicked.",
+          dependencies: [],
+          assumptions: [],
+          toolProfile: "form_fill",
+        },
+      ],
+    });
+
+    expect(repaired).toHaveLength(1);
+    expect(repaired[0].objective).not.toMatch(/reviewed matter|best matches/i);
+  });
+
   test("synthesizes compact batched plan for bounded exhaustive detail review tasks", () => {
     const synthesized = synthesizeBatchedExhaustivePlan(
       "Please review all 10 job listings on this page, click into each one to read the full details, then come back to the listings page. After reviewing every job, tell me which ones are the best matches for my profile and why.",

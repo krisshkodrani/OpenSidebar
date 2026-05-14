@@ -33,7 +33,9 @@ function countToolCalls(traceFiles: string[], toolName: string): number {
       count +
       readTrace(filePath).reduce(
         (sum, turn) =>
-          sum + turn.toolCalls.filter((toolCall) => toolCall.name === toolName).length,
+          sum +
+          turn.toolCalls.filter((toolCall) => toolCall.name === toolName)
+            .length,
         0,
       ),
     0,
@@ -41,7 +43,10 @@ function countToolCalls(traceFiles: string[], toolName: string): number {
 }
 
 function countOpeningMutations(traceFiles: string[]): number {
-  return countToolCalls(traceFiles, "create_tab") + countToolCalls(traceFiles, "click_element");
+  return (
+    countToolCalls(traceFiles, "create_tab") +
+    countToolCalls(traceFiles, "click_element")
+  );
 }
 
 describe.skipIf(!h.apiKey)("E2E: Mutation Dedupe Recovery", () => {
@@ -68,11 +73,7 @@ describe.skipIf(!h.apiKey)("E2E: Mutation Dedupe Recovery", () => {
       "Open the TechDirect store link in a new tab and stop once the store page is open.";
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
-    await waitForTabCount(
-      h.ctx.serviceWorker,
-      2,
-      120_000,
-    );
+    await waitForTabCount(h.ctx.serviceWorker, 2, 120_000, workspaceId);
 
     await restartExtensionAndMonitor(h.ctx);
 
@@ -93,7 +94,10 @@ describe.skipIf(!h.apiKey)("E2E: Mutation Dedupe Recovery", () => {
     const finalUserTabUrls = await getUserTabUrls(h.ctx.serviceWorker);
     expect(outcome.ok, outcome.reason).toBe(true);
     expect(finalUserTabUrls.length).toBe(2);
-    expect(finalUserTabUrls.filter((url) => url.includes("?store=techdirect")).length).toBe(1);
+    expect(
+      finalUserTabUrls.filter((url) => url.includes("?store=techdirect"))
+        .length,
+    ).toBe(1);
     expect(countOpeningMutations(traceFiles)).toBe(1);
 
     await assertNoGhostSession(h.ctx.serviceWorker, 2_000, workspaceId);

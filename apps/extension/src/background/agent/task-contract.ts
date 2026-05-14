@@ -448,6 +448,7 @@ function extractExhaustiveScope(text: string): {
     "of them",
     "of those",
     "of these",
+    "matter",
   ]);
   const patterns = [
     /\b(?:review|inspect|check|open|browse|read|visit|compare|analyze)\s+(?:all|every|each(?:\s+of)?)\s+(?:(\d{1,3})\s+)?([a-z][a-z0-9\s-]{2,40}?)(?=\s+(?:on|in|for|from|with|then|and)\b|[,.]|$)/i,
@@ -494,7 +495,7 @@ function countWord(value: number): string | null {
 }
 
 function extractAggregateReportIntent(text: string): boolean {
-  return /\b(report|tell me|summari[sz]e|recommend|best match|best matches|rank|compare|which .* strongest|which .* best|give .* answer|why)\b/i.test(
+  return /\b(report|tell me|summari[sz]e|recommend|best match|best matches|rank|compare|which .* strongest|which .* best|give .* answer)\b/i.test(
     text,
   );
 }

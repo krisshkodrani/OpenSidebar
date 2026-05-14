@@ -100,10 +100,14 @@ async function main(): Promise<void> {
           ],
           { stdio: "inherit" },
         )
-      : spawnWithExited("npx", ["tsx", "scripts/log-server.ts"], {
-          stdio: "inherit",
-          shell: true,
-        });
+      : spawnWithExited(
+          process.execPath,
+          [
+            path.resolve("node_modules/tsx/dist/cli.mjs"),
+            "scripts/log-server.ts",
+          ],
+          { stdio: "inherit" },
+        );
     if (await waitForServer(LOCAL_SERVER_HEALTH_URL)) {
       console.log("[dev:stack] Local server healthy.");
     } else {
@@ -120,10 +124,11 @@ async function main(): Promise<void> {
         [path.resolve("node_modules/vite/bin/vite.js")],
         { stdio: "inherit" },
       )
-    : spawnWithExited("npx", ["vite"], {
-        stdio: "inherit",
-        shell: true,
-      });
+    : spawnWithExited(
+        process.execPath,
+        [path.resolve("node_modules/vite/bin/vite.js")],
+        { stdio: "inherit" },
+      );
 
   console.log(
     `[dev:stack] Trace viewer: http://127.0.0.1:${LOCAL_SERVER_PORT}/viewer`,

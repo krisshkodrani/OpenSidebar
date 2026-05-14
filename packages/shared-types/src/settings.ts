@@ -6,22 +6,16 @@ import type { AgentLoopState } from "./agent";
 
 // --- Configuration Types ---
 
-export type TTSProviderMode = "auto" | "groq" | "openai" | "gemini";
+export type VoiceMode = "off" | "openai_realtime";
 export type PerceptionRuntimeMode = "auto" | "unified_vl" | "structured";
 export type LaneTopologyMode = "simple" | "standard" | "full";
 export const DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE = 25_000;
+export const DEFAULT_JOBAGENT_MCP_URL = "http://127.0.0.1:3727/mcp";
 export const DEFAULT_ENABLED_SKILL_PACK_IDS = [
   "communication-workflows",
   "procurement-workflows",
   "servicenow-platform",
 ];
-
-export type TTSStylePreset =
-  | "neutral"
-  | "friendly"
-  | "calm"
-  | "excited"
-  | "serious";
 
 export interface UserSettings {
   openRouterApiKey: string;
@@ -105,18 +99,14 @@ export interface UserSettings {
   /** @deprecated Use `perceptionMode` instead. */
   /** Legacy unified executor toggle. Ignored during settings migration. */
   useVLExecutor?: boolean;
-  /** Enable voice input via microphone (STT) */
-  enableVoiceInput?: boolean;
-  /** Enable voice output on assistant messages (TTS) */
-  enableVoiceOutput?: boolean;
-  /** Preferred TTS provider (auto picks Groq first, then OpenAI, then Gemini) */
-  ttsProvider?: TTSProviderMode;
-  /** TTS voice selection for the active provider */
-  ttsVoice?: string;
-  /** Expressive speech preset for Gemini TTS */
-  ttsStylePreset?: TTSStylePreset;
-  /** Automatically speak the final assistant response when the agent finishes */
-  autoVoiceResponse?: boolean;
+  /** Voice interaction layer. OpenAI Realtime uses the local backend broker. */
+  voiceMode?: VoiceMode;
+  /** Enable the local JobAgent MCP HTTP integration. */
+  jobAgentMcpEnabled?: boolean;
+  /** Local JobAgent MCP HTTP endpoint. */
+  jobAgentMcpUrl?: string;
+  /** Bearer token for the local JobAgent MCP HTTP endpoint. Stored locally only. */
+  jobAgentMcpToken?: string;
 }
 
 // --- Workspace / Tab Group Types ---

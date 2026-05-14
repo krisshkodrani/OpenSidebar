@@ -9,6 +9,7 @@ export * from "./ApprovalOverlay";
 export * from "./EscalationOverlay";
 export * from "./PlanStepIcon";
 export * from "./PlanStrip";
+export * from "./TaskStatusRegion";
 
 export * from "./SavedPromptsDrawer";
 export * from "./WebsiteSkillsDrawer";

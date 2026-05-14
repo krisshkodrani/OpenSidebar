@@ -226,6 +226,87 @@ export function assessInlineEditTextEntryRetarget(params: {
   };
 }
 
+function cleanReplacementValue(value: string): string {
+  return value
+    .replace(/^[\s"'`]+|[\s"'`]+$/g, "")
+    .replace(/[.,;:]+$/g, "")
+    .trim();
+}
+
+function extractInlineEditReplacementValue(objectiveText: string): string | null {
+  const objective = objectiveText.trim();
+  if (!objective) return null;
+
+  const patterns = [
+    /\b(?:change|update|edit|set|replace|rename)\b[^.,;\n]{0,140}\bto\b\s+["'`]?([^"'`.,;\n]{1,80})/i,
+    /\b(?:value|cell|field|name|filename|file name)\b[^.,;\n]{0,100}\bto\b\s+["'`]?([^"'`.,;\n]{1,80})/i,
+    /\b(?:type|enter|input)\s+["'`]?([^"'`.,;\n]{1,80})/i,
+    /\b(?:with|as)\b\s+["'`]?([^"'`.,;\n]{1,80})\s*$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = objective.match(pattern);
+    const value = match?.[1] ? cleanReplacementValue(match[1]) : "";
+    if (value) return value;
+  }
+
+  return null;
+}
+
+export function assessInlineEditNavigationGuard(params: {
+  activeToolProfile: string | null | undefined;
+  selectedSkillId?: string | null | undefined;
+  snapshot: DomSnapshot | null | undefined;
+  objectiveText: string;
+  key: string;
+}): string | null {
+  if (
+    params.activeToolProfile !== "edit_surface" &&
+    params.selectedSkillId !== "inline-edit-surface"
+  ) {
+    return null;
+  }
+
+  const guardedKeys = new Set([
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "Tab",
+    "Enter",
+    "Escape",
+  ]);
+  if (!guardedKeys.has(params.key)) return null;
+
+  const replacementValue = extractInlineEditReplacementValue(
+    params.objectiveText,
+  );
+  if (!replacementValue) return null;
+
+  const visibleInputs =
+    params.snapshot?.elements?.filter(
+      (element) =>
+        element.isVisible !== false && isTextLikeInputElement(element),
+    ) ?? [];
+  if (visibleInputs.length === 0) return null;
+
+  const inlineInput = visibleInputs[0];
+  const liveDisplayValue = String(
+    inlineInput.attributes.value || inlineInput.text || "",
+  ).trim();
+  if (
+    elementLiveValue(inlineInput) === normalizeGuardText(replacementValue)
+  ) {
+    return null;
+  }
+
+  return (
+    `Inline editor [${inlineInput.tag}] is open with "${liveDisplayValue || "(empty)"}", ` +
+    `but this edit-surface step needs "${replacementValue}". ` +
+    `Use type_text({"id":${inlineInput.tag},"text":"${replacementValue}"}) before pressing ${params.key}.`
+  );
+}
+
 function isAutocompleteLikeElement(
   element: DomSnapshot["elements"][number] | null | undefined,
 ): boolean {

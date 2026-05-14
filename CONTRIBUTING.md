@@ -6,44 +6,44 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 
 1. Fork the repository.
 2. Clone your fork.
-3. Run `npm install`.
+3. Run `pnpm install`.
 4. Copy `.env.example` to `.env` if you want local provider-backed runs.
-5. Run `npm run dev`.
+5. Run `pnpm run dev`.
 
-`npm run dev` starts the extension build, the unified local server, and the trace viewer.
+`pnpm run dev` starts the extension build, the unified local server, and the trace viewer.
 
 ## Command Reference
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Extension dev stack + local backend/logs + trace viewer |
-| `npm run build` | Production build |
-| `npm test` | Extension unit and integration suite |
-| `npm run test:backend` | Backend Vitest suite |
-| `npm run lint` | ESLint for extension, backend, packages, and scripts |
-| `npm run fmt` | Prettier for extension source and packages |
-| `npm run logs` | Start unified local server + trace viewer |
-| `npm run logs:tail` | Tail recent structured logs |
-| `npm run logs:errors` | Show error-level logs |
-| `npm run traces` | Trace query CLI |
-| `npm run fixtures` | Serve local E2E/demo fixtures |
-| `npm run test:e2e` | Build + real-browser E2E tests |
-| `npm run release:verify` | CI-equivalent lint, tests, and build |
+| `pnpm run dev` | Extension dev stack + local backend/logs + trace viewer |
+| `pnpm run build` | Production build |
+| `pnpm test` | Extension unit and integration suite |
+| `pnpm run test:backend` | Backend Vitest suite |
+| `pnpm run lint` | ESLint for extension, backend, packages, and scripts |
+| `pnpm run fmt` | Prettier for extension source and packages |
+| `pnpm run logs` | Start unified local server + trace viewer |
+| `pnpm run logs:tail` | Tail recent structured logs |
+| `pnpm run logs:errors` | Show error-level logs |
+| `pnpm run traces` | Trace query CLI |
+| `pnpm run fixtures` | Serve local E2E/demo fixtures |
+| `pnpm run test:e2e` | Build + real-browser E2E tests |
+| `pnpm run release:verify` | CI-equivalent lint, tests, and build |
 
 ## Testing
 
 Use this as the normal validation loop:
 
 ```bash
-npm run ci:lint
-npm run ci:test
-npm run ci:build
+pnpm run ci:lint
+pnpm run ci:test
+pnpm run ci:build
 ```
 
 Run E2E only when you need browser-level validation:
 
 ```bash
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 ## Observability
@@ -57,10 +57,10 @@ OpenSidebar keeps the trace/logging workflow:
 Useful commands:
 
 ```bash
-npm run logs
-npm run logs:tail
-npm run logs:errors
-npm run traces -- list
+pnpm run logs
+pnpm run logs:tail
+pnpm run logs:errors
+pnpm run traces -- list
 ```
 
 ## Architecture

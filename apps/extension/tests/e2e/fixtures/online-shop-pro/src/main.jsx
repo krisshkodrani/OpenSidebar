@@ -36,12 +36,14 @@ import EmailCompose from "./routes/email-compose";
 import SupportTicket from "./routes/support-ticket";
 import JobBoard from "./routes/job-board";
 import JobApplication from "./routes/job-application";
+import AshbyJobApplication from "./routes/ashby-job-application";
 import ExperienceApplication from "./routes/experience-application";
 import VendorOnboarding from "./routes/vendor-onboarding";
 import PartnerRegistration from "./routes/partner-registration";
 import WorkspaceChoice from "./routes/workspace-choice";
 import SessionStateProbe from "./routes/session-state";
 import VisualCanvas from "./routes/visual-canvas";
+import MemoryLab from "./routes/memory-lab";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -78,12 +80,14 @@ const routes = [
   { path: "/support-ticket", label: "Ticket", title: "TICKET-4271 — CSV Export Timeout", component: SupportTicket },
   { path: "/job-board", label: "Jobs", title: "TechJobs Board", component: JobBoard },
   { path: "/job-application", label: "Apply", title: "Frontend Engineer Application", component: JobApplication },
+  { path: "/ashby-job-application", label: "Ashby", title: "Senior Product Engineer @ Langfuse | Ashby", component: AshbyJobApplication },
   { path: "/experience-application", label: "Experience", title: "Work Experience Application", component: ExperienceApplication },
   { path: "/vendor-onboarding", label: "Vendor", title: "Vendor Access Request", component: VendorOnboarding },
   { path: "/partner-registration", label: "Partner", title: "Partner Registration", component: PartnerRegistration },
   { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
   { path: "/session-state", label: "Session", title: "Session State Probe", component: SessionStateProbe },
   { path: "/visual-canvas", label: "Canvas", title: "Visual Canvas Report", component: VisualCanvas },
+  { path: "/memory-lab", label: "Memory", title: "Memory Lab Dashboard", component: MemoryLab },
 ];
 
 function Layout({ children, currentPath }) {

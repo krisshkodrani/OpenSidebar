@@ -121,7 +121,7 @@ async function readOverlayBundlePath(): Promise<string> {
     manifestRaw = await readFile(DIST_MANIFEST_PATH, "utf8");
   } catch {
     throw new Error(
-      `Missing built extension manifest at ${DIST_MANIFEST_PATH}. Run npm run build before the overlay harness smoke.`,
+      `Missing built extension manifest at ${DIST_MANIFEST_PATH}. Run pnpm run build before the overlay harness smoke.`,
     );
   }
 
@@ -132,7 +132,7 @@ async function readOverlayBundlePath(): Promise<string> {
   const overlayEntry = manifest[OVERLAY_ENTRY];
   if (!overlayEntry?.file) {
     throw new Error(
-      `Built manifest does not contain ${OVERLAY_ENTRY}. Run npm run build and verify the overlay-harness Rollup input.`,
+      `Built manifest does not contain ${OVERLAY_ENTRY}. Run pnpm run build and verify the overlay-harness Rollup input.`,
     );
   }
   return overlayEntry.file;

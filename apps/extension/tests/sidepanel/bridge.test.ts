@@ -112,6 +112,54 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().agentStatus).toBe(AgentStatus.IDLE);
     });
 
+    test("USER_CHAT_ACCEPTED renders externally-started user chat", () => {
+        setupBridge();
+        send("USER_CHAT_ACCEPTED", {
+            text: "Complete the Ashby application",
+            tabId: 123,
+            workspaceId: "ws-1",
+            messageId: "u1",
+            timestamp: 1000,
+        });
+
+        const state = useStore.getState();
+        expect(state.messages).toEqual([
+            {
+                id: "u1",
+                role: "user",
+                content: "Complete the Ashby application",
+                timestamp: 1000,
+                toolCalls: [],
+                isStreaming: false,
+            },
+        ]);
+        expect(state.isAgentRunning).toBe(true);
+        expect(state.agentStatus).toBe(AgentStatus.THINKING);
+        expect(state.isPlanning).toBe(true);
+    });
+
+    test("USER_CHAT_ACCEPTED dedupes locally-sent sidepanel chat", () => {
+        useStore.getState().addMessage({
+            id: "u1",
+            role: "user",
+            content: "Summarize this page",
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: false,
+        });
+
+        setupBridge();
+        send("USER_CHAT_ACCEPTED", {
+            text: "Summarize this page",
+            tabId: 123,
+            workspaceId: "ws-1",
+            messageId: "u1",
+            timestamp: 1000,
+        });
+
+        expect(useStore.getState().messages).toHaveLength(1);
+    });
+
     test("AGENT_STATUS updates status and running state", () => {
         setupBridge();
         send("AGENT_STATUS", { status: AgentStatus.THINKING, detail: "Analyzing..." });
@@ -325,6 +373,48 @@ describe("Bridge Message Routing", () => {
         expect(useStore.getState().messages[0].isStreaming).toBe(false);
     });
 
+    test("TASK_COMPLETION preserves a fuller streamed final answer", () => {
+        const fullSummary =
+            "Wikipedia Homepage Summary\n\n" +
+            "Overview: The Wikipedia homepage serves as the central portal for accessing Wikipedia in multiple languages and discovering related Wikimedia projects.\n\n" +
+            "Key Sections\n\n" +
+            "Header & Search: The page includes a central search input and language selector.\n\n" +
+            "Language Options: The homepage prominently displays links to the top 10 Wikipedia language editions and keeps the answer complete.";
+        const truncatedSummary =
+            "Wikipedia Homepage Summary\n\n" +
+            "Overview: The Wikipedia homepage serves as the central portal for accessing Wikipedia in multiple languages and discovering related Wikimedia projects.\n\n" +
+            "Key Sections\n\n" +
+            "Header & Search: The page includes a central search input and language selector.\n\n" +
+            "Language Options: The homepage prominently displays links to the top 10 Wikipedia language";
+
+        useStore.getState().addMessage({
+            id: "a1",
+            role: "assistant",
+            content: fullSummary,
+            timestamp: 1000,
+            toolCalls: [],
+            isStreaming: true,
+        });
+
+        setupBridge();
+        const payload: TaskCompletionMessage["payload"] = {
+            taskId: "t1",
+            status: "completed",
+            summary: truncatedSummary,
+            totalTurnsUsed: 2,
+            totalTimeMs: 1000,
+            subtaskResults: [],
+            urlHistory: [],
+        };
+        send("TASK_COMPLETION", payload);
+
+        const state = useStore.getState();
+        expect(state.taskCompletion?.summary).toBe(fullSummary);
+        expect(state.messages[0].content).toBe(fullSummary);
+        expect(state.messages[0].completionData?.summary).toBe(fullSummary);
+        expect(state.messages[0].isStreaming).toBe(false);
+    });
+
     test("TASK_COMPLETION does not append duplicate completion cards after reconnect replay", () => {
         const payload: TaskCompletionMessage["payload"] = {
             taskId: "t1",
@@ -365,6 +455,99 @@ describe("Bridge Message Routing", () => {
             .messages.filter((message) => message.completionData?.taskId === "t1");
         expect(completionMessages).toHaveLength(1);
         expect(useStore.getState().messages).toHaveLength(1);
+    });
+
+    test("ignores stale active updates after terminal completion", () => {
+        const payload: TaskCompletionMessage["payload"] = {
+            taskId: "t1",
+            status: "completed",
+            summary: "Done",
+            totalTurnsUsed: 10,
+            subtaskResults: [],
+        };
+        useStore.setState({
+            messages: [
+                {
+                    id: "a1",
+                    role: "assistant",
+                    content: "Done",
+                    timestamp: 1000,
+                    toolCalls: [],
+                    isStreaming: false,
+                    completionData: payload,
+                },
+            ],
+            taskCompletion: payload,
+            isAgentRunning: false,
+            agentStatus: AgentStatus.IDLE,
+            taskProgress: null,
+            turnProgress: null,
+            stagnationState: null,
+        });
+
+        setupBridge();
+        send("AGENT_STATUS", { status: AgentStatus.ACTING, detail: "Verifying..." });
+        send("TASK_PROGRESS", {
+            taskId: "t1",
+            subtasks: [{ description: "Old step", status: "running" }],
+            currentIndex: 0,
+            totalTurnsUsed: 10,
+        });
+        send("AGENT_TURN", { turn: 11, maxTurns: 30, provider: "test" });
+        send("AGENT_STAGNATION", {
+            signal: "nudge",
+            stagnantTurns: 3,
+            url: "https://example.com",
+        });
+
+        const state = useStore.getState();
+        expect(state.isAgentRunning).toBe(false);
+        expect(state.agentStatus).toBe(AgentStatus.IDLE);
+        expect(state.taskCompletion).toEqual(payload);
+        expect(state.taskProgress).toBeNull();
+        expect(state.turnProgress).toBeNull();
+        expect(state.stagnationState).toBeNull();
+    });
+
+    test("allows active status after a newer user message starts another run", () => {
+        const payload: TaskCompletionMessage["payload"] = {
+            taskId: "t1",
+            status: "completed",
+            summary: "Done",
+            totalTurnsUsed: 10,
+            subtaskResults: [],
+        };
+        useStore.setState({
+            messages: [
+                {
+                    id: "a1",
+                    role: "assistant",
+                    content: "Done",
+                    timestamp: 1000,
+                    toolCalls: [],
+                    isStreaming: false,
+                    completionData: payload,
+                },
+                {
+                    id: "u2",
+                    role: "user",
+                    content: "Run another task",
+                    timestamp: 2000,
+                    toolCalls: [],
+                    isStreaming: false,
+                },
+            ],
+            taskCompletion: payload,
+            isAgentRunning: false,
+            agentStatus: AgentStatus.IDLE,
+        });
+
+        setupBridge();
+        send("AGENT_STATUS", { status: AgentStatus.THINKING, detail: "Planning..." });
+
+        expect(useStore.getState().isAgentRunning).toBe(true);
+        expect(useStore.getState().agentStatus).toBe(AgentStatus.THINKING);
+        expect(useStore.getState().taskCompletion).toBeNull();
     });
 
     test("STREAM_CHUNK delta appends to streaming message", () => {

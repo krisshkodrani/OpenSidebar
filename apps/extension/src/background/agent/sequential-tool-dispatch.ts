@@ -9,6 +9,7 @@ import {
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
 } from "./catalog-order-policy";
+import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -80,6 +81,7 @@ import { mergeGenericSequentialToolState } from "./sequential-tool-state";
 import { formatStepLabel } from "./step-labels";
 import {
   assessAutocompleteTextRewrite,
+  assessInlineEditNavigationGuard,
   assessInlineEditTextEntryRetarget,
   assessTextEntryClickGuard,
   validateTextEntryTarget,
@@ -95,6 +97,7 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     forceApproval: boolean,
   ): Promise<boolean>;
   getActiveToolProfileForStep(stepIndex: number): string | null | undefined;
+  getConsequentialActionTaskText(): string;
   getPendingInlineEditVerificationBlock(
     toolName: ToolName,
     currentStepIndex: number,
@@ -709,6 +712,34 @@ export async function executeSequentialToolCalls(
 
     const planStatus = this.context.getPlanStatusRaw();
     const currentStepIndex = planStatus?.currentIndex ?? -1;
+    if (toolName === ToolName.PRESS_KEY && typeof args.key === "string") {
+      const activeObjective =
+        planStatus?.subtasks[currentStepIndex]?.description ??
+        this.originalQuery;
+      const inlineNavigationBlock = assessInlineEditNavigationGuard({
+        activeToolProfile: this.getActiveToolProfileForStep(currentStepIndex),
+        selectedSkillId: this.selectedSkillId,
+        snapshot: this.context.getSnapshot(),
+        objectiveText: activeObjective,
+        key: args.key,
+      });
+      if (inlineNavigationBlock) {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: inlineNavigationBlock,
+        });
+        this.log.warn("agent", "Inline edit navigation blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          key: args.key,
+          step: currentStepIndex,
+          mode: "sequential",
+        });
+        continue;
+      }
+    }
+
     const inlineVerificationBlock = this.getPendingInlineEditVerificationBlock(
       toolName,
       currentStepIndex,
@@ -895,6 +926,34 @@ export async function executeSequentialToolCalls(
       const activeObjective =
         planStatus?.subtasks[planStatus.currentIndex]?.description ??
         this.originalQuery;
+      const consequentialFinalActionBlock = assessConsequentialFinalActionBlock(
+        {
+          toolName,
+          args,
+          taskText: this.getConsequentialActionTaskText(),
+          actionLabel: formatStepLabel(toolName, args, this.elementResolver),
+        },
+      );
+      if (consequentialFinalActionBlock) {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: consequentialFinalActionBlock,
+        });
+        this.log.warn("agent", "Consequential final action blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          mode: "sequential",
+        });
+        this.traceRecorder?.recordEvent("consequential_final_action_blocked", {
+          turn: this.turnCount,
+          tool: toolName,
+          id: args.id,
+          mode: "sequential",
+        });
+        continue;
+      }
       const textEntryClickGuard = assessTextEntryClickGuard({
         objectiveText: activeObjective,
         element: target,

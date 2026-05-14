@@ -3,7 +3,11 @@ import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
 import { tokenizeStepText } from "../agent/loop-helpers";
-import { EvidenceEvent, EvidenceEventType, isTrustedEvidence } from "../../types";
+import {
+  EvidenceEvent,
+  EvidenceEventType,
+  isTrustedEvidence,
+} from "../../types";
 
 export interface NodeVerificationInput {
   taskQuery: string;
@@ -173,9 +177,7 @@ function hasGoalTokenSupport(
   const goalTokens = [
     ...tokenizeStepText(objective || ""),
     ...tokenizeStepText(successCriteria || ""),
-  ].filter(
-    (token) => token.length >= 4 && !GOAL_TOKEN_STOPWORDS.has(token),
-  );
+  ].filter((token) => token.length >= 4 && !GOAL_TOKEN_STOPWORDS.has(token));
 
   if (goalTokens.length === 0) return true;
   return goalTokens.some((token) => outputTokens.has(token));
@@ -216,6 +218,45 @@ function hasExplicitCompletionEvidence(text: string): boolean {
   return EXPLICIT_COMPLETION_MARKERS.some((pattern) => pattern.test(text));
 }
 
+function hasSupersedingFinalStateEvidence(
+  input: ProgrammaticVerificationInput,
+): boolean {
+  const text = input.output.trim();
+  if (!text) return false;
+  if (hasNegativeCompletionEvidence(text)) return false;
+
+  const lower = text.toLowerCase();
+  if (
+    /\b(?:final|success|confirmation|dashboard|welcome|code)\b[\s\S]{0,80}\b(?:not|is not|isn't|no longer)\s+(?:visible|present|available|shown|there|displayed|reached)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  const previousControlGone =
+    /\b(?:previous|old|prior|original|source|trigger|initial)?\s*(?:button|control|link|element|step|page)?\b[\s\S]{0,100}\b(?:no longer|not|is not|isn't|missing|absent|gone|removed)\s+(?:visible|present|available|shown|there|displayed)\b/i.test(
+      text,
+    ) ||
+    /\b(?:no longer|not|is not|isn't|missing|absent|gone|removed)\s+(?:visible|present|available|shown|there|displayed)\b[\s\S]{0,100}\b(?:button|control|link|element|step|page)\b/i.test(
+      text,
+    );
+  const replacementStateVisible =
+    /\b(?:now|new|revealed|appears?|shows?|displayed|present|landed|reached|advanced|transitioned|changed)\b[\s\S]{0,180}\b(?:final|next|success|confirmation|dashboard|welcome|code|input|field|form|screen|state|page)\b/i.test(
+      text,
+    ) ||
+    /\b(?:final|next|success|confirmation|dashboard|welcome|code|input|field|form|screen|state|page)\b[\s\S]{0,180}\b(?:now|new|revealed|appears?|visible|shows?|displayed|present|reached)\b/i.test(
+      text,
+    );
+
+  if (!previousControlGone || !replacementStateVisible) return false;
+  return hasGoalTokenSupport(
+    lower,
+    input.objective || "",
+    input.successCriteria,
+    input.evidence,
+  );
+}
+
 function isClarificationNeededOutcome(text: string): boolean {
   const mentionsChoiceKind =
     /\b(?:workspace|account|project|environment|tenant|record|option|item|choice)\b/i.test(
@@ -234,9 +275,7 @@ function isClarificationNeededOutcome(text: string): boolean {
     );
 
   return (
-    mentionsChoiceKind &&
-    asksForUserClarification &&
-    identifiesMissingChoice
+    mentionsChoiceKind && asksForUserClarification && identifiesMissingChoice
   );
 }
 
@@ -320,6 +359,15 @@ export function programmaticVerify(
       decision: "accept",
       reason: `Required typed evidence is present: ${input.requiredEvidenceTypes?.join(", ")}.`,
       confidence: 0.95,
+    };
+  }
+
+  if (hasSupersedingFinalStateEvidence(input)) {
+    return {
+      decision: "accept",
+      reason:
+        "Output cites a superseding final/replacement state; the prior trigger control no longer needs to remain visible.",
+      confidence: 0.82,
     };
   }
 
@@ -412,10 +460,15 @@ export function programmaticVerify(
   }
 
   // Success keywords + explicit completion details in the summary → accept
-  if (hasSuccessMarker && hasGoalSupport && hasExplicitCompletionEvidence(input.output)) {
+  if (
+    hasSuccessMarker &&
+    hasGoalSupport &&
+    hasExplicitCompletionEvidence(input.output)
+  ) {
     return {
       decision: "accept",
-      reason: "Output contains explicit completion evidence aligned with the success criteria.",
+      reason:
+        "Output contains explicit completion evidence aligned with the success criteria.",
       confidence: 0.8,
     };
   }

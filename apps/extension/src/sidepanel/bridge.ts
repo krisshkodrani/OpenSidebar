@@ -1,10 +1,60 @@
 ﻿import { AgentStatus, RuntimeMessage, MessageSource } from "../types";
 import { logger } from "../utils";
 import { useStore } from "./store";
-import { uiRuntime } from "./runtime";
+import { getE2EPanelConfig, uiRuntime } from "./runtime";
 import type { UiRuntimeKeepalivePort } from "./runtime";
 
 type StoreApi = typeof useStore;
+type SidePanelState = ReturnType<StoreApi["getState"]>;
+type UserChatAcceptedPayload = Extract<
+  RuntimeMessage,
+  { type: "USER_CHAT_ACCEPTED" }
+>["payload"];
+
+function hasTerminalCompletionWithoutNewerUser(state: SidePanelState): boolean {
+  if (!state.taskCompletion || state.isAgentRunning) return false;
+
+  let latestCompletionIndex = -1;
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const message = state.messages[i];
+    if (message.role === "assistant" && message.completionData) {
+      latestCompletionIndex = i;
+      break;
+    }
+  }
+
+  if (latestCompletionIndex === -1) return true;
+  return !state.messages
+    .slice(latestCompletionIndex + 1)
+    .some((message) => message.role === "user");
+}
+
+function hasUserChatMessage(
+  state: SidePanelState,
+  payload: UserChatAcceptedPayload,
+): boolean {
+  return state.messages.some(
+    (message) => message.role === "user" && message.id === payload.messageId,
+  );
+}
+
+function appendAcceptedUserChat(
+  state: SidePanelState,
+  payload: UserChatAcceptedPayload,
+): void {
+  const text = payload.text.trim();
+  if (!text || hasUserChatMessage(state, payload)) return;
+
+  state.addMessage({
+    id: payload.messageId,
+    role: "user",
+    content: text,
+    timestamp: payload.timestamp,
+    toolCalls: [],
+    isStreaming: false,
+    ...(payload.isFeedback ? { isFeedback: true } : {}),
+  });
+}
 
 /**
  * Initialize the message bridge between the background service worker and the
@@ -24,6 +74,7 @@ export function initializeBridge(
     onClose: (windowId: number) => void;
   },
 ): () => void {
+  const isE2EPanel = getE2EPanelConfig() != null;
   const listener = (message: RuntimeMessage) => {
     if (message.source !== MessageSource.BACKGROUND) return;
 
@@ -60,7 +111,33 @@ export function initializeBridge(
     const state = store.getState();
 
     switch (message.type) {
+      case "USER_CHAT_ACCEPTED":
+        appendAcceptedUserChat(state, message.payload);
+        if (!message.payload.isFeedback) {
+          store.setState({
+            agentStatus: AgentStatus.THINKING,
+            statusDetail: "Starting task...",
+            isAgentRunning: true,
+            taskProgress: null,
+            taskCompletion: null,
+            sessionMetrics: null,
+            durableRunStatus: null,
+            isPlanning: true,
+          });
+        }
+        break;
+
       case "AGENT_STATUS":
+        if (
+          message.payload.status !== AgentStatus.IDLE &&
+          message.payload.status !== AgentStatus.ERROR &&
+          hasTerminalCompletionWithoutNewerUser(store.getState())
+        ) {
+          logger.debug("ui", "Ignored stale running status after completion", {
+            status: message.payload.status,
+          });
+          break;
+        }
         store.setState((current) => {
           if (
             message.payload.status === AgentStatus.IDLE ||
@@ -186,6 +263,10 @@ export function initializeBridge(
       // --- New message types from RFCs ---
 
       case "AGENT_STAGNATION":
+        if (hasTerminalCompletionWithoutNewerUser(store.getState())) {
+          logger.debug("ui", "Ignored stale stagnation state after completion");
+          break;
+        }
         if (message.payload.signal === "resolved") {
           state.clearStagnationState();
         } else {
@@ -199,6 +280,10 @@ export function initializeBridge(
         break;
 
       case "AGENT_TURN":
+        if (hasTerminalCompletionWithoutNewerUser(store.getState())) {
+          logger.debug("ui", "Ignored stale turn progress after completion");
+          break;
+        }
         state.setTurnProgress({
           turn: message.payload.turn,
           maxTurns: message.payload.maxTurns,
@@ -207,6 +292,10 @@ export function initializeBridge(
         break;
 
       case "TASK_PROGRESS":
+        if (hasTerminalCompletionWithoutNewerUser(store.getState())) {
+          logger.debug("ui", "Ignored stale task progress after completion");
+          break;
+        }
         state.setTaskProgress(message.payload);
         // Clear stale confirmation so PlanStrip transitions to progress mode
         if (state.pendingPlanConfirmation) {
@@ -215,8 +304,7 @@ export function initializeBridge(
         break;
 
       case "TASK_COMPLETION":
-        state.setTaskCompletion(message.payload);
-        state.setCompletionOnLastMessage(message.payload);
+        state.applyTaskCompletion(message.payload);
         break;
 
       case "SESSION_METRICS":
@@ -305,7 +393,7 @@ export function initializeBridge(
       reconnectDelay = 1000; // reset backoff on successful connect
       // Re-sync agent status after reconnect (SW may still be running a task)
       const wsId = store.getState().activeWorkspaceId;
-      if (wsId) {
+      if (wsId && !isE2EPanel) {
         uiRuntime
           .sendMessage({
             type: "WORKSPACE_SYNC",

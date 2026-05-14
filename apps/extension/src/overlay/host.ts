@@ -3,6 +3,8 @@ export const OPENSIDEBAR_OVERLAY_HOST_ID = "opensidebar-harness-host";
 const OVERLAY_ROOT_ID = "root";
 const TITLEBAR_HEIGHT = 34;
 const MIN_VIEWPORT_GUTTER = 16;
+const INITIAL_HEIGHT_VIEWPORT_RATIO = 0.95;
+const PREFERRED_OVERLAY_WIDTH = 430;
 
 const OVERLAY_FRAME_CSS = `
 :host {
@@ -23,6 +25,13 @@ const OVERLAY_FRAME_CSS = `
   background: #f8fafc;
   box-shadow: 0 18px 60px rgba(15, 23, 42, 0.28);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:host([data-glass="true"]) .osb-overlay-frame {
+  border-color: rgba(15, 23, 42, 0.18);
+  background: rgba(248, 250, 252, 0.82);
+  box-shadow: 0 18px 56px rgba(15, 23, 42, 0.26);
+  backdrop-filter: blur(16px) saturate(1.1);
 }
 
 .osb-overlay-titlebar {
@@ -90,6 +99,10 @@ const OVERLAY_FRAME_CSS = `
   overflow: hidden;
 }
 
+:host([data-glass="true"]) .osb-overlay-body {
+  background: rgba(255, 255, 255, 0.9);
+}
+
 #${OVERLAY_ROOT_ID} {
   height: 100%;
 }
@@ -110,6 +123,7 @@ export interface OpenSidebarOverlayHost {
 export interface OpenSidebarOverlayHostOptions {
   document?: Document;
   sidepanelCss?: string;
+  glass?: boolean;
   onClose?: () => void;
 }
 
@@ -137,17 +151,28 @@ function initialOverlayMetrics(doc: Document): {
   height: number;
 } {
   const viewport = viewportSize(doc);
-  const width = Math.max(
-    320,
-    Math.min(420, viewport.width - MIN_VIEWPORT_GUTTER * 2),
+  const availableWidth = viewport.width - MIN_VIEWPORT_GUTTER * 2;
+  const availableHeight = viewport.height - MIN_VIEWPORT_GUTTER * 2;
+  const width = clamp(
+    PREFERRED_OVERLAY_WIDTH,
+    Math.min(320, availableWidth),
+    availableWidth,
   );
-  const height = Math.max(
-    360,
-    Math.min(680, viewport.height - MIN_VIEWPORT_GUTTER * 2),
+  const height = clamp(
+    Math.round(viewport.height * INITIAL_HEIGHT_VIEWPORT_RATIO),
+    Math.min(360, availableHeight),
+    availableHeight,
   );
   return {
-    left: Math.max(MIN_VIEWPORT_GUTTER, viewport.width - width - 24),
-    top: 24,
+    left: Math.max(MIN_VIEWPORT_GUTTER, viewport.width - width - 16),
+    top: clamp(
+      Math.round((viewport.height - height) / 2),
+      MIN_VIEWPORT_GUTTER,
+      Math.max(
+        MIN_VIEWPORT_GUTTER,
+        viewport.height - height - MIN_VIEWPORT_GUTTER,
+      ),
+    ),
     width,
     height,
   };
@@ -183,6 +208,9 @@ export function createOpenSidebarOverlayHost(
   const host = doc.createElement("div");
   host.id = OPENSIDEBAR_OVERLAY_HOST_ID;
   host.setAttribute("data-opensidebar-overlay", "true");
+  if (options.glass) {
+    host.setAttribute("data-glass", "true");
+  }
   host.style.cssText = [
     "position: fixed",
     `left: ${metrics.left}px`,
@@ -207,6 +235,7 @@ export function createOpenSidebarOverlayHost(
         <span>OpenSidebar</span>
       </div>
       <div class="osb-overlay-controls">
+        <button class="osb-overlay-button" type="button" data-osb-dock aria-label="Move OpenSidebar overlay to left side" title="Move overlay"> &lt; </button>
         <button class="osb-overlay-button" type="button" data-osb-minimize aria-label="Minimize OpenSidebar overlay">-</button>
         <button class="osb-overlay-button" type="button" data-osb-close aria-label="Close OpenSidebar overlay">x</button>
       </div>
@@ -220,6 +249,7 @@ export function createOpenSidebarOverlayHost(
   doc.documentElement.appendChild(host);
 
   const titlebar = shadowRoot.querySelector("[data-osb-drag-handle]");
+  const dockButton = shadowRoot.querySelector("[data-osb-dock]");
   const minimizeButton = shadowRoot.querySelector("[data-osb-minimize]");
   const closeButton = shadowRoot.querySelector("[data-osb-close]");
   const mountElement = shadowRoot.getElementById(OVERLAY_ROOT_ID);
@@ -227,6 +257,8 @@ export function createOpenSidebarOverlayHost(
     host.remove();
     throw new Error("OpenSidebar overlay mount element was not created.");
   }
+
+  host.dataset.dock = "right";
 
   let dragState: {
     startX: number;
@@ -252,6 +284,7 @@ export function createOpenSidebarOverlayHost(
       MIN_VIEWPORT_GUTTER,
       viewport.height - height - MIN_VIEWPORT_GUTTER,
     )}px`;
+    host.dataset.dock = "custom";
   };
 
   const onMouseUp = () => {
@@ -291,6 +324,46 @@ export function createOpenSidebarOverlayHost(
     host.style.height = `${TITLEBAR_HEIGHT}px`;
   };
 
+  const dockOverlay = (side: "left" | "right") => {
+    const viewport = viewportSize(doc);
+    const width = numberFromPixels(host.style.width, metrics.width);
+    const height = numberFromPixels(
+      host.dataset.expandedHeight ?? host.style.height,
+      metrics.height,
+    );
+    host.style.left =
+      side === "left"
+        ? `${MIN_VIEWPORT_GUTTER}px`
+        : `${viewport.width - width - MIN_VIEWPORT_GUTTER}px`;
+    host.style.top = `${clamp(
+      numberFromPixels(host.style.top, metrics.top),
+      MIN_VIEWPORT_GUTTER,
+      viewport.height - height - MIN_VIEWPORT_GUTTER,
+    )}px`;
+    host.dataset.dock = side;
+    if (dockButton instanceof HTMLButtonElement) {
+      dockButton.textContent = side === "right" ? "<" : ">";
+      dockButton.setAttribute(
+        "aria-label",
+        side === "right"
+          ? "Move OpenSidebar overlay to left side"
+          : "Move OpenSidebar overlay to right side",
+      );
+    }
+  };
+
+  const onDock = () => {
+    const viewport = viewportSize(doc);
+    const currentLeft = numberFromPixels(host.style.left, metrics.left);
+    const currentSide =
+      host.dataset.dock === "left" || host.dataset.dock === "right"
+        ? host.dataset.dock
+        : currentLeft < viewport.width / 2
+          ? "left"
+          : "right";
+    dockOverlay(currentSide === "right" ? "left" : "right");
+  };
+
   const dispose = () => {
     doc.removeEventListener("mousemove", onMouseMove);
     doc.removeEventListener("mouseup", onMouseUp);
@@ -299,6 +372,7 @@ export function createOpenSidebarOverlayHost(
   };
 
   titlebar?.addEventListener("mousedown", onMouseDown);
+  dockButton?.addEventListener("click", onDock);
   minimizeButton?.addEventListener("click", onMinimize);
   closeButton?.addEventListener("click", dispose);
 

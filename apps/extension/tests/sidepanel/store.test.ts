@@ -215,6 +215,134 @@ describe("SidePanel Store", () => {
         expect(messages[0].completionData?.taskId).toBe("t1");
     });
 
+    test("loadMessagesFromStorage preserves fuller visible completion text", async () => {
+        const fullSummary =
+            "Wikipedia Homepage Summary\n\nOverview: The page links to language editions, search, sister projects, and the complete footer details.";
+        const truncatedSummary =
+            "Wikipedia Homepage Summary\n\nOverview: The page links to language editions, search, sister projects, and";
+        const completionData = {
+            taskId: "t1",
+            status: "completed" as const,
+            summary: truncatedSummary,
+            totalTurnsUsed: 1,
+            totalTimeMs: 1000,
+            subtaskResults: [],
+            urlHistory: [],
+        };
+
+        (chrome.storage.local.get as any) = vi.fn(async () => ({
+            "chatMessages:ws-test": [
+                {
+                    id: "m1",
+                    role: "assistant" as const,
+                    content: fullSummary,
+                    timestamp: 1000,
+                    toolCalls: [],
+                    isStreaming: false,
+                    completionData,
+                },
+            ],
+        }));
+
+        await useStore.getState().loadMessagesFromStorage();
+
+        const message = useStore.getState().messages[0];
+        expect(message.completionData?.summary).toBe(fullSummary);
+        expect(useStore.getState().taskCompletion?.summary).toBe(fullSummary);
+    });
+
+    test("loadMessagesFromStorage restores completion as terminal idle state", async () => {
+        const completionData = {
+            taskId: "t1",
+            status: "completed" as const,
+            summary: "Done",
+            totalTurnsUsed: 1,
+            totalTimeMs: 1000,
+            subtaskResults: [],
+            urlHistory: [],
+        };
+        const storedMessages = [
+            {
+                id: "m1",
+                role: "assistant" as const,
+                content: "Done",
+                timestamp: 1000,
+                toolCalls: [],
+                isStreaming: false,
+                completionData,
+            },
+        ];
+        useStore.setState({
+            isAgentRunning: true,
+            agentStatus: AgentStatus.ACTING,
+            taskProgress: {
+                taskId: "t1",
+                subtasks: [],
+                currentIndex: 0,
+                totalTurnsUsed: 1,
+            },
+            turnProgress: { turn: 1, maxTurns: 30 },
+        });
+        (chrome.storage.local.get as any) = vi.fn(async () => ({
+            "chatMessages:ws-test": storedMessages,
+        }));
+
+        await useStore.getState().loadMessagesFromStorage();
+
+        const state = useStore.getState();
+        expect(state.taskCompletion).toEqual(completionData);
+        expect(state.taskProgress).toBeNull();
+        expect(state.isAgentRunning).toBe(false);
+        expect(state.agentStatus).toBe(AgentStatus.IDLE);
+        expect(state.statusDetail).toBe("Task complete");
+        expect(state.turnProgress).toBeNull();
+    });
+
+    test("loadAgentStateFromStorage ignores stale running state after completion", async () => {
+        const completionData = {
+            taskId: "t1",
+            status: "completed" as const,
+            summary: "Done",
+            totalTurnsUsed: 1,
+            subtaskResults: [],
+        };
+        useStore.setState({
+            messages: [
+                {
+                    id: "m1",
+                    role: "assistant" as const,
+                    content: "Done",
+                    timestamp: 1000,
+                    toolCalls: [],
+                    isStreaming: false,
+                    completionData,
+                },
+            ],
+            taskCompletion: completionData,
+            taskProgress: {
+                taskId: "t1",
+                subtasks: [],
+                currentIndex: 0,
+                totalTurnsUsed: 1,
+            },
+        });
+        (chrome.storage.local.get as any) = vi.fn(async () => ({
+            "agentState:ws-test": {
+                isRunning: true,
+                status: AgentStatus.ACTING,
+                detail: "Verifying completion...",
+            },
+        }));
+
+        await useStore.getState().loadAgentStateFromStorage();
+
+        const state = useStore.getState();
+        expect(state.isAgentRunning).toBe(false);
+        expect(state.agentStatus).toBe(AgentStatus.IDLE);
+        expect(state.statusDetail).toBe("Task complete");
+        expect(state.taskProgress).toBeNull();
+    });
+
     test("loadMessagesFromStorage handles empty storage", async () => {
         (chrome.storage.session.get as any) = vi.fn(async () => ({}));
 

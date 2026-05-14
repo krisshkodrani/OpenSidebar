@@ -104,7 +104,7 @@ Exit criteria:
 - The extension is rebuilt after runtime changes before any `--no-build` WorkArena command.
 - The run notes record any unrelated dirty worktree state.
 - Focused tests for changed runtime areas pass.
-- `npm run dist` and `npm run ci:lint` pass, with known warnings explicitly recorded.
+- `pnpm run dist` and `pnpm run ci:lint` pass, with known warnings explicitly recorded.
 
 ### R1. Harness Readiness
 
@@ -241,10 +241,10 @@ The full runner should wrap the existing handoff runner instead of reimplementin
 Current suite runner examples:
 
 ```bash
-npx tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20
-npx tsx scripts/workarena-suite.ts --category menu --seeds 0..4 --no-build
-npx tsx scripts/workarena-suite.ts --resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json
-npx tsx scripts/workarena-grade.ts
+pnpm exec tsx scripts/workarena-suite.ts --suite atomic --categories all --seeds 0,1,2 --max-turns 20
+pnpm exec tsx scripts/workarena-suite.ts --category menu --seeds 0..4 --no-build
+pnpm exec tsx scripts/workarena-suite.ts --resume-from-report .artifacts/e2e/workarena-suite-YYYY-MM-DD-SCOPE-SEED-TIME.json
+pnpm exec tsx scripts/workarena-grade.ts
 ```
 
 Required options:
@@ -408,7 +408,7 @@ Do not commit dated E2E result reports under `docs/`.
 ## Immediate Next Steps
 
 1. Validate generated WorkArena reports with `workarena-validate-reports`.
-2. Run final source hygiene for checkpoint scope: focused tests are green, build is green, and `npm run ci:lint` should be run before committing if this checkpoint is release-facing.
+2. Run final source hygiene for checkpoint scope: focused tests are green, build is green, and `pnpm run ci:lint` should be run before committing if this checkpoint is release-facing.
 3. Create a named checkpoint commit for the generic catalog fixes and roadmap update, staging only relevant files from the dirty worktree.
 4. Use the generated grade and trace-learning reports to rank high-turn passing cases before widening; current top catalog cost is `order-development-laptop-p-c` at 15 turns.
 5. Run the full atomic seed `0` no-retry baseline after the checkpoint, then widen to seeds `0,1,2` only after that report validates.

@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../../..");
 const LOG_SERVER_SCRIPT = resolve(PROJECT_ROOT, "scripts", "log-server.ts");
+const TSX_CLI = resolve(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const LOG_SERVER_PORT = 7589;
 
 let logServerProcess: ChildProcess | null = null;
@@ -55,12 +56,10 @@ export async function setup(): Promise<void> {
     return;
   }
 
-  const isWin = process.platform === "win32";
-  const command = isWin ? "npx.cmd" : "npx";
-  logServerProcess = spawn(command, ["tsx", LOG_SERVER_SCRIPT], {
+  logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
-    shell: isWin,
+    shell: false,
   });
 
   const started = await waitForServer(LOG_SERVER_PORT, 10_000);

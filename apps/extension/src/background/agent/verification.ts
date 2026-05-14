@@ -394,8 +394,11 @@ function detectCatalogQuantityConflict(
 
 function extractRequestedSortLabels(queryText: string): string[] {
   const labels = new Set<string>();
-  const parenthesizedDirection =
-    /(?:^|[-:\s])"?([a-z][a-z0-9 /_-]{1,50})"?\s*\((?:ascending|descending|asc|desc)\)/gi;
+  const whitespace = "\\s";
+  const parenthesizedDirection = new RegExp(
+    `(?:^|[-:${whitespace}])"?([a-z][a-z0-9 /_-]{1,50})"?${whitespace}*\\((?:ascending|descending|asc|desc)\\)`,
+    "gi",
+  );
   for (const match of queryText.matchAll(parenthesizedDirection)) {
     let label = (match[1] || "")
       .replace(/\s+/g, " ")
@@ -430,13 +433,16 @@ export function assessWorkflowDoneGuard(
   const summary = normalizeWorkflowGuardText(input.summary);
   const skillId = input.selectedSkillId ?? null;
   const primaryRequestText = extractWorkflowGuardPrimaryRequest(queryText);
+  const guardIntentText = normalizeWorkflowGuardText(
+    `${primaryRequestText}\n${currentPageText}`,
+  );
 
   if (!summary) return { blocked: false, reason: null };
 
   const chartActive = workflowSkillOrQueryMatches(
     skillId,
     "chart-value-extraction",
-    queryText,
+    guardIntentText,
     /\b(chart|dashboard|graph|plot|highcharts|visualization)\b/,
   );
   if (chartActive) {
@@ -491,7 +497,7 @@ export function assessWorkflowDoneGuard(
   const searchActive = workflowSkillOrQueryMatches(
     skillId,
     "search-answer-extraction",
-    queryText,
+    guardIntentText,
     /\b(knowledge base|kb article|search results?|find answer|look up|answer the question)\b/,
   );
   if (searchActive) {
@@ -518,7 +524,7 @@ export function assessWorkflowDoneGuard(
   const listFilterActive = workflowSkillOrQueryMatches(
     skillId,
     "list-filter-workflow",
-    queryText,
+    guardIntentText,
     /\b(filter|condition builder|filter builder|show records where|query list)\b/,
   );
   if (listFilterActive) {
@@ -549,7 +555,7 @@ export function assessWorkflowDoneGuard(
   const listSortActive = workflowSkillOrQueryMatches(
     skillId,
     "list-sort-workflow",
-    queryText,
+    guardIntentText,
     /\b(sort|order by|ascending|descending|sort column)\b/,
   );
   if (listSortActive) {
@@ -579,9 +585,7 @@ export function assessWorkflowDoneGuard(
       };
     }
     const serviceNowListSort =
-      /service-now\.com|servicenow|incident_list\.do|_list\.do/.test(
-        queryText,
-      );
+      /service-now\.com|servicenow|incident_list\.do|_list\.do/.test(queryText);
     const durableServiceNowSortEvidence =
       /\b(sysparm_query|orderby|aria-sort|sort state)\b/.test(summary);
     if (serviceNowListSort && sortComplete && !durableServiceNowSortEvidence) {
@@ -603,7 +607,7 @@ export function assessWorkflowDoneGuard(
   const catalogActive = workflowSkillOrQueryMatches(
     skillId,
     "catalog-order-workflow",
-    queryText,
+    guardIntentText,
     /\b(service catalog|catalog item|request item|standard laptop|add to cart|order now|place order|submit order)\b/,
   );
   if (catalogActive) {

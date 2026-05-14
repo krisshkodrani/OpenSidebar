@@ -8,7 +8,7 @@
  * Turn 2: Switch to Reports tab and describe the reports
  * Turn 3: Compare — which area looks strongest based on both tabs?
  *
- * Run: npx vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cross-tab.test.ts
+ * Run: pnpm exec vitest run --config tests/e2e/vitest.e2e.config.ts tests/e2e/continuation-cross-tab.test.ts
  */
 
 import {
@@ -97,7 +97,8 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
 
     await sendUserChat(
       h.ctx,
-      "Now switch to the Reports tab and tell me what reports are available.",
+      "Use the in-page Reports tab on this same dashboard and tell me the report names shown. " +
+        "Do not open or download any report.",
       tabId,
       workspaceId,
     );
@@ -134,7 +135,7 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Cross-Tab Synthesis", () => {
     await sendUserChat(
       h.ctx,
       "Based on what you saw in both tabs, which area of the business looks strongest — " +
-        "user growth, revenue, or traffic? Give a brief answer referencing the data.",
+        "user growth, revenue, or traffic? Use the Overview numbers already reported and do not open or download reports.",
       tabId,
       workspaceId,
     );

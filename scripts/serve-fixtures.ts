@@ -5,7 +5,7 @@
  * that links to all available demos. Use these pages with the extension loaded
  * to capture screenshots or record demo videos.
  *
- * Usage:  npm run fixtures
+ * Usage:  pnpm run fixtures
  */
 
 import http from "http";

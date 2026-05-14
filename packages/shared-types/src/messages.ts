@@ -34,6 +34,7 @@ export interface BaseMessage {
  */
 export type RuntimeMessage =
   | UserChatMessage
+  | UserChatAcceptedMessage
   | AgentResponseMessage
   | AgentStatusMessage
   | TaskRecoveryMessage
@@ -102,7 +103,25 @@ export interface UserChatMessage extends BaseMessage {
     tabId: number;
     /** Active workspace ID, if any */
     workspaceId: string | null;
+    /** UI-generated chat entry ID, echoed back by the background for dedupe. */
+    messageId?: string;
+    /** UI timestamp, echoed back by the background for consistent ordering. */
+    timestamp?: number;
     /** When true, inject as feedback into running agent context (don't start new loop) */
+    isFeedback?: boolean;
+  };
+}
+
+/** Background acknowledges a user chat so all mounted panels can render it */
+export interface UserChatAcceptedMessage extends BaseMessage {
+  type: "USER_CHAT_ACCEPTED";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    text: string;
+    tabId: number;
+    workspaceId: string | null;
+    messageId: string;
+    timestamp: number;
     isFeedback?: boolean;
   };
 }
