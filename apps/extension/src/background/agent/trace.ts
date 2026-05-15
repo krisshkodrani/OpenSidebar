@@ -44,6 +44,7 @@ export class TraceRecorder {
   private runId: string | null = null;
   private correlationId: string;
   private parentRunId: string | null = null;
+  private sensitiveTraceLiterals = new Set<string>();
 
   // Current turn being recorded
   private currentTurn: Partial<TraceEntry> | null = null;
@@ -147,18 +148,20 @@ export class TraceRecorder {
     contextMetrics?: TraceContextMetrics,
     modelTier?: "executor" | "planner",
   ): void {
+    const redactedSnapshot = this.redactSensitiveTraceValue(snapshot);
+    const redactedElements = this.redactSensitiveTraceValue(elements);
     this.turnToolExecutions = [];
     this.turnEvents = [];
     this.currentTurn = {
       sessionId: this.sessionId,
       turnNumber,
       timestamp: Date.now(),
-      snapshot,
-      elements,
+      snapshot: redactedSnapshot,
+      elements: redactedElements,
       pageState: {
         preDecision: {
-          ...snapshot,
-          domSnapshot: elements,
+          ...redactedSnapshot,
+          domSnapshot: redactedElements,
         },
       },
       llmRequest: {
@@ -167,7 +170,9 @@ export class TraceRecorder {
         messageCount,
         toolCount,
         compressionLevel,
-        ...(rawMessages ? { messages: rawMessages } : {}),
+        ...(rawMessages
+          ? { messages: this.redactSensitiveTraceValue(rawMessages) }
+          : {}),
         ...(contextMetrics ? { contextMetrics } : {}),
       },
     };
@@ -185,8 +190,8 @@ export class TraceRecorder {
   ): void {
     if (!this.currentTurn) return;
     this.currentTurn.llmResponse = {
-      content,
-      toolCalls,
+      content: this.redactSensitiveTraceValue(content),
+      toolCalls: this.redactSensitiveTraceValue(toolCalls),
       finishReason,
       usage: usage
         ? {
@@ -213,16 +218,66 @@ export class TraceRecorder {
     riskLevel: RiskLevel,
     error?: string,
   ): void {
+    if (toolName === ToolName.GET_PROFILE_FIELDS) {
+      this.rememberProfileToolResultLiterals(result);
+    }
     this.turnToolExecutions.push({
       toolCallId,
       toolName,
-      args,
-      result,
+      args: this.redactSensitiveTraceValue(args),
+      result: this.redactSensitiveTraceValue(result),
       success,
       durationMs,
       riskLevel,
       ...(error ? { error } : {}),
     });
+  }
+
+  private rememberProfileToolResultLiterals(result: string): void {
+    for (const line of result.split(/\r?\n/)) {
+      const match = /^-\s+[^:]+:\s*(.+)$/.exec(line);
+      const rawValue = match?.[1]?.trim();
+      if (!rawValue || rawValue === "null") continue;
+      this.addSensitiveTraceLiteral(rawValue);
+      for (const part of rawValue.split(",")) {
+        const trimmedPart = part.trim();
+        this.addSensitiveTraceLiteral(trimmedPart);
+        for (const token of trimmedPart.split(/\s+/)) {
+          this.addSensitiveTraceLiteral(token);
+        }
+      }
+    }
+  }
+
+  private addSensitiveTraceLiteral(value: string): void {
+    const normalized = value.trim();
+    if (normalized.length < 3) return;
+    this.sensitiveTraceLiterals.add(normalized);
+  }
+
+  private redactSensitiveTraceString(value: string): string {
+    let redacted = value;
+    for (const literal of this.sensitiveTraceLiterals) {
+      redacted = redacted.split(literal).join("[REDACTED_PROFILE_VALUE]");
+    }
+    return redacted;
+  }
+
+  private redactSensitiveTraceValue<T>(value: T): T {
+    if (typeof value === "string") {
+      return this.redactSensitiveTraceString(value) as T;
+    }
+    if (value == null || typeof value !== "object") return value;
+    if (Array.isArray(value)) {
+      return value.map((item) => this.redactSensitiveTraceValue(item)) as T;
+    }
+    const out: Record<string, unknown> = {};
+    for (const [key, entryValue] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
+      out[key] = this.redactSensitiveTraceValue(entryValue);
+    }
+    return out as T;
   }
 
   /** Record a notable event (escalation, hint, done_rejected, etc.) */
@@ -239,7 +294,7 @@ export class TraceRecorder {
     this.turnEvents.push({
       type,
       timestamp: Date.now(),
-      data,
+      data: this.redactSensitiveTraceValue(data),
     } as TraceEvent);
   }
 
@@ -343,9 +398,10 @@ export class TraceRecorder {
         : panoramicShots;
     const pageState = this.currentTurn.pageState;
     const capture = pageState?.[pageStateRef];
+    const redactedElementSummary = this.redactSensitiveTraceValue(elementSummary);
     if (capture) {
-      if (elementSummary) {
-        capture.domDistillation = elementSummary;
+      if (redactedElementSummary) {
+        capture.domDistillation = redactedElementSummary;
       }
       const screenshots = [...(capture.screenshots ?? [])];
       if (screenshotDataUrl) {
@@ -382,7 +438,9 @@ export class TraceRecorder {
       }
     }
     this.currentTurn.perception = {
-      interpretation: perception.interpretation,
+      interpretation: this.redactSensitiveTraceValue(
+        perception.interpretation,
+      ),
       model: perception.model,
       providerId: perception.providerId,
       durationMs: perception.durationMs,
@@ -399,7 +457,9 @@ export class TraceRecorder {
         ? { screenshotStatus: perception.screenshotStatus }
         : {}),
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
-      ...(elementSummary ? { elementSummary } : {}),
+      ...(redactedElementSummary
+        ? { elementSummary: redactedElementSummary }
+        : {}),
       ...(enrichedPanoramicShots?.length
         ? { panoramicShots: enrichedPanoramicShots }
         : {}),
@@ -419,7 +479,11 @@ export class TraceRecorder {
   }): void {
     if (!this.currentTurn) return;
     const { elements, ...snapshotMeta } = snapshot;
-    this.currentTurn.postToolSnapshot = snapshotMeta;
+    const redactedSnapshotMeta = this.redactSensitiveTraceValue(snapshotMeta);
+    const redactedElements = elements
+      ? this.redactSensitiveTraceValue(elements)
+      : undefined;
+    this.currentTurn.postToolSnapshot = redactedSnapshotMeta;
     this.currentTurn.pageState = {
       preDecision:
         this.currentTurn.pageState?.preDecision ?? {
@@ -427,8 +491,8 @@ export class TraceRecorder {
           domSnapshot: this.currentTurn.elements,
         },
       postTool: {
-        ...snapshotMeta,
-        ...(elements ? { domSnapshot: elements } : {}),
+        ...redactedSnapshotMeta,
+        ...(redactedElements ? { domSnapshot: redactedElements } : {}),
       },
     };
   }

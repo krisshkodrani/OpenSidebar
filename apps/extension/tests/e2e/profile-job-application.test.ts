@@ -51,9 +51,9 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
       seededProfile = await seedTemporaryProfile({
         profile: {
           identity: {
-            full_name: "Kai Schmidt",
-            email: "kai.apply@example.com",
-            phone: "+49 170 1234567",
+            full_name: "John Doe",
+            email: "john.doe.apply@example.com",
+            phone: "+1 555 0100",
           },
           files: {
             cv: {
@@ -134,9 +134,9 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
       }));
 
       expect(draftState).toMatchObject({
-        fullName: "Kai Schmidt",
-        email: "kai.apply@example.com",
-        phone: "+49 170 1234567",
+        fullName: "John Doe",
+        email: "john.doe.apply@example.com",
+        phone: "+1 555 0100",
         cvName: "cv.pdf",
         submitted: false,
       });
@@ -162,9 +162,9 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
 
       expect(outcome.ok, outcome.reason).toBe(true);
       expect(outcome.result).toMatchObject({
-        fullName: "Kai Schmidt",
-        email: "kai.apply@example.com",
-        phone: "+49 170 1234567",
+        fullName: "John Doe",
+        email: "john.doe.apply@example.com",
+        phone: "+1 555 0100",
         cvName: "cv.pdf",
         submitted: true,
       });

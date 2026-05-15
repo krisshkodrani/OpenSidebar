@@ -12,6 +12,7 @@ export function useSidepanelBootstrap(): void {
   );
   const loadSavedPrompts = useStore((s) => s.loadSavedPrompts);
   const loadUserWebsiteSkills = useStore((s) => s.loadUserWebsiteSkills);
+  const loadPersonalProfile = useStore((s) => s.loadPersonalProfile);
   const setReady = useStore((s) => s.setReady);
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function useSidepanelBootstrap(): void {
         await loadAgentStateFromStorage();
         await loadSavedPrompts();
         await loadUserWebsiteSkills();
+        await loadPersonalProfile();
         setReady();
         return;
       }
@@ -78,11 +80,13 @@ export function useSidepanelBootstrap(): void {
       await loadAgentStateFromStorage();
       await loadSavedPrompts();
       await loadUserWebsiteSkills();
+      await loadPersonalProfile();
       setReady();
     })();
   }, [
     loadAgentStateFromStorage,
     loadMessagesFromStorage,
+    loadPersonalProfile,
     loadSavedPrompts,
     loadSettingsFromStorage,
     loadUserWebsiteSkills,

@@ -59,7 +59,10 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "date-picker.test.ts",
     "faq-accordion.test.ts",
   ],
-  "overlay-harness": ["overlay-harness.test.ts"],
+  "overlay-harness": [
+    "overlay-harness.test.ts",
+    "overlay-panel-surfaces.test.ts",
+  ],
   "memory-regression": [
     "memory-current-vs-historical.test.ts",
     "memory-long-turn-dossier.test.ts",

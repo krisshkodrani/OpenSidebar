@@ -1,23 +1,37 @@
 import React from "react";
-import { Bookmark, CircleDot, ListChecks, Settings } from "lucide-react";
+import {
+  Bookmark,
+  CircleDot,
+  ListChecks,
+  Settings,
+  UserRound,
+} from "lucide-react";
 
 interface Props {
   onOpenSettings: () => void;
+  onOpenPersonalProfile: () => void;
   onOpenSavedPrompts: () => void;
   onOpenWebsiteSkills: () => void;
   onRecordSkill: () => void;
+  hasPersonalProfile?: boolean;
   modeBadgeLabel?: string | null;
+  profileEnabled?: boolean;
   recordingActive?: boolean;
 }
 
 export function Header({
   onOpenSettings,
+  onOpenPersonalProfile,
   onOpenSavedPrompts,
   onOpenWebsiteSkills,
   onRecordSkill,
+  hasPersonalProfile = false,
   modeBadgeLabel,
+  profileEnabled = false,
   recordingActive,
 }: Props) {
+  const profileActive = profileEnabled && hasPersonalProfile;
+
   return (
     <header className="flex items-center justify-between px-3 py-1.5 bg-warm-50 dark:bg-warm-900 border-b border-warm-100 dark:border-warm-800 sticky top-0 z-10">
       <div className="w-16">
@@ -59,6 +73,18 @@ export function Header({
           aria-label="Saved Prompts"
         >
           <Bookmark size={16} />
+        </button>
+        <button
+          onClick={onOpenPersonalProfile}
+          className={`p-1.5 hover:bg-warm-100 dark:hover:bg-warm-800 rounded-full transition-colors ${
+            profileActive
+              ? "text-primary-600 dark:text-primary-300"
+              : "text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
+          }`}
+          aria-label="Personalize"
+          title={profileActive ? "Saved profile on" : "Personalize"}
+        >
+          <UserRound size={16} />
         </button>
         <button
           onClick={onOpenSettings}

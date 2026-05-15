@@ -9,10 +9,11 @@ import {
 } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
+import { resolveProfileFile } from "../infrastructure/backend-client";
 import {
+  formatProfileFieldsForToolResult,
   resolveProfileFields,
-  resolveProfileFile,
-} from "../infrastructure/backend-client";
+} from "../../utils/personal-profile";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
 import { workspaceManager } from "../workspaces/manager";
 import {
@@ -12164,27 +12165,9 @@ export function registerTools() {
         return "Error: provide at least one profile field path.";
       }
 
-      const result = await resolveProfileFields(fields);
-      if (!result) {
-        return "Error: Could not read local profile fields. Ensure the backend is running and the profile file exists.";
-      }
-
-      const lines = ["PROFILE FIELDS:"];
-      for (const [field, value] of Object.entries(result.values)) {
-        const rendered =
-          value === null
-            ? "null"
-            : typeof value === "object"
-              ? JSON.stringify(value)
-              : String(value);
-        lines.push(`- ${field}: ${rendered}`);
-      }
-
-      if (result.missing.length > 0) {
-        lines.push("", `Missing: ${result.missing.join(", ")}`);
-      }
-
-      return lines.join("\n");
+      return formatProfileFieldsForToolResult(
+        await resolveProfileFields(fields),
+      );
     },
   );
 

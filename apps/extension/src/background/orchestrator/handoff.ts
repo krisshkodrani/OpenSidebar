@@ -544,7 +544,7 @@ export function buildExecutorInstruction(
     sections.push(
       "",
       personalContextBrief,
-      "Use personal context for fit, preferences, and wording. For exact form values, call get_profile_fields instead of copying from context.",
+      "Treat the saved-profile note as an availability hint only. For exact form values, call get_profile_fields instead of copying or inferring from context.",
     );
   }
 

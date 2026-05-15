@@ -30,7 +30,6 @@ import {
   fetchTaskRunResume,
   listTaskRuns,
   patchTaskRun,
-  resolveProfileContext,
   updateTaskRunCheckpoint,
   upsertTaskRun,
   upsertTaskRunNode,
@@ -42,6 +41,11 @@ import {
   type DurableTaskRunSummary,
   type DurableTaskRunResumeResponse,
 } from "../infrastructure/backend-client";
+import {
+  buildPersonalProfilePlannerContext,
+  EMPTY_PERSONALIZATION_STATE,
+  loadPersonalizationState,
+} from "../../utils/personal-profile";
 import { workspaceManager } from "../workspaces/manager";
 import { agentNotifications } from "../notifications";
 import { isUsableTab } from "../infrastructure/tab-resolution";
@@ -3364,10 +3368,10 @@ export class Orchestrator {
       await this.stopTask(input.workspaceId);
     }
 
-    const personalContext = await resolveProfileContext(input.query).catch(
-      () => null,
+    const personalContextBrief = buildPersonalProfilePlannerContext(
+      input.query,
+      await loadPersonalizationState().catch(() => EMPTY_PERSONALIZATION_STATE),
     );
-    const personalContextBrief = personalContext?.rendered || "";
     const recentCompletionContext = this.getRecentCompletionContext(
       input.workspaceId,
     );

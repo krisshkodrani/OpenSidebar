@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Pause, Play, Square } from "lucide-react";
 import { AgentStatus, type SessionMetrics } from "../../types";
 import { logger } from "../../utils";
@@ -134,8 +134,16 @@ function statusDotLabel(tone: TaskRailTone) {
 export function PrimaryTaskRail() {
   const taskUi = useTaskUiState();
   const showSessionMetrics = useStore((s) => s.settings.showSessionMetrics);
+  const [pauseRequested, setPauseRequested] = useState(false);
+
+  useEffect(() => {
+    if (taskUi.phase === "paused" || !taskUi.rail.canPause) {
+      setPauseRequested(false);
+    }
+  }, [taskUi.phase, taskUi.rail.canPause]);
 
   const handlePause = useCallback(async () => {
+    setPauseRequested(true);
     try {
       await uiRuntime.sendMessage({
         type: "PAUSE_AGENT",
@@ -144,6 +152,7 @@ export function PrimaryTaskRail() {
         payload: { workspaceId: useStore.getState().activeWorkspaceId },
       });
     } catch (error) {
+      setPauseRequested(false);
       logger.error("ui", "Failed to pause agent", { error });
     }
   }, []);
@@ -230,6 +239,11 @@ export function PrimaryTaskRail() {
                 Stop requested
               </span>
             ) : null}
+            {pauseRequested ? (
+              <span className="rounded-full border border-yellow-300/70 bg-yellow-50/80 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/30 dark:text-yellow-300">
+                Pause requested
+              </span>
+            ) : null}
             {rail.turnProgress?.provider ? (
               <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
                 {rail.turnProgress.provider}
@@ -257,11 +271,12 @@ export function PrimaryTaskRail() {
           {rail.canPause ? (
             <button
               onClick={() => void handlePause()}
-              className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
+              disabled={pauseRequested}
+              className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 disabled:cursor-wait disabled:opacity-70 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
               aria-label="Pause agent"
             >
               <Pause size={12} />
-              Pause
+              {pauseRequested ? "Pause requested" : "Pause"}
             </button>
           ) : null}
           {rail.showResume ? (

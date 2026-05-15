@@ -62,6 +62,7 @@ function createHost(): SequentialToolDispatchHost {
     ensureToolApproval: vi.fn(async () => true),
     executeToolCall: vi.fn(),
     getActiveToolProfileForStep: () => null,
+    getConsequentialActionTaskText: () => "finish the task",
     getPendingInlineEditVerificationBlock: () => null,
     getUncommittedInlineEditDoneRejection: () => null,
     getWorkflowTabToolRedirect: vi.fn(async () => null),

@@ -872,6 +872,9 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
       if (message.type === "AGENT_ACTIVITY") {
         agentSessionActive = message.payload.active;
+        if (message.payload.active) currentFloatingStep = null;
+        agentPageActivityActive =
+          message.payload.active && (message.payload.pageActivity ?? true);
         e2eRailState = {
           ...e2eRailState,
           active: message.payload.active,
@@ -892,9 +895,12 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         };
         void renderE2ERail();
         clearAgentCueTimer();
-        if (message.payload.active) {
+        if (agentPageActivityActive) {
           setAgentBorder(true, undefined, "active");
+        } else if (message.payload.active) {
+          removeFloatingAgentCue();
         } else {
+          agentPageActivityActive = false;
           setAgentBorder(false, message.payload.outcome);
         }
         return;
@@ -954,13 +960,18 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         };
         void renderE2ERail();
         const transition = deriveAgentCueTransition({
-          sessionActive: agentSessionActive,
+          sessionActive: agentPageActivityActive,
           stepStatus: message.payload.status,
         });
         if (transition.showCue && transition.borderState) {
           setAgentBorder(true, undefined, transition.borderState);
+          updateFloatingStepLabel(
+            message.payload.label,
+            message.payload.status,
+          );
+        } else {
+          currentFloatingStep = null;
         }
-        updateFloatingStepLabel(message.payload.label, message.payload.status);
         if (transition.hideAfterMs != null) {
           scheduleAgentCueHide(transition.hideAfterMs);
         }
@@ -1650,6 +1661,7 @@ const E2E_RAIL_ID = "opensidebar-e2e-rail";
 const E2E_RAIL_STYLE_ID = "opensidebar-e2e-rail-style";
 const E2E_VISIBLE_RAIL_STORAGE_KEY = "opensidebar:e2eVisibleRail";
 let agentSessionActive = false;
+let agentPageActivityActive = false;
 let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
 let e2eRailEnabled: boolean | null = null;
 let currentPlanProgress: { currentIndex: number; total: number } | null = null;

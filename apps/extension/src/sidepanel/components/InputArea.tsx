@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, UserRound } from "lucide-react";
 import { useStore } from "../store";
 import { ApprovalOverlay } from "./ApprovalOverlay";
 import { EscalationOverlay } from "./EscalationOverlay";
@@ -16,12 +16,14 @@ import { useRealtimeVoiceAnnouncements } from "../hooks/useRealtimeVoiceAnnounce
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
+import { hasUsablePersonalProfile } from "../../utils/personal-profile";
 
 interface InputAreaProps {
   onSend: (text: string) => void;
   onSendFeedback: (text: string) => void;
   onStop: () => void;
   onOpenSettings: () => void;
+  onOpenPersonalProfile: () => void;
 }
 
 function PendingInteractionShell({ children }: { children: React.ReactNode }) {
@@ -67,6 +69,7 @@ export function InputArea({
   onSend,
   onSendFeedback,
   onStop,
+  onOpenPersonalProfile,
 }: InputAreaProps) {
   const inputText = useStore((s) => s.inputText);
   const setInputText = useStore((s) => s.setInputText);
@@ -77,10 +80,16 @@ export function InputArea({
   const taskCompletion = useStore((s) => s.taskCompletion);
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+  const personalProfileState = useStore((s) => s.personalProfileState);
+  const setPersonalProfileEnabled = useStore(
+    (s) => s.setPersonalProfileEnabled,
+  );
 
   const interactionMode = getInteractionMode(settings);
   const autonomousMode = interactionMode === "autonomous";
   const realtimeVoiceEnabled = settings.voiceMode === "openai_realtime";
+  const profileAvailable = hasUsablePersonalProfile(personalProfileState);
+  const profileActive = personalProfileState.enabled && profileAvailable;
   const realtimeVoice = useOpenAIRealtimeVoice({
     startTask: onSend,
     sendGuidance: onSendFeedback,
@@ -104,6 +113,19 @@ export function InputArea({
     },
     [settings, updateSettings],
   );
+
+  const handleProfileToggle = useCallback(() => {
+    if (!profileAvailable) {
+      onOpenPersonalProfile();
+      return;
+    }
+    void setPersonalProfileEnabled(!profileActive);
+  }, [
+    onOpenPersonalProfile,
+    profileActive,
+    profileAvailable,
+    setPersonalProfileEnabled,
+  ]);
 
   const hasText = inputText.trim().length > 0;
   const handleSubmit = useCallback(() => {
@@ -239,6 +261,24 @@ export function InputArea({
                 mode={interactionMode}
                 onChange={setInteractionMode}
               />
+              <button
+                type="button"
+                onClick={handleProfileToggle}
+                aria-pressed={profileActive}
+                className={`ml-auto inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
+                  profileActive
+                    ? "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200"
+                    : "border-warm-200 text-warm-500 hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
+                }`}
+                title={
+                  profileAvailable
+                    ? "Use saved profile"
+                    : "Add a saved profile"
+                }
+              >
+                <UserRound size={12} />
+                {profileActive ? "Profile on" : "Profile off"}
+              </button>
             </div>
             <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">
               AI can make mistakes. Please double-check responses.

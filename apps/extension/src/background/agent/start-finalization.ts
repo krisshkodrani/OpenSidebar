@@ -9,8 +9,6 @@ import type { TraceRecorder } from "./trace";
 
 export type FinalizeStartResultDeps = {
   result: LoopResult;
-  tabId: number;
-  initialScrollY: number | null;
   taskId: string | null;
   planSubtasks: SubtaskSummary[];
   mutationLedger: MutationLedger;
@@ -23,11 +21,6 @@ export type FinalizeStartResultDeps = {
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
   ) => void;
-  scrollContentScript: (
-    tabId: number,
-    y: number,
-    timeoutMs: number,
-  ) => Promise<unknown>;
   setRunning: (isRunning: boolean) => void;
   clearTraceRecorder: () => void;
 };
@@ -58,19 +51,6 @@ export async function finalizeStartResult(
       result.outcome as "stopped" | "max_turns" | "error",
       result.summary,
     );
-  }
-
-  if (deps.initialScrollY !== null && result.outcome === "completed") {
-    try {
-      await deps.scrollContentScript(deps.tabId, deps.initialScrollY, 1500);
-    } catch (error) {
-      deps.traceRecorder?.recordEvent("terminal_cleanup_timeout", {
-        phase: "restore_scroll",
-        tabId: deps.tabId,
-        targetScrollY: deps.initialScrollY,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
   }
 
   deps.setRunning(false);

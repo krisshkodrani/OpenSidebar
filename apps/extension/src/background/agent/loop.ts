@@ -40,7 +40,7 @@ import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { createResultPageProgressState } from "./result-page-progress-policy";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
-import type { PanoramicShot, PerceptionTaskContext } from "../perception/types";
+import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
 import {
   CompletionResponse,
@@ -3081,9 +3081,6 @@ export class AgentLoop {
     const warmupPerception = initialSnapshotResolution.warmupPerception;
     const warmupScreenshot = initialSnapshotResolution.warmupScreenshot;
 
-    // Save initial scroll position for restoration when the agent finishes
-    let initialScrollY: number | null = null;
-
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
       useVLExecutor: this.useVLExecutorOption,
@@ -3112,7 +3109,6 @@ export class AgentLoop {
     });
 
     if (snapshot) {
-      initialScrollY = snapshot.scroll?.y ?? 0;
       this.context.setSnapshot(snapshot);
       this.elementResolver = buildElementResolver(snapshot.elements);
       // If snapshot was fetched via fallback/warmup, update trace startUrl
@@ -3335,8 +3331,6 @@ export class AgentLoop {
     } finally {
       await finalizeStartResult({
         result,
-        tabId,
-        initialScrollY,
         taskId: this.taskId,
         planSubtasks: this.planSubtasks,
         mutationLedger: this.mutationLedger,
@@ -3347,8 +3341,6 @@ export class AgentLoop {
         clearTurnCheckpoint: () => this.clearTurnCheckpoint(),
         broadcastPlanTermination: (outcome, summary) =>
           this.broadcastPlanTermination(outcome, summary),
-        scrollContentScript: (targetTabId, y, timeoutMs) =>
-          this.scrollContentScript(targetTabId, y, timeoutMs),
         setRunning: (isRunning) => {
           this.isRunning = isRunning;
         },
@@ -3711,91 +3703,6 @@ export class AgentLoop {
     return [...this.activeToolNamesForTurn];
   }
 
-  /**
-   * Send a scroll-to-position message to the content script and return
-   * the actual scroll Y after the browser settles.
-   */
-  private async scrollContentScript(
-    tabId: number,
-    y: number,
-    timeoutMs = 15_000,
-  ): Promise<number> {
-    const response = await Promise.race([
-      chrome.tabs.sendMessage(tabId, {
-        type: "SCROLL_TO_POSITION",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { y },
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Scroll restore timed out (${timeoutMs}ms)`)),
-          timeoutMs,
-        ),
-      ),
-    ]);
-    return response?.payload?.actualY ?? y;
-  }
-
-  /**
-   * Capture additional viewport screenshots at different scroll positions
-   * for first-turn panoramic perception. Returns empty array for short pages.
-   * @param primaryScrollY — If the primary screenshot was taken after an orientation
-   *   scroll (e.g., to y=0), pass that value so we skip duplicate positions.
-   */
-  private async capturePanoramicScreenshots(
-    tabId: number,
-    primaryScrollY?: number,
-    restoreY?: number,
-  ): Promise<PanoramicShot[]> {
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) return [];
-
-    const maxY = snapshot.scroll?.maxY ?? 0;
-    const viewportH =
-      snapshot.scroll?.viewportHeight ?? snapshot.viewport?.height ?? 720;
-
-    // Short pages (< 1.5 viewports): no panoramic needed
-    if (maxY < viewportH * 0.5) return [];
-
-    const originalY = restoreY ?? snapshot.scroll?.y ?? 0;
-    // Use primaryScrollY for filtering if the primary shot was taken at a different position
-    const primaryY = primaryScrollY ?? originalY;
-    const shots: PanoramicShot[] = [];
-
-    // Calculate positions: top, middle, bottom
-    const positions: Array<{ y: number; label: string }> = [
-      { y: 0, label: "top" },
-    ];
-    if (maxY > viewportH * 1.5) {
-      positions.push({ y: Math.floor(maxY / 2), label: "middle" });
-    }
-    positions.push({ y: maxY, label: "bottom" });
-
-    // Filter out positions close to primary screenshot (already captured)
-    const filteredPositions = positions.filter(
-      (p) => Math.abs(p.y - primaryY) > viewportH * 0.3,
-    );
-
-    const tab = await chrome.tabs.get(tabId);
-    if (!tab.active) return shots; // Tab not visible — skip panoramic capture
-    for (const pos of filteredPositions) {
-      if (this.abortController?.signal.aborted) break;
-      await this.scrollContentScript(tabId, pos.y);
-      // Brief settle time for rendering
-      await new Promise((r) => setTimeout(r, 150));
-      const dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
-        format: "jpeg",
-        quality: 50, // Lower quality for context shots
-      });
-      shots.push({ dataUrl, scrollY: pos.y, label: pos.label });
-    }
-
-    // Restore original scroll position
-    await this.scrollContentScript(tabId, originalY);
-    return shots;
-  }
-
   private async captureVisibleTabWithRetry(
     windowId: number,
     options: { format?: "jpeg" | "png"; quality?: number },
@@ -3879,15 +3786,7 @@ export class AgentLoop {
         | "missing"
         | "capture_failed"
         | "not_requested" = "not_requested";
-      // Orientation scan: on first perception, scroll to top so the primary
-      // screenshot shows the page beginning (defeats auto-scroll tricks).
-      let primaryScrollY: number | undefined;
       const isFirstPerception = !this.perception.panoramicDone;
-      if (isFirstPerception && (snapshot.scroll?.y ?? 0) > 0) {
-        await this.scrollContentScript(tabId, 0);
-        await new Promise((r) => setTimeout(r, 150));
-        primaryScrollY = 0;
-      }
 
       // Ensure the agent's tab is the visible one before capturing —
       // captureVisibleTab captures whatever tab is active in the window.
@@ -3974,58 +3873,17 @@ export class AgentLoop {
           { tabId, url: snapshot.url },
         );
       } else {
-        // First-turn panoramic: capture additional viewports for page-level context
-        let panoramicScreenshots: PanoramicShot[] | undefined;
         if (isFirstPerception) {
           this.perception.markPanoramicDone();
-          panoramicScreenshots = await this.capturePanoramicScreenshots(
-            tabId,
-            primaryScrollY,
-            // Restore to user's original scroll position after panoramic capture
-            snapshot.scroll?.y,
-          );
-          if (panoramicScreenshots.length > 0) {
-            // Store on perception agent for retroactive T1 trace recording
-            this.perception.setPanoramicShots(panoramicScreenshots);
-            this.log.info(
-              "agent",
-              "Panoramic perception: captured additional viewports",
-              {
-                count: panoramicScreenshots.length,
-                labels: panoramicScreenshots.map((s) => s.label),
-              },
-            );
-          } else {
-            panoramicScreenshots = undefined;
-          }
         }
-        const imageCount = 1 + (panoramicScreenshots?.length ?? 0);
-        if (
-          panoramicScreenshots &&
-          panoramicScreenshots.length > 0 &&
-          !this.imagePromptBudgetAllows(imageCount)
-        ) {
-          this.recordImagePromptBudgetExhausted(
-            imageCount,
-            "structured_panoramic_perception",
-          );
-          panoramicScreenshots = undefined;
-        }
-
-        // If we scrolled for orientation, tell the VLM the primary screenshot is from y=0
-        const scrollOverride =
-          primaryScrollY !== undefined
-            ? { ...snapshot.scroll, y: primaryScrollY }
-            : snapshot.scroll;
 
         const result = await this.perception.observe(
           {
             screenshotDataUrl: dataUrl,
-            panoramicScreenshots,
             elements: snapshot.elements,
             url: snapshot.url,
             title: snapshot.title,
-            scroll: scrollOverride,
+            scroll: snapshot.scroll,
             skeleton: snapshot.skeleton,
             lang: snapshot.lang,
             taskContext,
@@ -4047,7 +3905,6 @@ export class AgentLoop {
           },
           dataUrl,
           elSummary,
-          panoramicScreenshots,
         );
 
         // Track usage for non-cached calls
@@ -4057,7 +3914,7 @@ export class AgentLoop {
             result.durationMs,
             result.model,
             result.providerId as ProviderConfig["providerId"] | undefined,
-            1 + (panoramicScreenshots?.length ?? 0),
+            1,
           );
         } else if (result.cached) {
           this.recordCachedVisionUsage();
