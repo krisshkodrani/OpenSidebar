@@ -49,7 +49,7 @@ import {
   type AgentLoopToolHandlerHost,
   type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
-import { resolveProfileFields } from "../infrastructure/backend-client";
+import { resolveProfileFields } from "../../utils/personal-profile";
 import {
   assessProfileLiteralTextRewrite,
   collectProfileRecordSetsFromValues,

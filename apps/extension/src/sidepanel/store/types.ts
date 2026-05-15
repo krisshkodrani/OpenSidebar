@@ -21,6 +21,10 @@ import type {
   UserWebsiteSkillDraft,
   UserSettings,
 } from "../../types";
+import type {
+  PersonalizationState,
+  PersonalProfile,
+} from "../../utils/personal-profile";
 
 // --- Slice Interfaces ---
 
@@ -161,6 +165,17 @@ export interface WebsiteSkillsSlice {
   setActiveUserWebsiteSkill: (skill: UserWebsiteSkill | null) => void;
 }
 
+export interface PersonalProfileSlice {
+  personalProfileState: PersonalizationState;
+  loadPersonalProfile: () => Promise<void>;
+  savePersonalProfile: (
+    profile: PersonalProfile,
+    enabled?: boolean,
+  ) => Promise<void>;
+  deletePersonalProfile: () => Promise<void>;
+  setPersonalProfileEnabled: (enabled: boolean) => Promise<void>;
+}
+
 export interface UiSlice {
   ready: boolean;
   error: string | null;
@@ -179,6 +194,7 @@ export type Store = ChatSlice &
   SettingsSlice &
   SavedPromptsSlice &
   WebsiteSkillsSlice &
+  PersonalProfileSlice &
   UiSlice;
 
 /** Utility type for creating a slice with immer middleware */

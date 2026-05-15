@@ -67,8 +67,8 @@ beforeAll(async () => {
     [
       "profile:",
       "  identity:",
-      "    first_name: Kai",
-      "    last_name: Schmidt",
+      "    first_name: John",
+      "    last_name: Doe",
       "  sensitive:",
       '    date_of_birth: "1990-01-01"',
       "",
@@ -257,7 +257,7 @@ describe("POST /profile/resolve", () => {
 
     expect(status).toBe(200);
     expect(data.values).toEqual({
-      "identity.first_name": "Kai",
+      "identity.first_name": "John",
       "sensitive.date_of_birth": "1990-01-01",
     });
     expect(data.missing).toEqual(["identity.email"]);

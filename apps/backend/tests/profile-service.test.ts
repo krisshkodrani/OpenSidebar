@@ -13,18 +13,18 @@ import {
 
 describe("parseProfileDocument", () => {
   test("requires a top-level profile object", () => {
-    expect(() => parseProfileDocument("identity:\n  first_name: Kai\n")).toThrow(
-      "top-level `profile` object",
-    );
+    expect(() =>
+      parseProfileDocument("identity:\n  first_name: John\n"),
+    ).toThrow("top-level `profile` object");
   });
 
   test("accepts a valid structured profile document", () => {
     const parsed = parseProfileDocument(
-      "profile:\n  identity:\n    first_name: Kai\n",
+      "profile:\n  identity:\n    first_name: John\n",
     );
     expect(parsed.profile).toEqual({
       identity: {
-        first_name: "Kai",
+        first_name: "John",
       },
     });
   });
@@ -68,8 +68,8 @@ describe("resolveProfileFields", () => {
         [
           "profile:",
           "  identity:",
-          "    first_name: Kai",
-          "    last_name: Schmidt",
+          "    first_name: John",
+          "    last_name: Doe",
           "  address:",
           "    city: Berlin",
           "  sensitive:",
@@ -89,7 +89,7 @@ describe("resolveProfileFields", () => {
       );
 
       expect(result.values).toEqual({
-        "identity.first_name": "Kai",
+        "identity.first_name": "John",
         "address.city": "Berlin",
         "sensitive.date_of_birth": "1990-01-01",
       });

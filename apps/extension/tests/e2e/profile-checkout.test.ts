@@ -45,9 +45,9 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
       seededProfile = await seedTemporaryProfile({
         profile: {
           identity: {
-            first_name: "Kai",
-            last_name: "Schmidt",
-            email: "kai.profile@example.com",
+            first_name: "John",
+            last_name: "Doe",
+            email: "john.doe@example.com",
           },
         },
       });
@@ -91,8 +91,8 @@ describe.skipIf(!h.apiKey || !RUN_BACKEND_PROFILE_E2E)(
       const order = outcome.result as any;
       expect(order).toBeTruthy();
       expect(order.shippingMethod).toBe("standard");
-      expect(order.name).toBe("Kai Schmidt");
-      expect(order.email).toBe("kai.profile@example.com");
+      expect(order.name).toBe("John Doe");
+      expect(order.email).toBe("john.doe@example.com");
 
       expect(
         traceFilesContainText(traceFiles, "get_profile_fields"),

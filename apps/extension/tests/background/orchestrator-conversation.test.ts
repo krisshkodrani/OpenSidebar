@@ -326,12 +326,21 @@ describe("Orchestrator conversation collaboration", () => {
     expect(plannerQueries).toHaveLength(2);
     expect(plannerQueries[1]).not.toContain("PRIOR WORKSPACE TURNS:");
     expect(plannerQueries[1]).not.toContain("Draft a reply accepting Thursday 2 PM");
-    expect(plannerQueries[1]).toBe(
+    expect(plannerQueries[1]).toContain("RECENT WORKSPACE CONVERSATION:");
+    expect(plannerQueries[1]).toContain(
+      "- Assistant result 1: Drafted a reply suggesting Monday at 11 AM.",
+    );
+    expect(plannerQueries[1]).toContain("CURRENT REQUEST:");
+    expect(plannerQueries[1]).toContain(
       "Change the reply. Suggest Monday at 11 AM instead.",
     );
 
     const secondInstruction = capturedInstructions.at(-1)?.instruction ?? "";
     expect(secondInstruction).not.toContain("PRIOR WORKSPACE TURNS:");
+    expect(secondInstruction).toContain("Recent workspace conversation:");
+    expect(secondInstruction).toContain(
+      "Drafted a reply suggesting Monday at 11 AM.",
+    );
     expect(secondInstruction).toContain("Original user request");
     expect(secondInstruction).toContain("Suggest Monday at 11 AM instead.");
   });

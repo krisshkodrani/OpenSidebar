@@ -112,6 +112,39 @@ describe("Saved Prompts CRUD", () => {
     expect(prompts[1].title).toBe("Second");
   });
 
+  test("addSavedPrompt and updateSavedPrompt do not mutate loaded storage objects", async () => {
+    stored[SEEDED_KEY] = true;
+    stored[VERSION_KEY] = 3;
+    stored[STORAGE_KEY] = Object.freeze([
+      Object.freeze({
+        id: "frozen-prompt",
+        title: "Frozen",
+        content: "Original content",
+        category: "Research",
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    ]);
+
+    await addSavedPrompt("Added", "Added content", "Follow-up");
+    let persisted = stored[STORAGE_KEY] as any[];
+    expect(persisted).toHaveLength(2);
+    expect(persisted[0].title).toBe("Frozen");
+    expect(persisted[1].title).toBe("Added");
+
+    await updateSavedPrompt("frozen-prompt", {
+      title: "Updated frozen",
+      content: "Updated content",
+    });
+    persisted = stored[STORAGE_KEY] as any[];
+    expect(persisted[0]).toMatchObject({
+      id: "frozen-prompt",
+      title: "Updated frozen",
+      content: "Updated content",
+      category: "Research",
+    });
+  });
+
   test("updateSavedPrompt updates fields and updatedAt", async () => {
     stored[SEEDED_KEY] = true;
     stored[VERSION_KEY] = 3;

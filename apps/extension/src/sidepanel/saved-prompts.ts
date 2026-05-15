@@ -82,7 +82,7 @@ export async function addSavedPrompt(
   content: string,
   category: string,
 ): Promise<SavedPrompt> {
-  const prompts = await loadSavedPrompts();
+  const prompts = [...(await loadSavedPrompts())];
   const now = Date.now();
   const prompt: SavedPrompt = {
     id: crypto.randomUUID(),
@@ -101,7 +101,7 @@ export async function updateSavedPrompt(
   id: string,
   updates: Partial<Pick<SavedPrompt, "title" | "content" | "category">>,
 ): Promise<SavedPrompt[]> {
-  const prompts = await loadSavedPrompts();
+  const prompts = (await loadSavedPrompts()).map((prompt) => ({ ...prompt }));
   const idx = prompts.findIndex((p) => p.id === id);
   if (idx === -1) return prompts;
   const p = prompts[idx];

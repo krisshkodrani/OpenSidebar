@@ -392,6 +392,8 @@ export interface AgentActivityMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload: {
     active: boolean;
+    /** Whether the task is actively operating on the page surface. */
+    pageActivity?: boolean;
     /** Final outcome sent with active=false so the overlay can show a brief done/failed flash */
     outcome?: { status: "completed" | "failed" | "stopped"; label?: string };
     laneTelemetry?: LaneTelemetrySnapshot;

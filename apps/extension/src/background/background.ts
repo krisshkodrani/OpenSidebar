@@ -46,6 +46,7 @@ import {
   loadUserWebsiteSkills,
   saveUserWebsiteSkill,
 } from "../utils/website-skills";
+import { shouldShowPageActivityCue } from "./page-activity-cue";
 
 /** Cached settings — populated on side panel open, invalidated on storage change. */
 let cachedSettings: UserSettings | null = null;
@@ -1143,8 +1144,10 @@ async function handleUserChat(
         agentQuery = `${text}\n\nSaved website skill guidance:\n${formatUserWebsiteSkillGuidance(savedSkill)}`;
       }
 
+      const pageActivity = shouldShowPageActivityCue(text);
+
       // Notify content script that agent is active
-      sendAgentActivity(tabId, true);
+      sendAgentActivity(tabId, true, undefined, pageActivity);
 
       await startKeepalive();
       try {
@@ -1188,6 +1191,7 @@ function sendAgentActivity(
   tabId: number,
   active: boolean,
   outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
+  pageActivity?: boolean,
 ) {
   if (!tabId || tabId === chrome.tabs.TAB_ID_NONE) return;
   chrome.tabs
@@ -1195,7 +1199,7 @@ function sendAgentActivity(
       type: "AGENT_ACTIVITY",
       requestId: crypto.randomUUID(),
       source: MessageSource.BACKGROUND,
-      payload: { active, outcome },
+      payload: { active, outcome, pageActivity },
     })
     .catch(() => {});
 }

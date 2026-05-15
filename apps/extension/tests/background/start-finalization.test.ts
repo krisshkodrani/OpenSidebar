@@ -200,4 +200,21 @@ describe("finalizeStartResult", () => {
       "boom",
     );
   });
+
+  test("does not restore scroll after successful completion", async () => {
+    const result: LoopResult = {
+      outcome: "completed",
+      turnCount: 1,
+      summary: "Done",
+    };
+    const scrollContentScript = vi.fn(async () => undefined);
+    const deps = makeDeps(result, {
+      initialScrollY: 400,
+      scrollContentScript,
+    });
+
+    await finalizeStartResult(deps);
+
+    expect(scrollContentScript).not.toHaveBeenCalled();
+  });
 });

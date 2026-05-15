@@ -16,19 +16,6 @@ const TIMEOUT_MS = 5000;
 
 // ── Types ──
 
-export interface ProfileResolveResult {
-  profilePath: string;
-  values: Record<string, unknown>;
-  missing: string[];
-  sensitiveFields: string[];
-}
-
-export interface ProfileSafeContextResult {
-  profilePath: string;
-  entries: Array<{ path: string; value: unknown }>;
-  rendered: string;
-}
-
 export interface ProfileFileResolveResult {
   profilePath: string;
   alias: string;
@@ -217,36 +204,6 @@ async function backendFetch(
     signal: AbortSignal.timeout(TIMEOUT_MS),
     headers: { "Content-Type": "application/json", ...options.headers },
   });
-}
-
-export async function resolveProfileFields(
-  fields: string[],
-): Promise<ProfileResolveResult | null> {
-  try {
-    const res = await backendFetch("/profile/resolve", {
-      method: "POST",
-      body: JSON.stringify({ fields }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ProfileResolveResult;
-  } catch {
-    return null;
-  }
-}
-
-export async function resolveProfileContext(
-  query: string,
-): Promise<ProfileSafeContextResult | null> {
-  try {
-    const res = await backendFetch("/profile/context", {
-      method: "POST",
-      body: JSON.stringify({ query }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ProfileSafeContextResult;
-  } catch {
-    return null;
-  }
 }
 
 export async function resolveProfileFile(

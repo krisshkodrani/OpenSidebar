@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
-import { ToolName } from "../../src/types";
+import { RiskLevel, ToolName } from "../../src/types";
 import { TraceRecorder } from "../../src/background/agent/trace";
 
 describe("TraceRecorder skill tool metrics", () => {
@@ -179,5 +179,95 @@ describe("TraceRecorder skill tool metrics", () => {
       elementSummary: "[2] h1 \"Next page\"",
       pageStateRef: "postTool",
     });
+  });
+
+  test("redacts profile tool values from trace payloads", async () => {
+    const recorder = new TraceRecorder("session-profile-redaction");
+    recorder.startTurn(
+      1,
+      {
+        url: "https://example.com/apply",
+        title: "Apply",
+        elementCount: 2,
+        visibleContentLength: 80,
+        pageContentLength: 100,
+        scrollY: 0,
+      },
+      [],
+      2,
+      2,
+      "openai/gpt-5.4",
+      "none",
+    );
+    recorder.recordToolExecution(
+      "profile-call",
+      ToolName.GET_PROFILE_FIELDS,
+      { fields: ["full_name", "contact.email"] },
+      [
+        "PROFILE FIELDS:",
+        "- full_name: John Doe",
+        "- contact.email: john.doe@example.com",
+      ].join("\n"),
+      true,
+      5,
+      RiskLevel.LOW,
+    );
+    recorder.recordLLMResponse(
+      "Typing John Doe into the form.",
+      [
+        {
+          id: "type-name",
+          type: "function",
+          function: {
+            name: ToolName.TYPE_TEXT,
+            arguments: JSON.stringify({ id: 7, text: "John Doe" }),
+          },
+        } as any,
+      ],
+      "tool_calls",
+      null,
+      10,
+    );
+    recorder.recordPostToolSnapshot({
+      url: "https://example.com/apply",
+      title: "Apply",
+      elementCount: 1,
+      visibleContentLength: 80,
+      pageContentLength: 100,
+      scrollY: 0,
+      elements: [
+        {
+          tag: 7,
+          tagName: "input",
+          text: "John Doe",
+          attributes: { value: "john.doe@example.com" },
+          isVisible: true,
+          isInteractive: true,
+          rect: { x: 0, y: 0, width: 100, height: 20 },
+        } as any,
+      ],
+    });
+    await recorder.recordPerception(
+      {
+        interpretation: "The form contains John Doe.",
+        model: "vision-model",
+        durationMs: 5,
+        cached: false,
+      },
+      undefined,
+      '[7] input "john.doe@example.com"',
+    );
+    await recorder.endTurn();
+
+    const fetchMock = globalThis.fetch as any;
+    const turnCall = fetchMock.mock.calls.find(
+      ([url]: [string]) => String(url).endsWith("/traces"),
+    );
+    expect(turnCall).toBeTruthy();
+
+    const body = turnCall[1].body as string;
+    expect(body).not.toContain("John Doe");
+    expect(body).not.toContain("john.doe@example.com");
+    expect(body).toContain("[REDACTED_PROFILE_VALUE]");
   });
 });

@@ -13,4 +13,5 @@ export * from "./TaskStatusRegion";
 
 export * from "./SavedPromptsDrawer";
 export * from "./WebsiteSkillsDrawer";
+export * from "./PersonalProfileDrawer";
 export * from "./ClarificationOverlay";

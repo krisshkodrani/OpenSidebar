@@ -5,7 +5,7 @@ OpenSidebar connects to JobAgent as a separate local MCP HTTP service. The Chrom
 Start JobAgent separately:
 
 ```powershell
-cd C:\Users\k_shk\Projects\JobAgent
+cd C:\path\to\JobAgent
 $env:JOBAGENT_MCP_TOKEN="local-dev-token"
 $env:JOBAGENT_MCP_ALLOWED_ORIGINS="http://localhost,http://127.0.0.1"
 corepack pnpm run mcp:http

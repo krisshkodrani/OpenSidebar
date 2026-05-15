@@ -11,6 +11,10 @@ import "../setup";
 import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
 import { ToolName } from "../../src/types";
+import {
+  EMPTY_PERSONAL_PROFILE,
+  PERSONAL_PROFILE_STORAGE_KEY,
+} from "../../src/utils/personal-profile";
 
 // Register all tools once
 beforeAll(() => {
@@ -6243,6 +6247,47 @@ describe("Tool Registration", () => {
     expect(def!.function.parameters.required).toContain("fields");
     expect(def!.function.parameters.properties.fields.type).toBe("array");
     expect(def!.function.description).toContain("local personal profile");
+  });
+
+  test("get_profile_fields reads the local saved profile", async () => {
+    (chrome.storage.local.get as any) = vi.fn(async () => ({
+      [PERSONAL_PROFILE_STORAGE_KEY]: {
+        version: 1,
+        enabled: true,
+        updatedAt: 1,
+        profile: {
+          ...EMPTY_PERSONAL_PROFILE,
+          identity: {
+            ...EMPTY_PERSONAL_PROFILE.identity,
+            first_name: "John",
+            last_name: "Doe",
+          },
+          contact: {
+            ...EMPTY_PERSONAL_PROFILE.contact,
+            email: "john.doe@example.com",
+          },
+        },
+      },
+    }));
+
+    const result = await toolRegistry.execute(
+      {
+        id: "tool-profile-fields",
+        type: "function",
+        function: {
+          name: ToolName.GET_PROFILE_FIELDS,
+          arguments: JSON.stringify({
+            fields: ["full_name", "contact.email", "contact.phone"],
+          }),
+        },
+      } as any,
+      123,
+    );
+
+    expect(result).toContain("PROFILE FIELDS:");
+    expect(result).toContain("- full_name: John Doe");
+    expect(result).toContain("- contact.email: john.doe@example.com");
+    expect(result).toContain("Missing: contact.phone");
   });
 
   test("type_text mirrors input in the main world after content execution", async () => {

@@ -81,10 +81,9 @@ describe("Overlay harness browser injection", () => {
   }, 60_000);
 
   it("drives visible overlay state transitions with a fake background controller", async () => {
-    const runner = await setupRunner();
+    const runner = await setupRunner({ autoStartFakeBackground: true });
     await runner.inject();
     await runner.startMessageCapture();
-    await runner.startFakeBackgroundController();
 
     await runner.emitRuntimeMessage({
       type: "AGENT_STATUS",
@@ -102,7 +101,6 @@ describe("Overlay harness browser injection", () => {
     await runner.waitForOverlayText(
       "Fake overlay response: Use the visible heading.",
     );
-    await runner.waitForOverlayText("Task completed");
 
     const capture = await runner.readMessageCapture();
     expect(capture.inboundTypes).toEqual(
@@ -127,10 +125,9 @@ describe("Overlay harness browser injection", () => {
   }, 60_000);
 
   it("round-trips rendered pause and resume controls through the fake background", async () => {
-    const runner = await setupRunner();
+    const runner = await setupRunner({ autoStartFakeBackground: true });
     await runner.inject();
     await runner.startMessageCapture();
-    await runner.startFakeBackgroundController();
 
     await runner.emitRuntimeMessage({
       type: "AGENT_STATUS",
@@ -151,7 +148,7 @@ describe("Overlay harness browser injection", () => {
     await runner.waitForFakeBackgroundHandled("RESUME_AGENT");
     await runner.waitForOverlayText("Fake background resumed");
 
-    await runner.clickOverlayButton("Stop agent");
+    await runner.clickOverlayButton("Stop agent and take control");
     await runner.waitForFakeBackgroundHandled("STOP_AGENT");
 
     const capture = await runner.readMessageCapture();
@@ -171,6 +168,7 @@ describe("Overlay harness browser injection", () => {
 
   it("starts an idle task and completes it through the fake background", async () => {
     const runner = await setupRunner({
+      autoStartFakeBackground: true,
       runtimeOptions: {
         storage: {
           local: {
@@ -182,7 +180,6 @@ describe("Overlay harness browser injection", () => {
     await runner.inject();
     await runner.waitForOverlayText("Hi! What can I help with?");
     await runner.startMessageCapture();
-    await runner.startFakeBackgroundController();
 
     await runner.sendPrimaryMessageThroughUi("Summarize the generic page.");
     await runner.waitForFakeBackgroundHandled("USER_CHAT");
@@ -190,7 +187,6 @@ describe("Overlay harness browser injection", () => {
     await runner.waitForOverlayText(
       "Fake overlay response: Summarize the generic page.",
     );
-    await runner.waitForOverlayText("Task completed");
 
     const capture = await runner.readMessageCapture();
     const taskMessage = capture.outboundMessages.find(

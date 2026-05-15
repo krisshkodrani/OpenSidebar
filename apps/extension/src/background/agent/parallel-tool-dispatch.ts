@@ -1,5 +1,5 @@
 import { AgentStep, ToolCall, ToolName } from "../../types";
-import { resolveProfileFields } from "../infrastructure/backend-client";
+import { resolveProfileFields } from "../../utils/personal-profile";
 import { DOM_MODIFYING_TOOLS } from "../tools/metadata";
 import {
   hasRecentExactTextFieldRead,

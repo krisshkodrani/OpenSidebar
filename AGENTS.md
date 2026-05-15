@@ -74,6 +74,10 @@ Before implementing, identify the user-visible goal and any assumptions that aff
 - Surface tradeoffs when choosing between a narrow fix, a broader runtime fix, or a test-only change.
 - Push back on approaches that add complexity, fixture-specific behavior, or brittle shortcuts.
 
+### Feature Direction Changes
+
+When the direction of a feature changes, identify any UX, copy, settings, docs, tests, prompts, fixtures, or runtime paths left rough, stale, duplicated, or half-replaced by the pivot. If polishing or removing that leftover surface is not already part of the requested work, ask the user whether to polish it before leaving it behind.
+
 ### Simplicity First
 
 Implement the minimum product change that satisfies the request. Prefer the least code that solves the real problem without overengineering, speculative abstractions, or unnecessary features.

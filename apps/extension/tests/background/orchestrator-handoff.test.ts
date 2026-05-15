@@ -613,11 +613,11 @@ describe("Orchestrator handoff briefing", () => {
       undefined,
       undefined,
       "Fill checkout using saved profile values",
-      "Use my saved profile for checkout and keep the shipping speed unchanged. The name should stay Kai Schmidt, the email should be kai.profile@example.com, and suggest Monday at 11 AM in the follow-up note. Also preserve the reference code \"SHIP-42\" while avoiding any unnecessary navigation. Add several extra descriptive sentences here so the full original request becomes much longer than the compact excerpt threshold and would otherwise bloat the executor prompt without adding more useful literals.",
+      "Use my saved profile for checkout and keep the shipping speed unchanged. The name should stay John Doe, the email should be john.doe@example.com, and suggest Monday at 11 AM in the follow-up note. Also preserve the reference code \"SHIP-42\" while avoiding any unnecessary navigation. Add several extra descriptive sentences here so the full original request becomes much longer than the compact excerpt threshold and would otherwise bloat the executor prompt without adding more useful literals.",
     );
 
     expect(instruction).toContain("Original user request");
-    expect(instruction).toContain("kai.profile@example.com");
+    expect(instruction).toContain("john.doe@example.com");
     expect(instruction).toContain("Monday at 11 AM");
     expect(instruction).toContain('"SHIP-42"');
     expect(instruction.length).toBeLessThan(2600);

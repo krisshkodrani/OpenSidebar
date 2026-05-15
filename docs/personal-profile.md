@@ -1,138 +1,60 @@
 # Personal Profile
 
-OpenSidebar can read exact fields from a local YAML profile when it needs to fill forms.
+OpenSidebar supports one local saved profile for form and application tasks. The
+profile is edited in the sidepanel through **Personalize** and is stored in the
+browser runtime storage adapter.
 
-## Default Path
+## V1 Decisions
 
-On Windows, the default path is:
-
-```text
-%USERPROFILE%\.opensidebar\profiles\default.yaml
-```
-
-You can override it with:
-
-```text
-OPENSIDEBAR_PROFILE_PATH=C:\path\to\your\profile.yaml
-```
-
-## Format
-
-The file must contain a top-level `profile` object. Field requests are relative to that root.
-
-Example:
-
-```yaml
-profile:
-  identity:
-    first_name: Kai
-    last_name: Schmidt
-    full_name: Kai Schmidt
-    email: kai@example.com
-    phone: "+49 170 1234567"
-
-  address:
-    line1: Musterstrasse 12
-    line2: ""
-    city: Berlin
-    state: Berlin
-    postal_code: "10115"
-    country: Germany
-
-  work:
-    company: Example GmbH
-    title: Product Engineer
-
-  files:
-    cv:
-      path: cv.pdf
-      mime_type: application/pdf
-
-  context:
-    safe:
-      professional_summary: Senior frontend engineer focused on React, TypeScript, and browser automation.
-      job_preferences:
-        roles:
-          - Frontend Engineer
-          - Product Engineer
-        remote: true
-        locations:
-          - Berlin
-          - Remote
-        salary_range: 120K-160K
-      work_authorization: Authorized to work in Germany.
-
-  preferences:
-    default_country: Germany
-    preferred_language: en
-
-  sensitive:
-    date_of_birth: "1990-01-01"
-```
-
-## Job Experience Sample
-
-For repeated work-history forms, keep experience entries as a YAML list under the
-structured profile. The agent can request the full list with
-`get_profile_fields(["experience.roles"])` and map each item into the repeated
-form sections. Individual entries can also be requested with array paths such as
-`experience.roles[1].company`.
-
-```yaml
-profile:
-  experience:
-    roles:
-      - company: Atlas Labs
-        title: Senior Frontend Engineer
-        start_date: "2022-04"
-        end_date: Present
-        summary: Built React and TypeScript workflow tools for enterprise teams.
-      - company: Northstar Systems
-        title: Frontend Engineer
-        start_date: "2019-06"
-        end_date: "2022-03"
-        summary: Delivered customer dashboards with GraphQL and design-system components.
-      - company: BrightPixel Studio
-        title: Web Developer
-        start_date: "2017-01"
-        end_date: "2019-05"
-        summary: Created responsive web applications and automated content workflows.
-```
+1. Screenshots stay enabled by default. Personalization does not turn off debug
+   screenshots after profile values are filled.
+2. The **Use saved profile** toggle is persistent for the local browser profile.
+3. V1 supports only one local profile. Multiple personas are out of scope.
 
 ## Runtime Behavior
 
-- The agent should request only the exact fields it needs.
-- Non-secret values under `context.safe` may be injected as compact task-relevant personal context.
-- Exact form values such as name, email, phone, and address are still retrieved through `get_profile_fields`.
-- `files.cv.path` is resolved relative to the profile file directory and can be uploaded with `upload_file` using `profileFile: "cv"`.
-- Normal fields like `identity.first_name` are treated as low-risk reads.
-- Fields under `sensitive.*` are treated as high-risk and go through the existing approval flow.
-- The full profile is not injected into prompts by default.
+- The sidepanel stores profile data under `opensidebar:personalProfile`.
+- The overlay harness uses the same storage port shape with its local adapter.
+- The planner only receives a short note that a saved profile is available for
+  application or form tasks.
+- Exact profile values are not injected into the task prompt. The agent must call
+  `get_profile_fields` for specific fields before typing saved profile data.
+- If profile use is off or no saved profile exists, `get_profile_fields` returns
+  a disabled message and the agent should ask the user to personalize the harness
+  or turn on **Use saved profile**.
+- Final submission of applications remains covered by the normal approval flow.
 
-## Local CV Setup
+## Supported Shape
 
-Keep profile files and CVs out of git. A recommended local layout for development is:
+The v1 profile schema is intentionally small and form-oriented:
 
-```text
-.artifacts/personal-info/default.yaml
-.artifacts/personal-info/cv.pdf
+- `identity`: first name, last name, preferred name, pronouns
+- `contact`: email, phone, location, address
+- `links`: LinkedIn, portfolio, GitHub, website
+- `preferences`: roles, locations, work modes, salary, available date
+- `authorization`: work authorization, sponsorship, relocation
+- `answers`: availability, why interested, cover note
+- `sensitive.eeo`: optional EEO answers
+
+## Field Requests
+
+The agent should request only the exact fields it needs:
+
+```json
+{ "fields": ["identity.first_name", "contact.email"] }
 ```
 
-Point the backend at that profile:
+Common aliases are supported:
 
-```text
-OPENSIDEBAR_PROFILE_PATH=C:\Users\k_shk\Projects\OpenSidebar\.artifacts\personal-info\default.yaml
-```
+- `full_name` and `identity.full_name`
+- `email`
+- `phone`
+- `location`
 
-The default `cv` alias is the only profile file alias currently supported. Files must stay under the profile directory and must be 10MB or smaller.
+## Privacy Notes
 
-## Example Field Paths
-
-- `identity.first_name`
-- `identity.last_name`
-- `identity.email`
-- `address.line1`
-- `address.city`
-- `address.postal_code`
-- `preferences.default_country`
-- `sensitive.date_of_birth`
+Profile values are local to the runtime storage adapter. Trace recording redacts
+profile values after they are returned by `get_profile_fields`, including later
+tool arguments and model messages that contain those exact values. Screenshots
+can still show page content by design, because screenshots remain enabled by
+default for v1.

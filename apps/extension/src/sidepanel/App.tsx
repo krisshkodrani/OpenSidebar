@@ -16,6 +16,7 @@ import {
   Header,
   MessageBubble,
   InputArea,
+  PersonalProfileDrawer,
   TaskStatusRegion,
   WebsiteSkillsDrawer,
 } from "./components";
@@ -33,6 +34,7 @@ import { useTranscriptAutoScroll } from "./hooks/useTranscriptAutoScroll";
 import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useTaskUiState } from "./task-ui-state";
+import { hasUsablePersonalProfile } from "../utils/personal-profile";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -74,6 +76,7 @@ export default function App({ themeRoot }: AppProps = {}) {
   const skillRecordingStatus = useStore((s) => s.skillRecordingStatus);
   const activeUserWebsiteSkill = useStore((s) => s.activeUserWebsiteSkill);
   const isAgentRunning = useStore((s) => s.isAgentRunning);
+  const personalProfileState = useStore((s) => s.personalProfileState);
   // Avoid re-running filter/map work on every streaming delta.
   const visibleMessages = useMemo(
     () =>
@@ -125,6 +128,7 @@ export default function App({ themeRoot }: AppProps = {}) {
 
   // Sidebar UI State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPersonalProfileOpen, setIsPersonalProfileOpen] = useState(false);
   const [isSavedPromptsOpen, setIsSavedPromptsOpen] = useState(false);
   const [isWebsiteSkillsOpen, setIsWebsiteSkillsOpen] = useState(false);
   const [isRecordIntroOpen, setIsRecordIntroOpen] = useState(false);
@@ -135,6 +139,10 @@ export default function App({ themeRoot }: AppProps = {}) {
     string | undefined
   >(undefined);
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
+  const hasPersonalProfile = useMemo(
+    () => hasUsablePersonalProfile(personalProfileState),
+    [personalProfileState],
+  );
 
   useEffect(() => {
     const root = themeRoot ?? document.documentElement;
@@ -230,19 +238,27 @@ export default function App({ themeRoot }: AppProps = {}) {
         )}
         <Header
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
           onOpenSavedPrompts={() => {
             setSavedPromptsPrefill(undefined);
             setIsSavedPromptsOpen(true);
           }}
           onOpenWebsiteSkills={() => setIsWebsiteSkillsOpen(true)}
           onRecordSkill={handleRecordSkill}
+          hasPersonalProfile={hasPersonalProfile}
           modeBadgeLabel={getHeaderModeBadge(settings)}
+          profileEnabled={personalProfileState.enabled}
           recordingActive={skillRecordingStatus === "recording"}
         />
 
         <SettingsDrawer
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
+        />
+
+        <PersonalProfileDrawer
+          isOpen={isPersonalProfileOpen}
+          onClose={() => setIsPersonalProfileOpen(false)}
         />
 
         <SavedPromptsDrawer
@@ -308,6 +324,13 @@ export default function App({ themeRoot }: AppProps = {}) {
               {blockedSiteWarning}
             </div>
           )}
+          {isAgentRunning &&
+            personalProfileState.enabled &&
+            hasPersonalProfile && (
+              <div className="mx-4 mt-2 rounded-lg border border-primary-200 bg-primary-50/80 px-3 py-2 text-xs text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">
+                Saved profile available for form fields.
+              </div>
+            )}
           {error && (
             <div
               role="alert"
@@ -389,6 +412,7 @@ export default function App({ themeRoot }: AppProps = {}) {
             onSendFeedback={handleSendFeedback}
             onStop={handleStop}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenPersonalProfile={() => setIsPersonalProfileOpen(true)}
           />
         </div>
 
