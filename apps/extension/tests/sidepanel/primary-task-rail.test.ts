@@ -109,6 +109,48 @@ describe("PrimaryTaskRail label precedence", () => {
     ).toBe("Task partially completed");
   });
 
+  test("labels the running stop control as take control", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    useStore.setState({
+      agentStatus: AgentStatus.ACTING,
+      statusDetail: "Taking action on the page",
+      isAgentRunning: true,
+      latestStepLabel: "Clicking Continue",
+      taskProgress: null,
+      taskCompletion: null,
+      pendingApproval: null,
+      pendingEscalation: null,
+      pendingClarification: null,
+      pendingPlanConfirmation: null,
+      durableRunStatus: null,
+      stagnationState: null,
+      turnProgress: null,
+      sessionMetrics: null,
+      settings: {
+        ...useStore.getState().settings,
+        showSessionMetrics: false,
+      },
+    });
+
+    try {
+      await act(async () => {
+        root.render(React.createElement(PrimaryTaskRail));
+      });
+
+      const button = container.querySelector(
+        'button[aria-label="Stop agent and take control"]',
+      );
+      expect(button?.textContent).toContain("Take control");
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+    }
+  });
+
   test("caps long primary labels inside a scrollable rail region", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

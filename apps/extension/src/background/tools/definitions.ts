@@ -9,7 +9,7 @@ export const CLICK_DEF: ToolDefinition = {
   function: {
     name: ToolName.CLICK_ELEMENT,
     description:
-      "Click an element by tag ID. For untagged canvas/game targets, use click_coordinates.",
+      "Click an element by tag ID. If the user asks to click the same non-submit control N times, use count=N in one call instead of separate turns. For untagged canvas/game targets, use click_coordinates.",
     parameters: {
       type: "object",
       properties: {

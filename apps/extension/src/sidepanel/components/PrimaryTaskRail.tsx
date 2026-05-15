@@ -278,10 +278,10 @@ export function PrimaryTaskRail() {
             <button
               onClick={() => void handleStop()}
               className="inline-flex items-center gap-1 rounded-lg bg-red-500 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600"
-              aria-label="Stop agent"
+              aria-label="Stop agent and take control"
             >
               <Square size={11} fill="currentColor" />
-              Stop
+              Take control
             </button>
           ) : null}
         </div>

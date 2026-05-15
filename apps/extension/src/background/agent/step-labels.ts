@@ -76,7 +76,7 @@ export function formatStepLabel(
     case ToolName.SCROLL_PAGE:
       return `Scroll ${args.direction ?? "down"}`;
     case ToolName.READ_PAGE:
-      return "Read page";
+      return "Scanning page";
     case ToolName.HOVER_ELEMENT:
       return `Hover ${el(args.id)}`;
     case ToolName.FIND_ELEMENT: {
@@ -148,7 +148,9 @@ export function formatStepLabel(
     case ToolName.RIGHT_CLICK:
       return `Right-click ${el(args.id)}`;
     case ToolName.SET_CHECKBOX:
-      return `Set checkbox ${el(args.id)} = ${args.checked ?? "?"}`;
+      return args.checked === false
+        ? `Uncheck ${el(args.id)}`
+        : `Check ${el(args.id)}`;
     case ToolName.DOWNLOAD_FILE: {
       const url = args.url as string | undefined;
       if (url) {
@@ -184,8 +186,8 @@ export function formatStepLabel(
     case ToolName.INSPECT_HIDDEN: {
       const pattern = args.pattern as string | undefined;
       return pattern
-        ? `Inspect hidden: "${pattern.slice(0, 30)}"`
-        : "Inspect hidden elements";
+        ? `Checking hidden page state: "${pattern.slice(0, 30)}"`
+        : "Checking hidden page state";
     }
     case ToolName.INSPECT_CHART: {
       const pattern = args.pattern as string | undefined;
@@ -208,7 +210,7 @@ export function formatStepLabel(
     case ToolName.CONFIGURE_SERVICENOW_FORM:
       return "Configure ServiceNow form";
     case ToolName.XRAY_PAGE:
-      return "Toggle X-ray mode";
+      return "Inspecting page structure";
     default:
       return String(toolName);
   }

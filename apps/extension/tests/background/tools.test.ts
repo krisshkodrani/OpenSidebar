@@ -104,6 +104,19 @@ describe("Tool Registration", () => {
     }
   });
 
+  test("click_element documents count for repeated same-control clicks", () => {
+    const clickDef = toolRegistry
+      .getDefinitions()
+      .find((def) => def.function.name === ToolName.CLICK_ELEMENT);
+
+    expect(clickDef?.function.description).toContain(
+      "use count=N in one call",
+    );
+    expect(
+      clickDef?.function.parameters.properties.count?.description,
+    ).toContain("max 10");
+  });
+
   test("inspect_table summarizes duplicate row candidates", async () => {
     document.body.innerHTML = `
       <table>

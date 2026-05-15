@@ -32,7 +32,11 @@ import {
 } from "lucide-react";
 import { AgentStep, ToolName } from "../../types";
 import { clsx } from "clsx";
-import { isGenericProgressLabel } from "../progress-labels";
+import {
+  displayProgressLabel,
+  isGenericProgressLabel,
+  isLowLevelProgressLabel,
+} from "../progress-labels";
 
 /** Map a tool name (from step label) to a specific icon */
 function toolIcon(step: AgentStep): React.ReactNode {
@@ -126,9 +130,11 @@ function toolIcon(step: AgentStep): React.ReactNode {
 
 function StepRow({
   step,
+  label,
   showMedia,
 }: {
   step: AgentStep;
+  label: string;
   showMedia: boolean;
 }) {
   const isRunning = step.status === "running";
@@ -147,7 +153,7 @@ function StepRow({
             step.status === "error" && "text-red-600 dark:text-red-400",
           )}
         >
-          {step.label}
+          {label}
         </span>
       </div>
       {showMedia && step.screenshotUrl && (
@@ -175,6 +181,12 @@ const COLLAPSE_THRESHOLD = 5;
 const VISIBLE_TAIL = 3;
 const ACTIVE_VISIBLE_TAIL = 2;
 
+type StepView = {
+  step: AgentStep;
+  label: string;
+  lowLevel: boolean;
+};
+
 export const StepTimeline = React.memo(function StepTimeline({
   steps,
 }: {
@@ -182,19 +194,46 @@ export const StepTimeline = React.memo(function StepTimeline({
   defaultCollapsed?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const displaySteps = steps.filter(
-    (step) =>
-      !(step.type === "thinking" && isGenericProgressLabel(step.label)),
-  );
+  const stepViews: StepView[] = steps
+    .filter(
+      (step) =>
+        !(step.type === "thinking" && isGenericProgressLabel(step.label)),
+    )
+    .map((step) => ({
+      step,
+      label: displayProgressLabel(step.label) ?? step.label,
+      lowLevel: isLowLevelProgressLabel(step.label),
+    }))
+    .filter((view) => view.label.trim().length > 0);
+  const hasUserFacingStep = stepViews.some((view) => !view.lowLevel);
+  const diagnosticHiddenCount =
+    !expanded && hasUserFacingStep
+      ? stepViews.filter(
+          (view) => view.lowLevel && view.step.status !== "running",
+        ).length
+      : 0;
+  const displaySteps =
+    !expanded && hasUserFacingStep
+      ? stepViews.filter(
+          (view) => !view.lowLevel || view.step.status === "running",
+        )
+      : stepViews;
 
-  const hasRunning = displaySteps.some((s) => s.status === "running");
-  const collapseThreshold = hasRunning ? ACTIVE_VISIBLE_TAIL : COLLAPSE_THRESHOLD;
+  const hasRunning = displaySteps.some(
+    (view) => view.step.status === "running",
+  );
+  const collapseThreshold = hasRunning
+    ? ACTIVE_VISIBLE_TAIL
+    : COLLAPSE_THRESHOLD;
   const visibleTail = hasRunning ? ACTIVE_VISIBLE_TAIL : VISIBLE_TAIL;
   const shouldCollapse = !expanded && displaySteps.length > collapseThreshold;
   const visibleSteps = shouldCollapse
     ? displaySteps.slice(-visibleTail)
     : displaySteps;
-  const hiddenCount = displaySteps.length - visibleSteps.length;
+  const hiddenCount =
+    displaySteps.length - visibleSteps.length + diagnosticHiddenCount;
+  const shouldShowExpand =
+    shouldCollapse || (!expanded && diagnosticHiddenCount > 0);
   const showMedia = expanded || (!shouldCollapse && displaySteps.length <= 2);
   const helperLabel = `${hiddenCount} earlier step${hiddenCount > 1 ? "s" : ""}`;
 
@@ -203,7 +242,7 @@ export const StepTimeline = React.memo(function StepTimeline({
   return (
     <div className="max-w-[92%] mb-1">
       <div className="ml-1 border-l border-warm-200/60 dark:border-warm-700/40 pl-2 space-y-px">
-        {shouldCollapse && (
+        {shouldShowExpand && (
           <button
             onClick={() => setExpanded(true)}
             className="flex items-center gap-1 text-[11px] text-warm-400 dark:text-warm-500 hover:text-warm-600 dark:hover:text-warm-300 py-0.5 px-1 transition-colors"
@@ -223,8 +262,13 @@ export const StepTimeline = React.memo(function StepTimeline({
             <span>Collapse</span>
           </button>
         ) : null}
-        {visibleSteps.map((step) => (
-          <StepRow key={step.id} step={step} showMedia={showMedia} />
+        {visibleSteps.map((view) => (
+          <StepRow
+            key={view.step.id}
+            step={view.step}
+            label={view.label}
+            showMedia={showMedia}
+          />
         ))}
       </div>
     </div>
