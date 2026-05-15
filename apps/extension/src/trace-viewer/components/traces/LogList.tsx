@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useId, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
@@ -46,43 +46,60 @@ function formatTs(ts: string): string {
 
 function LogRow({ entry }: { entry: SessionLogEntry }) {
   const [expanded, setExpanded] = useState(false);
+  const dataId = useId();
   const hasData = entry.data && Object.keys(entry.data).length > 0;
+  const rowClass = `flex w-full gap-2 px-3 py-0.5 text-left ${hasData ? "cursor-pointer" : ""}`;
+  const rowContent = (
+    <>
+      <span className="text-trace-dim shrink-0 w-[85px]">
+        {formatTs(entry.ts)}
+      </span>
+      <span
+        className={`shrink-0 w-[38px] font-bold ${LEVEL_COLORS[entry.lvl] || "text-trace-muted"}`}
+      >
+        {entry.lvl}
+      </span>
+      <span
+        className={`shrink-0 w-[80px] ${SOURCE_COLORS[entry.src] || "text-trace-muted"}`}
+      >
+        {entry.src}
+      </span>
+      <span className="shrink-0 w-[80px] text-trace-muted">{entry.cat}</span>
+      <span className="text-trace-text truncate flex-1">{entry.msg}</span>
+      {hasData && (
+        <span className="text-trace-dim shrink-0">
+          <ChevronRight
+            size={13}
+            className={`transition-transform ${expanded ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+        </span>
+      )}
+    </>
+  );
 
   return (
     <div
       className={`font-mono text-[11px] leading-[18px] border-b border-trace-border/40 hover:bg-trace-panel/50 ${LEVEL_BG[entry.lvl] || ""}`}
     >
-      <div
-        className={`flex gap-2 px-3 py-0.5 ${hasData ? "cursor-pointer" : ""}`}
-        onClick={() => hasData && setExpanded(!expanded)}
-      >
-        <span className="text-trace-dim shrink-0 w-[85px]">
-          {formatTs(entry.ts)}
-        </span>
-        <span
-          className={`shrink-0 w-[38px] font-bold ${LEVEL_COLORS[entry.lvl] || "text-trace-muted"}`}
+      {hasData ? (
+        <button
+          type="button"
+          className={rowClass}
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-controls={dataId}
         >
-          {entry.lvl}
-        </span>
-        <span
-          className={`shrink-0 w-[80px] ${SOURCE_COLORS[entry.src] || "text-trace-muted"}`}
-        >
-          {entry.src}
-        </span>
-        <span className="shrink-0 w-[80px] text-trace-muted">{entry.cat}</span>
-        <span className="text-trace-text truncate flex-1">{entry.msg}</span>
-        {hasData && (
-          <span className="text-trace-dim shrink-0">
-            <ChevronRight
-              size={13}
-              className={`transition-transform ${expanded ? "rotate-90" : ""}`}
-              aria-hidden="true"
-            />
-          </span>
-        )}
-      </div>
+          {rowContent}
+        </button>
+      ) : (
+        <div className={rowClass}>{rowContent}</div>
+      )}
       {expanded && entry.data && (
-        <pre className="px-3 py-1.5 ml-0 sm:ml-[285px] text-[10px] text-trace-subtle bg-trace-bg/60 rounded mb-1 overflow-x-auto max-h-[300px] whitespace-pre-wrap break-all scrollbar-thin">
+        <pre
+          id={dataId}
+          className="px-3 py-1.5 ml-0 sm:ml-[285px] text-[10px] text-trace-subtle bg-trace-bg/60 rounded mb-1 overflow-x-auto max-h-[300px] whitespace-pre-wrap break-all scrollbar-thin"
+        >
           {JSON.stringify(entry.data, null, 2)}
         </pre>
       )}
@@ -146,6 +163,7 @@ export default function LogList() {
       {/* Filter bar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-trace-border shrink-0 bg-trace-panel/50">
         <select
+          aria-label="Filter logs by level"
           value={levelFilter}
           onChange={(e) => setLevelFilter(e.target.value)}
           className="bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1 text-[11px] outline-none focus:border-trace-accent"
@@ -157,6 +175,7 @@ export default function LogList() {
           <option value="ERROR">ERROR</option>
         </select>
         <select
+          aria-label="Filter logs by category"
           value={catFilter}
           onChange={(e) => setCatFilter(e.target.value)}
           className="bg-trace-bg text-trace-text border border-trace-border rounded px-2 py-1 text-[11px] outline-none focus:border-trace-accent"
@@ -170,6 +189,7 @@ export default function LogList() {
         </select>
         <input
           type="text"
+          aria-label="Search logs"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search logs..."

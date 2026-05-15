@@ -7,6 +7,7 @@ import {
   formatCost,
   formatTokens,
   extractQueryTitle,
+  compactTraceTaskLabel,
 } from "../../utils";
 import InvestigationSummary from "./InvestigationSummary";
 import EvidenceTimeline from "./EvidenceTimeline";
@@ -125,15 +126,19 @@ export default function OverviewTab({ session }: OverviewTabProps) {
           </div>
           {plan.subtasks?.length > 0 && (
             <ol className="mt-3 space-y-1">
-              {plan.subtasks.map((subtask, i) => (
-                <li
-                  key={i}
-                  className="text-[12px] text-trace-muted flex items-start gap-2"
-                >
-                  <span className="text-trace-accent mt-0.5">{i + 1}.</span>
-                  {subtask}
-                </li>
-              ))}
+              {plan.subtasks.map((subtask, i) => {
+                const label = compactTraceTaskLabel(subtask) || subtask;
+                return (
+                  <li
+                    key={i}
+                    className="text-[12px] text-trace-muted flex items-start gap-2"
+                    title={label === subtask ? undefined : subtask}
+                  >
+                    <span className="text-trace-accent mt-0.5">{i + 1}.</span>
+                    {label}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>

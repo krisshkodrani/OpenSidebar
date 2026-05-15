@@ -125,6 +125,62 @@ describe("trace sqlite store", () => {
       failures: 1,
       sampleSessionId: "session-1",
     });
+    expect(insights?.models[0]).toMatchObject({
+      id: "model-a",
+      sessions: 1,
+      requests: 1,
+    });
+  });
+
+  test("applies session filters before reading sqlite trace details", () => {
+    upsertTraceSessionToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-2",
+        startTime: Date.UTC(2026, 4, 12),
+        endTime: Date.UTC(2026, 4, 12, 0, 1),
+        query: "Filtered objective",
+        startUrl: "https://example.com/b",
+        outcome: "completed",
+        turnCount: 1,
+      },
+      { dbPath },
+    );
+    insertTraceTurnToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-2",
+        turnNumber: 1,
+        llmRequest: { model: "model-b" },
+        llmResponse: {
+          durationMs: 50,
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        },
+        toolExecutions: [{ toolName: "click", success: true }],
+      },
+      { dbPath },
+    );
+
+    const insights = buildTraceInsightsFromSqlite(
+      root,
+      { from: "2026-05-12", to: "2026-05-12" },
+      dbPath,
+    );
+
+    expect(insights?.summary).toMatchObject({
+      totalSessions: 1,
+      completedSessions: 1,
+      failedSessions: 0,
+      toolCalls: 1,
+      toolFailures: 0,
+    });
+    expect(insights?.facets.sessions).toEqual(["session-2"]);
+    expect(insights?.tools[0]).toMatchObject({
+      id: "click",
+      sampleSessionId: "session-2",
+    });
   });
 
   test("builds harness ratchet candidates", () => {

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
   PROFILE_ANALYZER_VERSION,
+  PROFILE_NOTES_MAX_CHARS,
   PERSONAL_PROFILE_STORAGE_KEY,
   buildPersonalProfilePlannerContext,
   buildProfileDigestFromAnalyzerOutput,
+  buildProfileAnalyzerSystemPrompt,
+  deleteProfileDigestItem,
   deletePersonalProfile,
   hasReadyProfileDigest,
   hashProfileNotes,
@@ -11,6 +14,7 @@ import {
   loadPersonalizationState,
   resolveProfileFields,
   savePersonalizationState,
+  updateProfileDigestItem,
   type PersonalProfileStorage,
 } from "../../src/utils/personal-profile";
 
@@ -224,6 +228,127 @@ describe("profile notes storage", () => {
     expect(context).toContain("Report unresolved fields");
     expect(context).not.toContain("1990-01-01");
     expect(context).not.toContain(notes);
+  });
+
+  test("editing a digest item reconciles notes and keeps the digest ready", async () => {
+    const storage = createMemoryStorage();
+    const notes = "# About me\nI prefer remote-first roles.";
+    const state = await savePersonalizationState(
+      {
+        enabled: true,
+        notesMarkdown: notes,
+        digest: digestFor(notes),
+      },
+      storage,
+    );
+    const item = state.digest?.items.find(
+      (candidate) => candidate.label === "Work mode",
+    );
+    expect(item).toBeDefined();
+
+    const updated = await updateProfileDigestItem(
+      item!.id,
+      {
+        label: "Work mode",
+        value: "Only remote roles",
+        kind: "constraint",
+      },
+      storage,
+    );
+
+    const replacement = updated.digest?.items.find(
+      (candidate) => candidate.value === "Only remote roles",
+    );
+    expect(updated.notesMarkdown).toContain("# Digest review corrections");
+    expect(updated.notesMarkdown).toContain("Replace digest item");
+    expect(updated.notesMarkdown).toContain("Only remote roles");
+    expect(updated.notesHash).toBe(hashProfileNotes(updated.notesMarkdown));
+    expect(updated.digest?.notesHash).toBe(updated.notesHash);
+    expect(hasReadyProfileDigest(updated)).toBe(true);
+    expect(replacement?.kind).toBe("constraint");
+    expect(replacement?.confidence).toBe("high");
+    expect(replacement?.sourceQuote).toBeUndefined();
+  });
+
+  test("deleting a digest item removes it from runtime resolution and records a correction", async () => {
+    const storage = createMemoryStorage();
+    const notes = "# Contact\nEmail: john.doe@example.com";
+    const state = await savePersonalizationState(
+      {
+        enabled: true,
+        notesMarkdown: notes,
+        digest: digestFor(notes),
+      },
+      storage,
+    );
+    const emailItem = state.digest?.items.find(
+      (candidate) => candidate.label === "Email",
+    );
+    expect(emailItem).toBeDefined();
+
+    const updated = await deleteProfileDigestItem(emailItem!.id, storage);
+
+    expect(updated.notesMarkdown).toContain("Do not include or use digest item");
+    expect(updated.notesMarkdown).toContain("john.doe@example.com");
+    expect(updated.digest?.items.some((item) => item.id === emailItem!.id)).toBe(
+      false,
+    );
+    expect(updated.digest?.notesHash).toBe(updated.notesHash);
+    await expect(resolveProfileFields(["email"], storage)).resolves.toEqual({
+      values: {},
+      missing: ["email"],
+    });
+  });
+
+  test("digest item edits reject empty fields and over-limit notes", async () => {
+    const storage = createMemoryStorage();
+    const notes = "# About me\nMy name is John Doe.";
+    const state = await savePersonalizationState(
+      {
+        enabled: true,
+        notesMarkdown: notes,
+        digest: digestFor(notes),
+      },
+      storage,
+    );
+    const nameItem = state.digest?.items.find(
+      (candidate) => candidate.label === "Full name",
+    );
+    expect(nameItem).toBeDefined();
+
+    await expect(
+      updateProfileDigestItem(
+        nameItem!.id,
+        { label: " ", value: "Jane Doe", kind: "fact" },
+        storage,
+      ),
+    ).rejects.toThrow("Digest item label and value are required");
+
+    const longNotes = "x".repeat(PROFILE_NOTES_MAX_CHARS);
+    const longState = await savePersonalizationState(
+      {
+        enabled: true,
+        notesMarkdown: longNotes,
+        digest: digestFor(longNotes),
+      },
+      storage,
+    );
+    const longNameItem = longState.digest?.items.find(
+      (candidate) => candidate.label === "Full name",
+    );
+    expect(longNameItem).toBeDefined();
+    await expect(
+      deleteProfileDigestItem(longNameItem!.id, storage),
+    ).rejects.toThrow("Profile Notes must be");
+  });
+
+  test("analyzer prompt prioritizes digest review corrections", () => {
+    const prompt = buildProfileAnalyzerSystemPrompt();
+
+    expect(prompt).toContain("opensidebar:digest-review:start");
+    expect(prompt).toContain("user-reviewed corrections");
+    expect(prompt).toContain("Do not include or use digest item");
+    expect(prompt).toContain("Replace digest item");
   });
 
   test("delete removes profile notes and digest", async () => {

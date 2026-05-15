@@ -151,10 +151,44 @@ describe("trace-viewer store", () => {
     useStore.getState().navigateToTurn(7);
     expect(useStore.getState().activeSubview).toBe("turns");
     expect(useStore.getState().focusTurnNumber).toBe(7);
+    expect(useStore.getState().focusTurnRequest).toMatchObject({
+      id: 1,
+      turnNumber: 7,
+    });
 
     useStore.getState().navigateToPerception(4);
     expect(useStore.getState().activeSubview).toBe("perception");
     expect(useStore.getState().focusTurnNumber).toBe(4);
+    expect(useStore.getState().focusTurnRequest).toMatchObject({
+      id: 2,
+      turnNumber: 4,
+    });
+  });
+
+  test("clearFocusTurnRequest only clears the active request", () => {
+    useStore.getState().navigateToTurn(7);
+    useStore.getState().navigateToTurn(8);
+
+    useStore.getState().clearFocusTurnRequest(1);
+    expect(useStore.getState().focusTurnRequest).toMatchObject({
+      id: 2,
+      turnNumber: 8,
+    });
+
+    useStore.getState().clearFocusTurnRequest(2);
+    expect(useStore.getState().focusTurnRequest).toBeNull();
+    expect(useStore.getState().focusTurnNumber).toBeNull();
+  });
+
+  test("saveScrollPosition evicts oldest entries after the limit", () => {
+    for (let index = 0; index < 105; index += 1) {
+      useStore.getState().setCurrentSessionId(`s-${index}`);
+      useStore.getState().saveScrollPosition("turns", index);
+    }
+
+    expect(Object.keys(useStore.getState().scrollPositions)).toHaveLength(100);
+    expect(useStore.getState().scrollPositions["s-0:turns"]).toBeUndefined();
+    expect(useStore.getState().scrollPositions["s-104:turns"]).toBe(104);
   });
 
   test("trace list mode defaults to sessions and can be toggled", () => {

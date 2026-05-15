@@ -2,7 +2,9 @@ export const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
 
 export interface TraceEntryLike extends Record<string, unknown> {
   llmRequest?: {
+    model?: string;
     modelTier?: "executor" | "planner";
+    provider?: string;
   };
 }
 

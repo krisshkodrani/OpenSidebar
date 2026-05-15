@@ -206,6 +206,10 @@ body {
   border: 1px solid var(--trace-border);
 }
 
+.bg-trace-panel-muted {
+  background: color-mix(in srgb, var(--trace-panel) 72%, var(--trace-bg));
+}
+
 .dark .viewer-metric-card {
   background: #0f172a;
   border-color: #1e293b;

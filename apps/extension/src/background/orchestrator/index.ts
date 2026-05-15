@@ -3598,6 +3598,8 @@ export class Orchestrator {
             tab.title || "Untitled",
             tab.url || "",
             skillCatalogOptions,
+            undefined,
+            { displayQuery: input.query },
           ),
         );
         nodes = buildResult.nodes;
@@ -3819,6 +3821,8 @@ export class Orchestrator {
             tab.title || "Untitled",
             tab.url || "",
             { enabledSkillPackIds: task.enabledSkillPackIds },
+            undefined,
+            { displayQuery: revisedQuery },
           );
           if (replanResult.nodes.length > 0) {
             task.nodes = replanResult.nodes;

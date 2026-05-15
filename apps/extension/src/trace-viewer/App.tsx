@@ -33,7 +33,9 @@ import InsightsTab from "./components/traces/InsightsTab";
 import MetricsTab from "./components/traces/MetricsTab";
 import DocsTab from "./components/traces/DocsTab";
 import SkillDetail from "./components/traces/SkillDetail";
+import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
+import { formatCount } from "./utils";
 
 // URL hash helpers
 
@@ -245,6 +247,7 @@ function ViewerBody({
   const { sessions, refreshSessions } = useTraceData();
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
 
   const selectSession = useCallback(
     (sessionId: string) => {
@@ -392,7 +395,8 @@ function ViewerBody({
           </button>
           <span className="text-trace-muted text-[10px]">&middot;</span>
           <span className="text-[10px] text-trace-muted">
-            {currentIdx + 1} / {sessions.length}
+            {formatCount(currentIdx + 1)} / {formatCount(sessions.length)}
+            {sessionsLimitReached ? "+" : ""}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -420,7 +424,7 @@ function ViewerBody({
         </div>
 
         <div className="session-detail-summary scroll-shadow-y shrink-0 overflow-y-auto scrollbar-thin bg-trace-panel border-b border-trace-border">
-          <TraceDetailHeader session={currentSession as any} />
+          <TraceDetailHeader session={currentSession} />
         </div>
         <TraceSubviewToggle />
 
@@ -432,11 +436,11 @@ function ViewerBody({
           {activeSubview === "turns" ? (
             <div className="flex flex-col px-5 py-4">
               <TurnSearchBar />
-              {(currentEntries as any[]).length === 0 && !tracesError ? (
+              {currentEntries.length === 0 && !tracesError ? (
                 <LoadingSpinner message="Loading turns..." />
               ) : (
                 <>
-                  <TurnTimeline entries={currentEntries as any[]} />
+                  <TurnTimeline entries={currentEntries} />
                   <div className="flex-1 min-h-0">
                     <TurnList />
                   </div>
@@ -460,24 +464,24 @@ function ViewerBody({
             </div>
           ) : activeSubview === "overview" ? (
             <div className="px-5 py-4">
-              <OverviewTab session={currentSession as any} />
+              <OverviewTab session={currentSession} />
             </div>
           ) : activeSubview === "plan" ? (
             <div className="px-5 py-4">
-              <PlanTab session={currentSession as any} />
+              <PlanTab session={currentSession} />
             </div>
           ) : activeSubview === "skills" ? (
             <div className="px-5 py-4">
-              <SkillsTab session={currentSession as any} />
+              <SkillsTab session={currentSession} entries={currentEntries} />
             </div>
           ) : activeSubview === "prompts" ? (
             <div className="px-5 py-4">
-              <PromptsTab session={currentSession as any} />
+              <PromptsTab session={currentSession} entries={currentEntries} />
             </div>
           ) : (
             <div className="px-5 py-4">
               <div className="text-sm text-trace-muted">
-                {activeSubview} tab coming soon...
+                Unknown trace subview: {activeSubview}
               </div>
             </div>
           )}
@@ -542,11 +546,18 @@ function TopLevelTabs({
 }) {
   const sessions = useStore((s) => s.sessions);
   const runGroups = useStore((s) => s.runGroups);
-  const tabs: Array<{ id: TopLevelView; label: string; count?: number }> = [
-    { id: "sessions", label: "Sessions", count: sessions.length },
-    { id: "runs", label: "Runs", count: runGroups.length },
-    { id: "insights", label: "Insights", count: sessions.length },
-    { id: "metrics", label: "Metrics", count: sessions.length },
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
+  const sessionsCountLabel = `${formatCount(sessions.length)}${
+    sessionsLimitReached ? "+" : ""
+  }`;
+  const runsCountLabel = `${formatCount(runGroups.length)}${
+    sessionsLimitReached ? "+" : ""
+  }`;
+  const tabs: Array<{ id: TopLevelView; label: string; countLabel?: string }> = [
+    { id: "sessions", label: "Sessions", countLabel: sessionsCountLabel },
+    { id: "runs", label: "Runs", countLabel: runsCountLabel },
+    { id: "insights", label: "Insights" },
+    { id: "metrics", label: "Metrics" },
     { id: "docs", label: "Docs" },
   ];
 
@@ -567,7 +578,9 @@ function TopLevelTabs({
                 : "bg-transparent text-trace-muted hover:text-trace-text"
             }`}
           >
-            {tab.count == null ? tab.label : `${tab.label} (${tab.count})`}
+            {tab.countLabel == null
+              ? tab.label
+              : `${tab.label} (${tab.countLabel})`}
           </button>
         ))}
       </div>

@@ -30,13 +30,14 @@ export default function TurnLLMMessage({
       <React.Fragment key={i}>
         {part}
         {i < parts.length - 1 && (
-          <a
+          <button
+            type="button"
             className="text-trace-accent-light hover:underline cursor-pointer"
             onClick={() => navigateToPerception(turnNumber)}
             title="View screenshot in Perception tab"
           >
             [image &rarr;]
-          </a>
+          </button>
         )}
       </React.Fragment>
     ));
@@ -73,9 +74,11 @@ export default function TurnLLMMessage({
 
   return (
     <div className="border border-trace-accent/[0.12] rounded mb-1 overflow-hidden">
-      <div
+      <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-2 py-[5px] cursor-pointer text-[11px] text-trace-subtle transition-colors hover:bg-trace-accent/[0.08]"
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-2 py-[5px] cursor-pointer text-[11px] text-trace-subtle transition-colors hover:bg-trace-accent/[0.08] text-left"
       >
         <span
           className={`text-[9px] shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
@@ -103,7 +106,7 @@ export default function TurnLLMMessage({
         >
           ~{formatTokens(tokEst)} tok
         </span>
-      </div>
+      </button>
       <div className={`collapsible ${open ? "open" : ""}`}>
         {hasCachedSplit ? (
           <div className="p-2 text-[11px] font-mono text-trace-subtle whitespace-pre-wrap break-words leading-normal max-h-[500px] overflow-y-auto scrollbar-thin bg-trace-accent/[0.04]">

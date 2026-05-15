@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
 import {
+  TRACE_SESSION_SEARCH_LIMIT,
   deleteAllTraces,
   fetchHarnessRatchet,
   fetchRunTraceEvents,
@@ -45,7 +46,7 @@ describe("trace-viewer api", () => {
     expect(url).toContain("model=openai%2Fgpt-5.4-mini%3Anitro");
     expect(url).toContain("skill=checkout");
     expect(url).toContain("runId=run-123");
-    expect(url).toContain("limit=1000");
+    expect(url).toContain(`limit=${TRACE_SESSION_SEARCH_LIMIT}`);
   });
 
   test("fetchSessionLogs includes optional level filter", async () => {

@@ -204,9 +204,10 @@ function TableRow({
   const title = extractQueryTitle(session.query).title;
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="flex min-w-[760px] items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px]"
+      className="flex min-w-[760px] w-full items-center gap-2 px-4 py-2.5 border-b border-trace-border/50 cursor-pointer transition-colors hover:bg-trace-accent/[0.06] text-[12px] text-left"
     >
       <span className="w-[90px] text-trace-muted text-[11px] shrink-0">
         {formatTime(session.startTime)}
@@ -239,6 +240,6 @@ function TableRow({
       <span className="w-[120px] text-trace-muted text-[10px] truncate shrink-0">
         {models || "-"}
       </span>
-    </div>
+    </button>
   );
 }

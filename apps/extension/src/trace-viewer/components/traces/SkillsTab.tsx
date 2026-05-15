@@ -1,38 +1,40 @@
 import React, { useState } from "react";
-import type { TraceSession } from "../../../types/traces";
+import type { TraceEntry, TraceSession } from "../../../types/traces";
+import {
+  extractSkillEvents,
+  type SkillTraceEventView,
+} from "../../analysis/skill-events";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import CollapsibleSection from "../CollapsibleSection";
 
 interface SkillsTabProps {
   session: TraceSession;
+  entries: TraceEntry[];
 }
 
-interface SkillEvent {
-  turn: number;
-  type: "ranking_applied" | "tool_selected";
-  skillId: string;
-  toolName?: string;
-  preference?: "preferred" | "neutral" | "discouraged";
-  preferredTools?: string[];
-  discouragedTools?: string[];
-}
-
-export default function SkillsTab({ session }: SkillsTabProps) {
+export default function SkillsTab({ session, entries }: SkillsTabProps) {
   const metrics = session.skillToolMetrics;
+  const extraction = extractSkillEvents(entries);
 
-  if (!metrics) {
+  if (!metrics && extraction.events.length === 0) {
     return (
-      <div className="text-sm text-trace-muted p-4">
-        No skill metrics available for this session.
+      <div className="bg-trace-panel border border-trace-border rounded-lg p-4 text-sm text-trace-muted">
+        No skill metrics or skill events were recorded for this session.
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <SkillMetricsCard metrics={metrics} />
-      <SkillEventStream session={session} />
+      {metrics ? (
+        <SkillMetricsCard metrics={metrics} />
+      ) : (
+        <div className="bg-trace-panel border border-trace-border rounded-lg p-4 text-sm text-trace-muted">
+          No aggregate skill metrics available for this session.
+        </div>
+      )}
+      <SkillEventStream events={extraction.events} />
     </div>
   );
 }
@@ -160,19 +162,16 @@ function MetricBox({
   );
 }
 
-function SkillEventStream({ session }: { session: TraceSession }) {
+function SkillEventStream({ events }: { events: SkillTraceEventView[] }) {
   const [filter, setFilter] = useState<"all" | "ranking" | "selection">("all");
-
-  // Extract skill events from trace entries
-  const events = extractSkillEvents(session);
 
   const filteredEvents =
     filter === "all"
       ? events
       : events.filter((e) =>
           filter === "ranking"
-            ? e.type === "ranking_applied"
-            : e.type === "tool_selected",
+            ? e.kind === "ranking_applied"
+            : e.kind === "selected",
         );
 
   if (events.length === 0) {
@@ -216,16 +215,16 @@ function SkillEventStream({ session }: { session: TraceSession }) {
       </div>
 
       <div className="space-y-2">
-        {filteredEvents.map((event, i) => (
-          <SkillEventRow key={i} event={event} />
+        {filteredEvents.map((event) => (
+          <SkillEventRow key={event.id} event={event} />
         ))}
       </div>
     </div>
   );
 }
 
-function SkillEventRow({ event }: { event: SkillEvent }) {
-  const isRanking = event.type === "ranking_applied";
+function SkillEventRow({ event }: { event: SkillTraceEventView }) {
+  const isRanking = event.kind === "ranking_applied";
 
   return (
     <div className="flex items-start gap-2 p-2 bg-trace-bg border border-trace-border/50 rounded">
@@ -233,9 +232,9 @@ function SkillEventRow({ event }: { event: SkillEvent }) {
         className={`shrink-0 w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${
           isRanking
             ? "bg-trace-accent/20 text-trace-accent"
-            : event.preference === "preferred"
+            : event.selectionPreference === "preferred"
               ? "bg-state-success/20 text-state-success"
-              : event.preference === "discouraged"
+              : event.selectionPreference === "discouraged"
                 ? "bg-state-error/20 text-state-error"
                 : "bg-trace-border/30 text-trace-muted"
         }`}
@@ -251,25 +250,29 @@ function SkillEventRow({ event }: { event: SkillEvent }) {
             </>
           ) : (
             <>
-              Selected <span className="font-medium">{event.toolName}</span>{" "}
-              {event.preference && (
+              Selected{" "}
+              <span className="font-medium">
+                {event.selectedToolName ?? "unknown tool"}
+              </span>{" "}
+              {event.selectionPreference && (
                 <Badge
                   variant={
-                    event.preference === "preferred"
+                    event.selectionPreference === "preferred"
                       ? "completed"
-                      : event.preference === "discouraged"
+                      : event.selectionPreference === "discouraged"
                         ? "error"
                         : "type"
                   }
                 >
-                  {event.preference}
+                  {event.selectionPreference}
                 </Badge>
               )}
+              {event.selectionMode && <Badge variant="type">{event.selectionMode}</Badge>}
             </>
           )}
         </div>
         <div className="text-[10px] text-trace-muted mt-0.5">
-          Turn {event.turn}
+          Turn {event.turnNumber}
         </div>
         {isRanking && event.preferredTools && (
           <CollapsibleSection
@@ -285,30 +288,18 @@ function SkillEventRow({ event }: { event: SkillEvent }) {
                 <span className="text-state-error">Discouraged:</span>{" "}
                 {event.discouragedTools?.join(", ") || "None"}
               </div>
+              <div>
+                <span className="text-trace-muted">Original order:</span>{" "}
+                {event.originalOrder?.join(", ") || "None"}
+              </div>
+              <div>
+                <span className="text-trace-muted">Ranked order:</span>{" "}
+                {event.rankedOrder?.join(", ") || "None"}
+              </div>
             </div>
           </CollapsibleSection>
         )}
       </div>
     </div>
   );
-}
-
-function extractSkillEvents(session: TraceSession): SkillEvent[] {
-  const events: SkillEvent[] = [];
-
-  // This is a placeholder - in reality, we'd need access to the trace entries
-  // For now, we'll create events from the skillToolMetrics if available
-  const metrics = session.skillToolMetrics;
-  if (metrics) {
-    // Add a summary event
-    events.push({
-      turn: 1,
-      type: "ranking_applied",
-      skillId: metrics.skillId,
-      preferredTools: [],
-      discouragedTools: [],
-    });
-  }
-
-  return events;
 }

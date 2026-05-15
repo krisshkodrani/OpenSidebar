@@ -7,8 +7,16 @@ import {
   type TraceInsightsResponse,
 } from "../../api";
 import { useStore } from "../../store";
-import { formatCost, formatDuration, formatTokens } from "../../utils";
+import {
+  formatCount,
+  formatCost,
+  formatDuration,
+  formatPercent,
+  formatTokens,
+} from "../../utils";
 import LoadingSpinner from "../LoadingSpinner";
+
+const METRICS_TIMEOUT_MS = 30_000;
 
 function emptyInsights(): TraceInsightsResponse {
   return {
@@ -54,14 +62,6 @@ function emptyInsights(): TraceInsightsResponse {
     events: [],
     runs: [],
   };
-}
-
-function pct(value: number): string {
-  return `${Math.round(value * 100)}%`;
-}
-
-function numberValue(value: number): string {
-  return Number.isFinite(value) ? value.toLocaleString("en-US") : "0";
 }
 
 function formatIndexedAt(value: number | null): string {
@@ -134,20 +134,35 @@ export default function MetricsTab() {
 
   useEffect(() => {
     let cancelled = false;
+    let timedOut = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, METRICS_TIMEOUT_MS);
     setLoading(true);
     setError(null);
-    fetchTraceInsights(requestFilters)
+    fetchTraceInsights(requestFilters, controller.signal)
       .then((result) => {
         if (!cancelled) setInsights(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) {
+          setError(
+            timedOut
+              ? "Timed out loading trace metrics. Try narrowing the filters or rebuilding the trace index."
+              : String(err),
+          );
+        }
       })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [requestFilters]);
 
@@ -191,19 +206,19 @@ export default function MetricsTab() {
               <div className="grid grid-cols-2 xl:grid-cols-5 gap-2">
                 <MetricCard
                   label="Indexed Sessions"
-                  value={numberValue(indexStatus.sessions)}
-                  detail={`${numberValue(indexStatus.hotSessions)} hot, ${numberValue(indexStatus.archivedSessions)} archived`}
+                  value={formatCount(indexStatus.sessions)}
+                  detail={`${formatCount(indexStatus.hotSessions)} hot, ${formatCount(indexStatus.archivedSessions)} archived`}
                   tone={indexStatus.available ? "success" : "warning"}
                 />
                 <MetricCard
                   label="Indexed Turns"
-                  value={numberValue(indexStatus.turns)}
-                  detail={`${numberValue(indexStatus.tools)} tool calls`}
+                  value={formatCount(indexStatus.turns)}
+                  detail={`${formatCount(indexStatus.tools)} tool calls`}
                 />
                 <MetricCard
                   label="Artifacts"
-                  value={numberValue(indexStatus.screenshots)}
-                  detail={`${numberValue(indexStatus.runEvents)} run events`}
+                  value={formatCount(indexStatus.screenshots)}
+                  detail={`${formatCount(indexStatus.runEvents)} run events`}
                 />
                 <MetricCard
                   label="Trace Range"
@@ -226,24 +241,24 @@ export default function MetricsTab() {
             <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
               <MetricCard
                 label="LLM Requests"
-                value={numberValue(summary.llmRequests)}
-                detail={`${numberValue(summary.totalSessions)} sessions, ${numberValue(summary.totalRuns)} runs`}
+                value={formatCount(summary.llmRequests)}
+                detail={`${formatCount(summary.totalSessions)} sessions, ${formatCount(summary.totalRuns)} runs`}
               />
               <MetricCard
                 label="Total Turns"
-                value={numberValue(summary.totalTurns)}
+                value={formatCount(summary.totalTurns)}
                 detail={`${summary.averageTurns.toFixed(1)} avg turns/session`}
               />
               <MetricCard
                 label="Success Rate"
-                value={pct(summary.successRate)}
-                detail={`${numberValue(summary.completedSessions)} completed, ${numberValue(summary.failedSessions)} failed`}
+                value={formatPercent(summary.successRate)}
+                detail={`${formatCount(summary.completedSessions)} completed, ${formatCount(summary.failedSessions)} failed`}
                 tone={summary.failedSessions > 0 ? "warning" : "success"}
               />
               <MetricCard
                 label="Tool Failure Rate"
-                value={pct(summary.toolFailureRate)}
-                detail={`${numberValue(summary.toolFailures)} failed of ${numberValue(summary.toolCalls)} calls`}
+                value={formatPercent(summary.toolFailureRate)}
+                detail={`${formatCount(summary.toolFailures)} failed of ${formatCount(summary.toolCalls)} calls`}
                 tone={summary.toolFailures > 0 ? "warning" : "success"}
               />
             </div>
@@ -272,7 +287,7 @@ export default function MetricsTab() {
               <MetricCard
                 label="Request Cost"
                 value={formatCost(requestCost) || "$0"}
-                detail="Summed from request usage when available"
+                detail="Request usage when available; session total fallback"
               />
               <MetricCard
                 label="Avg LLM Latency"
@@ -296,7 +311,7 @@ export default function MetricsTab() {
                 <span>Model</span>
                 <span>Sessions</span>
                 <span>Runs</span>
-                <span>Calls</span>
+                <span>Requests</span>
                 <span>Fail Rate</span>
               </div>
               {insights.models.length === 0 ? (
@@ -312,11 +327,17 @@ export default function MetricsTab() {
                     <span className="min-w-0 truncate text-trace-text">
                       {row.label}
                     </span>
-                    <span className="text-trace-subtle">{row.sessions}</span>
-                    <span className="text-trace-subtle">{row.runs}</span>
-                    <span className="text-trace-subtle">{row.calls ?? "-"}</span>
                     <span className="text-trace-subtle">
-                      {row.failureRate == null ? "-" : pct(row.failureRate)}
+                      {formatCount(row.sessions)}
+                    </span>
+                    <span className="text-trace-subtle">
+                      {formatCount(row.runs)}
+                    </span>
+                    <span className="text-trace-subtle">
+                      {formatCount(row.requests ?? row.calls)}
+                    </span>
+                    <span className="text-trace-subtle">
+                      {formatPercent(row.failureRate)}
                     </span>
                   </div>
                 ))

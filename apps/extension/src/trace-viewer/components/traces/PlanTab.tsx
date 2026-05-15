@@ -4,7 +4,12 @@ import type { RunTraceEvent } from "../../../utils/run-trace";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import { useStore } from "../../store";
-import { formatCost, formatDuration, formatTokens } from "../../utils";
+import {
+  compactTraceTaskLabel,
+  formatCost,
+  formatDuration,
+  formatTokens,
+} from "../../utils";
 
 interface PlanTabProps {
   session: TraceSession;
@@ -65,9 +70,14 @@ export default function PlanTab({ session }: PlanTabProps) {
         <div className="text-[12px] text-trace-muted">
           {plan.subtasks?.length > 0 && (
             <ol className="list-decimal list-inside space-y-1">
-              {plan.subtasks.map((subtask, i) => (
-                <li key={i}>{subtask}</li>
-              ))}
+              {plan.subtasks.map((subtask, i) => {
+                const label = compactTraceTaskLabel(subtask) || subtask;
+                return (
+                  <li key={i} title={label === subtask ? undefined : subtask}>
+                    {label}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>
@@ -719,6 +729,7 @@ function formatEventTime(event: RunTraceEvent): string {
 
 function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
+  const objective = compactTraceTaskLabel(step.objective) || step.objective;
 
   const statusColors = {
     completed: "bg-state-success/20 border-state-success/50 text-state-success",
@@ -749,8 +760,11 @@ function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
             {statusIcons[step.status]}
           </span>
           <div>
-            <div className="text-[13px] font-medium">
-              Step {step.index + 1}: {step.objective}
+            <div
+              className="text-[13px] font-medium"
+              title={objective === step.objective ? undefined : step.objective}
+            >
+              Step {step.index + 1}: {objective}
             </div>
             {step.successCriteria && (
               <div className="text-[11px] opacity-80 mt-0.5">

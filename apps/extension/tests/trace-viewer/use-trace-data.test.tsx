@@ -252,7 +252,10 @@ describe("useTraceData", () => {
       root.render(<HookHarness />);
     });
     await waitFor(() => {
-      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith("run-1");
+      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith(
+        "run-1",
+        expect.any(AbortSignal),
+      );
       expect(useStore.getState().currentRunEvents).toHaveLength(1);
     });
   });
@@ -316,13 +319,19 @@ describe("useTraceData", () => {
       useStore.getState().setCurrentSessionId("session-1");
     });
     await flushAsyncWork();
-    expect(api.fetchTraceEntries).toHaveBeenCalledWith("session-1");
+    expect(api.fetchTraceEntries).toHaveBeenCalledWith(
+      "session-1",
+      expect.any(AbortSignal),
+    );
 
     await act(async () => {
       useStore.getState().setCurrentSessionId("session-2");
     });
     await flushAsyncWork();
-    expect(api.fetchTraceEntries).toHaveBeenCalledWith("session-2");
+    expect(api.fetchTraceEntries).toHaveBeenCalledWith(
+      "session-2",
+      expect.any(AbortSignal),
+    );
 
     sessionTwoEntries.resolve([{ sessionId: "session-2", turnNumber: 1 }]);
     sessionTwoLogs.resolve([

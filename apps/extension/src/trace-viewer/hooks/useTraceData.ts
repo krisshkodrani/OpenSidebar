@@ -19,9 +19,13 @@ export function useTraceData() {
   const didInitLoading = useRef(false);
   const didInitialRefresh = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const detailAbortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filtersRef = useRef(filters);
-  filtersRef.current = filters;
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // Set loading true on first render to avoid flash of "no sessions"
   if (!didInitLoading.current) {
@@ -98,9 +102,21 @@ export function useTraceData() {
   }, [filters, refreshSessions]);
 
   useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      detailAbortRef.current?.abort();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!currentSessionId) return;
     const requestId = detailRequestSeq.current + 1;
     detailRequestSeq.current = requestId;
+    detailAbortRef.current?.abort();
+    const detailAbort = new AbortController();
+    detailAbortRef.current = detailAbort;
+    const { signal } = detailAbort;
 
     setLogsWarning(null);
     setCurrentEntries([]);
@@ -115,12 +131,13 @@ export function useTraceData() {
         ? currentSession.runId
         : null;
     Promise.all([
-      api.fetchTraceEntries(currentSessionId),
+      api.fetchTraceEntries(currentSessionId, signal),
       runId
-        ? api.fetchRunTraceEvents(runId).catch(() => [])
+        ? api.fetchRunTraceEvents(runId, signal).catch(() => [])
         : Promise.resolve([]),
-      api.fetchSessionLogs(currentSessionId).catch((err) => {
+      api.fetchSessionLogs(currentSessionId, undefined, signal).catch((err) => {
         if (
+          signal.aborted ||
           detailRequestSeq.current !== requestId ||
           useStore.getState().currentSessionId !== currentSessionId
         ) {
@@ -132,6 +149,7 @@ export function useTraceData() {
     ])
       .then(([entries, runEvents, logs]) => {
         if (
+          signal.aborted ||
           detailRequestSeq.current !== requestId ||
           useStore.getState().currentSessionId !== currentSessionId
         ) {
@@ -143,6 +161,7 @@ export function useTraceData() {
       })
       .catch((err) => {
         if (
+          signal.aborted ||
           detailRequestSeq.current !== requestId ||
           useStore.getState().currentSessionId !== currentSessionId
         ) {
@@ -150,6 +169,10 @@ export function useTraceData() {
         }
         setTracesError(`Failed to load turns: ${err}`);
       });
+
+    return () => {
+      detailAbort.abort();
+    };
   }, [
     currentSessionId,
     sessions,

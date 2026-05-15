@@ -18,6 +18,7 @@ import {
   formatTokens,
   truncate,
   extractQueryTitle,
+  compactTraceTaskLabel,
   getSessionModels,
 } from "../../utils";
 
@@ -616,9 +617,14 @@ function PlanSection({ session }: { session: TraceSession }) {
       </div>
       {subtasks.length > 0 && (
         <ol className="list-decimal list-inside text-[12px] text-trace-muted leading-relaxed pl-1 mb-1.5">
-          {subtasks.map((s, i) => (
-            <li key={i}>{s}</li>
-          ))}
+          {subtasks.map((s, i) => {
+            const label = compactTraceTaskLabel(s) || s;
+            return (
+              <li key={i} title={label === s ? undefined : s}>
+                {label}
+              </li>
+            );
+          })}
         </ol>
       )}
       {steps && steps.length > 0 && (
@@ -629,31 +635,42 @@ function PlanSection({ session }: { session: TraceSession }) {
           className="mt-1"
         >
           <div className="pl-3 pt-1.5 space-y-2 text-[11px] text-trace-muted">
-            {steps.map((step, i) => (
-              <div key={i} className="border-l-2 border-trace-border pl-2">
-                <div className="text-trace-subtle font-medium">
-                  {i + 1}. {step.objective ?? "(no objective)"}
-                  {step.selectedSkillId && (
-                    <span className="ml-1.5 px-1 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-normal">
-                      {step.selectedSkillId}
-                    </span>
+            {steps.map((step, i) => {
+              const objective =
+                compactTraceTaskLabel(step.objective) || "(no objective)";
+              return (
+                <div key={i} className="border-l-2 border-trace-border pl-2">
+                  <div
+                    className="text-trace-subtle font-medium"
+                    title={
+                      objective === step.objective ? undefined : step.objective
+                    }
+                  >
+                    {i + 1}. {objective}
+                    {step.selectedSkillId && (
+                      <span className="ml-1.5 px-1 py-0.5 text-[9px] rounded bg-brand-live/10 text-brand-live font-normal">
+                        {step.selectedSkillId}
+                      </span>
+                    )}
+                  </div>
+                  {step.successCriteria && (
+                    <div className="text-[10px]">
+                      Success: {step.successCriteria}
+                    </div>
+                  )}
+                  {step.dependencies && step.dependencies.length > 0 && (
+                    <div className="text-[10px]">
+                      Deps: [{step.dependencies.join(", ")}]
+                    </div>
+                  )}
+                  {step.toolProfile && (
+                    <div className="text-[10px]">
+                      Tools: {step.toolProfile}
+                    </div>
                   )}
                 </div>
-                {step.successCriteria && (
-                  <div className="text-[10px]">
-                    Success: {step.successCriteria}
-                  </div>
-                )}
-                {step.dependencies && step.dependencies.length > 0 && (
-                  <div className="text-[10px]">
-                    Deps: [{step.dependencies.join(", ")}]
-                  </div>
-                )}
-                {step.toolProfile && (
-                  <div className="text-[10px]">Tools: {step.toolProfile}</div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CollapsibleSection>
       )}

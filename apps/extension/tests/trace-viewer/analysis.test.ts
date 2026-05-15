@@ -569,6 +569,18 @@ describe("trace redaction", () => {
 });
 
 describe("trace investigation report", () => {
+  const enrichedQuery = [
+    "Objective: Complete the workflow for the original request:",
+    "RECENT WORKSPACE CONVERSATION:",
+    "- Assistant: long previous answer",
+    "PROFILE DIGEST CONTEXT:",
+    "- Fact: Email = kshkodrani@gmail.com",
+    "CURRENT REQUEST:",
+    "Fill the profile",
+    "Planner assumptions:",
+    "- No explicit assumptions from planner.",
+  ].join("\n");
+
   test("builds redacted agent-ready context around evidence turns", () => {
     const report = buildTraceInvestigationReport(
       {
@@ -628,6 +640,17 @@ describe("trace investigation report", () => {
     expect(report).toContain("[REDACTED_EMAIL]");
     expect(report).toContain("sk-[REDACTED]");
     expect(report).toContain("verifier_rejected");
+  });
+
+  test("uses compact task labels in generated investigation context", () => {
+    const report = buildTraceInvestigationReport({
+      session: session({ query: enrichedQuery }),
+      entries: [],
+    });
+
+    expect(report).toContain("Task: Fill the profile");
+    expect(report).not.toContain("RECENT WORKSPACE CONVERSATION");
+    expect(report).not.toContain("PROFILE DIGEST CONTEXT");
   });
 });
 
@@ -793,6 +816,18 @@ describe("trace fleet analysis", () => {
 });
 
 describe("trace session comparison", () => {
+  const enrichedQuery = [
+    "Objective: Complete the workflow for the original request:",
+    "RECENT WORKSPACE CONVERSATION:",
+    "- Assistant: long previous answer",
+    "PROFILE DIGEST CONTEXT:",
+    "- Fact: Email = kshkodrani@gmail.com",
+    "CURRENT REQUEST:",
+    "Fill the profile",
+    "Planner assumptions:",
+    "- No explicit assumptions from planner.",
+  ].join("\n");
+
   test("ranks same-run and related failure sessions for investigation", () => {
     const base = session({
       sessionId: "base",
@@ -892,6 +927,24 @@ describe("trace session comparison", () => {
       sharedSkills: ["checkout"],
     });
     expect(result.comparisons[2].costDelta).toBeCloseTo(-0.06);
+  });
+
+  test("compacts enriched planner context in related trace titles", () => {
+    const base = session({ sessionId: "base", runId: "run-1" });
+
+    const result = compareTraceSessions(base, [
+      base,
+      session({
+        sessionId: "same-run",
+        runId: "run-1",
+        query: enrichedQuery,
+      }),
+    ]);
+
+    expect(result.comparisons[0]).toMatchObject({
+      sessionId: "same-run",
+      queryTitle: "Fill the profile",
+    });
   });
 });
 

@@ -61,7 +61,13 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
 export default function TurnTimeline({ entries }: TurnTimelineProps) {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
 
-  if (entries.length < 2) return null;
+  if (entries.length < 2) {
+    return (
+      <div className="mb-3 rounded border border-trace-border bg-trace-panel px-3 py-2 text-[12px] text-trace-muted">
+        Turn timeline needs at least two turns.
+      </div>
+    );
+  }
 
   const durations = entries.map((e) => e.llmResponse?.durationMs ?? 0);
   const maxDuration = Math.max(...durations, 1);

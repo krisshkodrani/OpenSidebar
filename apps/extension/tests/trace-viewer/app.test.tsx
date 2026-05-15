@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import App from "../../src/trace-viewer/App";
 import { useStore } from "../../src/trace-viewer/store";
+import { TRACE_SESSION_SEARCH_LIMIT } from "../../src/trace-viewer/api";
 
 const mockUseTraceData = vi.fn();
 
@@ -246,6 +247,95 @@ describe("trace-viewer App", () => {
       expect(useStore.getState().traceListMode).toBe("sessions");
       expect(container.textContent).toContain("UnifiedSessionsTableView");
       expect(container.textContent).toContain("FleetInsights");
+    });
+  });
+
+  test("only list-backed top-level tabs show count badges", async () => {
+    useStore.getState().setSessions([
+      {
+        sessionId: "session-1",
+        runId: "run-1",
+        startTime: 100,
+        endTime: 200,
+        query: "Objective: left",
+        startUrl: "https://example.com",
+        outcome: "completed",
+        turnCount: 2,
+        summary: "done",
+        metrics: null,
+      },
+      {
+        sessionId: "session-2",
+        runId: "run-1",
+        startTime: 210,
+        endTime: 240,
+        query: "Objective: right",
+        startUrl: "https://example.com",
+        outcome: "error",
+        turnCount: 2,
+        summary: "failed",
+        metrics: null,
+      },
+    ] as any);
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Sessions (2)");
+      expect(container.textContent).toContain("Runs (1)");
+      expect(container.textContent).toContain("Insights");
+      expect(container.textContent).toContain("Metrics");
+      expect(container.textContent).not.toContain("Insights (2)");
+      expect(container.textContent).not.toContain("Metrics (2)");
+    });
+  });
+
+  test("marks list-backed tab counts as capped at the loaded search limit", async () => {
+    const sessions = Array.from(
+      { length: TRACE_SESSION_SEARCH_LIMIT },
+      (_, index) => ({
+        sessionId: `session-${index}`,
+        runId: "run-1",
+        startTime: 100 + index,
+        endTime: 200 + index,
+        query: `Objective: trace ${index}`,
+        startUrl: "https://example.com",
+        outcome: "completed",
+        turnCount: 1,
+        summary: "done",
+        metrics: null,
+      }),
+    );
+
+    useStore.setState({
+      sessions,
+      runGroups: [
+        {
+          runId: "run-1",
+          shortId: "run-1",
+          sessions,
+          totalTurns: sessions.length,
+          totalCost: 0,
+          earliestStart: 100,
+          latestEnd: 200,
+          overallOutcome: "completed",
+          query: "Objective: trace 0",
+          expanded: false,
+        },
+      ],
+    } as any);
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Sessions (1,000+)");
+      expect(container.textContent).toContain("Runs (1+)");
+      expect(container.textContent).not.toContain("Insights (1,000+)");
+      expect(container.textContent).not.toContain("Metrics (1,000+)");
     });
   });
 

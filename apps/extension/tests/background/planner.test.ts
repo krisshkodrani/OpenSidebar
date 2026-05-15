@@ -1986,6 +1986,73 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("uses display query for collapsed skill-owned workflow labels", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Fill the Name field with Kris Shkodrani",
+                        successCriteria: "Name input contains Kris Shkodrani",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Fill the Email field with kshkodrani@gmail.com",
+                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const currentRequest = "Fill the profile";
+        const enrichedQuery = [
+            "RECENT WORKSPACE CONVERSATION:",
+            "- User: Summarize this page",
+            "- Assistant: Senior Product Engineer @ Langfuse summary",
+            "",
+            "PROFILE DIGEST CONTEXT:",
+            "- Fact: Full name = Kris Shkodrani",
+            "- Fact: Email = kshkodrani@gmail.com",
+            "",
+            `CURRENT REQUEST:\n${currentRequest}`,
+        ].join("\n");
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            enrichedQuery,
+            "Senior Product Engineer @ Langfuse",
+            "https://jobs.ashbyhq.com/langfuse/example/application",
+            undefined,
+            undefined,
+            { displayQuery: currentRequest },
+        );
+
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe(
+            "ashby-job-application-assistant",
+        );
+        expect(result.nodes[0].description).toContain(
+            "Complete the workflow for the original request: Fill the profile",
+        );
+        expect(result.nodes[0].description).toContain("Kris Shkodrani");
+        expect(result.nodes[0].description).not.toContain(
+            "RECENT WORKSPACE CONVERSATION",
+        );
+        expect(result.nodes[0].description).not.toContain(
+            "PROFILE DIGEST CONTEXT",
+        );
+        expect(result.nodes[0].description).not.toContain(
+            "Senior Product Engineer @ Langfuse summary",
+        );
+    });
+
     test("fallback executor nodes expose workflow inspector tools", () => {
         const nodes = buildFallbackNodes(
             "Tell me the value shown in the dashboard chart.",

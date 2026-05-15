@@ -106,13 +106,14 @@ export default function TurnSnapshotSection({
               </CollapsibleSection>
             )}
             {perception && (
-              <a
+              <button
+                type="button"
                 className="inline-block mt-2 text-[11px] text-trace-accent-light hover:underline cursor-pointer"
                 onClick={() => navigateToPerception(turnNumber)}
                 title="View full perception details"
               >
                 View perception observation &rarr;
-              </a>
+              </button>
             )}
           </div>
         </CollapsibleSection>

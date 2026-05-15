@@ -11,6 +11,7 @@ import {
 } from "../api";
 import LoadingSpinner from "./LoadingSpinner";
 import ErrorBanner from "./ErrorBanner";
+import { compactTraceTaskLabel, extractQueryTitle } from "../utils";
 
 function formatProgressPayload(payload: unknown): string {
   if (Array.isArray(payload)) {
@@ -168,6 +169,7 @@ function DurableRunsTab() {
       <div className="space-y-2">
         {runs.map((run) => {
           const selected = run.id === selectedRunId;
+          const runTitle = extractQueryTitle(run.query).title;
           return (
             <button
               key={run.id}
@@ -179,8 +181,11 @@ function DurableRunsTab() {
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-xs font-medium text-trace-text">
-                  {run.query}
+                <span
+                  className="truncate text-xs font-medium text-trace-text"
+                  title={runTitle === run.query ? undefined : run.query}
+                >
+                  {runTitle}
                 </span>
                 <TaskStatusBadge status={run.status} />
               </div>
@@ -226,8 +231,16 @@ function DurableRunsTab() {
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-trace-text">
-                  {detail.run.query}
+                <div
+                  className="text-sm font-semibold text-trace-text"
+                  title={
+                    extractQueryTitle(detail.run.query).title ===
+                    detail.run.query
+                      ? undefined
+                      : detail.run.query
+                  }
+                >
+                  {extractQueryTitle(detail.run.query).title}
                 </div>
                 <div className="mt-1 text-[11px] text-trace-muted">
                   {detail.run.workspaceId} ·{" "}
@@ -275,32 +288,44 @@ function DurableRunsTab() {
                 Nodes
               </div>
               <div className="space-y-2">
-                {detail.nodes.map((node) => (
-                  <div
-                    key={node.nodeId}
-                    className="rounded border border-trace-border/70 px-3 py-2"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-trace-text">
-                        {node.description}
-                      </span>
-                      <TaskStatusBadge status={node.status} />
-                    </div>
-                    <div className="mt-1 text-[11px] text-trace-muted">
-                      {node.successCriteria}
-                    </div>
-                    {node.result ? (
-                      <div className="mt-1 text-[11px] text-trace-dim">
-                        {node.result}
+                {detail.nodes.map((node) => {
+                  const description =
+                    compactTraceTaskLabel(node.description) ||
+                    node.description;
+                  return (
+                    <div
+                      key={node.nodeId}
+                      className="rounded border border-trace-border/70 px-3 py-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-xs font-medium text-trace-text"
+                          title={
+                            description === node.description
+                              ? undefined
+                              : node.description
+                          }
+                        >
+                          {description}
+                        </span>
+                        <TaskStatusBadge status={node.status} />
                       </div>
-                    ) : null}
-                    {node.error ? (
-                      <div className="mt-1 text-[11px] text-state-error">
-                        {node.error}
+                      <div className="mt-1 text-[11px] text-trace-muted">
+                        {node.successCriteria}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+                      {node.result ? (
+                        <div className="mt-1 text-[11px] text-trace-dim">
+                          {node.result}
+                        </div>
+                      ) : null}
+                      {node.error ? (
+                        <div className="mt-1 text-[11px] text-state-error">
+                          {node.error}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -374,7 +399,6 @@ function DurableRunsTab() {
   );
 }
 
-// ── Tasks Tab ───────────────────────────────────────────────
 
 // ── Shared components ───────────────────────────────────────
 

@@ -67,4 +67,46 @@ describe("PlanProgressPanel", () => {
     expect(container.textContent).toContain("Blocked");
     expect(container.textContent).toContain("Waiting for Read alpha dashboard");
   });
+
+  test("compacts internal context in plan row labels", async () => {
+    const rows: PlanRow[] = [
+      {
+        id: "task:n1",
+        nodeId: "n1",
+        description: [
+          "Objective: Complete the workflow for the original request:",
+          "RECENT WORKSPACE CONVERSATION:",
+          "- Assistant: Senior Product Engineer @ Langfuse summary",
+          "PROFILE DIGEST CONTEXT:",
+          "- Fact: Email = kshkodrani@gmail.com",
+          "CURRENT REQUEST:",
+          "Fill the profile",
+          "Execution policy:",
+          "- Call done only when complete.",
+        ].join("\n"),
+        status: "running",
+        turnsUsed: 0,
+        workerStatus: "running",
+      },
+    ];
+
+    await act(async () => {
+      root.render(
+        <PlanProgressPanel
+          canSkip={false}
+          onResumeRecoveredTask={vi.fn()}
+          onSkipCurrentStep={vi.fn()}
+          recovery={null}
+          rows={rows}
+          runningRef={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Fill the profile");
+    expect(container.textContent).not.toContain(
+      "RECENT WORKSPACE CONVERSATION",
+    );
+    expect(container.textContent).not.toContain("PROFILE DIGEST CONTEXT");
+  });
 });

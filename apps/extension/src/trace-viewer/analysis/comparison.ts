@@ -1,4 +1,5 @@
 import type { TraceSession } from "../../types/traces";
+import { extractQueryTitle } from "../utils";
 import type {
   TraceSessionComparison,
   TraceSessionComparisonResult,
@@ -53,13 +54,6 @@ function skills(session: TraceSession): string[] {
 function intersect(a: string[], b: string[]): string[] {
   const bSet = new Set(b);
   return a.filter((value) => bSet.has(value));
-}
-
-function queryTitle(query: string | undefined): string {
-  if (!query) return "(no query)";
-  const match = query.match(/^Objective:\s*(.+?)(?:\n|$)/);
-  if (match) return match[1].trim();
-  return query.split("\n")[0].trim() || "(no query)";
 }
 
 function duration(session: TraceSession): number {
@@ -161,7 +155,7 @@ export function compareTraceSessions(
         score,
         label: relationLabel(relation),
         outcome: session.outcome,
-        queryTitle: queryTitle(session.query),
+        queryTitle: extractQueryTitle(session.query).title,
         ...(sessionFailure ? { failureLabel: sessionFailure } : {}),
         ...(sessionDomain ? { domain: sessionDomain } : {}),
         sharedSkills,
