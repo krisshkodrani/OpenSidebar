@@ -10,6 +10,26 @@ export interface ToolMeta {
   mutationSensitive?: boolean;
 }
 
+export type ToolNodeConcurrencyScope =
+  | "same_page"
+  | "same_origin"
+  | "separate_tab"
+  | "never";
+
+export type ToolNodeResourceAccess =
+  | "read"
+  | "write"
+  | "navigate"
+  | "approval"
+  | "external";
+
+export interface ToolNodeConcurrencyMeta {
+  /** Broadest node-level context where this tool may coexist with sibling workers. */
+  scope: ToolNodeConcurrencyScope;
+  /** Resource access used by scheduler policy when deriving node locks. */
+  access: ToolNodeResourceAccess;
+}
+
 const TOOL_METADATA: Record<ToolName, ToolMeta> = {
   [ToolName.CLICK_ELEMENT]: {
     risk: RiskLevel.MEDIUM,
@@ -331,8 +351,84 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
 
 };
 
+const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
+  [ToolName.CLICK_ELEMENT]: { scope: "separate_tab", access: "write" },
+  [ToolName.TYPE_TEXT]: { scope: "separate_tab", access: "write" },
+  [ToolName.SELECT_OPTION]: { scope: "separate_tab", access: "write" },
+  [ToolName.HOVER_ELEMENT]: { scope: "same_page", access: "read" },
+  [ToolName.DRAG_AND_DROP]: { scope: "separate_tab", access: "write" },
+  [ToolName.HIDE_ELEMENT]: { scope: "separate_tab", access: "write" },
+  [ToolName.NAVIGATE]: { scope: "separate_tab", access: "navigate" },
+  [ToolName.OPEN_SERVICENOW_MODULE]: {
+    scope: "separate_tab",
+    access: "navigate",
+  },
+  [ToolName.SEARCH_KNOWLEDGE_BASE]: { scope: "same_origin", access: "read" },
+  [ToolName.DONE]: { scope: "same_page", access: "read" },
+  [ToolName.READ_PAGE]: { scope: "same_page", access: "read" },
+  [ToolName.SCROLL_PAGE]: { scope: "separate_tab", access: "read" },
+  [ToolName.FIND_ELEMENT]: { scope: "same_page", access: "read" },
+  [ToolName.PRESS_KEY]: { scope: "separate_tab", access: "write" },
+  [ToolName.WAIT]: { scope: "same_page", access: "read" },
+  [ToolName.CREATE_TAB]: { scope: "separate_tab", access: "navigate" },
+  [ToolName.CLOSE_TAB]: { scope: "separate_tab", access: "navigate" },
+  [ToolName.SWITCH_TAB]: { scope: "separate_tab", access: "navigate" },
+  [ToolName.ESCALATE]: { scope: "never", access: "approval" },
+  [ToolName.READ_ELEMENT]: { scope: "same_page", access: "read" },
+  [ToolName.EXECUTE_JS]: { scope: "never", access: "write" },
+  [ToolName.UPLOAD_FILE]: { scope: "never", access: "write" },
+  [ToolName.GO_BACK]: { scope: "separate_tab", access: "navigate" },
+  [ToolName.LIST_TABS]: { scope: "same_page", access: "read" },
+  [ToolName.RIGHT_CLICK]: { scope: "separate_tab", access: "write" },
+  [ToolName.SET_CHECKBOX]: { scope: "separate_tab", access: "write" },
+  [ToolName.CLICK_COORDINATES]: { scope: "separate_tab", access: "write" },
+  [ToolName.DOWNLOAD_FILE]: { scope: "separate_tab", access: "read" },
+  [ToolName.GET_COOKIES]: { scope: "same_origin", access: "read" },
+  [ToolName.SET_COOKIE]: { scope: "same_origin", access: "write" },
+  [ToolName.DELETE_COOKIE]: { scope: "same_origin", access: "write" },
+  [ToolName.SEARCH_HISTORY]: { scope: "same_page", access: "read" },
+  [ToolName.INSPECT_HIDDEN]: { scope: "same_page", access: "read" },
+  [ToolName.INSPECT_CHART]: { scope: "same_page", access: "read" },
+  [ToolName.INSPECT_TABLE]: { scope: "same_page", access: "read" },
+  [ToolName.INSPECT_FILTER_STATE]: { scope: "same_page", access: "read" },
+  [ToolName.APPLY_LIST_FILTER]: { scope: "separate_tab", access: "write" },
+  [ToolName.APPLY_LIST_SORT]: { scope: "separate_tab", access: "write" },
+  [ToolName.APPLY_LIST_ACTION]: { scope: "separate_tab", access: "write" },
+  [ToolName.INSPECT_CATALOG_ITEM]: { scope: "same_page", access: "read" },
+  [ToolName.CONFIGURE_CATALOG_ITEM]: { scope: "separate_tab", access: "write" },
+  [ToolName.CONFIGURE_SERVICENOW_FORM]: {
+    scope: "separate_tab",
+    access: "write",
+  },
+  [ToolName.XRAY_PAGE]: { scope: "separate_tab", access: "read" },
+  [ToolName.DISMISS_OVERLAYS]: { scope: "separate_tab", access: "write" },
+  [ToolName.CLARIFY]: { scope: "never", access: "approval" },
+  [ToolName.UPDATE_NOTES]: { scope: "never", access: "external" },
+  [ToolName.GET_PROFILE_FIELDS]: { scope: "same_page", access: "read" },
+  [ToolName.LIST_APPLICATION_PACKAGES]: { scope: "same_page", access: "read" },
+  [ToolName.GET_APPLICATION_PACKAGE]: { scope: "same_page", access: "read" },
+  [ToolName.SUGGEST_FORM_ANSWERS]: { scope: "same_page", access: "read" },
+  [ToolName.GET_CANDIDATE_PROFILE]: { scope: "same_page", access: "read" },
+  [ToolName.ANSWER_CANDIDATE_QUESTION]: {
+    scope: "same_page",
+    access: "read",
+  },
+  [ToolName.RECORD_APPLICATION_STATUS]: {
+    scope: "same_origin",
+    access: "write",
+  },
+  [ToolName.CREATE_WINDOW]: { scope: "never", access: "navigate" },
+  [ToolName.UPDATE_PLAN]: { scope: "never", access: "external" },
+};
+
 export function getToolMeta(name: ToolName): ToolMeta {
   return TOOL_METADATA[name];
+}
+
+export function getToolNodeConcurrencyMeta(
+  name: ToolName,
+): ToolNodeConcurrencyMeta {
+  return TOOL_NODE_CONCURRENCY[name];
 }
 
 // Pre-computed sets for fast lookup
@@ -559,6 +655,79 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.WAIT,
   ],
 };
+
+const PROFILE_CONTROL_TOOLS = new Set<ToolName>([
+  ToolName.DONE,
+  ToolName.ESCALATE,
+  ToolName.CLARIFY,
+  ToolName.WAIT,
+  ToolName.UPDATE_NOTES,
+  ToolName.UPDATE_PLAN,
+]);
+
+const TOOL_NODE_ACCESS_PRIORITY: Record<ToolNodeResourceAccess, number> = {
+  read: 0,
+  navigate: 1,
+  write: 2,
+  external: 3,
+  approval: 4,
+};
+
+const TOOL_NODE_SCOPE_PRIORITY: Record<ToolNodeConcurrencyScope, number> = {
+  same_page: 0,
+  same_origin: 1,
+  separate_tab: 2,
+  never: 3,
+};
+
+export function summarizeToolNodeConcurrency(
+  tools: Iterable<ToolName>,
+  options: { ignoreControlTools?: boolean } = {},
+): ToolNodeConcurrencyMeta {
+  let summary: ToolNodeConcurrencyMeta = {
+    scope: "same_page",
+    access: "read",
+  };
+
+  for (const tool of tools) {
+    if (options.ignoreControlTools && PROFILE_CONTROL_TOOLS.has(tool)) {
+      continue;
+    }
+    const meta = getToolNodeConcurrencyMeta(tool);
+    if (
+      TOOL_NODE_SCOPE_PRIORITY[meta.scope] >
+      TOOL_NODE_SCOPE_PRIORITY[summary.scope]
+    ) {
+      summary = { ...summary, scope: meta.scope };
+    }
+    if (
+      TOOL_NODE_ACCESS_PRIORITY[meta.access] >
+      TOOL_NODE_ACCESS_PRIORITY[summary.access]
+    ) {
+      summary = { ...summary, access: meta.access };
+    }
+  }
+
+  return summary;
+}
+
+export function getToolProfileNodeConcurrency(
+  profile: ToolProfile | undefined,
+): ToolNodeConcurrencyMeta | null {
+  if (!profile) return null;
+  if (profile === "full") {
+    return { scope: "never", access: "write" };
+  }
+  const tools = TOOL_PROFILES[profile];
+  if (!tools) return null;
+  const summary = summarizeToolNodeConcurrency(tools, {
+    ignoreControlTools: true,
+  });
+  if (profile === "navigate" || profile === "navigation_only") {
+    return { ...summary, access: "navigate" };
+  }
+  return summary;
+}
 
 /** Resolve a profile name to an allowedTools array. "full" returns null (no filtering). */
 export function resolveToolProfile(

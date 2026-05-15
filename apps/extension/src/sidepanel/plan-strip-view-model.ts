@@ -11,6 +11,9 @@ export interface PlanStripViewModel {
   rows: PlanRow[];
   currentIndex: number;
   canSkip: boolean;
+  activeCount: number;
+  blockedCount: number;
+  queuedCount: number;
   barClassName: string;
 }
 
@@ -44,6 +47,17 @@ export function derivePlanStripViewModel({
     rows,
     currentIndex: taskProgress?.currentIndex ?? 0,
     canSkip: mode === "progress" && rows.some((row) => row.status === "running"),
+    activeCount: rows.filter(
+      (row) =>
+        row.status === "running" &&
+        (row.workerStatus === "running" || row.workerStatus === "retrying"),
+    ).length,
+    blockedCount: rows.filter((row) => row.workerStatus === "blocked").length,
+    queuedCount: rows.filter(
+      (row) =>
+        row.status === "pending" &&
+        (row.workerStatus === "queued" || row.workerStatus === "retrying"),
+    ).length,
     barClassName:
       mode === "confirmation"
         ? "bg-primary-50/40 dark:bg-primary-900/10 border-primary-200 dark:border-primary-800"

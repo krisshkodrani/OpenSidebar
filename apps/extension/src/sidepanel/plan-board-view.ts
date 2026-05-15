@@ -13,12 +13,19 @@ export type PlanRowStatus =
 
 export interface PlanRow {
   id: string;
+  nodeId?: string;
   description: string;
   status: PlanRowStatus;
   turnsUsed: number;
   turnBudget?: number;
   evidenceSnippet?: string;
   selectedSkillId?: string;
+  workerStatus?: NonNullable<
+    TaskProgressMessage["payload"]["subtasks"][number]["workerStatus"]
+  >;
+  workerStatusDetail?: string;
+  parallelism?: TaskProgressMessage["payload"]["subtasks"][number]["parallelism"];
+  resourceSummary?: string;
 }
 
 export function derivePlanRows(
@@ -28,12 +35,17 @@ export function derivePlanRows(
   if (taskProgress) {
     return taskProgress.subtasks.map((subtask, index) => ({
       id: `${taskProgress.taskId}:${index}`,
+      nodeId: subtask.nodeId,
       description: subtask.description,
       status: subtask.status,
       turnsUsed: subtask.turnsUsed,
       turnBudget: subtask.turnBudget,
       evidenceSnippet: subtask.result,
       selectedSkillId: subtask.selectedSkillId,
+      workerStatus: subtask.workerStatus,
+      workerStatusDetail: subtask.workerStatusDetail,
+      parallelism: subtask.parallelism,
+      resourceSummary: subtask.resourceSummary,
     }));
   }
 

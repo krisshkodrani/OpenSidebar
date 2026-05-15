@@ -195,9 +195,26 @@ interface RunTraceEventRecord {
 export interface RunTraceEvent {
   traceKind?: string;
   runId?: string;
+  ts?: string;
+  recordedAt?: string;
   type?: string;
   role?: string;
   data?: Record<string, unknown>;
+}
+
+export interface WorkerTraceInterval {
+  nodeId: string;
+  workerId?: string;
+  startedAtMs: number;
+  endedAtMs: number | null;
+  startEvent: RunTraceEvent;
+  endEvent?: RunTraceEvent;
+}
+
+export interface WorkerTraceOverlap {
+  first: WorkerTraceInterval;
+  second: WorkerTraceInterval;
+  overlapMs: number;
 }
 
 export interface SkillTraceSummary {
@@ -527,6 +544,155 @@ export function readRunTraceEventsForTraceFile(
   } catch {
     return [];
   }
+}
+
+function runEventTimestampMs(event: RunTraceEvent): number {
+  const timestamp =
+    typeof event.ts === "string"
+      ? event.ts
+      : typeof event.recordedAt === "string"
+        ? event.recordedAt
+        : "";
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function runEventDataString(
+  event: RunTraceEvent,
+  key: "nodeId" | "workerId",
+): string | undefined {
+  const value = event.data?.[key];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function sortRunEventsChronologically(events: RunTraceEvent[]): RunTraceEvent[] {
+  return [...events].sort((left, right) => {
+    const delta = runEventTimestampMs(left) - runEventTimestampMs(right);
+    if (delta !== 0) return delta;
+    return String(left.type ?? "").localeCompare(String(right.type ?? ""));
+  });
+}
+
+export function collectWorkerTraceIntervals(
+  events: RunTraceEvent[],
+): WorkerTraceInterval[] {
+  const intervals: WorkerTraceInterval[] = [];
+
+  for (const event of sortRunEventsChronologically(events)) {
+    if (event.type === "worker_started") {
+      const nodeId = runEventDataString(event, "nodeId");
+      if (!nodeId) continue;
+      intervals.push({
+        nodeId,
+        workerId: runEventDataString(event, "workerId"),
+        startedAtMs: runEventTimestampMs(event),
+        endedAtMs: null,
+        startEvent: event,
+      });
+      continue;
+    }
+
+    if (
+      event.type !== "node_completed" &&
+      event.type !== "worker_cancelled" &&
+      event.type !== "worker_released_resource"
+    ) {
+      continue;
+    }
+
+    const nodeId = runEventDataString(event, "nodeId");
+    if (!nodeId) continue;
+    const workerId = runEventDataString(event, "workerId");
+    const match = intervals.find(
+      (interval) =>
+        interval.nodeId === nodeId &&
+        interval.endedAtMs == null &&
+        (!workerId || !interval.workerId || interval.workerId === workerId),
+    );
+    if (!match) continue;
+    match.endedAtMs = runEventTimestampMs(event);
+    match.endEvent = event;
+  }
+
+  return intervals;
+}
+
+export function findWorkerTraceOverlaps(
+  events: RunTraceEvent[],
+  options: { nodeIds?: string[]; minimumOverlapMs?: number } = {},
+): WorkerTraceOverlap[] {
+  const nodeIdSet = options.nodeIds ? new Set(options.nodeIds) : null;
+  const intervals = collectWorkerTraceIntervals(events).filter((interval) =>
+    nodeIdSet ? nodeIdSet.has(interval.nodeId) : true,
+  );
+  const latestEventMs = Math.max(0, ...events.map(runEventTimestampMs));
+  const minimumOverlapMs = options.minimumOverlapMs ?? 1;
+  const overlaps: WorkerTraceOverlap[] = [];
+
+  for (let leftIndex = 0; leftIndex < intervals.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < intervals.length;
+      rightIndex += 1
+    ) {
+      const first = intervals[leftIndex];
+      const second = intervals[rightIndex];
+      if (
+        first.nodeId === second.nodeId &&
+        (!first.workerId || !second.workerId || first.workerId === second.workerId)
+      ) {
+        continue;
+      }
+      const overlapStart = Math.max(first.startedAtMs, second.startedAtMs);
+      const overlapEnd = Math.min(
+        first.endedAtMs ?? latestEventMs,
+        second.endedAtMs ?? latestEventMs,
+      );
+      const overlapMs = overlapEnd - overlapStart;
+      if (overlapMs >= minimumOverlapMs) {
+        overlaps.push({ first, second, overlapMs });
+      }
+    }
+  }
+
+  return overlaps;
+}
+
+function formatWorkerIntervals(intervals: WorkerTraceInterval[]): string {
+  return intervals
+    .map((interval) => {
+      const end =
+        interval.endedAtMs == null
+          ? "open"
+          : `${interval.endedAtMs - interval.startedAtMs}ms`;
+      return `${interval.nodeId}${interval.workerId ? `/${interval.workerId}` : ""}:${end}`;
+    })
+    .join(", ");
+}
+
+export function assertWorkerTraceOverlap(
+  events: RunTraceEvent[],
+  options: { minimumOverlapMs?: number } = {},
+): void {
+  const overlaps = findWorkerTraceOverlaps(events, options);
+  if (overlaps.length > 0) return;
+  throw new Error(
+    `Expected overlapping executor workers in run trace. Intervals: ${formatWorkerIntervals(
+      collectWorkerTraceIntervals(events),
+    )}`,
+  );
+}
+
+export function assertNoWorkerTraceOverlap(
+  events: RunTraceEvent[],
+  options: { nodeIds?: string[]; minimumOverlapMs?: number } = {},
+): void {
+  const overlaps = findWorkerTraceOverlaps(events, options);
+  if (overlaps.length === 0) return;
+  const first = overlaps[0];
+  throw new Error(
+    `Expected serialized executor workers, but ${first.first.nodeId} and ${first.second.nodeId} overlapped for ${first.overlapMs}ms.`,
+  );
 }
 
 export function readSkillSummaryForRun(runId: string): SkillTraceSummary | null {

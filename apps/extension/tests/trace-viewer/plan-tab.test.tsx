@@ -69,6 +69,55 @@ describe("PlanTab", () => {
         {
           runId: "run-1",
           ts: "2026-04-28T11:35:10.497Z",
+          type: "worker_queued",
+          role: "system",
+          data: {
+            nodeId: "node-1",
+            activeWorkerCount: 0,
+            resourceLocks: [],
+          },
+        },
+        {
+          runId: "run-1",
+          ts: "2026-04-28T11:35:10.498Z",
+          type: "worker_started",
+          role: "executor",
+          data: {
+            nodeId: "node-1",
+            workerId: "worker-1",
+            activeWorkerCount: 2,
+            resourceLocks: [
+              {
+                nodeId: "node-1",
+                resources: [{ kind: "url", key: "alpha", access: "read" }],
+              },
+              {
+                nodeId: "node-2",
+                resources: [{ kind: "url", key: "beta", access: "read" }],
+              },
+            ],
+          },
+        },
+        {
+          runId: "run-1",
+          ts: "2026-04-28T11:35:10.499Z",
+          type: "worker_blocked_resource",
+          role: "system",
+          data: {
+            nodeId: "node-3",
+            activeWorkerCount: 2,
+            resourceLocks: [
+              {
+                nodeId: "node-1",
+                resources: [{ kind: "form", key: "checkout", access: "write" }],
+              },
+            ],
+            conflicts: [{ nodeId: "node-1", resources: [] }],
+          },
+        },
+        {
+          runId: "run-1",
+          ts: "2026-04-28T11:35:10.500Z",
           type: "node_started",
           role: "executor",
           data: { nodeId: "node-1", retries: 0, dependencyCount: 0 },
@@ -118,6 +167,11 @@ describe("PlanTab", () => {
     expect(container.textContent).toContain("plan_decomposition");
     expect(container.textContent).toContain("kimi-k2p5-turbo");
     expect(container.textContent).toContain("paginated-record-lookup");
+    expect(container.textContent).toContain("Parallel Workers");
+    expect(container.textContent).toContain("overlap observed");
+    expect(container.textContent).toContain("Max Active");
+    expect(container.textContent).toContain("Resource Blocks");
+    expect(container.textContent).toContain("worker_blocked_resource");
     expect(container.textContent).toContain("Run Event Timeline");
     expect(container.textContent).toContain("planner_llm_call");
     expect(container.textContent).toContain("plan_decomposed");

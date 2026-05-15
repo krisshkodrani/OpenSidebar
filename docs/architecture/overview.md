@@ -58,6 +58,7 @@ Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_AP
 ## See Also
 
 - [Orchestrator](./orchestrator.md)
+- [First-Class Parallel Work Roadmap](./parallel-work-roadmap.md)
 - [Agent Loop](./agent-loop.md)
 - [Perception Layer](./perception-layer.md)
 - [Content Script](./content-script.md)

@@ -34,6 +34,16 @@ describe("task contract helpers", () => {
     expect(synthesizePlanFromTaskContract(query)).toBeNull();
   });
 
+  test("does not require URL infrastructure numbers as report values", () => {
+    const contract = buildTaskContract(
+      "Read http://127.0.0.1:52935/reports/alpha and report the 12345 ticket count.",
+    );
+
+    expect(contract.requiredNumbers).toContain("12345");
+    expect(contract.requiredNumbers).not.toContain("127");
+    expect(contract.requiredNumbers).not.toContain("52935");
+  });
+
   test("repairs plan coverage by appending missing return and report steps", () => {
     const repaired = repairPlanCoverage({
       query: [
@@ -225,6 +235,56 @@ describe("task contract helpers", () => {
     expect(synthesized![0].objective).toContain('Channel="Phone"');
     expect(synthesized![1].toolProfile).toBe("submit_form");
     expect(synthesized![1].dependencies).toEqual([0]);
+  });
+
+  test("synthesizes independent read steps for multi-URL report prompts", () => {
+    const synthesized = synthesizePlanFromTaskContract(
+      "Read these two read-only report pages and summarize each page's headline metric and owner: https://example.com/reports/alpha and https://example.com/reports/beta.",
+    );
+
+    expect(synthesized).not.toBeNull();
+    expect(synthesized).toHaveLength(3);
+    expect(synthesized![0]).toMatchObject({
+      toolProfile: "navigate",
+      dependencies: [],
+    });
+    expect(synthesized![1]).toMatchObject({
+      toolProfile: "navigate",
+      dependencies: [],
+    });
+    expect(synthesized![2]).toMatchObject({
+      toolProfile: "read_only",
+      dependencies: [0, 1],
+    });
+    expect(synthesized![0].objective).toContain(
+      "https://example.com/reports/alpha",
+    );
+    expect(synthesized![1].objective).toContain(
+      "https://example.com/reports/beta",
+    );
+  });
+
+  test("synthesizes separate same-form updates when explicitly requested", () => {
+    const synthesized = synthesizePlanFromTaskContract(
+      "On the shared form page https://example.com/shared-form, do these as separate updates on the same form: set Primary label to Mercury, set Secondary label to Atlas, then submit the shared form.",
+    );
+
+    expect(synthesized).not.toBeNull();
+    expect(synthesized).toHaveLength(3);
+    expect(synthesized![0]).toMatchObject({
+      objective:
+        'Set Primary label to "Mercury" on https://example.com/shared-form.',
+      toolProfile: "form_fill",
+    });
+    expect(synthesized![1]).toMatchObject({
+      objective:
+        'Set Secondary label to "Atlas" on https://example.com/shared-form.',
+      toolProfile: "form_fill",
+    });
+    expect(synthesized![2]).toMatchObject({
+      toolProfile: "submit_form",
+      dependencies: [0, 1],
+    });
   });
 
   test("extracts WorkArena field values once from wrapped executor prompts", () => {

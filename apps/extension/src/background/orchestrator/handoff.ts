@@ -1,7 +1,9 @@
 import {
   NodeHandoffArtifact,
+  ParallelismHint,
   PlannerReflexionEntry,
   ReflexionEntry,
+  ResourceHint,
   StructuredEvidence,
   TaskNode,
 } from "./types";
@@ -491,6 +493,85 @@ export function shouldUseVerificationTurnMode(params: {
   return isVerificationTurnQuery(params.originalQuery);
 }
 
+export interface ExecutorParallelSiblingBrief {
+  nodeId: string;
+  status: TaskNode["status"];
+  objective: string;
+  resources: ResourceHint[];
+}
+
+export interface ExecutorParallelContext {
+  nodeId: string;
+  workerIndex: number;
+  parallelism: ParallelismHint;
+  assignedResources: ResourceHint[];
+  siblingWorkers: ExecutorParallelSiblingBrief[];
+}
+
+function formatResourceHint(hint: ResourceHint): string {
+  return `${hint.kind}:${hint.key} (${hint.access}, confidence=${hint.confidence.toFixed(2)})`;
+}
+
+function formatResourceHints(hints: ResourceHint[]): string {
+  if (hints.length === 0) return "none declared";
+  return hints.slice(0, 4).map(formatResourceHint).join("; ");
+}
+
+export function buildExecutorParallelContext(params: {
+  node: TaskNode;
+  allNodes: TaskNode[];
+  workerIndex: number;
+}): ExecutorParallelContext {
+  const siblingWorkers = params.allNodes
+    .filter(
+      (candidate) =>
+        candidate.id !== params.node.id &&
+        (candidate.status === "running" || candidate.status === "pending"),
+    )
+    .slice(0, 4)
+    .map((candidate) => ({
+      nodeId: candidate.id,
+      status: candidate.status,
+      objective: normalizeNote(candidate.description),
+      resources: candidate.parallelContract?.resourceHints ?? [],
+    }));
+
+  return {
+    nodeId: params.node.id,
+    workerIndex: params.workerIndex,
+    parallelism: params.node.parallelContract?.parallelism ?? "unknown",
+    assignedResources: params.node.parallelContract?.resourceHints ?? [],
+    siblingWorkers,
+  };
+}
+
+function buildExecutorParallelContextSection(
+  context?: ExecutorParallelContext,
+): string[] {
+  if (!context) return [];
+
+  const lines = [
+    "Parallel work context:",
+    `- This worker is node ${context.nodeId} at worker index ${context.workerIndex}.`,
+    `- Node parallelism contract: ${context.parallelism}.`,
+    `- Assigned resources: ${formatResourceHints(context.assignedResources)}.`,
+    "- Sibling summaries are informational only. Use your own page and tool evidence before acting, and do not depend on hidden mutable state from another worker.",
+  ];
+
+  if (context.siblingWorkers.length > 0) {
+    lines.push("- Sibling workers:");
+    for (const sibling of context.siblingWorkers) {
+      lines.push(
+        `  - ${sibling.nodeId} [${sibling.status}]: ${sibling.objective}; resources: ${formatResourceHints(sibling.resources)}.`,
+      );
+    }
+  } else {
+    lines.push("- Sibling workers: none active or pending.");
+  }
+
+  return ["", ...lines];
+}
+
 export function buildExecutorInstruction(
   node: TaskNode,
   taskStateBrief?: string,
@@ -499,6 +580,7 @@ export function buildExecutorInstruction(
   originalQuery?: string,
   verificationTurnMode = false,
   personalContextBrief?: string,
+  parallelContext?: ExecutorParallelContext,
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -539,6 +621,8 @@ export function buildExecutorInstruction(
         ]
       : ["- Call done() only when success criteria are satisfied."]),
   );
+
+  sections.push(...buildExecutorParallelContextSection(parallelContext));
 
   if (personalContextBrief) {
     sections.push(

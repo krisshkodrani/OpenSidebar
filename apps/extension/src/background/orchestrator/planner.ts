@@ -13,6 +13,7 @@ import {
   synthesizePlanFromTaskContract,
 } from "../agent/task-contract";
 import { BuildNodesResult, PlannerAssignment, TaskNode } from "./types";
+import { annotateParallelContracts } from "./parallel-contract";
 import {
   getSkillDescriptor,
   selectPrimarySkill,
@@ -283,13 +284,14 @@ function collapseAllMultiTabChecklistNodes(
       ),
       allowedTools: unionTools(nodes),
       dependencies: [],
-      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      assumptions: dedupeStrings(
+        nodes.flatMap((node) => node.assumptions || []),
+      ),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
-      verificationGate:
-        nodes
-          .slice()
-          .reverse()
-          .find((node) => node.verificationGate)?.verificationGate,
+      verificationGate: nodes
+        .slice()
+        .reverse()
+        .find((node) => node.verificationGate)?.verificationGate,
       status: "pending",
       retries: 0,
       result: undefined,
@@ -353,13 +355,14 @@ function collapsePaginatedAggregateScanNodes(
       ),
       allowedTools: unionTools(nodes),
       dependencies: [...firstNode.dependencies],
-      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      assumptions: dedupeStrings(
+        nodes.flatMap((node) => node.assumptions || []),
+      ),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
-      verificationGate:
-        nodes
-          .slice()
-          .reverse()
-          .find((node) => node.verificationGate)?.verificationGate,
+      verificationGate: nodes
+        .slice()
+        .reverse()
+        .find((node) => node.verificationGate)?.verificationGate,
       status: "pending",
       retries: 0,
       result: undefined,
@@ -451,6 +454,30 @@ function collapsePaginatedTableScanNodes(
     : nodes;
 }
 
+function shouldPreserveSeparateFormUpdateNodes(
+  nodes: TaskNode[],
+  query: string,
+): boolean {
+  const text = compactText(query).toLowerCase();
+  if (
+    !/\bseparate(?:ly)?\b.{0,40}\b(update|updates|action|actions|step|steps|task|tasks)\b/.test(
+      text,
+    ) &&
+    !/\b(update|updates|action|actions|step|steps|task|tasks)\b.{0,40}\bseparate(?:ly)?\b/.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  if (!/\b(form|field|input|page|screen|record)\b/.test(text)) return false;
+
+  return nodes.some(
+    (node) =>
+      node.toolProfile === "form_fill" &&
+      /\bset\b.+\bto\b/i.test(node.description),
+  );
+}
+
 function collapseSkillOwnedWorkflowNodes(
   nodes: TaskNode[],
   query: string,
@@ -459,6 +486,7 @@ function collapseSkillOwnedWorkflowNodes(
   skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
   if (nodes.length < 2) return nodes;
+  if (shouldPreserveSeparateFormUpdateNodes(nodes, query)) return nodes;
 
   const selection = selectPrimarySkill({
     query,
@@ -473,7 +501,10 @@ function collapseSkillOwnedWorkflowNodes(
     selection.id,
     skillCatalogOptions,
   );
-  if (!selectedDescriptor?.atomic && !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) {
+  if (
+    !selectedDescriptor?.atomic &&
+    !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)
+  ) {
     return nodes;
   }
 
@@ -502,13 +533,14 @@ function collapseSkillOwnedWorkflowNodes(
           ),
       allowedTools: unionTools(nodes),
       dependencies: [...firstNode.dependencies],
-      assumptions: dedupeStrings(nodes.flatMap((node) => node.assumptions || [])),
+      assumptions: dedupeStrings(
+        nodes.flatMap((node) => node.assumptions || []),
+      ),
       handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
-      verificationGate:
-        nodes
-          .slice()
-          .reverse()
-          .find((node) => node.verificationGate)?.verificationGate,
+      verificationGate: nodes
+        .slice()
+        .reverse()
+        .find((node) => node.verificationGate)?.verificationGate,
       status: "pending",
       retries: 0,
       result: undefined,
@@ -539,7 +571,10 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
     selection.id,
     skillCatalogOptions,
   );
-  if (!selectedDescriptor?.atomic && !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)) {
+  if (
+    !selectedDescriptor?.atomic &&
+    !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)
+  ) {
     return nodes;
   }
 
@@ -631,7 +666,10 @@ function extractFallbackNamedTargets(query: string): string[] {
 function buildSingleFallbackStep(query: string): DecompositionStep {
   const contract = buildTaskContract(query);
   const compactQuery = compactText(query);
-  const contractTargets = [...contract.requiredEntities, ...contract.requiredNumbers]
+  const contractTargets = [
+    ...contract.requiredEntities,
+    ...contract.requiredNumbers,
+  ]
     .filter(Boolean)
     .slice(0, 3);
   const shouldSynthesizeTargetedFallback =
@@ -650,9 +688,10 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
       ? `${contract.exhaustiveScopeCount} ${contract.exhaustiveScopeLabel}`
       : null;
 
-  const objective = compactQuery.length > 0
-    ? compactQuery
-    : "Follow the user's exact request on the current page and report the result clearly.";
+  const objective =
+    compactQuery.length > 0
+      ? compactQuery
+      : "Follow the user's exact request on the current page and report the result clearly.";
 
   const successCriteria = targetSummary
     ? isNavigationOnlyTask(query)
@@ -670,33 +709,77 @@ function buildSingleFallbackStep(query: string): DecompositionStep {
     dependencies: [],
     assumptions:
       compactQuery.length > 0
-        ? [`Preserve all explicit constraints from the user's original request: ${compactQuery}`]
+        ? [
+            `Preserve all explicit constraints from the user's original request: ${compactQuery}`,
+          ]
         : [],
   };
 }
 
-function withDefaultSuccessCriteria(
-  steps: DecompositionStep[],
-): Array<
+function withDefaultSuccessCriteria(steps: DecompositionStep[]): Array<
   DecompositionStep & {
     successCriteria: string;
     dependencies: number[];
     assumptions: string[];
   }
 > {
-  return steps.map((step, index) => ({
+  return steps.map((step) => ({
     ...step,
     successCriteria:
       step.successCriteria ||
       `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
     assumptions: step.assumptions || [],
-    dependencies:
-      step.dependencies && step.dependencies.length > 0
-        ? step.dependencies
-        : index > 0
-          ? [index - 1]
-          : [],
+    dependencies: step.dependencies || [],
   }));
+}
+
+function isReadOnlyDecompositionStep(step: DecompositionStep): boolean {
+  if (
+    step.toolProfile === "read_only" ||
+    step.toolProfile === "inspect_hidden_state"
+  ) {
+    return true;
+  }
+  const text = `${step.objective}\n${step.successCriteria ?? ""}`;
+  return (
+    /\b(read|check|inspect|review|summari[sz]e|extract|compare|report|count|inventory)\b/i.test(
+      text,
+    ) &&
+    !/\b(click|type|fill|select|submit|save|update|delete|add|order|purchase|checkout|send|post|apply)\b/i.test(
+      text,
+    )
+  );
+}
+
+function extractIndependentStepKeys(step: DecompositionStep): string[] {
+  const text = `${step.objective}\n${step.successCriteria ?? ""}`;
+  const urls = [...text.matchAll(/\bhttps?:\/\/[^\s)"']+/gi)].map((match) =>
+    match[0].toLowerCase().replace(/[),.;]+$/, ""),
+  );
+  const quoted = [...text.matchAll(/"([^"]{3,80})"|'([^']{3,80})'/g)].map(
+    (match) => (match[1] || match[2] || "").toLowerCase().trim(),
+  );
+  return [...new Set([...urls, ...quoted])];
+}
+
+function canLeaveStepIndependent(
+  steps: DecompositionStep[],
+  index: number,
+): boolean {
+  const step = steps[index];
+  if (!step || !isReadOnlyDecompositionStep(step)) return false;
+  const keys = extractIndependentStepKeys(step);
+  if (keys.length === 0) return false;
+
+  for (let priorIndex = 0; priorIndex < index; priorIndex++) {
+    const prior = steps[priorIndex];
+    if (!prior || !isReadOnlyDecompositionStep(prior)) return false;
+    const priorKeys = extractIndependentStepKeys(prior);
+    if (priorKeys.length === 0) return false;
+    if (keys.some((key) => priorKeys.includes(key))) return false;
+  }
+
+  return true;
 }
 
 function stepsToNodes(
@@ -730,7 +813,11 @@ function stepsToNodes(
       // default to sequential chaining (depend on previous step).
       // This prevents accidental parallel launches (e.g. "apply coupon"
       // running before "add to cart").
-      if (explicit.length === 0 && index > 0) {
+      if (
+        explicit.length === 0 &&
+        index > 0 &&
+        !canLeaveStepIndependent(steps, index)
+      ) {
         return [nodeIds[index - 1]];
       }
       return explicit;
@@ -762,6 +849,9 @@ function stepsToNodes(
     role: assignment.role,
     description: assignment.objective,
     successCriteria: assignment.successCriteria,
+    ...(steps[index]?.toolProfile
+      ? { toolProfile: steps[index].toolProfile }
+      : {}),
     allowedTools: assignment.allowedTools,
     dependencies: (assignment.dependencies || []).filter(
       (dep) => dep.length > 0,
@@ -793,17 +883,17 @@ export function buildFallbackNodes(
   pageUrl?: string,
   skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
-  const fallbackSteps =
-    synthesizeBatchedExhaustivePlan(query) ||
-    synthesizePlanFromTaskContract(query) ||
-    [buildSingleFallbackStep(query)];
-  return stepsToNodes(
-    query,
-    fallbackSteps,
-    phase,
-    pageTitle,
-    pageUrl,
-    skillCatalogOptions,
+  const fallbackSteps = synthesizeBatchedExhaustivePlan(query) ||
+    synthesizePlanFromTaskContract(query) || [buildSingleFallbackStep(query)];
+  return annotateParallelContracts(
+    stepsToNodes(
+      query,
+      fallbackSteps,
+      phase,
+      pageTitle,
+      pageUrl,
+      skillCatalogOptions,
+    ),
   );
 }
 
@@ -814,13 +904,15 @@ export function buildDirectExecutionNodes(
   pageUrl?: string,
   skillCatalogOptions?: SkillCatalogOptions,
 ): TaskNode[] {
-  return stepsToNodes(
-    query,
-    [buildSingleFallbackStep(query)],
-    phase,
-    pageTitle,
-    pageUrl,
-    skillCatalogOptions,
+  return annotateParallelContracts(
+    stepsToNodes(
+      query,
+      [buildSingleFallbackStep(query)],
+      phase,
+      pageTitle,
+      pageUrl,
+      skillCatalogOptions,
+    ),
   );
 }
 
@@ -928,10 +1020,7 @@ export class OrchestratorPlanner {
       );
     }
 
-    const collapsedMultiTabNodes = collapseMultiTabChecklistNodes(
-      nodes,
-      query,
-    );
+    const collapsedMultiTabNodes = collapseMultiTabChecklistNodes(nodes, query);
     if (collapsedMultiTabNodes !== nodes) {
       nodes = collapsedMultiTabNodes;
       logger.info(
@@ -941,7 +1030,10 @@ export class OrchestratorPlanner {
       );
     }
 
-    const collapsedPaginatedNodes = collapsePaginatedTableScanNodes(nodes, query);
+    const collapsedPaginatedNodes = collapsePaginatedTableScanNodes(
+      nodes,
+      query,
+    );
     if (collapsedPaginatedNodes !== nodes) {
       nodes = collapsedPaginatedNodes;
       logger.info(
@@ -989,6 +1081,8 @@ export class OrchestratorPlanner {
       );
     }
 
+    nodes = annotateParallelContracts(nodes);
+
     logger.info("orchestrator", "Planner generated nodes", {
       count: nodes.length,
     });
@@ -996,12 +1090,10 @@ export class OrchestratorPlanner {
     // Simple task: decomposition had no subtasks (empty array)
     const isSkillOwnedSingleNode = Boolean(
       nodes.length === 1 &&
-        nodes[0]?.selectedSkillId &&
-        (SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId) ||
-          getSkillDescriptor(
-            nodes[0].selectedSkillId,
-            skillCatalogOptions,
-          )?.atomic),
+      nodes[0]?.selectedSkillId &&
+      (SKILL_OWNED_WORKFLOW_IDS.has(nodes[0].selectedSkillId) ||
+        getSkillDescriptor(nodes[0].selectedSkillId, skillCatalogOptions)
+          ?.atomic),
     );
     const isSingleNode =
       nodes.length === 1 &&
@@ -1069,10 +1161,7 @@ export class OrchestratorPlanner {
         .map((depIndex) => nodeIds[depIndex]);
       const dependencies =
         explicitDependencies.length > 0
-          ? [
-              ...(index === 0 ? node.dependencies : []),
-              ...explicitDependencies,
-            ]
+          ? [...(index === 0 ? node.dependencies : []), ...explicitDependencies]
           : index === 0
             ? [...node.dependencies]
             : [nodeIds[index - 1]];
@@ -1083,29 +1172,32 @@ export class OrchestratorPlanner {
               selectedSkillReason: selection.reason,
             }
           : {}),
-      id: nodeIds[index],
-      role: "executor",
-      description: step.objective,
-      successCriteria:
-        step.successCriteria ||
-        `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
-      allowedTools: [...node.allowedTools],
-      dependencies,
-      assumptions: step.assumptions || [],
-      handoffArtifacts: [
-        {
-          role: "planner",
-          phase: "planner_replan",
-          note: `Planner replanned from node ${node.id}: ${step.objective}`,
-          timestamp: Date.now(),
-        },
-      ],
-      reflexionLog: [],
-      handoffDepth: node.handoffDepth,
-      handoffFromNodeId: node.id,
-      verificationGate: step.verifyAfter ? { ...step.verifyAfter } : undefined,
-      status: "pending",
-      retries: 0,
+        id: nodeIds[index],
+        role: "executor",
+        description: step.objective,
+        successCriteria:
+          step.successCriteria ||
+          `The subtask outcome for "${step.objective}" is verified on the page or in tool output.`,
+        ...(step.toolProfile ? { toolProfile: step.toolProfile } : {}),
+        allowedTools: [...node.allowedTools],
+        dependencies,
+        assumptions: step.assumptions || [],
+        handoffArtifacts: [
+          {
+            role: "planner",
+            phase: "planner_replan",
+            note: `Planner replanned from node ${node.id}: ${step.objective}`,
+            timestamp: Date.now(),
+          },
+        ],
+        reflexionLog: [],
+        handoffDepth: node.handoffDepth,
+        handoffFromNodeId: node.id,
+        verificationGate: step.verifyAfter
+          ? { ...step.verifyAfter }
+          : undefined,
+        status: "pending",
+        retries: 0,
       };
     });
 
@@ -1113,7 +1205,7 @@ export class OrchestratorPlanner {
       sourceNodeId: node.id,
       count: expanded.length,
     });
-    return expanded;
+    return annotateParallelContracts(expanded);
   }
 
   async planNextHorizon(
@@ -1156,13 +1248,15 @@ export class OrchestratorPlanner {
 
     if (steps.length === 0) return null;
 
-    const nodes = stepsToNodes(
-      query,
-      steps as DecompositionStep[],
-      "planned",
-      pageTitle,
-      pageUrl,
-      skillCatalogOptions,
+    const nodes = annotateParallelContracts(
+      stepsToNodes(
+        query,
+        steps as DecompositionStep[],
+        "planned",
+        pageTitle,
+        pageUrl,
+        skillCatalogOptions,
+      ),
     );
 
     logger.info("orchestrator", "Planner produced horizon expansion nodes", {

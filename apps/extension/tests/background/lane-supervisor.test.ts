@@ -16,7 +16,10 @@ import {
   releaseLaneOperation,
   releaseLaneOperationRegistration,
 } from "../../src/background/orchestrator/lane-supervisor";
-import { resolveLaneTopology } from "../../src/background/orchestrator/lane-topology";
+import {
+  resolveExecutorNodeConcurrency,
+  resolveLaneTopology,
+} from "../../src/background/orchestrator/lane-topology";
 
 describe("orchestrator lane supervisor helpers", () => {
   test("builds lane policies with bounded overrides", () => {
@@ -65,6 +68,31 @@ describe("orchestrator lane supervisor helpers", () => {
 
     expect(runtime.executor.policy.maxConcurrent).toBe(1);
     expect(runtime.verifier.policy.maxConcurrent).toBe(4);
+  });
+
+  test("executor node concurrency follows topology and kill switch", () => {
+    expect(
+      resolveExecutorNodeConcurrency({
+        topology: resolveLaneTopology("full"),
+        maxWorkers: 4,
+        executorMaxConcurrent: 3,
+      }),
+    ).toBe(3);
+    expect(
+      resolveExecutorNodeConcurrency({
+        topology: resolveLaneTopology("standard"),
+        maxWorkers: 4,
+        executorMaxConcurrent: 3,
+      }),
+    ).toBe(1);
+    expect(
+      resolveExecutorNodeConcurrency({
+        topology: resolveLaneTopology("full"),
+        maxWorkers: 4,
+        executorMaxConcurrent: 3,
+        root: { __OPENSIDEBAR_DISABLE_NODE_PARALLELISM__: true },
+      }),
+    ).toBe(1);
   });
 
   test("summarizes queue depth and circuit state for telemetry", () => {

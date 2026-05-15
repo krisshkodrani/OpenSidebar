@@ -6,15 +6,36 @@ import {
 } from "../e2e/helpers/utils";
 import { closeExtension } from "../e2e/helpers/browser";
 import {
+  assertNoWorkerTraceOverlap,
+  assertWorkerTraceOverlap,
   collectFormTraceMetrics,
+  collectWorkerTraceIntervals,
   extractDoneSummary,
+  findWorkerTraceOverlaps,
   filterTraceFilesByWorkspace,
+  type RunTraceEvent,
 } from "../e2e/helpers/diagnostics";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
 describe("e2e helper semantics", () => {
+  const baseTraceMs = Date.parse("2026-05-15T12:00:00.000Z");
+
+  function runEvent(
+    type: string,
+    data: Record<string, unknown>,
+    offsetMs: number,
+  ): RunTraceEvent {
+    return {
+      traceKind: "orchestrator.run.event",
+      runId: "run-1",
+      type,
+      ts: new Date(baseTraceMs + offsetMs).toISOString(),
+      data,
+    };
+  }
+
   it("treats partial task completion as distinct from completed", () => {
     expect(
       e2eUtilsTestOnly.getLatestTaskCompletionState([
@@ -177,6 +198,54 @@ describe("e2e helper semantics", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("detects overlapping worker intervals from run trace timestamps", () => {
+    const events = [
+      runEvent("worker_started", { nodeId: "n1", workerId: "w1" }, 0),
+      runEvent("worker_started", { nodeId: "n2", workerId: "w2" }, 100),
+      runEvent("node_completed", { nodeId: "n1" }, 500),
+      runEvent("node_completed", { nodeId: "n2" }, 700),
+    ];
+
+    const intervals = collectWorkerTraceIntervals(events);
+    expect(intervals).toHaveLength(2);
+    expect(findWorkerTraceOverlaps(events)[0]).toMatchObject({
+      first: { nodeId: "n1" },
+      second: { nodeId: "n2" },
+      overlapMs: 400,
+    });
+    expect(() => assertWorkerTraceOverlap(events)).not.toThrow();
+    expect(() => assertNoWorkerTraceOverlap(events)).toThrow(
+      /Expected serialized executor workers/,
+    );
+  });
+
+  it("accepts serialized worker intervals without false overlap", () => {
+    const events = [
+      runEvent("worker_started", { nodeId: "n1", workerId: "w1" }, 0),
+      runEvent("node_completed", { nodeId: "n1" }, 100),
+      runEvent("worker_started", { nodeId: "n2", workerId: "w2" }, 150),
+      runEvent("node_completed", { nodeId: "n2" }, 300),
+    ];
+
+    expect(findWorkerTraceOverlaps(events)).toEqual([]);
+    expect(() => assertNoWorkerTraceOverlap(events)).not.toThrow();
+    expect(() => assertWorkerTraceOverlap(events)).toThrow(
+      /Expected overlapping executor workers/,
+    );
+  });
+
+  it("ignores duplicate intervals for the same worker when traces are merged", () => {
+    const events = [
+      runEvent("worker_started", { nodeId: "n1", workerId: "w1" }, 0),
+      runEvent("worker_started", { nodeId: "n1", workerId: "w1" }, 0),
+      runEvent("node_completed", { nodeId: "n1" }, 100),
+      runEvent("node_completed", { nodeId: "n1" }, 100),
+    ];
+
+    expect(findWorkerTraceOverlaps(events)).toEqual([]);
+    expect(() => assertNoWorkerTraceOverlap(events)).not.toThrow();
   });
 
   it("extracts the latest accepted done summary after a rejected done attempt", () => {

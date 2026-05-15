@@ -6,6 +6,8 @@ import { formatPlanElapsed, type PlanStripMode } from "../../plan-strip-view-mod
 import { PlanProgressBar } from "./PlanProgressBar";
 
 export function PlanCollapsedBar({
+  activeCount,
+  blockedCount,
   confirmed,
   currentIndex,
   elapsed,
@@ -15,6 +17,8 @@ export function PlanCollapsedBar({
   pendingPlan,
   rows,
 }: {
+  activeCount: number;
+  blockedCount: number;
   confirmed: boolean;
   currentIndex: number;
   elapsed: number;
@@ -78,6 +82,16 @@ export function PlanCollapsedBar({
           <span className="ml-1 text-[11px] tabular-nums text-warm-700 dark:text-warm-200">
             {`Step ${currentIndex + 1}/${rows.length}`}
           </span>
+          {activeCount > 1 ? (
+            <span className="rounded-full bg-primary-100 px-1 py-0.5 text-[9px] text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+              {activeCount} active
+            </span>
+          ) : null}
+          {blockedCount > 0 ? (
+            <span className="rounded-full bg-amber-100 px-1 py-0.5 text-[9px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+              {blockedCount} blocked
+            </span>
+          ) : null}
           <span className="ml-auto text-[10px] tabular-nums text-warm-500 dark:text-warm-400">
             {formatPlanElapsed(elapsed)}
           </span>

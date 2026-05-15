@@ -3,6 +3,7 @@ import type {
   TraceValidationIssue,
   TraceValidationResult,
 } from "./types";
+import type { RunTraceEvent } from "../../utils/run-trace";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -32,6 +33,191 @@ function push(
   context: Partial<TraceValidationIssue> = {},
 ): void {
   issues.push({ severity, code, message, ...context });
+}
+
+function dataRecord(event: RunTraceEvent): Record<string, unknown> {
+  return isRecord(event.data) ? event.data : {};
+}
+
+function arrayValue(
+  record: Record<string, unknown>,
+  key: string,
+): unknown[] | null {
+  const value = record[key];
+  return Array.isArray(value) ? value : null;
+}
+
+function workerKey(event: RunTraceEvent): string | null {
+  const data = dataRecord(event);
+  return (
+    stringValue(data, "workerId") ??
+    (stringValue(data, "nodeId")
+      ? `node:${stringValue(data, "nodeId")}`
+      : null)
+  );
+}
+
+function extractGraphDependencies(
+  event: RunTraceEvent,
+): Map<string, string[]> {
+  const dependencies = new Map<string, string[]>();
+  const graph = dataRecord(event).graph;
+  if (!isRecord(graph)) return dependencies;
+  const nodes = graph.nodes;
+  if (!Array.isArray(nodes)) return dependencies;
+
+  for (const node of nodes) {
+    if (!isRecord(node)) continue;
+    const nodeId = stringValue(node, "nodeId");
+    if (!nodeId) continue;
+    dependencies.set(
+      nodeId,
+      (arrayValue(node, "dependencies") ?? []).filter(
+        (dependency): dependency is string =>
+          typeof dependency === "string" && dependency.length > 0,
+      ),
+    );
+  }
+
+  return dependencies;
+}
+
+function runEventTimestamp(event: RunTraceEvent, index: number): number {
+  const parsed = Date.parse(event.ts);
+  return Number.isFinite(parsed) ? parsed : index;
+}
+
+function validateParallelRunEvents(
+  runId: string,
+  events: RunTraceEvent[],
+  issues: TraceValidationIssue[],
+): void {
+  const ordered = events
+    .map((event, index) => ({ event, index }))
+    .sort(
+      (a, b) =>
+        runEventTimestamp(a.event, a.index) -
+          runEventTimestamp(b.event, b.index) || a.index - b.index,
+    );
+  const activeWorkers = new Map<
+    string,
+    { nodeId: string | null; resources: unknown[]; eventIndex: number }
+  >();
+  const knownWorkers = new Set<string>();
+  const finishedWorkers = new Set<string>();
+  const completedNodes = new Set<string>();
+  const graphDependencies = new Map<string, string[]>();
+  const workerStateEventTypes = new Set([
+    "worker_queued",
+    "worker_started",
+    "worker_blocked_resource",
+    "worker_released_resource",
+    "worker_cancelled",
+  ]);
+
+  for (const { event, index } of ordered) {
+    const data = dataRecord(event);
+    if (event.type === "plan_decomposed") {
+      for (const [nodeId, dependencies] of extractGraphDependencies(event)) {
+        graphDependencies.set(nodeId, dependencies);
+      }
+    }
+
+    if (workerStateEventTypes.has(event.type)) {
+      if (numberValue(data, "activeWorkerCount") == null) {
+        push(
+          issues,
+          "warning",
+          "missing_parallel_active_worker_count",
+          `${event.type} is missing activeWorkerCount`,
+          { runId },
+        );
+      }
+      if (!arrayValue(data, "resourceLocks")) {
+        push(
+          issues,
+          "warning",
+          "missing_parallel_resource_locks",
+          `${event.type} is missing resourceLocks`,
+          { runId },
+        );
+      }
+    }
+
+    if (event.type === "node_completed") {
+      const nodeId = stringValue(data, "nodeId");
+      const outcome = stringValue(data, "outcome");
+      if (nodeId && (outcome === "completed" || outcome === "skipped")) {
+        completedNodes.add(nodeId);
+      }
+    }
+
+    if (event.type === "worker_started") {
+      const key = workerKey(event);
+      const nodeId = stringValue(data, "nodeId");
+      if (nodeId) {
+        const missingDependencies = (graphDependencies.get(nodeId) ?? []).filter(
+          (dependency) => !completedNodes.has(dependency),
+        );
+        if (missingDependencies.length > 0) {
+          push(
+            issues,
+            "error",
+            "dependency_started_before_complete",
+            `Worker for ${nodeId} started before dependencies completed: ${missingDependencies.join(", ")}`,
+            { runId },
+          );
+        }
+      }
+      if (key) {
+        knownWorkers.add(key);
+        activeWorkers.set(key, {
+          nodeId,
+          resources: arrayValue(data, "assignedResources") ?? [],
+          eventIndex: index,
+        });
+      }
+    }
+
+    if (
+      event.type === "worker_released_resource" ||
+      event.type === "worker_cancelled"
+    ) {
+      const key = workerKey(event);
+      if (!key) continue;
+      if (finishedWorkers.has(key)) continue;
+      if (!knownWorkers.has(key)) {
+        push(
+          issues,
+          "warning",
+          "worker_finish_without_start",
+          `${event.type} was recorded before worker_started for ${key}`,
+          { runId },
+        );
+      }
+      finishedWorkers.add(key);
+      activeWorkers.delete(key);
+    }
+  }
+
+  for (const [key, active] of activeWorkers) {
+    push(
+      issues,
+      "error",
+      "missing_worker_finish",
+      `Worker ${key} started but no release or cancellation event was recorded`,
+      { runId },
+    );
+    if (active.resources.length > 0) {
+      push(
+        issues,
+        "error",
+        "orphan_resource_lock",
+        `Worker ${key} left ${active.resources.length} resource lock(s) without release`,
+        { runId },
+      );
+    }
+  }
 }
 
 function detectKind(record: Record<string, unknown>): string {
@@ -407,6 +593,7 @@ export function validateTraceBundle(
         const result = validateTraceRecord(event, { runId });
         issues.push(...result.issues);
       }
+      validateParallelRunEvents(runId, events, issues);
     }
   }
 

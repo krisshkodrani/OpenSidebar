@@ -14,6 +14,7 @@ import {
 } from "../../src/trace-viewer/analysis";
 import { redactTracePayload } from "../../src/utils/trace-protection";
 import type { TraceEntry, TraceSession } from "../../src/types/traces";
+import type { RunTraceEvent } from "../../src/utils/run-trace";
 
 function session(overrides: Partial<TraceSession> = {}): TraceSession {
   return {
@@ -70,6 +71,25 @@ function entry(overrides: Partial<TraceEntry> = {}): TraceEntry {
     events: [],
     progressState: { stagnantTurns: 0, signal: null },
     ...overrides,
+  };
+}
+
+function runEvent(
+  type: string,
+  data: Record<string, unknown> = {},
+  index = 0,
+): RunTraceEvent {
+  return {
+    schemaVersion: "2026-02-19",
+    traceKind: "orchestrator.run.event",
+    recordedAt: `2026-04-28T00:00:0${index}.000Z`,
+    producer: "background.orchestrator.run-trace-writer",
+    correlationId: "run-1",
+    runId: "run-1",
+    ts: `2026-04-28T00:00:0${index}.000Z`,
+    type,
+    role: "system",
+    data,
   };
 }
 
@@ -236,6 +256,277 @@ describe("trace validation", () => {
       expect.arrayContaining([
         expect.objectContaining({ code: "missing_turn_gap", turnNumber: 3 }),
         expect.objectContaining({ code: "out_of_order_turn", turnNumber: 2 }),
+      ]),
+    );
+  });
+
+  test("detects parallel worker lifecycle and dependency integrity issues", () => {
+    const issues = validateTraceBundle({
+      sessions: [],
+      entriesBySession: new Map(),
+      runEventsByRun: new Map([
+        [
+          "run-1",
+          [
+            runEvent(
+              "plan_decomposed",
+              {
+                graph: {
+                  nodes: [
+                    {
+                      nodeId: "n1",
+                      dependencies: [],
+                    },
+                    {
+                      nodeId: "n2",
+                      dependencies: ["n1"],
+                    },
+                    {
+                      nodeId: "n3",
+                      dependencies: [],
+                    },
+                  ],
+                },
+              },
+              1,
+            ),
+            runEvent(
+              "worker_started",
+              {
+                nodeId: "n2",
+                workerId: "w2",
+                assignedResources: [
+                  { kind: "form", key: "checkout", access: "write" },
+                ],
+                activeWorkerCount: 1,
+                resourceLocks: [
+                  {
+                    nodeId: "n2",
+                    resources: [
+                      { kind: "form", key: "checkout", access: "write" },
+                    ],
+                  },
+                ],
+              },
+              2,
+            ),
+            runEvent(
+              "worker_started",
+              {
+                nodeId: "n3",
+                workerId: "w3",
+                assignedResources: [
+                  { kind: "url", key: "alpha", access: "read" },
+                ],
+                activeWorkerCount: 2,
+                resourceLocks: [
+                  {
+                    nodeId: "n2",
+                    resources: [
+                      { kind: "form", key: "checkout", access: "write" },
+                    ],
+                  },
+                  {
+                    nodeId: "n3",
+                    resources: [
+                      { kind: "url", key: "alpha", access: "read" },
+                    ],
+                  },
+                ],
+              },
+              3,
+            ),
+            runEvent(
+              "node_completed",
+              {
+                nodeId: "n1",
+                outcome: "completed",
+                activeWorkerCount: 2,
+                resourceLocks: [],
+              },
+              4,
+            ),
+            runEvent(
+              "worker_released_resource",
+              {
+                nodeId: "n2",
+                workerId: "w2",
+                resources: [
+                  { kind: "form", key: "checkout", access: "write" },
+                ],
+                activeWorkerCount: 1,
+                resourceLocks: [
+                  {
+                    nodeId: "n3",
+                    resources: [
+                      { kind: "url", key: "alpha", access: "read" },
+                    ],
+                  },
+                ],
+              },
+              5,
+            ),
+          ],
+        ],
+      ]),
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "dependency_started_before_complete",
+        }),
+        expect.objectContaining({ code: "missing_worker_finish" }),
+        expect.objectContaining({ code: "orphan_resource_lock" }),
+      ]),
+    );
+  });
+
+  test("accepts balanced parallel worker lifecycle events", () => {
+    const issues = validateTraceBundle({
+      sessions: [],
+      entriesBySession: new Map(),
+      runEventsByRun: new Map([
+        [
+          "run-1",
+          [
+            runEvent(
+              "plan_decomposed",
+              {
+                graph: {
+                  nodes: [
+                    { nodeId: "n1", dependencies: [] },
+                    { nodeId: "n2", dependencies: ["n1"] },
+                  ],
+                },
+              },
+              1,
+            ),
+            runEvent(
+              "worker_started",
+              {
+                nodeId: "n1",
+                workerId: "w1",
+                assignedResources: [
+                  { kind: "url", key: "alpha", access: "read" },
+                ],
+                activeWorkerCount: 1,
+                resourceLocks: [
+                  {
+                    nodeId: "n1",
+                    resources: [
+                      { kind: "url", key: "alpha", access: "read" },
+                    ],
+                  },
+                ],
+              },
+              2,
+            ),
+            runEvent(
+              "node_completed",
+              {
+                nodeId: "n1",
+                outcome: "completed",
+                activeWorkerCount: 0,
+                resourceLocks: [],
+              },
+              3,
+            ),
+            runEvent(
+              "worker_released_resource",
+              {
+                nodeId: "n1",
+                workerId: "w1",
+                resources: [
+                  { kind: "url", key: "alpha", access: "read" },
+                ],
+                activeWorkerCount: 0,
+                resourceLocks: [],
+              },
+              4,
+            ),
+            runEvent(
+              "worker_started",
+              {
+                nodeId: "n2",
+                workerId: "w2",
+                assignedResources: [
+                  { kind: "url", key: "beta", access: "read" },
+                ],
+                activeWorkerCount: 1,
+                resourceLocks: [
+                  {
+                    nodeId: "n2",
+                    resources: [
+                      { kind: "url", key: "beta", access: "read" },
+                    ],
+                  },
+                ],
+              },
+              5,
+            ),
+            runEvent(
+              "worker_cancelled",
+              {
+                nodeId: "n2",
+                workerId: "w2",
+                activeWorkerCount: 1,
+                resourceLocks: [
+                  {
+                    nodeId: "n2",
+                    resources: [
+                      { kind: "url", key: "beta", access: "read" },
+                    ],
+                  },
+                ],
+              },
+              6,
+            ),
+            runEvent(
+              "worker_released_resource",
+              {
+                nodeId: "n2",
+                workerId: "w2",
+                resources: [
+                  { kind: "url", key: "beta", access: "read" },
+                ],
+                activeWorkerCount: 0,
+                resourceLocks: [],
+              },
+              7,
+            ),
+          ],
+        ],
+      ]),
+    });
+
+    expect(
+      issues.filter((issue) =>
+        [
+          "dependency_started_before_complete",
+          "missing_worker_finish",
+          "orphan_resource_lock",
+          "worker_finish_without_start",
+        ].includes(issue.code),
+      ),
+    ).toEqual([]);
+  });
+
+  test("warns when worker events omit parallel state snapshots", () => {
+    const issues = validateTraceBundle({
+      sessions: [],
+      entriesBySession: new Map(),
+      runEventsByRun: new Map([
+        ["run-1", [runEvent("worker_queued", { nodeId: "n1" }, 1)]],
+      ]),
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "missing_parallel_active_worker_count",
+        }),
+        expect.objectContaining({ code: "missing_parallel_resource_locks" }),
       ]),
     );
   });

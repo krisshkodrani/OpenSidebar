@@ -6,24 +6,119 @@ import { EscalationOptionId, SubtaskSummary } from "../../types";
 import { TaskNode } from "./types";
 import { NodeVerificationResult } from "./verifier";
 import { LaneIsolationError, RuntimeLane } from "./lane-types";
+import { getNodeResourceConflicts } from "./parallel-contract";
+
+function compactResourceSummary(node: TaskNode): string | undefined {
+  const hints = node.parallelContract?.resourceHints ?? [];
+  if (hints.length === 0) return undefined;
+  return hints
+    .slice(0, 2)
+    .map((hint) => `${hint.kind}:${hint.key} (${hint.access})`)
+    .join(", ");
+}
+
+function workerStatusForNode(
+  node: TaskNode,
+  runningNodes: TaskNode[],
+  nodesById: Map<string, TaskNode>,
+): Pick<
+  SubtaskSummary,
+  "workerStatus" | "workerStatusDetail" | "parallelism" | "resourceSummary"
+> {
+  const resourceSummary = compactResourceSummary(node);
+  const parallelism = node.parallelContract?.parallelism ?? "unknown";
+
+  if (node.status === "completed") {
+    return { workerStatus: "completed", parallelism, resourceSummary };
+  }
+  if (isUserSkippedNode(node)) {
+    return { workerStatus: "skipped", parallelism, resourceSummary };
+  }
+  if (node.status === "failed") {
+    return {
+      workerStatus: "failed",
+      workerStatusDetail: node.error,
+      parallelism,
+      resourceSummary,
+    };
+  }
+  if (node.status === "running") {
+    return {
+      workerStatus: node.retries > 0 ? "retrying" : "running",
+      workerStatusDetail: resourceSummary
+        ? `Using ${resourceSummary}`
+        : "Worker is active.",
+      parallelism,
+      resourceSummary,
+    };
+  }
+
+  const unresolvedDependencies = node.dependencies.filter((dependencyId) => {
+    const dependency = nodesById.get(dependencyId);
+    if (!dependency) return true;
+    if (isUserSkippedNode(dependency)) return false;
+    return dependency.status !== "completed";
+  });
+  if (unresolvedDependencies.length > 0) {
+    return {
+      workerStatus: node.retries > 0 ? "retrying" : "queued",
+      workerStatusDetail: `Waiting for ${unresolvedDependencies.length} dependency${
+        unresolvedDependencies.length === 1 ? "" : "ies"
+      }.`,
+      parallelism,
+      resourceSummary,
+    };
+  }
+
+  const conflicts = getNodeResourceConflicts(node, runningNodes);
+  if (conflicts.length > 0) {
+    return {
+      workerStatus: "blocked",
+      workerStatusDetail: `Waiting for ${conflicts
+        .map((candidate) => candidate.description)
+        .slice(0, 2)
+        .join(", ")}`,
+      parallelism,
+      resourceSummary,
+    };
+  }
+
+  return {
+    workerStatus: node.retries > 0 ? "retrying" : "queued",
+    workerStatusDetail: resourceSummary
+      ? `Queued for ${resourceSummary}`
+      : "Queued.",
+    parallelism,
+    resourceSummary,
+  };
+}
 
 export function toSubtasks(nodes: TaskNode[]): SubtaskSummary[] {
-  return nodes.map((node) => ({
-    description: node.description,
-    status:
-      node.status === "completed"
-        ? "completed"
-        : isUserSkippedNode(node)
-          ? "skipped"
-          : node.status === "failed"
-            ? "failed"
-            : node.status === "running"
-              ? "running"
-              : "pending",
-    turnsUsed: 0,
-    turnBudget: 0,
-    result: node.result || node.error,
-  }));
+  const runningNodes = nodes.filter((node) => node.status === "running");
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  return nodes.map((node) => {
+    const worker = workerStatusForNode(node, runningNodes, nodesById);
+    return {
+      description: node.description,
+      status:
+        node.status === "completed"
+          ? "completed"
+          : isUserSkippedNode(node)
+            ? "skipped"
+            : node.status === "failed"
+              ? "failed"
+              : node.status === "running"
+                ? "running"
+                : "pending",
+      turnsUsed: 0,
+      turnBudget: 0,
+      result: node.result || node.error,
+      nodeId: node.id,
+      selectedSkillId: node.selectedSkillId,
+      toolProfile: node.toolProfile,
+      ...worker,
+    };
+  });
 }
 
 export function currentIndex(nodes: TaskNode[]): number {

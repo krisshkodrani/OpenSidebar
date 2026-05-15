@@ -40,6 +40,17 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function extractUrls(text: string): string[] {
+  const urls = [...text.matchAll(/\bhttps?:\/\/[^\s)"']+/gi)].map((match) =>
+    (match[0] || "").replace(/[),.;]+$/, ""),
+  );
+  return unique(urls);
+}
+
+function stripUrls(text: string): string {
+  return text.replace(/\bhttps?:\/\/[^\s)"']+/gi, " ");
+}
+
 const CONVERSATIONAL_FILLERS = new Set([
   "actually",
   "basically",
@@ -198,6 +209,45 @@ function formatFieldValue(pair: { field: string; value: string }): string {
     : `${pair.field}=empty`;
 }
 
+function hasUrlReadReportIntent(text: string): boolean {
+  return /\b(read|check|inspect|review|summari[sz]e|extract|compare|report|tell me|find|headline metric|owner)\b/i.test(
+    stripQuotedSpans(text),
+  );
+}
+
+function hasUrlMutationIntent(text: string): boolean {
+  return /\b(type|fill|enter|select|choose|set|toggle|submit|save|update|edit|delete|remove|add|order|purchase|buy|checkout|send|post|apply|configure|create)\b/i.test(
+    stripQuotedSpans(text),
+  );
+}
+
+function synthesizeMultiUrlReadPlan(
+  query: string,
+): SynthesizedPlanStep[] | null {
+  const urls = extractUrls(query);
+  if (urls.length < 2) return null;
+  if (!hasUrlReadReportIntent(query)) return null;
+  if (hasUrlMutationIntent(query)) return null;
+
+  const steps: SynthesizedPlanStep[] = urls.map((url) => ({
+    objective: `Open ${url} and read the requested information from that page.`,
+    successCriteria: `The page at ${url} has been read and the requested information from that page is captured for the final response.`,
+    dependencies: [],
+    assumptions: [],
+    toolProfile: "navigate",
+  }));
+
+  steps.push({
+    objective: `Summarize the requested information from the ${urls.length} pages.`,
+    successCriteria: `Final answer includes the requested information from each URL: ${urls.join(", ")}.`,
+    dependencies: urls.map((_, index) => index),
+    assumptions: [],
+    toolProfile: "read_only",
+  });
+
+  return steps;
+}
+
 function synthesizeFieldValueFormPlan(
   query: string,
 ): SynthesizedPlanStep[] | null {
@@ -225,9 +275,90 @@ function synthesizeFieldValueFormPlan(
   ];
 }
 
+function hasSeparateFormUpdateIntent(text: string): boolean {
+  const normalized = normalize(text);
+  return (
+    /\bseparate(?:ly)?\b.{0,40}\b(update|updates|action|actions|step|steps|task|tasks)\b/.test(
+      normalized,
+    ) ||
+    /\b(update|updates|action|actions|step|steps|task|tasks)\b.{0,40}\bseparate(?:ly)?\b/.test(
+      normalized,
+    )
+  );
+}
+
+function extractSeparateSetFieldValuePairs(text: string): Array<{
+  field: string;
+  value: string;
+}> {
+  const pairs: Array<{ field: string; value: string }> = [];
+  const seen = new Set<string>();
+  const sources = [...extractOriginalUserRequestSections(text), text];
+
+  const pushPair = (field: string, value: string) => {
+    const normalizedField = field
+      .replace(/\b(?:the|a|an)\s+/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalizedValue = value
+      .replace(/\s+(?:and\s+)?then\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalizedField || normalizedField.length > 120) return;
+    if (/[\r\n]/.test(normalizedField)) return;
+    const key = `${normalize(normalizedField)}\u0000${normalizedValue}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push({ field: normalizedField, value: normalizedValue });
+  };
+
+  for (const source of sources) {
+    for (const match of source.matchAll(
+      /\b(?:set|update|change|fill|enter|type)\s+(?:the\s+)?([a-z0-9][a-z0-9 /_-]{1,80}?)\s+(?:to|as|=)\s+(?:"([^"]*)"|'([^']*)'|([^,.;\n]+?))(?=\s*(?:,|;|\.|\bthen\b|\band\s+(?:set|update|change|fill|enter|type|submit|save)\b|$))/gi,
+    )) {
+      pushPair(match[1] ?? "", match[2] ?? match[3] ?? match[4] ?? "");
+    }
+  }
+
+  return pairs;
+}
+
+function synthesizeSeparateFormUpdatePlan(
+  query: string,
+): SynthesizedPlanStep[] | null {
+  if (!hasSeparateFormUpdateIntent(query)) return null;
+  if (!/\b(form|field|input|page|screen|record)\b/i.test(query)) return null;
+
+  const pairs = extractSeparateSetFieldValuePairs(query);
+  if (pairs.length < 2) return null;
+
+  const urls = extractUrls(query);
+  const target = urls[0] ? ` on ${urls[0]}` : " on the shared form";
+  const steps: SynthesizedPlanStep[] = pairs.map((pair) => ({
+    objective: `Set ${pair.field} to "${pair.value}"${target}.`,
+    successCriteria: `${pair.field} shows "${pair.value}"${target}.`,
+    dependencies: [],
+    assumptions: [],
+    toolProfile: "form_fill",
+  }));
+
+  if (/\b(submit|save|send|confirm)\b/i.test(stripQuotedSpans(query))) {
+    steps.push({
+      objective: `Submit the shared form${urls[0] ? ` on ${urls[0]}` : ""}.`,
+      successCriteria:
+        "The form is submitted and the requested field updates remain applied.",
+      dependencies: pairs.map((_, index) => index),
+      assumptions: [],
+      toolProfile: "submit_form",
+    });
+  }
+
+  return steps.length >= 2 ? steps : null;
+}
+
 function extractLargeNumbers(text: string): string[] {
   return unique(
-    text
+    stripUrls(text)
       .match(/\b\d[\d,]{2,}\b/g)
       ?.map((value) => normalize(value))
       .filter((value) => /\d{3,}|,/.test(value)) ?? [],
@@ -759,6 +890,12 @@ export function synthesizePlanFromTaskContract(
   query: string,
 ): SynthesizedPlanStep[] | null {
   if (isNavigationOnlyTask(query)) return null;
+
+  const multiUrlReadPlan = synthesizeMultiUrlReadPlan(query);
+  if (multiUrlReadPlan) return multiUrlReadPlan;
+
+  const separateFormUpdatePlan = synthesizeSeparateFormUpdatePlan(query);
+  if (separateFormUpdatePlan) return separateFormUpdatePlan;
 
   const fieldValueFormPlan = synthesizeFieldValueFormPlan(query);
   if (fieldValueFormPlan) return fieldValueFormPlan;

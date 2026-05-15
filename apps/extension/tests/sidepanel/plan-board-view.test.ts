@@ -11,11 +11,16 @@ describe("plan-board-view", () => {
         totalTurnsUsed: 2,
         subtasks: [
           {
+            nodeId: "node-1",
             description: "collect data",
             status: "running",
             turnsUsed: 2,
             turnBudget: 5,
             result: "navigated to source",
+            workerStatus: "running",
+            workerStatusDetail: "Using url:alpha (read)",
+            parallelism: "independent",
+            resourceSummary: "url:alpha (read)",
           },
         ],
       },
@@ -24,10 +29,15 @@ describe("plan-board-view", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       description: "collect data",
+      nodeId: "node-1",
       status: "running",
       turnsUsed: 2,
       turnBudget: 5,
       evidenceSnippet: "navigated to source",
+      workerStatus: "running",
+      workerStatusDetail: "Using url:alpha (read)",
+      parallelism: "independent",
+      resourceSummary: "url:alpha (read)",
     });
   });
 
