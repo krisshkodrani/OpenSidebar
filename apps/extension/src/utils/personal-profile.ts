@@ -1,4 +1,18 @@
+import type { UserSettings } from "../types";
+
 export const PERSONAL_PROFILE_STORAGE_KEY = "opensidebar:personalProfile";
+
+export const PERSONALIZATION_VERSION = 2;
+export const PROFILE_DIGEST_SCHEMA_VERSION = 1;
+export const PROFILE_ANALYZER_VERSION = "profile-notes-digest-v1";
+export const PROFILE_NOTES_MAX_CHARS = 20_000;
+export const PROFILE_DIGEST_MAX_ITEMS = 60;
+export const PROFILE_DIGEST_RUNTIME_MAX_ITEMS = 12;
+export const PROFILE_DIGEST_LABEL_MAX_CHARS = 80;
+export const PROFILE_DIGEST_VALUE_MAX_CHARS = 500;
+export const PROFILE_DIGEST_SOURCE_QUOTE_MAX_CHARS = 240;
+export const FIREWORKS_PROFILE_ANALYZER_MODEL =
+  "accounts/fireworks/routers/kimi-k2p6-turbo";
 
 export type PersonalProfileStorageKeys =
   | string
@@ -17,64 +31,47 @@ export interface PersonalProfileStorage {
   local: PersonalProfileStorageArea;
 }
 
-export interface PersonalProfile {
-  identity: {
-    first_name: string;
-    last_name: string;
-    preferred_name: string;
-    pronouns: string;
-  };
-  contact: {
-    email: string;
-    phone: string;
-    location: string;
-    address: {
-      line1: string;
-      line2: string;
-      city: string;
-      state: string;
-      postal_code: string;
-      country: string;
-    };
-  };
-  links: {
-    linkedin: string;
-    portfolio: string;
-    github: string;
-    website: string;
-  };
-  preferences: {
-    roles: string[];
-    locations: string[];
-    work_modes: string[];
-    salary_expectation: string;
-    available_from: string;
-  };
-  authorization: {
-    work_authorized: string;
-    sponsorship_required: string;
-    relocation: string;
-  };
-  answers: {
-    availability: string;
-    why_interested: string;
-    cover_note: string;
-  };
-  sensitive: {
-    eeo: {
-      gender: string;
-      race_ethnicity: string;
-      veteran_status: string;
-      disability_status: string;
-    };
-  };
+export type DigestKind =
+  | "fact"
+  | "preference"
+  | "constraint"
+  | "theme"
+  | "sensitive"
+  | "open_question";
+
+export type DigestConfidence = "high" | "medium" | "low";
+
+export interface DigestItem {
+  id: string;
+  label: string;
+  value: string;
+  kind: DigestKind;
+  confidence: DigestConfidence;
+  sourceQuote?: string;
+}
+
+export interface ProfileDigest {
+  schemaVersion: 1;
+  notesHash: string;
+  analyzerVersion: string;
+  items: DigestItem[];
+}
+
+export interface AnalyzerMetadata {
+  provider: string;
+  model: string;
+  analyzerVersion: string;
+  analyzedAt: number;
 }
 
 export interface PersonalizationState {
-  version: 1;
+  version: 2;
   enabled: boolean;
+  notesMarkdown: string;
+  notesHash: string;
+  digest: ProfileDigest | null;
   updatedAt: number;
-  profile: PersonalProfile;
+  analyzer: AnalyzerMetadata | null;
 }
 
 export interface ProfileResolveResult {
@@ -83,173 +80,334 @@ export interface ProfileResolveResult {
   disabled?: boolean;
 }
 
-export const EMPTY_PERSONAL_PROFILE: PersonalProfile = {
-  identity: {
-    first_name: "",
-    last_name: "",
-    preferred_name: "",
-    pronouns: "",
-  },
-  contact: {
-    email: "",
-    phone: "",
-    location: "",
-    address: {
-      line1: "",
-      line2: "",
-      city: "",
-      state: "",
-      postal_code: "",
-      country: "",
-    },
-  },
-  links: {
-    linkedin: "",
-    portfolio: "",
-    github: "",
-    website: "",
-  },
-  preferences: {
-    roles: [],
-    locations: [],
-    work_modes: [],
-    salary_expectation: "",
-    available_from: "",
-  },
-  authorization: {
-    work_authorized: "",
-    sponsorship_required: "",
-    relocation: "",
-  },
-  answers: {
-    availability: "",
-    why_interested: "",
-    cover_note: "",
-  },
-  sensitive: {
-    eeo: {
-      gender: "",
-      race_ethnicity: "",
-      veteran_status: "",
-      disability_status: "",
-    },
-  },
-};
+export interface ProfileAnalysisResult {
+  digest: ProfileDigest;
+  analyzer: AnalyzerMetadata;
+}
+
+export const DEFAULT_PROFILE_NOTES_MARKDOWN = [
+  "# About me",
+  "",
+  "# Contact and links",
+  "",
+  "# Work preferences",
+  "",
+  "# Availability",
+  "",
+  "# Authorization and relocation",
+  "",
+  "# Writing style",
+  "",
+  "# Things to avoid",
+  "",
+  "# Sensitive / do not use",
+  "",
+].join("\n");
 
 export const EMPTY_PERSONALIZATION_STATE: PersonalizationState = {
-  version: 1,
+  version: 2,
   enabled: false,
+  notesMarkdown: "",
+  notesHash: hashProfileNotes(""),
+  digest: null,
   updatedAt: 0,
-  profile: EMPTY_PERSONAL_PROFILE,
+  analyzer: null,
 };
 
-const APPLICATION_TASK_PATTERN =
-  /\b(apply|application|job|role|position|career|cover letter|resume|cv|form)\b/i;
+const PROFILE_TASK_PATTERN =
+  /\b(apply|application|job|role|position|career|cover letter|resume|cv|form|profile|preferences?|availability|authorization|relocation|sponsorship|about me|personal)\b/i;
 
-function cloneProfile(profile: PersonalProfile): PersonalProfile {
-  return JSON.parse(JSON.stringify(profile)) as PersonalProfile;
+const DIGEST_KIND_LABELS: Record<DigestKind, string> = {
+  fact: "Fact",
+  preference: "Preference",
+  constraint: "Constraint",
+  theme: "Theme",
+  sensitive: "Sensitive",
+  open_question: "Open question",
+};
+
+const DIGEST_KIND_PRIORITY: Record<DigestKind, number> = {
+  fact: 0,
+  constraint: 1,
+  preference: 2,
+  theme: 3,
+  open_question: 4,
+  sensitive: 5,
+};
+
+const CONFIDENCE_PRIORITY: Record<DigestConfidence, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+function defaultStorage(): PersonalProfileStorage {
+  return chrome.storage as unknown as PersonalProfileStorage;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function normalizeProfile(input: unknown): PersonalProfile {
-  const source =
-    input && typeof input === "object"
-      ? (input as Record<string, unknown>)
-      : {};
-  const identity = (source.identity ?? {}) as Record<string, unknown>;
-  const contact = (source.contact ?? {}) as Record<string, unknown>;
-  const address = (contact.address ?? {}) as Record<string, unknown>;
-  const links = (source.links ?? {}) as Record<string, unknown>;
-  const preferences = (source.preferences ?? {}) as Record<string, unknown>;
-  const authorization = (source.authorization ?? {}) as Record<string, unknown>;
-  const answers = (source.answers ?? {}) as Record<string, unknown>;
-  const sensitive = (source.sensitive ?? {}) as Record<string, unknown>;
-  const eeo = (sensitive.eeo ?? {}) as Record<string, unknown>;
+function truncate(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max).trimEnd() : value;
+}
 
-  return {
-    identity: {
-      first_name: stringValue(identity.first_name),
-      last_name: stringValue(identity.last_name),
-      preferred_name: stringValue(identity.preferred_name),
-      pronouns: stringValue(identity.pronouns),
-    },
-    contact: {
-      email: stringValue(contact.email),
-      phone: stringValue(contact.phone),
-      location: stringValue(contact.location),
-      address: {
-        line1: stringValue(address.line1),
-        line2: stringValue(address.line2),
-        city: stringValue(address.city),
-        state: stringValue(address.state),
-        postal_code: stringValue(address.postal_code),
-        country: stringValue(address.country),
-      },
-    },
-    links: {
-      linkedin: stringValue(links.linkedin),
-      portfolio: stringValue(links.portfolio),
-      github: stringValue(links.github),
-      website: stringValue(links.website),
-    },
-    preferences: {
-      roles: stringArray(preferences.roles),
-      locations: stringArray(preferences.locations),
-      work_modes: stringArray(preferences.work_modes),
-      salary_expectation: stringValue(preferences.salary_expectation),
-      available_from: stringValue(preferences.available_from),
-    },
-    authorization: {
-      work_authorized: stringValue(authorization.work_authorized),
-      sponsorship_required: stringValue(authorization.sponsorship_required),
-      relocation: stringValue(authorization.relocation),
-    },
-    answers: {
-      availability: stringValue(answers.availability),
-      why_interested: stringValue(answers.why_interested),
-      cover_note: stringValue(answers.cover_note),
-    },
-    sensitive: {
-      eeo: {
-        gender: stringValue(eeo.gender),
-        race_ethnicity: stringValue(eeo.race_ethnicity),
-        veteran_status: stringValue(eeo.veteran_status),
-        disability_status: stringValue(eeo.disability_status),
-      },
-    },
+function normalizeWhitespace(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function slug(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "item";
+}
+
+export function hashProfileNotes(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function shortHash(text: string): string {
+  return hashProfileNotes(text).slice(0, 8);
+}
+
+function generateDigestItemId(item: Omit<DigestItem, "id">): string {
+  return `${item.kind}:${slug(item.label)}:${shortHash(
+    `${normalizeWhitespace(item.value)}|${normalizeWhitespace(
+      item.sourceQuote ?? "",
+    )}`,
+  )}`;
+}
+
+function isDigestKind(value: unknown): value is DigestKind {
+  return (
+    value === "fact" ||
+    value === "preference" ||
+    value === "constraint" ||
+    value === "theme" ||
+    value === "sensitive" ||
+    value === "open_question"
+  );
+}
+
+function isDigestConfidence(value: unknown): value is DigestConfidence {
+  return value === "high" || value === "medium" || value === "low";
+}
+
+function normalizeDigestItem(input: unknown): DigestItem | null {
+  if (!isRecord(input)) return null;
+  if (!isDigestKind(input.kind)) return null;
+  const label = truncate(normalizeWhitespace(stringValue(input.label)), PROFILE_DIGEST_LABEL_MAX_CHARS);
+  const value = truncate(normalizeWhitespace(stringValue(input.value)), PROFILE_DIGEST_VALUE_MAX_CHARS);
+  if (!label || !value) return null;
+
+  const sourceQuote = truncate(
+    normalizeWhitespace(stringValue(input.sourceQuote)),
+    PROFILE_DIGEST_SOURCE_QUOTE_MAX_CHARS,
+  );
+  const itemWithoutId: Omit<DigestItem, "id"> = {
+    label,
+    value,
+    kind: input.kind,
+    confidence: isDigestConfidence(input.confidence)
+      ? input.confidence
+      : "low",
+    ...(sourceQuote ? { sourceQuote } : {}),
   };
+  return {
+    ...itemWithoutId,
+    id: generateDigestItemId(itemWithoutId),
+  };
+}
+
+function sortDigestItems(items: DigestItem[]): DigestItem[] {
+  return [...items].sort((left, right) => {
+    const kindDiff =
+      DIGEST_KIND_PRIORITY[left.kind] - DIGEST_KIND_PRIORITY[right.kind];
+    if (kindDiff !== 0) return kindDiff;
+    const confidenceDiff =
+      CONFIDENCE_PRIORITY[left.confidence] -
+      CONFIDENCE_PRIORITY[right.confidence];
+    if (confidenceDiff !== 0) return confidenceDiff;
+    return left.label.localeCompare(right.label);
+  });
+}
+
+export function normalizeDigestItems(items: unknown): DigestItem[] {
+  if (!Array.isArray(items)) return [];
+  const byKey = new Map<string, DigestItem>();
+  for (const raw of items) {
+    const item = normalizeDigestItem(raw);
+    if (!item) continue;
+    const key = `${item.kind}\0${item.label.toLowerCase()}\0${item.value.toLowerCase()}`;
+    if (!byKey.has(key)) byKey.set(key, item);
+  }
+  return sortDigestItems(Array.from(byKey.values())).slice(
+    0,
+    PROFILE_DIGEST_MAX_ITEMS,
+  );
+}
+
+function normalizeDigest(input: unknown, notesHash: string): ProfileDigest | null {
+  if (!isRecord(input)) return null;
+  const schemaVersion =
+    input.schemaVersion === PROFILE_DIGEST_SCHEMA_VERSION
+      ? PROFILE_DIGEST_SCHEMA_VERSION
+      : null;
+  if (!schemaVersion) return null;
+  const digestNotesHash = stringValue(input.notesHash);
+  const analyzerVersion = stringValue(input.analyzerVersion);
+  const items = normalizeDigestItems(input.items);
+  return {
+    schemaVersion,
+    notesHash: digestNotesHash || notesHash,
+    analyzerVersion: analyzerVersion || PROFILE_ANALYZER_VERSION,
+    items,
+  };
+}
+
+function normalizeAnalyzerMetadata(input: unknown): AnalyzerMetadata | null {
+  if (!isRecord(input)) return null;
+  const provider = stringValue(input.provider).trim();
+  const model = stringValue(input.model).trim();
+  const analyzerVersion = stringValue(input.analyzerVersion).trim();
+  const analyzedAt = numberValue(input.analyzedAt);
+  if (!provider || !model || !analyzerVersion || !analyzedAt) return null;
+  return { provider, model, analyzerVersion, analyzedAt };
+}
+
+function renderImportedLine(
+  lines: string[],
+  label: string,
+  value: unknown,
+): void {
+  if (typeof value === "string" && value.trim()) {
+    lines.push(`${label}: ${value.trim()}`);
+    return;
+  }
+  if (Array.isArray(value)) {
+    const values = value
+      .filter((item): item is string => typeof item === "string" && !!item.trim())
+      .map((item) => item.trim());
+    if (values.length > 0) lines.push(`${label}: ${values.join(", ")}`);
+  }
+}
+
+function readPath(source: Record<string, unknown>, path: string): unknown {
+  let current: unknown = source;
+  for (const segment of path.split(".")) {
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function migrateLegacyProfileToNotes(source: Record<string, unknown>): string {
+  const profile = isRecord(source.profile) ? source.profile : {};
+  const lines: string[] = [];
+  const imported: string[] = [];
+  const application: string[] = [];
+  const sensitive: string[] = [];
+
+  const firstName = stringValue(readPath(profile, "identity.first_name")).trim();
+  const lastName = stringValue(readPath(profile, "identity.last_name")).trim();
+  const fullName = [firstName, lastName].filter(Boolean).join(" ");
+  renderImportedLine(imported, "Name", fullName);
+  renderImportedLine(imported, "Preferred name", readPath(profile, "identity.preferred_name"));
+  renderImportedLine(imported, "Pronouns", readPath(profile, "identity.pronouns"));
+  renderImportedLine(imported, "Email", readPath(profile, "contact.email"));
+  renderImportedLine(imported, "Phone", readPath(profile, "contact.phone"));
+  renderImportedLine(imported, "Location", readPath(profile, "contact.location"));
+  renderImportedLine(imported, "Address line 1", readPath(profile, "contact.address.line1"));
+  renderImportedLine(imported, "Address line 2", readPath(profile, "contact.address.line2"));
+  renderImportedLine(imported, "City", readPath(profile, "contact.address.city"));
+  renderImportedLine(imported, "State", readPath(profile, "contact.address.state"));
+  renderImportedLine(imported, "Postal code", readPath(profile, "contact.address.postal_code"));
+  renderImportedLine(imported, "Country", readPath(profile, "contact.address.country"));
+  renderImportedLine(imported, "LinkedIn", readPath(profile, "links.linkedin"));
+  renderImportedLine(imported, "Portfolio", readPath(profile, "links.portfolio"));
+  renderImportedLine(imported, "GitHub", readPath(profile, "links.github"));
+  renderImportedLine(imported, "Website", readPath(profile, "links.website"));
+
+  renderImportedLine(application, "Roles", readPath(profile, "preferences.roles"));
+  renderImportedLine(application, "Locations", readPath(profile, "preferences.locations"));
+  renderImportedLine(application, "Work modes", readPath(profile, "preferences.work_modes"));
+  renderImportedLine(application, "Salary expectation", readPath(profile, "preferences.salary_expectation"));
+  renderImportedLine(application, "Available from", readPath(profile, "preferences.available_from"));
+  renderImportedLine(application, "Work authorization", readPath(profile, "authorization.work_authorized"));
+  renderImportedLine(application, "Sponsorship", readPath(profile, "authorization.sponsorship_required"));
+  renderImportedLine(application, "Relocation", readPath(profile, "authorization.relocation"));
+  renderImportedLine(application, "Availability", readPath(profile, "answers.availability"));
+  renderImportedLine(application, "Why interested", readPath(profile, "answers.why_interested"));
+  renderImportedLine(application, "Cover note", readPath(profile, "answers.cover_note"));
+
+  renderImportedLine(sensitive, "Gender", readPath(profile, "sensitive.eeo.gender"));
+  renderImportedLine(sensitive, "Race / ethnicity", readPath(profile, "sensitive.eeo.race_ethnicity"));
+  renderImportedLine(sensitive, "Veteran status", readPath(profile, "sensitive.eeo.veteran_status"));
+  renderImportedLine(sensitive, "Disability status", readPath(profile, "sensitive.eeo.disability_status"));
+
+  if (imported.length > 0) {
+    lines.push("# Imported from old profile", "", ...imported, "");
+  }
+  if (application.length > 0) {
+    lines.push("# Imported application notes", "", ...application, "");
+  }
+  if (sensitive.length > 0) {
+    lines.push("# Sensitive / do not use", "", ...sensitive, "");
+  }
+  return lines.join("\n").trim();
 }
 
 function normalizeState(input: unknown): PersonalizationState {
-  if (!input || typeof input !== "object") {
+  if (!isRecord(input)) {
+    return { ...EMPTY_PERSONALIZATION_STATE };
+  }
+
+  if (input.version !== 2) {
+    const notesMarkdown = truncate(
+      migrateLegacyProfileToNotes(input),
+      PROFILE_NOTES_MAX_CHARS,
+    );
     return {
-      ...EMPTY_PERSONALIZATION_STATE,
-      profile: cloneProfile(EMPTY_PERSONAL_PROFILE),
+      version: 2,
+      enabled: input.enabled === true,
+      notesMarkdown,
+      notesHash: hashProfileNotes(notesMarkdown),
+      digest: null,
+      updatedAt: numberValue(input.updatedAt),
+      analyzer: null,
     };
   }
-  const source = input as Partial<PersonalizationState>;
-  return {
-    version: 1,
-    enabled: source.enabled === true,
-    updatedAt:
-      typeof source.updatedAt === "number" && Number.isFinite(source.updatedAt)
-        ? source.updatedAt
-        : 0,
-    profile: normalizeProfile(source.profile),
-  };
-}
 
-function defaultStorage(): PersonalProfileStorage {
-  return chrome.storage as unknown as PersonalProfileStorage;
+  const notesMarkdown = truncate(
+    stringValue(input.notesMarkdown),
+    PROFILE_NOTES_MAX_CHARS,
+  );
+  const notesHash = hashProfileNotes(notesMarkdown);
+  return {
+    version: 2,
+    enabled: input.enabled === true,
+    notesMarkdown,
+    notesHash,
+    digest: normalizeDigest(input.digest, notesHash),
+    updatedAt: numberValue(input.updatedAt),
+    analyzer: normalizeAnalyzerMetadata(input.analyzer),
+  };
 }
 
 export async function loadPersonalizationState(
@@ -260,76 +418,137 @@ export async function loadPersonalizationState(
 }
 
 export async function savePersonalizationState(
-  state: Pick<PersonalizationState, "enabled" | "profile">,
+  state: Partial<
+    Pick<
+      PersonalizationState,
+      "enabled" | "notesMarkdown" | "digest" | "analyzer"
+    >
+  >,
   storage: PersonalProfileStorage = defaultStorage(),
 ): Promise<PersonalizationState> {
+  const current = await loadPersonalizationState(storage).catch(
+    () => EMPTY_PERSONALIZATION_STATE,
+  );
+  const notesMarkdown =
+    state.notesMarkdown != null
+      ? truncate(state.notesMarkdown, PROFILE_NOTES_MAX_CHARS)
+      : current.notesMarkdown;
+  const notesHash = hashProfileNotes(notesMarkdown);
   const next: PersonalizationState = {
-    version: 1,
-    enabled: state.enabled,
+    version: 2,
+    enabled: state.enabled ?? current.enabled,
+    notesMarkdown,
+    notesHash,
+    digest:
+      state.digest !== undefined
+        ? normalizeDigest(state.digest, notesHash)
+        : current.digest,
     updatedAt: Date.now(),
-    profile: normalizeProfile(state.profile),
+    analyzer:
+      state.analyzer !== undefined
+        ? normalizeAnalyzerMetadata(state.analyzer)
+        : current.analyzer,
   };
   await storage.local.set({ [PERSONAL_PROFILE_STORAGE_KEY]: next });
   return next;
+}
+
+export async function saveProfileAnalysisResult(
+  result: ProfileAnalysisResult,
+  storage: PersonalProfileStorage = defaultStorage(),
+): Promise<PersonalizationState | null> {
+  const current = await loadPersonalizationState(storage);
+  if (current.notesHash !== result.digest.notesHash) {
+    return null;
+  }
+  return savePersonalizationState(
+    {
+      digest: result.digest,
+      analyzer: result.analyzer,
+    },
+    storage,
+  );
+}
+
+export async function clearProfileDigest(
+  storage: PersonalProfileStorage = defaultStorage(),
+): Promise<PersonalizationState> {
+  return savePersonalizationState({ digest: null, analyzer: null }, storage);
 }
 
 export async function deletePersonalProfile(
   storage: PersonalProfileStorage = defaultStorage(),
 ): Promise<PersonalizationState> {
   await storage.local.remove(PERSONAL_PROFILE_STORAGE_KEY);
-  return {
-    ...EMPTY_PERSONALIZATION_STATE,
-    profile: cloneProfile(EMPTY_PERSONAL_PROFILE),
-  };
-}
-
-function hasValue(value: unknown): boolean {
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.some(hasValue);
-  if (value && typeof value === "object") {
-    return Object.values(value).some(hasValue);
-  }
-  return false;
+  return { ...EMPTY_PERSONALIZATION_STATE };
 }
 
 export function hasUsablePersonalProfile(state: PersonalizationState): boolean {
-  return hasValue(state.profile);
+  return state.notesMarkdown.trim().length > 0;
 }
 
-function normalizePath(path: string): string {
-  const trimmed = path.trim();
-  return trimmed.startsWith("profile.")
-    ? trimmed.slice("profile.".length)
-    : trimmed;
+export function isProfileDigestStale(state: PersonalizationState): boolean {
+  if (!state.digest) return true;
+  return (
+    state.digest.notesHash !== state.notesHash ||
+    state.digest.analyzerVersion !== PROFILE_ANALYZER_VERSION ||
+    state.digest.schemaVersion !== PROFILE_DIGEST_SCHEMA_VERSION
+  );
 }
 
-function getPathValue(profile: PersonalProfile, path: string): unknown {
-  const normalized = normalizePath(path);
-  if (normalized === "identity.full_name") {
-    return [profile.identity.first_name, profile.identity.last_name]
-      .filter(Boolean)
-      .join(" ");
-  }
-  if (normalized === "name" || normalized === "full_name") {
-    return getPathValue(profile, "identity.full_name");
-  }
-  if (normalized === "email") return profile.contact.email;
-  if (normalized === "phone") return profile.contact.phone;
-  if (normalized === "location") return profile.contact.location;
-
-  let current: unknown = profile;
-  for (const segment of normalized.split(".")) {
-    if (!current || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
+export function hasReadyProfileDigest(state: PersonalizationState): boolean {
+  return (
+    state.enabled &&
+    !!state.digest &&
+    !isProfileDigestStale(state) &&
+    state.digest.items.length > 0
+  );
 }
 
-function isPresent(value: unknown): boolean {
-  if (value == null) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  return true;
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 3),
+  );
+}
+
+function profileFieldTokens(field: string): Set<string> {
+  const normalized = field
+    .replace(/^profile\./, "")
+    .replace(/[._-]+/g, " ");
+  const aliases: Record<string, string> = {
+    email: "email contact email address",
+    phone: "phone telephone mobile",
+    location: "location city current location",
+    name: "name full name first last",
+    full_name: "name full name first last",
+    first_name: "first name",
+    last_name: "last name",
+    linkedin: "linkedin linked in",
+    github: "github",
+    portfolio: "portfolio website",
+    website: "website portfolio",
+  };
+  return tokenize(`${normalized} ${aliases[normalized] ?? ""}`);
+}
+
+function scoreFieldMatch(item: DigestItem, field: string): number {
+  if (item.kind !== "fact") return 0;
+  const fieldSlug = slug(field.replace(/^profile\./, "").split(".").pop() ?? field);
+  const labelSlug = slug(item.label);
+  if (fieldSlug && fieldSlug === labelSlug) return 20;
+
+  const requested = profileFieldTokens(field);
+  const haystack = tokenize(`${item.label} ${item.value}`);
+  let score = 0;
+  for (const token of requested) {
+    if (haystack.has(token)) score += 3;
+  }
+  if (item.confidence === "high") score += 2;
+  if (item.confidence === "medium") score += 1;
+  return score;
 }
 
 export async function resolveProfileFields(
@@ -342,16 +561,20 @@ export async function resolveProfileFields(
     .map((field) => field.trim())
     .filter(Boolean);
 
-  if (!state.enabled || !hasUsablePersonalProfile(state)) {
+  if (!hasReadyProfileDigest(state)) {
     return { values: {}, missing: requested, disabled: true };
   }
 
+  const factItems = state.digest?.items.filter((item) => item.kind === "fact") ?? [];
   const values: Record<string, unknown> = {};
   const missing: string[] = [];
   for (const field of requested) {
-    const value = getPathValue(state.profile, field);
-    if (isPresent(value)) {
-      values[field] = value;
+    const best = factItems
+      .map((item) => ({ item, score: scoreFieldMatch(item, field) }))
+      .filter((candidate) => candidate.score >= 3)
+      .sort((left, right) => right.score - left.score)[0];
+    if (best) {
+      values[field] = best.item.value;
     } else {
       missing.push(field);
     }
@@ -359,17 +582,84 @@ export async function resolveProfileFields(
   return { values, missing };
 }
 
+export interface RelevantDigestItem extends DigestItem {
+  relevanceScore: number;
+}
+
+function scoreDigestItem(item: DigestItem, corpusTokens: Set<string>): number {
+  if (item.kind === "sensitive") return Number.NEGATIVE_INFINITY;
+  const itemTokens = tokenize(`${item.label} ${item.value} ${item.kind}`);
+  let score = 0;
+  for (const token of itemTokens) {
+    if (corpusTokens.has(token)) score += token.length > 5 ? 2 : 1;
+  }
+  if (item.kind === "fact") score += 2;
+  if (item.kind === "constraint") score += 2;
+  if (item.confidence === "high") score += 2;
+  if (item.confidence === "medium") score += 1;
+  return score;
+}
+
+export function selectRelevantProfileDigestItems(
+  query: string,
+  state: PersonalizationState,
+): RelevantDigestItem[] {
+  if (!hasReadyProfileDigest(state) || !state.digest) return [];
+  const corpusTokens = tokenize(query);
+  const isProfileTask = PROFILE_TASK_PATTERN.test(query);
+  return state.digest.items
+    .map((item) => {
+      let relevanceScore = scoreDigestItem(item, corpusTokens);
+      if (
+        isProfileTask &&
+        (item.kind === "fact" ||
+          item.kind === "preference" ||
+          item.kind === "constraint" ||
+          item.kind === "theme")
+      ) {
+        relevanceScore += 1;
+      }
+      if (item.kind === "open_question") {
+        relevanceScore = relevanceScore > 0 ? relevanceScore : -1;
+      }
+      return { ...item, relevanceScore };
+    })
+    .filter((item) => item.relevanceScore > 0)
+    .sort((left, right) => {
+      if (right.relevanceScore !== left.relevanceScore) {
+        return right.relevanceScore - left.relevanceScore;
+      }
+      return (
+        DIGEST_KIND_PRIORITY[left.kind] - DIGEST_KIND_PRIORITY[right.kind]
+      );
+    })
+    .slice(0, PROFILE_DIGEST_RUNTIME_MAX_ITEMS);
+}
+
+function renderDigestItemForPrompt(item: DigestItem): string {
+  return `- ${DIGEST_KIND_LABELS[item.kind]}: ${item.label} = ${item.value}`;
+}
+
 export function buildPersonalProfilePlannerContext(
   query: string,
   state: PersonalizationState,
 ): string {
-  if (!state.enabled || !hasUsablePersonalProfile(state)) return "";
-  if (!APPLICATION_TASK_PATTERN.test(query)) return "";
+  const selected = selectRelevantProfileDigestItems(query, state);
+  if (selected.length === 0) return "";
+
+  const contextLines = selected.map(renderDigestItemForPrompt);
   return [
-    "SAVED PROFILE:",
-    "- A local saved profile is enabled for application and form tasks.",
-    "- Do not infer exact values from this note. Call get_profile_fields for only the fields needed before typing saved profile data.",
-    "- Final submission of job applications must remain user-approved.",
+    "PROFILE DIGEST CONTEXT:",
+    ...contextLines,
+    "",
+    "PROFILE POLICY:",
+    "- Use facts only for exact matching fields.",
+    "- Use preferences only to choose among clear options.",
+    "- Treat constraints as hard boundaries.",
+    "- Use themes only for drafting, not exact fields.",
+    "- Do not infer open questions.",
+    "- Do not use sensitive profile items unless the user explicitly asks for them.",
+    "- Report unresolved fields at the end instead of guessing.",
   ].join("\n");
 }
 
@@ -384,18 +674,179 @@ export function formatProfileFieldsForToolResult(
   result: ProfileResolveResult,
 ): string {
   if (result.disabled) {
-    return "Profile use is turned off or no saved profile exists. Ask the user to personalize the harness or turn on Use saved profile before using saved profile data.";
+    return "Profile notes are off, missing, stale, or not analyzed. Ask the user to add Profile Notes and run Analyze Notes before using saved profile data.";
   }
 
-  const lines = ["PROFILE FIELDS:"];
+  const lines = ["PROFILE DIGEST FACTS:"];
   for (const [field, value] of Object.entries(result.values)) {
     lines.push(`- ${field}: ${renderValue(value)}`);
   }
   if (Object.keys(result.values).length === 0) {
-    lines.push("- No requested saved profile values were found.");
+    lines.push("- No requested profile facts were found.");
   }
   if (result.missing.length > 0) {
     lines.push("", `Missing: ${result.missing.join(", ")}`);
   }
   return lines.join("\n");
+}
+
+export function buildProfileAnalyzerSystemPrompt(): string {
+  return [
+    "You analyze user-owned profile notes for a browser automation assistant.",
+    "",
+    "Return strict JSON only. Do not wrap it in markdown. Do not include prose.",
+    "",
+    "Your job is to extract a conservative profile digest from the notes. The digest helps an automation agent decide what it can safely use in forms or drafts.",
+    "",
+    "Rules:",
+    "- Extract only information directly supported by the notes.",
+    "- Do not invent missing values.",
+    "- Preserve uncertainty.",
+    "- Prefer omission over overconfident extraction.",
+    "- Keep labels short.",
+    "- Keep values short and practical.",
+    "- Include sourceQuote when it helps audit the extraction.",
+    "- Use fact only for exact reusable values, such as name, email, location, a direct authorization statement, a specific date, or a specific URL.",
+    "- Use preference for soft choices, such as preferred work mode, role types, locations, writing style, or communication preferences.",
+    '- Use constraint for hard boundaries, such as "do not relocate", "do not use salary numbers", or "must not submit without review".',
+    "- Use theme for reusable drafting material, motivations, positioning, or narrative points.",
+    "- Use sensitive for private, regulated, or risky information that should not be used by default.",
+    "- Use open_question for missing or ambiguous information that would be useful to ask the user.",
+    "- Do not classify vague goals or themes as facts.",
+    "- Do not turn themes into exact application answers.",
+    "",
+    "Output schema:",
+    '{"items":[{"label":"short label","value":"short extracted value","kind":"fact | preference | constraint | theme | sensitive | open_question","confidence":"high | medium | low","sourceQuote":"optional short quote from notes"}]}',
+  ].join("\n");
+}
+
+export function buildProfileAnalyzerUserPrompt(notesMarkdown: string): string {
+  return [
+    "Analyze these profile notes and return the digest JSON.",
+    "",
+    "<profile_notes>",
+    notesMarkdown,
+    "</profile_notes>",
+  ].join("\n");
+}
+
+async function readFireworksCompletionText(response: Response): Promise<string> {
+  if (!response.body) {
+    const parsed = (await response.json()) as any;
+    return String(parsed?.choices?.[0]?.message?.content ?? "");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+
+  let streamDone = false;
+  while (!streamDone) {
+    const { done, value } = await reader.read();
+    if (done) {
+      streamDone = true;
+      continue;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice("data:".length).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        const message = parsed?.choices?.[0]?.message?.content;
+        if (typeof delta === "string") content += delta;
+        else if (typeof message === "string") content += message;
+      } catch {
+        // Ignore malformed keepalive chunks.
+      }
+    }
+  }
+
+  return content;
+}
+
+export function parseProfileAnalyzerJson(text: string): unknown {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+    throw new Error("Analyzer returned non-JSON content.");
+  }
+  return JSON.parse(trimmed);
+}
+
+export function buildProfileDigestFromAnalyzerOutput(params: {
+  output: unknown;
+  notesHash: string;
+}): ProfileDigest {
+  if (!isRecord(params.output) || !Array.isArray(params.output.items)) {
+    throw new Error("Analyzer output is missing items[].");
+  }
+  return {
+    schemaVersion: PROFILE_DIGEST_SCHEMA_VERSION,
+    notesHash: params.notesHash,
+    analyzerVersion: PROFILE_ANALYZER_VERSION,
+    items: normalizeDigestItems(params.output.items),
+  };
+}
+
+export async function analyzePersonalProfileNotes(params: {
+  notesMarkdown: string;
+  settings: Pick<UserSettings, "fireworksApiKey">;
+  fetchImpl?: typeof fetch;
+}): Promise<ProfileAnalysisResult> {
+  const notesMarkdown = params.notesMarkdown;
+  if (!notesMarkdown.trim()) {
+    throw new Error("Add Profile Notes before analyzing.");
+  }
+  if (notesMarkdown.length > PROFILE_NOTES_MAX_CHARS) {
+    throw new Error(
+      `Profile Notes must be ${PROFILE_NOTES_MAX_CHARS.toLocaleString()} characters or fewer.`,
+    );
+  }
+  const apiKey = params.settings.fireworksApiKey?.trim();
+  if (!apiKey) {
+    throw new Error("Add a Fireworks API key in Settings before analyzing notes.");
+  }
+
+  const fetchImpl = params.fetchImpl ?? fetch;
+  const notesHash = hashProfileNotes(notesMarkdown);
+  const response = await fetchImpl(
+    "https://api.fireworks.ai/inference/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: FIREWORKS_PROFILE_ANALYZER_MODEL,
+        temperature: 0,
+        stream: true,
+        messages: [
+          { role: "system", content: buildProfileAnalyzerSystemPrompt() },
+          { role: "user", content: buildProfileAnalyzerUserPrompt(notesMarkdown) },
+        ],
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Profile analysis failed with status ${response.status}.`);
+  }
+
+  const content = await readFireworksCompletionText(response);
+  const output = parseProfileAnalyzerJson(content);
+  return {
+    digest: buildProfileDigestFromAnalyzerOutput({ output, notesHash }),
+    analyzer: {
+      provider: "fireworks",
+      model: FIREWORKS_PROFILE_ANALYZER_MODEL,
+      analyzerVersion: PROFILE_ANALYZER_VERSION,
+      analyzedAt: Date.now(),
+    },
+  };
 }

@@ -79,25 +79,28 @@ describe("Overlay panel product surfaces", () => {
     expect(runner.pageErrors).toEqual([]);
   }, 120_000);
 
-  it("persists local profile data and the composer profile toggle through the exposed panel", async () => {
+  it("persists local Profile Notes and the composer profile toggle through the exposed panel", async () => {
     const runner = await setupRunner();
+    const notes = [
+      "# About me",
+      "My name is John Doe.",
+      "Email: john.doe@example.com",
+      "Phone: +1 555 0100",
+    ].join("\n");
 
     await runner.clickOverlayButton("Personalize");
-    await runner.waitForOverlayText("Use saved profile");
-    await fillOverlayControl(runner, "First name", "John");
-    await fillOverlayControl(runner, "Last name", "Doe");
-    await fillOverlayControl(runner, "Email", "john.doe@example.com");
-    await fillOverlayControl(runner, "Phone", "+1 555 0100");
-    await runner.clickOverlayButton("Use saved profile");
-    await clickOverlayButtonByText(runner, "Save");
-    await runner.waitForOverlayText("Saved");
+    await runner.waitForOverlayText("Use Profile Notes");
+    await fillOverlayControl(runner, "Profile Notes", notes);
+    await runner.clickOverlayButton("Use Profile Notes");
+    await clickOverlayButtonByText(runner, "Save Notes");
+    await runner.waitForOverlayText("Notes saved");
 
     await waitForStoragePath(
       runner,
       "local",
       "opensidebar:personalProfile",
-      ["profile", "identity", "first_name"],
-      "John",
+      ["notesMarkdown"],
+      notes,
     );
     await waitForStoragePath(
       runner,
@@ -108,8 +111,8 @@ describe("Overlay panel product surfaces", () => {
     );
 
     await runner.clickOverlayButton("Close");
-    await runner.waitForOverlayText("Profile on");
-    await clickOverlayButtonByText(runner, "Profile on");
+    await runner.waitForOverlayText("Notes on");
+    await clickOverlayButtonByText(runner, "Notes on");
     await waitForStoragePath(
       runner,
       "local",
@@ -121,36 +124,25 @@ describe("Overlay panel product surfaces", () => {
     const snapshot = await runner.readRuntimeSnapshot();
     expect(snapshot.storage.local["opensidebar:personalProfile"]).toMatchObject({
       enabled: false,
-      profile: {
-        identity: {
-          first_name: "John",
-          last_name: "Doe",
-        },
-        contact: {
-          email: "john.doe@example.com",
-        },
-      },
+      notesMarkdown: notes,
     });
     expect(runner.pageErrors).toEqual([]);
   }, 120_000);
 
-  it("deletes the local profile and disables profile use through the exposed panel", async () => {
+  it("deletes local Profile Notes and disables profile use through the exposed panel", async () => {
     const runner = await setupRunner();
 
     await runner.clickOverlayButton("Personalize");
-    await runner.waitForOverlayText("Use saved profile");
-    await fillOverlayControl(runner, "First name", "John");
-    await fillOverlayControl(runner, "Last name", "Doe");
-    await runner.clickOverlayButton("Use saved profile");
-    await clickOverlayButtonByText(runner, "Save");
-    await runner.waitForOverlayText("Saved");
+    await runner.waitForOverlayText("Use Profile Notes");
+    await fillOverlayControl(runner, "Profile Notes", "# About me\nJohn Doe");
+    await runner.clickOverlayButton("Use Profile Notes");
+    await clickOverlayButtonByText(runner, "Save Notes");
+    await runner.waitForOverlayText("Notes saved");
 
     await clickOverlayButtonByText(runner, "Delete");
     await clickOverlayButtonByText(runner, "Confirm");
     await runner.waitForOverlayText("Deleted");
-    await runner.waitForOverlayText(
-      "Add at least one field before turning profile use on.",
-    );
+    await runner.waitForOverlayText("Add notes");
     await waitForStorageKeyMissing(
       runner,
       "local",

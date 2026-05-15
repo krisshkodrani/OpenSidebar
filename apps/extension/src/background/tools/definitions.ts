@@ -551,7 +551,7 @@ export const GET_PROFILE_FIELDS_DEF: ToolDefinition = {
   function: {
     name: ToolName.GET_PROFILE_FIELDS,
     description:
-      "Read exact fields from the user's local personal profile for form filling. Request only the fields you need, using paths like identity.first_name or address.postal_code. Sensitive fields under sensitive.* require approval.",
+      "Read exact fact-like values from the user's local Profile Digest for form filling. Request only the labels or field paths you need. Missing values mean the notes are unavailable, stale, or ambiguous; do not guess.",
     parameters: {
       type: "object",
       properties: {
@@ -559,10 +559,10 @@ export const GET_PROFILE_FIELDS_DEF: ToolDefinition = {
           type: "array",
           items: {
             type: "string",
-            description: "Field path relative to the profile root.",
+            description: "Field label or profile-style path to retrieve.",
           },
           description:
-            'Exact profile field paths to retrieve, e.g. ["identity.first_name", "identity.last_name"].',
+            'Exact profile labels or field paths to retrieve, e.g. ["full_name", "email", "location"].',
         },
       },
       required: ["fields"],

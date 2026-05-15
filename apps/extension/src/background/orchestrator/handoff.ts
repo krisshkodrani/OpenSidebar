@@ -628,7 +628,7 @@ export function buildExecutorInstruction(
     sections.push(
       "",
       personalContextBrief,
-      "Treat the saved-profile note as an availability hint only. For exact form values, call get_profile_fields instead of copying or inferring from context.",
+      "Treat Profile Digest context according to its item kinds: facts can fill exact matching fields, preferences guide clear choices, constraints are hard boundaries, themes are drafting material, and open questions must not be inferred.",
     );
   }
 
@@ -642,7 +642,7 @@ export function buildExecutorInstruction(
 
   const activeObjective = objectiveOverride || node.description;
   const mentionsSavedProfile =
-    /\b(saved profile|profile data|profile field|identity\.(?:first_name|last_name|email))\b/i.test(
+    /\b(saved profile|profile data|profile field|profile notes|profile digest|identity\.(?:first_name|last_name|email)|full name|email address)\b/i.test(
       `${activeObjective}\n${originalQuery || ""}`,
     );
   const allowsProfileFields = node.allowedTools.includes(ToolName.GET_PROFILE_FIELDS);
@@ -651,10 +651,11 @@ export function buildExecutorInstruction(
     sections.push(
       "",
       "PROFILE DATA POLICY:",
-      "- The user's saved profile is available through get_profile_fields.",
-      "- If the current step needs name, email, or other saved profile values, call get_profile_fields for the exact fields before typing or navigating away.",
+      "- The user's Profile Digest facts are available through get_profile_fields when notes are enabled and analyzed.",
+      "- If the current step needs name, email, or other exact profile facts, call get_profile_fields for those labels before typing or navigating away.",
       '- If the current step needs the saved CV/resume file, upload it with upload_file using profileFile: "cv".',
-      "- Treat returned profile values as the source of truth; do not invent replacements when the profile is expected to provide them.",
+      "- Treat returned profile facts as the source of truth; do not invent replacements when the profile is expected to provide them.",
+      "- If a requested profile value is missing, leave the field unresolved and report it instead of guessing.",
       "- Do not leave the current checkout or form page to search for a login/profile page unless the page explicitly shows authentication is required.",
     );
   }

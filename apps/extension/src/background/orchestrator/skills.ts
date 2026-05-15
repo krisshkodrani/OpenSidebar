@@ -1825,9 +1825,9 @@ const SKILL_BODIES: Record<
   "structured-form-fill": {
     procedureMarkdown: [
       "1. Identify all relevant fields before typing.",
-      "2. If the user references a saved profile or explicit profile field paths, call get_profile_fields for the exact needed fields before navigating away or inventing values.",
+      "2. If the user references Profile Notes, a Profile Digest, or explicit profile fields, call get_profile_fields for exact needed facts before navigating away or inventing values.",
       "3. Map each requested value to a specific input, select, or checkbox.",
-      "4. Prefer the returned profile values as the source of truth for name, email, and address fields.",
+      "4. Prefer returned profile facts as the source of truth for name, email, and address fields; unresolved fields must be reported instead of guessed.",
       "5. Stay on the current form unless the page itself shows that login or authentication is required.",
       "6. For independent visible text, select, and checkbox fields that are already mapped, issue those field tools in the same tool-calling turn; submit later as a separate final action.",
       "7. Preserve quoted literals exactly, including punctuation, pipes, slashes, spacing, and long command strings.",
@@ -1866,7 +1866,7 @@ const SKILL_BODIES: Record<
         "Treat same-page validation feedback as part of the current form workflow until it is repaired or proven impossible.",
       ],
       toolDiscipline: [
-        "Use get_profile_fields for exact saved-profile values when the task calls for them.",
+        "Use get_profile_fields for exact Profile Digest facts when the task calls for them.",
         "Batch independent type_text, select_option, and set_checkbox calls in one executor turn after field mapping; re-ground once before submit instead of re-reading between every field.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
         'Use read_element(attribute="value") for filled textareas or long exact literals when read_page evidence is ambiguous.',
@@ -1890,7 +1890,7 @@ const SKILL_BODIES: Record<
   "progressive-repeatable-form": {
     procedureMarkdown: [
       "1. Identify the repeatable group name, the required item count, and the current visible item count.",
-      "2. If the task references saved profile data for repeated rows, call get_profile_fields once for the exact array/path before filling.",
+      "2. If the task references Profile Digest data for repeated rows, call get_profile_fields once for the exact labels before filling.",
       "3. Stay on the current form page; do not navigate to profile, workspace, account, or site-navigation pages to look for saved values.",
       "4. Add only the missing number of groups; after each Add another/Add item action, use fresh page state before reusing element ids.",
       "5. Bind each data item to its matching visible group by label or index, such as Experience 2 company, rather than by raw field order.",
@@ -1927,9 +1927,9 @@ const SKILL_BODIES: Record<
         "Count existing groups, add only missing groups with fresh grounding after each mutation, map data by group index, fill fields, then verify the completed group set.",
       ],
       toolDiscipline: [
-        "Use get_profile_fields once for exact repeated profile arrays when needed.",
+        "Use get_profile_fields once for exact repeated profile facts when needed.",
         "Treat profile values as literals: copy exact strings for text fields and do not summarize, embellish, or replace them with plausible alternatives.",
-        "Do not navigate away from the form to find saved profile data; the profile tool is the source of truth.",
+        "Do not navigate away from the form to find profile data; the profile tool and current Profile Digest context are the source of truth.",
         "Use read_page after Add another/Add item clicks before reusing the add control or filling newly inserted fields.",
         "Prefer labeled field ids or aria labels over positional guesses.",
         "Avoid press_key and click_coordinates for form progression or final submit.",

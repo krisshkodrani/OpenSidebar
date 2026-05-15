@@ -473,9 +473,9 @@ export interface UpdateNotesArgs {
   note: string;
 }
 
-/** Arguments for get_profile_fields — fetch exact fields from the local personal profile */
+/** Arguments for get_profile_fields - fetch exact facts from the local Profile Digest */
 export interface GetProfileFieldsArgs {
-  /** Field paths relative to the `profile` root, e.g. `identity.first_name` */
+  /** Profile labels or field paths, e.g. `full_name` or `email` */
   fields: string[];
 }
 
