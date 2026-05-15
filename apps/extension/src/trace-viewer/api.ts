@@ -13,6 +13,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return r.json();
 }
 
+export const TRACE_SESSION_SEARCH_LIMIT = 1000;
+
 export async function fetchTraceSessions(
   filters: TraceFilters,
   signal?: AbortSignal,
@@ -29,7 +31,7 @@ export async function fetchTraceSessions(
   if (filters.skill && filters.skill !== "all")
     params.set("skill", filters.skill);
   if (filters.runId) params.set("runId", filters.runId);
-  params.set("limit", "1000");
+  params.set("limit", String(TRACE_SESSION_SEARCH_LIMIT));
   return fetchJson(
     `/api/traces/search?${params.toString()}`,
     signal ? { signal } : undefined,
@@ -71,6 +73,7 @@ export interface TraceInsightsMetricRow {
   sessions: number;
   runs: number;
   calls?: number;
+  requests?: number;
   successes?: number;
   failures?: number;
   failureRate?: number;
@@ -181,6 +184,7 @@ export interface HarnessRatchetCandidate {
 
 export async function fetchTraceInsights(
   filters: TraceInsightsQuery,
+  signal?: AbortSignal,
 ): Promise<TraceInsightsResponse> {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
@@ -188,7 +192,10 @@ export async function fetchTraceInsights(
     params.set(key, value);
   }
   const query = params.toString();
-  return fetchJson(`/api/trace-insights${query ? `?${query}` : ""}`);
+  return fetchJson(
+    `/api/trace-insights${query ? `?${query}` : ""}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export async function fetchTraceIndexStatus(): Promise<TraceIndexStatus> {
@@ -201,14 +208,22 @@ export async function fetchHarnessRatchet(): Promise<HarnessRatchetCandidate[]> 
 
 export async function fetchTraceEntries(
   sessionId: string,
+  signal?: AbortSignal,
 ): Promise<TraceEntry[]> {
-  return fetchJson(`/api/traces/${encodeURIComponent(sessionId)}`);
+  return fetchJson(
+    `/api/traces/${encodeURIComponent(sessionId)}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export async function fetchRunTraceEvents(
   runId: string,
+  signal?: AbortSignal,
 ): Promise<RunTraceEvent[]> {
-  return fetchJson(`/api/run-traces/${encodeURIComponent(runId)}`);
+  return fetchJson(
+    `/api/run-traces/${encodeURIComponent(runId)}`,
+    signal ? { signal } : undefined,
+  );
 }
 
 export function screenshotUrl(sessionId: string, turn: number): string {
@@ -222,12 +237,14 @@ export async function deleteAllTraces(): Promise<{ deleted: number }> {
 export async function fetchSessionLogs(
   sessionId: string,
   level?: string,
+  signal?: AbortSignal,
 ): Promise<SessionLogEntry[]> {
   const params = new URLSearchParams();
   if (level) params.set("level", level);
   const query = params.toString();
   return fetchJson(
     `/api/logs/${encodeURIComponent(sessionId)}${query ? `?${query}` : ""}`,
+    signal ? { signal } : undefined,
   );
 }
 

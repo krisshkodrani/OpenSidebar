@@ -15,7 +15,8 @@ export default function TurnList() {
   const entries = useStore((s) => s.currentEntries);
   const sessionId = useStore((s) => s.currentSessionId) ?? "";
   const searchQuery = useStore((s) => s.searchQuery);
-  const focusTurnNumber = useStore((s) => s.focusTurnNumber);
+  const focusTurnRequest = useStore((s) => s.focusTurnRequest);
+  const clearFocusTurnRequest = useStore((s) => s.clearFocusTurnRequest);
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
@@ -64,15 +65,16 @@ export default function TurnList() {
 
   // Scroll to focused turn when navigating from Perception tab
   useEffect(() => {
-    if (focusTurnNumber == null) return;
-    const idx = filtered.findIndex((e) => e.turnNumber === focusTurnNumber);
+    if (!focusTurnRequest) return;
+    const idx = filtered.findIndex(
+      (e) => e.turnNumber === focusTurnRequest.turnNumber,
+    );
     if (idx >= 0) {
       virtualizer.scrollToIndex(idx, { align: "start" });
       setFocusedIdx(idx);
     }
-    // Clear focus after scrolling
-    useStore.setState({ focusTurnNumber: null });
-  }, [focusTurnNumber, filtered, virtualizer]);
+    clearFocusTurnRequest(focusTurnRequest.id);
+  }, [clearFocusTurnRequest, focusTurnRequest, filtered, virtualizer]);
 
   // j/k keyboard navigation
   const handleKeyNav = useCallback(
@@ -150,6 +152,15 @@ export default function TurnList() {
                 transform: `translateY(${virtualRow.start}px)`,
               }}
               onClick={() => setFocusedIdx(virtualRow.index)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setFocusedIdx(virtualRow.index);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Focus turn ${turnNum}`}
             >
               <div
                 className={

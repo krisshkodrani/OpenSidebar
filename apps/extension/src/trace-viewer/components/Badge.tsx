@@ -69,6 +69,7 @@ const VARIANT_CLASSES: Record<string, string> = {
   "role-user":
     "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25",
   "role-assistant": "bg-state-success/10 text-state-success border border-state-success/25",
+  "role-executor": "bg-brand-live/10 text-brand-live border border-brand-live/25",
   "role-tool": "bg-brand-live/10 text-brand-live border border-brand-live/25",
   // event badges
   "event-escalation":
@@ -82,6 +83,8 @@ const VARIANT_CLASSES: Record<string, string> = {
     "bg-state-success/10 text-state-success border border-state-success/25",
   "event-plan_update":
     "bg-brand-live/10 text-brand-live border border-brand-live/25",
+  "event-workflow_tab_redirect":
+    "bg-trace-accent/10 text-trace-accent-light border border-trace-accent/25",
 };
 
 const DEFAULT_EVENT_CLASS =

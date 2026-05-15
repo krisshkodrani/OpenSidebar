@@ -29,6 +29,18 @@ vi.mock("../../src/trace-viewer/components/ErrorBanner", () => ({
   default: ({ message }: { message: string }) => <div>{message}</div>,
 }));
 
+const enrichedObjective = [
+  "Objective: Complete the workflow for the original request:",
+  "RECENT WORKSPACE CONVERSATION:",
+  "- Assistant: long previous answer",
+  "PROFILE DIGEST CONTEXT:",
+  "- Fact: Email = kshkodrani@gmail.com",
+  "CURRENT REQUEST:",
+  "Fill the profile",
+  "Planner assumptions:",
+  "- No explicit assumptions from planner.",
+].join("\n");
+
 async function flushAsyncWork() {
   await act(async () => {
     await Promise.resolve();
@@ -71,7 +83,7 @@ describe("trace-viewer BackendPanel", () => {
         id: "run-1",
         clientRunId: "task-1",
         workspaceId: "ws-1",
-        query: "Compare the recovered job findings",
+        query: enrichedObjective,
         status: "running",
         createdAt: Date.now() - 10_000,
         updatedAt: Date.now(),
@@ -107,7 +119,7 @@ describe("trace-viewer BackendPanel", () => {
         id: "run-1",
         clientRunId: "task-1",
         workspaceId: "ws-1",
-        query: "Compare the recovered job findings",
+        query: enrichedObjective,
         status: "running",
         createdAt: Date.now() - 10_000,
         updatedAt: Date.now(),
@@ -139,7 +151,7 @@ describe("trace-viewer BackendPanel", () => {
       nodes: [
         {
           nodeId: "compare-1",
-          description: "Recommend the single best match",
+          description: enrichedObjective,
           successCriteria: "Return the strongest match and why",
           status: "running",
           retries: 0,
@@ -208,6 +220,11 @@ describe("trace-viewer BackendPanel", () => {
       expect(container.textContent).toContain("User preference");
       expect(container.textContent).toContain("Recent Side Effects");
       expect(container.textContent).toContain("read_page");
+      expect(container.textContent).toContain("Fill the profile");
+      expect(container.textContent).not.toContain(
+        "RECENT WORKSPACE CONVERSATION",
+      );
+      expect(container.textContent).not.toContain("PROFILE DIGEST CONTEXT");
     });
   });
 });

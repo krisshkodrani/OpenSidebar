@@ -2,10 +2,12 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import type { TraceSession } from "../../../types/traces";
 import { useStore } from "../../store";
+import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
 import {
   extractQueryTitle,
   formatCost,
+  formatCount,
   formatDuration,
   formatTime,
   getSessionModels,
@@ -26,6 +28,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
   const expandAllRunGroups = useStore((s) => s.expandAllRunGroups);
   const collapseAllRunGroups = useStore((s) => s.collapseAllRunGroups);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
 
   if (tracesLoading) {
     return (
@@ -73,7 +76,8 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
           Collapse all
         </button>
         <span className="ml-auto text-[10px] text-trace-dim">
-          {runGroups.length} runs
+          {formatCount(runGroups.length)}
+          {sessionsLimitReached ? "+" : ""} runs from loaded sessions
         </span>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -115,10 +119,10 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
                   {group.overallOutcome}
                 </Badge>
                 <span className="text-[11px] text-trace-muted shrink-0">
-                  {group.sessions.length} sessions
+                  {formatCount(group.sessions.length)} sessions
                 </span>
                 <span className="text-[11px] text-trace-muted shrink-0">
-                  {group.totalTurns} turns
+                  {formatCount(group.totalTurns)} turns
                 </span>
                 <span className="text-[11px] text-trace-muted shrink-0">
                   {formatDuration(group.latestEnd - group.earliestStart)}

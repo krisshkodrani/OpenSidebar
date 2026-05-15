@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import { useStore } from "../../store";
-import { formatCost } from "../../utils";
+import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
+import { formatCost, formatCount } from "../../utils";
 import Tooltip from "../Tooltip";
 
 interface FleetOverviewProps {
@@ -14,6 +15,7 @@ export default function FleetOverview({
   const runGroups = useStore((s) => s.runGroups);
   const filters = useStore((s) => s.filters);
   const resetFilters = useStore((s) => s.resetFilters);
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
 
   const stats = useMemo(() => {
     const completed = sessions.filter((session) =>
@@ -71,13 +73,29 @@ export default function FleetOverview({
       <div className="min-w-0 flex-1 flex items-center gap-x-4 gap-y-1 text-[11px] text-trace-muted flex-wrap">
         <InlineStat
           label="Sessions"
-          value={String(sessions.length)}
-          tooltip={`${stats.standaloneSessions} standalone, ${stats.sessionsInRuns} in ${runGroups.length} runs`}
+          value={`${formatCount(sessions.length)}${
+            sessionsLimitReached ? "+" : ""
+          }`}
+          tooltip={
+            sessionsLimitReached
+              ? `Loaded session rows; list is capped at ${formatCount(
+                  TRACE_SESSION_SEARCH_LIMIT,
+                )}. Use Insights or Metrics for aggregate totals.`
+              : `${formatCount(stats.standaloneSessions)} standalone, ${formatCount(stats.sessionsInRuns)} in ${formatCount(runGroups.length)} runs`
+          }
         />
         <InlineStat
           label="Runs"
-          value={String(runGroups.length)}
-          tooltip="Unique run groups (sessions with the same runId)"
+          value={`${formatCount(runGroups.length)}${
+            sessionsLimitReached ? "+" : ""
+          }`}
+          tooltip={
+            sessionsLimitReached
+              ? `Unique loaded run groups; list is capped at ${formatCount(
+                  TRACE_SESSION_SEARCH_LIMIT,
+                )} session rows.`
+              : "Unique run groups (sessions with the same runId)"
+          }
         />
         <InlineStat
           label="Success"

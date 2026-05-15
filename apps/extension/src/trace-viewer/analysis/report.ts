@@ -2,6 +2,7 @@ import type { TraceEntry, TraceEvent } from "../../types/traces";
 import type { RunTraceEvent } from "../../utils/run-trace";
 import { redactTracePayload } from "../../utils/trace-protection";
 import type { SessionLogEntry } from "../store/types";
+import { compactTraceTaskLabel } from "../utils";
 import { analyzeTraceSession } from "./analyze";
 import type {
   InvestigationFinding,
@@ -238,7 +239,9 @@ export function buildTraceInvestigationReport(
   lines.push(`Session: ${input.session.sessionId}`);
   if (input.session.runId) lines.push(`Run: ${input.session.runId}`);
   lines.push(`Outcome: ${input.session.outcome}`);
-  lines.push(`Task: ${clip(input.session.query, maxSnippetLength)}`);
+  lines.push(
+    `Task: ${compactTraceTaskLabel(input.session.query, maxSnippetLength) || "(no query)"}`,
+  );
   lines.push(`Start URL: ${input.session.startUrl || "(unknown)"}`);
   lines.push(`Turns: ${input.entries.length || input.session.turnCount || 0}`);
   lines.push("");

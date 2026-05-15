@@ -6,7 +6,11 @@ import {
   type TraceInsightsFilters,
   type TraceInsightsResponse,
 } from "./trace-insights";
-import type { TraceEntryLike, TraceSessionLike } from "./log-server-helpers";
+import {
+  isIsoDay,
+  type TraceEntryLike,
+  type TraceSessionLike,
+} from "./log-server-helpers";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 const HOT_TRACE_DAYS = 7;
@@ -83,6 +87,94 @@ function json(value: unknown): string | null {
 function dayKey(ms: number): string | null {
   if (!Number.isFinite(ms) || ms <= 0) return null;
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+function localDayStartMs(day: string): number {
+  const [year, month, date] = day.split("-").map((part) => Number(part));
+  return new Date(year, month - 1, date).getTime();
+}
+
+function localNextDayStartMs(day: string): number {
+  const [year, month, date] = day.split("-").map((part) => Number(part));
+  return new Date(year, month - 1, date + 1).getTime();
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function sessionInsightFilterSql(filters: TraceInsightsFilters): {
+  whereSql: string;
+  params: Record<string, string | number>;
+} {
+  const where: string[] = [];
+  const params: Record<string, string | number> = {};
+  const day = asString(filters.day).trim();
+  const from = asString(filters.from).trim();
+  const to = asString(filters.to).trim();
+
+  if (day && day !== "all" && isIsoDay(day)) {
+    where.push("start_time >= @fromMs AND start_time < @toMs");
+    params.fromMs = localDayStartMs(day);
+    params.toMs = localNextDayStartMs(day);
+  } else {
+    if (isIsoDay(from)) {
+      where.push("start_time >= @fromMs");
+      params.fromMs = localDayStartMs(from);
+    }
+    if (isIsoDay(to)) {
+      where.push("start_time < @toMs");
+      params.toMs = localNextDayStartMs(to);
+    }
+  }
+
+  const outcome = asString(filters.outcome).trim();
+  if (outcome && outcome !== "all") {
+    where.push("outcome = @outcome");
+    params.outcome = outcome;
+  }
+
+  const domainFilter = asString(filters.domain).trim().toLowerCase();
+  if (domainFilter) {
+    where.push("LOWER(domain) LIKE @domain ESCAPE '\\'");
+    params.domain = `%${escapeLike(domainFilter)}%`;
+  }
+
+  const runId = asString(filters.runId).trim();
+  if (runId) {
+    where.push("run_id LIKE @runId ESCAPE '\\'");
+    params.runId = `${escapeLike(runId)}%`;
+  }
+
+  const sessionPrefix = (
+    asString(filters.sessionId).trim() ||
+    asString(filters.sessionPrefix).trim()
+  );
+  if (sessionPrefix) {
+    where.push("session_id LIKE @sessionPrefix ESCAPE '\\'");
+    params.sessionPrefix = `${escapeLike(sessionPrefix)}%`;
+  }
+
+  const q = asString(filters.q).trim().toLowerCase();
+  if (q) {
+    where.push(
+      "(LOWER(query) LIKE @q ESCAPE '\\' OR LOWER(start_url) LIKE @q ESCAPE '\\' OR LOWER(session_id) LIKE @q ESCAPE '\\')",
+    );
+    params.q = `%${escapeLike(q)}%`;
+  }
+
+  return {
+    whereSql: where.length > 0 ? `WHERE ${where.join(" AND ")}` : "",
+    params,
+  };
+}
+
+function chunks<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
 }
 
 function domain(rawUrl: unknown): string | null {
@@ -729,13 +821,16 @@ export function buildTraceInsightsFromSqlite(
   if (!db) return null;
 
   try {
+    const sessionFilter = sessionInsightFilterSql(filters);
     const sessionRows = db
       .prepare(
         `SELECT session_id, raw_json, run_id, source, start_time, end_time,
           outcome, query, start_url, turn_count, total_cost
-        FROM trace_sessions`,
+        FROM trace_sessions
+        ${sessionFilter.whereSql}
+        ORDER BY start_time DESC`,
       )
-      .all() as Array<Record<string, unknown>>;
+      .all(sessionFilter.params) as Array<Record<string, unknown>>;
     const sessions = sessionRows.map((row) => {
       const parsed = parseJson<Record<string, unknown>>(row.raw_json, {});
       return {
@@ -754,25 +849,163 @@ export function buildTraceInsightsFromSqlite(
     });
 
     const entriesBySession = new Map<string, TraceEntryLike[]>();
-    for (const row of db
-      .prepare("SELECT session_id, raw_json FROM trace_turns ORDER BY turn_number")
-      .all() as Array<{ session_id: string; raw_json: string }>) {
-      const entry = parseJson<TraceEntryLike | null>(row.raw_json, null);
-      if (!entry) continue;
-      const entries = entriesBySession.get(row.session_id) ?? [];
-      entries.push(entry);
-      entriesBySession.set(row.session_id, entries);
+    const entriesByKey = new Map<string, TraceEntryLike>();
+    const modelsBySession = new Map<string, Set<string>>();
+    const sessionIds = sessions
+      .map((session) => asString(session.sessionId))
+      .filter((sessionId) => sessionId.length > 0);
+    for (const batch of chunks(sessionIds, 500)) {
+      const placeholders = batch.map(() => "?").join(", ");
+      for (const row of db
+        .prepare(
+          `SELECT session_id, turn_number, model, model_tier, provider,
+            prompt_tokens, completion_tokens, total_tokens, cost, duration_ms
+          FROM trace_turns
+          WHERE session_id IN (${placeholders})
+          ORDER BY session_id, turn_number`,
+        )
+        .all(...batch) as Array<Record<string, unknown>>) {
+        const sessionId = asString(row.session_id);
+        const turnNumber = asNumber(row.turn_number);
+        if (!sessionId || turnNumber <= 0) continue;
+        const entry: TraceEntryLike = {
+          sessionId,
+          turnNumber,
+          toolExecutions: [],
+        };
+        const model = asString(row.model);
+        const modelTier = asString(row.model_tier);
+        const provider = asString(row.provider);
+        const promptTokens = asNumber(row.prompt_tokens);
+        const completionTokens = asNumber(row.completion_tokens);
+        const totalTokens = asNumber(row.total_tokens);
+        const cost = asNumber(row.cost);
+        const durationMs = asNumber(row.duration_ms);
+        if (model) {
+          const models = modelsBySession.get(sessionId) ?? new Set<string>();
+          models.add(model);
+          modelsBySession.set(sessionId, models);
+        }
+        if (
+          model ||
+          modelTier ||
+          provider ||
+          promptTokens > 0 ||
+          completionTokens > 0 ||
+          totalTokens > 0 ||
+          cost > 0 ||
+          durationMs > 0
+        ) {
+          entry.llmRequest = {
+            ...(model ? { model } : {}),
+            ...(modelTier === "executor" || modelTier === "planner"
+              ? { modelTier }
+              : {}),
+            ...(provider ? { provider } : {}),
+          };
+          entry.llmResponse = {
+            durationMs,
+            usage: {
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              total_tokens: totalTokens,
+              cost,
+            },
+          };
+        }
+        entriesByKey.set(`${sessionId}:${turnNumber}`, entry);
+        const entries = entriesBySession.get(sessionId) ?? [];
+        entries.push(entry);
+        entriesBySession.set(sessionId, entries);
+      }
+
+      for (const row of db
+        .prepare(
+          `SELECT session_id, turn_number, tool_name, success, duration_ms,
+            error, result
+          FROM trace_tools
+          WHERE session_id IN (${placeholders})
+          ORDER BY session_id, turn_number, ordinal`,
+        )
+        .all(...batch) as Array<Record<string, unknown>>) {
+        const sessionId = asString(row.session_id);
+        const turnNumber = asNumber(row.turn_number);
+        if (!sessionId || turnNumber <= 0) continue;
+        const key = `${sessionId}:${turnNumber}`;
+        let entry = entriesByKey.get(key);
+        if (!entry) {
+          entry = {
+            sessionId,
+            turnNumber,
+            toolExecutions: [],
+          };
+          entriesByKey.set(key, entry);
+          const entries = entriesBySession.get(sessionId) ?? [];
+          entries.push(entry);
+          entriesBySession.set(sessionId, entries);
+        }
+        const executions = Array.isArray(entry.toolExecutions)
+          ? entry.toolExecutions
+          : [];
+        executions.push({
+          toolName: asString(row.tool_name),
+          success: asNumber(row.success) === 1,
+          durationMs: asNumber(row.duration_ms),
+          error: asString(row.error),
+          result: asString(row.result),
+        });
+        entry.toolExecutions = executions;
+      }
+    }
+
+    for (const session of sessions) {
+      const sessionId = asString(session.sessionId);
+      const models = modelsBySession.get(sessionId);
+      if (!models || models.size === 0) continue;
+      session.models = Array.from(
+        new Set([
+          ...(Array.isArray(session.models)
+            ? session.models.filter(
+                (model): model is string =>
+                  typeof model === "string" && model.length > 0,
+              )
+            : []),
+          ...models,
+        ]),
+      );
     }
 
     const runEventsByRun = new Map<string, TraceEntryLike[]>();
-    for (const row of db
-      .prepare("SELECT run_id, raw_json FROM trace_run_events ORDER BY ordinal")
-      .all() as Array<{ run_id: string; raw_json: string }>) {
-      const entry = parseJson<TraceEntryLike | null>(row.raw_json, null);
-      if (!entry) continue;
-      const events = runEventsByRun.get(row.run_id) ?? [];
-      events.push(entry);
-      runEventsByRun.set(row.run_id, events);
+    const runIds = Array.from(
+      new Set(
+        sessions
+          .map((session) => asString(session.runId))
+          .filter((runId) => runId.length > 0),
+      ),
+    );
+    for (const batch of chunks(runIds, 500)) {
+      const placeholders = batch.map(() => "?").join(", ");
+      for (const row of db
+        .prepare(
+          `SELECT run_id, type, role, turn_number, ts
+          FROM trace_run_events
+          WHERE run_id IN (${placeholders})
+          ORDER BY run_id, ordinal`,
+        )
+        .all(...batch) as Array<Record<string, unknown>>) {
+        const runId = asString(row.run_id);
+        if (!runId) continue;
+        const entry: TraceEntryLike = {
+          runId,
+          type: asString(row.type),
+          role: asString(row.role),
+          turn: asNumber(row.turn_number),
+          recordedAt: asString(row.ts),
+        };
+        const events = runEventsByRun.get(runId) ?? [];
+        events.push(entry);
+        runEventsByRun.set(runId, events);
+      }
     }
 
     return buildTraceInsights({

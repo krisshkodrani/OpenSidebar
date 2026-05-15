@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
 interface CollapsibleSectionProps {
@@ -19,11 +19,18 @@ export default function CollapsibleSection({
   children,
 }: CollapsibleSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const reactId = useId();
+  const buttonId = `collapsible-trigger-${reactId}`;
+  const contentId = `collapsible-content-${reactId}`;
 
   return (
     <div className={className}>
       <button
+        id={buttonId}
+        type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-controls={contentId}
         className="flex items-center gap-1.5 cursor-pointer px-2 py-1.5 rounded bg-trace-accent/[0.05] border-none text-trace-subtle text-xs w-full text-left transition-colors hover:bg-trace-accent/[0.07]"
       >
         <ChevronRight
@@ -39,6 +46,9 @@ export default function CollapsibleSection({
         </span>
       </button>
       <div
+        id={contentId}
+        role="region"
+        aria-labelledby={buttonId}
         className={`collapsible ${maxHeightClass === "sm" ? "collapsible-sm" : maxHeightClass === "xs" ? "collapsible-xs" : ""} ${open ? "open" : ""}`}
       >
         {children}

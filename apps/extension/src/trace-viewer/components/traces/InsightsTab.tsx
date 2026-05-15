@@ -12,7 +12,9 @@ import { useStore } from "../../store";
 import {
   extractQueryTitle,
   formatCost,
+  formatCount,
   formatDuration,
+  formatPercent,
   outcomeClass,
   truncate,
 } from "../../utils";
@@ -43,10 +45,7 @@ const SECTIONS: Array<{ id: InsightSection; label: string }> = [
   { id: "events", label: "Events" },
 ];
 
-function pct(value: number | undefined): string {
-  if (value == null) return "-";
-  return `${Math.round(value * 100)}%`;
-}
+const INSIGHTS_TIMEOUT_MS = 30_000;
 
 function emptyInsights(): TraceInsightsResponse {
   return {
@@ -147,20 +146,35 @@ export default function InsightsTab({
 
   useEffect(() => {
     let cancelled = false;
+    let timedOut = false;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, INSIGHTS_TIMEOUT_MS);
     setLoading(true);
     setError(null);
-    fetchTraceInsights(requestFilters)
+    fetchTraceInsights(requestFilters, controller.signal)
       .then((result) => {
         if (!cancelled) setInsights(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) {
+          setError(
+            timedOut
+              ? "Timed out loading trace insights. Try narrowing the filters or rebuilding the trace index."
+              : String(err),
+          );
+        }
       })
       .finally(() => {
+        window.clearTimeout(timeoutId);
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
   }, [requestFilters]);
 
@@ -186,11 +200,11 @@ export default function InsightsTab({
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div className="grid grid-cols-2 xl:grid-cols-6 gap-2 px-5 py-3 border-b border-trace-border bg-trace-panel/70 shrink-0">
-        <KpiCard label="Sessions" value={insights.summary.totalSessions} />
-        <KpiCard label="Runs" value={insights.summary.totalRuns} />
-        <KpiCard label="Success" value={pct(insights.summary.successRate)} />
-        <KpiCard label="Tool fails" value={pct(insights.summary.toolFailureRate)} />
-        <KpiCard label="Turns" value={insights.summary.totalTurns} />
+        <KpiCard label="Sessions" value={formatCount(insights.summary.totalSessions)} />
+        <KpiCard label="Runs" value={formatCount(insights.summary.totalRuns)} />
+        <KpiCard label="Success" value={formatPercent(insights.summary.successRate)} />
+        <KpiCard label="Tool fails" value={formatPercent(insights.summary.toolFailureRate)} />
+        <KpiCard label="Turns" value={formatCount(insights.summary.totalTurns)} />
         <KpiCard label="Cost" value={formatCost(insights.summary.totalCost) || "$0"} />
       </div>
 
@@ -327,6 +341,7 @@ function SelectFilter({
     <label className="min-w-0">
       <span className="sr-only">{label}</span>
       <select
+        aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="w-full px-2 py-1.5 text-sm bg-trace-surface border border-trace-border rounded text-trace-text focus:outline-none focus:border-trace-accent"
@@ -355,6 +370,17 @@ function MetricTable({
   onFocusRun: (runId: string) => void;
   onFilter: (value: string) => void;
 }) {
+  const activityLabel =
+    section === "tools"
+      ? "Calls"
+      : section === "models"
+        ? "Requests"
+        : section === "events"
+          ? "Events"
+          : section === "failures"
+            ? "Failures"
+            : "Uses";
+
   if (rows.length === 0) {
     return (
       <div className="py-10 text-center text-sm text-trace-muted">
@@ -369,7 +395,7 @@ function MetricTable({
         <span>Name</span>
         <span>Sessions</span>
         <span>Runs</span>
-        <span>Calls</span>
+        <span>{activityLabel}</span>
         <span>Fail rate</span>
         <span>Avg time</span>
         <span>Sample</span>
@@ -392,10 +418,18 @@ function MetricTable({
               </span>
             )}
           </button>
-          <span className="text-trace-subtle">{row.sessions}</span>
-          <span className="text-trace-subtle">{row.runs}</span>
-          <span className="text-trace-subtle">{row.calls ?? "-"}</span>
-          <span className="text-trace-subtle">{pct(row.failureRate)}</span>
+          <span className="text-trace-subtle">{formatCount(row.sessions)}</span>
+          <span className="text-trace-subtle">{formatCount(row.runs)}</span>
+          <span className="text-trace-subtle">
+            {formatCount(
+              section === "models"
+                ? row.requests ?? row.calls
+                : section === "failures"
+                  ? row.failures ?? row.calls
+                  : row.calls,
+            )}
+          </span>
+          <span className="text-trace-subtle">{formatPercent(row.failureRate)}</span>
           <span className="text-trace-subtle">
             {row.averageDurationMs ? formatDuration(row.averageDurationMs) : "-"}
           </span>
@@ -458,7 +492,7 @@ function RatchetTable({
       `Count: ${row.count}`,
       row.failureRate == null
         ? null
-        : `Failure rate: ${Math.round(row.failureRate * 100)}%`,
+        : `Failure rate: ${formatPercent(row.failureRate)}`,
       row.sampleSessionId ? `Sample session: ${row.sampleSessionId}` : null,
       row.sampleRunId ? `Sample run: ${row.sampleRunId}` : null,
       `Evidence query: ${row.evidenceQuery}`,
@@ -497,10 +531,10 @@ function RatchetTable({
             {row.severity}
           </span>
           <span className="text-trace-subtle">
-            {row.count}
+            {formatCount(row.count)}
             {row.failureRate == null
               ? ""
-              : ` / ${Math.round(row.failureRate * 100)}%`}
+              : ` / ${formatPercent(row.failureRate)}`}
           </span>
           <span className="flex min-w-0 gap-2">
             {row.sampleSessionId && (
@@ -595,10 +629,12 @@ function RunsInsightTable({
             {row.outcome}
           </Badge>
           <span className="text-trace-subtle">
-            {row.sessions}
-            {row.failedSessions > 0 ? ` (${row.failedSessions} failed)` : ""}
+            {formatCount(row.sessions)}
+            {row.failedSessions > 0
+              ? ` (${formatCount(row.failedSessions)} failed)`
+              : ""}
           </span>
-          <span className="text-trace-subtle">{row.totalTurns}</span>
+          <span className="text-trace-subtle">{formatCount(row.totalTurns)}</span>
           <span className="text-trace-subtle">
             {formatCost(row.totalCost) || "$0"}
           </span>

@@ -29,6 +29,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 vi.mock("../../src/trace-viewer/api", () => ({
+  TRACE_SESSION_SEARCH_LIMIT: 1000,
   fetchTraceSessions: (...args: unknown[]) => mockFetchTraceSessions(...args),
   fetchTraceDays: (...args: unknown[]) => mockFetchTraceDays(...args),
   fetchTraceModels: (...args: unknown[]) => mockFetchTraceModels(...args),

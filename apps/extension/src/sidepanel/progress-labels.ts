@@ -4,8 +4,93 @@ export function normalizeProgressLabel(
   return (label ?? "").replace(/\s+/g, " ").trim();
 }
 
+const DEFAULT_TASK_DISPLAY_LABEL_MAX_CHARS = 220;
+const CURRENT_REQUEST_MARKER = "CURRENT REQUEST:";
+const INTERNAL_CONTEXT_MARKERS = [
+  "RECENT WORKSPACE CONVERSATION:",
+  "PROFILE DIGEST CONTEXT:",
+  "PROFILE DIGEST FACTS:",
+  "PROFILE POLICY:",
+  "PROFILE DATA POLICY:",
+  "JOB APPLICATION POLICY:",
+  "ASHBY APPLICATION POLICY:",
+  "Execution policy:",
+  "Planner assumptions:",
+  "Handoff context:",
+  "Selected workflow skill:",
+  "Skill procedure:",
+  "Skill evidence requirements:",
+  "Skill execution contract:",
+  "Parallel work context:",
+  "Reality check signal:",
+  "Original user request",
+  "Use this only to resolve follow-up references",
+];
+
 function stripActorPrefix(label: string): string {
   return label.replace(/^(agent|executor|planner|verifier)\s*:\s*/i, "");
+}
+
+function markerIndex(value: string, marker: string): number {
+  return value.toLowerCase().indexOf(marker.toLowerCase());
+}
+
+function firstMarkerIndex(value: string, markers: string[]): number {
+  let index = -1;
+  for (const marker of markers) {
+    const candidate = markerIndex(value, marker);
+    if (candidate >= 0 && (index < 0 || candidate < index)) {
+      index = candidate;
+    }
+  }
+  return index;
+}
+
+function sectionAfterMarker(value: string, marker: string): string | null {
+  const index = markerIndex(value, marker);
+  if (index < 0) return null;
+  const start = index + marker.length;
+  const rest = value.slice(start).trim();
+  if (!rest) return null;
+  const end = firstMarkerIndex(rest, INTERNAL_CONTEXT_MARKERS);
+  return (end >= 0 ? rest.slice(0, end) : rest).trim();
+}
+
+function truncateDisplayLabel(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const slice = value.slice(0, Math.max(0, maxChars - 3)).trimEnd();
+  const boundary = slice.lastIndexOf(" ");
+  const trimmed =
+    boundary >= Math.min(80, Math.floor(maxChars * 0.5))
+      ? slice.slice(0, boundary).trimEnd()
+      : slice;
+  return `${trimmed}...`;
+}
+
+export function compactTaskDisplayLabel(
+  label: string | null | undefined,
+  maxChars = DEFAULT_TASK_DISPLAY_LABEL_MAX_CHARS,
+): string {
+  let normalized = normalizeProgressLabel(label);
+  if (!normalized) return "";
+
+  const currentRequest = sectionAfterMarker(normalized, CURRENT_REQUEST_MARKER);
+  if (currentRequest) {
+    normalized = currentRequest;
+  } else {
+    const firstInternalMarker = firstMarkerIndex(
+      normalized,
+      INTERNAL_CONTEXT_MARKERS,
+    );
+    if (firstInternalMarker > 0) {
+      normalized = normalized.slice(0, firstInternalMarker).trim();
+    } else if (firstInternalMarker === 0) {
+      normalized = "Working on the current task";
+    }
+  }
+
+  normalized = normalized.replace(/^Objective:\s*/i, "").trim();
+  return truncateDisplayLabel(normalized, maxChars);
 }
 
 function normalizedDisplayKey(label: string): string {
@@ -35,7 +120,7 @@ export function displayProgressLabel(
     return stripped.replace(/^Read/i, "Checking");
   }
   if (key.startsWith("escalate")) return "Switching strategy";
-  return stripped;
+  return compactTaskDisplayLabel(stripped);
 }
 
 export function isGenericProgressLabel(

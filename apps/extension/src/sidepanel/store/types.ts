@@ -24,6 +24,7 @@ import type {
 import type {
   PersonalizationState,
   ProfileAnalysisResult,
+  ProfileDigestItemPatch,
 } from "../../utils/personal-profile";
 
 // --- Slice Interfaces ---
@@ -176,6 +177,13 @@ export interface PersonalProfileSlice {
     result: ProfileAnalysisResult,
   ) => Promise<boolean>;
   analyzePersonalProfileNotes: () => Promise<void>;
+  updatePersonalProfileDigestItem: (
+    itemId: string,
+    patch: ProfileDigestItemPatch,
+  ) => Promise<PersonalizationState>;
+  deletePersonalProfileDigestItem: (
+    itemId: string,
+  ) => Promise<PersonalizationState>;
   clearPersonalProfileDigest: () => Promise<void>;
   deletePersonalProfile: () => Promise<void>;
   setPersonalProfileEnabled: (enabled: boolean) => Promise<void>;

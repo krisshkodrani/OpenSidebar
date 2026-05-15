@@ -85,13 +85,14 @@ export default function PerceptionCard({
     <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-4 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-trace-accent/[0.08] border-b border-trace-accent/[0.12]">
-        <a
+        <button
+          type="button"
           className="text-[13px] font-bold text-trace-accent-light hover:underline cursor-pointer"
           onClick={() => navigateToTurn(turnNum)}
           title="Jump to this turn"
         >
           Turn {turnNum} &rarr;
-        </a>
+        </button>
         <Badge variant="model">{p.model || "unknown"}</Badge>
         <Badge variant="type">observation</Badge>
         {p.mode && <Badge variant="type">{p.mode}</Badge>}

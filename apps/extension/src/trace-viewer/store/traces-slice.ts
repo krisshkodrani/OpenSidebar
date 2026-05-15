@@ -8,6 +8,8 @@ import type {
 import type { TraceSession } from "../../types/traces";
 import { isoDayOffset } from "../utils";
 
+const MAX_SCROLL_POSITIONS = 100;
+
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -35,7 +37,7 @@ function computeRunGroups(sessions: TraceSession[]): RunGroup[] {
   const byRun = new Map<string, TraceSession[]>();
 
   for (const s of sessions) {
-    const rid = (s as any).runId;
+    const rid = s.runId;
     if (typeof rid === "string" && rid.length > 0) {
       let list = byRun.get(rid);
       if (!list) {
@@ -106,10 +108,20 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
   searchQuery: "",
   activeSubview: "overview" as const,
   scrollPositions: {} as ScrollPositions,
+  scrollPositionOrder: [],
   saveScrollPosition: (view, position) =>
     set((s) => {
       const key = s.currentSessionId ? `${s.currentSessionId}:${view}` : view;
       s.scrollPositions[key] = position;
+      const existingIndex = s.scrollPositionOrder.indexOf(key);
+      if (existingIndex >= 0) {
+        s.scrollPositionOrder.splice(existingIndex, 1);
+      }
+      s.scrollPositionOrder.push(key);
+      while (s.scrollPositionOrder.length > MAX_SCROLL_POSITIONS) {
+        const oldestKey = s.scrollPositionOrder.shift();
+        if (oldestKey) delete s.scrollPositions[oldestKey];
+      }
     }),
   tracesLoading: false,
   tracesError: null,
@@ -157,6 +169,10 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     }),
   setCurrentSessionId: (id) =>
     set((s) => {
+      if (s.currentSessionId !== id) {
+        s.focusTurnRequest = null;
+        s.focusTurnNumber = null;
+      }
       s.currentSessionId = id;
     }),
   setCurrentEntries: (entries) =>
@@ -196,14 +212,37 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
       s.traceListMode = mode;
     }),
   focusTurnNumber: null,
+  focusTurnRequest: null,
+  nextFocusRequestId: 0,
+  clearFocusTurnRequest: (requestId) =>
+    set((s) => {
+      if (
+        requestId == null ||
+        !s.focusTurnRequest ||
+        s.focusTurnRequest.id === requestId
+      ) {
+        s.focusTurnRequest = null;
+        s.focusTurnNumber = null;
+      }
+    }),
   navigateToTurn: (turnNumber) =>
     set((s) => {
       s.activeSubview = "turns";
+      s.nextFocusRequestId += 1;
+      s.focusTurnRequest = {
+        id: s.nextFocusRequestId,
+        turnNumber,
+      };
       s.focusTurnNumber = turnNumber;
     }),
   navigateToPerception: (turnNumber) =>
     set((s) => {
       s.activeSubview = "perception";
+      s.nextFocusRequestId += 1;
+      s.focusTurnRequest = {
+        id: s.nextFocusRequestId,
+        turnNumber,
+      };
       s.focusTurnNumber = turnNumber;
     }),
   setTracesLoading: (loading) =>

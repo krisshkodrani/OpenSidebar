@@ -8,7 +8,8 @@ const ESTIMATED_PERCEPTION_HEIGHT = 600;
 export default function PerceptionList() {
   const entries = useStore((s) => s.currentEntries);
   const currentSessionId = useStore((s) => s.currentSessionId);
-  const focusTurnNumber = useStore((s) => s.focusTurnNumber);
+  const focusTurnRequest = useStore((s) => s.focusTurnRequest);
+  const clearFocusTurnRequest = useStore((s) => s.clearFocusTurnRequest);
   const perceptionEntries = entries.filter((e) => e.perception);
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -21,15 +22,15 @@ export default function PerceptionList() {
 
   // Scroll to focused perception card when navigating from Turns tab
   useEffect(() => {
-    if (focusTurnNumber == null) return;
+    if (!focusTurnRequest) return;
     const idx = perceptionEntries.findIndex(
-      (e) => e.turnNumber === focusTurnNumber,
+      (e) => e.turnNumber === focusTurnRequest.turnNumber,
     );
     if (idx >= 0) {
       virtualizer.scrollToIndex(idx, { align: "start" });
     }
-    useStore.setState({ focusTurnNumber: null });
-  }, [focusTurnNumber, perceptionEntries, virtualizer]);
+    clearFocusTurnRequest(focusTurnRequest.id);
+  }, [clearFocusTurnRequest, focusTurnRequest, perceptionEntries, virtualizer]);
 
   if (perceptionEntries.length === 0) {
     return (

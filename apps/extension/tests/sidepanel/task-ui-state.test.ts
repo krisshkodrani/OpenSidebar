@@ -100,6 +100,44 @@ describe("deriveTaskUiState", () => {
     expect(state.rail.secondaryLabel).toBe("Step 1 of 1");
   });
 
+  test("compacts internal planner context in the primary rail label", () => {
+    const state = deriveTaskUiState(
+      baseState({
+        agentStatus: AgentStatus.ACTING,
+        isAgentRunning: true,
+        taskProgress: {
+          taskId: "task-1",
+          currentIndex: 0,
+          totalTurnsUsed: 0,
+          subtasks: [
+            {
+              description: [
+                "Objective: Complete the workflow for the original request:",
+                "RECENT WORKSPACE CONVERSATION:",
+                "- User: Summarize this page",
+                "PROFILE DIGEST CONTEXT:",
+                "- Fact: Full name = Kris Shkodrani",
+                "CURRENT REQUEST:",
+                "Fill the profile",
+                "Execution policy:",
+                "- Call done only when complete.",
+              ].join("\n"),
+              status: "running",
+              turnsUsed: 0,
+              turnBudget: 4,
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(state.rail.primaryLabel).toBe("Fill the profile");
+    expect(state.rail.primaryLabel).not.toContain(
+      "RECENT WORKSPACE CONVERSATION",
+    );
+    expect(state.rail.primaryLabel).not.toContain("PROFILE DIGEST CONTEXT");
+  });
+
   test("does not surface generic thinking status text", () => {
     const state = deriveTaskUiState(
       baseState({

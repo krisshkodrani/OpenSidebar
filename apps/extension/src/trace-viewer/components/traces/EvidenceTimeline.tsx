@@ -83,6 +83,7 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
         <button
           type="button"
           onClick={() => navigateToTurn(evidenceTurns[0].turnNumber)}
+          aria-label={`Start evidence review at turn ${evidenceTurns[0].turnNumber}`}
           className="text-[11px] text-trace-accent hover:underline shrink-0"
         >
           Start at T{evidenceTurns[0].turnNumber}
@@ -102,6 +103,7 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
               <button
                 type="button"
                 onClick={() => navigateToTurn(turn.turnNumber)}
+                aria-label={`Open evidence turn ${turn.turnNumber}`}
                 className="text-[12px] text-trace-accent font-semibold hover:underline shrink-0"
               >
                 T{turn.turnNumber}
@@ -121,6 +123,7 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
                   key={signal.id}
                   type="button"
                   onClick={() => openSignal(turn, signal)}
+                  aria-label={`Open ${signal.label} signal for turn ${turn.turnNumber}`}
                   title={signal.detail || signal.label}
                   className="text-left"
                 >

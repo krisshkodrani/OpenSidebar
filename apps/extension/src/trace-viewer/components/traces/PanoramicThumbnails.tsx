@@ -9,8 +9,19 @@ export default function PanoramicThumbnails({
   shots,
 }: PanoramicThumbnailsProps) {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [failedIndexes, setFailedIndexes] = useState<Set<number>>(
+    () => new Set(),
+  );
 
   if (shots.length === 0) return null;
+
+  const markFailed = (index: number) => {
+    setFailedIndexes((prev) => {
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  };
 
   return (
     <div className="mt-2">
@@ -21,18 +32,28 @@ export default function PanoramicThumbnails({
         {shots.map((shot, i) => (
           <button
             key={i}
+            type="button"
             className="group relative rounded border border-trace-border hover:border-trace-accent/50 transition-colors overflow-hidden bg-trace-bg cursor-pointer"
             onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
-            title={`${shot.label} — scroll Y=${shot.scrollY}px (click to ${expandedIdx === i ? "collapse" : "expand"})`}
+            title={`${shot.label} - scroll Y=${shot.scrollY}px (click to ${
+              expandedIdx === i ? "collapse" : "expand"
+            })`}
           >
-            <img
-              src={shot.dataUrl}
-              alt={`${shot.label} view`}
-              className="h-16 w-auto object-cover"
-              loading="lazy"
-            />
+            {failedIndexes.has(i) ? (
+              <span className="flex h-16 w-24 items-center justify-center px-2 text-center text-[10px] text-trace-dim">
+                Image unavailable
+              </span>
+            ) : (
+              <img
+                src={shot.dataUrl}
+                alt={`${shot.label} view`}
+                className="h-16 w-auto object-cover"
+                loading="lazy"
+                onError={() => markFailed(i)}
+              />
+            )}
             <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[9px] text-white text-center py-0.5">
-              {shot.label} · {shot.scrollY}px
+              {shot.label} - {shot.scrollY}px
             </span>
           </button>
         ))}
@@ -46,17 +67,25 @@ export default function PanoramicThumbnails({
             </span>
             <span>scroll Y={shots[expandedIdx].scrollY}px</span>
             <button
+              type="button"
               className="ml-auto text-trace-dim hover:text-trace-subtle transition-colors"
               onClick={() => setExpandedIdx(null)}
             >
               Close
             </button>
           </div>
-          <img
-            src={shots[expandedIdx].dataUrl}
-            alt={`${shots[expandedIdx].label} view expanded`}
-            className="max-w-full"
-          />
+          {failedIndexes.has(expandedIdx) ? (
+            <div className="p-8 text-center text-xs text-trace-dim bg-trace-panel">
+              Panoramic image unavailable
+            </div>
+          ) : (
+            <img
+              src={shots[expandedIdx].dataUrl}
+              alt={`${shots[expandedIdx].label} view expanded`}
+              className="max-w-full"
+              onError={() => markFailed(expandedIdx)}
+            />
+          )}
         </div>
       )}
     </div>

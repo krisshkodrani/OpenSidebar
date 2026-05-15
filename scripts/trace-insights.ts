@@ -22,6 +22,7 @@ export interface TraceInsightsMetricRow {
   sessions: number;
   runs: number;
   calls?: number;
+  requests?: number;
   successes?: number;
   failures?: number;
   failureRate?: number;
@@ -102,12 +103,17 @@ interface BuildTraceInsightsInput {
   filters?: TraceInsightsFilters;
 }
 
+const MAX_RUN_ROWS = 200;
+const MAX_FACET_IDS = 500;
+const MAX_TEXT_FIELD_LENGTH = 500;
+
 interface MutableMetric {
   id: string;
   label: string;
   sessions: Set<string>;
   runs: Set<string>;
   calls: number;
+  requests: number;
   successes: number;
   failures: number;
   durationMs: number;
@@ -124,6 +130,11 @@ function asString(value: unknown): string {
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function truncateText(value: string, maxLength = MAX_TEXT_FIELD_LENGTH): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 3)}...`;
 }
 
 function usageNumber(
@@ -269,6 +280,7 @@ function metric(
       sessions: new Set(),
       runs: new Set(),
       calls: 0,
+      requests: 0,
       successes: 0,
       failures: 0,
       durationMs: 0,
@@ -286,6 +298,7 @@ function recordSessionMetric(
 ): void {
   const sessionId = asString(session.sessionId);
   const runId = asString(session.runId);
+  const hadSession = sessionId ? row.sessions.has(sessionId) : false;
   if (sessionId) {
     row.sessions.add(sessionId);
     row.sampleSessionId ??= sessionId;
@@ -294,10 +307,12 @@ function recordSessionMetric(
     row.runs.add(runId);
     row.sampleRunId ??= runId;
   }
-  row.totalTurns += asNumber(session.turnCount);
-  row.totalCost += asNumber(
-    (session.metrics as { totalCost?: unknown } | null | undefined)?.totalCost,
-  );
+  if (!hadSession) {
+    row.totalTurns += asNumber(session.turnCount);
+    row.totalCost += asNumber(
+      (session.metrics as { totalCost?: unknown } | null | undefined)?.totalCost,
+    );
+  }
 }
 
 function finalizeMetricRows(map: Map<string, MutableMetric>): TraceInsightsMetricRow[] {
@@ -308,6 +323,7 @@ function finalizeMetricRows(map: Map<string, MutableMetric>): TraceInsightsMetri
       sessions: row.sessions.size,
       runs: row.runs.size,
       calls: row.calls || undefined,
+      requests: row.requests || undefined,
       successes: row.successes || undefined,
       failures: row.failures || undefined,
       failureRate: row.calls > 0 ? row.failures / row.calls : undefined,
@@ -317,7 +333,9 @@ function finalizeMetricRows(map: Map<string, MutableMetric>): TraceInsightsMetri
       totalCost: row.totalCost || undefined,
       sampleSessionId: row.sampleSessionId,
       sampleRunId: row.sampleRunId,
-      sampleError: row.sampleError,
+      sampleError: row.sampleError
+        ? truncateText(row.sampleError)
+        : row.sampleError,
     }))
     .sort((a, b) => {
       const failureDelta = (b.failures ?? 0) - (a.failures ?? 0);
@@ -511,6 +529,17 @@ export function buildTraceInsights({
         totalLlmDurationMs += durationMs;
         llmDurationCount += 1;
       }
+      const request =
+        entry.llmRequest && typeof entry.llmRequest === "object"
+          ? (entry.llmRequest as Record<string, unknown>)
+          : null;
+      const requestModel = asString(request?.model);
+      if (requestModel) {
+        const row = metric(models, requestModel);
+        recordSessionMetric(row, session);
+        row.requests += 1;
+        row.durationMs += durationMs;
+      }
 
       const executions = Array.isArray(entry.toolExecutions)
         ? entry.toolExecutions
@@ -562,7 +591,11 @@ export function buildTraceInsights({
   }
 
   for (const key of Object.keys(facets) as Array<keyof TraceInsightsFacets>) {
-    facets[key] = Array.from(facetSets[key]).sort();
+    const values = Array.from(facetSets[key]).sort();
+    facets[key] =
+      key === "runs" || key === "sessions"
+        ? values.slice(0, MAX_FACET_IDS)
+        : values;
   }
 
   const runRows = Array.from(runs.values())
@@ -574,7 +607,7 @@ export function buildTraceInsights({
       const latest = Math.max(...sortedSessions.map((s) => asNumber(s.endTime)));
       return {
         runId: run.runId,
-        query: run.query,
+        query: truncateText(run.query),
         outcome: run.outcome,
         sessions: sortedSessions.length,
         failedSessions: sortedSessions.filter((s) => !isSuccessOutcome(s.outcome)).length,
@@ -601,10 +634,11 @@ export function buildTraceInsights({
 
   const totalSessions = selected.length;
   const failedSessions = totalSessions - completedSessions;
+  const totalRuns = runRows.length;
   return {
     summary: {
       totalSessions,
-      totalRuns: runRows.length,
+      totalRuns,
       completedSessions,
       failedSessions,
       successRate: totalSessions === 0 ? 0 : completedSessions / totalSessions,
@@ -635,6 +669,6 @@ export function buildTraceInsights({
     models: finalizeMetricRows(models),
     failures: finalizeMetricRows(failures),
     events: finalizeMetricRows(events),
-    runs: runRows,
+    runs: runRows.slice(0, MAX_RUN_ROWS),
   };
 }

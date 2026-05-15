@@ -50,6 +50,11 @@ export interface RunGroup {
   expanded: boolean;
 }
 
+export interface FocusTurnRequest {
+  id: number;
+  turnNumber: number;
+}
+
 // ── Slice Interfaces ───────────────────────────────────────────
 
 export interface TracesSlice {
@@ -70,6 +75,7 @@ export interface TracesSlice {
   activeSubview: Subview;
   setActiveSubview: (view: Subview) => void;
   scrollPositions: ScrollPositions;
+  scrollPositionOrder: string[];
   saveScrollPosition: (view: Subview, position: number) => void;
   tracesLoading: boolean;
   tracesError: string | null;
@@ -89,6 +95,9 @@ export interface TracesSlice {
   setTraceListMode: (mode: "sessions" | "runs") => void;
   /** Turn number to scroll to after a tab switch (cleared after scroll completes) */
   focusTurnNumber: number | null;
+  focusTurnRequest: FocusTurnRequest | null;
+  nextFocusRequestId: number;
+  clearFocusTurnRequest: (requestId?: number) => void;
   /** Switch to Turns tab and scroll to a specific turn */
   navigateToTurn: (turnNumber: number) => void;
   /** Switch to Perception tab and scroll to a specific turn's perception */

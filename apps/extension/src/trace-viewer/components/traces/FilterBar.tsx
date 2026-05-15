@@ -139,6 +139,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       {/* Filters */}
       <Tooltip content="Filter by session outcome (completed, error, etc.)">
         <select
+          aria-label="Filter by outcome"
           value={filters.outcome}
           onChange={(e) => handleSelectChange("outcome", e.target.value)}
           className={selectClass}
@@ -154,6 +155,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
 
       <Tooltip content="Filter by day">
         <select
+          aria-label="Filter by day"
           value={filters.day}
           onChange={(e) => {
             if (e.target.value !== "all") {
@@ -175,6 +177,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
 
       <Tooltip content="Filter by LLM model used">
         <select
+          aria-label="Filter by model"
           value={filters.model}
           onChange={(e) => handleSelectChange("model", e.target.value)}
           className={selectClass}
@@ -191,6 +194,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       {availableSkills.length > 0 && (
         <Tooltip content="Filter by skill used in this session">
           <select
+            aria-label="Filter by skill"
             value={filters.skill}
             onChange={(e) => handleSelectChange("skill", e.target.value)}
             className={selectClass}
@@ -208,6 +212,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       <Tooltip content="Filter by website/domain">
         <input
           type="text"
+          aria-label="Filter by website domain"
           value={localDomain}
           onChange={(e) => setLocalDomain(e.target.value)}
           placeholder="Website"
@@ -226,6 +231,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         ).map(([label, days]) => (
           <button
             key={label}
+            type="button"
             onClick={() => handleDatePreset(days, 0)}
             className="bg-white text-trace-subtle border border-trace-border rounded px-1.5 py-1.5 text-[10px] cursor-pointer hover:border-trace-accent hover:text-trace-text transition-colors shadow-sm"
           >
@@ -236,6 +242,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
 
       {hasActiveFilters && (
         <button
+          type="button"
           onClick={handleClearAll}
           className="text-[10px] text-trace-muted hover:text-trace-accent-light transition-colors ml-1"
         >

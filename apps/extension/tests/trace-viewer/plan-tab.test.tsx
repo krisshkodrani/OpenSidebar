@@ -10,6 +10,18 @@ function resetStore() {
   useStore.setState((useStore as any).getInitialState(), true);
 }
 
+const enrichedObjective = [
+  "Objective: Complete the workflow for the original request:",
+  "RECENT WORKSPACE CONVERSATION:",
+  "- Assistant: long previous answer",
+  "PROFILE DIGEST CONTEXT:",
+  "- Fact: Email = kshkodrani@gmail.com",
+  "CURRENT REQUEST:",
+  "Fill the profile",
+  "Planner assumptions:",
+  "- No explicit assumptions from planner.",
+].join("\n");
+
 describe("PlanTab", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -202,5 +214,45 @@ describe("PlanTab", () => {
     expect(container.textContent).toContain(
       "No plan decomposition available for this session.",
     );
+  });
+
+  test("compacts internal context in embedded plan objectives", async () => {
+    await act(async () => {
+      root.render(
+        <PlanTab
+          session={
+            {
+              sessionId: "session-1",
+              query: enrichedObjective,
+              startUrl: "https://example.com",
+              outcome: "completed",
+              startTime: 100,
+              endTime: 300,
+              turnCount: 1,
+              summary: "done",
+              metrics: null,
+              planDecomposition: {
+                subtasks: [enrichedObjective],
+                steps: [
+                  {
+                    objective: enrichedObjective,
+                    successCriteria: "The form is filled.",
+                    dependencies: [],
+                    assumptions: [],
+                  },
+                ],
+              },
+            } as any
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Fill the profile");
+    expect(container.textContent).toContain("Step 1: Fill the profile");
+    expect(container.textContent).not.toContain(
+      "RECENT WORKSPACE CONVERSATION",
+    );
+    expect(container.textContent).not.toContain("PROFILE DIGEST CONTEXT");
   });
 });

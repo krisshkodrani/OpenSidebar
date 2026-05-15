@@ -134,6 +134,7 @@ describe("trace insights", () => {
     expect(result.models[0]).toMatchObject({
       id: "openai/gpt-5.4-mini",
       sessions: 2,
+      requests: 2,
     });
     expect(result.failures[0]).toMatchObject({
       id: "tool_execution",
@@ -191,5 +192,31 @@ describe("trace insights", () => {
     expect(result.summary.totalSessions).toBe(1);
     expect(result.summary.failedSessions).toBe(1);
     expect(result.facets.sessions).toEqual(["s2"]);
+  });
+
+  test("bounds heavy run rows while preserving aggregate counts", () => {
+    const sessions = Array.from({ length: 250 }, (_, index) => ({
+      sessionId: `s${index}`,
+      runId: `run-${index}`,
+      startTime: Date.UTC(2026, 3, 15, 9, index, 0),
+      endTime: Date.UTC(2026, 3, 15, 9, index + 1, 0),
+      query: `Objective: ${"x".repeat(800)}`,
+      startUrl: "https://example.com",
+      outcome: "completed",
+      turnCount: 1,
+      metrics: null,
+    }));
+
+    const result = buildTraceInsights({
+      sessions,
+      entriesBySession: new Map(),
+    });
+
+    expect(result.summary.totalRuns).toBe(250);
+    expect(result.runs).toHaveLength(200);
+    expect(result.runs[0].query).toHaveLength(500);
+    expect(result.runs[0].query.endsWith("...")).toBe(true);
+    expect(result.facets.runs).toHaveLength(250);
+    expect(result.facets.sessions).toHaveLength(250);
   });
 });

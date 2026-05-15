@@ -85,6 +85,11 @@ export interface ProfileAnalysisResult {
   analyzer: AnalyzerMetadata;
 }
 
+export type ProfileDigestItemPatch = Pick<
+  DigestItem,
+  "label" | "value" | "kind"
+>;
+
 export const DEFAULT_PROFILE_NOTES_MARKDOWN = [
   "# About me",
   "",
@@ -103,6 +108,12 @@ export const DEFAULT_PROFILE_NOTES_MARKDOWN = [
   "# Sensitive / do not use",
   "",
 ].join("\n");
+
+const DIGEST_REVIEW_START_MARKER =
+  "<!-- opensidebar:digest-review:start -->";
+const DIGEST_REVIEW_END_MARKER = "<!-- opensidebar:digest-review:end -->";
+const DIGEST_REVIEW_INTRO =
+  "Corrections in this block are user-reviewed and take priority over earlier notes.";
 
 export const EMPTY_PERSONALIZATION_STATE: PersonalizationState = {
   version: 2,
@@ -279,6 +290,69 @@ function normalizeDigest(input: unknown, notesHash: string): ProfileDigest | nul
     analyzerVersion: analyzerVersion || PROFILE_ANALYZER_VERSION,
     items,
   };
+}
+
+function formatDigestItemReference(item: DigestItem): string {
+  return `[${item.kind}] ${item.label} = ${item.value}`;
+}
+
+function formatDigestReviewCorrection(params: {
+  action: "replace" | "delete";
+  original: DigestItem;
+  replacement?: DigestItem;
+}): string {
+  if (params.action === "delete") {
+    return `- Do not include or use digest item: ${formatDigestItemReference(
+      params.original,
+    )}.`;
+  }
+  return `- Replace digest item: ${formatDigestItemReference(
+    params.original,
+  )} -> ${formatDigestItemReference(params.replacement ?? params.original)}.`;
+}
+
+function appendDigestReviewCorrection(
+  notesMarkdown: string,
+  correctionLine: string,
+): string {
+  const startIndex = notesMarkdown.indexOf(DIGEST_REVIEW_START_MARKER);
+  const endIndex = notesMarkdown.indexOf(DIGEST_REVIEW_END_MARKER);
+  if (startIndex >= 0 && endIndex > startIndex) {
+    const beforeEnd = notesMarkdown.slice(0, endIndex).trimEnd();
+    const afterEnd = notesMarkdown.slice(endIndex);
+    return `${beforeEnd}\n${correctionLine}\n${afterEnd}`;
+  }
+
+  const prefix = notesMarkdown.trimEnd();
+  const block = [
+    "# Digest review corrections",
+    DIGEST_REVIEW_START_MARKER,
+    DIGEST_REVIEW_INTRO,
+    correctionLine,
+    DIGEST_REVIEW_END_MARKER,
+  ].join("\n");
+  return prefix ? `${prefix}\n\n${block}\n` : `${block}\n`;
+}
+
+function assertProfileNotesLength(notesMarkdown: string): void {
+  if (notesMarkdown.length > PROFILE_NOTES_MAX_CHARS) {
+    throw new Error(
+      `Profile Notes must be ${PROFILE_NOTES_MAX_CHARS.toLocaleString()} characters or fewer.`,
+    );
+  }
+}
+
+function normalizeDigestItemPatch(patch: ProfileDigestItemPatch): DigestItem {
+  const item = normalizeDigestItem({
+    label: patch.label,
+    value: patch.value,
+    kind: patch.kind,
+    confidence: "high",
+  });
+  if (!item) {
+    throw new Error("Digest item label and value are required.");
+  }
+  return item;
 }
 
 function normalizeAnalyzerMetadata(input: unknown): AnalyzerMetadata | null {
@@ -465,6 +539,87 @@ export async function saveProfileAnalysisResult(
     {
       digest: result.digest,
       analyzer: result.analyzer,
+    },
+    storage,
+  );
+}
+
+export async function updateProfileDigestItem(
+  itemId: string,
+  patch: ProfileDigestItemPatch,
+  storage: PersonalProfileStorage = defaultStorage(),
+): Promise<PersonalizationState> {
+  const current = await loadPersonalizationState(storage);
+  if (!current.digest) {
+    throw new Error("Profile digest is not ready.");
+  }
+  const itemIndex = current.digest.items.findIndex((item) => item.id === itemId);
+  if (itemIndex < 0) {
+    throw new Error("Digest item not found.");
+  }
+
+  const original = current.digest.items[itemIndex];
+  const replacement = normalizeDigestItemPatch(patch);
+  const nextNotesMarkdown = appendDigestReviewCorrection(
+    current.notesMarkdown,
+    formatDigestReviewCorrection({
+      action: "replace",
+      original,
+      replacement,
+    }),
+  );
+  assertProfileNotesLength(nextNotesMarkdown);
+  const nextNotesHash = hashProfileNotes(nextNotesMarkdown);
+  const nextDigest: ProfileDigest = {
+    ...current.digest,
+    notesHash: nextNotesHash,
+    items: normalizeDigestItems([
+      ...current.digest.items.slice(0, itemIndex),
+      replacement,
+      ...current.digest.items.slice(itemIndex + 1),
+    ]),
+  };
+
+  return savePersonalizationState(
+    {
+      notesMarkdown: nextNotesMarkdown,
+      digest: nextDigest,
+    },
+    storage,
+  );
+}
+
+export async function deleteProfileDigestItem(
+  itemId: string,
+  storage: PersonalProfileStorage = defaultStorage(),
+): Promise<PersonalizationState> {
+  const current = await loadPersonalizationState(storage);
+  if (!current.digest) {
+    throw new Error("Profile digest is not ready.");
+  }
+  const item = current.digest.items.find((candidate) => candidate.id === itemId);
+  if (!item) {
+    throw new Error("Digest item not found.");
+  }
+
+  const nextNotesMarkdown = appendDigestReviewCorrection(
+    current.notesMarkdown,
+    formatDigestReviewCorrection({ action: "delete", original: item }),
+  );
+  assertProfileNotesLength(nextNotesMarkdown);
+  const nextNotesHash = hashProfileNotes(nextNotesMarkdown);
+  const nextDigest: ProfileDigest = {
+    ...current.digest,
+    notesHash: nextNotesHash,
+    items: normalizeDigestItems(
+      current.digest.items.filter((candidate) => candidate.id !== itemId),
+    ),
+  };
+
+  return savePersonalizationState(
+    {
+      notesMarkdown: nextNotesMarkdown,
+      digest: nextDigest,
     },
     storage,
   );
@@ -714,6 +869,9 @@ export function buildProfileAnalyzerSystemPrompt(): string {
     "- Use open_question for missing or ambiguous information that would be useful to ask the user.",
     "- Do not classify vague goals or themes as facts.",
     "- Do not turn themes into exact application answers.",
+    `- If the notes include a ${DIGEST_REVIEW_START_MARKER} block, treat that block as user-reviewed corrections with priority over earlier conflicting notes.`,
+    '- Honor "Do not include or use digest item" corrections by omitting that item from the digest unless a later correction explicitly replaces it.',
+    '- Honor "Replace digest item" corrections by extracting the replacement item instead of the original item.',
     "",
     "Output schema:",
     '{"items":[{"label":"short label","value":"short extracted value","kind":"fact | preference | constraint | theme | sensitive | open_question","confidence":"high | medium | low","sourceQuote":"optional short quote from notes"}]}',

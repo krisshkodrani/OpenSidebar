@@ -12,10 +12,12 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useStore } from "../../store";
 import type { TraceSession } from "../../../types/traces";
+import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import {
   outcomeClass,
+  formatCount,
   formatTime,
   formatCost,
   getSessionModels,
@@ -211,7 +213,7 @@ function createColumns(
       header: "Run",
       size: 80,
       enableSorting: false,
-      accessorFn: (row) => (row as any).runId as string | undefined,
+      accessorFn: (row) => row.runId,
       cell: ({ row }) => {
         const runId = row.getValue<string | undefined>("runId");
         return (
@@ -323,8 +325,9 @@ export default function UnifiedSessionsTableView({
 
   // Count unique runs from filtered rows
   const uniqueRuns = new Set(
-    rows.map((r) => (r.original as any).runId).filter(Boolean),
+    rows.map((r) => r.original.runId).filter(Boolean),
   );
+  const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -398,6 +401,16 @@ export default function UnifiedSessionsTableView({
                 data-index={virtualRow.index}
                 ref={virtualizer.measureElement}
                 onClick={() => onSelect(row.original.sessionId)}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(row.original.sessionId);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open trace session ${row.original.sessionId}`}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -425,8 +438,12 @@ export default function UnifiedSessionsTableView({
       </div>
 
       <div className="px-4 py-1.5 text-[10px] text-trace-muted border-t border-trace-border/50 shrink-0">
-        {rows.length} sessions
-        {uniqueRuns.size > 0 && ` · ${uniqueRuns.size} runs`}
+        {formatCount(rows.length)} sessions shown
+        {uniqueRuns.size > 0 && ` - ${formatCount(uniqueRuns.size)} runs`}
+        {sessionsLimitReached &&
+          ` - loaded list capped at ${formatCount(
+            TRACE_SESSION_SEARCH_LIMIT,
+          )} sessions`}
       </div>
     </div>
   );

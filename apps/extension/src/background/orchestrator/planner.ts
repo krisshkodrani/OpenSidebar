@@ -144,6 +144,10 @@ interface DecompositionStep {
   toolProfile?: ToolProfile;
 }
 
+export interface BuildNodesOptions {
+  displayQuery?: string;
+}
+
 const MULTI_TAB_CHECKLIST_SKILL_ID = "multi-tab-checklist-workflow";
 const PAGINATED_TABLE_SCAN_SKILL_ID = "paginated-table-scan";
 const SKILL_OWNED_WORKFLOW_IDS = new Set([
@@ -262,17 +266,24 @@ function isSkillOwnedMultiTabChecklistRequest(
   );
 }
 
+function displayQueryOrFallback(query: string, displayQuery?: string): string {
+  const compactDisplayQuery = compactText(displayQuery || "");
+  return compactDisplayQuery || compactText(query);
+}
+
 function collapseAllMultiTabChecklistNodes(
   query: string,
   nodes: TaskNode[],
+  displayQuery?: string,
 ): TaskNode[] {
   const firstNode = nodes[0];
+  const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
   return [
     {
       ...firstNode,
       description: compactText(
         [
-          `Complete the multi-tab checklist workflow for the original request: ${query}`,
+          `Complete the multi-tab checklist workflow for the original request: ${taskLabelQuery}`,
           ...nodes.map((node) => node.description),
         ].join(" "),
       ),
@@ -338,13 +349,15 @@ function isSkillOwnedPaginatedAggregateScan(
 function collapsePaginatedAggregateScanNodes(
   query: string,
   nodes: TaskNode[],
+  displayQuery?: string,
 ): TaskNode[] {
   const firstNode = nodes[0];
+  const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
   return [
     {
       ...firstNode,
       description: compactText(
-        `Scan the full paginated data surface for the original request and answer it: ${query}`,
+        `Scan the full paginated data surface for the original request and answer it: ${taskLabelQuery}`,
       ),
       successCriteria: compactText(
         [
@@ -374,9 +387,10 @@ function collapsePaginatedAggregateScanNodes(
 function collapseMultiTabChecklistNodes(
   nodes: TaskNode[],
   query: string,
+  displayQuery?: string,
 ): TaskNode[] {
   if (isSkillOwnedMultiTabChecklistRequest(query, nodes)) {
-    return collapseAllMultiTabChecklistNodes(query, nodes);
+    return collapseAllMultiTabChecklistNodes(query, nodes, displayQuery);
   }
 
   if (nodes.length < 3 || nodes.length % 3 !== 0) return nodes;
@@ -448,9 +462,10 @@ function collapseMultiTabChecklistNodes(
 function collapsePaginatedTableScanNodes(
   nodes: TaskNode[],
   query: string,
+  displayQuery?: string,
 ): TaskNode[] {
   return isSkillOwnedPaginatedAggregateScan(query, nodes)
-    ? collapsePaginatedAggregateScanNodes(query, nodes)
+    ? collapsePaginatedAggregateScanNodes(query, nodes, displayQuery)
     : nodes;
 }
 
@@ -484,9 +499,11 @@ function collapseSkillOwnedWorkflowNodes(
   pageTitle?: string,
   pageUrl?: string,
   skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
 ): TaskNode[] {
   if (nodes.length < 2) return nodes;
-  if (shouldPreserveSeparateFormUpdateNodes(nodes, query)) return nodes;
+  const taskLabelQuery = displayQueryOrFallback(query, displayQuery);
+  if (shouldPreserveSeparateFormUpdateNodes(nodes, taskLabelQuery)) return nodes;
 
   const selection = selectPrimarySkill({
     query,
@@ -509,17 +526,19 @@ function collapseSkillOwnedWorkflowNodes(
   }
 
   const firstNode = nodes[0];
-  const navigationOnly = isNavigationOnlyTask(query);
+  const navigationOnly = isNavigationOnlyTask(taskLabelQuery);
   return [
     {
       ...firstNode,
       selectedSkillId: selection.id,
       selectedSkillReason: selection.reason,
       description: navigationOnly
-        ? compactText(`Navigate according to the original request: ${query}`)
+        ? compactText(
+            `Navigate according to the original request: ${taskLabelQuery}`,
+          )
         : compactText(
             [
-              `Complete the workflow for the original request: ${query}`,
+              `Complete the workflow for the original request: ${taskLabelQuery}`,
               ...nodes.map((node) => node.description),
             ].join(" "),
           ),
@@ -555,6 +574,7 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
   pageTitle?: string,
   pageUrl?: string,
   skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
 ): TaskNode[] {
   if (nodes.length !== 1) return nodes;
 
@@ -579,22 +599,24 @@ function preserveOriginalScopeForSingleSkillOwnedNode(
   }
 
   const node = nodes[0];
-  const compactQuery = compactText(query);
+  const compactQuery = displayQueryOrFallback(query, displayQuery);
   const compactDescription = compactText(node.description);
   if (!compactQuery || compactDescription.includes(compactQuery)) {
     return nodes;
   }
 
-  const navigationOnly = isNavigationOnlyTask(query);
+  const navigationOnly = isNavigationOnlyTask(compactQuery);
   return [
     {
       ...node,
       selectedSkillId: selection.id,
       selectedSkillReason: selection.reason,
       description: navigationOnly
-        ? compactText(`Navigate according to the original request: ${query}`)
+        ? compactText(
+            `Navigate according to the original request: ${compactQuery}`,
+          )
         : compactText(
-            `Complete the workflow for the original request: ${query}`,
+            `Complete the workflow for the original request: ${compactQuery}`,
           ),
       successCriteria: navigationOnly
         ? navigationOnlySuccessCriteria()
@@ -935,7 +957,9 @@ export class OrchestratorPlanner {
     pageUrl: string,
     skillCatalogOptions?: SkillCatalogOptions,
     signal?: AbortSignal,
+    options?: BuildNodesOptions,
   ): Promise<BuildNodesResult> {
+    const displayQuery = options?.displayQuery;
     const decomposition = await this.planner.decompose(
       query,
       pageTitle,
@@ -1012,7 +1036,7 @@ export class OrchestratorPlanner {
       );
     } else {
       nodes = buildFallbackNodes(
-        query,
+        displayQueryOrFallback(query, displayQuery),
         "planned",
         pageTitle,
         pageUrl,
@@ -1020,7 +1044,11 @@ export class OrchestratorPlanner {
       );
     }
 
-    const collapsedMultiTabNodes = collapseMultiTabChecklistNodes(nodes, query);
+    const collapsedMultiTabNodes = collapseMultiTabChecklistNodes(
+      nodes,
+      query,
+      displayQuery,
+    );
     if (collapsedMultiTabNodes !== nodes) {
       nodes = collapsedMultiTabNodes;
       logger.info(
@@ -1033,6 +1061,7 @@ export class OrchestratorPlanner {
     const collapsedPaginatedNodes = collapsePaginatedTableScanNodes(
       nodes,
       query,
+      displayQuery,
     );
     if (collapsedPaginatedNodes !== nodes) {
       nodes = collapsedPaginatedNodes;
@@ -1049,6 +1078,7 @@ export class OrchestratorPlanner {
       pageTitle,
       pageUrl,
       skillCatalogOptions,
+      displayQuery,
     );
     if (collapsedSkillOwnedWorkflowNodes !== nodes) {
       nodes = collapsedSkillOwnedWorkflowNodes;
@@ -1068,6 +1098,7 @@ export class OrchestratorPlanner {
       pageTitle,
       pageUrl,
       skillCatalogOptions,
+      displayQuery,
     );
     if (originalScopedNodes !== nodes) {
       nodes = originalScopedNodes;

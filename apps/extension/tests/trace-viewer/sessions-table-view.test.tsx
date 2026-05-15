@@ -65,7 +65,7 @@ describe("SessionsTableView", () => {
     expect(container.textContent).toContain("Verify model fallback");
     expect(container.textContent).toContain("gpt-5.4-mini:nitro");
 
-    const row = container.querySelector('[data-index="0"] > div');
+    const row = container.querySelector('[data-index="0"] > button');
     expect(row).not.toBeNull();
 
     await act(async () => {
