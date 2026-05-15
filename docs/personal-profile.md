@@ -1,60 +1,100 @@
-# Personal Profile
+# Profile Notes And Digest
 
-OpenSidebar supports one local saved profile for form and application tasks. The
-profile is edited in the sidepanel through **Personalize** and is stored in the
-browser runtime storage adapter.
+OpenSidebar supports one local personalization surface for form and application
+tasks. The profile is no longer a field-heavy schema. Users maintain markdown
+**Profile Notes**, then explicitly run **Analyze Notes** to generate a compact
+**Profile Digest**.
 
-## V1 Decisions
+The notes are the user's source material. The digest is a reviewable index the
+runtime can use conservatively.
 
-1. Screenshots stay enabled by default. Personalization does not turn off debug
-   screenshots after profile values are filled.
-2. The **Use saved profile** toggle is persistent for the local browser profile.
-3. V1 supports only one local profile. Multiple personas are out of scope.
+## V2 Decisions
+
+1. Profile Notes are stored locally in the browser runtime storage adapter.
+2. Digest analysis is explicit; it is not run on every edit.
+3. Fireworks Kimi K2.6 is the initial analyzer when a Fireworks key is
+   configured.
+4. The digest is stale when the notes hash, digest schema version, or analyzer
+   version changes.
+5. V2 supports only one local notes profile. Multiple personas are out of scope.
+6. Job-application-specific fields are not first-class profile schema.
 
 ## Runtime Behavior
 
-- The sidepanel stores profile data under `opensidebar:personalProfile`.
+- The sidepanel stores profile state under `opensidebar:personalProfile`.
 - The overlay harness uses the same storage port shape with its local adapter.
-- The planner only receives a short note that a saved profile is available for
-  application or form tasks.
-- Exact profile values are not injected into the task prompt. The agent must call
-  `get_profile_fields` for specific fields before typing saved profile data.
-- If profile use is off or no saved profile exists, `get_profile_fields` returns
-  a disabled message and the agent should ask the user to personalize the harness
-  or turn on **Use saved profile**.
+- The planner receives only selected digest items relevant to the task.
+- The full markdown notes are not injected into normal runtime prompts.
+- The agent may use digest facts for exact matching fields.
+- The agent may use preferences to choose among clear visible options.
+- The agent treats constraints as hard boundaries.
+- The agent may use themes for drafting, not exact form values.
+- Sensitive items are excluded unless the user explicitly asks to use them.
+- Open questions are never used for filling; they are unresolved context.
+- If a field cannot be filled safely, the harness reports it at the end instead
+  of guessing.
 - Final submission of applications remains covered by the normal approval flow.
 
 ## Supported Shape
 
-The v1 profile schema is intentionally small and form-oriented:
+The v2 personalization state is intentionally small:
 
-- `identity`: first name, last name, preferred name, pronouns
-- `contact`: email, phone, location, address
-- `links`: LinkedIn, portfolio, GitHub, website
-- `preferences`: roles, locations, work modes, salary, available date
-- `authorization`: work authorization, sponsorship, relocation
-- `answers`: availability, why interested, cover note
-- `sensitive.eeo`: optional EEO answers
+- `notesMarkdown`: user-owned markdown source notes.
+- `notesHash`: content hash used for stale digest detection.
+- `digest.items`: flat list of extracted digest items.
+- `analyzer`: provider/model/version/timestamp metadata for the latest saved
+  digest.
+
+Digest item kinds:
+
+- `fact`
+- `preference`
+- `constraint`
+- `theme`
+- `sensitive`
+- `open_question`
+
+## Profile Notes Template
+
+The UI offers this starter structure as a placeholder, not as required fields:
+
+```md
+# About me
+
+# Contact and links
+
+# Work preferences
+
+# Availability
+
+# Authorization and relocation
+
+# Writing style
+
+# Things to avoid
+
+# Sensitive / do not use
+```
 
 ## Field Requests
 
-The agent should request only the exact fields it needs:
+The compatibility tool `get_profile_fields` now reads exact fact-like values
+from a ready Profile Digest. It accepts labels or path-like names:
 
 ```json
-{ "fields": ["identity.first_name", "contact.email"] }
+{ "fields": ["full_name", "email", "location"] }
 ```
 
-Common aliases are supported:
-
-- `full_name` and `identity.full_name`
-- `email`
-- `phone`
-- `location`
+If profile use is off, notes are missing, the digest is stale, or no matching
+fact exists, the tool reports missing fields. The agent must not infer missing
+values from themes or preferences.
 
 ## Privacy Notes
 
-Profile values are local to the runtime storage adapter. Trace recording redacts
-profile values after they are returned by `get_profile_fields`, including later
-tool arguments and model messages that contain those exact values. Screenshots
-can still show page content by design, because screenshots remain enabled by
-default for v1.
+Profile values are local to the runtime storage adapter by default. Running
+analysis sends the markdown notes to the configured model provider only after
+the user clicks **Analyze Notes**.
+
+Trace recording should redact digest values after they are returned by
+`get_profile_fields`, including later tool arguments and model messages that
+contain those exact values. Screenshots can still show page content by design.

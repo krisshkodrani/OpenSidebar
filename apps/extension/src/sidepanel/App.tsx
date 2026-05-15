@@ -34,7 +34,10 @@ import { useTranscriptAutoScroll } from "./hooks/useTranscriptAutoScroll";
 import { useComposerActions } from "./hooks/useComposerActions";
 import { useSkillRecordingActions } from "./hooks/useSkillRecordingActions";
 import { useTaskUiState } from "./task-ui-state";
-import { hasUsablePersonalProfile } from "../utils/personal-profile";
+import {
+  hasReadyProfileDigest,
+  hasUsablePersonalProfile,
+} from "../utils/personal-profile";
 
 const SUGGESTED_ACTIONS = [
   "Summarize this page",
@@ -141,6 +144,10 @@ export default function App({ themeRoot }: AppProps = {}) {
   const splashLogoUrl = uiRuntime.getUrl("public/icons/icon-128.png");
   const hasPersonalProfile = useMemo(
     () => hasUsablePersonalProfile(personalProfileState),
+    [personalProfileState],
+  );
+  const profileDigestReady = useMemo(
+    () => hasReadyProfileDigest(personalProfileState),
     [personalProfileState],
   );
 
@@ -325,10 +332,9 @@ export default function App({ themeRoot }: AppProps = {}) {
             </div>
           )}
           {isAgentRunning &&
-            personalProfileState.enabled &&
-            hasPersonalProfile && (
+            profileDigestReady && (
               <div className="mx-4 mt-2 rounded-lg border border-primary-200 bg-primary-50/80 px-3 py-2 text-xs text-primary-800 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-200">
-                Saved profile available for form fields.
+                Profile Digest available for this run.
               </div>
             )}
           {error && (

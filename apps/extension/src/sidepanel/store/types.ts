@@ -23,7 +23,7 @@ import type {
 } from "../../types";
 import type {
   PersonalizationState,
-  PersonalProfile,
+  ProfileAnalysisResult,
 } from "../../utils/personal-profile";
 
 // --- Slice Interfaces ---
@@ -168,10 +168,15 @@ export interface WebsiteSkillsSlice {
 export interface PersonalProfileSlice {
   personalProfileState: PersonalizationState;
   loadPersonalProfile: () => Promise<void>;
-  savePersonalProfile: (
-    profile: PersonalProfile,
+  savePersonalProfileNotes: (
+    notesMarkdown: string,
     enabled?: boolean,
   ) => Promise<void>;
+  savePersonalProfileAnalysis: (
+    result: ProfileAnalysisResult,
+  ) => Promise<boolean>;
+  analyzePersonalProfileNotes: () => Promise<void>;
+  clearPersonalProfileDigest: () => Promise<void>;
   deletePersonalProfile: () => Promise<void>;
   setPersonalProfileEnabled: (enabled: boolean) => Promise<void>;
 }

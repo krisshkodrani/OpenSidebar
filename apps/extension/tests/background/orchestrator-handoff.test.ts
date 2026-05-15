@@ -175,7 +175,7 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Selected workflow skill:");
     expect(instruction).toContain("structured-form-fill");
     expect(instruction).toContain("Skill procedure:");
-    expect(instruction).toContain("call get_profile_fields for the exact needed fields");
+    expect(instruction).toContain("call get_profile_fields for exact needed facts");
     expect(instruction).toContain("Skill evidence requirements:");
     expect(instruction).toContain("Skill execution contract:");
     expect(instruction).toContain("Sequence to preserve:");
@@ -320,7 +320,7 @@ describe("Orchestrator handoff briefing", () => {
 
     expect(instruction).toContain("PERSONAL CONTEXT:");
     expect(instruction).toContain("professional_summary");
-    expect(instruction).toContain("For exact form values, call get_profile_fields");
+    expect(instruction).toContain("facts can fill exact matching fields");
     expect(instruction).toContain("JOB APPLICATION POLICY:");
   });
 

@@ -16,7 +16,10 @@ import { useRealtimeVoiceAnnouncements } from "../hooks/useRealtimeVoiceAnnounce
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
-import { hasUsablePersonalProfile } from "../../utils/personal-profile";
+import {
+  hasUsablePersonalProfile,
+  isProfileDigestStale,
+} from "../../utils/personal-profile";
 
 interface InputAreaProps {
   onSend: (text: string) => void;
@@ -90,6 +93,10 @@ export function InputArea({
   const realtimeVoiceEnabled = settings.voiceMode === "openai_realtime";
   const profileAvailable = hasUsablePersonalProfile(personalProfileState);
   const profileActive = personalProfileState.enabled && profileAvailable;
+  const profileDigestReady =
+    profileActive &&
+    Boolean(personalProfileState.digest) &&
+    !isProfileDigestStale(personalProfileState);
   const realtimeVoice = useOpenAIRealtimeVoice({
     startTask: onSend,
     sendGuidance: onSendFeedback,
@@ -272,12 +279,16 @@ export function InputArea({
                 }`}
                 title={
                   profileAvailable
-                    ? "Use saved profile"
-                    : "Add a saved profile"
+                    ? "Use Profile Notes"
+                    : "Add Profile Notes"
                 }
               >
                 <UserRound size={12} />
-                {profileActive ? "Profile on" : "Profile off"}
+                {profileDigestReady
+                  ? "Digest ready"
+                  : profileActive
+                    ? "Notes on"
+                    : "Profile off"}
               </button>
             </div>
             <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">

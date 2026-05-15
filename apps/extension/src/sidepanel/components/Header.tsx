@@ -82,7 +82,7 @@ export function Header({
               : "text-warm-500 hover:text-warm-700 dark:hover:text-warm-300"
           }`}
           aria-label="Personalize"
-          title={profileActive ? "Saved profile on" : "Personalize"}
+          title={profileActive ? "Profile Notes on" : "Personalize"}
         >
           <UserRound size={16} />
         </button>

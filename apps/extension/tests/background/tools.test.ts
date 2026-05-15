@@ -12,8 +12,9 @@ import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
 import { ToolName } from "../../src/types";
 import {
-  EMPTY_PERSONAL_PROFILE,
   PERSONAL_PROFILE_STORAGE_KEY,
+  PROFILE_ANALYZER_VERSION,
+  hashProfileNotes,
 } from "../../src/utils/personal-profile";
 
 // Register all tools once
@@ -6246,26 +6247,45 @@ describe("Tool Registration", () => {
     expect(def).toBeDefined();
     expect(def!.function.parameters.required).toContain("fields");
     expect(def!.function.parameters.properties.fields.type).toBe("array");
-    expect(def!.function.description).toContain("local personal profile");
+    expect(def!.function.description).toContain("Profile Digest");
   });
 
-  test("get_profile_fields reads the local saved profile", async () => {
+  test("get_profile_fields reads ready local Profile Digest facts", async () => {
+    const notesMarkdown =
+      "# About me\nMy name is John Doe.\nEmail: john.doe@example.com";
     (chrome.storage.local.get as any) = vi.fn(async () => ({
       [PERSONAL_PROFILE_STORAGE_KEY]: {
-        version: 1,
+        version: 2,
         enabled: true,
+        notesMarkdown,
+        notesHash: hashProfileNotes(notesMarkdown),
         updatedAt: 1,
-        profile: {
-          ...EMPTY_PERSONAL_PROFILE,
-          identity: {
-            ...EMPTY_PERSONAL_PROFILE.identity,
-            first_name: "John",
-            last_name: "Doe",
-          },
-          contact: {
-            ...EMPTY_PERSONAL_PROFILE.contact,
-            email: "john.doe@example.com",
-          },
+        analyzer: {
+          provider: "fireworks",
+          model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+          analyzerVersion: PROFILE_ANALYZER_VERSION,
+          analyzedAt: 1,
+        },
+        digest: {
+          schemaVersion: 1,
+          notesHash: hashProfileNotes(notesMarkdown),
+          analyzerVersion: PROFILE_ANALYZER_VERSION,
+          items: [
+            {
+              id: "fact:full-name:test",
+              label: "Full name",
+              value: "John Doe",
+              kind: "fact",
+              confidence: "high",
+            },
+            {
+              id: "fact:email:test",
+              label: "Email",
+              value: "john.doe@example.com",
+              kind: "fact",
+              confidence: "high",
+            },
+          ],
         },
       },
     }));
@@ -6284,7 +6304,7 @@ describe("Tool Registration", () => {
       123,
     );
 
-    expect(result).toContain("PROFILE FIELDS:");
+    expect(result).toContain("PROFILE DIGEST FACTS:");
     expect(result).toContain("- full_name: John Doe");
     expect(result).toContain("- contact.email: john.doe@example.com");
     expect(result).toContain("Missing: contact.phone");
