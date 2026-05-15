@@ -54,7 +54,40 @@ describe("StepTimeline", () => {
       );
     });
 
-    expect(container.textContent).toContain("Executor: Read page");
+    expect(container.textContent).toContain("Scanning page");
     expect(container.textContent).not.toContain("Thinking");
+  });
+
+  test("hides completed diagnostics when user-facing steps are present", async () => {
+    await act(async () => {
+      root.render(
+        <StepTimeline
+          steps={[
+            step({
+              id: "tool-1",
+              label: "Executor: Read page",
+              toolName: undefined,
+              status: "done",
+            }),
+            step({
+              id: "tool-2",
+              label: "Executor: Toggle X-ray mode",
+              toolName: undefined,
+              status: "done",
+            }),
+            step({
+              id: "tool-3",
+              label: 'Click "Advance" button',
+              status: "done",
+            }),
+          ]}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('Click "Advance" button');
+    expect(container.textContent).toContain("2 earlier steps");
+    expect(container.textContent).not.toContain("Scanning page");
+    expect(container.textContent).not.toContain("X-ray");
   });
 });

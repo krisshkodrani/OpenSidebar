@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  classifyVerificationRisk,
   deriveVerifierFallbackDecision,
   programmaticVerify,
   validateEvidenceSufficiency,
@@ -380,6 +381,41 @@ describe("programmaticVerify", () => {
     });
 
     expect(result?.decision).not.toBe("accept");
+  });
+
+  test("accepts substantive low-risk output without verifier LLM", () => {
+    const result = programmaticVerify({
+      taskQuery: "Open the details panel and report what appears",
+      output:
+        "The details panel is open and shows the account status, owner, and renewal date requested by the task.",
+      objective: "Open the details panel and report what appears",
+      successCriteria: "The details panel content is reported",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("Low-risk verification budget");
+  });
+
+  test("keeps medium-risk form completion out of low-risk budget", () => {
+    const result = programmaticVerify({
+      taskQuery: "Log in with email admin@example.com",
+      output:
+        "The login form fields were filled and I clicked the login button.",
+      objective: "Log in with the provided credentials",
+      successCriteria: "The dashboard is visible after login",
+      executorOutcome: "completed",
+    });
+
+    expect(result).toBeNull();
+    expect(
+      classifyVerificationRisk({
+        taskQuery: "Log in with email admin@example.com",
+        objective: "Log in with the provided credentials",
+        successCriteria: "The dashboard is visible after login",
+      }),
+    ).toBe("medium");
   });
 
   test("returns accept for trusted ServiceNow form submit evidence", () => {

@@ -40,6 +40,7 @@ export interface NodeVerificationResult {
 }
 
 export interface ProgrammaticVerificationInput {
+  taskQuery?: string;
   output: string;
   objective?: string;
   successCriteria: string;
@@ -148,6 +149,58 @@ const READ_ONLY_OBJECTIVE_MARKERS = [
   "inspect",
 ];
 
+const HIGH_RISK_VERIFICATION_MARKERS = [
+  "delete",
+  "remove",
+  "destroy",
+  "cancel subscription",
+  "purchase",
+  "buy",
+  "checkout",
+  "place order",
+  "payment",
+  "send",
+  "publish",
+  "submit application",
+  "apply for",
+  "book",
+  "reserve",
+];
+
+const MEDIUM_RISK_VERIFICATION_MARKERS = [
+  "submit",
+  "save",
+  "update",
+  "change",
+  "edit",
+  "set",
+  "login",
+  "log in",
+  "sign in",
+  "sign up",
+  "register",
+  "upload",
+  "download",
+  "fill",
+  "checkbox",
+  "select",
+];
+
+const LOW_RISK_INTERACTION_MARKERS = [
+  "advance",
+  "reveal",
+  "expand",
+  "collapse",
+  "open",
+  "show",
+  "view",
+  "navigate",
+  "go to",
+  "scroll",
+  "hover",
+  "find",
+];
+
 const EXPLICIT_COMPLETION_MARKERS = [
   /\border confirmed\b/i,
   /\border number\b/i,
@@ -199,6 +252,35 @@ function isReadOnlyObjective(
 ): boolean {
   const corpus = `${taskQuery} ${objective} ${successCriteria}`.toLowerCase();
   return READ_ONLY_OBJECTIVE_MARKERS.some((marker) => corpus.includes(marker));
+}
+
+export type VerificationRiskTier = "low" | "medium" | "high";
+
+export function classifyVerificationRisk(input: {
+  taskQuery?: string;
+  objective?: string;
+  successCriteria?: string;
+}): VerificationRiskTier {
+  const corpus =
+    `${input.taskQuery ?? ""} ${input.objective ?? ""} ${input.successCriteria ?? ""}`.toLowerCase();
+
+  if (
+    HIGH_RISK_VERIFICATION_MARKERS.some((marker) => corpus.includes(marker))
+  ) {
+    return "high";
+  }
+  if (
+    MEDIUM_RISK_VERIFICATION_MARKERS.some((marker) => corpus.includes(marker))
+  ) {
+    return "medium";
+  }
+  if (
+    READ_ONLY_OBJECTIVE_MARKERS.some((marker) => corpus.includes(marker)) ||
+    LOW_RISK_INTERACTION_MARKERS.some((marker) => corpus.includes(marker))
+  ) {
+    return "low";
+  }
+  return "medium";
 }
 
 function hasSubstantiveAlignedOutput(
@@ -423,6 +505,11 @@ export function programmaticVerify(
         (e.basis === "tool_output" && (e.confidence ?? 0) >= 0.8) ||
         (e.event && isTrustedEvidence(e.event) && e.event.confidence !== "low"),
     );
+  const verificationRisk = classifyVerificationRisk({
+    taskQuery: input.taskQuery,
+    objective: input.objective,
+    successCriteria: input.successCriteria,
+  });
 
   // Error keywords + no evidence of DOM change → retry. When the executor
   // explicitly completed, the "error" text may be quoted page content from a
@@ -474,6 +561,29 @@ export function programmaticVerify(
   }
 
   // Ambiguous → fall through to LLM
+  // Low-risk read/reveal/navigation-style work can be accepted without a
+  // verifier LLM call when the completed executor output is substantive and
+  // aligned. Medium/high-risk workflows still require stronger typed,
+  // structural, or LLM verification before acceptance.
+  if (
+    input.executorOutcome === "completed" &&
+    verificationRisk === "low" &&
+    !hasErrorMarker &&
+    hasSubstantiveAlignedOutput(
+      input.output,
+      input.objective || "",
+      input.successCriteria,
+      input.evidence,
+    )
+  ) {
+    return {
+      decision: "accept",
+      reason:
+        "Low-risk verification budget accepted substantive output aligned with the objective.",
+      confidence: 0.78,
+    };
+  }
+
   return null;
 }
 
@@ -555,6 +665,7 @@ export function deriveVerifierFallbackDecision(
   }
 
   const programmaticResult = programmaticVerify({
+    taskQuery: input.taskQuery,
     output: input.output,
     objective: input.objective,
     successCriteria: input.successCriteria,

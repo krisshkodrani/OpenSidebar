@@ -73,26 +73,31 @@ function formatPageSkeleton(skeleton: PageSkeletonNode[]): string {
 }
 
 /**
- * If 3+ input fields are visible, return a hint telling the LLM
- * to batch type_text calls in a single response.
+ * If 3+ form controls are visible, return a hint telling the LLM
+ * to batch independent field actions in a single response.
  */
 function buildFormBatchHint(elements: TaggedElement[]): string | null {
-  const inputCount = elements.filter(
-    (el) =>
-      ["input", "textarea", "select"].includes(el.tagName) ||
-      el.role === "textbox" ||
-      el.role === "combobox" ||
-      el.role === "searchbox",
-  ).length;
+  const formControlCount = elements.filter((el) => {
+    const tagName = el.tagName.toLowerCase();
+    const role = el.role?.toLowerCase();
+    return (
+      ["input", "textarea", "select"].includes(tagName) ||
+      role === "textbox" ||
+      role === "combobox" ||
+      role === "searchbox" ||
+      role === "checkbox" ||
+      role === "radio"
+    );
+  }).length;
 
-  if (inputCount < 3) return null;
+  if (formControlCount < 3) return null;
 
   return (
     "\n\n> **Batch hint:** This page has " +
-    inputCount +
-    " input fields. " +
-    "You may call multiple type_text actions in a single response — they will execute in parallel. " +
-    "Fill all visible fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
+    formControlCount +
+    " form controls. " +
+    "When independent fields are already mapped, call multiple type_text, select_option, and set_checkbox actions in the same response; they will execute within one turn. " +
+    "Fill all visible requested fields at once. Do not click Next or Submit unless the user or the current plan step explicitly asks for it."
   );
 }
 

@@ -807,6 +807,20 @@ describe("Form batch hint", () => {
     };
   }
 
+  test("system prompt includes direct-action batching and repeated-click guidance", () => {
+    const ctx = new ContextManager();
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+
+    expect(systemContent).toContain(
+      "call multiple `type_text`, `select_option`, and `set_checkbox` tools in the same response",
+    );
+    expect(systemContent).toContain("They execute within one turn");
+    expect(systemContent).toContain(
+      "call `click_element` once with `count` set to that number",
+    );
+  });
+
   test("system message contains batch hint when 4 input fields visible", () => {
     const ctx = new ContextManager();
     ctx.setSnapshot({
@@ -826,8 +840,11 @@ describe("Form batch hint", () => {
     const prompt = ctx.getPrompt();
     const systemContent = prompt[0].content as string;
     expect(systemContent).toContain("Batch hint");
-    expect(systemContent).toContain("4 input fields");
+    expect(systemContent).toContain("4 form controls");
     expect(systemContent).toContain("type_text");
+    expect(systemContent).toContain("select_option");
+    expect(systemContent).toContain("set_checkbox");
+    expect(systemContent).toContain("execute within one turn");
     expect(systemContent).toContain(
       "Do not click Next or Submit unless the user or the current plan step explicitly asks for it.",
     );
@@ -886,9 +903,41 @@ describe("Form batch hint", () => {
     const prompt = ctx.getPrompt();
     const systemContent = prompt[0].content as string;
     expect(systemContent).toContain("Batch hint");
-    expect(systemContent).toContain("3 input fields");
+    expect(systemContent).toContain("3 form controls");
     expect(systemContent).toContain(
       "Do not click Next or Submit unless the user or the current plan step explicitly asks for it.",
+    );
+  });
+
+  test("system message counts checkboxes and selects as batchable form controls", () => {
+    const ctx = new ContextManager();
+    ctx.setSnapshot({
+      title: "Login Page",
+      url: "https://example.com/login",
+      elements: [
+        makeInputElement(1),
+        makeInputElement(2, "select", "combobox"),
+        {
+          tag: 3,
+          tagName: "input",
+          role: "checkbox",
+          text: "Remember me",
+          attributes: { type: "checkbox" },
+          rect: { x: 10, y: 150, width: 20, height: 20 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      visibleContent: "Login",
+      viewport: { width: 1280, height: 800 },
+    });
+
+    const prompt = ctx.getPrompt();
+    const systemContent = prompt[0].content as string;
+    expect(systemContent).toContain("Batch hint");
+    expect(systemContent).toContain("3 form controls");
+    expect(systemContent).toContain(
+      "type_text, select_option, and set_checkbox actions in the same response",
     );
   });
 

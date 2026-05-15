@@ -801,7 +801,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
     notes: [
       "Ashby application labels may look like questions; fill them as fields and do not turn them into analysis tasks.",
       "Copy long user-supplied answers exactly, including paragraph breaks and sentence grouping.",
-      "Verify text inputs and textareas through read_element(attribute=\"value\") before reporting ready state.",
+      'Verify text inputs and textareas through read_element(attribute="value") before reporting ready state.',
       "Submit Application is a final consequential action and must remain approval-gated.",
     ],
   },
@@ -1829,7 +1829,7 @@ const SKILL_BODIES: Record<
       "3. Map each requested value to a specific input, select, or checkbox.",
       "4. Prefer the returned profile values as the source of truth for name, email, and address fields.",
       "5. Stay on the current form unless the page itself shows that login or authentication is required.",
-      "6. Fill fields one by one without submitting early.",
+      "6. For independent visible text, select, and checkbox fields that are already mapped, issue those field tools in the same tool-calling turn; submit later as a separate final action.",
       "7. Preserve quoted literals exactly, including punctuation, pipes, slashes, spacing, and long command strings.",
       '8. For textarea or long literal fields, verify the live value with read_element(attribute="value") or read_page evidence before submission.',
       "9. Re-check required fields and validation messages before submission.",
@@ -1867,6 +1867,7 @@ const SKILL_BODIES: Record<
       ],
       toolDiscipline: [
         "Use get_profile_fields for exact saved-profile values when the task calls for them.",
+        "Batch independent type_text, select_option, and set_checkbox calls in one executor turn after field mapping; re-ground once before submit instead of re-reading between every field.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
         'Use read_element(attribute="value") for filled textareas or long exact literals when read_page evidence is ambiguous.',
         "For configurators, use read_page after option changes to verify the derived total or summary.",
@@ -1965,7 +1966,8 @@ const SKILL_BODIES: Record<
     ],
     commonFailures: [
       {
-        signal: "Next is clicked before conditional fields appear or are filled",
+        signal:
+          "Next is clicked before conditional fields appear or are filled",
         recovery:
           "re-read the current step, fill the newly visible required fields, then continue",
       },
@@ -2148,7 +2150,7 @@ const SKILL_BODIES: Record<
         "Use JobAgent package/profile/form-answer tools when available, then verify every suggested value on the live page before treating it as done.",
         "Use type_text/select_option/set_checkbox for explicit values only.",
         "Paste long user-supplied application answers as exact literals; do not rewrap them into bullets or one sentence per line.",
-        "Use upload_file with profileFile=\"cv\" when the user asks to use their saved CV or resume.",
+        'Use upload_file with profileFile="cv" when the user asks to use their saved CV or resume.',
         "Avoid press_key and click_coordinates for final application submission.",
       ],
       completionChecks: [
@@ -2172,7 +2174,7 @@ const SKILL_BODIES: Record<
       "5. Fill all user-supplied fields in one application workflow when possible, especially field/value tables and follow-up requests for remaining fields.",
       "6. Preserve user-supplied long-form answers verbatim, including paragraph breaks, sentence grouping, punctuation, and spacing.",
       '7. Verify text inputs and textareas with read_element(attribute="value"); verify radio/select choices from live selected state or visible selected styling.',
-      "8. For resume/CV uploads, use upload_file with the provided file or profileFile=\"cv\", then verify the displayed attachment filename.",
+      '8. For resume/CV uploads, use upload_file with the provided file or profileFile="cv", then verify the displayed attachment filename.',
       "9. Never click Submit Application unless the user explicitly approved that exact final submission. If the task says do not send/submit, stop at ready state.",
       "10. Report only the prepared/submitted state and missing fields; do not add fit analysis or best-match comparisons unless the user explicitly requested that report.",
     ].join("\n"),
@@ -2191,12 +2193,14 @@ const SKILL_BODIES: Record<
           "return to the application field mapping and fill the requested literal answer instead",
       },
       {
-        signal: "long textarea answer has been reformatted into one sentence per line",
+        signal:
+          "long textarea answer has been reformatted into one sentence per line",
         recovery:
           "clear the field, paste the exact source answer, and verify the value attribute",
       },
       {
-        signal: "the final Submit Application button is visible but approval is absent",
+        signal:
+          "the final Submit Application button is visible but approval is absent",
         recovery:
           "stop and report ready-for-approval state without clicking Submit Application",
       },
@@ -2924,7 +2928,10 @@ function getPackActivationReason(
   pack: SkillPack,
   input: SkillMatcherInput,
 ): { reason: string; strength: SkillActivationSignalStrength } | null {
-  if (pack.id === "communication-workflows" && hasCommunicationPackSignal(input)) {
+  if (
+    pack.id === "communication-workflows" &&
+    hasCommunicationPackSignal(input)
+  ) {
     return {
       reason: "Communication workflow signals are present.",
       strength: "weak",
@@ -2933,7 +2940,8 @@ function getPackActivationReason(
 
   if (pack.id === "procurement-workflows" && hasProcurementPackSignal(input)) {
     return {
-      reason: "Source-list or multi-tab checklist workflow signals are present.",
+      reason:
+        "Source-list or multi-tab checklist workflow signals are present.",
       strength: "weak",
     };
   }

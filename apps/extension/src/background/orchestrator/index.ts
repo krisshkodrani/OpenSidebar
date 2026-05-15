@@ -3521,144 +3521,144 @@ export class Orchestrator {
     // ─── Plan decomposition ───
     if (usePlannerDecomposition) {
       try {
-      const plannerContract = buildRoleExecutionContract(
-        "planner",
-        input.settings,
-      );
-      logger.debug("policy", "Role execution contract resolved", {
-        role: plannerContract.role,
-        modelTier: plannerContract.modelTier,
-        allowedToolCount: plannerContract.allowedTools.length,
-      });
-      const modelOverrides = {
-        executorModel: input.settings.executorModel,
-        plannerModel: input.settings.plannerModel,
-        useNitro: input.settings.useNitro,
-        providerMode: input.settings.providerMode,
-        provider: input.settings.provider,
-        openaiApiKey: input.settings.openaiApiKey,
-        groqApiKey: input.settings.groqApiKey,
-        temperature: input.settings.temperature,
-        perceptionMode: input.settings.perceptionMode,
-        useVLExecutor: input.settings.useVLExecutor,
-        fireworksApiKey: input.settings.fireworksApiKey,
-        deepseekApiKey: input.settings.deepseekApiKey,
-        kimiApiKey: input.settings.kimiApiKey,
-        xiaomiApiKey: input.settings.xiaomiApiKey,
-      };
-      const planner = this.deps.createPlanner(
-        input.openRouterApiKey,
-        modelOverrides,
-      );
-      const skillCatalogOptions = {
-        enabledSkillPackIds: task.enabledSkillPackIds,
-      };
-      this.attachPlannerUsageTrace(planner, task, () => "plan_decomposition");
-      const tab = await chrome.tabs.get(input.tabId);
-      const buildResult = await this.runInLane(task, "planner", async () =>
-        planner.buildNodes(
-          plannerQuery,
-          tab.title || "Untitled",
-          tab.url || "",
-          skillCatalogOptions,
-        ),
-      );
-      nodes = buildResult.nodes;
-      const selectedSkills = nodes
-        .filter((node) => node.selectedSkillId)
-        .map((node) => `${node.id.slice(0, 6)}:${node.selectedSkillId}`);
-      task.planClassification = {
-        isSingleNode: buildResult.isSingleNode,
-        difficulty: buildResult.difficulty,
-      };
-      // Use the first node's planner-derived objective as a meaningful title
-      if (nodes.length > 0) {
-        updateTabGroupAppearance(input.workspaceId, {
-          title: nodes[0].description,
+        const plannerContract = buildRoleExecutionContract(
+          "planner",
+          input.settings,
+        );
+        logger.debug("policy", "Role execution contract resolved", {
+          role: plannerContract.role,
+          modelTier: plannerContract.modelTier,
+          allowedToolCount: plannerContract.allowedTools.length,
         });
-      }
-      this.emitTraceEvent(
-        task,
-        "plan_decomposed",
-        {
-          nodeCount: nodes.length,
-          structured: true,
+        const modelOverrides = {
+          executorModel: input.settings.executorModel,
+          plannerModel: input.settings.plannerModel,
+          useNitro: input.settings.useNitro,
+          providerMode: input.settings.providerMode,
+          provider: input.settings.provider,
+          openaiApiKey: input.settings.openaiApiKey,
+          groqApiKey: input.settings.groqApiKey,
+          temperature: input.settings.temperature,
+          perceptionMode: input.settings.perceptionMode,
+          useVLExecutor: input.settings.useVLExecutor,
+          fireworksApiKey: input.settings.fireworksApiKey,
+          deepseekApiKey: input.settings.deepseekApiKey,
+          kimiApiKey: input.settings.kimiApiKey,
+          xiaomiApiKey: input.settings.xiaomiApiKey,
+        };
+        const planner = this.deps.createPlanner(
+          input.openRouterApiKey,
+          modelOverrides,
+        );
+        const skillCatalogOptions = {
+          enabledSkillPackIds: task.enabledSkillPackIds,
+        };
+        this.attachPlannerUsageTrace(planner, task, () => "plan_decomposition");
+        const tab = await chrome.tabs.get(input.tabId);
+        const buildResult = await this.runInLane(task, "planner", async () =>
+          planner.buildNodes(
+            plannerQuery,
+            tab.title || "Untitled",
+            tab.url || "",
+            skillCatalogOptions,
+          ),
+        );
+        nodes = buildResult.nodes;
+        const selectedSkills = nodes
+          .filter((node) => node.selectedSkillId)
+          .map((node) => `${node.id.slice(0, 6)}:${node.selectedSkillId}`);
+        task.planClassification = {
           isSingleNode: buildResult.isSingleNode,
           difficulty: buildResult.difficulty,
-          laneTopologyMode: laneTopology.mode,
-          skills: nodes
-            .filter((node) => node.selectedSkillId)
-            .map((node) => ({
-              nodeId: node.id,
-              skillId: node.selectedSkillId,
-              reason: node.selectedSkillReason,
-            })),
-        },
-        "planner",
-      );
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: input.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
-            ...(selectedSkills.length > 0
-              ? { detail: `Skills: ${selectedSkills.join(", ")}` }
-              : {}),
-            status: "done",
-            timestamp: Date.now(),
+        };
+        // Use the first node's planner-derived objective as a meaningful title
+        if (nodes.length > 0) {
+          updateTabGroupAppearance(input.workspaceId, {
+            title: nodes[0].description,
+          });
+        }
+        this.emitTraceEvent(
+          task,
+          "plan_decomposed",
+          {
+            nodeCount: nodes.length,
+            structured: true,
+            isSingleNode: buildResult.isSingleNode,
+            difficulty: buildResult.difficulty,
+            laneTopologyMode: laneTopology.mode,
+            skills: nodes
+              .filter((node) => node.selectedSkillId)
+              .map((node) => ({
+                nodeId: node.id,
+                skillId: node.selectedSkillId,
+                reason: node.selectedSkillReason,
+              })),
           },
-          update: false,
-        },
-      });
-    } catch (error: any) {
-      logger.warn(
-        "orchestrator",
-        "Planner failed, using synthesized fallback graph",
-        {
-          error: error?.message,
-        },
-      );
-      nodes = buildFallbackNodes(input.query);
-      task.planClassification = {
-        isSingleNode: nodes.length === 1,
-        difficulty: "moderate",
-      };
-      this.emitTraceEvent(
-        task,
-        "plan_decomposed",
-        {
-          nodeCount: 1,
-          structured: false,
-          fallback: true,
-          laneTopologyMode: laneTopology.mode,
-          skills: nodes
-            .filter((node) => node.selectedSkillId)
-            .map((node) => ({
-              nodeId: node.id,
-              skillId: node.selectedSkillId,
-              reason: node.selectedSkillReason,
-            })),
-        },
-        "planner",
-      );
-      this.sendMessage({
-        type: "AGENT_STEP",
-        workspaceId: input.workspaceId,
-        payload: {
-          step: {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: "Planning approach",
-            detail: error?.message || "Unknown planner error",
-            status: "done",
-            timestamp: Date.now(),
+          "planner",
+        );
+        this.sendMessage({
+          type: "AGENT_STEP",
+          workspaceId: input.workspaceId,
+          payload: {
+            step: {
+              id: crypto.randomUUID(),
+              type: "info",
+              label: `Planning ${nodes.length} ${nodes.length === 1 ? "step" : "steps"}`,
+              ...(selectedSkills.length > 0
+                ? { detail: `Skills: ${selectedSkills.join(", ")}` }
+                : {}),
+              status: "done",
+              timestamp: Date.now(),
+            },
+            update: false,
           },
-          update: false,
-        },
-      });
+        });
+      } catch (error: any) {
+        logger.warn(
+          "orchestrator",
+          "Planner failed, using synthesized fallback graph",
+          {
+            error: error?.message,
+          },
+        );
+        nodes = buildFallbackNodes(input.query);
+        task.planClassification = {
+          isSingleNode: nodes.length === 1,
+          difficulty: "moderate",
+        };
+        this.emitTraceEvent(
+          task,
+          "plan_decomposed",
+          {
+            nodeCount: 1,
+            structured: false,
+            fallback: true,
+            laneTopologyMode: laneTopology.mode,
+            skills: nodes
+              .filter((node) => node.selectedSkillId)
+              .map((node) => ({
+                nodeId: node.id,
+                skillId: node.selectedSkillId,
+                reason: node.selectedSkillReason,
+              })),
+          },
+          "planner",
+        );
+        this.sendMessage({
+          type: "AGENT_STEP",
+          workspaceId: input.workspaceId,
+          payload: {
+            step: {
+              id: crypto.randomUUID(),
+              type: "info",
+              label: "Planning approach",
+              detail: error?.message || "Unknown planner error",
+              status: "done",
+              timestamp: Date.now(),
+            },
+            update: false,
+          },
+        });
       }
     }
 
@@ -4654,6 +4654,7 @@ export class Orchestrator {
               { enabledSkillPackIds: task.enabledSkillPackIds },
             )?.requiredEvidenceTypes;
             const programmaticResult = programmaticVerify({
+              taskQuery: task.query,
               output: result.summary,
               objective: node.description,
               successCriteria: node.successCriteria,
@@ -6285,13 +6286,9 @@ export class Orchestrator {
     let newNodes: TaskNode[] | null = null;
     try {
       newNodes = await this.runInLane(task, "planner", async () =>
-        replanner.planNextHorizon(
-          task.query,
-          summary,
-          pageTitle,
-          pageUrl,
-          { enabledSkillPackIds: task.enabledSkillPackIds },
-        ),
+        replanner.planNextHorizon(task.query, summary, pageTitle, pageUrl, {
+          enabledSkillPackIds: task.enabledSkillPackIds,
+        }),
       );
     } catch (error: any) {
       logger.warn("orchestrator", "Horizon expansion planner call failed", {
