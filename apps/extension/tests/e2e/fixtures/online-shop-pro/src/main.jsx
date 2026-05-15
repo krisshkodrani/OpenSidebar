@@ -44,6 +44,7 @@ import WorkspaceChoice from "./routes/workspace-choice";
 import SessionStateProbe from "./routes/session-state";
 import VisualCanvas from "./routes/visual-canvas";
 import MemoryLab from "./routes/memory-lab";
+import ParallelWork from "./routes/parallel-work";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -88,6 +89,7 @@ const routes = [
   { path: "/session-state", label: "Session", title: "Session State Probe", component: SessionStateProbe },
   { path: "/visual-canvas", label: "Canvas", title: "Visual Canvas Report", component: VisualCanvas },
   { path: "/memory-lab", label: "Memory", title: "Memory Lab Dashboard", component: MemoryLab },
+  { path: "/parallel-work", label: "Parallel", title: "Parallel Work Lab", component: ParallelWork },
 ];
 
 function Layout({ children, currentPath }) {

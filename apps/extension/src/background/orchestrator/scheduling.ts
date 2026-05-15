@@ -1,4 +1,5 @@
 import { TaskNode } from "./types";
+import { getNodeResourceConflicts } from "./parallel-contract";
 
 export interface DependencyState {
   ready: boolean;
@@ -43,12 +44,33 @@ export function getDependencyState(
   };
 }
 
-export function getRunnablePendingNodes(nodes: TaskNode[]): TaskNode[] {
+export function getRunnablePendingNodes(
+  nodes: TaskNode[],
+  options: { runningNodes?: TaskNode[] } = {},
+): TaskNode[] {
   const nodesById = new Map<string, TaskNode>(
     nodes.map((node) => [node.id, node]),
   );
   return nodes.filter((node) => {
     if (node.status !== "pending") return false;
-    return getDependencyState(node, nodesById).ready;
+    if (!getDependencyState(node, nodesById).ready) return false;
+    if (options.runningNodes?.length) {
+      return getNodeResourceConflicts(node, options.runningNodes).length === 0;
+    }
+    return true;
   });
+}
+
+export function getResourceBlockedPendingNodes(
+  nodes: TaskNode[],
+  runningNodes: TaskNode[],
+): Array<{ node: TaskNode; conflicts: TaskNode[] }> {
+  if (runningNodes.length === 0) return [];
+  const dependencyReady = getRunnablePendingNodes(nodes);
+  return dependencyReady
+    .map((node) => ({
+      node,
+      conflicts: getNodeResourceConflicts(node, runningNodes),
+    }))
+    .filter((entry) => entry.conflicts.length > 0);
 }

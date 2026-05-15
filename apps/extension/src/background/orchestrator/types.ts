@@ -1,5 +1,6 @@
 import { AgentLoop } from "../agent";
 import type { Difficulty } from "../agent/constants";
+import type { ToolProfile } from "../tools/metadata";
 import type { LaneTopologyMode } from "./lane-topology";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
@@ -20,6 +21,43 @@ export interface VerificationGate {
   pattern?: string; // optional regex for precise matching
 }
 
+export type ParallelismHint =
+  | "independent"
+  | "resource_bound"
+  | "serialized"
+  | "unknown";
+
+export type ResourceAccess =
+  | "read"
+  | "write"
+  | "navigate"
+  | "approval"
+  | "external";
+
+export interface ResourceHint {
+  kind:
+    | "tab"
+    | "origin"
+    | "url"
+    | "form"
+    | "record"
+    | "cart"
+    | "table"
+    | "account"
+    | "external";
+  key: string;
+  access: ResourceAccess;
+  confidence: number;
+  source: "planner" | "repair" | "runtime";
+}
+
+export interface NodeParallelContract {
+  parallelism: ParallelismHint;
+  dependencyReason?: string;
+  resourceHints: ResourceHint[];
+  siblingAwareness: "none" | "summary" | "coordination_required";
+}
+
 export interface PlannerAssignment {
   role: Extract<AgentRole, "executor">;
   objective: string;
@@ -28,6 +66,8 @@ export interface PlannerAssignment {
   dependencies?: string[];
   assumptions?: string[];
   verificationGate?: VerificationGate;
+  toolProfile?: ToolProfile;
+  parallelContract?: NodeParallelContract;
 }
 
 export interface StructuredEvidence {
@@ -82,9 +122,11 @@ export interface TaskNode {
   successCriteria: string;
   selectedSkillId?: string;
   selectedSkillReason?: string;
+  toolProfile?: ToolProfile;
   allowedTools: ToolName[];
   dependencies: string[];
   assumptions: string[];
+  parallelContract?: NodeParallelContract;
   handoffArtifacts: NodeHandoffArtifact[];
   reflexionLog: ReflexionEntry[];
   handoffDepth: number;

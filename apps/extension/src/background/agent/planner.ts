@@ -261,6 +261,28 @@ function isCompactFieldValueFormPlan(
   );
 }
 
+function shouldPreferSynthesizedPlan(
+  query: string,
+  steps: Array<{ objective: string; toolProfile?: ToolProfile }> | null,
+): boolean {
+  if (!steps || steps.length < 2) return false;
+  const distinctUrls = [
+    ...new Set(
+      [...query.matchAll(/\bhttps?:\/\/[^\s)"']+/gi)].map((match) =>
+        (match[0] || "").replace(/[),.;]+$/, ""),
+      ),
+    ),
+  ];
+  if (distinctUrls.length >= 2) return true;
+
+  const text = normalizePlanText(query);
+  return (
+    /\bseparate(?:ly)?\b.{0,40}\b(update|updates|action|actions|step|steps|task|tasks)\b/.test(
+      text,
+    ) && steps.some((step) => step.toolProfile === "form_fill")
+  );
+}
+
 export function inferToolProfileForStep(
   objective: string,
   successCriteria: string,
@@ -541,13 +563,15 @@ export class TaskPlanner {
       }
 
       const taskContract = buildTaskContract(query);
+      const synthesizedFallback = synthesizePlanFromTaskContract(query);
       const batchedExhaustiveFallback =
         synthesizeBatchedExhaustivePlan(query);
       const requiresStructuredPlan =
         taskContract.requiresRoundTrip ||
         taskContract.reportTargets.length > 1 ||
         taskContract.requiredEntities.length > 1 ||
-        hasSequentialActionSequence(query);
+        hasSequentialActionSequence(query) ||
+        Boolean(synthesizedFallback && synthesizedFallback.length >= 2);
       const maxStructuredSteps =
         taskContract.exhaustiveScopeCount &&
         taskContract.requiresAggregateReport
@@ -561,7 +585,6 @@ export class TaskPlanner {
       // for truly single-step work. Round trips and multi-report tasks still need structure.
       const forceSimple =
         parsed.isMultiStep && difficulty === "simple" && !requiresStructuredPlan;
-      const synthesizedFallback = synthesizePlanFromTaskContract(query);
       if (forceSimple) {
         logger.info(
           "agent",
@@ -586,7 +609,12 @@ export class TaskPlanner {
           parsed.steps.some(
             (s: any) => typeof s?.objective === "string" && s.objective.trim(),
           );
-        if (synthesizedFallback && !forceSimple && !plannerHasSteps) {
+        if (
+          synthesizedFallback &&
+          !forceSimple &&
+          (!plannerHasSteps ||
+            shouldPreferSynthesizedPlan(query, synthesizedFallback))
+        ) {
           logger.info(
             "agent",
             "Planner under-decomposed task; using task-contract synthesis",
@@ -871,7 +899,10 @@ export class TaskPlanner {
         // missed the return leg. For normal tasks, the planner's steps preserve
         // the user's specific instructions (names, values, codes) while the
         // synthesis creates garbled entity-concatenation objectives.
-        if (synthesizedFallback && !parsedSteps) {
+        if (
+          synthesizedFallback &&
+          (!parsedSteps || shouldPreferSynthesizedPlan(query, synthesizedFallback))
+        ) {
           logger.info(
             "agent",
             "Planner returned insufficient subtasks; using task-contract synthesis",

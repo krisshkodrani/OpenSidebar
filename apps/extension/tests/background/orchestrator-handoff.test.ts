@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 import {
   buildAssumptionDriftSignal,
+  buildExecutorParallelContext,
   buildExecutorInstruction,
   buildTaskStateBrief,
   buildVerifierContext,
@@ -103,6 +104,64 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Completed / prior steps:");
     expect(instruction).toContain("Reality check signal:");
     expect(instruction).toContain("Potential plan-reality drift");
+  });
+
+  test("injects environment-neutral parallel worker context", () => {
+    const node = makeNode([]);
+    node.parallelContract = {
+      parallelism: "resource_bound",
+      siblingAwareness: "summary",
+      resourceHints: [
+        {
+          kind: "url",
+          key: "alpha.example/dashboard",
+          access: "read",
+          confidence: 0.95,
+          source: "repair",
+        },
+      ],
+    };
+
+    const sibling = makeNode([]);
+    sibling.id = "node-2";
+    sibling.description = "Read beta dashboard";
+    sibling.status = "running";
+    sibling.parallelContract = {
+      parallelism: "independent",
+      siblingAwareness: "summary",
+      resourceHints: [
+        {
+          kind: "origin",
+          key: "beta.example",
+          access: "read",
+          confidence: 0.9,
+          source: "repair",
+        },
+      ],
+    };
+
+    const parallelContext = buildExecutorParallelContext({
+      node,
+      allNodes: [node, sibling],
+      workerIndex: 1,
+    });
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      parallelContext,
+    );
+
+    expect(instruction).toContain("Parallel work context:");
+    expect(instruction).toContain("worker index 1");
+    expect(instruction).toContain("url:alpha.example/dashboard");
+    expect(instruction).toContain("node-2 [running]: Read beta dashboard");
+    expect(instruction).toContain("origin:beta.example");
+    expect(instruction).not.toContain("tabId");
   });
 
   test("injects selected workflow skill into executor instruction", () => {

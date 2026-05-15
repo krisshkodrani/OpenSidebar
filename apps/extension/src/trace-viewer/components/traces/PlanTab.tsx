@@ -125,7 +125,101 @@ export default function PlanTab({ session }: PlanTabProps) {
       )}
 
       {currentRunEvents.length > 0 && (
-        <RunEventTimeline runEvents={currentRunEvents} compact />
+        <>
+          <ParallelWorkerTimeline runEvents={currentRunEvents} />
+          <RunEventTimeline runEvents={currentRunEvents} compact />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ParallelWorkerTimeline({
+  runEvents,
+}: {
+  runEvents: RunTraceEvent[];
+}) {
+  const workerEvents = runEvents.filter((event) =>
+    [
+      "worker_queued",
+      "worker_started",
+      "worker_blocked_resource",
+      "worker_released_resource",
+      "worker_cancelled",
+      "node_verified",
+      "scheduler_executor_lane_retry",
+    ].includes(event.type),
+  );
+  if (workerEvents.length === 0) return null;
+
+  const activeCounts = workerEvents
+    .map((event) => numberValue(asRecord(event.data)?.activeWorkerCount))
+    .filter((value): value is number => value != null);
+  const maxActive = activeCounts.length > 0 ? Math.max(...activeCounts) : 0;
+  const queued = workerEvents.filter(
+    (event) => event.type === "worker_queued",
+  ).length;
+  const blocked = workerEvents.filter(
+    (event) => event.type === "worker_blocked_resource",
+  ).length;
+  const verifierCalls = workerEvents.filter(
+    (event) => event.type === "node_verified",
+  ).length;
+  const retries = workerEvents.filter(
+    (event) => event.type === "scheduler_executor_lane_retry",
+  ).length;
+
+  return (
+    <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="text-[11px] text-trace-muted uppercase tracking-wide">
+          Parallel Workers
+        </span>
+        <Badge variant={maxActive >= 2 ? "completed" : "type"}>
+          {maxActive >= 2 ? "overlap observed" : "serialized"}
+        </Badge>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-[11px]">
+        <RunMetricCard
+          label="Max Active"
+          value={maxActive}
+          hint="worker overlap"
+        />
+        <RunMetricCard label="Queued" value={queued} hint="lane queue events" />
+        <RunMetricCard
+          label="Resource Blocks"
+          value={blocked}
+          hint="scheduler waits"
+        />
+        <RunMetricCard
+          label="Verifier"
+          value={verifierCalls}
+          hint="node checks"
+        />
+        <RunMetricCard label="Retries" value={retries} hint="lane recovery" />
+      </div>
+      <div className="mt-3 space-y-2">
+        {workerEvents.slice(0, 10).map((event, index) => (
+          <div
+            key={`${event.type}-${event.ts}-${index}`}
+            className="rounded border border-trace-border/70 bg-trace-bg px-3 py-2"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-[10px] text-trace-muted shrink-0">
+                {formatEventTime(event)}
+              </span>
+              <Badge variant="role-executor">{event.type}</Badge>
+              <span className="text-[11px] text-trace-muted truncate">
+                {parallelWorkerEventSummary(event)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {workerEvents.length > 10 && (
+        <div className="mt-2 text-[11px] text-trace-muted">
+          Showing first 10 of {workerEvents.length} worker events.
+        </div>
       )}
     </div>
   );
@@ -218,6 +312,8 @@ function RunPlannerActivity({
       {plannerLlmEvents.length > 0 && (
         <PlannerLlmCalls runEvents={plannerLlmEvents} />
       )}
+
+      <ParallelWorkerTimeline runEvents={runEvents} />
 
       {skills.length > 0 && (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
@@ -477,6 +573,18 @@ function summarizeRunEvent(event: RunTraceEvent): string {
   }
 
   if (
+    [
+      "worker_queued",
+      "worker_started",
+      "worker_blocked_resource",
+      "worker_released_resource",
+      "worker_cancelled",
+    ].includes(event.type)
+  ) {
+    return parallelWorkerEventSummary(event);
+  }
+
+  if (
     event.type === "node_failure_attribution" ||
     event.type === "scheduler_dependency_failed"
   ) {
@@ -544,6 +652,57 @@ function arraySummary(value: unknown): string | null {
   return value
     .map((item) => (typeof item === "string" ? item.slice(0, 8) : String(item)))
     .join(", ");
+}
+
+function resourceLockSummary(value: unknown): string {
+  if (!Array.isArray(value) || value.length === 0) return "no active locks";
+  return value
+    .slice(0, 3)
+    .map((item) => {
+      const record = asRecord(item);
+      const nodeId = shortId(stringValue(record?.nodeId));
+      const resources = Array.isArray(record?.resources)
+        ? record.resources.length
+        : 0;
+      return `${nodeId}:${resources}`;
+    })
+    .join(", ");
+}
+
+function parallelWorkerEventSummary(event: RunTraceEvent): string {
+  const data = asRecord(event.data);
+  const nodeId = shortId(stringValue(data?.nodeId));
+  const workerId = shortId(stringValue(data?.workerId));
+  const active = numberValue(data?.activeWorkerCount);
+  const locks = resourceLockSummary(data?.resourceLocks);
+  const reason = stringValue(data?.reason);
+
+  if (event.type === "worker_blocked_resource") {
+    const conflicts = Array.isArray(data?.conflicts)
+      ? data.conflicts.length
+      : 0;
+    return `Node ${nodeId} blocked by ${conflicts} resource conflict${conflicts === 1 ? "" : "s"}; active=${active ?? "?"}; locks=${locks}.`;
+  }
+  if (event.type === "worker_cancelled") {
+    return `Worker ${workerId} for node ${nodeId} cancelled${reason ? `: ${reason}` : ""}; active=${active ?? "?"}; locks=${locks}.`;
+  }
+  if (event.type === "worker_released_resource") {
+    return `Worker ${workerId} released node ${nodeId}; active=${active ?? "?"}; locks=${locks}.`;
+  }
+  if (event.type === "worker_started") {
+    return `Worker ${workerId} started node ${nodeId}; active=${active ?? "?"}; locks=${locks}.`;
+  }
+  if (event.type === "worker_queued") {
+    return `Node ${nodeId} queued; active=${active ?? "?"}; locks=${locks}.`;
+  }
+  if (event.type === "node_verified") {
+    const decision = stringValue(data?.decision) ?? "checked";
+    return `Verifier ${decision} node ${nodeId}.`;
+  }
+  if (event.type === "scheduler_executor_lane_retry") {
+    return `Executor lane retry scheduled for node ${nodeId}.`;
+  }
+  return clip(JSON.stringify(data), 180);
 }
 
 function formatEventTime(event: RunTraceEvent): string {

@@ -124,6 +124,85 @@ describe("Overlay harness browser injection", () => {
     expect(runner.pageErrors).toEqual([]);
   }, 60_000);
 
+  it("renders multi-worker task progress through the overlay runtime port", async () => {
+    const runner = await setupRunner({
+      runtimeOptions: {
+        storage: {
+          local: {
+            fireworksApiKey_local: "fake-fireworks-key",
+          },
+        },
+      },
+    });
+    await runner.inject();
+    await runner.startMessageCapture();
+    await runner.page.waitForFunction(() =>
+      Boolean(
+        document
+          .getElementById("opensidebar-harness-host")
+          ?.shadowRoot?.textContent?.trim(),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
+    await runner.emitRuntimeMessage({
+      type: "TASK_PROGRESS",
+      source: "background",
+      requestId: "overlay-parallel-progress",
+      payload: {
+        taskId: "overlay-parallel-task",
+        currentIndex: 0,
+        totalTurnsUsed: 3,
+        subtasks: [
+          {
+            nodeId: "n1",
+            description: "Read alpha dashboard",
+            status: "running",
+            turnsUsed: 1,
+            turnBudget: 8,
+            workerStatus: "running",
+            workerStatusDetail: "Using url:alpha.example/dashboard (read)",
+            parallelism: "independent",
+            resourceSummary: "url:alpha.example/dashboard (read)",
+          },
+          {
+            nodeId: "n2",
+            description: "Read beta dashboard",
+            status: "running",
+            turnsUsed: 2,
+            turnBudget: 8,
+            workerStatus: "retrying",
+            workerStatusDetail: "Using url:beta.example/dashboard (read)",
+            parallelism: "independent",
+            resourceSummary: "url:beta.example/dashboard (read)",
+          },
+          {
+            nodeId: "n3",
+            description: "Update alpha dashboard form",
+            status: "pending",
+            turnsUsed: 0,
+            turnBudget: 8,
+            workerStatus: "blocked",
+            workerStatusDetail: "Waiting for Read alpha dashboard",
+            parallelism: "resource_bound",
+            resourceSummary: "url:alpha.example/dashboard (write)",
+          },
+        ],
+      },
+    });
+
+    await runner.waitForOverlayText("2 active");
+    await runner.waitForOverlayText("1 blocked");
+    await runner.waitForOverlayText("Active");
+    await runner.waitForOverlayText("Retrying");
+    await runner.waitForOverlayText("Blocked");
+    await runner.waitForOverlayText("Waiting for Read alpha dashboard");
+
+    const capture = await runner.readMessageCapture();
+    expect(capture.inboundTypes).toContain("TASK_PROGRESS");
+    expect(runner.pageErrors).toEqual([]);
+  }, 60_000);
+
   it("round-trips rendered pause and resume controls through the fake background", async () => {
     const runner = await setupRunner({ autoStartFakeBackground: true });
     await runner.inject();

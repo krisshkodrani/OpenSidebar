@@ -5,6 +5,7 @@ The orchestrator manages multi-step task execution. When a user submits a task, 
 ## When It Activates
 
 The planner (`TaskPlanner.decompose()`) classifies every task:
+
 - **Simple tasks** — single-step, run directly by the agent loop
 - **Multi-step tasks** — decomposed into nodes, each executed by its own agent loop instance
 
@@ -19,6 +20,7 @@ src/background/orchestrator/
   verifier.ts    — OrchestratorVerifier: programmatic + LLM verification
   handoff.ts     — Context formatting between nodes (briefs, reflexion, evidence)
   contracts.ts   — Tool profiles and execution constraints per node
+  parallel-contract.ts — Node parallel/resource contracts and trace graph shaping
   scheduling.ts  — Dependency resolution, runnable node selection
   retry-policy.ts — Retry/reroute decisions after verification failure
   types.ts       — TaskNode, OrchestratorTask, handoff types
@@ -53,19 +55,26 @@ Each node is a self-contained sub-task:
 ```typescript
 interface TaskNode {
   id: string;
-  description: string;        // "Add Trabuco Max 3 to cart"
-  successCriteria: string;    // "Cart shows Trabuco Max 3, quantity 1"
-  allowedTools: ToolName[];   // Tool profile for this node
-  dependencies: string[];     // Node IDs that must complete first
-  assumptions: string[];      // Planner's expectations about page state
+  description: string; // "Add Trabuco Max 3 to cart"
+  successCriteria: string; // "Cart shows Trabuco Max 3, quantity 1"
+  allowedTools: ToolName[]; // Tool profile for this node
+  dependencies: string[]; // Node IDs that must complete first
+  assumptions: string[]; // Planner's expectations about page state
+  parallelContract?: NodeParallelContract; // Parallelism hint + resource ownership
   status: "pending" | "running" | "completed" | "failed" | "skipped";
-  result?: string;            // Done summary from executor
+  result?: string; // Done summary from executor
   handoffArtifacts: NodeHandoffArtifact[];
   reflexionLog: ReflexionEntry[];
 }
 ```
 
-Nodes execute sequentially by default (each depends on the previous). The scheduler respects dependency ordering.
+Nodes execute sequentially by default unless the plan or repair layer can identify independent read-only targets. Each node may carry a `NodeParallelContract` with a `parallelism` hint, resource hints, dependency reason, and sibling-awareness level. The scheduler treats those hints conservatively: dependency ordering still wins, mutable or ambiguous shared resources serialize, and resource wait/start/release events are written to run traces.
+
+Tool-level node coexistence is audited in `tools/metadata.ts` and summarized by tool profile when the repair layer derives resource access. Executor instructions include a compact parallel work context with the worker index, assigned resources, and environment-neutral sibling summaries.
+
+`plan_decomposed` run-trace events include a compact graph with node IDs, dependency edges, parallel contracts, and resource hints so trace assertions can inspect the planned graph without parsing raw logs. Worker lifecycle events also include active worker counts and resource-lock snapshots; trace-viewer integrity checks detect missing worker finishes, orphan resource locks, and dependency-order violations. The trace viewer Plan tab summarizes worker overlap, queued work, resource blocks, verifier checks, and retry events from the same run trace stream.
+
+Focused browser coverage for this contract lives in `apps/extension/tests/e2e/parallel-work.test.ts` and is wired as the `parallel-workers` E2E focus suite. It uses the generic `parallel-work` fixture plus timestamp-based run-trace helpers to assert independent read overlap, shared-form serialization, and stop cleanup during active parallel work.
 
 ## Plan Repair
 
@@ -81,11 +90,13 @@ The repair uses semantic matching: it checks for explicit "return to X" or "back
 After each node completes, the verifier decides: accept, retry, or reroute.
 
 **Programmatic verification** (fast, no LLM call):
+
 - Success/error markers in executor output
 - URL or title changed (DOM mutation evidence)
 - Goal token overlap between output and criteria
 
 **LLM verification** (when programmatic is ambiguous):
+
 - Verifier LLM receives: node objective, success criteria, executor output, handoff context
 - Prompt explicitly says: "Judge ONLY the Objective and Success criteria — NOT the overall Task"
 - The full task query is provided as background context only
@@ -95,6 +106,7 @@ This scoping prevents false retries where the verifier rejects a node because th
 ## Global Goal Gate
 
 An optimization that skips the last remaining node when its success criteria are already satisfied on the page. Constraints:
+
 - Only fires when exactly 1 pending node remains
 - Must pass task contract coverage check
 - Blocked for round-trip tasks
@@ -102,6 +114,7 @@ An optimization that skips the last remaining node when its success criteria are
 ## Sub-Node Scoping
 
 When the agent loop runs as an orchestrator sub-node (`this.nodeId` is set):
+
 - **`validateDone` is skipped** — the orchestrator's verifier handles completion checking. Running validateDone against the full original query would reject correct node completions.
 - **`countExplicitSteps` is skipped** — the original query may have 5 numbered steps, but the sub-node only handles 1.
 - **`taskContractGuard` is skipped** — entity coverage is checked at the orchestrator level, not per-node.
@@ -109,6 +122,7 @@ When the agent loop runs as an orchestrator sub-node (`this.nodeId` is set):
 ## Handoff Context
 
 Between nodes, the orchestrator builds handoff context:
+
 - **Completed steps summary** — what prior nodes achieved
 - **Reflexion log** — failures, retries, and lessons from prior attempts
 - **Assumption drift signal** — checks planner assumptions against current page state

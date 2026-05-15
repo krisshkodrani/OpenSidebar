@@ -65,3 +65,29 @@ export function shouldUsePlannerDecomposition(
 export function shouldUseVerifier(topology: LaneTopologyConfig): boolean {
   return topology.verifier === "enabled";
 }
+
+export function isNodeParallelismKillSwitchEnabled(
+  root: unknown = globalThis,
+): boolean {
+  const candidate = root as {
+    __OPENSIDEBAR_DISABLE_NODE_PARALLELISM__?: unknown;
+  };
+  return candidate.__OPENSIDEBAR_DISABLE_NODE_PARALLELISM__ === true;
+}
+
+export function shouldRunExecutorNodesInParallel(
+  topology: LaneTopologyConfig,
+  root: unknown = globalThis,
+): boolean {
+  return topology.mode === "full" && !isNodeParallelismKillSwitchEnabled(root);
+}
+
+export function resolveExecutorNodeConcurrency(args: {
+  topology: LaneTopologyConfig;
+  maxWorkers: number;
+  executorMaxConcurrent: number;
+  root?: unknown;
+}): number {
+  if (!shouldRunExecutorNodesInParallel(args.topology, args.root)) return 1;
+  return Math.max(1, Math.min(args.maxWorkers, args.executorMaxConcurrent));
+}

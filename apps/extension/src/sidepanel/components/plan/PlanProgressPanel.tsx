@@ -5,6 +5,35 @@ import type { TaskRecoveryState } from "../../../types";
 import { PlanStepIcon } from "../PlanStepIcon";
 import { PlanRecoveryBanner } from "./PlanRecoveryBanner";
 
+function workerStatusLabel(row: PlanRow): string | null {
+  switch (row.workerStatus) {
+    case "blocked":
+      return "Blocked";
+    case "queued":
+      return "Queued";
+    case "retrying":
+      return "Retrying";
+    case "running":
+      return row.parallelism === "independent" ? "Active" : "Running";
+    case "verifying":
+      return "Verifying";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return null;
+  }
+}
+
+function workerStatusClass(row: PlanRow): string {
+  if (row.workerStatus === "blocked") {
+    return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300";
+  }
+  if (row.workerStatus === "running") {
+    return "border-primary-200 bg-primary-50 text-primary-700 dark:border-primary-800 dark:bg-primary-900/30 dark:text-primary-300";
+  }
+  return "border-warm-200 bg-warm-50 text-warm-600 dark:border-warm-700 dark:bg-warm-900/20 dark:text-warm-300";
+}
+
 export function PlanProgressPanel({
   canSkip,
   onResumeRecoveredTask,
@@ -69,7 +98,25 @@ export function PlanProgressPanel({
                     {row.selectedSkillId}
                   </span>
                 ) : null}
+                {workerStatusLabel(row) ? (
+                  <span
+                    className={`ml-1.5 inline-flex rounded border px-1 py-0.5 align-middle text-[9px] font-normal ${workerStatusClass(
+                      row,
+                    )}`}
+                  >
+                    {workerStatusLabel(row)}
+                  </span>
+                ) : null}
               </span>
+              {row.workerStatusDetail &&
+              (row.workerStatus === "running" ||
+                row.workerStatus === "blocked" ||
+                row.workerStatus === "queued" ||
+                row.workerStatus === "retrying") ? (
+                <div className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-warm-500 dark:text-warm-400">
+                  {row.workerStatusDetail}
+                </div>
+              ) : null}
               {row.evidenceSnippet &&
               row.status !== "pending" &&
               row.status !== "running" ? (

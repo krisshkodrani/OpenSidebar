@@ -595,6 +595,25 @@ export interface SubtaskSummary {
   turnsUsed: number;
   turnBudget: number;
   result?: string;
+  /** Stable orchestrator node id for worker-level progress correlation. */
+  nodeId?: string;
+  /** Parallel scheduling state shown by side panel and overlay progress UI. */
+  workerStatus?:
+    | "queued"
+    | "blocked"
+    | "running"
+    | "verifying"
+    | "retrying"
+    | "completed"
+    | "failed"
+    | "skipped"
+    | "cancelled";
+  /** Concise human-facing explanation for queued, blocked, or running worker state. */
+  workerStatusDetail?: string;
+  /** Planner/repair parallelism classification for this node. */
+  parallelism?: "independent" | "resource_bound" | "serialized" | "unknown";
+  /** Compact resource ownership summary, intentionally environment-neutral. */
+  resourceSummary?: string;
   /** URL (origin+pathname) where this step was completed — used by navigate guard */
   completedAtUrl?: string;
   /** Workflow skill selected for this subtask */

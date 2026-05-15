@@ -5,6 +5,9 @@ export type E2EDefaultSuiteName =
 export type E2EFocusSuiteName =
   | "nightly-legacy"
   | "overlay-harness"
+  | "parallel-workers"
+  | "local-mock-provider"
+  | "showcase"
   | "memory-regression"
   | "multi-turn-workflows";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
@@ -63,6 +66,9 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "overlay-harness.test.ts",
     "overlay-panel-surfaces.test.ts",
   ],
+  "parallel-workers": ["parallel-work.test.ts"],
+  "local-mock-provider": ["local-mock-provider-video.test.ts"],
+  showcase: ["showcase-ashby-application.test.ts"],
   "memory-regression": [
     "memory-current-vs-historical.test.ts",
     "memory-long-turn-dossier.test.ts",
@@ -80,6 +86,9 @@ export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
 export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "nightly-legacy",
   "overlay-harness",
+  "parallel-workers",
+  "local-mock-provider",
+  "showcase",
   "memory-regression",
   "multi-turn-workflows",
 ];

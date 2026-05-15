@@ -107,6 +107,8 @@ export function PlanStrip({
   return (
     <div className={`shrink-0 border-b ${viewModel.barClassName}`}>
       <PlanCollapsedBar
+        activeCount={viewModel.activeCount}
+        blockedCount={viewModel.blockedCount}
         confirmed={confirmed}
         currentIndex={viewModel.currentIndex}
         elapsed={elapsed}

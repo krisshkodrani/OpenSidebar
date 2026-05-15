@@ -97,6 +97,7 @@ import { getLoadedSkillContract } from "./skills";
 import {
   buildAssumptionDriftSignal,
   buildCompletedStepsSummary,
+  buildExecutorParallelContext,
   buildExecutorInstruction,
   compactExecutorSummaryForNode,
   createRerouteNode,
@@ -111,7 +112,12 @@ import {
   matchSuccessCriteria,
 } from "../agent/loop-helpers";
 import { buildRoleExecutionContract } from "./contracts";
-import { getDependencyState, getRunnablePendingNodes } from "./scheduling";
+import { buildPlanTraceGraph } from "./parallel-contract";
+import {
+  getDependencyState,
+  getResourceBlockedPendingNodes,
+  getRunnablePendingNodes,
+} from "./scheduling";
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
 import {
@@ -143,6 +149,8 @@ import {
   releaseLaneOperationRegistration,
 } from "./lane-supervisor";
 import {
+  resolveExecutorNodeConcurrency,
+  resolveLaneTopology,
   resolveLaneTopologyFromSettings,
   shouldUsePlannerDecomposition,
   shouldUseVerifier,
@@ -473,6 +481,34 @@ function cloneTaskForDurableSync(task: OrchestratorTask): OrchestratorTask {
   return cloned;
 }
 
+function getNodeToolProfile(
+  node: Pick<TaskNode, "description" | "successCriteria" | "toolProfile">,
+): ToolProfile | undefined {
+  return (
+    node.toolProfile ??
+    inferToolProfileForStep(node.description, node.successCriteria)
+  );
+}
+
+function buildParallelRunState(task: OrchestratorTask): {
+  activeWorkerCount: number;
+  resourceLocks: Array<{
+    nodeId: string;
+    parallelism: string;
+    resources: NonNullable<TaskNode["parallelContract"]>["resourceHints"];
+  }>;
+} {
+  const runningNodes = task.nodes.filter((node) => node.status === "running");
+  return {
+    activeWorkerCount: runningNodes.length,
+    resourceLocks: runningNodes.map((node) => ({
+      nodeId: node.id,
+      parallelism: node.parallelContract?.parallelism ?? "unknown",
+      resources: node.parallelContract?.resourceHints ?? [],
+    })),
+  };
+}
+
 export function buildInitialPlanState(
   task: OrchestratorTask,
   activeNodeId?: string,
@@ -492,28 +528,24 @@ export function buildInitialPlanState(
     (node) => node.status === "running",
   );
   return {
-    subtasks: task.nodes.map((node) => ({
-      description: node.description,
-      successCriteria: node.successCriteria,
-      status: node.status,
-      turnsUsed: 0,
-      turnBudget: 0,
-      ...(node.result ? { result: node.result } : {}),
-      ...(node.verificationGate
-        ? { verificationGate: node.verificationGate }
-        : {}),
-      ...(inferToolProfileForStep(node.description, node.successCriteria)
-        ? {
-            toolProfile: inferToolProfileForStep(
-              node.description,
-              node.successCriteria,
-            ),
-          }
-        : {}),
-      ...(node.selectedSkillId
-        ? { selectedSkillId: node.selectedSkillId }
-        : {}),
-    })),
+    subtasks: task.nodes.map((node) => {
+      const toolProfile = getNodeToolProfile(node);
+      return {
+        description: node.description,
+        successCriteria: node.successCriteria,
+        status: node.status,
+        turnsUsed: 0,
+        turnBudget: 0,
+        ...(node.result ? { result: node.result } : {}),
+        ...(node.verificationGate
+          ? { verificationGate: node.verificationGate }
+          : {}),
+        ...(toolProfile ? { toolProfile } : {}),
+        ...(node.selectedSkillId
+          ? { selectedSkillId: node.selectedSkillId }
+          : {}),
+      };
+    }),
     currentIndex:
       activeIndex >= 0
         ? activeIndex
@@ -3495,6 +3527,7 @@ export class Orchestrator {
           fallback: true,
           plannerSkipped: true,
           laneTopologyMode: laneTopology.mode,
+          graph: buildPlanTraceGraph(nodes),
           skills: nodes
             .filter((node) => node.selectedSkillId)
             .map((node) => ({
@@ -3590,6 +3623,7 @@ export class Orchestrator {
             isSingleNode: buildResult.isSingleNode,
             difficulty: buildResult.difficulty,
             laneTopologyMode: laneTopology.mode,
+            graph: buildPlanTraceGraph(nodes),
             skills: nodes
               .filter((node) => node.selectedSkillId)
               .map((node) => ({
@@ -3638,6 +3672,7 @@ export class Orchestrator {
             structured: false,
             fallback: true,
             laneTopologyMode: laneTopology.mode,
+            graph: buildPlanTraceGraph(nodes),
             skills: nodes
               .filter((node) => node.selectedSkillId)
               .map((node) => ({
@@ -3847,6 +3882,9 @@ export class Orchestrator {
     const budgetEstimator = this.getBudgetEstimator(task.workspaceId);
     const running = new Set<Promise<void>>();
     const budgetWarningsEmitted = new Set<string>();
+    const queuedWorkerTraceNodeIds = new Set<string>();
+    const blockedResourceTraceKeys = new Set<string>();
+    let nextWorkerIndex = 0;
     const verifierContract = buildRoleExecutionContract(
       "verifier",
       input.settings,
@@ -3992,6 +4030,7 @@ export class Orchestrator {
 
     const launchWorker = async (node: TaskNode): Promise<void> => {
       if (task.status !== "running") return;
+      const workerIndex = nextWorkerIndex++;
       let staleSignalCount = 0;
       const nodeStartMs = Date.now();
 
@@ -4088,6 +4127,20 @@ export class Orchestrator {
         tabId,
         role: tabId === task.rootTabId ? "primary" : "auxiliary",
       });
+      this.emitTraceEvent(
+        task,
+        "worker_started",
+        {
+          taskId: task.id,
+          nodeId: node.id,
+          workerId,
+          workerIndex,
+          assignedResources: node.parallelContract?.resourceHints ?? [],
+          parallelism: node.parallelContract?.parallelism ?? "unknown",
+          ...buildParallelRunState(task),
+        },
+        "executor",
+      );
 
       const snapshot = await this.getSnapshot(tabId);
       const recoveredTurnCheckpoints = (task as any)._turnCheckpoints as
@@ -4195,6 +4248,7 @@ export class Orchestrator {
       const verificationTurnMode = shouldUseVerificationTurnMode({
         originalQuery: task.query,
       });
+      const nodeToolProfile = getNodeToolProfile(node);
 
       const loop = this.deps.createAgentLoop({
         openRouterApiKey: input.openRouterApiKey,
@@ -4321,16 +4375,8 @@ export class Orchestrator {
                     description: node.description,
                     successCriteria: node.successCriteria,
                     status: "running" as const,
-                    ...(inferToolProfileForStep(
-                      node.description,
-                      node.successCriteria,
-                    )
-                      ? {
-                          toolProfile: inferToolProfileForStep(
-                            node.description,
-                            node.successCriteria,
-                          ),
-                        }
+                    ...(nodeToolProfile
+                      ? { toolProfile: nodeToolProfile }
                       : {}),
                   },
                 ],
@@ -4387,6 +4433,11 @@ export class Orchestrator {
       });
 
       try {
+        const parallelContext = buildExecutorParallelContext({
+          node,
+          allNodes: task.nodes,
+          workerIndex,
+        });
         let executorInstruction = buildExecutorInstruction(
           node,
           taskStateBrief,
@@ -4395,6 +4446,7 @@ export class Orchestrator {
           task.query,
           verificationTurnMode,
           task.personalContextBrief,
+          parallelContext,
         );
         if (task.conversationContextBrief) {
           executorInstruction +=
@@ -5252,6 +5304,20 @@ export class Orchestrator {
             summary: (node.result || node.error || "").slice(0, 300),
             retries: node.retries,
             durationMs: Date.now() - nodeStartMs,
+            ...buildParallelRunState(task),
+          },
+          "executor",
+        );
+        this.emitTraceEvent(
+          task,
+          "worker_released_resource",
+          {
+            taskId: task.id,
+            nodeId: node.id,
+            workerId,
+            resources: node.parallelContract?.resourceHints ?? [],
+            outcome: node.status,
+            ...buildParallelRunState(task),
           },
           "executor",
         );
@@ -5295,15 +5361,48 @@ export class Orchestrator {
         await this.persistTaskCheckpoint(task);
         return;
       }
-      const runnable = getRunnablePendingNodes(task.nodes);
+      const runningNodes = task.nodes.filter(
+        (node) => node.status === "running",
+      );
+      const resourceBlocked = getResourceBlockedPendingNodes(
+        task.nodes,
+        runningNodes,
+      );
+      for (const blocked of resourceBlocked) {
+        const key = `${blocked.node.id}:${blocked.conflicts
+          .map((node) => node.id)
+          .sort()
+          .join(",")}`;
+        if (blockedResourceTraceKeys.has(key)) continue;
+        blockedResourceTraceKeys.add(key);
+        this.emitTraceEvent(
+          task,
+          "worker_blocked_resource",
+          {
+            taskId: task.id,
+            nodeId: blocked.node.id,
+            conflicts: blocked.conflicts.map((node) => ({
+              nodeId: node.id,
+              resources: node.parallelContract?.resourceHints ?? [],
+            })),
+            requestedResources:
+              blocked.node.parallelContract?.resourceHints ?? [],
+            ...buildParallelRunState(task),
+          },
+          "system",
+        );
+      }
+      const runnable = getRunnablePendingNodes(task.nodes, { runningNodes });
       const executorMaxConcurrent = this.getLaneRuntimeState(
         task.workspaceId,
         "executor",
       ).policy.maxConcurrent;
-      const schedulerConcurrency = Math.max(
-        1,
-        Math.min(task.maxWorkers, executorMaxConcurrent),
-      );
+      const schedulerTopology = resolveLaneTopology(task.laneTopologyMode);
+      const schedulerConcurrency = resolveExecutorNodeConcurrency({
+        topology: schedulerTopology,
+        maxWorkers: task.maxWorkers,
+        executorMaxConcurrent,
+      });
       logger.debug("orchestrator", "Scheduler cycle", {
         taskId: task.id,
         pending: task.nodes.filter((n) => n.status === "pending").length,
@@ -5312,6 +5411,7 @@ export class Orchestrator {
         failed: task.nodes.filter((n) => n.status === "failed").length,
         runnable: runnable.length,
         schedulerConcurrency,
+        laneTopologyMode: schedulerTopology.mode,
       });
 
       // Global goal gate: if a node just completed and the final node's
@@ -5595,6 +5695,22 @@ export class Orchestrator {
 
       while (runnable.length > 0 && running.size < schedulerConcurrency) {
         const node = runnable.shift()!;
+        if (!queuedWorkerTraceNodeIds.has(node.id)) {
+          queuedWorkerTraceNodeIds.add(node.id);
+          this.emitTraceEvent(
+            task,
+            "worker_queued",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              dependencyCount: node.dependencies.length,
+              resources: node.parallelContract?.resourceHints ?? [],
+              parallelism: node.parallelContract?.parallelism ?? "unknown",
+              ...buildParallelRunState(task),
+            },
+            "system",
+          );
+        }
         const tracked = launchWorker(node);
         running.add(tracked);
         tracked.finally(() => running.delete(tracked));
@@ -5965,6 +6081,19 @@ export class Orchestrator {
     const workers = this.workersByWorkspace.get(task.workspaceId)?.executor;
     for (const worker of workers?.values() ?? []) {
       if (worker.nodeId !== targetNode.id) continue;
+      this.emitTraceEvent(
+        task,
+        "worker_cancelled",
+        {
+          taskId: task.id,
+          nodeId: worker.nodeId,
+          workerId: worker.workerId,
+          reason: "user_skipped_node",
+          resources: targetNode.parallelContract?.resourceHints ?? [],
+          ...buildParallelRunState(task),
+        },
+        "system",
+      );
       worker.loop.stop();
       workers?.delete(worker.workerId);
     }
@@ -6081,6 +6210,22 @@ export class Orchestrator {
       void this.persistTaskCheckpoint(task);
       const pools = this.workersByWorkspace.get(workspaceId);
       for (const worker of workers?.values() || []) {
+        const node = task.nodes.find(
+          (candidate) => candidate.id === worker.nodeId,
+        );
+        this.emitTraceEvent(
+          task,
+          "worker_cancelled",
+          {
+            taskId: task.id,
+            nodeId: worker.nodeId,
+            workerId: worker.workerId,
+            reason: "task_stop_requested",
+            resources: node?.parallelContract?.resourceHints ?? [],
+            ...buildParallelRunState(task),
+          },
+          "system",
+        );
         worker.loop.requestStop();
       }
       pools?.planner.clear();
@@ -6095,6 +6240,22 @@ export class Orchestrator {
 
     const pools = this.workersByWorkspace.get(workspaceId);
     for (const worker of workers?.values() || []) {
+      const node = task.nodes.find(
+        (candidate) => candidate.id === worker.nodeId,
+      );
+      this.emitTraceEvent(
+        task,
+        "worker_cancelled",
+        {
+          taskId: task.id,
+          nodeId: worker.nodeId,
+          workerId: worker.workerId,
+          reason: "task_stop_forced",
+          resources: node?.parallelContract?.resourceHints ?? [],
+          ...buildParallelRunState(task),
+        },
+        "system",
+      );
       worker.loop.stop();
     }
     workers?.clear();

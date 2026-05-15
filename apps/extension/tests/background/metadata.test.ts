@@ -6,6 +6,8 @@ import {
   SEQUENTIAL_TOOLS,
   CACHEABLE_TOOLS,
   resolveToolProfile,
+  getToolNodeConcurrencyMeta,
+  getToolProfileNodeConcurrency,
 } from "../../src/background/tools/metadata";
 import { ToolName, RiskLevel } from "../../src/types";
 import { classifyRisk } from "../../src/background/security";
@@ -80,6 +82,71 @@ describe("Tool Metadata", () => {
         expect(typeof meta.domModifying).toBe("boolean");
         expect(typeof meta.sequential).toBe("boolean");
       }
+    });
+  });
+
+  describe("node concurrency metadata", () => {
+    test("returns scheduler-facing concurrency metadata for every ToolName", () => {
+      for (const name of Object.values(ToolName)) {
+        const meta = getToolNodeConcurrencyMeta(name as ToolName);
+        expect(meta).toBeDefined();
+        expect(meta.scope).toMatch(
+          /^(same_page|same_origin|separate_tab|never)$/,
+        );
+        expect(meta.access).toMatch(
+          /^(read|write|navigate|approval|external)$/,
+        );
+      }
+    });
+
+    test("covers each node-level concurrency classification", () => {
+      const scopes = new Set(
+        Object.values(ToolName).map(
+          (name) => getToolNodeConcurrencyMeta(name as ToolName).scope,
+        ),
+      );
+
+      expect(scopes.has("same_page")).toBe(true);
+      expect(scopes.has("same_origin")).toBe(true);
+      expect(scopes.has("separate_tab")).toBe(true);
+      expect(scopes.has("never")).toBe(true);
+    });
+
+    test("classifies representative tools by coexistence scope", () => {
+      expect(getToolNodeConcurrencyMeta(ToolName.READ_PAGE)).toMatchObject({
+        scope: "same_page",
+        access: "read",
+      });
+      expect(getToolNodeConcurrencyMeta(ToolName.NAVIGATE)).toMatchObject({
+        scope: "separate_tab",
+        access: "navigate",
+      });
+      expect(getToolNodeConcurrencyMeta(ToolName.SET_COOKIE)).toMatchObject({
+        scope: "same_origin",
+        access: "write",
+      });
+      expect(getToolNodeConcurrencyMeta(ToolName.EXECUTE_JS)).toMatchObject({
+        scope: "never",
+        access: "write",
+      });
+    });
+
+    test("summarizes tool profiles for scheduler defaults", () => {
+      expect(getToolProfileNodeConcurrency("read_only")).toMatchObject({
+        access: "read",
+      });
+      expect(getToolProfileNodeConcurrency("form_fill")).toMatchObject({
+        access: "write",
+      });
+      expect(getToolProfileNodeConcurrency("navigation_only")).toMatchObject({
+        access: "navigate",
+      });
+      expect(getToolProfileNodeConcurrency("recover_from_stuck")).toMatchObject(
+        {
+          scope: "never",
+          access: "write",
+        },
+      );
     });
   });
 

@@ -1384,6 +1384,73 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[result.nodes.length - 1].description).toMatch(/best matches/i);
     });
 
+    test("repairs under-decomposed multi-URL read prompts into independent graph nodes", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                difficulty: "simple",
+                steps: [
+                    {
+                        objective: "Read both report pages and summarize them",
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Read these two read-only report pages and summarize each page's headline metric and owner: https://example.com/reports/alpha and https://example.com/reports/beta.",
+            "Reports",
+            "https://example.com/reports",
+        );
+
+        expect(result.isSingleNode).toBe(false);
+        expect(result.nodes).toHaveLength(3);
+        expect(result.nodes[0].dependencies).toEqual([]);
+        expect(result.nodes[1].dependencies).toEqual([]);
+        expect(result.nodes[0].parallelContract?.parallelism).toBe("independent");
+        expect(result.nodes[1].parallelContract?.parallelism).toBe("independent");
+        expect(result.nodes[2].dependencies).toEqual([
+            result.nodes[0].id,
+            result.nodes[1].id,
+        ]);
+    });
+
+    test("repairs explicit separate same-form updates into serialized graph nodes", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: false,
+                difficulty: "simple",
+                steps: [
+                    {
+                        objective: "Update both form fields and submit",
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "On the shared form page https://example.com/shared-form, do these as separate updates on the same form: set Primary label to Mercury, set Secondary label to Atlas, then submit the shared form.",
+            "Shared Form",
+            "https://example.com/shared-form",
+        );
+
+        expect(result.isSingleNode).toBe(false);
+        expect(result.nodes).toHaveLength(3);
+        expect(result.nodes[0].description).toMatch(/Primary label.*Mercury/i);
+        expect(result.nodes[1].description).toMatch(/Secondary label.*Atlas/i);
+        expect(result.nodes[1].dependencies).toContain(result.nodes[0].id);
+        expect(result.nodes[2].dependencies).toContain(result.nodes[1].id);
+        expect(result.nodes[1].parallelContract?.parallelism).toBe("serialized");
+    });
+
     test("defaults difficulty to moderate when missing", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
