@@ -69,6 +69,7 @@
     "test:e2e:hard": "nx run extension:test-e2e-hard",
     "test:e2e:smoke": "nx run extension:test-e2e-easy",
     "test:e2e:video": "tsx scripts/run-e2e-video-review.ts",
+    "test:e2e:showcase": "tsx scripts/run-e2e-showcase.ts",
     "test:e2e:interactions": "nx run extension:test-e2e-medium",
     "test:e2e:runtime": "nx run extension:test-e2e-hard",
     "workarena:demo": "tsx scripts/workarena-demo-server.ts",

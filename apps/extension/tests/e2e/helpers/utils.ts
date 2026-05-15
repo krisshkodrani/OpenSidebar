@@ -22,6 +22,12 @@ import {
 import { readE2EConfig } from "./e2e-config";
 
 type TaskCompletionState = "completed" | "partial" | "failed" | "none";
+export type E2EPanelPromptEntryMode = "instant" | "visible";
+
+export interface SendUserChatOptions {
+  panelPromptEntry?: E2EPanelPromptEntryMode;
+  typingDelayMs?: number;
+}
 
 function isTerminalTaskCompletionStatus(
   status: unknown,
@@ -136,6 +142,7 @@ function isTransientPageEvaluationError(error: unknown): boolean {
 const PANEL_PROMPT_SUBMIT_TIMEOUT_MS = 15_000;
 const SERVICE_WORKER_EVALUATE_TIMEOUT_MS = 3_000;
 const RESET_CLEANUP_OPERATION_TIMEOUT_MS = 5_000;
+const DEFAULT_VISIBLE_PANEL_TYPING_DELAY_MS = 10;
 
 function withE2ETimeout<T>(
   operation: Promise<T>,
@@ -237,6 +244,62 @@ function panelSetPromptExpression(
   }))()`;
 }
 
+function panelTypePromptExpression(
+  mode: "overlay" | "detached",
+  message: string,
+  delayMs: number,
+): string {
+  return `(() => new Promise((resolve) => {
+    ${panelRootLookupScript(mode)}
+    const textarea = root && root.querySelector("textarea");
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      resolve({ ok: false, reason: "textarea-missing" });
+      return;
+    }
+    const value = ${JSON.stringify(message)};
+    const delayMs = ${JSON.stringify(delayMs)};
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    const setValue = (nextValue) => {
+      if (setter) {
+        setter.call(textarea, nextValue);
+      } else {
+        textarea.value = nextValue;
+      }
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    let index = 0;
+    textarea.focus();
+    setValue("");
+
+    const appendNext = () => {
+      if (index >= value.length) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const button =
+              root &&
+              root.querySelector('button[aria-label="Send message"], button[aria-label="Send guidance"]');
+            resolve({
+              ok: true,
+              value: textarea.value,
+              buttonDisabled:
+                button instanceof HTMLButtonElement ? button.disabled : null,
+            });
+          });
+        });
+        return;
+      }
+      index += 1;
+      setValue(value.slice(0, index));
+      setTimeout(appendNext, delayMs);
+    };
+
+    appendNext();
+  }))()`;
+}
+
 function panelFocusTextareaExpression(mode: "overlay" | "detached"): string {
   return `(() => {
     ${panelRootLookupScript(mode)}
@@ -272,12 +335,22 @@ async function submitPromptOnPanelPage(
   page: Page,
   mode: "overlay" | "detached",
   message: string,
+  options: SendUserChatOptions = {},
 ): Promise<void> {
   await page.bringToFront().catch(() => {});
   await page.waitForFunction(panelTextareaReadyExpression(mode), {
     timeout: PANEL_PROMPT_SUBMIT_TIMEOUT_MS,
   });
-  const result = await page.evaluate(panelSetPromptExpression(mode, message));
+  const result =
+    options.panelPromptEntry === "visible"
+      ? await page.evaluate(
+          panelTypePromptExpression(
+            mode,
+            message,
+            options.typingDelayMs ?? DEFAULT_VISIBLE_PANEL_TYPING_DELAY_MS,
+          ),
+        )
+      : await page.evaluate(panelSetPromptExpression(mode, message));
   if (!result || typeof result !== "object" || !(result as any).ok) {
     throw new Error(
       `E2E panel prompt injection failed: ${(result as any)?.reason ?? "unknown"}`,
@@ -294,6 +367,7 @@ async function submitUserChatThroughE2EPanel(
   ctx: ExtensionContext,
   message: string,
   tabId: number,
+  options: SendUserChatOptions = {},
 ): Promise<boolean> {
   const mode = getE2EPanelMode();
   if (mode === "off") return false;
@@ -303,7 +377,7 @@ async function submitUserChatThroughE2EPanel(
     if (!panelPage || panelPage.isClosed()) {
       throw new Error("Detached E2E panel is not available for prompt input.");
     }
-    await submitPromptOnPanelPage(panelPage, "detached", message);
+    await submitPromptOnPanelPage(panelPage, "detached", message, options);
     return true;
   }
 
@@ -311,7 +385,7 @@ async function submitUserChatThroughE2EPanel(
   if (!targetPage) {
     throw new Error(`Could not find Puppeteer page for tab ${tabId}.`);
   }
-  await submitPromptOnPanelPage(targetPage, "overlay", message);
+  await submitPromptOnPanelPage(targetPage, "overlay", message, options);
   return true;
 }
 
@@ -675,11 +749,17 @@ export async function sendUserChat(
   message: string,
   tabId: number,
   workspaceId: string | null = null,
+  options: SendUserChatOptions = {},
 ): Promise<string> {
   const effectiveWorkspaceId = workspaceId ?? `e2e-${crypto.randomUUID()}`;
   await ensureE2EPanel(ctx, tabId, effectiveWorkspaceId);
   const panelSubmitStartedAt = Date.now();
-  const sentViaPanel = await submitUserChatThroughE2EPanel(ctx, message, tabId);
+  const sentViaPanel = await submitUserChatThroughE2EPanel(
+    ctx,
+    message,
+    tabId,
+    options,
+  );
   if (sentViaPanel) {
     const expectedText = message.trim();
     await waitForMonitoredEvent(
