@@ -25,6 +25,10 @@ import {
   type FormTraceMetrics,
   type TraceTurn,
 } from "./diagnostics";
+import type {
+  HarnessDiagnostic,
+  TraceArtifactBundle,
+} from "./trace-artifacts";
 
 const PROJECT_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -37,6 +41,9 @@ interface TestRecord {
   passed: boolean | null;
   durationMs: number;
   traceFiles: string[];
+  runTraceFiles: string[];
+  runIds: string[];
+  harnessDiagnostics: HarnessDiagnostic[];
 }
 
 interface RunMetadata {
@@ -51,22 +58,49 @@ interface TraceCostData {
   cost: number;
 }
 
-type FailureClass = "provider" | "harness" | "product" | null;
+type FailureClass =
+  | "provider"
+  | "infrastructure"
+  | "harness"
+  | "runtime"
+  | "product"
+  | "unknown"
+  | null;
+
+type AnalysisTraceTurn = TraceTurn & { traceOrdinal?: number };
+
+interface E2EFailureEvidence {
+  failureClass: NonNullable<FailureClass>;
+  firstBadTurnRef: string;
+  signals: string[];
+  diagnostics: HarnessDiagnostic[];
+}
+
+interface E2EReportIndexEntry {
+  path: string;
+  generatedAt: string;
+  caseCount: number;
+  traceFiles: string[];
+  runTraceFiles: string[];
+}
 
 interface TraceAnalysis extends TraceCostData {
   traceCount: number;
+  runTraceCount: number;
   pageInterpretationTurns: number;
   promptUsed: string;
   toolCounts: Record<string, number>;
   repeatedTools: string[];
   model: string | undefined;
-  turnDetails: TraceTurn[];
+  turnDetails: AnalysisTraceTurn[];
   runIds: string[];
   sessionIds: string[];
   skillsUsed: string[];
   nodeSkills: Array<{ nodeId: string; skillId: string; reason?: string }>;
   diagnostics: SessionDiagnostics;
+  harnessDiagnostics: HarnessDiagnostic[];
   failureClass: FailureClass;
+  failureEvidence: E2EFailureEvidence | null;
   formMetrics: FormTraceMetrics | null;
 }
 
@@ -185,6 +219,10 @@ function compactPrompt(prompt: string, maxLength: number = 140): string {
   return `${compact.slice(0, maxLength - 3)}...`;
 }
 
+function sortUnique(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
 function messageContainsPageInterpretation(message: TraceLLMMessage): boolean {
   return (
     typeof message.content === "string" &&
@@ -206,27 +244,47 @@ function countPageInterpretationTurns(entries: TraceEntry[]): number {
 /**
  * Classify a test failure by inspecting trace evidence.
  *
- * - provider: LLM/API failures and transport-level issues.
- * - harness: browser/extension lifecycle and synchronization failures.
+ * - provider: LLM/API failures and provider transport issues.
+ * - infrastructure: Playwright, CDP, browser, or WebSocket failures below the harness.
+ * - harness: e2e scaffolding, synchronization, and trace collection failures.
+ * - runtime: extension bridge or agent runtime failures.
  * - product: agent behavior or assertion failures.
  */
-function classifyFailure(turns: TraceTurn[]): FailureClass {
+function classifyFailureEvidence(
+  turns: AnalysisTraceTurn[],
+  diagnostics: HarnessDiagnostic[] = [],
+): E2EFailureEvidence {
   const providerSignals = [
     /\b(429|500|502|503|504)\b/,
     /\b(rate.?limit|too many requests|service unavailable|bad gateway|gateway timeout)\b/i,
     /\b(empty response|no response|model refused|content filter|api error|provider error)\b/i,
-    /\b(timeout|timed out|ETIMEDOUT|ECONNREFUSED|fetch failed)\b/i,
+    /\b(ETIMEDOUT|ECONNREFUSED|fetch failed)\b/i,
+    /\b(provider|llm|model|api|request)\b.{0,40}\b(timeout|timed out)\b/i,
+  ];
+
+  const infrastructureSignals = [
+    /\b(CDP|Protocol error|WebSocket|Target closed|Session closed)\b/i,
+    /\b(browser (?:has )?(?:disconnected|closed|crashed)|page crashed)\b/i,
+    /\b(Execution context was destroyed|detached frame|frame was detached)\b/i,
   ];
 
   const harnessSignals = [
+    /\b(test timeout|assertion failed|expect\(|beforeEach|afterEach)\b/i,
+    /\b(no trace file|missing trace|workspace filter)\b/i,
+  ];
+
+  const runtimeSignals = [
     /\b(bridge disconnect|content script .* not .* respond|extension context invalidated)\b/i,
     /\b(tab (was )?closed|no active tab|tab not found|Cannot access)\b/i,
-    /\b(navigation timeout|page crashed|target closed|session closed)\b/i,
-    /\b(injecting content script|reinjection|chrome\.runtime)\b/i,
+    /\b(navigation timeout|injecting content script|reinjection|chrome\.runtime)\b/i,
   ];
 
   let providerHits = 0;
+  let infrastructureHits = 0;
   let harnessHits = 0;
+  let runtimeHits = 0;
+  const signals: string[] = [];
+  let firstBadTurnRef = "-";
 
   for (const turn of turns) {
     const texts = [
@@ -237,18 +295,65 @@ function classifyFailure(turns: TraceTurn[]): FailureClass {
     ];
 
     for (const text of texts) {
+      if (!text) continue;
       for (const pattern of providerSignals) {
-        if (pattern.test(text)) providerHits++;
+        if (pattern.test(text)) {
+          providerHits++;
+          signals.push("provider:" + compactPrompt(text, 90));
+        }
+      }
+      for (const pattern of infrastructureSignals) {
+        if (pattern.test(text)) {
+          infrastructureHits++;
+          signals.push("infrastructure:" + compactPrompt(text, 90));
+        }
       }
       for (const pattern of harnessSignals) {
-        if (pattern.test(text)) harnessHits++;
+        if (pattern.test(text)) {
+          harnessHits++;
+          signals.push("harness:" + compactPrompt(text, 90));
+        }
       }
+      for (const pattern of runtimeSignals) {
+        if (pattern.test(text)) {
+          runtimeHits++;
+          signals.push("runtime:" + compactPrompt(text, 90));
+        }
+      }
+    }
+
+    if (
+      firstBadTurnRef === "-" &&
+      (turn.toolResults.some((result) => result.success === false) ||
+        providerHits + infrastructureHits + harnessHits + runtimeHits > 0)
+    ) {
+      firstBadTurnRef = `S${turn.traceOrdinal ?? 1}-T${turn.turnNumber}`;
     }
   }
 
-  if (providerHits > 0 && providerHits >= harnessHits) return "provider";
-  if (harnessHits > 0) return "harness";
-  return "product";
+  for (const item of diagnostics) {
+    if (item.severity === "warning" || item.severity === "error") {
+      harnessHits++;
+      signals.push(`harness:${item.message}`);
+    }
+  }
+
+  const scored: Array<[NonNullable<FailureClass>, number]> = [
+    ["infrastructure", infrastructureHits],
+    ["provider", providerHits],
+    ["runtime", runtimeHits],
+    ["harness", harnessHits],
+  ];
+  const winner = scored
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1])[0]?.[0];
+
+  return {
+    failureClass: winner ?? (turns.length > 0 ? "product" : "unknown"),
+    firstBadTurnRef,
+    signals: sortUnique(signals).slice(0, 6),
+    diagnostics,
+  };
 }
 
 function analyzeTraces(
@@ -260,7 +365,7 @@ function analyzeTraces(
   let model: string | undefined;
   let pageInterpretationTurns = 0;
   const toolCounts: Record<string, number> = {};
-  const allTurns: TraceTurn[] = [];
+  const allTurns: AnalysisTraceTurn[] = [];
   const runIds = new Set<string>();
   const sessionIds = new Set<string>();
   const prompts = new Set<string>();
@@ -268,7 +373,8 @@ function analyzeTraces(
   const nodeSkills = new Map<string, { skillId: string; reason?: string }>();
   const diagnostics = createEmptyDiagnostics();
 
-  for (const filePath of traceFiles) {
+  for (let traceIndex = 0; traceIndex < traceFiles.length; traceIndex++) {
+    const filePath = traceFiles[traceIndex];
     if (!existsSync(filePath)) continue;
 
     const entries = readTraceEntries(filePath);
@@ -307,7 +413,10 @@ function analyzeTraces(
 
     mergeDiagnostics(diagnostics, computeSessionDiagnostics(session, entries));
 
-    const turns = readTrace(filePath);
+    const turns: AnalysisTraceTurn[] = readTrace(filePath).map((turn) => ({
+      ...turn,
+      traceOrdinal: traceIndex + 1,
+    }));
     allTurns.push(...turns);
     for (const turn of turns) {
       for (const toolCall of turn.toolCalls) {
@@ -352,6 +461,7 @@ function analyzeTraces(
     turns: totalTurns,
     cost: totalCost,
     traceCount: traceFiles.length,
+    runTraceCount: 0,
     pageInterpretationTurns,
     promptUsed: compactPrompt([...prompts].join(" / ")),
     toolCounts,
@@ -367,7 +477,9 @@ function analyzeTraces(
       ...(value.reason ? { reason: value.reason } : {}),
     })),
     diagnostics,
+    harnessDiagnostics: [],
     failureClass: null,
+    failureEvidence: null,
     formMetrics: hasFormSkill ? formMetrics : null,
   };
 }
@@ -421,6 +533,47 @@ function formatFormRubric(metrics: FormTraceMetrics): string {
   ].join(", ");
 }
 
+function normalizeTraceArtifacts(
+  input: string[] | TraceArtifactBundle,
+): Pick<
+  TestRecord,
+  "traceFiles" | "runTraceFiles" | "runIds" | "harnessDiagnostics"
+> {
+  if (Array.isArray(input)) {
+    return {
+      traceFiles: input,
+      runTraceFiles: [],
+      runIds: [],
+      harnessDiagnostics: [],
+    };
+  }
+
+  return {
+    traceFiles: input.traceFiles,
+    runTraceFiles: input.runTraceFiles,
+    runIds: input.runIds,
+    harnessDiagnostics: input.diagnostics,
+  };
+}
+
+function mergeRunIds(left: string[], right: string[]): string[] {
+  return sortUnique([...left, ...right]);
+}
+
+function buildReportIndexEntry(
+  reportPath: string,
+  generatedAt: Date,
+  analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
+): E2EReportIndexEntry {
+  return {
+    path: reportPath,
+    generatedAt: generatedAt.toISOString(),
+    caseCount: analyses.length,
+    traceFiles: sortUnique(analyses.flatMap(({ rec }) => rec.traceFiles)),
+    runTraceFiles: sortUnique(analyses.flatMap(({ rec }) => rec.runTraceFiles)),
+  };
+}
+
 function buildMarkdownReport(
   analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
   runMetadata: RunMetadata | null,
@@ -452,11 +605,16 @@ function buildMarkdownReport(
     `Overall result: ${passedCount}/${analyses.length} passed${failedCount > 0 ? `, ${failedCount} failed` : ""}`,
   );
   lines.push("");
-  lines.push("| Case | Success | Turns | Perceptions | Traces | Prompt used |");
-  lines.push("|------|---------|------:|------------:|-------:|-------------|");
+  lines.push(
+    "| Case | Success | Turns | Perceptions | Trace refs | First bad | Failure | Prompt used |",
+  );
+  lines.push(
+    "|------|---------|------:|------------:|------------|-----------|---------|-------------|",
+  );
   for (const { rec, analysis } of analyses) {
+    const traceRefs = `${analysis.traceCount} trace(s), ${analysis.runTraceCount} run(s)`;
     lines.push(
-      `| ${rec.name} | ${rec.passed ? "Yes" : rec.passed === false ? "No" : "Unknown"} | ${analysis.turns} | ${analysis.pageInterpretationTurns} | ${analysis.traceCount} | ${analysis.promptUsed} |`,
+      `| ${rec.name} | ${rec.passed ? "Yes" : rec.passed === false ? "No" : "Unknown"} | ${analysis.turns} | ${analysis.pageInterpretationTurns} | ${traceRefs} | ${analysis.failureEvidence?.firstBadTurnRef ?? "-"} | ${analysis.failureClass ?? "-"} | ${analysis.promptUsed} |`,
     );
   }
   lines.push("");
@@ -469,7 +627,13 @@ function buildMarkdownReport(
     "- `Perceptions`: Turns where the recorded trace input included `Page Interpretation`.",
   );
   lines.push(
-    "- `Traces`: Number of trace sessions produced for that case, including retries or replans.",
+    "- `Trace refs`: Compact count of agent trace files and orchestrator run trace files referenced by the case.",
+  );
+  lines.push(
+    "- `First bad`: Abbreviated `S<n>-T<m>` reference to the first trace session and turn with failure evidence.",
+  );
+  lines.push(
+    "- `Failure`: Conservative failure class inferred from trace, run, and harness diagnostics.",
   );
   lines.push(
     "- `Success`: Whether the case completed successfully in the run.",
@@ -477,6 +641,43 @@ function buildMarkdownReport(
   lines.push(
     "- `Form metrics`: For form-skill traces, field writes count text/select/checkbox writes, validation errors count observed inline/server feedback, corrections count field writes after validation feedback, rework counts stagnation/widening signals, and submit confidence ranges from 0 to 1.",
   );
+
+  const failureAnalyses = analyses.filter(
+    ({ rec, analysis }) => rec.passed === false || analysis.failureEvidence,
+  );
+  if (failureAnalyses.length > 0) {
+    lines.push("");
+    lines.push("## Failure Evidence");
+    for (const { rec, analysis } of failureAnalyses) {
+      lines.push("");
+      lines.push(`### ${rec.name}`);
+      if (!analysis.failureEvidence) {
+        lines.push("- Class: unknown");
+        lines.push("- First bad turn: -");
+        continue;
+      }
+      lines.push(`- Class: ${analysis.failureEvidence.failureClass}`);
+      lines.push(
+        `- First bad turn: ${analysis.failureEvidence.firstBadTurnRef}`,
+      );
+      lines.push(
+        `- Trace references: ${analysis.traceCount} agent trace(s), ${analysis.runTraceCount} run trace(s), ${analysis.runIds.length} run ID(s).`,
+      );
+      if (analysis.failureEvidence.signals.length > 0) {
+        lines.push(
+          `- Signals: ${analysis.failureEvidence.signals.join(" / ")}`,
+        );
+      }
+      const warnings = analysis.failureEvidence.diagnostics.filter(
+        (item) => item.severity !== "info",
+      );
+      if (warnings.length > 0) {
+        lines.push(
+          `- Harness diagnostics: ${warnings.map((item) => item.message).join(" / ")}`,
+        );
+      }
+    }
+  }
 
   const formAnalyses = analyses.filter(({ analysis }) => analysis.formMetrics);
   if (formAnalyses.length > 0) {
@@ -533,9 +734,14 @@ class SuiteReport {
     name: string,
     passed: boolean | null,
     durationMs: number,
-    traceFiles: string[],
+    traceArtifacts: string[] | TraceArtifactBundle,
   ): void {
-    this.records.push({ name, passed, durationMs, traceFiles });
+    this.records.push({
+      name,
+      passed,
+      durationMs,
+      ...normalizeTraceArtifacts(traceArtifacts),
+    });
   }
 
   printSummary(): void {
@@ -545,8 +751,16 @@ class SuiteReport {
     const sessionIndex = readTraceSessions();
     const analyses = this.records.map((rec) => {
       const analysis = analyzeTraces(rec.traceFiles, sessionIndex);
+      analysis.runTraceCount = rec.runTraceFiles.length;
+      analysis.runIds = mergeRunIds(analysis.runIds, rec.runIds);
+      analysis.harnessDiagnostics = rec.harnessDiagnostics;
       if (rec.passed === false) {
-        analysis.failureClass = classifyFailure(analysis.turnDetails);
+        const evidence = classifyFailureEvidence(
+          analysis.turnDetails,
+          rec.harnessDiagnostics,
+        );
+        analysis.failureClass = evidence.failureClass;
+        analysis.failureEvidence = evidence;
       }
       return { rec, analysis };
     });
@@ -609,26 +823,80 @@ class SuiteReport {
     const reportsDir = resolve(PROJECT_ROOT, ".artifacts", "e2e");
     if (!existsSync(reportsDir)) mkdirSync(reportsDir, { recursive: true });
 
-    const today = new Date().toISOString().split("T")[0];
-    const reportPath = resolve(reportsDir, `e2e-report-${today}.md`);
-    const markdown = buildMarkdownReport(analyses, this.runMetadata);
+    const generatedAt = new Date();
+    const timestamp = generatedAt
+      .toISOString()
+      .replace(/[:.]/g, "-");
+    const reportPath = resolve(reportsDir, `e2e-report-${timestamp}.md`);
+    const markdown = buildMarkdownReport(analyses, this.runMetadata, generatedAt);
 
     writeFileSync(reportPath, markdown, "utf-8");
+    this.writeReportIndex(reportsDir, reportPath, generatedAt, analyses);
     console.log(`\n[report] Written to ${reportPath}`);
+  }
+
+  private writeReportIndex(
+    reportsDir: string,
+    reportPath: string,
+    generatedAt: Date,
+    analyses: Array<{ rec: TestRecord; analysis: TraceAnalysis }>,
+  ): void {
+    const indexPath = resolve(reportsDir, "index.json");
+    let reports: E2EReportIndexEntry[] = [];
+    if (existsSync(indexPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(indexPath, "utf-8"));
+        if (Array.isArray(parsed?.reports)) {
+          reports = parsed.reports.filter(
+            (item: any) =>
+              typeof item?.path === "string" &&
+              typeof item?.generatedAt === "string",
+          );
+        }
+      } catch {
+        reports = [];
+      }
+    }
+
+    const entry = buildReportIndexEntry(reportPath, generatedAt, analyses);
+    const nextReports = [
+      entry,
+      ...reports.filter((item) => item.path !== reportPath),
+    ].slice(0, 20);
+
+    writeFileSync(
+      indexPath,
+      JSON.stringify(
+        {
+          latest: entry,
+          reports: nextReports,
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf-8",
+    );
   }
 }
 
 export const __testOnly = {
   analyzeTraces,
   buildMarkdownReport,
+  buildReportIndexEntry,
+  classifyFailureEvidence,
   compactPrompt,
   countPageInterpretationTurns,
   createEmptyDiagnostics,
   mergeDiagnostics,
+  normalizeTraceArtifacts,
 };
 
 export const suiteReport = new SuiteReport();
 
 process.on("beforeExit", () => {
+  suiteReport.printSummary();
+});
+
+process.on("exit", () => {
   suiteReport.printSummary();
 });

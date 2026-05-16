@@ -88,6 +88,13 @@ describe("tab coordination trace data", () => {
         primaryTabId: 100,
         lastReboundTabId: 201,
       },
+      diagnostics: {
+        chrome: {
+          rootTabId: 100,
+          primaryTabId: 100,
+          lastReboundTabId: 201,
+        },
+      },
       tabRefs: {
         root: {
           source: "root",
@@ -101,8 +108,8 @@ describe("tab coordination trace data", () => {
           url: "https://example.com/list",
           debug: { chromeTabId: 100 },
         },
-        lastRebound: {
-          source: "lastRebound",
+        previous: {
+          source: "previous",
           role: "auxiliary",
           url: "https://example.com/detail",
           debug: { chromeTabId: 201 },
@@ -160,7 +167,7 @@ describe("tab coordination trace data", () => {
 
     const tabRefs = traceData.tabRefs as {
       primary: { role: string; url: string | null; debug?: unknown };
-      lastRebound: unknown;
+      previous: unknown;
       owned: Array<{ role: string; url: string | null; debug?: unknown }>;
     };
     const replayHints = {
@@ -186,7 +193,7 @@ describe("tab coordination trace data", () => {
         },
       ],
     });
-    expect(tabRefs.lastRebound).toBeNull();
+    expect(tabRefs.previous).toBeNull();
   });
 
   test("filters released tabs from portable refs and legacy owned tab counts", () => {
@@ -221,15 +228,15 @@ describe("tab coordination trace data", () => {
     );
 
     const tabRefs = traceData.tabRefs as {
-      lastRebound: unknown;
+      previous: unknown;
       owned: unknown[];
     };
 
     expect(traceData.ownedTabCount).toBe(1);
     expect(tabRefs.owned).toHaveLength(1);
-    expect(tabRefs.lastRebound).toEqual(
+    expect(tabRefs.previous).toEqual(
       expect.objectContaining({
-        source: "lastRebound",
+        source: "previous",
         role: "auxiliary",
         url: "https://example.com/closed",
         debug: { chromeTabId: 201 },

@@ -169,11 +169,15 @@ describe("e2e report helper", () => {
             passed: true,
             durationMs: 10_000,
             traceFiles: ["trace-1.jsonl"],
+            runTraceFiles: ["run-1.jsonl"],
+            runIds: ["run-1"],
+            harnessDiagnostics: [],
           },
           analysis: {
             turns: 3,
             cost: 0.003,
             traceCount: 1,
+            runTraceCount: 1,
             pageInterpretationTurns: 2,
             promptUsed: "Dismiss the cookie popup and continue to checkout",
             toolCounts: {},
@@ -199,7 +203,9 @@ describe("e2e report helper", () => {
                 cached: 1,
               },
             },
+            harnessDiagnostics: [],
             failureClass: null,
+            failureEvidence: null,
             formMetrics: null,
           },
         },
@@ -220,15 +226,84 @@ describe("e2e report helper", () => {
     );
     expect(markdown).toContain("Overall result: 1/1 passed");
     expect(markdown).toContain(
-      "| Case | Success | Turns | Perceptions | Traces | Prompt used |",
+      "| Case | Success | Turns | Perceptions | Trace refs | First bad | Failure | Prompt used |",
     );
     expect(markdown).toContain(
-      "| modal-dismiss | Yes | 3 | 2 | 1 | Dismiss the cookie popup and continue to checkout |",
+      "| modal-dismiss | Yes | 3 | 2 | 1 trace(s), 1 run(s) | - | - | Dismiss the cookie popup and continue to checkout |",
     );
     expect(markdown).toContain("## Metric Definitions");
     expect(markdown).toContain("## Stability Notes");
     expect(markdown).toContain(
       "- Perception path mix: structured 2, VL screenshot 1, element-only 0.",
     );
+  });
+
+  it("classifies browser and CDP failures as infrastructure", () => {
+    const evidence = reportTestOnly.classifyFailureEvidence([
+      {
+        turnNumber: 2,
+        traceOrdinal: 1,
+        toolCalls: [],
+        toolResults: [
+          {
+            name: "click_element",
+            success: false,
+            result: "",
+            error: "Protocol error (Runtime.callFunctionOn): Target closed",
+          },
+        ],
+      },
+    ]);
+
+    expect(evidence.failureClass).toBe("infrastructure");
+    expect(evidence.firstBadTurnRef).toBe("S1-T2");
+  });
+
+  it("records referenced traces in the report index entry", () => {
+    const entry = reportTestOnly.buildReportIndexEntry(
+      "C:/repo/.artifacts/e2e/e2e-report.json",
+      new Date("2026-04-18T12:34:56.000Z"),
+      [
+        {
+          rec: {
+            name: "case-a",
+            passed: false,
+            durationMs: 1000,
+            traceFiles: ["trace-a.jsonl", "trace-b.jsonl"],
+            runTraceFiles: ["run-a.jsonl"],
+            runIds: ["run-a"],
+            harnessDiagnostics: [],
+          },
+          analysis: {
+            turns: 0,
+            cost: 0,
+            traceCount: 2,
+            runTraceCount: 1,
+            pageInterpretationTurns: 0,
+            promptUsed: "-",
+            toolCounts: {},
+            repeatedTools: [],
+            model: undefined,
+            turnDetails: [],
+            runIds: ["run-a"],
+            sessionIds: [],
+            skillsUsed: [],
+            nodeSkills: [],
+            diagnostics: reportTestOnly.createEmptyDiagnostics(),
+            harnessDiagnostics: [],
+            failureClass: "unknown",
+            failureEvidence: null,
+            formMetrics: null,
+          },
+        },
+      ],
+    );
+
+    expect(entry).toMatchObject({
+      generatedAt: "2026-04-18T12:34:56.000Z",
+      caseCount: 1,
+      traceFiles: ["trace-a.jsonl", "trace-b.jsonl"],
+      runTraceFiles: ["run-a.jsonl"],
+    });
   });
 });

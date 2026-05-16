@@ -23,16 +23,19 @@ import {
   startLogServer,
   stopLogServer,
   snapshotTraceFiles,
-  findAllNewTraceFiles,
-  filterTraceFilesByWorkspace,
   readTrace,
   formatTraceSummary,
   attachSwConsole,
 } from "./diagnostics";
 import { suiteReport } from "./report";
+import { collectTraceArtifacts } from "./trace-artifacts";
 import { collectE2EVideoTraceMetrics } from "./video-metrics";
 import { readE2EConfig } from "./e2e-config";
-import { existsSync, readFileSync } from "fs";
+import {
+  resolveE2EProviderConfig,
+  type ProviderMode,
+} from "./e2e-provider-config";
+export { loadApiKey } from "./e2e-provider-config";
 import { copyFile, mkdir, readdir, stat, writeFile } from "fs/promises";
 import { relative, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -40,7 +43,6 @@ import { promisify } from "util";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../../../..");
-const REPO_ENV_PATH = resolve(__dirname, "../../../../../.env");
 const execFileAsync = promisify(execFile);
 const FINAL_SCREENSHOT_BLUR_TIMEOUT_MS = 2_000;
 const FINAL_SCREENSHOT_CAPTURE_TIMEOUT_MS = 5_000;
@@ -74,16 +76,6 @@ interface E2EVideoRecording {
 
 type E2ETestResultInput = boolean | null | undefined;
 
-type ProviderMode =
-  | "openrouter"
-  | "openrouter-groq"
-  | "openai-groq"
-  | "fireworks"
-  | "fireworks-deepseek"
-  | "moonshot"
-  | "xiaomi";
-type E2ELane = "dev" | "validation";
-
 function isDiagnosticModeEnabled(): boolean {
   return readE2EConfig().diagnostic;
 }
@@ -109,120 +101,6 @@ export interface E2EHarness {
   printTraceSummary(
     workspaceId?: string | null,
   ): Promise<{ traceFiles: string[]; turns: any[] }>;
-}
-
-export function loadApiKey(): string | undefined {
-  if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/OPENROUTER_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadGroqApiKey(): string | undefined {
-  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/GROQ_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadOpenAiApiKey(): string | undefined {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/OPENAI_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadFireworksApiKey(): string | undefined {
-  if (process.env.FIREWORKS_API_KEY) return process.env.FIREWORKS_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/FIREWORKS_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadDeepSeekApiKey(): string | undefined {
-  if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/DEEPSEEK_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadKimiApiKey(): string | undefined {
-  if (process.env.KIMI_API_KEY) return process.env.KIMI_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/KIMI_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-function loadXiaomiApiKey(): string | undefined {
-  if (process.env.XIAOMI_API_KEY) return process.env.XIAOMI_API_KEY;
-  if (!existsSync(REPO_ENV_PATH)) return undefined;
-  const content = readFileSync(REPO_ENV_PATH, "utf-8");
-  const match = content.match(/XIAOMI_API_KEY=(.+)/);
-  return match?.[1]?.trim() || undefined;
-}
-
-/** Detect provider mode from E2E config (default: fireworks). */
-function detectProviderMode(): ProviderMode {
-  const prov = readE2EConfig().provider.toLowerCase();
-  if (prov === "deepseek" || prov === "fireworks-deepseek")
-    return "fireworks-deepseek";
-  if (prov === "moonshot" || prov === "kimi") return "moonshot";
-  if (prov === "xiaomi" || prov === "mimo") return "xiaomi";
-  if (prov === "groq" || prov === "openrouter-groq") return "openrouter-groq";
-  if (prov === "openai-groq") return "openai-groq";
-  if (prov === "openrouter") return "openrouter";
-  return "fireworks";
-}
-
-function loadActiveProviderApiKey(
-  providerMode: ProviderMode,
-): string | undefined {
-  if (providerMode === "fireworks-deepseek") {
-    const fireworksKey = loadFireworksApiKey();
-    const deepseekKey = loadDeepSeekApiKey();
-    return fireworksKey && deepseekKey ? fireworksKey : undefined;
-  }
-  if (providerMode === "fireworks") return loadFireworksApiKey();
-  if (providerMode === "moonshot") return loadKimiApiKey();
-  if (providerMode === "xiaomi") return loadXiaomiApiKey();
-  if (providerMode === "openai-groq") return loadOpenAiApiKey();
-  return loadApiKey();
-}
-
-function deriveLane(providerMode: ProviderMode): E2ELane {
-  return providerMode === "fireworks" ||
-    providerMode === "fireworks-deepseek" ||
-    providerMode === "moonshot" ||
-    providerMode === "xiaomi"
-    ? "dev"
-    : "validation";
-}
-
-async function waitForTraceFiles(
-  tracesBefore: Set<string>,
-  workspaceId?: string | null,
-  timeoutMs: number = 2_000,
-): Promise<string[]> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const traceFiles = filterTraceFilesByWorkspace(
-      findAllNewTraceFiles(tracesBefore),
-      workspaceId,
-    );
-    if (traceFiles.length > 0) return traceFiles;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-
-  return filterTraceFilesByWorkspace(
-    findAllNewTraceFiles(tracesBefore),
-    workspaceId,
-  );
 }
 
 function shouldCaptureFinalScreenshot(): boolean {
@@ -979,8 +857,9 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const maxTurns = options.maxTurns ?? 20;
   const testLabel = options.testLabel ?? "e2e";
 
-  const providerMode = detectProviderMode();
-  const apiKey = loadActiveProviderApiKey(providerMode);
+  const providerConfig = resolveE2EProviderConfig();
+  const providerMode = providerConfig.providerMode;
+  const apiKey = providerConfig.apiKey;
 
   let ctx: ExtensionContext;
   let page: Page;
@@ -1022,29 +901,16 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         ) || (await ctx.browser.newPage());
 
       const helper = await openHelperPage(ctx);
-      const lane = deriveLane(providerMode);
-      const groqKey =
-        providerMode === "openrouter-groq" || providerMode === "openai-groq"
-          ? loadGroqApiKey()
-          : undefined;
-      const openAiKey =
-        providerMode === "openai-groq" ? loadOpenAiApiKey() : undefined;
-      const openRouterKey =
-        providerMode === "openrouter" || providerMode === "openrouter-groq"
-          ? loadApiKey()
-          : undefined;
-      const fireworksKey =
-        providerMode === "fireworks" || providerMode === "fireworks-deepseek"
-          ? loadFireworksApiKey()
-          : undefined;
-      const deepseekKey =
-        providerMode === "fireworks-deepseek"
-          ? loadDeepSeekApiKey()
-          : undefined;
-      const kimiKey =
-        providerMode === "moonshot" ? loadKimiApiKey() : undefined;
-      const xiaomiKey =
-        providerMode === "xiaomi" ? loadXiaomiApiKey() : undefined;
+      const lane = providerConfig.lane;
+      const {
+        openRouterKey,
+        groqKey,
+        openAiKey,
+        fireworksKey,
+        deepseekKey,
+        kimiKey,
+        xiaomiKey,
+      } = providerConfig.keys;
       const e2eConfig = readE2EConfig();
       const executorModel = e2eConfig.model;
       const temperature = e2eConfig.runtime.temperature;
@@ -1132,7 +998,10 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         passed,
       });
       logHarnessLifecycle("afterEach collect traces");
-      const traceFiles = testName ? findAllNewTraceFiles(tracesBefore) : [];
+      const traceArtifacts = testName
+        ? await collectTraceArtifacts({ tracesBefore })
+        : null;
+      const traceFiles = traceArtifacts?.traceFiles ?? [];
       logHarnessLifecycle("afterEach stop video");
       await stopE2EVideoRecording(activeVideoRecording, {
         testName: testName ?? testLabel,
@@ -1145,7 +1014,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       activeVideoRecording = null;
       if (testName) {
         logHarnessLifecycle("afterEach record report");
-        suiteReport.record(testName, passed, durationMs, traceFiles);
+        suiteReport.record(testName, passed, durationMs, traceArtifacts ?? traceFiles);
       }
       logHarnessLifecycle("afterEach done; next beforeEach owns reset");
       logHarnessLifecycle(`afterEach done ${testName ?? testLabel}`);
@@ -1161,7 +1030,11 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
     },
 
     async printTraceSummary(workspaceId?: string | null) {
-      const traceFiles = await waitForTraceFiles(tracesBefore, workspaceId);
+      const traceArtifacts = await collectTraceArtifacts({
+        tracesBefore,
+        workspaceId,
+      });
+      const traceFiles = traceArtifacts.traceFiles;
       const allTurns = traceFiles.flatMap((f) => readTrace(f));
 
       for (const f of traceFiles) {

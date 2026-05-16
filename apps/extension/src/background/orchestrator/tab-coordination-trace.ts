@@ -2,7 +2,7 @@ import type { OrchestratorTask, TaskOwnedTab, TaskTabRole } from "./types";
 
 export type TraceTabEnvironment = "chrome-extension";
 
-export type TraceTabRefSource = "root" | "primary" | "lastRebound" | "owned";
+export type TraceTabRefSource = "root" | "primary" | "previous" | "owned";
 
 export interface TraceTabRef {
   source: TraceTabRefSource;
@@ -92,11 +92,11 @@ export function buildTabCoordinationTraceData(
         url: primaryOwnedTab?.lastKnownUrl ?? task.rootTabUrl ?? null,
         tabId: primaryTabId,
       }),
-      lastRebound:
+      previous:
         lastReboundTabId == null
           ? null
           : buildTraceTabRef({
-              source: "lastRebound",
+              source: "previous",
               role:
                 lastReboundOwnedTab?.role ??
                 fallbackRoleForTab(lastReboundTabId, primaryTabId),
@@ -126,6 +126,13 @@ export function buildTabCoordinationTraceData(
       rootTabId: task.rootTabId,
       primaryTabId,
       lastReboundTabId,
+    },
+    diagnostics: {
+      chrome: {
+        rootTabId: task.rootTabId,
+        primaryTabId,
+        lastReboundTabId,
+      },
     },
     ...detail,
   };
