@@ -94,6 +94,12 @@ export interface ContextSpendTelemetry {
 
 export type ProgressSignalStrength = "strong" | "medium" | "weak";
 
+export interface ContextProgressSignal {
+  strength: ProgressSignalStrength;
+  label: string;
+  observed: boolean;
+}
+
 const PROMPT_SECTION_HEADERS = [
   "## Core Loop",
   "## Priority Order",
@@ -501,6 +507,263 @@ export function buildDomPromptDeltaMetrics(args: {
       remappedSuspicion,
     },
   };
+}
+
+const SEMANTIC_PROGRESS_TOOLS = new Set([
+  "apply_list_action",
+  "apply_list_filter",
+  "apply_list_sort",
+  "click_coordinates",
+  "click_element",
+  "configure_catalog_item",
+  "configure_servicenow_form",
+  "drag_and_drop",
+  "go_back",
+  "hover_element",
+  "navigate",
+  "open_servicenow_module",
+  "press_key",
+  "select_option",
+  "set_checkbox",
+  "type_text",
+]);
+
+const FIELD_STATE_ATTRS = [
+  "value",
+  "checked",
+  "selected",
+  "aria-checked",
+  "aria-selected",
+  "aria-valuetext",
+];
+
+const SEMANTIC_STATE_LINE_PATTERN =
+  /\b(success(?:ful(?:ly)?)?|completed?|submitted|saved|created|updated|confirmed|applied|loaded|opened|selected|added|removed|ordered|requested|approved|rejected|resolved|closed|showing|results?|found|matches?|search(?:ed)?|filtered|sorted|validation|required|error|warning)\b/i;
+
+function normalizeSnapshotText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function snapshotLines(snapshot: DomSnapshot | null | undefined): Set<string> {
+  const chunks = [
+    snapshot?.title,
+    snapshot?.visibleContent,
+    snapshot?.pageContent,
+    ...(snapshot?.skeleton ?? []).map((node) => node.text),
+  ].filter((chunk): chunk is string => Boolean(chunk));
+  const lines = new Set<string>();
+  for (const chunk of chunks) {
+    for (const rawLine of chunk.split(/\r?\n/)) {
+      const line = normalizeSnapshotText(rawLine);
+      if (line.length >= 4) lines.add(line);
+    }
+  }
+  return lines;
+}
+
+function meaningfulElementTexts(snapshot: DomSnapshot): Set<string> {
+  const lines = new Set<string>();
+  for (const element of snapshot.elements) {
+    const line = normalizeSnapshotText(element.text);
+    if (line.length >= 4 && /[a-z0-9]/i.test(line)) {
+      lines.add(line);
+    }
+  }
+  return lines;
+}
+
+function elementState(element: TaggedElement | undefined): string {
+  if (!element) return "";
+  const attrs = FIELD_STATE_ATTRS.map((attr) =>
+    attr in element.attributes ? `${attr}=${element.attributes[attr]}` : "",
+  )
+    .filter(Boolean)
+    .join("|");
+  return normalizeSnapshotText(`${element.text} ${attrs}`);
+}
+
+function numericArg(args: Record<string, unknown> | undefined, key: string): number | null {
+  const value = args?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringArg(args: Record<string, unknown> | undefined, key: string): string {
+  const value = args?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function detectFieldStateProgress(args: {
+  toolName: string;
+  toolArgs?: Record<string, unknown>;
+  previousSnapshot: DomSnapshot;
+  currentSnapshot: DomSnapshot;
+}): ContextProgressSignal | null {
+  if (!["type_text", "select_option", "set_checkbox"].includes(args.toolName)) {
+    return null;
+  }
+  const tagId =
+    numericArg(args.toolArgs, "id") ??
+    numericArg(args.toolArgs, "elementId") ??
+    numericArg(args.toolArgs, "tag");
+  if (tagId == null) return null;
+  const previousElement = args.previousSnapshot.elements.find(
+    (element) => element.tag === tagId,
+  );
+  const currentElement = args.currentSnapshot.elements.find(
+    (element) => element.tag === tagId,
+  );
+  if (!currentElement) return null;
+  const previousState = elementState(previousElement);
+  const currentState = elementState(currentElement);
+  if (!currentState || previousState === currentState) return null;
+
+  if (args.toolName === "type_text") {
+    const expectedText = normalizeSnapshotText(stringArg(args.toolArgs, "text"));
+    if (expectedText && !currentState.includes(expectedText)) return null;
+  }
+
+  return {
+    strength: "strong",
+    label: "field_state_changed",
+    observed: true,
+  };
+}
+
+function detectNewStateLineProgress(args: {
+  previousSnapshot: DomSnapshot;
+  currentSnapshot: DomSnapshot;
+}): ContextProgressSignal | null {
+  const previousLines = snapshotLines(args.previousSnapshot);
+  const currentLines = snapshotLines(args.currentSnapshot);
+  for (const line of currentLines) {
+    if (!previousLines.has(line) && SEMANTIC_STATE_LINE_PATTERN.test(line)) {
+      return {
+        strength: "strong",
+        label: "semantic_page_state_changed",
+        observed: true,
+      };
+    }
+  }
+  return null;
+}
+
+function detectNewVisibleTextProgress(args: {
+  previousSnapshot: DomSnapshot;
+  currentSnapshot: DomSnapshot;
+}): ContextProgressSignal | null {
+  const previousTexts = meaningfulElementTexts(args.previousSnapshot);
+  const currentTexts = meaningfulElementTexts(args.currentSnapshot);
+  for (const text of currentTexts) {
+    if (!previousTexts.has(text)) {
+      return {
+        strength: "medium",
+        label: "visible_text_added",
+        observed: true,
+      };
+    }
+  }
+  return null;
+}
+
+export function detectSemanticProgressSignals(args: {
+  toolName?: string | null;
+  toolArgs?: Record<string, unknown>;
+  previousSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+}): ContextProgressSignal[] {
+  const toolName = args.toolName ?? "";
+  if (
+    !SEMANTIC_PROGRESS_TOOLS.has(toolName) ||
+    !args.previousSnapshot ||
+    !args.currentSnapshot
+  ) {
+    return [];
+  }
+
+  const signals: ContextProgressSignal[] = [];
+  const fieldSignal = detectFieldStateProgress({
+    toolName,
+    toolArgs: args.toolArgs,
+    previousSnapshot: args.previousSnapshot,
+    currentSnapshot: args.currentSnapshot,
+  });
+  if (fieldSignal) signals.push(fieldSignal);
+
+  const visibleTextSignal = detectNewVisibleTextProgress({
+    previousSnapshot: args.previousSnapshot,
+    currentSnapshot: args.currentSnapshot,
+  });
+  if (visibleTextSignal) signals.push(visibleTextSignal);
+
+  const stateLineSignal = detectNewStateLineProgress({
+    previousSnapshot: args.previousSnapshot,
+    currentSnapshot: args.currentSnapshot,
+  });
+  if (stateLineSignal) signals.push(stateLineSignal);
+
+  return signals;
+}
+
+const OBSERVATION_PROGRESS_TOOLS = new Set([
+  "find_element",
+  "inspect_catalog_item",
+  "inspect_chart",
+  "inspect_filter_state",
+  "inspect_table",
+  "read_element",
+  "read_page",
+]);
+
+const OBSERVATION_FAILURE_PATTERN =
+  /^(?:error|failed|failure|not found|unable|cannot|could not)\b/i;
+
+function normalizeObservationResult(content: string): string {
+  return content.replace(/\s+/g, " ").trim();
+}
+
+export function buildObservationProgressKey(args: {
+  toolName: string;
+  resultContent: string;
+  snapshotFingerprint?: string;
+}): string {
+  const normalized = normalizeObservationResult(args.resultContent);
+  return [
+    args.toolName,
+    args.snapshotFingerprint ?? "",
+    fnv1a(normalized.slice(0, 4000)),
+  ].join(":");
+}
+
+export function detectObservationProgressSignals(args: {
+  toolName?: string | null;
+  resultContent: string;
+  alreadySeen: boolean;
+}): ContextProgressSignal[] {
+  const toolName = args.toolName ?? "";
+  if (!OBSERVATION_PROGRESS_TOOLS.has(toolName) || args.alreadySeen) {
+    return [];
+  }
+
+  const normalized = normalizeObservationResult(args.resultContent);
+  if (
+    normalized.length < 20 ||
+    OBSERVATION_FAILURE_PATTERN.test(normalized)
+  ) {
+    return [];
+  }
+
+  return [
+    {
+      strength: "medium",
+      label: "new_observation",
+      observed: true,
+    },
+    {
+      strength: "weak",
+      label: "successful_read_tool",
+      observed: true,
+    },
+  ];
 }
 
 export class ContextSpendTracker {

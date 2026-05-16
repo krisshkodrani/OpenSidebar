@@ -560,6 +560,22 @@ describe("StagnationMonitor — sameUrlTurns", () => {
     tracker.reset();
     expect(tracker.sameUrlTurns).toBe(0);
   });
+
+  it("resetProgressCounters() clears sameUrlTurns while preserving the snapshot baseline", () => {
+    const snap = makeSnap();
+    tracker.onSnapshotRefresh(snap);
+    tracker.onSnapshotRefresh(snap);
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.sameUrlTurns).toBe(2);
+
+    tracker.resetProgressCounters();
+    expect(tracker.sameUrlTurns).toBe(0);
+    expect(tracker.isStillStuck()).toBe(false);
+
+    tracker.onSnapshotRefresh(snap);
+    expect(tracker.sameUrlTurns).toBe(1);
+    expect(tracker.isStillStuck()).toBe(true);
+  });
 });
 
 describe("StagnationMonitor — ActionEffect", () => {

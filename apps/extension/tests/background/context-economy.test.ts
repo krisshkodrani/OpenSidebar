@@ -3,10 +3,13 @@ import type { DomSnapshot, TaggedElement } from "../../src/types";
 import type { LLMMessage } from "../../src/background/llm/types";
 import {
   attachActualPromptTokens,
+  buildObservationProgressKey,
   buildDomPromptDeltaMetrics,
   buildPromptSectionMetrics,
   buildStructuredRuntimeStateShadowMetrics,
   ContextSpendTracker,
+  detectObservationProgressSignals,
+  detectSemanticProgressSignals,
   resolveContextModeTelemetry,
 } from "../../src/background/agent/context-economy";
 
@@ -24,13 +27,18 @@ function element(overrides: Partial<TaggedElement>): TaggedElement {
   };
 }
 
-function snapshot(elements: TaggedElement[], url = "https://example.test"): DomSnapshot {
+function snapshot(
+  elements: TaggedElement[],
+  url = "https://example.test",
+  overrides: Partial<DomSnapshot> = {},
+): DomSnapshot {
   return {
     title: "Example",
     url,
     elements,
     viewport: { width: 1280, height: 720 },
     scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
   };
 }
 
@@ -179,6 +187,159 @@ describe("context economy telemetry", () => {
     expect(delta?.stability.stableTagReusePct).toBeGreaterThan(50);
     expect(typeof delta?.breakEven).toBe("boolean");
   });
+
+  test("detects field readback changes as semantic progress", () => {
+    const previous = snapshot([
+      element({
+        tag: 2,
+        tagName: "input",
+        role: "textbox",
+        text: "",
+        attributes: { value: "" },
+      }),
+    ]);
+    const current = snapshot([
+      element({
+        tag: 2,
+        tagName: "input",
+        role: "textbox",
+        text: "",
+        attributes: { value: "SKU-4829" },
+      }),
+    ]);
+
+    const signals = detectSemanticProgressSignals({
+      toolName: "type_text",
+      toolArgs: { id: 2, text: "SKU-4829" },
+      previousSnapshot: previous,
+      currentSnapshot: current,
+    });
+
+    expect(signals).toContainEqual({
+      strength: "strong",
+      label: "field_state_changed",
+      observed: true,
+    });
+  });
+
+  test("detects newly visible result or status text as semantic progress", () => {
+    const previous = snapshot([], "https://example.test/catalog", {
+      pageContent: "Product Inventory\nSearch products",
+    });
+    const current = snapshot([], "https://example.test/catalog", {
+      pageContent:
+        "Product Inventory\nShowing products in: Electronics\nWidget X",
+    });
+
+    const signals = detectSemanticProgressSignals({
+      toolName: "click_element",
+      toolArgs: { id: 5 },
+      previousSnapshot: previous,
+      currentSnapshot: current,
+    });
+
+    expect(signals).toContainEqual({
+      strength: "strong",
+      label: "semantic_page_state_changed",
+      observed: true,
+    });
+  });
+
+  test("detects newly visible element text as semantic progress", () => {
+    const previous = snapshot([
+      element({ tag: 1, text: "Products" }),
+    ]);
+    const current = snapshot([
+      element({ tag: 1, text: "Products" }),
+      element({ tag: 2, tagName: "span", role: "span", text: "Info for Widget X" }),
+    ]);
+
+    const signals = detectSemanticProgressSignals({
+      toolName: "click_element",
+      toolArgs: { id: 5 },
+      previousSnapshot: previous,
+      currentSnapshot: current,
+    });
+
+    expect(signals).toContainEqual({
+      strength: "medium",
+      label: "visible_text_added",
+      observed: true,
+    });
+  });
+
+  test("does not treat unchanged status text as fresh semantic progress", () => {
+    const previous = snapshot([], "https://example.test/catalog", {
+      pageContent: "Product Inventory\nShowing products in: Electronics",
+    });
+    const current = snapshot([], "https://example.test/catalog", {
+      pageContent: "Product Inventory\nShowing products in: Electronics",
+    });
+
+    expect(
+      detectSemanticProgressSignals({
+        toolName: "click_element",
+        toolArgs: { id: 5 },
+        previousSnapshot: previous,
+        currentSnapshot: current,
+      }),
+    ).toEqual([]);
+  });
+
+  test("detects new successful read observations as context progress", () => {
+    const signals = detectObservationProgressSignals({
+      toolName: "read_page",
+      resultContent:
+        "Page: Product Inventory\nShowing products in: Electronics\nWidget X SKU: SKU-4829",
+      alreadySeen: false,
+    });
+
+    expect(signals).toEqual([
+      {
+        strength: "medium",
+        label: "new_observation",
+        observed: true,
+      },
+      {
+        strength: "weak",
+        label: "successful_read_tool",
+        observed: true,
+      },
+    ]);
+  });
+
+  test("does not count repeated or failed observations as context progress", () => {
+    expect(
+      detectObservationProgressSignals({
+        toolName: "read_page",
+        resultContent: "Page: Product Inventory",
+        alreadySeen: true,
+      }),
+    ).toEqual([]);
+
+    expect(
+      detectObservationProgressSignals({
+        toolName: "find_element",
+        resultContent: "Not found: Widget X",
+        alreadySeen: false,
+      }),
+    ).toEqual([]);
+  });
+
+  test("builds stable observation progress keys from normalized content", () => {
+    const first = buildObservationProgressKey({
+      toolName: "read_page",
+      resultContent: "Page:\nWidget X    SKU-4829",
+      snapshotFingerprint: "abc",
+    });
+    const second = buildObservationProgressKey({
+      toolName: "read_page",
+      resultContent: "Page: Widget X SKU-4829",
+      snapshotFingerprint: "abc",
+    });
+
+    expect(first).toBe(second);
+  });
 });
 
 describe("ContextSpendTracker", () => {
@@ -223,5 +384,43 @@ describe("ContextSpendTracker", () => {
     const sample = tracker.snapshot(1);
     expect(sample.promptTokensSinceProgress).toBe(0);
     expect(sample.threshold).toBe("none");
+  });
+
+  test("resets spend counters from paired medium progress signals", () => {
+    const tracker = new ContextSpendTracker();
+    tracker.recordUsage(1, {
+      prompt_tokens: 70_000,
+      completion_tokens: 100,
+      total_tokens: 70_100,
+    });
+
+    expect(
+      tracker.recordProgress(1, [
+        { strength: "medium", label: "visible_text_added", observed: true },
+        { strength: "medium", label: "action_effect_delta", observed: true },
+      ]),
+    ).toBe(true);
+
+    expect(tracker.snapshot(1).threshold).toBe("none");
+  });
+
+  test("resets spend counters from medium delta plus targeted action effect", () => {
+    const tracker = new ContextSpendTracker();
+    tracker.recordUsage(1, {
+      prompt_tokens: 70_000,
+      completion_tokens: 100,
+      total_tokens: 70_100,
+    });
+
+    expect(
+      tracker.recordProgress(1, [
+        { strength: "medium", label: "action_effect_delta", observed: true },
+        { strength: "weak", label: "targeted_action_effect", observed: true },
+      ]),
+    ).toBe(true);
+
+    expect(tracker.snapshot(1).lastProgressSignal).toBe(
+      "action_effect_delta+targeted_action_effect",
+    );
   });
 });
