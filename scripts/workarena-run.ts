@@ -15,6 +15,10 @@ import {
   withReadiness,
   writeJsonReport,
 } from "./workarena-adapter-lib.js";
+import {
+  WORKARENA_ENV_RESET_SAFETY_NOTE,
+  WORKARENA_RESET_APPROVAL_MESSAGE,
+} from "./workarena-safety.js";
 
 function parseArgs(): {
   taskId: string | null;
@@ -94,7 +98,7 @@ function buildResult(args: ReturnType<typeof parseArgs>): WorkArenaResetRun {
     },
     safety: [
       "This command never starts OpenSidebar or calls an LLM provider.",
-      "A real WorkArena env.reset() requires --allow-servicenow-reset or --reset.",
+      WORKARENA_ENV_RESET_SAFETY_NOTE,
       "The reset path requires doctor.ready=true, including approved gated dataset access.",
       "The WorkArena bridge closes the environment after collecting reset diagnostics.",
     ],
@@ -106,7 +110,7 @@ function nextBlockedReason(
   readiness: ReadinessStatus,
 ): string {
   if (status === "blocked_requires_reset_flag") {
-    return "Pass --allow-servicenow-reset after confirming remote instance use is intended.";
+    return WORKARENA_RESET_APPROVAL_MESSAGE;
   }
   if (status === "blocked_setup") {
     return `Setup is not fully ready: ${readinessLabel(readiness)}.`;

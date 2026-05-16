@@ -16,6 +16,10 @@ import {
   writeJsonReport,
 } from "./workarena-adapter-lib.js";
 import { validateWorkArenaReport } from "./workarena-report-schema.js";
+import {
+  WORKARENA_BROWSERGYM_RESET_SAFETY_NOTE,
+  WORKARENA_HELD_SESSION_RESET_APPROVAL_MESSAGE,
+} from "./workarena-safety.js";
 
 const SESSION_BRIDGE_PATH = resolve(PROJECT_ROOT, "scripts", "workarena-session-bridge.py");
 
@@ -149,7 +153,7 @@ function buildReport(args: ReturnType<typeof parseArgs>): WorkArenaHeldSessionRe
     },
     safety: [
       "Default held-session runs only start the bridge and read its protocol description.",
-      "A real BrowserGym reset requires --allow-servicenow-reset and strict doctor readiness.",
+      WORKARENA_BROWSERGYM_RESET_SAFETY_NOTE,
       "When reset succeeds, the bridge sequence exports session state, validates, and tears down before process exit in this CLI.",
       "The future agent runner will keep the same bridge process alive while OpenSidebar acts.",
     ],
@@ -162,7 +166,7 @@ function nextReason(
   readiness: ReadinessStatus,
 ): string {
   if (!allowServiceNowReset) {
-    return "Protocol is ready. Pass --allow-servicenow-reset after gated access is approved to exercise the reset/export path.";
+    return WORKARENA_HELD_SESSION_RESET_APPROVAL_MESSAGE;
   }
   if (!doctorReady) {
     return `Setup is not fully ready: ${readinessLabel(readiness)}.`;

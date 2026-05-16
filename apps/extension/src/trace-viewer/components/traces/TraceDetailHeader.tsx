@@ -491,8 +491,15 @@ function CoordinationSection({
 
   const latestState = asRecord(stateEvents[stateEvents.length - 1]?.data);
   const latestAction = stringValue(latestState?.action);
+  const tabRefs = asRecord(latestState?.tabRefs);
+  const previousTabRef = asRecord(
+    tabRefs?.previous ?? tabRefs?.lastRebound,
+  );
+  const previousChromeDebug = asRecord(previousTabRef?.debug);
   const primaryTabId = numberValue(latestState?.primaryTabId);
-  const lastReboundTabId = numberValue(latestState?.lastReboundTabId);
+  const previousTabId =
+    numberValue(latestState?.lastReboundTabId) ??
+    numberValue(previousChromeDebug?.chromeTabId);
   const ownedTabCount = numberValue(latestState?.ownedTabCount);
   const nodeBindingCount = numberValue(latestState?.nodeBindingCount);
   const latestReason = stringValue(latestState?.reason);
@@ -544,9 +551,9 @@ function CoordinationSection({
             hint="node-tab bindings"
           />
           <MetricCard
-            label="Rebound"
-            value={lastReboundTabId == null ? "-" : String(lastReboundTabId)}
-            hint={latestReason ?? "last rebound tab"}
+            label="Previous"
+            value={previousTabId == null ? "-" : String(previousTabId)}
+            hint={latestReason ?? "previous task tab"}
           />
         </div>
       )}

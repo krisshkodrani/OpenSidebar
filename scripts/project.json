@@ -239,6 +239,14 @@
         "command": "tsx scripts/workarena-trace-learning.ts"
       }
     },
+    "workarena-smoke-summary": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/workarena-smoke-summary.ts"
+      }
+    },
     "workarena-validate-reports": {
       "executor": "nx:run-commands",
       "cache": false,

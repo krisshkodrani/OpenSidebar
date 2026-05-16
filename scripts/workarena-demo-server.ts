@@ -12,6 +12,10 @@ import {
   runWorkArenaDoctor,
   withReadiness,
 } from "./workarena-adapter-lib.js";
+import {
+  WORKARENA_DEMO_SERVER_BLOCKED_HTML,
+  WORKARENA_DEMO_SERVER_START_ERROR,
+} from "./workarena-safety.js";
 
 const SESSION_BRIDGE_PATH = resolve(PROJECT_ROOT, "scripts", "workarena-session-bridge.py");
 const DEFAULT_PORT = 7595;
@@ -214,7 +218,7 @@ function sendHtml(res: http.ServerResponse, args: Args): void {
   ${
     args.allowServiceNowReset
       ? ""
-      : '<p class="warn">Server started without --allow-servicenow-reset. /start will be blocked.</p>'
+      : WORKARENA_DEMO_SERVER_BLOCKED_HTML
   }
   <button onclick="post('/start')">Start visible session</button>
   <button onclick="post('/export')">Export session</button>
@@ -341,7 +345,7 @@ async function main(): Promise<void> {
       return {
         ok: false,
         status: "blocked_requires_server_reset_flag",
-        error: "Restart the demo server with --allow-servicenow-reset to enable /start.",
+        error: WORKARENA_DEMO_SERVER_START_ERROR,
         state,
       };
     }

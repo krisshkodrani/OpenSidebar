@@ -15,6 +15,7 @@ import {
   writeJsonReport,
 } from "./workarena-adapter-lib.js";
 import { validateWorkArenaReport } from "./workarena-report-schema.js";
+import { WORKARENA_SELECTED_HANDOFF_APPROVAL_NOTE } from "./workarena-safety.js";
 
 function parseArgs(): {
   suite: WorkArenaSuite;
@@ -154,6 +155,7 @@ function buildReport(args: ReturnType<typeof parseArgs>): WorkArenaFirstTaskRepo
     notes: [
       "This command is metadata-only and does not reset ServiceNow.",
       "Use the selected handoff command only after doctor.ready=true.",
+      WORKARENA_SELECTED_HANDOFF_APPROVAL_NOTE,
       "Ranking is heuristic; it prefers atomic navigation/read tasks before mutation or communication tasks.",
     ],
   };
@@ -186,6 +188,9 @@ function printHuman(result: WorkArenaFirstTaskReport): void {
     `[workarena:first-task] Selected: ${result.selected.task.id} (score ${result.selected.score})`,
   );
   console.log(`[workarena:first-task] Command: ${result.selected.handoffCommand}`);
+  for (const note of result.notes) {
+    console.log(`[workarena:first-task] Note: ${note}`);
+  }
   console.log("");
   console.log("[workarena:first-task] Ranked candidates:");
   for (const candidate of result.candidates) {

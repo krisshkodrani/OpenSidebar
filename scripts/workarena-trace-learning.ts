@@ -8,16 +8,23 @@ import {
   writeFileSync,
 } from "fs";
 import { basename, dirname, isAbsolute, join, resolve } from "path";
+import { fileURLToPath } from "url";
 import { PROJECT_ROOT, REPORTS_DIR, today } from "./workarena-adapter-lib.js";
 
 type JsonRecord = Record<string, unknown>;
 
-type Args = {
+export type WorkArenaTraceLearningArgs = {
   files: string[];
   includePending: boolean;
   json: boolean;
   noReport: boolean;
   output: string | null;
+};
+
+export type WorkArenaTraceLearningResult = {
+  reportPath: string | null;
+  skippedPending: number;
+  records: WorkArenaTraceLearningRecord[];
 };
 
 type ToolFailure = {
@@ -56,7 +63,7 @@ type TraceAnalysis = {
   urls: string[];
 };
 
-type LearningRecord = {
+export type WorkArenaTraceLearningRecord = {
   sourceFile: string;
   taskId: string;
   category: string | null;
@@ -74,7 +81,7 @@ type LearningRecord = {
   skillOpportunity: string | null;
 };
 
-function parseArgs(): Args {
+function parseArgs(): WorkArenaTraceLearningArgs {
   const args = process.argv.slice(2);
   const files: string[] = [];
   let output: string | null = null;
@@ -515,7 +522,9 @@ function buildSignals(report: JsonRecord, trace: TraceAnalysis, resetAttempts: R
   return signals;
 }
 
-function buildRecommendation(record: Omit<LearningRecord, "recommendation">): string {
+function buildRecommendation(
+  record: Omit<WorkArenaTraceLearningRecord, "recommendation">,
+): string {
   const opportunity = record.skillOpportunity;
   if (record.fixLayer === "WorkArena harness/session") {
     return "Inspect reset/session diagnostics first; rerun only after reset errors are classified as transient or fixed.";
@@ -544,7 +553,7 @@ function buildRecommendation(record: Omit<LearningRecord, "recommendation">): st
   return opportunity ?? "No immediate action; use this as a passing baseline.";
 }
 
-function analyzeReport(filePath: string): LearningRecord | null {
+function analyzeReport(filePath: string): WorkArenaTraceLearningRecord | null {
   const raw = readFileSync(filePath, "utf-8");
   const report = JSON.parse(raw) as unknown;
   if (!isRecord(report)) return null;
@@ -591,7 +600,10 @@ function analyzeReport(filePath: string): LearningRecord | null {
   };
 }
 
-function groupCounts(records: LearningRecord[], key: (record: LearningRecord) => string): Array<{ key: string; count: number }> {
+function groupCounts(
+  records: WorkArenaTraceLearningRecord[],
+  key: (record: WorkArenaTraceLearningRecord) => string,
+): Array<{ key: string; count: number }> {
   const counts = new Map<string, number>();
   for (const record of records) {
     const value = key(record);
@@ -602,7 +614,10 @@ function groupCounts(records: LearningRecord[], key: (record: LearningRecord) =>
     .map(([groupKey, count]) => ({ key: groupKey, count }));
 }
 
-function buildMarkdownReport(records: LearningRecord[], generatedAt = new Date()): string {
+function buildMarkdownReport(
+  records: WorkArenaTraceLearningRecord[],
+  generatedAt = new Date(),
+): string {
   const passed = records.filter((record) => record.status === "passed" && record.passed === true).length;
   const failed = records.length - passed;
   const lines: string[] = [];
@@ -704,7 +719,11 @@ function writeMarkdownReport(content: string, output: string | null): string {
   return reportPath;
 }
 
-function printHuman(records: LearningRecord[], reportPath: string | null, skippedPending: number): void {
+function printHuman(
+  records: WorkArenaTraceLearningRecord[],
+  reportPath: string | null,
+  skippedPending: number,
+): void {
   const passed = records.filter((record) => record.status === "passed" && record.passed === true).length;
   console.log("\n[workarena:trace-learning] WorkArena trace learning report");
   console.log(`[workarena:trace-learning] Reports analyzed: ${records.length}`);
@@ -723,8 +742,9 @@ function printHuman(records: LearningRecord[], reportPath: string | null, skippe
   }
 }
 
-function main(): void {
-  const args = parseArgs();
+export function runTraceLearning(
+  args: WorkArenaTraceLearningArgs,
+): WorkArenaTraceLearningResult {
   const files =
     args.files.length > 0 ? args.files.map(resolveInputPath) : discoverReports();
   const allRecords = files
@@ -737,10 +757,11 @@ function main(): void {
         return null;
       }
     })
-    .filter((record): record is LearningRecord => record !== null);
-  const skippedPending = allRecords.filter(
+    .filter((record): record is WorkArenaTraceLearningRecord => record !== null);
+  const pendingNoTraceRecords = allRecords.filter(
     (record) => record.status === "pending" && record.trace.traceFiles.length === 0,
-  ).length;
+  );
+  const skippedPending = args.includePending ? 0 : pendingNoTraceRecords.length;
   const records = args.includePending
     ? allRecords
     : allRecords.filter(
@@ -749,12 +770,21 @@ function main(): void {
 
   const markdownReport = buildMarkdownReport(records);
   const reportPath = args.noReport ? null : writeMarkdownReport(markdownReport, args.output);
+  return { reportPath, skippedPending, records };
+}
+
+function main(): void {
+  const args = parseArgs();
+  const result = runTraceLearning(args);
 
   if (args.json) {
-    console.log(JSON.stringify({ reportPath, skippedPending, records }, null, 2));
+    console.log(JSON.stringify(result, null, 2));
   } else {
-    printHuman(records, reportPath, skippedPending);
+    printHuman(result.records, result.reportPath, result.skippedPending);
   }
 }
 
-main();
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : "";
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  main();
+}

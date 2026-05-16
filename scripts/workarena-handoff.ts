@@ -42,6 +42,7 @@ import {
   readTraceMetrics,
   readTraceTerminalFromIndex,
 } from "./workarena-handoff-metrics.js";
+import { WORKARENA_RESET_APPROVAL_MESSAGE } from "./workarena-safety.js";
 import { selectValidationUrl } from "./workarena-validation-url.js";
 import { resolve } from "path";
 import type { Page } from "puppeteer";
@@ -739,7 +740,7 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
       args,
       "pending",
       null,
-      "Pass --allow-servicenow-reset after confirming remote instance use is intended.",
+      WORKARENA_RESET_APPROVAL_MESSAGE,
     );
   }
   if (!doctor.ready) {

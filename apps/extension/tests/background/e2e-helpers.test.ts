@@ -15,7 +15,8 @@ import {
   filterTraceFilesByWorkspace,
   type RunTraceEvent,
 } from "../e2e/helpers/diagnostics";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { matchRunTraceFiles } from "../e2e/helpers/trace-artifacts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -195,6 +196,63 @@ describe("e2e helper semantics", () => {
         match,
         miss,
       ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("matches run traces by exact path and bounded fallback scan", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opensidebar-e2e-run-trace-"));
+    try {
+      const traceFile = join(dir, "agent-trace.jsonl");
+      const runTraceDir = join(dir, "runs");
+      mkdirSync(runTraceDir);
+      writeFileSync(
+        traceFile,
+        `${JSON.stringify({ runId: "run-1", turnNumber: 1 })}\n`,
+        "utf-8",
+      );
+      const exactRunTrace = join(runTraceDir, "run-1.jsonl");
+      writeFileSync(
+        exactRunTrace,
+        `${JSON.stringify({
+          traceKind: "orchestrator.run.event",
+          runId: "run-1",
+        })}\n`,
+        "utf-8",
+      );
+
+      expect(
+        matchRunTraceFiles([traceFile], { runTraceDir }).runTraceFiles,
+      ).toEqual([exactRunTrace]);
+
+      const fallbackTraceFile = join(dir, "agent-trace-fallback.jsonl");
+      writeFileSync(
+        fallbackTraceFile,
+        `${JSON.stringify({ runId: "run-2", turnNumber: 1 })}\n`,
+        "utf-8",
+      );
+      const fallbackRunTrace = join(runTraceDir, "renamed-run-trace.jsonl");
+      writeFileSync(
+        fallbackRunTrace,
+        `${JSON.stringify({
+          traceKind: "orchestrator.run.event",
+          runId: "run-2",
+        })}\n`,
+        "utf-8",
+      );
+
+      const fallbackResult = matchRunTraceFiles([fallbackTraceFile], {
+        runTraceDir,
+        fallbackWindowMs: 60_000,
+      });
+      expect(fallbackResult.runTraceFiles).toEqual([fallbackRunTrace]);
+      expect(fallbackResult.diagnostics[0]).toMatchObject({
+        severity: "warning",
+        source: "trace-collector",
+        code: "run_trace_fallback_match",
+        message: "Run trace matched by bounded fallback scan.",
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
