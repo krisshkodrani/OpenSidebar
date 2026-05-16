@@ -199,6 +199,13 @@ export class StagnationMonitor {
     this.stagnantTurns = 0;
   }
 
+  /** Reset all progress counters while preserving the current snapshot baseline. */
+  resetProgressCounters() {
+    this.escalationFired = false;
+    this.stagnantTurns = 0;
+    this._sameUrlTurns = 0;
+  }
+
   /**
    * Returns true if the monitor is in a stagnant state (stagnantTurns > 0) but no
    * signal was emitted — either because escalation already fired or because

@@ -122,7 +122,6 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "read_element",
       "update_notes",
     ],
-    discouragedTools: ["done"],
     contextScope: "turn",
     verifierMode: "hybrid",
     notes: [
@@ -3257,6 +3256,21 @@ const SKILL_TOOL_SUPPRESSION_POLICIES: Record<
   string,
   SkillToolSuppressionPolicy
 > = {
+  "hover-reveal-navigation": {
+    temporarilySuppressedTools: [
+      ToolName.HIDE_ELEMENT,
+      ToolName.INSPECT_HIDDEN,
+      ToolName.XRAY_PAGE,
+      ToolName.EXECUTE_JS,
+      ToolName.CLICK_COORDINATES,
+    ],
+    exemptTools: [
+      ToolName.DONE,
+      ToolName.ESCALATE,
+      ToolName.CLARIFY,
+      ToolName.UPDATE_NOTES,
+    ],
+  },
   "structured-form-fill": {
     temporarilySuppressedTools: [
       ToolName.PRESS_KEY,

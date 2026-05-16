@@ -59,7 +59,13 @@ import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { completeTurnWithRetries } from "./turn-completion";
 import { prepareLlmTurnRequest } from "./loop-turn-preparation";
-import { ContextSpendTracker } from "./context-economy";
+import {
+  buildObservationProgressKey,
+  ContextSpendTracker,
+  detectObservationProgressSignals,
+  detectSemanticProgressSignals,
+  type ContextProgressSignal,
+} from "./context-economy";
 import { processLlmTurnResponse } from "./loop-response-processing";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
@@ -7283,6 +7289,7 @@ export class AgentLoop {
     // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
     // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
     const recentOutcomes: RecentOutcome[] = [];
+    const recentObservationProgressKeys: string[] = [];
 
     // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
@@ -7741,6 +7748,52 @@ export class AgentLoop {
             messages: recentMessages,
             snapshot: this.context.getSnapshot(),
           });
+          const observationSnapshot = this.context.getSnapshot();
+          const observationSnapshotFingerprint = observationSnapshot
+            ? getSnapshotFingerprint(observationSnapshot)
+            : undefined;
+          const observationProgressSignals: ContextProgressSignal[] = [];
+          for (const outcome of turnToolOutcomes) {
+            const observationKey = buildObservationProgressKey({
+              toolName: outcome.toolName,
+              resultContent: outcome.resultContent,
+              snapshotFingerprint: observationSnapshotFingerprint,
+            });
+            const signals = detectObservationProgressSignals({
+              toolName: outcome.toolName,
+              resultContent: outcome.resultContent,
+              alreadySeen: recentObservationProgressKeys.includes(
+                observationKey,
+              ),
+            });
+            if (signals.length === 0) continue;
+            recentObservationProgressKeys.push(observationKey);
+            if (recentObservationProgressKeys.length > 30) {
+              recentObservationProgressKeys.shift();
+            }
+            observationProgressSignals.push(...signals);
+          }
+          if (observationProgressSignals.length > 0) {
+            this.traceRecorder?.recordEvent("observation_progress_detected", {
+              turn: this.turnCount,
+              signals: observationProgressSignals.map(
+                (signal) => signal.label,
+              ),
+            });
+            if (
+              this.contextSpend.recordProgress(
+                this.turnCount,
+                observationProgressSignals,
+              )
+            ) {
+              this.traceRecorder?.recordEvent("context_spend_progress_reset", {
+                turn: this.turnCount,
+                signals: observationProgressSignals.map(
+                  (signal) => signal.label,
+                ),
+              });
+            }
+          }
           const missingFieldInfeasibleSummary =
             this.assessServiceNowMissingFieldInfeasibility(
               turnToolOutcomes,
@@ -8123,12 +8176,14 @@ export class AgentLoop {
 
         // Trigger A: Same-URL forced escalation — fires even without a plan/subtask structure.
         // Catches the agent spinning on one page regardless of DOM changes (Fix 5A).
-        const sameUrlEscalation = assessSameUrlForcedEscalation({
-          escalationTier,
-          cooldownRemaining,
-          sameUrlTurns: this.stagnation.sameUrlTurns,
-          sameUrlEscalate: this.limits.sameUrlEscalate,
-        });
+        const sameUrlEscalation = doneSignaled
+          ? { kind: "none" as const }
+          : assessSameUrlForcedEscalation({
+              escalationTier,
+              cooldownRemaining,
+              sameUrlTurns: this.stagnation.sameUrlTurns,
+              sameUrlEscalate: this.limits.sameUrlEscalate,
+            });
         if (sameUrlEscalation.kind === "escalate") {
           this.log.warn("agent", "Same-URL forced escalation", {
             turn: this.turnCount,
@@ -8216,6 +8271,19 @@ export class AgentLoop {
         // Used to distinguish structural loading keywords (present before the
         // action) from transient ones (appeared due to the action).
         const preActionSnapshot = this.context.getSnapshot();
+        const lastToolCall =
+          response.tool_calls[response.tool_calls.length - 1];
+        const lastToolName = lastToolCall?.function.name;
+        let lastToolArgs: Record<string, unknown> | undefined;
+        if (lastToolCall?.function.arguments) {
+          try {
+            lastToolArgs = JSON.parse(
+              lastToolCall.function.arguments,
+            ) as Record<string, unknown>;
+          } catch {
+            lastToolArgs = undefined;
+          }
+        }
 
         // Batch snapshot refresh: ONE refresh after all tools complete
         if (domModified && !doneSignaled) {
@@ -8392,6 +8460,7 @@ export class AgentLoop {
 
               // Progress tracking: detect stuck loops
               const progressSignal = this.stagnation.onSnapshotRefresh(snap);
+              let suppressStuckSignal = false;
 
               // P0: Surface action effect — tell the agent whether its last action changed the page
               // Use visuallyModified (not domModified) so read_page doesn't produce misleading deltas
@@ -8453,7 +8522,51 @@ export class AgentLoop {
                   elementsAdded: actionEffect.elementsAdded,
                   elementsRemoved: actionEffect.elementsRemoved,
                 });
-                const spendProgressSignals = [];
+                const semanticToolName =
+                  lastDomAffectingToolName ?? lastToolName ?? null;
+                const semanticToolArgs =
+                  lastToolName === semanticToolName ? lastToolArgs : undefined;
+                const semanticProgressSignals =
+                  detectSemanticProgressSignals({
+                    toolName: semanticToolName,
+                    toolArgs: semanticToolArgs,
+                    previousSnapshot: preActionSnapshot,
+                    currentSnapshot: snap,
+                  });
+                const strongSemanticProgress =
+                  semanticProgressSignals.some(
+                    (signal) =>
+                      signal.observed && signal.strength === "strong",
+                  );
+                const semanticProgressObserved =
+                  semanticProgressSignals.some((signal) => signal.observed);
+                const resetBySemanticProgress =
+                  semanticProgressObserved &&
+                  (strongSemanticProgress ||
+                    actionEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD ||
+                    actionEffect.urlChanged);
+                const smallObservedActionProgress =
+                  actionEffect.deltaPercent > 0 &&
+                  Boolean(lastDomAffectingToolName);
+                if (semanticProgressSignals.length > 0) {
+                  this.traceRecorder?.recordEvent(
+                    "semantic_progress_detected",
+                    {
+                      turn: this.turnCount,
+                      toolName: semanticToolName ?? "unknown",
+                      signals: semanticProgressSignals.map(
+                        (signal) => signal.label,
+                      ),
+                    },
+                  );
+                }
+                if (resetBySemanticProgress || smallObservedActionProgress) {
+                  suppressStuckSignal = true;
+                  this.stagnation.resetProgressCounters();
+                }
+                const spendProgressSignals: ContextProgressSignal[] = [
+                  ...semanticProgressSignals,
+                ];
                 if (actionEffect.deltaPercent >= 0.1) {
                   spendProgressSignals.push({
                     strength: "strong" as const,
@@ -8466,6 +8579,13 @@ export class AgentLoop {
                   spendProgressSignals.push({
                     strength: "medium" as const,
                     label: "action_effect_delta",
+                    observed: true,
+                  });
+                }
+                if (smallObservedActionProgress) {
+                  spendProgressSignals.push({
+                    strength: "weak" as const,
+                    label: "targeted_action_effect",
                     observed: true,
                   });
                 }
@@ -8497,19 +8617,6 @@ export class AgentLoop {
                 ) {
                   const currentSubtask =
                     planAfterAction.subtasks[planAfterAction.currentIndex];
-                  const lastToolCall =
-                    response.tool_calls[response.tool_calls.length - 1];
-                  const lastToolName = lastToolCall?.function.name;
-                  let lastToolArgs: Record<string, unknown> | undefined;
-                  if (lastToolCall?.function.arguments) {
-                    try {
-                      lastToolArgs = JSON.parse(
-                        lastToolCall.function.arguments,
-                      ) as Record<string, unknown>;
-                    } catch {
-                      lastToolArgs = undefined;
-                    }
-                  }
 
                   if (currentSubtask && lastToolName) {
                     const asyncSignal = detectPendingAsyncChange({
@@ -8732,7 +8839,9 @@ export class AgentLoop {
                 // P1b: Track consecutive zero-effect turns with warn-then-escalate recovery
                 if (
                   actionEffect.deltaPercent < ACTION_EFFECT.ZERO_THRESHOLD &&
-                  !actionEffect.urlChanged
+                  !actionEffect.urlChanged &&
+                  !resetBySemanticProgress &&
+                  !smallObservedActionProgress
                 ) {
                   this.consecutiveZeroEffectTurns++;
                   const failureBrief = buildFailureBrief(subgoalAttempts);
@@ -8828,7 +8937,16 @@ export class AgentLoop {
                 }
               }
 
-              if (progressSignal) {
+              if (progressSignal && suppressStuckSignal) {
+                this.traceRecorder?.recordEvent(
+                  "stuck_signal_suppressed_by_semantic_progress",
+                  {
+                    turn: this.turnCount,
+                    type: progressSignal.type,
+                    stagnantTurns: progressSignal.stagnantTurns,
+                  },
+                );
+              } else if (progressSignal) {
                 this.traceRecorder?.recordProgress(
                   progressSignal.stagnantTurns,
                   progressSignal.type,

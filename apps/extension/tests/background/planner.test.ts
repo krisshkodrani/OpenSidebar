@@ -2177,6 +2177,51 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].selectedSkillReason).toContain("hover");
     });
 
+    test("collapses decomposed hover menu workflows into one skill-owned node", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Hover the Products menu and choose Electronics.",
+                        successCriteria: "Electronics is selected.",
+                    },
+                    {
+                        objective: "Find the SKU number for Widget X.",
+                        successCriteria: "Widget X SKU is known.",
+                        dependencies: [0],
+                    },
+                    {
+                        objective: "Search for the Widget X SKU.",
+                        successCriteria: "The SKU search is complete.",
+                        dependencies: [1],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Go to Electronics under the Products menu, find the SKU number for Widget X, and search for it.",
+            "Hover Menus & Tooltips",
+            "https://example.com/hover-menus",
+        );
+
+        expect(result.isSingleNode).toBe(true);
+        expect(result.nodes).toHaveLength(1);
+        expect(result.nodes[0].selectedSkillId).toBe("hover-reveal-navigation");
+        expect(result.nodes[0].description).toContain(
+            "Go to Electronics under the Products menu",
+        );
+        expect(result.nodes[0].successCriteria).toContain(
+            "The original request is fully completed and verified",
+        );
+    });
+
     test("selects list-detail-review-loop for repeated listing review workflows", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -3133,6 +3178,25 @@ describe("selectPrimarySkill", () => {
                 successCriteria: "Electronics selected and SKU searched",
             })?.id,
         ).toBe("hover-reveal-navigation");
+    });
+
+    test("does not discourage completion for hover reveal workflows", () => {
+        const policy = getSkillToolPolicy("hover-reveal-navigation");
+        const suppression = getSkillToolSuppressionPolicy("hover-reveal-navigation");
+
+        expect(policy?.preferredTools).toContain(ToolName.HOVER_ELEMENT);
+        expect(policy?.preferredTools).toContain(ToolName.CLICK_ELEMENT);
+        expect(policy?.discouragedTools).not.toContain(ToolName.DONE);
+        expect(suppression?.temporarilySuppressedTools).toContain(
+            ToolName.INSPECT_HIDDEN,
+        );
+        expect(suppression?.temporarilySuppressedTools).toContain(
+            ToolName.XRAY_PAGE,
+        );
+        expect(suppression?.temporarilySuppressedTools).toContain(
+            ToolName.HIDE_ELEMENT,
+        );
+        expect(suppression?.exemptTools).toContain(ToolName.DONE);
     });
 
     test("matches explicit turn-budget conservation workflows", () => {

@@ -162,6 +162,7 @@ const SKILL_OWNED_WORKFLOW_IDS = new Set([
   "structured-form-fill",
   "progressive-repeatable-form",
   "multi-step-form-wizard",
+  "hover-reveal-navigation",
 ]);
 
 function unionTools(groups: TaskNode[]): ToolName[] {
