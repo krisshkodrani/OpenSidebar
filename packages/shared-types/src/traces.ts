@@ -30,6 +30,77 @@ export interface TraceLLMMessage {
 }
 
 /** Context budget metrics captured at time of LLM call */
+export interface TracePromptSectionMetrics {
+  templateId: string;
+  templateVersion: string;
+  sectionSignatureHash: string;
+  staticRulesChars: number;
+  systemMessagePrefixChars: number;
+  personaAndTaskChars: number;
+  planStatusChars: number;
+  workingNotesChars: number;
+  pageContextChars: number;
+  lastActionOutcomeChars: number;
+  visibleElementsChars: number;
+  pageContentChars: number;
+  pageInterpretationChars: number;
+  toolCapabilityCatalogChars: number;
+  toolOutputChars: number;
+  distillationSummaryChars: number;
+  systemTotalChars: number;
+  historyChars: number;
+  estimatedPromptTokens: number;
+  actualPromptTokens?: number;
+  estimatorErrorPct?: number;
+  imagePromptCount?: number;
+  estimatedImagePromptTokens?: number;
+}
+
+export interface TraceContextModeTelemetry {
+  active: string;
+  shadowCandidate: string;
+  reasons: string[];
+  fallbackReason?: string;
+}
+
+export interface TraceDomPromptDeltaMetrics {
+  shadowOnly: true;
+  previousFingerprint: string;
+  currentFingerprint: string;
+  cause: string;
+  addedCount: number;
+  removedCount: number;
+  changedCount: number;
+  stableActionableCount: number;
+  estimatedFullChars: number;
+  estimatedDeltaChars: number;
+  breakEven: boolean;
+  stability: {
+    stableTagReusePct: number;
+    changedHashPct: number;
+    removedActionablePct: number;
+    remappedSuspicion: boolean;
+  };
+}
+
+export interface TraceStructuredRuntimeStateShadowMetrics {
+  shadowOnly: true;
+  proseStateChars: number;
+  estimatedStructuredChars: number;
+  estimatedSavingsChars: number;
+  estimatedSavingsPct: number;
+  preservedRationaleChars: number;
+  mixedFormatExpected: boolean;
+  comprehensionGateRequired: true;
+  fields: {
+    planStatusChars: number;
+    workingNotesChars: number;
+    lastActionOutcomeChars: number;
+    toolOutputChars: number;
+    distillationSummaryChars: number;
+  };
+}
+
 export interface TraceContextMetrics {
   systemTokens: number;
   historyTokens: number;
@@ -39,6 +110,10 @@ export interface TraceContextMetrics {
   droppedMessageCount: number;
   compressionLevel: string;
   cachedPrefixLength: number;
+  promptSections?: TracePromptSectionMetrics;
+  contextMode?: TraceContextModeTelemetry;
+  domPromptDelta?: TraceDomPromptDeltaMetrics | null;
+  structuredRuntimeState?: TraceStructuredRuntimeStateShadowMetrics;
 }
 
 export type TracePerceptionMode =
@@ -174,6 +249,14 @@ export interface TraceEntry {
       completion_tokens: number;
       total_tokens: number;
       cost?: number;
+      cached_tokens?: number;
+      cacheTelemetry?: {
+        provider: string;
+        promptTokens?: number;
+        cachedPromptTokens?: number;
+        cacheHitPct?: number;
+        source: "usage" | "response_headers";
+      };
     } | null;
     durationMs: number;
     /** Provider that actually served the request (may differ after failover) */

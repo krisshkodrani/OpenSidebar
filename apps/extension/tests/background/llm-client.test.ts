@@ -72,7 +72,10 @@ function jsonApiResponse(
 }
 
 /** Build an SSE ReadableStream response from text chunks. */
-function sseResponse(chunks: string[]): Response {
+function sseResponse(
+  chunks: string[],
+  opts: { usage?: Record<string, unknown>; headers?: Record<string, string> } = {},
+): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -82,13 +85,18 @@ function sseResponse(chunks: string[]): Response {
         });
         controller.enqueue(encoder.encode(`data: ${data}\n\n`));
       }
+      if (opts.usage) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ usage: opts.usage })}\n\n`),
+        );
+      }
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
   });
   return new Response(stream, {
     status: 200,
-    headers: { "Content-Type": "text/event-stream" },
+    headers: { "Content-Type": "text/event-stream", ...opts.headers },
   });
 }
 
@@ -527,6 +535,62 @@ describe("complete() payload & response", () => {
 
     expect(url).toBe("https://api.deepseek.com/chat/completions");
     expect(payload.model).toBe("deepseek-v4-pro");
+  });
+
+  test("fireworks requests include per-task cache affinity headers", async () => {
+    const client = makeClient({
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-test",
+    });
+    let headers: Headers | null = null;
+    mockFetch((_url, init) => {
+      headers = new Headers(init!.headers as HeadersInit);
+      return sseResponse(["OK"]);
+    });
+
+    await client.complete(
+      baseRequest({
+        sessionAffinityId: "task-123",
+        multiTurnSessionId: "agent-session-456",
+      }),
+    );
+
+    expect(headers?.get("x-session-affinity")).toBe("task-123");
+    expect(headers?.get("x-multi-turn-session-id")).toBe("agent-session-456");
+  });
+
+  test("fireworks response cache headers supplement streamed usage", async () => {
+    const client = makeClient({
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-test",
+    });
+    mockFetch(() =>
+      sseResponse(["OK"], {
+        headers: {
+          "fireworks-prompt-tokens": "100",
+          "fireworks-cached-prompt-tokens": "80",
+        },
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 5,
+          total_tokens: 125,
+        },
+      }),
+    );
+
+    const result = await client.complete(baseRequest());
+
+    expect(result.usage?.prompt_tokens).toBe(100);
+    expect(result.usage?.cached_tokens).toBe(80);
+    expect(result.usage?.cacheTelemetry).toEqual(
+      expect.objectContaining({
+        provider: "fireworks",
+        promptTokens: 100,
+        cachedPromptTokens: 80,
+        cacheHitPct: 80,
+        source: "response_headers",
+      }),
+    );
   });
 
   test("xiaomi mode sends OpenAI-compatible requests to Xiaomi MiMo endpoint", async () => {

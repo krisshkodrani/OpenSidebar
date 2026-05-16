@@ -56,6 +56,18 @@ export interface CompletionRequest {
   response_format?: { type: "json_object" };
   /** Override tool_choice (default: "auto" when tools present) */
   tool_choice?: "auto" | "required" | "none";
+  /** Provider routing hint for prompt-cache affinity within one top-level task */
+  sessionAffinityId?: string;
+  /** Provider routing hint for a single multi-turn agent session */
+  multiTurnSessionId?: string;
+}
+
+export interface PromptCacheTelemetry {
+  provider: ProviderConfig["providerId"] | string;
+  promptTokens?: number;
+  cachedPromptTokens?: number;
+  cacheHitPct?: number;
+  source: "usage" | "response_headers";
 }
 
 /** Token usage data returned by OpenRouter in every response */
@@ -67,6 +79,8 @@ export interface TokenUsage {
   cost?: number;
   /** Number of prompt tokens served from cache (prefix caching) */
   cached_tokens?: number;
+  /** Provider-specific prompt cache telemetry */
+  cacheTelemetry?: PromptCacheTelemetry;
 }
 
 export interface CompletionResponse {

@@ -181,6 +181,99 @@ describe("TraceRecorder skill tool metrics", () => {
     });
   });
 
+  test("turn traces attach actual prompt tokens and cache telemetry to context metrics", async () => {
+    const recorder = new TraceRecorder("session-context-economy");
+    recorder.startTurn(
+      1,
+      {
+        url: "https://example.com/start",
+        title: "Start",
+        elementCount: 1,
+        visibleContentLength: 50,
+        pageContentLength: 75,
+        scrollY: 0,
+      },
+      [],
+      2,
+      1,
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "none",
+      [{ role: "system", content: "System\n## Page Context\nTitle: Start" }],
+      {
+        systemTokens: 90,
+        historyTokens: 10,
+        totalTokens: 100,
+        maxTokens: 1000,
+        utilization: 0.1,
+        droppedMessageCount: 0,
+        compressionLevel: "none",
+        cachedPrefixLength: 7,
+        promptSections: {
+          templateId: "agent.system",
+          templateVersion: "v5",
+          sectionSignatureHash: "abcdef12",
+          staticRulesChars: 20,
+          systemMessagePrefixChars: 20,
+          personaAndTaskChars: 0,
+          planStatusChars: 0,
+          workingNotesChars: 0,
+          pageContextChars: 10,
+          lastActionOutcomeChars: 0,
+          visibleElementsChars: 0,
+          pageContentChars: 0,
+          pageInterpretationChars: 0,
+          toolCapabilityCatalogChars: 0,
+          toolOutputChars: 0,
+          distillationSummaryChars: 0,
+          systemTotalChars: 30,
+          historyChars: 0,
+          estimatedPromptTokens: 100,
+        },
+      },
+    );
+    recorder.recordLLMResponse(
+      "OK",
+      [],
+      "stop",
+      {
+        prompt_tokens: 80,
+        completion_tokens: 5,
+        total_tokens: 85,
+        cached_tokens: 40,
+        cacheTelemetry: {
+          provider: "fireworks",
+          promptTokens: 80,
+          cachedPromptTokens: 40,
+          cacheHitPct: 50,
+          source: "response_headers",
+        },
+      },
+      25,
+      "fireworks",
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
+    );
+    await recorder.endTurn();
+
+    const fetchMock = globalThis.fetch as any;
+    const turnCall = fetchMock.mock.calls.find(
+      ([url]: [string]) => String(url).endsWith("/traces"),
+    );
+    expect(turnCall).toBeTruthy();
+
+    const payload = JSON.parse(turnCall[1].body);
+    expect(payload.llmResponse.usage.cached_tokens).toBe(40);
+    expect(payload.llmResponse.usage.cacheTelemetry).toMatchObject({
+      provider: "fireworks",
+      cacheHitPct: 50,
+    });
+    expect(
+      payload.llmRequest.contextMetrics.promptSections.actualPromptTokens,
+    ).toBe(80);
+    expect(
+      payload.llmRequest.contextMetrics.promptSections.estimatorErrorPct,
+    ).toBe(25);
+  });
+
   test("redacts profile tool values from trace payloads", async () => {
     const recorder = new TraceRecorder("session-profile-redaction");
     recorder.startTurn(

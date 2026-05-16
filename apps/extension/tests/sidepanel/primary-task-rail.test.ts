@@ -157,6 +157,18 @@ describe("PrimaryTaskRail label precedence", () => {
     const root = createRoot(container);
     const longLabel = Array.from({ length: 40 }, (_, index) => `part-${index}`)
       .join(" ");
+    const expectedLabel = resolvePrimaryTaskLabel({
+      latestStepLabel: longLabel,
+      isStalled: false,
+      stagnantTurns: undefined,
+      hasPendingApproval: false,
+      hasPendingEscalation: false,
+      hasPendingClarification: false,
+      isAgentRunning: true,
+      taskCompletion: null,
+      agentStatus: AgentStatus.THINKING,
+      statusDetail: "Thinking...",
+    });
     useStore.setState({
       agentStatus: AgentStatus.THINKING,
       statusDetail: "Thinking...",
@@ -185,8 +197,9 @@ describe("PrimaryTaskRail label precedence", () => {
 
       const rail = container.querySelector("section");
       const label = [...container.querySelectorAll("div")].find(
-        (element) => element.textContent === longLabel,
+        (element) => element.textContent === expectedLabel,
       );
+      expect(expectedLabel).toMatch(/\.\.\.$/);
       expect(rail?.className).toContain("max-h-[30vh]");
       expect(label?.className).toContain("max-h-[16vh]");
       expect(label?.className).toContain("overflow-y-auto");

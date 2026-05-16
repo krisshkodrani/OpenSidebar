@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../../types";
+import type { DomSnapshot } from "../../types";
 import type { logger } from "../../utils";
 import type { LLMClient } from "../llm";
 import type { LLMMessage } from "../llm/types";
@@ -6,6 +7,12 @@ import { buildElementSummary } from "../perception";
 import type { PerceptionAgent } from "../perception/perception-agent";
 import type { ContextManager } from "./context";
 import type { ContextMetrics } from "./context-types";
+import {
+  buildDomPromptDeltaMetrics,
+  buildPromptSectionMetrics,
+  buildStructuredRuntimeStateShadowMetrics,
+  resolveContextModeTelemetry,
+} from "./context-economy";
 import { TraceRecorder } from "./trace";
 import { withToolCapabilityCatalog } from "./tool-capabilities";
 
@@ -30,6 +37,7 @@ export type LlmTurnPreparationDeps = {
   >;
   log: TurnPreparationLogger;
   traceRecorder: TraceRecorder | null;
+  previousSnapshotForDelta?: DomSnapshot | null;
 };
 
 export type LlmTurnPreparationResult = {
@@ -74,6 +82,20 @@ export async function prepareLlmTurnRequest(
       0,
       deps.context.getHistoryLength() - (messages.length - 1),
     );
+    const promptSections = buildPromptSectionMetrics({
+      messages,
+      estimatedPromptTokens: metrics.systemTokens + metrics.historyTokens,
+    });
+    const structuredRuntimeState = buildStructuredRuntimeStateShadowMetrics({
+      promptSections,
+      messages,
+    });
+    const contextMode = resolveContextModeTelemetry({ messages, snapshot: snap });
+    const domPromptDelta = buildDomPromptDeltaMetrics({
+      previous: deps.previousSnapshotForDelta ?? null,
+      current: snap ?? null,
+      cause: deps.previousSnapshotForDelta ? "last_action" : "unknown",
+    });
 
     deps.traceRecorder.startTurn(
       deps.turnCount,
@@ -100,6 +122,10 @@ export async function prepareLlmTurnRequest(
         droppedMessageCount,
         compressionLevel: metrics.compressionLevel,
         cachedPrefixLength: cachedPrefixLength >= 0 ? cachedPrefixLength : 0,
+        promptSections,
+        structuredRuntimeState,
+        contextMode,
+        domPromptDelta,
       },
       deps.llm.isPlannerTier() ? "planner" : "executor",
     );

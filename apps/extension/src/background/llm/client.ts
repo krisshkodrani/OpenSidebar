@@ -12,7 +12,9 @@ import {
   CompletionResponse,
   LLMMessage,
   LLMToolCall,
+  PromptCacheTelemetry,
   ProviderConfig,
+  TokenUsage,
 } from "./types";
 import { LLM_MODEL_CONFIG } from "./model-config";
 
@@ -95,17 +97,108 @@ function sanitizeApiKeyForHeader(
   );
 }
 
-function buildJsonHeaders(provider: ProviderConfig): Record<string, string> {
-  const headers = {
+function buildJsonHeaders(
+  provider: ProviderConfig,
+  request?: Pick<CompletionRequest, "sessionAffinityId" | "multiTurnSessionId">,
+): Record<string, string> {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${provider.apiKey}`,
     ...provider.headers,
   };
 
+  if (provider.providerId === "fireworks") {
+    if (request?.sessionAffinityId) {
+      headers["x-session-affinity"] = request.sessionAffinityId;
+    }
+    if (request?.multiTurnSessionId) {
+      headers["x-multi-turn-session-id"] = request.multiTurnSessionId;
+    }
+  }
+
   for (const [name, value] of Object.entries(headers)) {
     assertIso88591HeaderValue(name, value, provider.providerId);
   }
   return headers;
+}
+
+function parsePositiveIntHeader(headers: Headers, name: string): number | undefined {
+  const raw = headers.get(name);
+  if (!raw) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function readProviderCacheTelemetry(
+  providerId: ProviderConfig["providerId"],
+  headers: Headers,
+): PromptCacheTelemetry | undefined {
+  if (providerId !== "fireworks") return undefined;
+  const promptTokens = parsePositiveIntHeader(headers, "fireworks-prompt-tokens");
+  const cachedPromptTokens = parsePositiveIntHeader(
+    headers,
+    "fireworks-cached-prompt-tokens",
+  );
+  if (promptTokens == null && cachedPromptTokens == null) {
+    logger.debug("agent", "Fireworks cache telemetry headers absent");
+    return undefined;
+  }
+  const cacheHitPct =
+    promptTokens && cachedPromptTokens != null
+      ? Math.round((cachedPromptTokens / promptTokens) * 10000) / 100
+      : undefined;
+  return {
+    provider: providerId,
+    promptTokens,
+    cachedPromptTokens,
+    cacheHitPct,
+    source: "response_headers",
+  };
+}
+
+function mergeCacheTelemetry(
+  usage: TokenUsage | undefined,
+  telemetry: PromptCacheTelemetry | undefined,
+): TokenUsage | undefined {
+  if (!usage) return usage;
+  if (!telemetry) return usage;
+  const promptTokens = telemetry.promptTokens ?? usage.prompt_tokens;
+  const cachedTokens = telemetry.cachedPromptTokens ?? usage.cached_tokens;
+  return {
+    ...usage,
+    prompt_tokens: promptTokens,
+    cached_tokens: cachedTokens,
+    cacheTelemetry: {
+      ...telemetry,
+      promptTokens,
+      cachedPromptTokens: cachedTokens,
+      cacheHitPct:
+        promptTokens > 0 && cachedTokens != null
+          ? Math.round((cachedTokens / promptTokens) * 10000) / 100
+          : telemetry.cacheHitPct,
+    },
+  };
+}
+
+function withUsageCacheTelemetry(
+  usage: TokenUsage | undefined,
+  providerId: ProviderConfig["providerId"],
+): TokenUsage | undefined {
+  if (!usage || usage.cached_tokens == null) return usage;
+  const cacheHitPct =
+    usage.prompt_tokens > 0
+      ? Math.round((usage.cached_tokens / usage.prompt_tokens) * 10000) / 100
+      : undefined;
+  return {
+    ...usage,
+    cacheTelemetry: {
+      provider: providerId,
+      promptTokens: usage.prompt_tokens,
+      cachedPromptTokens: usage.cached_tokens,
+      cacheHitPct,
+      source: "usage",
+    },
+  };
 }
 
 /** Moonshot direct API */
@@ -1044,7 +1137,7 @@ export class LLMClient {
     try {
       let requestInitBase: RequestInit = {
         method: "POST",
-        headers: buildJsonHeaders(provider),
+        headers: buildJsonHeaders(provider, request),
       };
 
       let response: Response;
@@ -1116,7 +1209,7 @@ export class LLMClient {
             });
             requestInitBase = {
               method: "POST",
-              headers: buildJsonHeaders(provider),
+              headers: buildJsonHeaders(provider, request),
             };
             continue; // Re-enter the while(true) loop with new provider
           }
@@ -1150,6 +1243,10 @@ export class LLMClient {
           () => {}, // no-op: complete() doesn't stream to UI
           request.signal,
         );
+        const cacheTelemetry = readProviderCacheTelemetry(
+          actualProviderId,
+          response.headers,
+        );
         const rawContent = result.content;
         const cleanContent = rawContent
           ? stripThinkTags(rawContent) || null
@@ -1159,7 +1256,10 @@ export class LLMClient {
           content: cleanContent,
           tool_calls: result.tool_calls,
           finish_reason: result.tool_calls ? "tool_calls" : "stop",
-          usage: result.usage,
+          usage: mergeCacheTelemetry(
+            withUsageCacheTelemetry(result.usage, actualProviderId),
+            cacheTelemetry,
+          ),
           actualProviderId,
           actualModel,
         };
@@ -1220,13 +1320,20 @@ export class LLMClient {
               data.usage.prompt_tokens_details?.cached_tokens ?? undefined,
           }
         : undefined;
+      const cacheTelemetry = readProviderCacheTelemetry(
+        actualProviderId,
+        response.headers,
+      );
 
       return {
         role: "assistant",
         content: cleanContent,
         tool_calls: parsedToolCalls.length > 0 ? parsedToolCalls : undefined,
         finish_reason: choice.finish_reason as any,
-        usage,
+        usage: mergeCacheTelemetry(
+          withUsageCacheTelemetry(usage, actualProviderId),
+          cacheTelemetry,
+        ),
         actualProviderId,
         actualModel,
       };
@@ -1291,7 +1398,7 @@ export class LLMClient {
     try {
       let requestInitBase: RequestInit = {
         method: "POST",
-        headers: buildJsonHeaders(provider),
+        headers: buildJsonHeaders(provider, request),
       };
 
       let response: Response;
@@ -1363,7 +1470,7 @@ export class LLMClient {
             });
             requestInitBase = {
               method: "POST",
-              headers: buildJsonHeaders(provider),
+              headers: buildJsonHeaders(provider, request),
             };
             continue; // Re-enter the while(true) loop with new provider
           }
@@ -1399,6 +1506,10 @@ export class LLMClient {
         request.signal,
       );
       thinkFilter.flush();
+      const cacheTelemetry = readProviderCacheTelemetry(
+        actualProviderId,
+        response.headers,
+      );
 
       // Preserve raw content (with <think> blocks) for conversation history —
       // M2.5 reasoning chain continuity improves performance significantly.
@@ -1414,7 +1525,10 @@ export class LLMClient {
         content: result.content || null,
         tool_calls: result.tool_calls,
         finish_reason: result.tool_calls ? "tool_calls" : "stop",
-        usage: result.usage,
+        usage: mergeCacheTelemetry(
+          withUsageCacheTelemetry(result.usage, actualProviderId),
+          cacheTelemetry,
+        ),
         actualProviderId,
         actualModel,
       };
