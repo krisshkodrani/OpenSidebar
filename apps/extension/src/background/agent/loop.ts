@@ -59,6 +59,7 @@ import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import { completeTurnWithRetries } from "./turn-completion";
 import { prepareLlmTurnRequest } from "./loop-turn-preparation";
+import { ContextSpendTracker } from "./context-economy";
 import { processLlmTurnResponse } from "./loop-response-processing";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
@@ -705,6 +706,8 @@ export class AgentLoop {
   /** Accumulated session metrics */
   private metrics: SessionMetrics = emptySessionMetrics();
   private sessionStartTime = 0;
+  private contextSpend = new ContextSpendTracker();
+  private previousSnapshotForDelta: DomSnapshot | null = null;
 
   /** Accumulate usage from an LLM response */
   private recordUsage(response: CompletionResponse, llmMs: number): void {
@@ -717,6 +720,20 @@ export class AgentLoop {
       currentModel: this.llm.getCurrentModel(),
       onCacheHit: (cacheHit) => this.log.debug("agent", "Cache hit", cacheHit),
     });
+    const spend = this.contextSpend.recordUsage(
+      this.turnCount,
+      response.usage,
+    );
+    this.traceRecorder?.recordEvent("context_spend_sample", {
+      ...spend,
+      model: response.actualModel ?? this.llm.getCurrentModel(),
+      provider:
+        response.actualProviderId ??
+        (this.llm.getCurrentProvider() as ProviderConfig["providerId"]),
+    });
+    if (spend.threshold !== "none") {
+      this.traceRecorder?.recordEvent("context_spend_threshold", { ...spend });
+    }
   }
 
   /** Record usage from a vision API call */
@@ -3008,6 +3025,8 @@ export class AgentLoop {
     this.pendingFormSubmissionReset = null;
     this.perception.reset();
     this.metrics = emptySessionMetrics();
+    this.contextSpend.reset();
+    this.previousSnapshotForDelta = null;
     this.sessionStartTime = Date.now();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
     this.log = logger.withSessionId(this.traceRecorder.sessionId);
@@ -7489,7 +7508,9 @@ export class AgentLoop {
         perception: this.perception,
         log: this.log,
         traceRecorder: this.traceRecorder,
+        previousSnapshotForDelta: this.previousSnapshotForDelta,
       });
+      this.previousSnapshotForDelta = this.context.getSnapshot();
       let messages = turnPreparation.messages;
       const tools = turnPreparation.tools;
       prevElementCount = turnPreparation.previousElementCount;
@@ -7521,6 +7542,9 @@ export class AgentLoop {
         invalidatePerceptionCache: () => this.perception.invalidateCache(),
         recordPromptImageUsage: (promptMessages) =>
           this.recordPromptImageUsage(promptMessages),
+        sessionAffinityId:
+          this.taskId ?? this.runId ?? this.traceRecorder?.sessionId ?? undefined,
+        multiTurnSessionId: this.traceRecorder?.sessionId ?? undefined,
       });
       if (turnCompletion.kind === "early_result") {
         return turnCompletion.result;
@@ -8429,6 +8453,40 @@ export class AgentLoop {
                   elementsAdded: actionEffect.elementsAdded,
                   elementsRemoved: actionEffect.elementsRemoved,
                 });
+                const spendProgressSignals = [];
+                if (actionEffect.deltaPercent >= 0.1) {
+                  spendProgressSignals.push({
+                    strength: "strong" as const,
+                    label: "action_effect_delta",
+                    observed: true,
+                  });
+                } else if (
+                  actionEffect.deltaPercent > ACTION_EFFECT.ZERO_THRESHOLD
+                ) {
+                  spendProgressSignals.push({
+                    strength: "medium" as const,
+                    label: "action_effect_delta",
+                    observed: true,
+                  });
+                }
+                if (actionEffect.urlChanged) {
+                  spendProgressSignals.push({
+                    strength: "weak" as const,
+                    label: "url_changed",
+                    observed: true,
+                  });
+                }
+                if (
+                  this.contextSpend.recordProgress(
+                    this.turnCount,
+                    spendProgressSignals,
+                  )
+                ) {
+                  this.traceRecorder?.recordEvent("context_spend_progress_reset", {
+                    turn: this.turnCount,
+                    signals: spendProgressSignals.map((signal) => signal.label),
+                  });
+                }
 
                 const planAfterAction = this.context.getPlanStatusRaw();
                 if (

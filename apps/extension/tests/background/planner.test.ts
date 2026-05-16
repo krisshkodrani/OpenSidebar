@@ -1419,6 +1419,53 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         ]);
     });
 
+    test("replaces serial planner multi-URL read steps with deterministic independent graph nodes", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Read the Alpha Operations Report and capture its headline metric and owner.",
+                        successCriteria: "Alpha report metric and owner are captured.",
+                    },
+                    {
+                        objective: "Read the Beta Support Report and capture its headline metric and owner.",
+                        successCriteria: "Beta report metric and owner are captured.",
+                        dependencies: [0],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            "Read these two read-only report pages and summarize each page's headline metric and owner: https://example.com/reports/alpha and https://example.com/reports/beta.",
+            "Reports",
+            "https://example.com/reports",
+        );
+
+        expect(result.isSingleNode).toBe(false);
+        expect(result.nodes).toHaveLength(3);
+        expect(result.nodes[0].description).toContain(
+            "https://example.com/reports/alpha",
+        );
+        expect(result.nodes[1].description).toContain(
+            "https://example.com/reports/beta",
+        );
+        expect(result.nodes[0].dependencies).toEqual([]);
+        expect(result.nodes[1].dependencies).toEqual([]);
+        expect(result.nodes[0].parallelContract?.parallelism).toBe("independent");
+        expect(result.nodes[1].parallelContract?.parallelism).toBe("independent");
+        expect(result.nodes[2].dependencies).toEqual([
+            result.nodes[0].id,
+            result.nodes[1].id,
+        ]);
+    });
+
     test("repairs explicit separate same-form updates into serialized graph nodes", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

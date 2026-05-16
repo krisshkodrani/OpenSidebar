@@ -24,6 +24,7 @@ import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
 import { logger } from "../../utils";
 import { redactTracePayload } from "../../utils/trace-protection";
+import { attachActualPromptTokens } from "./context-economy";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const FLUSH_TIMEOUT_MS = 2000;
@@ -199,12 +200,20 @@ export class TraceRecorder {
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             cost: usage.cost,
+            cached_tokens: usage.cached_tokens,
+            cacheTelemetry: usage.cacheTelemetry,
           }
         : null,
       durationMs,
       ...(actualProviderId ? { actualProviderId } : {}),
       ...(actualModel ? { actualModel } : {}),
     };
+    const promptSections =
+      this.currentTurn.llmRequest?.contextMetrics?.promptSections;
+    if (usage && promptSections) {
+      this.currentTurn.llmRequest!.contextMetrics!.promptSections =
+        attachActualPromptTokens(promptSections, usage.prompt_tokens);
+    }
   }
 
   /** Record a single tool execution */

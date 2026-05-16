@@ -266,13 +266,7 @@ function shouldPreferSynthesizedPlan(
   steps: Array<{ objective: string; toolProfile?: ToolProfile }> | null,
 ): boolean {
   if (!steps || steps.length < 2) return false;
-  const distinctUrls = [
-    ...new Set(
-      [...query.matchAll(/\bhttps?:\/\/[^\s)"']+/gi)].map((match) =>
-        (match[0] || "").replace(/[),.;]+$/, ""),
-      ),
-    ),
-  ];
+  const distinctUrls = extractDistinctUrls(query);
   if (distinctUrls.length >= 2) return true;
 
   const text = normalizePlanText(query);
@@ -280,6 +274,40 @@ function shouldPreferSynthesizedPlan(
     /\bseparate(?:ly)?\b.{0,40}\b(update|updates|action|actions|step|steps|task|tasks)\b/.test(
       text,
     ) && steps.some((step) => step.toolProfile === "form_fill")
+  );
+}
+
+function extractDistinctUrls(text: string): string[] {
+  return [
+    ...new Set(
+      [...text.matchAll(/\bhttps?:\/\/[^\s)"']+/gi)].map((match) =>
+        (match[0] || "").replace(/[),.;]+$/, ""),
+      ),
+    ),
+  ];
+}
+
+function isMultiUrlReadSynthesis(
+  query: string,
+  steps: Array<{ objective: string; toolProfile?: ToolProfile }> | null,
+): boolean {
+  const urls = extractDistinctUrls(query);
+  if (!steps || urls.length < 2 || steps.length !== urls.length + 1) {
+    return false;
+  }
+
+  const readSteps = steps.slice(0, urls.length);
+  const synthesisStep = steps[steps.length - 1];
+  return (
+    readSteps.every((step) => {
+      const objective = step.objective.toLowerCase();
+      return (
+        step.toolProfile === "navigate" &&
+        urls.some((url) => objective.includes(url.toLowerCase()))
+      );
+    }) &&
+    synthesisStep?.toolProfile === "read_only" &&
+    /\bsummari[sz]e|report|compare\b/i.test(synthesisStep.objective)
   );
 }
 
@@ -831,6 +859,31 @@ export class TaskPlanner {
             repairPlanCoverage({ query, steps: parsedSteps }),
           )
         : null;
+      if (
+        synthesizedFallback &&
+        isMultiUrlReadSynthesis(query, synthesizedFallback)
+      ) {
+        logger.info(
+          "agent",
+          "Planner multi-URL read plan replaced with deterministic parallel graph",
+          {
+            originalStepCount: steps?.length ?? 0,
+            synthesizedStepCount: synthesizedFallback.length,
+          },
+        );
+        return {
+          subtasks: synthesizedFallback.map((step) => step.objective),
+          steps: synthesizedFallback,
+          difficulty,
+          limitOverrides,
+          instrumentation: {
+            outcome: "structured_steps",
+            parsedStepCount: synthesizedFallback.length,
+            parsedSubtaskCount: synthesizedFallback.length,
+            requestedMultiStep: true,
+          },
+        };
+      }
       if (
         batchedExhaustiveFallback &&
         (!steps || steps.length > batchedExhaustiveFallback.length)

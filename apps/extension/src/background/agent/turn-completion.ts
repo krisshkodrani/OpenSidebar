@@ -58,6 +58,8 @@ export type TurnCompletionDeps = {
   getMetrics: () => SessionMetrics;
   invalidatePerceptionCache: () => void;
   recordPromptImageUsage?: (messages: LLMMessage[]) => void;
+  sessionAffinityId?: string;
+  multiTurnSessionId?: string;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -121,6 +123,8 @@ export async function completeTurnWithRetries(
           max_tokens: deps.maxTokens,
           stop: ["Observation:"],
           signal: turnAbortController.signal,
+          sessionAffinityId: deps.sessionAffinityId,
+          multiTurnSessionId: deps.multiTurnSessionId,
         },
         onTextDelta,
       );
