@@ -68,6 +68,21 @@ describe("e2e helper semantics", () => {
     expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(events)).toBe(true);
   });
 
+  it("treats stopped task completion as terminal without marking it failed", () => {
+    const events = [
+      { type: "TASK_COMPLETION", status: "stopped", timestamp: 100 },
+      { type: "AGENT_STATUS", status: "IDLE", timestamp: 120 },
+    ];
+
+    expect(e2eUtilsTestOnly.isTerminalTaskCompletionStatus("stopped")).toBe(
+      true,
+    );
+    expect(e2eUtilsTestOnly.getLatestTaskCompletionState(events)).toBe(
+      "stopped",
+    );
+    expect(e2eUtilsTestOnly.hasIdleAfterTerminalCompletion(events)).toBe(true);
+  });
+
   it("describes terminal task completion for fail-fast E2E waits", () => {
     const events = [
       {

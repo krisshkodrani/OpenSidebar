@@ -229,7 +229,7 @@ export interface SkillTraceSummary {
 
 export interface RunCompletionSummary {
   runId: string;
-  status: "completed" | "partial" | "failed";
+  status: "completed" | "partial" | "failed" | "stopped";
   summary: string;
 }
 
@@ -508,7 +508,8 @@ export function readRunCompletionForTraceFiles(
           if (
             status === "completed" ||
             status === "partial" ||
-            status === "failed"
+            status === "failed" ||
+            status === "stopped"
           ) {
             latestStatus = status;
           }

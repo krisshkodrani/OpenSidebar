@@ -26,7 +26,8 @@ export type TaskUiPhase =
   | "recoverable"
   | "completed"
   | "partial"
-  | "failed";
+  | "failed"
+  | "stopped";
 
 export type TaskRailTone =
   | "running"
@@ -34,7 +35,8 @@ export type TaskRailTone =
   | "paused"
   | "stalled"
   | "failed"
-  | "completed";
+  | "completed"
+  | "stopped";
 
 export interface TaskRailViewModel {
   eyebrow: "Now doing" | "Latest run";
@@ -150,6 +152,7 @@ function resolvePrimaryLabel(input: TaskUiStateInput): string {
     if (input.taskCompletion.status === "partial") {
       return "Task partially completed";
     }
+    if (input.taskCompletion.status === "stopped") return "Task stopped";
     return "Task failed";
   }
   if (!input.isAgentRunning && input.durableRunStatus?.canResume) {
@@ -166,7 +169,8 @@ function resolveSecondaryLabel(input: TaskUiStateInput): string {
   if (input.stagnationState) return "Intervention recommended";
   if (input.pendingApproval) return "Review the proposed action below";
   if (input.pendingEscalation) return "Choose how the agent should proceed";
-  if (input.pendingClarification) return "Answer the question below to continue";
+  if (input.pendingClarification)
+    return "Answer the question below to continue";
   if (input.taskProgress) {
     return `Step ${input.taskProgress.currentIndex + 1} of ${
       input.taskProgress.subtasks.length
@@ -188,6 +192,7 @@ function resolveSecondaryLabel(input: TaskUiStateInput): string {
 function resolveRailTone(input: TaskUiStateInput): TaskRailTone {
   if (input.stagnationState) return "stalled";
   if (input.taskCompletion?.status === "completed") return "completed";
+  if (input.taskCompletion?.status === "stopped") return "stopped";
   if (
     input.taskCompletion?.status === "failed" ||
     input.agentStatus === AgentStatus.ERROR

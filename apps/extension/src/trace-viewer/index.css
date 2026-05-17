@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .os-type-label {
+    @apply text-ui-caption font-medium text-slate-500;
+  }
+
+  .os-type-meta {
+    @apply text-ui-control text-slate-500;
+  }
+
+  .os-type-body {
+    @apply text-ui-body text-slate-800;
+  }
+
+  .os-type-control {
+    @apply text-ui-body-strong font-medium;
+  }
+
+  .os-type-heading {
+    @apply text-ui-title font-semibold tracking-normal text-slate-950;
+  }
+
+  .os-type-metric {
+    @apply text-ui-display font-semibold tabular-nums tracking-normal;
+  }
+}
+
 :root {
   color-scheme: light;
   --trace-text: #0f172a;

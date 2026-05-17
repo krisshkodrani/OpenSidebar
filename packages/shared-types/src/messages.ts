@@ -15,6 +15,13 @@ import type {
 } from "./agent";
 
 export type UiMessageSource = MessageSource.SIDEPANEL | MessageSource.UI;
+export type PassiveInputSource = "page" | "screenshot";
+export type PassiveMonitorStatus =
+  | "watching"
+  | "paused"
+  | "stopped"
+  | "blocked"
+  | "error";
 
 // --- Core Message Types ---
 
@@ -35,6 +42,11 @@ export interface BaseMessage {
 export type RuntimeMessage =
   | UserChatMessage
   | UserChatAcceptedMessage
+  | PassiveMonitorStartMessage
+  | PassiveMonitorStopMessage
+  | PassiveMonitorStatusMessage
+  | PassiveMonitorPageActivityMessage
+  | PassiveMonitorSuggestionMessage
   | AgentResponseMessage
   | AgentStatusMessage
   | TaskRecoveryMessage
@@ -126,6 +138,68 @@ export interface UserChatAcceptedMessage extends BaseMessage {
   };
 }
 
+/** Side panel starts a passive monitor for the active workspace tab. */
+export interface PassiveMonitorStartMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_START";
+  source: UiMessageSource;
+  payload: {
+    tabId: number;
+    workspaceId: string | null;
+    instructions: string;
+    inputSources: PassiveInputSource[];
+    minIntervalMs?: number;
+    maxSuggestionsPerMinute?: number;
+  };
+}
+
+/** Side panel stops the passive monitor for a workspace. */
+export interface PassiveMonitorStopMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_STOP";
+  source: UiMessageSource;
+  payload: {
+    workspaceId?: string | null;
+  };
+}
+
+/** Background broadcasts passive monitor status to the side panel. */
+export interface PassiveMonitorStatusMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_STATUS";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    status: PassiveMonitorStatus;
+    detail?: string;
+    sessionId?: string;
+    observedAt?: number;
+  };
+}
+
+/** Background tells the watched page whether Watch Mode owns the page glow. */
+export interface PassiveMonitorPageActivityMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_PAGE_ACTIVITY";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    active: boolean;
+    status: PassiveMonitorStatus;
+    sessionId: string;
+  };
+}
+
+/** Background posts a passive suggestion to the side panel chat. */
+export interface PassiveMonitorSuggestionMessage extends BaseMessage {
+  type: "PASSIVE_MONITOR_SUGGESTION";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    suggestionId: string;
+    sessionId: string;
+    answer: string;
+    confidence: "low" | "medium" | "high";
+    evidence: string[];
+    reason?: string;
+    observedAt: number;
+    fingerprint: string;
+  };
+}
+
 /** Background sends a completed agent response to the side panel */
 export interface AgentResponseMessage extends BaseMessage {
   type: "AGENT_RESPONSE";
@@ -149,6 +223,8 @@ export interface AgentStatusMessage extends BaseMessage {
     status: AgentStatus;
     /** Human-readable description (e.g. "Clicking button [12]") */
     detail: string;
+    /** Optional terminal task outcome associated with an IDLE status. */
+    completionStatus?: "completed" | "partial" | "failed" | "stopped";
   };
 }
 
@@ -628,7 +704,7 @@ export interface TaskCompletionMessage extends BaseMessage {
   source: MessageSource.BACKGROUND;
   payload: {
     taskId: string;
-    status: "completed" | "partial" | "failed";
+    status: "completed" | "partial" | "failed" | "stopped";
     totalTurnsUsed: number;
     totalTimeMs: number;
     summary: string;
@@ -644,7 +720,7 @@ export interface TaskCompletionMessage extends BaseMessage {
 /** Outcome of a single subtask within a completion report */
 export interface SubtaskResult {
   description: string;
-  status: "completed" | "failed" | "skipped";
+  status: "completed" | "failed" | "skipped" | "stopped";
   turnsUsed: number;
   result: string;
 }

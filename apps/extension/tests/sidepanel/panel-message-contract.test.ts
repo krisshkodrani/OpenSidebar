@@ -10,9 +10,11 @@ const draftSkill: UserWebsiteSkillDraft = {
   pathPattern: "/checkout",
   triggerPhrase: "checkout",
   workflowSteps: ["Fill the form.", "Submit the checkout."],
+  guardrails: ["Verify before submitting."],
   requiredEvidence: ["Confirmation is visible."],
   privacySummary: "Typed values are redacted.",
   capturedEventCount: 2,
+  capturedInputCount: 1,
   createdAt: 1,
   updatedAt: 1,
 };

@@ -30,6 +30,7 @@ export type LogCategory =
   | "manual"
   | "navigation"
   | "orchestrator"
+  | "passive-monitor"
   | "perception"
   | "policy"
   | "recording"

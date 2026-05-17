@@ -75,13 +75,17 @@ class AgentNotificationService {
         ? "OpenSidebar finished"
         : status === "partial"
           ? "OpenSidebar needs review"
-          : "OpenSidebar task failed";
+          : status === "stopped"
+            ? "OpenSidebar stopped"
+            : "OpenSidebar task failed";
     const fallback =
       status === "completed"
         ? "Task complete"
         : status === "partial"
           ? "Task partially completed"
-          : "Task failed";
+          : status === "stopped"
+            ? "Task stopped"
+            : "Task failed";
 
     await this.notify({
       workspaceId: input.workspaceId,

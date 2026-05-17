@@ -61,6 +61,9 @@ export function formatRecordingTimelineEvent(
   if (event.kind === "click") return `Clicked "${label}"`;
   if (event.kind === "select") return `Selected "${label}"`;
   if (event.kind === "checkbox") {
+    if (event.controlType === "radio") {
+      return `${event.checked === false ? "Deselected" : "Selected"} "${label}"`;
+    }
     return `${event.checked ? "Checked" : "Unchecked"} "${label}"`;
   }
   if (event.kind === "input") {
@@ -90,7 +93,7 @@ export async function loadUserWebsiteSkills(
   const result = await storage.get(WEBSITE_SKILLS_STORAGE_KEY);
   const raw = result[WEBSITE_SKILLS_STORAGE_KEY];
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isUserWebsiteSkill);
+  return raw.filter(isUserWebsiteSkill).map(normalizeUserWebsiteSkill);
 }
 
 export async function saveUserWebsiteSkill(
@@ -101,7 +104,7 @@ export async function saveUserWebsiteSkill(
   const skills = await loadUserWebsiteSkills(storage);
   const now = Date.now();
   const skill: UserWebsiteSkill = {
-    ...draft,
+    ...normalizeUserWebsiteSkillDraft(draft),
     enabled,
     updatedAt: now,
     createdAt: draft.createdAt || now,
@@ -121,6 +124,7 @@ export async function updateUserWebsiteSkill(
       | "pathPattern"
       | "triggerPhrase"
       | "workflowSteps"
+      | "guardrails"
       | "requiredEvidence"
       | "privacySummary"
       | "enabled"
@@ -159,39 +163,96 @@ export function generateWebsiteSkillDraft(
   fallbackUrl: string,
 ): UserWebsiteSkillDraft {
   const now = Date.now();
-  const url = safeUrl(events[0]?.url || fallbackUrl);
+  const normalizedEvents = normalizeSkillRecordingEvents(events);
+  const url = safeUrl(normalizedEvents[0]?.url || events[0]?.url || fallbackUrl);
   const origin = url?.origin || "";
-  const pathPattern = buildPathPattern(events, url);
-  const meaningful = events
+  const pathPattern = buildPathPattern(normalizedEvents, url);
+  const meaningful = normalizedEvents
     .filter((event) => event.kind !== "page")
     .slice(0, MAX_EVENTS_FOR_DRAFT);
   const actionLabels = meaningful
     .filter((event) => event.kind === "click")
     .map((event) => event.label)
     .filter(Boolean);
-  const name = buildSkillName(actionLabels, url);
+  const hasSubmitAction = actionLabels.some(isSubmitLikeLabel);
+  const choiceEvents = meaningful.filter(isChoiceSelectionEvent);
+  const choiceOnly =
+    choiceEvents.length > 0 &&
+    meaningful.every(
+      (event) => event.kind === "checkbox" || event.kind === "navigation",
+    );
+  const quizLike = isQuizLikePath(pathPattern) || meaningful.some(isQuizLikeEvent);
+  const name = choiceOnly
+    ? quizLike
+      ? "Choose answers on quiz page"
+      : "Choose options on form"
+    : buildSkillName(actionLabels, url);
   const workflowSteps =
-    meaningful.length > 0
+    choiceOnly
+      ? buildChoiceWorkflowSteps(quizLike)
+      : meaningful.length > 0
       ? meaningful.map((event) => generalizeStep(event))
       : ["Ground on the current page and identify the target workflow controls."];
+  const guardrails = buildGuardrails({
+    hasSubmitAction,
+    choiceOnly,
+    quizLike,
+  });
+  const capturedInputCount = normalizedEvents.filter(
+    (event) => event.kind === "input",
+  ).length;
 
   return {
     id: crypto.randomUUID(),
     name,
     origin,
     pathPattern,
-    triggerPhrase: name.toLowerCase(),
+    triggerPhrase: choiceOnly
+      ? quizLike
+        ? "choose answers"
+        : "choose options"
+      : name.toLowerCase(),
     workflowSteps: dedupePreserveOrder(workflowSteps),
-    requiredEvidence: [
-      "The final page state, confirmation message, saved record, or changed field is visible.",
-      "Any submitted values are verified by field labels or summary text, not by raw captured input.",
-    ],
-    privacySummary:
-      "Typed values were redacted by default. The saved skill keeps field intent, control labels, page scope, and verification expectations.",
+    guardrails,
+    requiredEvidence: buildRequiredEvidence({ choiceOnly, quizLike }),
+    privacySummary: buildPrivacySummary(capturedInputCount),
     capturedEventCount: events.length,
+    capturedInputCount,
     createdAt: now,
     updatedAt: now,
   };
+}
+
+export function normalizeSkillRecordingEvents(
+  events: SkillRecordingEvent[],
+): SkillRecordingEvent[] {
+  const normalized: SkillRecordingEvent[] = [];
+  const replaceableIndexes = new Map<string, number>();
+
+  for (const event of events) {
+    const key = getReplaceableRecordingEventKey(event);
+    if (!key) {
+      normalized.push(event);
+      continue;
+    }
+
+    const existingIndex = replaceableIndexes.get(key);
+    if (existingIndex == null) {
+      replaceableIndexes.set(key, normalized.length);
+      normalized.push(event);
+      continue;
+    }
+
+    normalized[existingIndex] = event;
+  }
+
+  return normalized;
+}
+
+export function formatSkillRecordingTimeline(
+  events: SkillRecordingEvent[],
+): string[] {
+  return normalizeSkillRecordingEvents(events).map((event) => event.timelineText);
 }
 
 export function findMatchingUserWebsiteSkill(
@@ -230,6 +291,12 @@ export function formatUserWebsiteSkillGuidance(
     `Trigger phrase: ${skill.triggerPhrase}`,
     "Workflow steps:",
     ...skill.workflowSteps.map((step) => `- ${step}`),
+    ...((skill.guardrails ?? []).length
+      ? [
+          "Guardrails:",
+          ...(skill.guardrails ?? []).map((item) => `- ${item}`),
+        ]
+      : []),
     "Required verification evidence:",
     ...skill.requiredEvidence.map((item) => `- ${item}`),
     `Privacy: ${skill.privacySummary}`,
@@ -249,6 +316,26 @@ function isUserWebsiteSkill(value: unknown): value is UserWebsiteSkill {
   );
 }
 
+function normalizeUserWebsiteSkillDraft(
+  draft: UserWebsiteSkillDraft,
+): UserWebsiteSkillDraft {
+  const capturedInputCount =
+    typeof draft.capturedInputCount === "number" ? draft.capturedInputCount : 0;
+  return {
+    ...draft,
+    guardrails: Array.isArray(draft.guardrails) ? draft.guardrails : [],
+    capturedInputCount,
+    privacySummary: draft.privacySummary || buildPrivacySummary(capturedInputCount),
+  };
+}
+
+function normalizeUserWebsiteSkill(skill: UserWebsiteSkill): UserWebsiteSkill {
+  return {
+    ...normalizeUserWebsiteSkillDraft(skill),
+    enabled: skill.enabled !== false,
+  };
+}
+
 function safeUrl(value: string): URL | null {
   try {
     return new URL(value);
@@ -264,12 +351,42 @@ function buildPathPattern(
   const paths = dedupePreserveOrder(
     events
       .map((event) => safeUrl(event.url)?.pathname)
+      .map((path) => (path ? generalizePathPattern(path) : path))
       .filter((path): path is string => Boolean(path)),
   );
-  if (paths.length === 0) return fallbackUrl?.pathname || "/";
+  if (paths.length === 0) {
+    return fallbackUrl ? generalizePathPattern(fallbackUrl.pathname) : "/";
+  }
   if (paths.length === 1) return paths[0] || "/";
   const prefix = commonPathPrefix(paths);
   return `${prefix.replace(/\/$/, "") || "/"}/*`;
+}
+
+function generalizePathPattern(pathname: string): string {
+  const segments = pathname.split("/").filter(Boolean);
+  const courseIndex = segments.indexOf("course");
+  const learnIndex = segments.indexOf("learn");
+  const quizIndex = segments.indexOf("quiz");
+  if (
+    courseIndex >= 0 &&
+    learnIndex === courseIndex + 2 &&
+    quizIndex === learnIndex + 1
+  ) {
+    return "/course/*/learn/quiz/*";
+  }
+
+  const next = segments.map((segment) =>
+    isVolatilePathSegment(segment) ? "*" : segment,
+  );
+  return `/${next.join("/")}` || "/";
+}
+
+function isVolatilePathSegment(segment: string): boolean {
+  return (
+    /^\d+$/.test(segment) ||
+    /^[0-9a-f]{8,}$/i.test(segment) ||
+    /^[0-9a-f]{8}-[0-9a-f-]{13,}$/i.test(segment)
+  );
 }
 
 function commonPathPrefix(paths: string[]): string {
@@ -288,6 +405,7 @@ function commonPathPrefix(paths: string[]): string {
 
 function pathMatchesPattern(pathname: string, pattern: string): boolean {
   if (!pattern || pattern === "/*") return true;
+  if (pattern.includes("*")) return pathMatchesWildcardPattern(pathname, pattern);
   if (pattern.endsWith("/*")) {
     const prefix = pattern.slice(0, -1);
     return pathname.startsWith(prefix);
@@ -295,15 +413,127 @@ function pathMatchesPattern(pathname: string, pattern: string): boolean {
   return pathname === pattern || pathname.startsWith(`${pattern.replace(/\/$/, "")}/`);
 }
 
+function pathMatchesWildcardPattern(pathname: string, pattern: string): boolean {
+  const pathSegments = pathname.split("/").filter(Boolean);
+  const patternSegments = pattern.split("/").filter(Boolean);
+  for (let index = 0; index < patternSegments.length; index++) {
+    const segment = patternSegments[index];
+    if (segment === "*" && index === patternSegments.length - 1) return true;
+    if (segment === "*") continue;
+    if (pathSegments[index] !== segment) return false;
+  }
+  return pathSegments.length === patternSegments.length;
+}
+
 function buildSkillName(labels: string[], url: URL | null): string {
-  const submitLabel = labels.find((label) =>
-    /\b(create|save|submit|send|order|checkout|publish|confirm|apply)\b/i.test(
-      label,
-    ),
-  );
+  const submitLabel = labels.find(isSubmitLikeLabel);
   if (submitLabel) return titleCase(submitLabel);
   const host = url?.hostname.replace(/^www\./, "") || "Website";
   return `Workflow on ${host}`;
+}
+
+function buildChoiceWorkflowSteps(quizLike: boolean): string[] {
+  if (quizLike) {
+    return [
+      "Find the answer options requested by the user.",
+      "Select only the requested answer options.",
+      "Verify each requested answer option is visibly selected.",
+    ];
+  }
+  return [
+    "Find the options requested by the user.",
+    "Set only the requested options to the requested state.",
+    "Verify each requested option state is visible.",
+  ];
+}
+
+function buildGuardrails(input: {
+  hasSubmitAction: boolean;
+  choiceOnly: boolean;
+  quizLike: boolean;
+}): string[] {
+  const guardrails = [
+    "Do not infer missing values or choose a substitute when a requested target is not visible.",
+    "Do not change unrelated fields or options unless the user asks.",
+  ];
+  if (!input.hasSubmitAction) {
+    guardrails.unshift(
+      input.quizLike || input.choiceOnly
+        ? "Do not submit, finish, grade, or move to the next question unless the user explicitly asks."
+        : "Do not submit, finish, or move to the next step unless the user explicitly asks.",
+    );
+  } else {
+    guardrails.unshift(
+      "Verify the requested state before using any submit, finish, or confirmation action.",
+    );
+  }
+  return guardrails;
+}
+
+function buildRequiredEvidence(input: {
+  choiceOnly: boolean;
+  quizLike: boolean;
+}): string[] {
+  if (input.choiceOnly) {
+    return [
+      input.quizLike
+        ? "Each requested answer option is visibly selected."
+        : "Each requested option or checkbox state is visible.",
+      "No submit, next, finish, or grade action was taken unless explicitly requested.",
+    ];
+  }
+  return [
+    "The final page state, confirmation message, saved record, or changed field is visible.",
+    "Any submitted values are verified by field labels or summary text, not by raw captured input.",
+  ];
+}
+
+function buildPrivacySummary(capturedInputCount: number): string {
+  if (capturedInputCount > 0) {
+    return "Typed values were redacted by default. The saved skill keeps field intent, control labels, page scope, guardrails, and verification expectations.";
+  }
+  return "No typed values were captured. The saved skill keeps control labels, page scope, guardrails, and verification expectations.";
+}
+
+function isSubmitLikeLabel(label: string): boolean {
+  return /\b(create|save|submit|send|order|checkout|publish|confirm|apply|finish|grade|next)\b/i.test(
+    label,
+  );
+}
+
+function isChoiceSelectionEvent(event: SkillRecordingEvent): boolean {
+  return event.kind === "checkbox" && event.checked !== false;
+}
+
+function isQuizLikePath(pathPattern: string): boolean {
+  return /\b(quiz|exam|assessment|question)\b/i.test(pathPattern);
+}
+
+function isQuizLikeEvent(event: SkillRecordingEvent): boolean {
+  return (
+    isQuizLikePath(event.path) ||
+    /\b(answer|option|question|quiz|exam)\b/i.test(event.label)
+  );
+}
+
+function getReplaceableRecordingEventKey(
+  event: SkillRecordingEvent,
+): string | null {
+  if (
+    event.kind !== "input" &&
+    event.kind !== "select" &&
+    event.kind !== "checkbox"
+  ) {
+    return null;
+  }
+  return [
+    event.kind,
+    event.path,
+    event.label.trim().toLowerCase(),
+    event.tagName || "",
+    event.inputType || "",
+    event.controlType || "",
+  ].join("|");
 }
 
 function generalizeStep(event: SkillRecordingEvent): string {
@@ -311,7 +541,10 @@ function generalizeStep(event: SkillRecordingEvent): string {
   if (event.kind === "click") return `Click "${label}" when it is visible.`;
   if (event.kind === "select") return `Choose the requested option for "${label}".`;
   if (event.kind === "checkbox") {
-    return `Set "${label}" to the requested checked state.`;
+    if (event.controlType === "radio") {
+      return `Select the requested option in the "${label}" choice group.`;
+    }
+    return `Set the checkbox labeled "${label}" to the requested state.`;
   }
   if (event.kind === "input") {
     return `Fill "${label}" with the user-provided ${event.valueKind || "value"}.`;

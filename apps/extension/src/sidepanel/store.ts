@@ -7,6 +7,7 @@ import { createSavedPromptsSlice } from "./store/saved-prompts-slice";
 import { createWebsiteSkillsSlice } from "./store/website-skills-slice";
 import { createPersonalProfileSlice } from "./store/personal-profile-slice";
 import { createUiSlice } from "./store/ui-slice";
+import { createPassiveMonitorSlice } from "./store/passive-monitor-slice";
 import type { Store } from "./store/types";
 
 export type { Store } from "./store/types";
@@ -20,5 +21,6 @@ export const useStore: UseBoundStore<StoreApi<Store>> = create<Store>()(
     ...createWebsiteSkillsSlice(...a),
     ...createPersonalProfileSlice(...a),
     ...createUiSlice(...a),
+    ...createPassiveMonitorSlice(...a),
   })),
 );

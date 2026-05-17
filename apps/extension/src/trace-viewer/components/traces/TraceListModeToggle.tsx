@@ -1,5 +1,6 @@
 import React from "react";
 import { useStore } from "../../store";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 
 export default function TraceListModeToggle() {
   const traceListMode = useStore((s) => s.traceListMode);
@@ -12,47 +13,28 @@ export default function TraceListModeToggle() {
       <span className="text-[10px] uppercase tracking-[0.22em] text-trace-muted">
         Traces
       </span>
-      <div className="inline-flex rounded border border-trace-border overflow-hidden">
-        <ModeButton
-          active={traceListMode === "runs"}
-          onClick={() => setTraceListMode("runs")}
-          disabled={runGroups.length === 0}
-        >
+      <Tabs
+        value={traceListMode}
+        onValueChange={(value) => setTraceListMode(value as "runs" | "sessions")}
+      >
+        <TabsList className="h-auto gap-0 overflow-hidden rounded border border-trace-border bg-transparent p-0 text-trace-muted">
+          <TabsTrigger
+            value="runs"
+            onClick={() => setTraceListMode("runs")}
+            disabled={runGroups.length === 0}
+            className="rounded-none px-3 py-1.5 text-[11px] font-semibold text-trace-muted shadow-none data-[state=active]:bg-trace-accent/15 data-[state=active]:text-trace-accent-light data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-40"
+          >
           Trace Runs ({runGroups.length})
-        </ModeButton>
-        <ModeButton
-          active={traceListMode === "sessions"}
-          onClick={() => setTraceListMode("sessions")}
-        >
+          </TabsTrigger>
+          <TabsTrigger
+            value="sessions"
+            onClick={() => setTraceListMode("sessions")}
+            className="rounded-none px-3 py-1.5 text-[11px] font-semibold text-trace-muted shadow-none data-[state=active]:bg-trace-accent/15 data-[state=active]:text-trace-accent-light data-[state=active]:shadow-none"
+          >
           Sessions ({sessions.length})
-        </ModeButton>
-      </div>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
     </div>
-  );
-}
-
-function ModeButton({
-  active,
-  onClick,
-  disabled,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-        active
-          ? "bg-trace-accent/15 text-trace-accent-light"
-          : "bg-transparent text-trace-muted hover:text-trace-text disabled:opacity-40 disabled:hover:text-trace-muted disabled:cursor-not-allowed"
-      }`}
-    >
-      {children}
-    </button>
   );
 }

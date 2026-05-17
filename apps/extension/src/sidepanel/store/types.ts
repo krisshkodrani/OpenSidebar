@@ -9,6 +9,8 @@ import type {
   PendingClarification,
   PendingEscalation,
   PendingPlanConfirmation,
+  PassiveInputSource,
+  PassiveMonitorStatus,
   SavedPrompt,
   SessionMetrics,
   StagnationState,
@@ -51,6 +53,7 @@ export interface ChatSlice {
   addStep: (step: AgentStep) => void;
   updateStep: (step: AgentStep) => void;
   setInputText: (text: string) => void;
+  startNewChat: () => void;
   clearHistory: () => void;
   loadMessagesFromStorage: () => Promise<void>;
 }
@@ -149,6 +152,7 @@ export interface WebsiteSkillsSlice {
         | "pathPattern"
         | "triggerPhrase"
         | "workflowSteps"
+        | "guardrails"
         | "requiredEvidence"
         | "privacySummary"
         | "enabled"
@@ -200,6 +204,24 @@ export interface UiSlice {
   setActiveWorkspaceId: (id: string | null) => void;
 }
 
+export interface PassiveMonitorSlice {
+  passiveStatus: PassiveMonitorStatus | null;
+  passiveStatusDetail: string | null;
+  passiveInstructions: string;
+  passiveInputSources: PassiveInputSource[];
+  passiveLastObservationAt: number | null;
+  passiveSessionId: string | null;
+  setPassiveMonitorStatus: (
+    status: PassiveMonitorStatus | null,
+    detail?: string | null,
+    observedAt?: number | null,
+    sessionId?: string | null,
+  ) => void;
+  setPassiveInstructions: (instructions: string) => void;
+  setPassiveInputSources: (sources: PassiveInputSource[]) => void;
+  clearPassiveMonitor: () => void;
+}
+
 // --- Combined Store ---
 
 export type Store = ChatSlice &
@@ -208,7 +230,8 @@ export type Store = ChatSlice &
   SavedPromptsSlice &
   WebsiteSkillsSlice &
   PersonalProfileSlice &
-  UiSlice;
+  UiSlice &
+  PassiveMonitorSlice;
 
 /** Utility type for creating a slice with immer middleware */
 export type SliceCreator<T> = StateCreator<

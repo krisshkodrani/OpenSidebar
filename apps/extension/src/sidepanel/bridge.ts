@@ -10,6 +10,12 @@ type UserChatAcceptedPayload = Extract<
   RuntimeMessage,
   { type: "USER_CHAT_ACCEPTED" }
 >["payload"];
+type PassiveSuggestionPayload = Extract<
+  RuntimeMessage,
+  { type: "PASSIVE_MONITOR_SUGGESTION" }
+>["payload"];
+
+const PASSIVE_SUGGESTION_DEDUPE_TTL_MS = 60_000;
 
 function hasTerminalCompletionWithoutNewerUser(state: SidePanelState): boolean {
   if (!state.taskCompletion || state.isAgentRunning) return false;
@@ -56,6 +62,36 @@ function appendAcceptedUserChat(
   });
 }
 
+function formatPassiveSuggestion(
+  payload: PassiveSuggestionPayload,
+): string {
+  return payload.answer.trim();
+}
+
+function normalizePassiveSuggestionText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function fingerprintPassiveSuggestion(
+  payload: PassiveSuggestionPayload,
+  content: string,
+): string {
+  return [
+    "watch",
+    payload.sessionId,
+    payload.fingerprint,
+    normalizePassiveSuggestionText(content),
+  ].join("\u001f");
+}
+
+function getLastPassiveMessage(state: SidePanelState) {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    const message = state.messages[i];
+    if (message.isPassive) return message;
+  }
+  return null;
+}
+
 /**
  * Initialize the message bridge between the background service worker and the
  * side panel Zustand store. Returns a cleanup function to remove the listener.
@@ -75,6 +111,7 @@ export function initializeBridge(
   },
 ): () => void {
   const isE2EPanel = getE2EPanelConfig() != null;
+  const passiveSuggestionFingerprints = new Map<string, string>();
   const listener = (message: RuntimeMessage) => {
     if (message.source !== MessageSource.BACKGROUND) return;
 
@@ -127,6 +164,62 @@ export function initializeBridge(
         }
         break;
 
+      case "PASSIVE_MONITOR_STATUS":
+        if (message.payload.status !== "watching") {
+          passiveSuggestionFingerprints.clear();
+        }
+        state.setPassiveMonitorStatus(
+          message.payload.status,
+          message.payload.detail ?? null,
+          message.payload.observedAt ?? null,
+          message.payload.sessionId ?? null,
+        );
+        break;
+
+      case "PASSIVE_MONITOR_SUGGESTION":
+        {
+          const content = formatPassiveSuggestion(message.payload);
+          const observationFingerprint = fingerprintPassiveSuggestion(
+            message.payload,
+            content,
+          );
+          const lastPassiveMessage = getLastPassiveMessage(state);
+          const lastPassiveFingerprint = lastPassiveMessage
+            ? passiveSuggestionFingerprints.get(lastPassiveMessage.id)
+            : null;
+          const duplicateRecentPassiveSuggestion =
+            lastPassiveMessage != null &&
+            lastPassiveFingerprint === observationFingerprint &&
+            Math.abs(message.payload.observedAt - lastPassiveMessage.timestamp) <=
+              PASSIVE_SUGGESTION_DEDUPE_TTL_MS;
+          const duplicateSuggestionId = state.messages.some(
+            (entry) => entry.id === message.payload.suggestionId,
+          );
+
+          if (!duplicateSuggestionId && !duplicateRecentPassiveSuggestion) {
+            passiveSuggestionFingerprints.set(
+              message.payload.suggestionId,
+              observationFingerprint,
+            );
+            state.addMessage({
+              id: message.payload.suggestionId,
+              role: "assistant",
+              content,
+              timestamp: message.payload.observedAt,
+              toolCalls: [],
+              isStreaming: false,
+              isPassive: true,
+            });
+          }
+        }
+        state.setPassiveMonitorStatus(
+          "watching",
+          "Suggestion posted.",
+          message.payload.observedAt,
+          message.payload.sessionId,
+        );
+        break;
+
       case "AGENT_STATUS":
         if (
           message.payload.status !== AgentStatus.IDLE &&
@@ -137,6 +230,13 @@ export function initializeBridge(
             status: message.payload.status,
           });
           break;
+        }
+        if (
+          message.payload.status === AgentStatus.THINKING ||
+          message.payload.status === AgentStatus.IDLE ||
+          message.payload.status === AgentStatus.ERROR
+        ) {
+          passiveSuggestionFingerprints.clear();
         }
         store.setState((current) => {
           if (

@@ -107,6 +107,21 @@ describe("PrimaryTaskRail label precedence", () => {
         statusDetail: "Ready",
       }),
     ).toBe("Task partially completed");
+
+    expect(
+      resolvePrimaryTaskLabel({
+        latestStepLabel: null,
+        isStalled: false,
+        stagnantTurns: undefined,
+        hasPendingApproval: false,
+        hasPendingEscalation: false,
+        hasPendingClarification: false,
+        isAgentRunning: false,
+        taskCompletion: { status: "stopped" },
+        agentStatus: AgentStatus.IDLE,
+        statusDetail: "Ready",
+      }),
+    ).toBe("Task stopped");
   });
 
   test("labels the running stop control as take control", async () => {

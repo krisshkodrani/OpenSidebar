@@ -74,16 +74,26 @@ describe("Tool Registration", () => {
     }
   });
 
-  test("registers JobAgent MCP tools without submit_application", () => {
+  test("does not register removed JobAgent MCP tools", () => {
     const registeredNames = new Set(
       toolRegistry.getDefinitions().map((d) => d.function.name),
     );
-    expect(registeredNames.has(ToolName.LIST_APPLICATION_PACKAGES)).toBe(true);
-    expect(registeredNames.has(ToolName.GET_APPLICATION_PACKAGE)).toBe(true);
-    expect(registeredNames.has(ToolName.SUGGEST_FORM_ANSWERS)).toBe(true);
-    expect(registeredNames.has(ToolName.GET_CANDIDATE_PROFILE)).toBe(true);
-    expect(registeredNames.has(ToolName.ANSWER_CANDIDATE_QUESTION)).toBe(true);
-    expect(registeredNames.has(ToolName.RECORD_APPLICATION_STATUS)).toBe(true);
+    expect(registeredNames.has("list_application_packages" as ToolName)).toBe(
+      false,
+    );
+    expect(registeredNames.has("get_application_package" as ToolName)).toBe(
+      false,
+    );
+    expect(registeredNames.has("suggest_form_answers" as ToolName)).toBe(false);
+    expect(registeredNames.has("get_candidate_profile" as ToolName)).toBe(
+      false,
+    );
+    expect(registeredNames.has("answer_candidate_question" as ToolName)).toBe(
+      false,
+    );
+    expect(registeredNames.has("record_application_status" as ToolName)).toBe(
+      false,
+    );
     expect(registeredNames.has("submit_application" as ToolName)).toBe(false);
   });
 

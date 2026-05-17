@@ -18,7 +18,6 @@ The Settings drawer controls:
 - provider keys
 - model routing
 - unified vision
-- voice input and output
 - safety and interaction mode
 
 ## Interaction Modes

@@ -2,7 +2,6 @@ import React from "react";
 import { ArrowUp } from "lucide-react";
 import { clsx } from "clsx";
 import { ComposerTextarea } from "./ComposerTextarea";
-import { VoiceControlButton } from "./VoiceControlButton";
 
 export function ComposerBox({
   hasText,
@@ -14,10 +13,6 @@ export function ComposerBox({
   onKeyDown,
   onSubmit,
   placeholder,
-  realtimeVoiceEnabled,
-  realtimeVoiceListening,
-  realtimeVoiceStatus,
-  toggleRealtimeVoice,
   value,
 }: {
   hasText: boolean;
@@ -29,10 +24,6 @@ export function ComposerBox({
   onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   placeholder: string;
-  realtimeVoiceEnabled: boolean;
-  realtimeVoiceListening: boolean;
-  realtimeVoiceStatus: "idle" | "connecting" | "ready" | "listening" | "error";
-  toggleRealtimeVoice: () => void;
   value: string;
 }) {
   return (
@@ -47,14 +38,6 @@ export function ComposerBox({
         placeholder={placeholder}
       />
       <div className="flex items-end gap-1">
-        {realtimeVoiceEnabled ? (
-          <VoiceControlButton
-            isGuidance={isGuidance}
-            isListening={realtimeVoiceListening}
-            onToggle={toggleRealtimeVoice}
-            status={realtimeVoiceStatus}
-          />
-        ) : null}
         <button
           onClick={onSubmit}
           disabled={!hasText}

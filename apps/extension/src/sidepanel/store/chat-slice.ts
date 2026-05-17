@@ -469,6 +469,56 @@ export const createChatSlice: SliceCreator<ChatSlice> = (set, get) => ({
       state.inputText = text;
     }),
 
+  startNewChat: () => {
+    if (persistTimeout) {
+      clearTimeout(persistTimeout);
+      persistTimeout = null;
+    }
+    set((state) => {
+      state.messages = [];
+      state.inputText = "";
+      state.taskProgress = null;
+      state.taskCompletion = null;
+      state.stagnationState = null;
+      state.turnProgress = null;
+      state.pendingApproval = null;
+      state.pendingEscalation = null;
+      state.pendingPlanConfirmation = null;
+      state.pendingClarification = null;
+      state.taskRecovery = null;
+      state.laneTelemetry = null;
+      state.latestStepLabel = null;
+      state.sessionMetrics = null;
+      state.durableRunStatus = null;
+      state.isPlanning = false;
+      state.isAgentRunning = false;
+      state.agentStatus = AgentStatus.IDLE;
+      state.statusDetail = "Ready";
+      state.passiveStatus = null;
+      state.passiveStatusDetail = null;
+      state.passiveLastObservationAt = null;
+      state.passiveSessionId = null;
+      if (!state.errorPersistent) {
+        state.error = null;
+      }
+    });
+
+    const wsId = get().activeWorkspaceId;
+    logger.info("ui", "New chat started");
+    if (wsId != null) {
+      uiRuntime.storage.local
+        .set({
+          [chatStorageKey(wsId)]: [],
+          [agentStateKey(wsId)]: {
+            isRunning: false,
+            status: AgentStatus.IDLE,
+            detail: "Ready",
+          },
+        })
+        .catch(() => {});
+    }
+  },
+
   clearHistory: () =>
     set((state) => {
       state.messages = [];

@@ -16,7 +16,6 @@ import { parse as parseYaml } from "yaml";
 import { initDatabase, closeDatabase } from "./db.js";
 import { handleHealth } from "./routes/health.js";
 import { handleProfileRoutes } from "./routes/profile.js";
-import { handleRealtimeRoutes } from "./routes/realtime.js";
 import { handleTaskRunRoutes } from "./routes/task-runs.js";
 import type { BackendConfig } from "./types.js";
 
@@ -127,20 +126,6 @@ export async function handleBackendRequest(
 
     if (pathname.startsWith("/profile")) {
       await handleProfileRoutes(req, res, {
-        pathname,
-        searchParams,
-        method,
-        parseJsonBody,
-        parseTextBody,
-        sendJson,
-        sendEmpty,
-        sendError,
-      });
-      return;
-    }
-
-    if (pathname.startsWith("/realtime")) {
-      await handleRealtimeRoutes(req, res, {
         pathname,
         searchParams,
         method,

@@ -50,9 +50,7 @@
     {
       "resources": [
         "assets/*",
-        "public/icons/icon-128.png",
-        "public/request-mic.html",
-        "public/request-mic.js"
+        "public/icons/icon-128.png"
       ],
       "matches": ["<all_urls>"]
     }

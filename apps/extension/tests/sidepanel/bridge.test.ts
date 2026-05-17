@@ -55,10 +55,17 @@ describe("Bridge Message Routing", () => {
             inputText: "",
             isAgentRunning: false,
             error: null,
+            activeWorkspaceId: null,
             taskProgress: null,
             taskCompletion: null,
             stagnationState: null,
             turnProgress: null,
+            passiveStatus: null,
+            passiveStatusDetail: null,
+            passiveInstructions: "",
+            passiveInputSources: ["page"],
+            passiveLastObservationAt: null,
+            passiveSessionId: null,
             durableRunStatus: null,
             pendingApproval: null,
             pendingEscalation: null,
@@ -758,6 +765,232 @@ describe("Bridge Message Routing", () => {
         expect(onScreenshot).toHaveBeenCalledWith(payload);
     });
 
+    test("PASSIVE_MONITOR_STATUS updates watch mode state", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+        capturedListener!({
+            type: "PASSIVE_MONITOR_STATUS",
+            requestId: "passive-status",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: {
+                status: "watching",
+                detail: "Watching page changes.",
+                sessionId: "session-1",
+                observedAt: 1234,
+            },
+        });
+
+        const state = useStore.getState();
+        expect(state.passiveStatus).toBe("watching");
+        expect(state.passiveStatusDetail).toBe("Watching page changes.");
+        expect(state.passiveSessionId).toBe("session-1");
+        expect(state.passiveLastObservationAt).toBe(1234);
+    });
+
+    test("PASSIVE_MONITOR_SUGGESTION appends a passive assistant message once", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+        const message = {
+            type: "PASSIVE_MONITOR_SUGGESTION",
+            requestId: "passive-suggestion",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: {
+                suggestionId: "suggestion-1",
+                sessionId: "session-1",
+                answer: "Choose B.",
+                confidence: "high",
+                evidence: ["The page says option B matches the prompt."],
+                reason: "new_question",
+                observedAt: 2000,
+                fingerprint: "fp-1",
+            },
+        } as const;
+
+        capturedListener!(message);
+        capturedListener!(message);
+
+        const state = useStore.getState();
+        expect(state.messages).toHaveLength(1);
+        expect(state.messages[0]).toMatchObject({
+            id: "suggestion-1",
+            role: "assistant",
+            isPassive: true,
+            isStreaming: false,
+        });
+        expect(state.messages[0].content).toContain("Choose B.");
+        expect(state.messages[0].content).not.toContain("Confidence:");
+        expect(state.messages[0].content).not.toContain("Evidence:");
+        expect(state.passiveStatus).toBe("watching");
+        expect(state.passiveSessionId).toBe("session-1");
+    });
+
+    test("PASSIVE_MONITOR_SUGGESTION dedupes identical passive content across suggestion ids", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+
+        const basePayload = {
+            sessionId: "session-1",
+            answer: "Question 49: Reduce the number of tokens in the input.",
+            confidence: "high",
+            evidence: ["The page shows question 49."],
+            reason: "new_question",
+            observedAt: 2000,
+            fingerprint: "fp-1",
+        } as const;
+
+        capturedListener!({
+            type: "PASSIVE_MONITOR_SUGGESTION",
+            requestId: "passive-suggestion-1",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: { ...basePayload, suggestionId: "suggestion-1" },
+        });
+        capturedListener!({
+            type: "PASSIVE_MONITOR_SUGGESTION",
+            requestId: "passive-suggestion-2",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: {
+                ...basePayload,
+                suggestionId: "suggestion-2",
+                answer:
+                    " Question 49:   Reduce the number of tokens in the input. ",
+                observedAt: 2010,
+            },
+        });
+
+        const state = useStore.getState();
+        expect(state.messages).toHaveLength(1);
+        expect(state.messages[0].id).toBe("suggestion-1");
+        expect(state.passiveStatus).toBe("watching");
+        expect(state.passiveSessionId).toBe("session-1");
+    });
+
+    test("PASSIVE_MONITOR_SUGGESTION allows changed content or page fingerprint", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+
+        const basePayload = {
+            sessionId: "session-1",
+            answer: "Question 49: Reduce the number of tokens in the input.",
+            confidence: "high",
+            evidence: ["The page shows question 49."],
+            reason: "new_question",
+            observedAt: 2000,
+            fingerprint: "fp-1",
+        } as const;
+
+        for (const payload of [
+            { ...basePayload, suggestionId: "suggestion-1" },
+            {
+                ...basePayload,
+                suggestionId: "suggestion-2",
+                answer: "Question 50: Choose the storage class.",
+                observedAt: 2010,
+            },
+            {
+                ...basePayload,
+                suggestionId: "suggestion-3",
+                fingerprint: "fp-2",
+                observedAt: 2020,
+            },
+        ]) {
+            capturedListener!({
+                type: "PASSIVE_MONITOR_SUGGESTION",
+                requestId: payload.suggestionId,
+                source: MessageSource.BACKGROUND,
+                workspaceId: "ws-1",
+                payload,
+            });
+        }
+
+        expect(useStore.getState().messages.map((message) => message.id)).toEqual([
+            "suggestion-1",
+            "suggestion-2",
+            "suggestion-3",
+        ]);
+    });
+
+    test("PASSIVE_MONITOR_SUGGESTION allows identical passive content after dedupe TTL", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+
+        const basePayload = {
+            sessionId: "session-1",
+            answer: "Question 49: Reduce the number of tokens in the input.",
+            confidence: "high",
+            evidence: ["The page shows question 49."],
+            reason: "new_question",
+            fingerprint: "fp-1",
+        } as const;
+
+        for (const payload of [
+            { ...basePayload, suggestionId: "suggestion-1", observedAt: 2000 },
+            { ...basePayload, suggestionId: "suggestion-2", observedAt: 63_000 },
+        ]) {
+            capturedListener!({
+                type: "PASSIVE_MONITOR_SUGGESTION",
+                requestId: payload.suggestionId,
+                source: MessageSource.BACKGROUND,
+                workspaceId: "ws-1",
+                payload,
+            });
+        }
+
+        expect(useStore.getState().messages.map((message) => message.id)).toEqual([
+            "suggestion-1",
+            "suggestion-2",
+        ]);
+    });
+
+    test("PASSIVE_MONITOR_SUGGESTION resets content dedupe on active task start", () => {
+        useStore.setState({ activeWorkspaceId: "ws-1" });
+        setupBridge();
+
+        const basePayload = {
+            sessionId: "session-1",
+            answer: "Question 49: Reduce the number of tokens in the input.",
+            confidence: "high",
+            evidence: ["The page shows question 49."],
+            reason: "new_question",
+            observedAt: 2000,
+            fingerprint: "fp-1",
+        } as const;
+
+        capturedListener!({
+            type: "PASSIVE_MONITOR_SUGGESTION",
+            requestId: "passive-suggestion-1",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: { ...basePayload, suggestionId: "suggestion-1" },
+        });
+        capturedListener!({
+            type: "AGENT_STATUS",
+            requestId: "agent-thinking",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: { status: AgentStatus.THINKING, detail: "Starting task" },
+        });
+        capturedListener!({
+            type: "PASSIVE_MONITOR_SUGGESTION",
+            requestId: "passive-suggestion-2",
+            source: MessageSource.BACKGROUND,
+            workspaceId: "ws-1",
+            payload: {
+                ...basePayload,
+                suggestionId: "suggestion-2",
+                observedAt: 2010,
+            },
+        });
+
+        expect(useStore.getState().messages.map((message) => message.id)).toEqual([
+            "suggestion-1",
+            "suggestion-2",
+        ]);
+    });
+
     test("IDLE clears stale taskProgress when no TASK_COMPLETION was received", () => {
         useStore.getState().setTaskProgress({
             taskId: "t1",
@@ -844,10 +1077,17 @@ describe("Bridge Port Keepalive", () => {
             inputText: "",
             isAgentRunning: false,
             error: null,
+            activeWorkspaceId: null,
             taskProgress: null,
             taskCompletion: null,
             stagnationState: null,
             turnProgress: null,
+            passiveStatus: null,
+            passiveStatusDetail: null,
+            passiveInstructions: "",
+            passiveInputSources: ["page"],
+            passiveLastObservationAt: null,
+            passiveSessionId: null,
             pendingApproval: null,
             pendingEscalation: null,
             pendingPlanConfirmation: null,

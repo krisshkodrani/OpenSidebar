@@ -4,6 +4,7 @@ import {
   Circle,
   Loader2,
   SkipForward,
+  Square,
   XCircle,
 } from "lucide-react";
 import type { PlanRowStatus } from "../plan-board-view";
@@ -28,6 +29,9 @@ export function PlanStepIcon({
   }
   if (status === "skipped") {
     return <SkipForward size={size} className="text-warm-400 shrink-0" />;
+  }
+  if (status === "stopped") {
+    return <Square size={size} className="text-amber-500 shrink-0" />;
   }
   return (
     <Circle size={size} className="text-warm-300 dark:text-warm-600 shrink-0" />

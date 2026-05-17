@@ -1,76 +1,68 @@
-import { describe, test, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import "../setup";
-
-// Since setAgentBorder is defined inside content.ts as a module-level function,
-// we test the DOM manipulation logic directly by reimplementing it here.
-// This avoids the side effects of importing the full content script.
-
-const BORDER_ID = "opensidebar-agent-border";
-
-function setAgentBorder(active: boolean) {
-    const existing = document.getElementById(BORDER_ID);
-
-    if (active) {
-        if (existing) return;
-
-        const overlay = document.createElement("div");
-        overlay.id = BORDER_ID;
-        Object.assign(overlay.style, {
-            position: "fixed",
-            inset: "0",
-            zIndex: "2147483646",
-            pointerEvents: "none",
-            border: "3px dashed #5A66D6",
-            borderRadius: "4px",
-            opacity: "1",
-        });
-        document.documentElement.appendChild(overlay);
-    } else {
-        if (!existing) return;
-        existing.remove();
-    }
-}
+import {
+  AGENT_BORDER_ID,
+  AGENT_BORDER_STYLE_ID,
+  ensureAgentBorderVisible,
+  removeAgentBorder,
+  setAgentBorderVisualState,
+} from "../../src/content/in-page-ui/agent-border";
 
 describe("Agent Border Overlay", () => {
-    beforeEach(() => {
-        const existing = document.getElementById(BORDER_ID);
-        if (existing) existing.remove();
+  beforeEach(() => {
+    document.documentElement.innerHTML = "<head></head><body></body>";
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
+  test("creates overlay element", () => {
+    const el = ensureAgentBorderVisible("active");
+
+    expect(el.id).toBe(AGENT_BORDER_ID);
+    expect(el.style.position).toBe("fixed");
+    expect(el.style.pointerEvents).toBe("none");
+    expect(el.style.zIndex).toBe("2147483646");
+  });
+
+  test("removes overlay element", () => {
+    ensureAgentBorderVisible("active");
+    expect(document.getElementById(AGENT_BORDER_ID)).not.toBeNull();
+
+    removeAgentBorder();
+    expect(document.getElementById(AGENT_BORDER_ID)).toBeNull();
+  });
+
+  test("is idempotent and updates visual state", () => {
+    const first = ensureAgentBorderVisible("active");
+    const second = ensureAgentBorderVisible("settle");
+
+    expect(first).toBe(second);
+    expect(document.querySelectorAll(`#${AGENT_BORDER_ID}`)).toHaveLength(1);
+    expect(second.getAttribute("data-state")).toBe("settle");
+
+    setAgentBorderVisualState("active");
+    expect(second.getAttribute("data-state")).toBe("active");
+  });
+
+  test("injects reduced-motion styles", () => {
+    ensureAgentBorderVisible("active");
+    const style = document.getElementById(AGENT_BORDER_STYLE_ID);
+
+    expect(style?.textContent).toContain(
+      "@media (prefers-reduced-motion: reduce)",
+    );
+  });
+
+  test("does not start fade animation when reduced motion is requested", () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
     });
 
-    test("setAgentBorder(true) creates overlay element", () => {
-        setAgentBorder(true);
-        const el = document.getElementById(BORDER_ID);
-        expect(el).not.toBeNull();
-        expect(el!.style.position).toBe("fixed");
-        expect(el!.style.pointerEvents).toBe("none");
-        expect(el!.style.zIndex).toBe("2147483646");
-    });
+    const el = ensureAgentBorderVisible("active");
 
-    test("setAgentBorder(false) removes overlay element", () => {
-        setAgentBorder(true);
-        expect(document.getElementById(BORDER_ID)).not.toBeNull();
-
-        setAgentBorder(false);
-        expect(document.getElementById(BORDER_ID)).toBeNull();
-    });
-
-    test("setAgentBorder(true) is idempotent", () => {
-        setAgentBorder(true);
-        setAgentBorder(true);
-        const els = document.querySelectorAll(`#${BORDER_ID}`);
-        expect(els.length).toBe(1);
-    });
-
-    test("setAgentBorder(false) is safe when no border exists", () => {
-        // Should not throw
-        setAgentBorder(false);
-        expect(document.getElementById(BORDER_ID)).toBeNull();
-    });
-
-    test("overlay has correct border style", () => {
-        setAgentBorder(true);
-        const el = document.getElementById(BORDER_ID);
-        expect(el!.style.border).toBe("3px dashed #5A66D6");
-        expect(el!.style.borderRadius).toBe("4px");
-    });
+    expect(el.style.opacity).toBe("1");
+  });
 });

@@ -5,6 +5,14 @@ packages:
   - packages/prompts
   - packages/shared-types
 
+minimumReleaseAge: 10080
+minimumReleaseAgeIgnoreMissingTime: true
+minimumReleaseAgeExclude:
+  - "@types/node"
+minimumReleaseAgeStrict: true
+resolutionMode: highest
+blockExoticSubdeps: true
+
 allowBuilds:
   better-sqlite3: true
   esbuild: true

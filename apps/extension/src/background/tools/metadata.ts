@@ -302,37 +302,6 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     domModifying: false,
     sequential: false,
   },
-  [ToolName.LIST_APPLICATION_PACKAGES]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: false,
-  },
-  [ToolName.GET_APPLICATION_PACKAGE]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: false,
-  },
-  [ToolName.SUGGEST_FORM_ANSWERS]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: false,
-  },
-  [ToolName.GET_CANDIDATE_PROFILE]: {
-    risk: RiskLevel.LOW,
-    domModifying: false,
-    sequential: false,
-  },
-  [ToolName.ANSWER_CANDIDATE_QUESTION]: {
-    risk: RiskLevel.MEDIUM,
-    domModifying: false,
-    sequential: false,
-  },
-  [ToolName.RECORD_APPLICATION_STATUS]: {
-    risk: RiskLevel.MEDIUM,
-    domModifying: false,
-    sequential: true,
-    mutationSensitive: true,
-  },
 
   // Window management
   [ToolName.CREATE_WINDOW]: {
@@ -405,18 +374,6 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.CLARIFY]: { scope: "never", access: "approval" },
   [ToolName.UPDATE_NOTES]: { scope: "never", access: "external" },
   [ToolName.GET_PROFILE_FIELDS]: { scope: "same_page", access: "read" },
-  [ToolName.LIST_APPLICATION_PACKAGES]: { scope: "same_page", access: "read" },
-  [ToolName.GET_APPLICATION_PACKAGE]: { scope: "same_page", access: "read" },
-  [ToolName.SUGGEST_FORM_ANSWERS]: { scope: "same_page", access: "read" },
-  [ToolName.GET_CANDIDATE_PROFILE]: { scope: "same_page", access: "read" },
-  [ToolName.ANSWER_CANDIDATE_QUESTION]: {
-    scope: "same_page",
-    access: "read",
-  },
-  [ToolName.RECORD_APPLICATION_STATUS]: {
-    scope: "same_origin",
-    access: "write",
-  },
   [ToolName.CREATE_WINDOW]: { scope: "never", access: "navigate" },
   [ToolName.UPDATE_PLAN]: { scope: "never", access: "external" },
 };
@@ -488,11 +445,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.SCROLL_PAGE,
     ToolName.LIST_TABS,
     ToolName.GET_PROFILE_FIELDS,
-    ToolName.LIST_APPLICATION_PACKAGES,
-    ToolName.GET_APPLICATION_PACKAGE,
-    ToolName.SUGGEST_FORM_ANSWERS,
-    ToolName.GET_CANDIDATE_PROFILE,
-    ToolName.ANSWER_CANDIDATE_QUESTION,
     // System (always)
     ToolName.DONE,
     ToolName.ESCALATE,
@@ -525,12 +477,6 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     ToolName.DISMISS_OVERLAYS,
     ToolName.CLICK_COORDINATES,
     ToolName.GET_PROFILE_FIELDS,
-    ToolName.LIST_APPLICATION_PACKAGES,
-    ToolName.GET_APPLICATION_PACKAGE,
-    ToolName.SUGGEST_FORM_ANSWERS,
-    ToolName.GET_CANDIDATE_PROFILE,
-    ToolName.ANSWER_CANDIDATE_QUESTION,
-    ToolName.RECORD_APPLICATION_STATUS,
     // System
     ToolName.DONE,
     ToolName.ESCALATE,

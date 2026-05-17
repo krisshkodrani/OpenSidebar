@@ -79,12 +79,6 @@ export enum ToolName {
   CLARIFY = "clarify",
   UPDATE_NOTES = "update_notes",
   GET_PROFILE_FIELDS = "get_profile_fields",
-  LIST_APPLICATION_PACKAGES = "list_application_packages",
-  GET_APPLICATION_PACKAGE = "get_application_package",
-  SUGGEST_FORM_ANSWERS = "suggest_form_answers",
-  GET_CANDIDATE_PROFILE = "get_candidate_profile",
-  ANSWER_CANDIDATE_QUESTION = "answer_candidate_question",
-  RECORD_APPLICATION_STATUS = "record_application_status",
   CREATE_WINDOW = "create_window",
   UPDATE_PLAN = "update_plan",
 }

@@ -9,7 +9,8 @@ export type PlanRowStatus =
   | "running"
   | "completed"
   | "failed"
-  | "skipped";
+  | "skipped"
+  | "stopped";
 
 export interface PlanRow {
   id: string;

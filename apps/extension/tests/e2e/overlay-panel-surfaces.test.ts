@@ -275,7 +275,45 @@ describe("Overlay panel product surfaces", () => {
     await clickOverlayButtonByText(runner, "Stop");
     await runner.waitForFakeBackgroundHandled("SKILL_RECORDING_STOP");
     await runner.waitForOverlayText("Review recorded skill");
-    await runner.waitForOverlayText("Harness smoke workflow");
+    await runner.waitForOverlayText("Choose answers on quiz page");
+    await runner.waitForOverlayText("/course/*/learn/quiz/*");
+    await runner.waitForOverlayText("Trigger: choose answers");
+    await runner.waitForOverlayText("Guardrails");
+    await runner.waitForOverlayText("Do not submit, finish, grade");
+    await runner.waitForOverlayText("No typed values captured.");
+    await waitForOverlayTextAbsent(runner, "AWS Trainium");
+
+    await clickOverlayButtonByText(runner, "Show captured details");
+    await runner.waitForOverlayText('Checked "AWS Trainium"');
+    await runner.waitForOverlayText('Checked "Amazon SageMaker JumpStart"');
+    await clickOverlayButtonByText(runner, "Hide details");
+    await waitForOverlayTextAbsent(runner, "AWS Trainium");
+
+    await clickOverlayButtonByText(runner, "Edit");
+    await fillOverlayControl(runner, "Skill name", "Canceled review name");
+    await clickOverlayButtonByText(runner, "Cancel");
+    await waitForOverlayTextAbsent(runner, "Canceled review name");
+
+    await clickOverlayButtonByText(runner, "Edit");
+    await fillOverlayControl(runner, "Skill name", "Choose answers safely");
+    await fillOverlayControl(runner, "Trigger phrase", "choose answers safely");
+    await fillOverlayControl(
+      runner,
+      "Workflow steps",
+      "Find requested answer options.\nSelect only requested answers.\nVerify selected answers.",
+    );
+    await fillOverlayControl(
+      runner,
+      "Guardrails",
+      "Do not submit the quiz.\nDo not infer missing answers.",
+    );
+    await fillOverlayControl(
+      runner,
+      "Required evidence",
+      "Requested answers are selected.\nThe quiz was not submitted.",
+    );
+    await clickOverlayButtonByText(runner, "Save");
+    await runner.waitForOverlayText("Choose answers safely");
 
     await clickOverlayButtonByText(runner, "Save Skill");
     await runner.waitForFakeBackgroundHandled("USER_SKILL_SAVE");
@@ -283,15 +321,21 @@ describe("Overlay panel product surfaces", () => {
       runner,
       "opensidebar:userWebsiteSkills",
       "name",
-      "Harness smoke workflow",
+      "Choose answers safely",
     );
 
     await runner.clickOverlayButton("Website Skills");
-    await runner.waitForOverlayText("Harness smoke workflow");
+    await runner.waitForOverlayText("Choose answers safely");
 
-    await runner.clickOverlayButton("Edit Harness smoke workflow");
+    await runner.clickOverlayButton("Edit Choose answers safely");
     await fillOverlayControl(runner, "Skill name", "Updated harness workflow");
     await fillOverlayControl(runner, "Trigger phrase", "updated harness");
+    await fillOverlayControl(runner, "Path pattern", "/course/*/learn/quiz/*");
+    await fillOverlayControl(
+      runner,
+      "Guardrails",
+      "Do not submit the quiz.\nDo not choose unrelated answers.",
+    );
     await clickOverlayButtonByText(runner, "Save");
     await waitForLocalArrayItemMatch(
       runner,
@@ -299,8 +343,10 @@ describe("Overlay panel product surfaces", () => {
       {
         name: "Updated harness workflow",
         triggerPhrase: "updated harness",
+        pathPattern: "/course/*/learn/quiz/*",
       },
     );
+    await runner.waitForOverlayText("Do not submit the quiz.");
 
     await setOverlayCheckboxByLabel(runner, "On", false);
     await waitForLocalArrayItemMatch(
@@ -317,6 +363,15 @@ describe("Overlay panel product surfaces", () => {
       name: "Updated harness workflow",
     });
     await runner.waitForOverlayText("No website skills yet");
+
+    await clickOverlayButtonByText(runner, "Record Skill");
+    await runner.waitForOverlayText("Teach a website workflow");
+    await clickOverlayButtonByText(runner, "Start recording");
+    await runner.waitForOverlayText("Recording site skill");
+    await clickOverlayButtonByText(runner, "Stop");
+    await runner.waitForOverlayText("Review recorded skill");
+    await clickOverlayButtonByText(runner, "Discard");
+    await waitForOverlayTextAbsent(runner, "Review recorded skill");
 
     const capture = await runner.readMessageCapture();
     expect(capture.outboundTypes).toEqual(

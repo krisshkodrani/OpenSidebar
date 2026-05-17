@@ -9,17 +9,11 @@ import {
   normalizeMaxImagePromptTokenEstimate,
   saveSettings,
 } from "../../utils/settings-storage";
-import { storageLogger } from "../../utils/storage-logger";
 import { uiRuntime } from "../runtime";
 import { useOpenRouterModels } from "../hooks/useOpenRouterModels";
 import { GeneralSettingsTab } from "./settings/GeneralSettingsTab";
 import { ModelsSettingsTab } from "./settings/ModelsSettingsTab";
-import { VoiceSettingsTab } from "./settings/VoiceSettingsTab";
-import type {
-  DataControlAction,
-  SettingsChangeHandler,
-  SettingsTab,
-} from "./settings/types";
+import type { SettingsChangeHandler, SettingsTab } from "./settings/types";
 
 interface Props {
   isOpen: boolean;
@@ -32,14 +26,10 @@ const FOCUSABLE_SELECTOR =
 export function SettingsDrawer({ isOpen, onClose }: Props) {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
-  const clearHistory = useStore((s) => s.clearHistory);
 
   const [formState, setFormState] = useState<UserSettings>(settings);
   const [isDirty, setIsDirty] = useState(false);
   const [siteBlocklistText, setSiteBlocklistText] = useState("");
-  const [dataControlStatus, setDataControlStatus] = useState<string | null>(
-    null,
-  );
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [notificationPermissionError, setNotificationPermissionError] =
@@ -57,7 +47,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     setFormState(settings);
     setIsDirty(false);
     setSiteBlocklistText((settings.siteAccessBlocklist ?? []).join("\n"));
-    setDataControlStatus(null);
     setSaveStatus(null);
     setIsSaving(false);
     setNotificationPermissionError(null);
@@ -119,15 +108,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     });
   };
 
-  const handleExportLogs = async () => {
-    const blobUrl = await storageLogger.exportAsJsonl(uiRuntime.storage.local);
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = "opensidebar-logs.jsonl";
-    link.click();
-    URL.revokeObjectURL(blobUrl);
-  };
-
   const handleBrowserNotificationToggle = async (checked: boolean) => {
     setNotificationPermissionError(null);
     if (!checked) {
@@ -187,29 +167,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
     }
   };
 
-  const handleDataControl = async (action: DataControlAction) => {
-    setDataControlStatus("Applying...");
-    try {
-      const response = await uiRuntime.sendMessage<{
-        ok?: boolean;
-        detail?: string;
-      }>({
-        type: "DATA_CONTROL_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: "sidepanel",
-        payload: { action },
-      });
-
-      const ok = Boolean(response?.ok);
-      const detail = response?.detail || (ok ? "Done." : "Action failed.");
-      setDataControlStatus(detail);
-
-      if (action === "clear_chat_history" && ok) clearHistory();
-    } catch (error: any) {
-      setDataControlStatus(`Failed: ${error?.message ?? String(error)}`);
-    }
-  };
-
   if (!isOpen) return null;
 
   return (
@@ -247,15 +204,12 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
         <div className="flex-1 space-y-6 overflow-y-auto p-4">
           {activeTab === "general" ? (
             <GeneralSettingsTab
-              dataControlStatus={dataControlStatus}
               formState={formState}
               notificationPermissionError={notificationPermissionError}
               onBrowserNotificationToggle={(checked) =>
                 void handleBrowserNotificationToggle(checked)
               }
               onChange={handleChange}
-              onDataControl={(action) => void handleDataControl(action)}
-              onExportLogs={() => void handleExportLogs()}
               onSiteBlocklistTextChange={setSiteBlocklistText}
               onSkillPackToggle={handleSkillPackToggle}
               siteBlocklistText={siteBlocklistText}
@@ -271,9 +225,6 @@ export function SettingsDrawer({ isOpen, onClose }: Props) {
             />
           ) : null}
 
-          {activeTab === "voice" ? (
-            <VoiceSettingsTab formState={formState} onChange={handleChange} />
-          ) : null}
         </div>
 
         <div className="border-t border-warm-200 bg-warm-100/50 p-4 dark:border-warm-800 dark:bg-warm-900/50">
@@ -305,7 +256,7 @@ function SettingsTabBar({
 }) {
   return (
     <div className="flex border-b border-warm-200 px-4 dark:border-warm-800">
-      {(["general", "models", "voice"] as const).map((tab) => (
+      {(["general", "models"] as const).map((tab) => (
         <button
           key={tab}
           className={`border-b-2 px-3 py-2 text-sm font-medium capitalize transition-colors ${

@@ -28,12 +28,6 @@ export function classifyRisk(
       return RiskLevel.HIGH;
     }
   }
-  if (
-    toolName === ToolName.GET_CANDIDATE_PROFILE &&
-    args.include_private === true
-  ) {
-    return RiskLevel.HIGH;
-  }
   return getToolMeta(toolName)?.risk ?? RiskLevel.HIGH;
 }
 

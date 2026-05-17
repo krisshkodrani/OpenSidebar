@@ -1,5 +1,5 @@
 import React from "react";
-import { Download, Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 import {
   DEFAULT_ENABLED_SKILL_PACK_IDS,
   type UserSettings,
@@ -9,27 +9,21 @@ import {
   MAX_TURNS_PRESETS,
   SKILL_PACK_OPTIONS,
 } from "./settings-options";
-import type { DataControlAction, SettingsChangeHandler } from "./types";
+import type { SettingsChangeHandler } from "./types";
 
 export function GeneralSettingsTab({
-  dataControlStatus,
   formState,
   notificationPermissionError,
   onBrowserNotificationToggle,
   onChange,
-  onDataControl,
-  onExportLogs,
   onSiteBlocklistTextChange,
   onSkillPackToggle,
   siteBlocklistText,
 }: {
-  dataControlStatus: string | null;
   formState: UserSettings;
   notificationPermissionError: string | null;
   onBrowserNotificationToggle: (checked: boolean) => void;
   onChange: SettingsChangeHandler;
-  onDataControl: (action: DataControlAction) => void;
-  onExportLogs: () => void;
   onSiteBlocklistTextChange: (text: string) => void;
   onSkillPackToggle: (packId: string, checked: boolean) => void;
   siteBlocklistText: string;
@@ -181,53 +175,6 @@ export function GeneralSettingsTab({
         </div>
       </section>
 
-      <section className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
-          Integrations
-        </h3>
-
-        <ToggleRow
-          checked={Boolean(formState.jobAgentMcpEnabled)}
-          description="Use the local JobAgent MCP HTTP server for job application packages and form answers."
-          label="JobAgent MCP"
-          onChange={(checked) => onChange("jobAgentMcpEnabled", checked)}
-        />
-
-        {formState.jobAgentMcpEnabled ? (
-          <div className="space-y-3 rounded-md border border-warm-200 p-3 dark:border-warm-800">
-            <div className="space-y-1">
-              <label className="text-sm font-medium dark:text-warm-300">
-                MCP URL
-              </label>
-              <input
-                type="url"
-                value={formState.jobAgentMcpUrl ?? ""}
-                onChange={(event) =>
-                  onChange("jobAgentMcpUrl", event.target.value)
-                }
-                className="w-full rounded-md border border-warm-300 bg-warm-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
-                placeholder="http://127.0.0.1:3727/mcp"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium dark:text-warm-300">
-                Bearer token
-              </label>
-              <input
-                type="password"
-                value={formState.jobAgentMcpToken ?? ""}
-                onChange={(event) =>
-                  onChange("jobAgentMcpToken", event.target.value)
-                }
-                className="w-full rounded-md border border-warm-300 bg-warm-50 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-100"
-                placeholder="local-dev-token"
-              />
-            </div>
-          </div>
-        ) : null}
-      </section>
-
       <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3 dark:border-amber-800 dark:bg-amber-900/10">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
           Safety
@@ -307,59 +254,6 @@ export function GeneralSettingsTab({
           onChange={(checked) => onChange("showDebugScreenshots", checked)}
         />
       </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-warm-400">
-          Data
-        </h3>
-
-        <div className="grid grid-cols-1 gap-2">
-          <DangerButton
-            label="Clear Chat History"
-            onClick={() => {
-              if (window.confirm("Clear all chat history? This cannot be undone.")) {
-                onDataControl("clear_chat_history");
-              }
-            }}
-          />
-          <DangerButton
-            label="Clear Local Logs"
-            onClick={() => {
-              if (window.confirm("Clear all local logs? This cannot be undone.")) {
-                onDataControl("clear_logs");
-              }
-            }}
-          />
-          <button
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Clear ALL local data? This includes chat history, logs, settings, and saved prompts. This cannot be undone.",
-                )
-              ) {
-                onDataControl("clear_local_data");
-              }
-            }}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 p-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-100 dark:border-red-900/40 dark:hover:bg-red-900/30"
-          >
-            Clear All Local Data
-          </button>
-        </div>
-
-        {dataControlStatus ? (
-          <p className="text-xs text-warm-500 dark:text-warm-400">
-            {dataControlStatus}
-          </p>
-        ) : null}
-
-        <button
-          onClick={onExportLogs}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-warm-200 p-2.5 text-sm font-medium text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:text-warm-300 dark:hover:bg-warm-800"
-        >
-          <Download size={16} />
-          Export Logs
-        </button>
-      </section>
     </>
   );
 }
@@ -393,22 +287,5 @@ function ToggleRow({
         className="h-4 w-4 rounded text-primary-600"
       />
     </div>
-  );
-}
-
-function DangerButton({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 p-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/30 dark:hover:bg-red-900/20"
-    >
-      {label}
-    </button>
   );
 }

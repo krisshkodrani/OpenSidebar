@@ -16,6 +16,7 @@ describe("settings storage", () => {
   const originalSyncSet = chrome.storage.sync.set;
   const originalLocalGet = chrome.storage.local.get;
   const originalLocalSet = chrome.storage.local.set;
+  const originalLocalRemove = chrome.storage.local.remove;
   const originalSessionGet = chrome.storage.session.get;
   const originalSessionRemove = chrome.storage.session.remove;
 
@@ -24,6 +25,7 @@ describe("settings storage", () => {
     chrome.storage.sync.set = originalSyncSet;
     chrome.storage.local.get = originalLocalGet;
     chrome.storage.local.set = originalLocalSet;
+    chrome.storage.local.remove = originalLocalRemove;
     chrome.storage.session.get = originalSessionGet;
     chrome.storage.session.remove = originalSessionRemove;
   });
@@ -419,11 +421,13 @@ describe("settings storage", () => {
     expect(payload.perceptionMode).toBe("auto");
   });
 
-  test("stores JobAgent MCP token locally and strips leaked sync token", async () => {
+  test("strips removed voice and JobAgent MCP settings", async () => {
     const localSet = vi.fn(async () => {});
+    const localRemove = vi.fn(async () => {});
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.set = syncSet as any;
     chrome.storage.local.set = localSet as any;
+    chrome.storage.local.remove = localRemove as any;
     chrome.storage.session.remove = vi.fn(async () => {}) as any;
 
     await saveSettings({
@@ -434,21 +438,21 @@ describe("settings storage", () => {
       showSessionMetrics: true,
       requireApprovals: true,
       allowNavigation: true,
+      voiceMode: "openai_realtime",
       jobAgentMcpEnabled: true,
       jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
       jobAgentMcpToken: "local-dev-token",
-    });
+    } as any);
 
-    expect(localSet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobAgentMcpToken_local: "local-dev-token",
-      }),
+    expect(localSet.mock.calls[0]?.[0]).not.toHaveProperty(
+      "jobAgentMcpToken_local",
     );
-    expect(syncSet.mock.calls[0]?.[0]?.userSettings).toMatchObject({
-      jobAgentMcpEnabled: true,
-      jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
-    });
-    expect(syncSet.mock.calls[0]?.[0]?.userSettings.jobAgentMcpToken).toBeUndefined();
+    expect(localRemove).toHaveBeenCalledWith("jobAgentMcpToken_local");
+    const saved = syncSet.mock.calls[0]?.[0]?.userSettings;
+    expect(saved.voiceMode).toBeUndefined();
+    expect(saved.jobAgentMcpEnabled).toBeUndefined();
+    expect(saved.jobAgentMcpUrl).toBeUndefined();
+    expect(saved.jobAgentMcpToken).toBeUndefined();
 
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {
@@ -458,6 +462,7 @@ describe("settings storage", () => {
         showSessionMetrics: true,
         requireApprovals: true,
         allowNavigation: true,
+        voiceMode: "openai_realtime",
         jobAgentMcpEnabled: true,
         jobAgentMcpUrl: "http://127.0.0.1:3727/mcp",
         jobAgentMcpToken: "leaked-sync-token",
@@ -478,7 +483,16 @@ describe("settings storage", () => {
 
     const settings = await loadSettings();
 
-    expect(settings?.jobAgentMcpToken).toBe("local-token");
-    expect(settings?.jobAgentMcpEnabled).toBe(true);
+    expect((settings as any)?.voiceMode).toBeUndefined();
+    expect((settings as any)?.jobAgentMcpToken).toBeUndefined();
+    expect((settings as any)?.jobAgentMcpEnabled).toBeUndefined();
+    expect((settings as any)?.jobAgentMcpUrl).toBeUndefined();
+    expect(localRemove).toHaveBeenCalledWith("jobAgentMcpToken_local");
+    const cleaned =
+      syncSet.mock.calls[syncSet.mock.calls.length - 1]?.[0]?.userSettings;
+    expect(cleaned.voiceMode).toBeUndefined();
+    expect(cleaned.jobAgentMcpEnabled).toBeUndefined();
+    expect(cleaned.jobAgentMcpUrl).toBeUndefined();
+    expect(cleaned.jobAgentMcpToken).toBeUndefined();
   });
 });

@@ -31,6 +31,9 @@ describe("content skill recording overlay", () => {
 
     expect(document.getElementById("opensidebar-recording-hud")).toBeTruthy();
     expect(document.getElementById("opensidebar-recording-border")).toBeTruthy();
+    expect(document.getElementById("opensidebar-recording-style")?.textContent).toContain(
+      "@media (prefers-reduced-motion: reduce)",
+    );
 
     const button = document.createElement("button");
     button.textContent = "Create order";
@@ -59,5 +62,46 @@ describe("content skill recording overlay", () => {
 
     expect(document.getElementById("opensidebar-recording-hud")).toBeNull();
     expect(document.getElementById("opensidebar-recording-border")).toBeNull();
+  });
+
+  test("captures checkable controls once with control type", () => {
+    listener(
+      {
+        type: "SKILL_RECORDING_START",
+        requestId: "start",
+        source: MessageSource.BACKGROUND,
+        payload: { tabId: 1 },
+      },
+      {},
+      vi.fn(),
+    );
+
+    const label = document.createElement("label");
+    label.textContent = "AWS Trainium";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    label.appendChild(checkbox);
+    document.body.appendChild(label);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("input", { bubbles: true }));
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const checkboxEvents = sendMessage.mock.calls
+      .map(([message]) => message)
+      .filter(
+        (message) =>
+          message.type === "SKILL_RECORDING_EVENT" &&
+          message.payload.event.kind === "checkbox" &&
+          message.payload.event.label === "AWS Trainium",
+      );
+
+    expect(checkboxEvents).toHaveLength(1);
+    expect(checkboxEvents[0].payload.event).toMatchObject({
+      checked: true,
+      controlType: "checkbox",
+      inputType: "checkbox",
+      timelineText: 'Checked "AWS Trainium"',
+    });
   });
 });

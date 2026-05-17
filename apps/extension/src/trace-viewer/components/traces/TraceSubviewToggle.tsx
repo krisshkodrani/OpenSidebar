@@ -1,6 +1,7 @@
 import React from "react";
 import { useStore } from "../../store";
 import type { Subview } from "../../store/types";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 
 export default function TraceSubviewToggle() {
   const activeSubview = useStore((s) => s.activeSubview);
@@ -21,20 +22,23 @@ export default function TraceSubviewToggle() {
   ];
 
   return (
-    <div className="flex gap-0.5 px-5 pt-2 bg-trace-panel border-b border-trace-border shrink-0 overflow-x-auto scrollbar-thin">
+    <Tabs
+      value={activeSubview}
+      onValueChange={(value) => setActiveSubview(value as Subview)}
+      className="bg-trace-panel border-b border-trace-border shrink-0 overflow-x-auto scrollbar-thin"
+    >
+      <TabsList className="flex h-auto justify-start gap-0.5 rounded-none bg-transparent px-5 pt-2 pb-0 text-trace-muted">
       {views.map((v) => (
-        <button
+        <TabsTrigger
           key={v.key}
+          value={v.key}
           onClick={() => setActiveSubview(v.key)}
-          className={`shrink-0 whitespace-nowrap px-4 py-1.5 text-xs font-semibold border-b-2 cursor-pointer transition-colors ${
-            activeSubview === v.key
-              ? "text-trace-accent-light border-trace-accent"
-              : "text-trace-muted border-transparent hover:text-trace-subtle"
-          }`}
+          className="shrink-0 whitespace-nowrap rounded-none border-b-2 border-transparent bg-transparent px-4 py-1.5 text-xs font-semibold text-trace-muted shadow-none transition-colors hover:text-trace-subtle data-[state=active]:border-trace-accent data-[state=active]:bg-transparent data-[state=active]:text-trace-accent-light data-[state=active]:shadow-none"
         >
           {v.label}
-        </button>
+        </TabsTrigger>
       ))}
-    </div>
+      </TabsList>
+    </Tabs>
   );
 }
