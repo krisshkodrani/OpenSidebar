@@ -111,6 +111,12 @@ export interface AgentLoopToolHandlerHost {
     result: string,
     preActionSnapshot?: unknown,
   ): void;
+  recordCompletionToolEvidence?(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+    preActionSnapshot?: unknown,
+  ): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   refreshSnapshotWithRetry(
     tabId: number,
@@ -970,6 +976,12 @@ export async function handleGenericSequentialToolCall(
       result = `${result}\n${autocompleteRewriteReason}`;
     }
     loop.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
+    loop.recordCompletionToolEvidence?.(
+      toolName,
+      args,
+      result,
+      preActionSnapshot,
+    );
     recordSuccessfulToolExecution(loop, {
       toolCall,
       toolName,

@@ -923,6 +923,54 @@ describe("dead-end outcome tracking", () => {
       }),
     ).toEqual({ kind: "none" });
   });
+
+  it("does not treat distinct successful checkbox mutations as a dead end", () => {
+    const recentOutcomes = [];
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: 'Set [158] <input> "answer" checked=true',
+      snapshotFp: "quiz-page",
+      windowSize: 4,
+    });
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: 'Set [159] <input> "answer" checked=true',
+      snapshotFp: "quiz-page",
+      windowSize: 4,
+    });
+
+    expect(
+      assessDeadEndPattern({
+        recentOutcomes,
+        reflectionThreshold: 2,
+        pivotThreshold: 4,
+      }),
+    ).toEqual({ kind: "none" });
+  });
+
+  it("still normalizes different failed element ids for recovery detection", () => {
+    const recentOutcomes = [];
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: "No element with tag [12]",
+      snapshotFp: "page-a",
+      windowSize: 4,
+    });
+    recordRecentOutcome({
+      recentOutcomes,
+      resultContent: "No element with tag [13]",
+      snapshotFp: "page-a",
+      windowSize: 4,
+    });
+
+    expect(
+      assessDeadEndPattern({
+        recentOutcomes,
+        reflectionThreshold: 2,
+        pivotThreshold: 4,
+      }),
+    ).toEqual(expect.objectContaining({ kind: "nudge", count: 2 }));
+  });
 });
 
 describe("updatePostEscalationPivot", () => {

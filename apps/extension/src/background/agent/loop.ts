@@ -75,6 +75,16 @@ import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
+  buildCompletionRecoveryHint,
+  CompletionEvidenceLedger,
+  deriveCompletionEvidenceFromSnapshot,
+  deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionContract,
+  generateCompletionContract,
+  type CompletionCandidateSource,
+  type CompletionEvaluation,
+} from "./completion-kernel";
+import {
   TURN_CHECKPOINT_VERSION,
   turnCheckpointKey,
   buildMutationKey,
@@ -704,6 +714,8 @@ export class AgentLoop {
     reason: string;
   } | null = null;
   private evidenceAccumulator = new EvidenceAccumulator();
+  private completionEvidence = new CompletionEvidenceLedger();
+  private lastCompletionRejection: CompletionEvaluation | null = null;
 
   /** Collected source citations (deduplicated by URL) */
   private citations: Citation[] = [];
@@ -1412,7 +1424,16 @@ export class AgentLoop {
     summary: string,
     options: { saveCheckpoint?: boolean } = {},
   ): void {
+    if (this.completedResult) {
+      return;
+    }
     this.completedResult = { outcome: "completed", summary };
+    this.traceRecorder?.recordEvent("completion_state_transition", {
+      turn: this.turnCount,
+      from: "working",
+      to: "completed",
+      source: "trusted_tool",
+    });
     this.statusHandler(AgentStatus.IDLE, "Done");
     this.messageHandler(summary, []);
     if (options.saveCheckpoint !== false) {
@@ -1424,6 +1445,12 @@ export class AgentLoop {
     // Signal completion immediately - the orchestrator reads this after a lane
     // timeout to avoid retrying completed subtasks.
     this.completedResult = { outcome: "completed", summary };
+    this.traceRecorder?.recordEvent("completion_state_transition", {
+      turn: this.turnCount,
+      from: "working",
+      to: "completed",
+      source: "model_done",
+    });
 
     this.context.clearPlanStatus();
     this.log.info("agent", "DONE called", {
@@ -2058,12 +2085,218 @@ export class AgentLoop {
     );
   }
 
+  private getActiveCompletionContext(): {
+    activeObjective?: string;
+    successCriteria?: string;
+  } {
+    const activePlanIdx =
+      this.planSubtasks.length > 0
+        ? this.planSubtasks.findIndex((s) => s.status === "running")
+        : -1;
+    const effectivePlanIdx =
+      activePlanIdx >= 0
+        ? activePlanIdx
+        : Math.min(
+            this.planSubtasks.filter((s) => s.status === "completed").length,
+            this.planSubtasks.length - 1,
+          );
+    return {
+      activeObjective:
+        effectivePlanIdx >= 0
+          ? this.planSubtasks[effectivePlanIdx]?.description
+          : undefined,
+      successCriteria:
+        effectivePlanIdx >= 0
+          ? this.planSteps[effectivePlanIdx]?.successCriteria
+          : undefined,
+    };
+  }
+
+  private recordCompletionEvidence(
+    evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
+    source: string,
+  ): void {
+    const added = this.completionEvidence.addMany(evidence);
+    if (added === 0) return;
+    this.traceRecorder?.recordEvent("completion_evidence_recorded", {
+      turn: this.turnCount,
+      source,
+      added,
+      evidence: evidence.map((event) => ({
+        type: event.type,
+        confidence: event.confidence,
+        logicalKey: event.logicalKey,
+      })),
+    });
+  }
+
+  private refreshCompletionEvidenceFromSnapshot(source: string): void {
+    this.recordCompletionEvidence(
+      deriveCompletionEvidenceFromSnapshot(
+        this.context.getSnapshot(),
+        this.turnCount,
+      ),
+      source,
+    );
+  }
+
+  private recordCompletionToolEvidence(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+    preActionSnapshot?: DomSnapshot | null,
+  ): void {
+    this.recordCompletionEvidence(
+      deriveCompletionEvidenceFromToolOutcome({
+        toolName,
+        args,
+        result,
+        preActionSnapshot,
+        currentSnapshot: this.context.getSnapshot(),
+        turn: this.turnCount,
+      }),
+      "tool_result",
+    );
+  }
+
+  private evaluateCompletionCandidate(
+    source: CompletionCandidateSource,
+    summary: string,
+  ): CompletionEvaluation {
+    this.refreshCompletionEvidenceFromSnapshot("candidate_evaluation");
+    const completionContext = this.getActiveCompletionContext();
+    const generated = generateCompletionContract({
+      userRequest: this.originalQuery,
+      snapshot: this.context.getSnapshot(),
+      activeObjective: completionContext.activeObjective,
+      successCriteria: completionContext.successCriteria,
+    });
+    this.traceRecorder?.recordEvent("completion_candidate", {
+      turn: this.turnCount,
+      source,
+      contractKind: generated?.contract.kind ?? "none",
+      confidence: generated?.confidence ?? "none",
+    });
+    if (generated?.notes.length) {
+      this.traceRecorder?.recordEvent("completion_contract_repaired", {
+        turn: this.turnCount,
+        notes: generated.notes,
+        contractKind: generated.contract.kind,
+      });
+    }
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: this.completionEvidence.toArray(),
+      snapshot: this.context.getSnapshot(),
+      candidateSource: source,
+      summary,
+    });
+    if (decision.status !== "accepted") {
+      this.lastCompletionRejection = decision;
+    }
+    return decision;
+  }
+
+  private getCompletionRecoveryHintForCurrentState(): string | null {
+    this.refreshCompletionEvidenceFromSnapshot("recovery_consult");
+    const completionContext = this.getActiveCompletionContext();
+    const generated = generateCompletionContract({
+      userRequest: this.originalQuery,
+      snapshot: this.context.getSnapshot(),
+      activeObjective: completionContext.activeObjective,
+      successCriteria: completionContext.successCriteria,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: this.completionEvidence.toArray(),
+      snapshot: this.context.getSnapshot(),
+      candidateSource: "model_done",
+    });
+    return buildCompletionRecoveryHint(decision);
+  }
+
+  private rejectDoneFromCompletionDecision(
+    toolCallId: string,
+    decision: Extract<
+      CompletionEvaluation,
+      { status: "rejected" | "needs_verification" }
+    >,
+  ): void {
+    this.doneRejections++;
+    this.lastCompletionRejection = decision;
+    this.log.warn("agent", "DONE rejected by deterministic completion kernel", {
+      turn: this.turnCount,
+      rejections: this.doneRejections,
+      status: decision.status,
+      reason: decision.reason,
+      contractKind: decision.contract.kind,
+    });
+    this.traceRecorder?.recordEvent("completion_decision", {
+      turn: this.turnCount,
+      status: decision.status,
+      source: "model_done",
+      reason: decision.reason,
+      contractKind: decision.contract.kind,
+      evidenceKeys: decision.evidence.map((event) => event.logicalKey),
+    });
+    this.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        decision.status === "needs_verification"
+          ? `done() REJECTED: ${decision.reason}\n\n${decision.hint}`
+          : `done() REJECTED: ${decision.reason}\n\nVerify the current page state, repair the selected options if needed, then call done() again.`,
+    });
+  }
+
   private async handleDoneToolCall(
     toolCallId: string,
     summary: string,
     tabId: number,
   ): Promise<boolean> {
+    if (this.completedResult) {
+      const completedSummary = this.completedResult.summary;
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: "accepted",
+        reason: "duplicate_done_after_terminal_completion",
+        source: "model_done",
+      });
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: completedSummary,
+      });
+      return true;
+    }
+
     if (this.rejectDoneForIncompleteUserFacingSummary(toolCallId, summary)) {
+      return false;
+    }
+
+    const deterministicDone = this.evaluateCompletionCandidate(
+      "model_done",
+      summary,
+    );
+    if (deterministicDone.status === "accepted") {
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: deterministicDone.status,
+        source: "model_done",
+        reason: deterministicDone.reason,
+        contractKind: deterministicDone.contract.kind,
+        evidenceKeys: deterministicDone.evidence.map(
+          (event) => event.logicalKey,
+        ),
+      });
+      this.acceptDoneToolCall(summary, toolCallId);
+      return true;
+    }
+    if (
+      deterministicDone.status === "rejected" ||
+      deterministicDone.status === "needs_verification"
+    ) {
+      this.rejectDoneFromCompletionDecision(toolCallId, deterministicDone);
       return false;
     }
 
@@ -2107,6 +2340,12 @@ export class AgentLoop {
       return false;
     }
 
+    this.traceRecorder?.recordEvent("completion_decision", {
+      turn: this.turnCount,
+      status: "accepted",
+      source: "model_done",
+      reason: "legacy_done_guards_passed",
+    });
     this.acceptDoneToolCall(summary, toolCallId);
     return true;
   }
@@ -3029,6 +3268,8 @@ export class AgentLoop {
     this.offDomainWarned = false;
     this.pendingAsyncVerification = null;
     this.pendingFormSubmissionReset = null;
+    this.lastCompletionRejection = null;
+    this.completionEvidence.clear();
     this.perception.reset();
     this.metrics = emptySessionMetrics();
     this.contextSpend.reset();
@@ -8023,6 +8264,32 @@ export class AgentLoop {
               pivotThreshold: this.limits.stagnationPivot,
             });
             if (deadEnd.kind === "pivot") {
+              const completionHint =
+                this.getCompletionRecoveryHintForCurrentState();
+              if (completionHint) {
+                this.log.info(
+                  "agent",
+                  "Dead-end pivot suppressed by completion evidence",
+                  {
+                    turn: this.turnCount,
+                    pattern: deadEnd.pattern.slice(0, 80),
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "dead_end_completion_consult",
+                  {
+                    turn: this.turnCount,
+                    action: "suppress_pivot",
+                    pattern: deadEnd.pattern.slice(0, 80),
+                  },
+                );
+                this.context.addMessage({
+                  role: "user",
+                  content: completionHint,
+                });
+                recentOutcomes.length = 0;
+                continue;
+              }
               this.log.warn(
                 "agent",
                 "Dead-end detected: forcing strategy pivot",
@@ -8045,6 +8312,32 @@ export class AgentLoop {
               await this.strategyPivot(tabId);
               recentOutcomes.length = 0;
             } else if (deadEnd.kind === "nudge") {
+              const completionHint =
+                this.getCompletionRecoveryHintForCurrentState();
+              if (completionHint) {
+                this.log.info(
+                  "agent",
+                  "Dead-end nudge replaced by completion evidence",
+                  {
+                    turn: this.turnCount,
+                    pattern: deadEnd.pattern.slice(0, 80),
+                  },
+                );
+                this.traceRecorder?.recordEvent(
+                  "dead_end_completion_consult",
+                  {
+                    turn: this.turnCount,
+                    action: "replace_nudge",
+                    pattern: deadEnd.pattern.slice(0, 80),
+                  },
+                );
+                this.context.addMessage({
+                  role: "user",
+                  content: completionHint,
+                });
+                recentOutcomes.length = 0;
+                continue;
+              }
               this.log.info(
                 "agent",
                 "Dead-end nudge: repeated outcome pattern",
