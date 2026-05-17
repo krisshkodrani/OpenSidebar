@@ -6,7 +6,6 @@
  */
 
 import {
-  DEFAULT_JOBAGENT_MCP_URL,
   DEFAULT_ENABLED_SKILL_PACK_IDS,
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
@@ -26,7 +25,7 @@ const LOCAL_FIREWORKS_KEY = "fireworksApiKey_local";
 const LOCAL_DEEPSEEK_KEY = "deepseekApiKey_local";
 const LOCAL_KIMI_KEY = "kimiApiKey_local";
 const LOCAL_XIAOMI_KEY = "xiaomiApiKey_local";
-const LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
+const LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY = "jobAgentMcpToken_local";
 
 export type SettingsStorageKeys =
   | string
@@ -107,7 +106,7 @@ export async function saveSettings(
   settings: UserSettings,
   storage: SettingsStorageBackend = chromeSettingsStorage,
 ): Promise<void> {
-  const normalized: UserSettings = {
+  const normalized: UserSettings & Record<string, unknown> = {
     ...settings,
     providerMode: settings.providerMode ?? "fireworks",
     perceptionMode: settings.perceptionMode ?? "auto",
@@ -128,6 +127,10 @@ export async function saveSettings(
     delete normalized.executorModel;
   }
   delete normalized.useVLExecutor;
+  delete normalized.voiceMode;
+  delete normalized.jobAgentMcpEnabled;
+  delete normalized.jobAgentMcpUrl;
+  delete normalized.jobAgentMcpToken;
   const {
     openRouterApiKey,
     openaiApiKey,
@@ -137,7 +140,6 @@ export async function saveSettings(
     deepseekApiKey,
     kimiApiKey,
     xiaomiApiKey,
-    jobAgentMcpToken,
     ...rest
   } = normalized;
   await Promise.all([
@@ -150,11 +152,11 @@ export async function saveSettings(
       [LOCAL_DEEPSEEK_KEY]: deepseekApiKey ?? "",
       [LOCAL_KIMI_KEY]: kimiApiKey ?? "",
       [LOCAL_XIAOMI_KEY]: xiaomiApiKey ?? "",
-      [LOCAL_JOBAGENT_MCP_TOKEN_KEY]: jobAgentMcpToken ?? "",
     }),
     storage.sync.set({ [SYNC_KEY]: rest }),
     // Clean up legacy session key if present
     storage.session.remove(SESSION_KEY).catch(() => {}),
+    storage.local.remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY).catch(() => {}),
   ]);
 }
 
@@ -175,7 +177,6 @@ export async function loadSettings(
       LOCAL_DEEPSEEK_KEY,
       LOCAL_KIMI_KEY,
       LOCAL_XIAOMI_KEY,
-      LOCAL_JOBAGENT_MCP_TOKEN_KEY,
     ]),
     // Check legacy session key for migration
     storage.session.get(SESSION_KEY).catch(() => ({}) as Record<string, unknown>),
@@ -197,8 +198,8 @@ export async function loadSettings(
   const kimiApiKey = (localResult[LOCAL_KIMI_KEY] as string | undefined) || "";
   const xiaomiApiKey =
     (localResult[LOCAL_XIAOMI_KEY] as string | undefined) || "";
-  const jobAgentMcpToken =
-    (localResult[LOCAL_JOBAGENT_MCP_TOKEN_KEY] as string | undefined) || "";
+
+  void storage.local.remove(LEGACY_LOCAL_JOBAGENT_MCP_TOKEN_KEY).catch(() => {});
 
   if (
     !syncSettings &&
@@ -209,13 +210,17 @@ export async function loadSettings(
     !fireworksApiKey &&
     !deepseekApiKey &&
     !kimiApiKey &&
-    !xiaomiApiKey &&
-    !jobAgentMcpToken
+    !xiaomiApiKey
   ) {
     return null;
   }
 
   const raw: Record<string, unknown> = { ...(syncSettings ?? {}) };
+  const shouldCleanRemovedSettings =
+    "voiceMode" in raw ||
+    "jobAgentMcpEnabled" in raw ||
+    "jobAgentMcpUrl" in raw ||
+    "jobAgentMcpToken" in raw;
 
   // Migrate renamed fields (polarity flip)
   if ("bypassApprovals" in raw) {
@@ -238,7 +243,9 @@ export async function loadSettings(
   delete raw.ttsVoice;
   delete raw.ttsStylePreset;
   delete raw.autoVoiceResponse;
-  if (!raw.voiceMode) raw.voiceMode = "off";
+  delete raw.voiceMode;
+  delete raw.jobAgentMcpEnabled;
+  delete raw.jobAgentMcpUrl;
 
   // Migrate legacy `provider` to `providerMode`
   if ("provider" in raw && !("providerMode" in raw)) {
@@ -249,12 +256,6 @@ export async function loadSettings(
     delete raw.provider;
   }
   if (!raw.providerMode) raw.providerMode = "fireworks";
-  if (typeof raw.jobAgentMcpEnabled !== "boolean") {
-    raw.jobAgentMcpEnabled = false;
-  }
-  if (typeof raw.jobAgentMcpUrl !== "string" || !raw.jobAgentMcpUrl.trim()) {
-    raw.jobAgentMcpUrl = DEFAULT_JOBAGENT_MCP_URL;
-  }
 
   // Migrate legacy unified-vision toggle to auto mode. The runtime chooses
   // unified VL only when page or task signals indicate vision is useful.
@@ -284,6 +285,10 @@ export async function loadSettings(
   delete raw.xiaomiApiKey;
   delete raw.jobAgentMcpToken;
 
+  if (shouldCleanRemovedSettings) {
+    await storage.sync.set({ [SYNC_KEY]: raw }).catch(() => {});
+  }
+
   return {
     ...raw,
     openRouterApiKey: apiKey ?? "",
@@ -294,7 +299,6 @@ export async function loadSettings(
     deepseekApiKey: deepseekApiKey,
     kimiApiKey: kimiApiKey,
     xiaomiApiKey: xiaomiApiKey,
-    jobAgentMcpToken,
   } as UserSettings;
 }
 

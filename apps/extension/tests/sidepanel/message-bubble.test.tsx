@@ -229,4 +229,27 @@ describe("MessageBubble final answer rendering", () => {
     expect(bubble!.className).toContain("overflow-y-auto");
     expect(bubble!.className).toContain("break-words");
   });
+
+  test("renders passive watch messages without glow shadow", async () => {
+    await act(async () => {
+      root.render(
+        <MessageBubble
+          message={assistantMessage({
+            content: "Look for the option that mentions shared responsibility.",
+            isPassive: true,
+          })}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Watching");
+    expect(container.textContent).toContain("shared responsibility");
+    const passiveBubble = Array.from(container.querySelectorAll("div")).find(
+      (node) =>
+        node.textContent?.includes("shared responsibility") &&
+        node.className.includes("border-sky"),
+    ) as HTMLDivElement | undefined;
+    expect(passiveBubble).toBeTruthy();
+    expect(passiveBubble!.className).not.toContain("shadow-[");
+  });
 });

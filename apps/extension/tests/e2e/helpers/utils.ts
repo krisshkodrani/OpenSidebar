@@ -21,7 +21,12 @@ import {
 } from "../../../src/background/e2e-test-api";
 import { readE2EConfig } from "./e2e-config";
 
-type TaskCompletionState = "completed" | "partial" | "failed" | "none";
+type TaskCompletionState =
+  | "completed"
+  | "partial"
+  | "failed"
+  | "stopped"
+  | "none";
 export type E2EPanelPromptEntryMode = "instant" | "visible";
 
 export interface SendUserChatOptions {
@@ -31,8 +36,13 @@ export interface SendUserChatOptions {
 
 function isTerminalTaskCompletionStatus(
   status: unknown,
-): status is "completed" | "partial" | "failed" {
-  return status === "completed" || status === "partial" || status === "failed";
+): status is "completed" | "partial" | "failed" | "stopped" {
+  return (
+    status === "completed" ||
+    status === "partial" ||
+    status === "failed" ||
+    status === "stopped"
+  );
 }
 
 function getLatestTaskCompletionEvent(events: any[]): any | null {
@@ -52,6 +62,7 @@ function getLatestTaskCompletionState(events: any[]): TaskCompletionState {
   if (completion?.status === "completed") return "completed";
   if (completion?.status === "partial") return "partial";
   if (completion?.status === "failed") return "failed";
+  if (completion?.status === "stopped") return "stopped";
   return "none";
 }
 
@@ -1366,6 +1377,13 @@ export async function waitForTaskCompletion(
         events,
       };
     }
+    if (completion?.status === "stopped") {
+      return {
+        ok: false,
+        reason: `task_stopped:${completion.detail || completion.terminationReason || "unknown"}`,
+        events,
+      };
+    }
 
     const lastStatus = [...events]
       .reverse()
@@ -1381,6 +1399,13 @@ export async function waitForTaskCompletion(
         return {
           ok: false,
           reason: `task_failed:${lastStatus.detail || "unknown"}`,
+          events,
+        };
+      }
+      if (lastStatus.completionStatus === "stopped") {
+        return {
+          ok: false,
+          reason: `task_stopped:${lastStatus.detail || "unknown"}`,
           events,
         };
       }
@@ -1402,20 +1427,24 @@ export async function waitForTaskCompletion(
     await new Promise((resolve) => setTimeout(resolve, 1500));
   }
 
+  const finalEvents = await getMonitoredEvents(ctx.serviceWorker, 80).then(
+    (all) =>
+      all.filter(
+        (event: any) =>
+          event.workspaceId == null || event.workspaceId === workspaceId,
+      ),
+  );
+  const finalCompletionState = getLatestTaskCompletionState(finalEvents);
+
   return {
     ok: false,
     reason:
-      getLatestTaskCompletionState(
-        await getMonitoredEvents(ctx.serviceWorker, 80).then((all) =>
-          all.filter(
-            (event: any) =>
-              event.workspaceId == null || event.workspaceId === workspaceId,
-          ),
-        ),
-      ) === "partial"
+      finalCompletionState === "partial"
         ? "task_partial"
-        : "timeout",
-    events: await getMonitoredEvents(ctx.serviceWorker, 80),
+        : finalCompletionState === "stopped"
+          ? "task_stopped"
+          : "timeout",
+    events: finalEvents,
   };
 }
 
@@ -1486,6 +1515,14 @@ export async function waitForOutcome<T>(
         events,
       };
     }
+    if (lastTaskCompletion?.status === "stopped") {
+      return {
+        ok: false,
+        reason: `task_stopped:${lastTaskCompletion.detail || lastTaskCompletion.payload?.summary || "unknown"}`,
+        result: successfulResult ?? lastResult,
+        events,
+      };
+    }
 
     if (successfulResult) {
       const taskCompleted = lastTaskCompletion?.status === "completed";
@@ -1527,12 +1564,15 @@ export async function waitForOutcome<T>(
           (event: any) =>
             event.workspaceId == null || event.workspaceId === workspaceId,
         );
+  const finalCompletionState = getLatestTaskCompletionState(events);
   return {
     ok: false,
     reason:
-      getLatestTaskCompletionState(events) === "partial"
+      finalCompletionState === "partial"
         ? "task_partial"
-        : "timeout",
+        : finalCompletionState === "stopped"
+          ? "task_stopped"
+          : "timeout",
     result: successfulResult ?? lastResult,
     events,
   };

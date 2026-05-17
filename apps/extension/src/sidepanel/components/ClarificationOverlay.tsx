@@ -3,6 +3,7 @@ import { HelpCircle } from "lucide-react";
 import { useStore } from "../store";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
+import { Button, Card } from "@/ui";
 
 export function ClarificationOverlay() {
   const pending = useStore((s) => s.pendingClarification);
@@ -75,7 +76,7 @@ export function ClarificationOverlay() {
   if (!pending) return null;
 
   return (
-    <div
+    <Card
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
@@ -120,13 +121,16 @@ export function ClarificationOverlay() {
       {pending.suggestions && pending.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {pending.suggestions.map((suggestion, i) => (
-            <button
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               key={i}
               onClick={() => void sendAnswer(suggestion)}
-              className="rounded-full border border-primary-300 dark:border-primary-700 px-2.5 py-1 text-xs text-primary-700 dark:text-primary-300 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+              className="h-auto rounded-full border-primary-300 px-2.5 py-1 text-xs text-primary-700 hover:bg-primary-100 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-900/30"
             >
               {suggestion}
-            </button>
+            </Button>
           ))}
         </div>
       )}
@@ -142,14 +146,16 @@ export function ClarificationOverlay() {
           className="flex-1 px-2 py-1.5 text-xs border border-primary-200 dark:border-primary-700 rounded-md bg-white dark:bg-primary-950/20 text-primary-800 dark:text-primary-200 placeholder:text-primary-400 dark:placeholder:text-primary-500 outline-none focus:ring-1 focus:ring-primary-400"
           autoFocus
         />
-        <button
+        <Button
+          type="button"
+          size="sm"
           onClick={() => void sendAnswer(answer)}
           disabled={!answer.trim()}
-          className="rounded bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="text-xs"
         >
           Submit
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

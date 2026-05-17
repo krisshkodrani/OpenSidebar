@@ -32,7 +32,6 @@ const STATE_CHANGING_TOOLS = new Set([
   "apply_list_action",
   "configure_catalog_item",
   "configure_servicenow_form",
-  "record_application_status",
 ]);
 
 const PAGE_READ_TOOLS = new Set([

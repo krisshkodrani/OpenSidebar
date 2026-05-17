@@ -130,6 +130,7 @@ export function WebsiteSkillsDrawer({
                   pathPattern: draft.pathPattern,
                   triggerPhrase: draft.triggerPhrase,
                   workflowSteps: draft.workflowSteps,
+                  guardrails: draft.guardrails,
                   requiredEvidence: draft.requiredEvidence,
                   privacySummary: draft.privacySummary,
                 });
@@ -227,6 +228,12 @@ export function SkillRecordingPanel({ onHelp }: ReviewProps) {
   const save = useStore((s) => s.saveUserWebsiteSkill);
   const clearDraft = useStore((s) => s.clearSkillRecordingDraft);
   const [showDetails, setShowDetails] = useState(false);
+  const privacyNotice =
+    status === "review" && draft
+      ? draft.capturedInputCount > 0
+        ? "Typed values are redacted."
+        : "No typed values captured."
+      : "Typed values are redacted if captured.";
 
   if (status === "idle" && !draft) return null;
 
@@ -239,7 +246,7 @@ export function SkillRecordingPanel({ onHelp }: ReviewProps) {
             {status === "review" ? "Review recorded skill" : "Recording site skill"}
           </div>
           <p className="mt-1 text-xs text-red-700/80 dark:text-red-200/75">
-            Typed values are redacted.
+            {privacyNotice}
           </p>
         </div>
         <button
@@ -355,6 +362,18 @@ function SkillDraftReview({
           ))}
         </ol>
       </div>
+      {(workingDraft.guardrails ?? []).length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase text-warm-400 mb-1">
+            Guardrails
+          </p>
+          <ul className="space-y-1 text-xs text-warm-700 dark:text-warm-200">
+            {(workingDraft.guardrails ?? []).map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div>
         <p className="text-xs font-semibold uppercase text-warm-400 mb-1">
           Evidence
@@ -422,6 +441,9 @@ function SkillEditForm({
   const [pathPattern, setPathPattern] = useState(skill.pathPattern);
   const [triggerPhrase, setTriggerPhrase] = useState(skill.triggerPhrase);
   const [workflow, setWorkflow] = useState(skill.workflowSteps.join("\n"));
+  const [guardrails, setGuardrails] = useState(
+    (skill.guardrails ?? []).join("\n"),
+  );
   const [evidence, setEvidence] = useState(skill.requiredEvidence.join("\n"));
 
   const toDraft = (): UserWebsiteSkillDraft => ({
@@ -434,56 +456,82 @@ function SkillEditForm({
       .split("\n")
       .map((item) => item.trim())
       .filter(Boolean),
+    guardrails: guardrails
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean),
     requiredEvidence: evidence
       .split("\n")
       .map((item) => item.trim())
       .filter(Boolean),
     privacySummary: skill.privacySummary,
     capturedEventCount: skill.capturedEventCount,
+    capturedInputCount: skill.capturedInputCount ?? 0,
     createdAt: skill.createdAt,
     updatedAt: Date.now(),
   });
 
   return (
     <div className="space-y-2 rounded-lg border border-primary-300 dark:border-primary-700 bg-primary-50/50 dark:bg-primary-900/20 p-3">
-      <input
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder="Skill name"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-      />
-      <input
-        value={origin}
-        onChange={(event) => setOrigin(event.target.value)}
-        placeholder="Website origin"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-      />
-      <input
-        value={pathPattern}
-        onChange={(event) => setPathPattern(event.target.value)}
-        placeholder="Path pattern"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-      />
-      <input
-        value={triggerPhrase}
-        onChange={(event) => setTriggerPhrase(event.target.value)}
-        placeholder="Trigger phrase"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
-      />
-      <textarea
-        value={workflow}
-        onChange={(event) => setWorkflow(event.target.value)}
-        rows={5}
-        placeholder="Workflow steps, one per line"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
-      />
-      <textarea
-        value={evidence}
-        onChange={(event) => setEvidence(event.target.value)}
-        rows={3}
-        placeholder="Evidence, one item per line"
-        className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
-      />
+      <LabeledSkillField label="Skill name">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Skill name"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Website origin">
+        <input
+          value={origin}
+          onChange={(event) => setOrigin(event.target.value)}
+          placeholder="https://example.com"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Path pattern">
+        <input
+          value={pathPattern}
+          onChange={(event) => setPathPattern(event.target.value)}
+          placeholder="/course/*/learn/quiz/*"
+          className="w-full overflow-x-auto px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Trigger phrase">
+        <input
+          value={triggerPhrase}
+          onChange={(event) => setTriggerPhrase(event.target.value)}
+          placeholder="choose answers"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Workflow steps">
+        <textarea
+          value={workflow}
+          onChange={(event) => setWorkflow(event.target.value)}
+          rows={5}
+          placeholder="One workflow step per line"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Guardrails">
+        <textarea
+          value={guardrails}
+          onChange={(event) => setGuardrails(event.target.value)}
+          rows={4}
+          placeholder="One guardrail per line"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+        />
+      </LabeledSkillField>
+      <LabeledSkillField label="Required evidence">
+        <textarea
+          value={evidence}
+          onChange={(event) => setEvidence(event.target.value)}
+          rows={3}
+          placeholder="One evidence item per line"
+          className="w-full px-2.5 py-1.5 text-sm border border-warm-300 dark:border-warm-700 rounded-md bg-warm-50 dark:bg-warm-900 focus:ring-2 focus:ring-primary-500 outline-none dark:text-warm-100 resize-none"
+        />
+      </LabeledSkillField>
       <div className="flex gap-2">
         <button
           onClick={() => onSave(toDraft())}
@@ -501,5 +549,20 @@ function SkillEditForm({
         </button>
       </div>
     </div>
+  );
+}
+
+function LabeledSkillField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block space-y-1 text-xs font-semibold text-warm-500 dark:text-warm-400">
+      <span>{label}</span>
+      {children}
+    </label>
   );
 }

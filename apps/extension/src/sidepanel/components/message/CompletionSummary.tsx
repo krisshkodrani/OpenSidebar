@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Square,
   XCircle,
 } from "lucide-react";
 import type { TaskCompletionMessage } from "../../../types";
@@ -17,6 +18,7 @@ import { MetricsSummary } from "./MetricsSummary";
 function completionLabel(status: TaskCompletionMessage["payload"]["status"]) {
   if (status === "completed") return "Done";
   if (status === "partial") return "Partially done";
+  if (status === "stopped") return "Stopped";
   return "Failed";
 }
 
@@ -30,6 +32,9 @@ function CompletionIcon({
   }
   if (status === "partial") {
     return <AlertTriangle size={13} className="shrink-0 text-yellow-500" />;
+  }
+  if (status === "stopped") {
+    return <Square size={13} className="shrink-0 text-amber-500" />;
   }
   return <XCircle size={13} className="shrink-0 text-red-500" />;
 }
@@ -119,9 +124,11 @@ export function CompletionDetails({
                         ? "completed"
                         : result.status === "failed"
                           ? "failed"
-                          : result.status === "skipped"
-                            ? "skipped"
-                            : "pending"
+                          : result.status === "stopped"
+                            ? "stopped"
+                            : result.status === "skipped"
+                              ? "skipped"
+                              : "pending"
                     }
                     size={10}
                   />
@@ -149,7 +156,7 @@ export function CompletionFrame({
   if (status === "completed") return <>{children}</>;
 
   const frameClass =
-    status === "partial"
+    status === "partial" || status === "stopped"
       ? "border-yellow-200 bg-yellow-50/45 dark:border-yellow-900/60 dark:bg-yellow-950/15"
       : "border-red-200 bg-red-50/45 dark:border-red-900/60 dark:bg-red-950/15";
 

@@ -10,6 +10,7 @@ export * from "./EscalationOverlay";
 export * from "./PlanStepIcon";
 export * from "./PlanStrip";
 export * from "./TaskStatusRegion";
+export * from "./WatchModeControl";
 
 export * from "./SavedPromptsDrawer";
 export * from "./WebsiteSkillsDrawer";

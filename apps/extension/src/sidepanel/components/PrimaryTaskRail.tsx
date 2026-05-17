@@ -64,7 +64,7 @@ interface PrimaryTaskLabelInput {
   isAgentRunning: boolean;
   taskCompletion:
     | {
-        status: "completed" | "partial" | "failed";
+        status: "completed" | "partial" | "failed" | "stopped";
       }
     | null
     | undefined;
@@ -107,6 +107,7 @@ export function resolvePrimaryTaskLabel({
   if (!isAgentRunning && taskCompletion) {
     if (taskCompletion.status === "completed") return "Task completed";
     if (taskCompletion.status === "partial") return "Task partially completed";
+    if (taskCompletion.status === "stopped") return "Task stopped";
     return "Task failed";
   }
   if (!isAgentRunning && durableRunStatus?.canResume) {
@@ -121,6 +122,7 @@ function statusDotClass(tone: TaskRailTone) {
   if (tone === "completed") return "bg-green-500";
   if (tone === "failed") return "bg-red-500";
   if (tone === "paused") return "bg-yellow-500";
+  if (tone === "stopped") return "bg-amber-500";
   return "bg-primary-500";
 }
 
@@ -128,6 +130,7 @@ function statusDotLabel(tone: TaskRailTone) {
   if (tone === "completed") return "Task completed";
   if (tone === "failed") return "Task failed";
   if (tone === "paused") return "Agent paused";
+  if (tone === "stopped") return "Task stopped";
   return "Agent idle";
 }
 

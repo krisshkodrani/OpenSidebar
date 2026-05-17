@@ -51,6 +51,26 @@ describe("deriveTaskUiState", () => {
     expect(state.showPlanStrip).toBe(false);
   });
 
+  test("keeps user-stopped completions separate from failures", () => {
+    const state = deriveTaskUiState(
+      baseState({
+        taskCompletion: {
+          taskId: "task-1",
+          status: "stopped",
+          summary: "Stopped by user",
+          totalTurnsUsed: 2,
+          totalTimeMs: 1000,
+          subtaskResults: [],
+          urlHistory: [],
+        },
+      }),
+    );
+
+    expect(state.phase).toBe("stopped");
+    expect(state.rail.primaryLabel).toBe("Task stopped");
+    expect(state.rail.tone).toBe("stopped");
+  });
+
   test("keeps pending user decisions above latest step labels", () => {
     const state = deriveTaskUiState(
       baseState({

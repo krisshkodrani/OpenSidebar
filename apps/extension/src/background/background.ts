@@ -30,6 +30,7 @@ import { registerContentScriptReadyListener } from "./tab-ready";
 import { resolveValidTabId } from "./infrastructure/tab-resolution";
 import { isUiMessageSource } from "./ui-message-source";
 import { orchestrator } from "./orchestrator";
+import { PassiveMonitorController } from "./passive-monitor";
 import { perceptionWarmup } from "./perception-warmup";
 import { agentNotifications } from "./notifications";
 import {
@@ -41,6 +42,7 @@ import {
   WEBSITE_SKILLS_STORAGE_KEY,
   deleteUserWebsiteSkill,
   findMatchingUserWebsiteSkill,
+  formatSkillRecordingTimeline,
   formatUserWebsiteSkillGuidance,
   generateWebsiteSkillDraft,
   loadUserWebsiteSkills,
@@ -56,6 +58,25 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 logger.info("system", "Service Worker Initialized");
+
+const passiveMonitor = new PassiveMonitorController({
+  isWorkspaceActive: (workspaceId) => orchestrator.hasActiveTask(workspaceId),
+  pageActivity: (event) => {
+    chrome.tabs
+      .sendMessage(event.tabId, {
+        type: "PASSIVE_MONITOR_PAGE_ACTIVITY",
+        requestId: crypto.randomUUID(),
+        source: MessageSource.BACKGROUND,
+        workspaceId: event.workspaceId,
+        payload: {
+          active: event.active,
+          status: event.status,
+          sessionId: event.sessionId,
+        },
+      } satisfies RuntimeMessage)
+      .catch(() => {});
+  },
+});
 
 // 1. Initialize Tools
 registerTools();
@@ -90,9 +111,11 @@ agentNotifications.registerHandlers();
 chrome.webNavigation?.onCommitted.addListener((details) => {
   if (details.frameId === 0) perceptionWarmup.invalidate(details.tabId);
 });
-chrome.tabs.onRemoved.addListener((tabId) =>
-  perceptionWarmup.invalidate(tabId),
-);
+chrome.tabs.onRemoved.addListener((tabId) => {
+  perceptionWarmup.invalidate(tabId);
+  passiveMonitor.stopSessionsForTab(tabId);
+  void maybeStopKeepalive();
+});
 
 // 4. Initialize Side Panel Behavior
 // We handle panel opening manually to support toggle/auto-close behavior
@@ -217,7 +240,9 @@ function broadcastUserChatAccepted(
 
 /** Stop keepalive only when all loops are done */
 async function maybeStopKeepalive(): Promise<void> {
-  if (!orchestrator.hasActiveTasks()) await stopKeepalive();
+  if (!orchestrator.hasActiveTasks() && !passiveMonitor.hasActiveSessions()) {
+    await stopKeepalive();
+  }
 }
 
 // --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
@@ -609,6 +634,83 @@ chrome.runtime.onMessage.addListener(
       return true;
     }
 
+    if (
+      isUiMessageSource(message.source) &&
+      message.type === "PASSIVE_MONITOR_START"
+    ) {
+      void (async () => {
+        const resolvedWsId = await resolveWorkspaceId(
+          message.payload.tabId,
+          message.workspaceId ?? message.payload.workspaceId,
+        );
+        const tabId = await resolveValidTabId(
+          message.payload.tabId,
+          resolvedWsId,
+          workspaceManager,
+        );
+        if (tabId === null) {
+          sendResponse({
+            ok: false,
+            detail: "No active web page found for Watch Mode.",
+          });
+          return;
+        }
+        rememberE2EOverlayTarget(resolvedWsId, tabId);
+        const settings =
+          cachedSettings ?? (await loadSettings()) ?? ({} as UserSettings);
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const blocked = getBlockedRuleForUrl(tab.url ?? "", settings);
+          if (blocked) {
+            sendResponse({
+              ok: false,
+              detail: `Blocked on ${blocked.host} by site access rule "${blocked.rule}".`,
+            });
+            return;
+          }
+        } catch {
+          // Controller will surface tab read failures as passive status errors.
+        }
+        await startKeepalive();
+        const result = await passiveMonitor.startSession({
+          tabId,
+          workspaceId: resolvedWsId,
+          instructions: message.payload.instructions,
+          inputSources: message.payload.inputSources,
+          minIntervalMs: message.payload.minIntervalMs,
+          maxSuggestionsPerMinute: message.payload.maxSuggestionsPerMinute,
+        });
+        sendResponse(result);
+      })().catch((error: any) => {
+        sendResponse({
+          ok: false,
+          detail: error?.message ?? String(error),
+        });
+      });
+      return true;
+    }
+
+    if (
+      isUiMessageSource(message.source) &&
+      message.type === "PASSIVE_MONITOR_STOP"
+    ) {
+      void (async () => {
+        const wsId =
+          message.workspaceId ??
+          message.payload.workspaceId ??
+          (message.payload.workspaceId === null ? null : undefined);
+        const stopped = passiveMonitor.stopSession(wsId);
+        await maybeStopKeepalive();
+        sendResponse({ ok: true, stopped });
+      })().catch((error: any) => {
+        sendResponse({
+          ok: false,
+          detail: error?.message ?? String(error),
+        });
+      });
+      return true;
+    }
+
     // 1. Chat (or hint injection)
     if (isUiMessageSource(message.source) && message.type === "USER_CHAT") {
       const wsId = message.payload.workspaceId;
@@ -899,7 +1001,7 @@ async function handleSkillRecordingStop(tabId?: number) {
   skillRecordingSessions.delete(tabId);
   broadcastSkillRecordingStatus({
     status: "review",
-    timeline: session.events.map((event) => event.timelineText),
+    timeline: formatSkillRecordingTimeline(session.events),
     draft,
     detail: "Review the generated skill before saving.",
   });
@@ -932,7 +1034,7 @@ function recordSkillEvent(tabId: number, event: SkillRecordingEvent) {
   session.events.push(event);
   broadcastSkillRecordingStatus({
     status: "recording",
-    timeline: session.events.map((item) => item.timelineText),
+    timeline: formatSkillRecordingTimeline(session.events),
     detail: "Recording site skill",
   });
 }
@@ -1150,6 +1252,13 @@ async function handleUserChat(
       sendAgentActivity(tabId, true, undefined, pageActivity);
 
       await startKeepalive();
+      const passiveWasActive = passiveMonitor.hasSession(workspaceId);
+      if (passiveWasActive) {
+        passiveMonitor.pauseSession(
+          workspaceId,
+          "Paused while an active agent task runs in this workspace.",
+        );
+      }
       try {
         await orchestrator.startTask({
           query: agentQuery,
@@ -1162,6 +1271,9 @@ async function handleUserChat(
           openRouterApiKey: providerKeyStatus.activeKey || openRouterApiKey,
         });
       } finally {
+        if (passiveWasActive) {
+          passiveMonitor.resumeSession(workspaceId);
+        }
         const outcomeStatus = orchestrator.getRecentOutcome(workspaceId);
         sendAgentActivity(
           tabId,

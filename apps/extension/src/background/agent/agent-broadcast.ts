@@ -228,14 +228,30 @@ export function planTerminationMessage(args: {
 }): BroadcastMessage | null {
   if (!args.taskId || args.subtasks.length === 0) return null;
 
-  const subtaskResults = buildSubtaskResults(args.subtasks);
+  const subtaskResults =
+    args.outcome === "stopped"
+      ? args.subtasks.map((st) => ({
+          description: st.description,
+          status:
+            st.status === "completed"
+              ? ("completed" as const)
+              : st.status === "skipped"
+                ? ("skipped" as const)
+                : ("stopped" as const),
+          turnsUsed: st.turnsUsed,
+          result: st.result || "",
+        }))
+      : buildSubtaskResults(args.subtasks);
   return {
     type: "TASK_COMPLETION",
     payload: {
       taskId: args.taskId,
-      status: subtaskResults.some((r) => r.status === "completed")
-        ? "partial"
-        : "failed",
+      status:
+        args.outcome === "stopped"
+          ? "stopped"
+          : subtaskResults.some((r) => r.status === "completed")
+            ? "partial"
+            : "failed",
       totalTurnsUsed: args.turnCount,
       totalTimeMs: args.totalTimeMs,
       summary: args.summary,

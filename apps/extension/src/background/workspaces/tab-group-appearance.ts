@@ -21,7 +21,7 @@ export function truncateTaskTitle(query: string, maxLen = 30): string {
 /** Map agent status (+ optional completion outcome) to a Chrome tab group color. */
 export function colorForStatus(
   status: AgentStatus,
-  completionStatus?: "completed" | "partial" | "failed",
+  completionStatus?: "completed" | "partial" | "failed" | "stopped",
 ): ColorEnum {
   switch (status) {
     case AgentStatus.THINKING:
@@ -37,6 +37,7 @@ export function colorForStatus(
       if (completionStatus === "completed") return "green";
       if (completionStatus === "partial") return "orange";
       if (completionStatus === "failed") return "red";
+      if (completionStatus === "stopped") return "yellow";
       return "blue";
     default:
       return "blue";
@@ -52,7 +53,7 @@ export async function updateTabGroupAppearance(
   opts: {
     title?: string;
     status?: AgentStatus;
-    completionStatus?: "completed" | "partial" | "failed";
+    completionStatus?: "completed" | "partial" | "failed" | "stopped";
   },
 ): Promise<void> {
   try {

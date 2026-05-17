@@ -286,21 +286,28 @@ async function installFakeBackgroundController(
       const url = new URL(window.location.href);
       return {
         id: makeId(),
-        name: "Harness smoke workflow",
+        name: "Choose answers on quiz page",
         origin: url.origin,
-        pathPattern: url.pathname || "/",
-        triggerPhrase: "harness smoke workflow",
+        pathPattern: "/course/*/learn/quiz/*",
+        triggerPhrase: "choose answers",
         workflowSteps: [
-          "Ground on the current page.",
-          "Use the visible workflow controls.",
-          "Verify the final confirmation state.",
+          "Find the answer options requested by the user.",
+          "Select only the requested answer options.",
+          "Verify each requested answer option is visibly selected.",
+        ],
+        guardrails: [
+          "Do not submit, finish, grade, or move to the next question unless the user explicitly asks.",
+          "Do not infer missing values or choose a substitute when a requested target is not visible.",
+          "Do not change unrelated fields or options unless the user asks.",
         ],
         requiredEvidence: [
-          "The confirmation message or final state is visible.",
+          "Each requested answer option is visibly selected.",
+          "No submit, next, finish, or grade action was taken unless explicitly requested.",
         ],
         privacySummary:
-          "Typed values were redacted by default in the recording.",
-        capturedEventCount: 3,
+          "No typed values were captured. The saved skill keeps control labels, page scope, guardrails, and verification expectations.",
+        capturedEventCount: 4,
+        capturedInputCount: 0,
         createdAt: now,
         updatedAt: now,
       };
@@ -437,9 +444,9 @@ async function installFakeBackgroundController(
         emitSkillStatus(
           "review",
           [
-            "Clicked \"Start\"",
-            "Filled \"Search\" with <text>",
-            "Saw confirmation",
+            "Saw Course: [Practice Exams] AWS Certified AI Practitioner",
+            "Checked \"AWS Trainium\"",
+            "Checked \"Amazon SageMaker JumpStart\"",
           ],
           draft,
         );

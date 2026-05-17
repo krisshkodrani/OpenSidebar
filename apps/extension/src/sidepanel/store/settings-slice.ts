@@ -1,6 +1,5 @@
 import {
   DEFAULT_ENABLED_SKILL_PACK_IDS,
-  DEFAULT_JOBAGENT_MCP_URL,
   DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE,
   type UserSettings,
 } from "../../types";
@@ -27,10 +26,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   requireApprovals: true,
   allowNavigation: true,
   requirePlanConfirmation: true,
-  voiceMode: "off",
-  jobAgentMcpEnabled: false,
-  jobAgentMcpUrl: DEFAULT_JOBAGENT_MCP_URL,
-  jobAgentMcpToken: "",
 };
 
 export const createSettingsSlice: SliceCreator<SettingsSlice> = (set) => ({

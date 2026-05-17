@@ -21,6 +21,8 @@ describe("overlay host", () => {
     );
     expect(overlay.shadowRoot).toBeTruthy();
     expect(overlay.mountElement.id).toBe("root");
+    expect(overlay.portalElement.dataset.osbOverlayPortal).toBe("");
+    expect(overlay.portalElement.getRootNode()).toBe(overlay.shadowRoot);
     expect(overlay.shadowRoot.textContent).toContain(".probe");
   });
 

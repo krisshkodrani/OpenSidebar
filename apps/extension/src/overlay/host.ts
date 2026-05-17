@@ -1,6 +1,7 @@
 export const OPENSIDEBAR_OVERLAY_HOST_ID = "opensidebar-harness-host";
 
 const OVERLAY_ROOT_ID = "root";
+const OVERLAY_PORTAL_ID = "opensidebar-overlay-portal";
 const TITLEBAR_HEIGHT = 34;
 const MIN_VIEWPORT_GUTTER = 16;
 const INITIAL_HEIGHT_VIEWPORT_RATIO = 0.95;
@@ -107,6 +108,11 @@ const OVERLAY_FRAME_CSS = `
   height: 100%;
 }
 
+#${OVERLAY_PORTAL_ID} {
+  position: relative;
+  z-index: 1;
+}
+
 :host([data-minimized="true"]) .osb-overlay-body {
   display: none;
 }
@@ -116,6 +122,7 @@ export interface OpenSidebarOverlayHost {
   host: HTMLElement;
   shadowRoot: ShadowRoot;
   mountElement: HTMLElement;
+  portalElement: HTMLElement;
   themeRoot: HTMLElement;
   dispose(): void;
 }
@@ -181,11 +188,19 @@ function initialOverlayMetrics(doc: Document): {
 function existingOverlayHost(host: HTMLElement): OpenSidebarOverlayHost | null {
   const shadowRoot = host.shadowRoot;
   const mountElement = shadowRoot?.getElementById(OVERLAY_ROOT_ID);
-  if (!shadowRoot || !(mountElement instanceof HTMLElement)) return null;
+  const portalElement = shadowRoot?.getElementById(OVERLAY_PORTAL_ID);
+  if (
+    !shadowRoot ||
+    !(mountElement instanceof HTMLElement) ||
+    !(portalElement instanceof HTMLElement)
+  ) {
+    return null;
+  }
   return {
     host,
     shadowRoot,
     mountElement,
+    portalElement,
     themeRoot: mountElement,
     dispose() {
       host.remove();
@@ -242,6 +257,7 @@ export function createOpenSidebarOverlayHost(
     </div>
     <div class="osb-overlay-body">
       <div id="${OVERLAY_ROOT_ID}"></div>
+      <div id="${OVERLAY_PORTAL_ID}" data-osb-overlay-portal></div>
     </div>
   `;
 
@@ -253,9 +269,10 @@ export function createOpenSidebarOverlayHost(
   const minimizeButton = shadowRoot.querySelector("[data-osb-minimize]");
   const closeButton = shadowRoot.querySelector("[data-osb-close]");
   const mountElement = shadowRoot.getElementById(OVERLAY_ROOT_ID);
-  if (!(mountElement instanceof HTMLElement)) {
+  const portalElement = shadowRoot.getElementById(OVERLAY_PORTAL_ID);
+  if (!(mountElement instanceof HTMLElement) || !(portalElement instanceof HTMLElement)) {
     host.remove();
-    throw new Error("OpenSidebar overlay mount element was not created.");
+    throw new Error("OpenSidebar overlay mount or portal element was not created.");
   }
 
   host.dataset.dock = "right";
@@ -380,6 +397,7 @@ export function createOpenSidebarOverlayHost(
     host,
     shadowRoot,
     mountElement,
+    portalElement,
     themeRoot: mountElement,
     dispose,
   };

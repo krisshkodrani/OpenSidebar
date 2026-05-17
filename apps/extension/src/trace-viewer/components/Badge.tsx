@@ -1,5 +1,8 @@
 import React from "react";
 
+import { Badge as UiBadge } from "@/ui/badge";
+import { cn } from "@/lib/utils";
+
 type BadgeVariant =
   | "completed"
   | "success"
@@ -104,10 +107,15 @@ export default function Badge({
   const cls = VARIANT_CLASSES[variant] ?? DEFAULT_EVENT_CLASS;
 
   return (
-    <span
-      className={`inline-block px-[7px] py-[2px] rounded text-[10px] font-semibold tracking-wide uppercase leading-snug ${cls} ${className}`}
+    <UiBadge
+      variant="outline"
+      className={cn(
+        "rounded px-[7px] py-[2px] text-[10px] font-semibold uppercase leading-snug tracking-normal",
+        cls,
+        className,
+      )}
     >
       {children}
-    </span>
+    </UiBadge>
   );
 }

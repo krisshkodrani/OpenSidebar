@@ -10,12 +10,11 @@ import {
   type InteractionMode,
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
-import { useOpenAIRealtimeVoice } from "../hooks/useOpenAIRealtimeVoice";
 import { useComposerTextarea } from "../hooks/useComposerTextarea";
-import { useRealtimeVoiceAnnouncements } from "../hooks/useRealtimeVoiceAnnouncements";
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
+import { WatchModeControl } from "./WatchModeControl";
 import {
   hasUsablePersonalProfile,
   isProfileDigestStale,
@@ -37,37 +36,6 @@ function PendingInteractionShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RealtimeVoiceStatusLine({
-  error,
-  isListening,
-  status,
-}: {
-  error: string | null;
-  isListening: boolean;
-  status: "idle" | "connecting" | "ready" | "listening" | "error";
-}) {
-  return (
-    <div className="mt-1 flex h-4 items-center gap-1.5 overflow-hidden px-1">
-      {error ? (
-        <span className="text-[11px] text-red-500 dark:text-red-400">
-          {error}
-        </span>
-      ) : isListening ? (
-        <>
-          <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-          <span className="text-[11px] text-red-500 dark:text-red-400">
-            OpenAI Realtime listening... press Alt+V or tap mic to stop
-          </span>
-        </>
-      ) : status === "connecting" ? (
-        <span className="text-[11px] text-warm-400 dark:text-warm-500">
-          Connecting OpenAI Realtime...
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export function InputArea({
   onSend,
   onSendFeedback,
@@ -80,7 +48,6 @@ export function InputArea({
   const pendingApproval = useStore((s) => s.pendingApproval);
   const pendingEscalation = useStore((s) => s.pendingEscalation);
   const pendingClarification = useStore((s) => s.pendingClarification);
-  const taskCompletion = useStore((s) => s.taskCompletion);
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
   const personalProfileState = useStore((s) => s.personalProfileState);
@@ -90,28 +57,12 @@ export function InputArea({
 
   const interactionMode = getInteractionMode(settings);
   const autonomousMode = interactionMode === "autonomous";
-  const realtimeVoiceEnabled = settings.voiceMode === "openai_realtime";
   const profileAvailable = hasUsablePersonalProfile(personalProfileState);
   const profileActive = personalProfileState.enabled && profileAvailable;
   const profileDigestReady =
     profileActive &&
     Boolean(personalProfileState.digest) &&
     !isProfileDigestStale(personalProfileState);
-  const realtimeVoice = useOpenAIRealtimeVoice({
-    startTask: onSend,
-    sendGuidance: onSendFeedback,
-    stopTask: onStop,
-  });
-
-  useRealtimeVoiceAnnouncements({
-    enabled: realtimeVoiceEnabled,
-    pendingApproval,
-    pendingClarification,
-    speakHarnessUpdate: realtimeVoice.speakHarnessUpdate,
-    taskCompletion,
-    toggleListening: realtimeVoice.toggleListening,
-  });
-
   const setInteractionMode = useCallback(
     (mode: InteractionMode) => {
       const next = applyInteractionMode(settings, mode);
@@ -203,6 +154,7 @@ export function InputArea({
       ) : null}
 
       <div className="p-2">
+        <WatchModeControl disabled={isAgentRunning} />
         {isAgentRunning ? (
           <div className="space-y-1.5">
             <div className="px-1">
@@ -224,10 +176,6 @@ export function InputArea({
               onKeyDown={composer.handleKeyDown}
               onSubmit={handleSubmit}
               placeholder="Guide the agent..."
-              realtimeVoiceEnabled={realtimeVoiceEnabled}
-              realtimeVoiceListening={realtimeVoice.isListening}
-              realtimeVoiceStatus={realtimeVoice.status}
-              toggleRealtimeVoice={realtimeVoice.toggleListening}
               value={inputText}
             />
             <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
@@ -250,19 +198,8 @@ export function InputArea({
               onKeyDown={composer.handleKeyDown}
               onSubmit={handleSubmit}
               placeholder="What can I help with?"
-              realtimeVoiceEnabled={realtimeVoiceEnabled}
-              realtimeVoiceListening={realtimeVoice.isListening}
-              realtimeVoiceStatus={realtimeVoice.status}
-              toggleRealtimeVoice={realtimeVoice.toggleListening}
               value={inputText}
             />
-            {realtimeVoiceEnabled ? (
-              <RealtimeVoiceStatusLine
-                error={realtimeVoice.error}
-                isListening={realtimeVoice.isListening}
-                status={realtimeVoice.status}
-              />
-            ) : null}
             <div className="relative mt-1.5 flex items-center px-1">
               <InteractionModeMenu
                 mode={interactionMode}
@@ -279,16 +216,16 @@ export function InputArea({
                 }`}
                 title={
                   profileAvailable
-                    ? "Use Profile Notes"
+                    ? profileActive
+                      ? profileDigestReady
+                        ? "Profile is on. Digest ready for new tasks."
+                        : "Profile is on. Analyze notes for the best results."
+                      : "Turn profile on for new tasks"
                     : "Add Profile Notes"
                 }
               >
                 <UserRound size={12} />
-                {profileDigestReady
-                  ? "Digest ready"
-                  : profileActive
-                    ? "Notes on"
-                    : "Profile off"}
+                {profileActive ? "Profile on" : "Profile off"}
               </button>
             </div>
             <p className="mt-1 select-none text-center text-[10px] text-warm-400 dark:text-warm-500">

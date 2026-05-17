@@ -4,12 +4,29 @@ module.exports = {
         "./apps/extension/src/sidepanel/**/*.{js,ts,jsx,tsx,html}",
         "./apps/extension/src/trace-viewer/**/*.{js,ts,jsx,tsx,html}",
         "./apps/extension/src/overlay/**/*.{js,ts,jsx,tsx,html}",
+        "./apps/extension/src/ui/**/*.{js,ts,jsx,tsx,html}",
+        "./apps/extension/src/lib/**/*.{js,ts,jsx,tsx,html}",
     ],
     darkMode: "class",
     theme: {
         extend: {
             fontFamily: {
                 sans: ['"Inter"', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'],
+            },
+            fontSize: {
+                "ui-caption": ["11px", { lineHeight: "16px" }],
+                "ui-control": ["12px", { lineHeight: "18px" }],
+                "ui-body": ["13px", { lineHeight: "20px" }],
+                "ui-body-strong": ["13px", { lineHeight: "20px" }],
+                "ui-section": ["14px", { lineHeight: "22px" }],
+                "ui-title": ["16px", { lineHeight: "24px" }],
+                "ui-display": ["20px", { lineHeight: "28px" }],
+                "ui-xs": ["11px", { lineHeight: "16px" }],
+                "ui-sm": ["12px", { lineHeight: "18px" }],
+                "ui-base": ["13px", { lineHeight: "20px" }],
+                "ui-md": ["14px", { lineHeight: "22px" }],
+                "ui-lg": ["16px", { lineHeight: "24px" }],
+                "ui-metric": ["20px", { lineHeight: "28px" }],
             },
             colors: {
                 warm: {
@@ -91,10 +108,10 @@ module.exports = {
                 },
                 "accordion-down": {
                     "0%": { height: "0", opacity: "0" },
-                    "100%": { height: "var(--accordion-height)", opacity: "1" },
+                    "100%": { height: "var(--radix-collapsible-content-height, var(--accordion-height))", opacity: "1" },
                 },
                 "accordion-up": {
-                    "0%": { height: "var(--accordion-height)", opacity: "1" },
+                    "0%": { height: "var(--radix-collapsible-content-height, var(--accordion-height))", opacity: "1" },
                     "100%": { height: "0", opacity: "0" },
                 },
                 "pulse-soft": {

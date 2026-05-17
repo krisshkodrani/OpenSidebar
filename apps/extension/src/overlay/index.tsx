@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import App from "../sidepanel/App";
+import { UiPortalProvider } from "../ui";
 import sidepanelCss from "../sidepanel/index.css?inline";
 import {
   setUiRuntimePortForTesting,
@@ -59,7 +60,9 @@ export function mountOpenSidebarOverlay(
   const root: Root = createRoot(overlayHost.mountElement);
   root.render(
     <React.StrictMode>
-      <App themeRoot={overlayHost.themeRoot} />
+      <UiPortalProvider container={overlayHost.portalElement}>
+        <App themeRoot={overlayHost.themeRoot} />
+      </UiPortalProvider>
     </React.StrictMode>,
   );
 

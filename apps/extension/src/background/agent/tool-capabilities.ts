@@ -72,12 +72,6 @@ const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
   [ToolName.EXECUTE_JS]: ["execute_javascript", "inspect_hidden_structure"],
   [ToolName.UPDATE_NOTES]: ["update_notes"],
   [ToolName.GET_PROFILE_FIELDS]: ["use_profile_data"],
-  [ToolName.GET_CANDIDATE_PROFILE]: ["use_profile_data"],
-  [ToolName.LIST_APPLICATION_PACKAGES]: ["use_profile_data"],
-  [ToolName.GET_APPLICATION_PACKAGE]: ["use_profile_data"],
-  [ToolName.SUGGEST_FORM_ANSWERS]: ["use_profile_data", "fill_text_fields"],
-  [ToolName.ANSWER_CANDIDATE_QUESTION]: ["use_profile_data"],
-  [ToolName.RECORD_APPLICATION_STATUS]: ["use_profile_data"],
 
   [ToolName.CONFIGURE_SERVICENOW_FORM]: [
     "service_now_forms",

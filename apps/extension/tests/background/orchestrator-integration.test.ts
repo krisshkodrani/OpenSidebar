@@ -1927,7 +1927,9 @@ describe("Orchestrator integration join tests", () => {
       payload?: any;
     }>;
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("stopped");
     expect(completion?.payload?.summary).toContain("Stopped by user");
+    expect(completion?.payload?.subtaskResults?.[0]?.status).toBe("stopped");
   });
 
   test("isolates verifier lane and stops cross-node contamination", async () => {

@@ -378,6 +378,63 @@ describe("SidePanel Store", () => {
         }));
     });
 
+    test("startNewChat clears active workspace chat without data-control request", async () => {
+        const setSpy = vi.fn(async () => {});
+        const sendMessageSpy = vi.fn(async () => ({ ok: true }));
+        (chrome.storage.local.set as any) = setSpy;
+        (chrome.runtime.sendMessage as any) = sendMessageSpy;
+
+        useStore.getState().addMessage({
+            id: "1",
+            role: "user" as const,
+            content: "Hi",
+            timestamp: 1,
+            toolCalls: [],
+            isStreaming: false,
+        });
+        useStore.getState().setTaskProgress({
+            taskId: "task-1",
+            subtasks: [],
+            currentIndex: 0,
+            totalTurnsUsed: 0,
+        });
+        useStore.getState().setTaskCompletion({
+            taskId: "task-1",
+            status: "completed",
+            summary: "done",
+            totalTurnsUsed: 0,
+            subtaskResults: [],
+        });
+        useStore.getState().setPassiveMonitorStatus(
+            "error",
+            "Watch failed",
+            Date.now(),
+            "passive-1",
+        );
+        useStore.getState().setError("Transient issue");
+
+        useStore.getState().startNewChat();
+
+        const state = useStore.getState();
+        expect(state.messages).toHaveLength(0);
+        expect(state.inputText).toBe("");
+        expect(state.taskProgress).toBeNull();
+        expect(state.taskCompletion).toBeNull();
+        expect(state.passiveStatus).toBeNull();
+        expect(state.error).toBeNull();
+        expect(state.agentStatus).toBe(AgentStatus.IDLE);
+        expect(state.statusDetail).toBe("Ready");
+        expect(sendMessageSpy).not.toHaveBeenCalled();
+        expect(setSpy).toHaveBeenCalledWith({
+            "chatMessages:ws-test": [],
+            "agentState:ws-test": {
+                isRunning: false,
+                status: AgentStatus.IDLE,
+                detail: "Ready",
+            },
+        });
+    });
+
     test("DEFAULT_SETTINGS includes requireApprovals", () => {
         const settings = useStore.getState().settings;
         expect(settings.requireApprovals).toBe(true);
@@ -669,6 +726,44 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().pendingApproval).toBeNull();
     });
 
+    test("setPendingApproval keeps same-request countdown deadline", () => {
+        useStore.getState().setPendingApproval({
+            approvalId: "ap-1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate",
+            timeoutMs: 30000,
+            requestedAt: 1000,
+        });
+
+        useStore.getState().setPendingApproval({
+            approvalId: "ap-1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate",
+            timeoutMs: 19000,
+            requestedAt: 12000,
+        });
+
+        const pending = useStore.getState().pendingApproval;
+        expect(pending?.requestedAt).toBe(1000);
+        expect(pending?.timeoutMs).toBe(30000);
+
+        useStore.getState().setPendingApproval({
+            approvalId: "ap-1",
+            toolName: "navigate" as any,
+            args: { url: "https://example.com" },
+            risk: "high" as any,
+            context: "Navigate",
+            timeoutMs: 19000,
+            requestedAt: 13000,
+        });
+
+        expect(useStore.getState().pendingApproval?.timeoutMs).toBe(30000);
+    });
+
     test("setTaskRecovery and clearTaskRecovery", () => {
         useStore.getState().setTaskRecovery({
             workspaceId: "ws-1",
@@ -794,6 +889,26 @@ describe("SidePanel Store", () => {
         expect(useStore.getState().pendingClarification).toBeNull();
     });
 
+    test("setPendingClarification keeps same-question countdown deadline", () => {
+        useStore.getState().setPendingClarification({
+            clarificationId: "cl-1",
+            question: "What color?",
+            timeoutMs: 120000,
+            requestedAt: 1000,
+        });
+
+        useStore.getState().setPendingClarification({
+            clarificationId: "cl-1",
+            question: "What color?",
+            timeoutMs: 90000,
+            requestedAt: 31000,
+        });
+
+        const pending = useStore.getState().pendingClarification;
+        expect(pending?.requestedAt).toBe(1000);
+        expect(pending?.timeoutMs).toBe(120000);
+    });
+
     test("setActiveWorkspaceId resets agent running state", () => {
         useStore.getState().setAgentRunning(true);
         useStore.getState().updateStatus(AgentStatus.THINKING, "Analyzing...");
@@ -842,7 +957,7 @@ describe("SidePanel Store", () => {
         });
 
         // Reset the mock to track new calls
-        const setMock = chrome.storage.local.set as ReturnType<typeof mock>;
+        const setMock = chrome.storage.local.set as ReturnType<typeof vi.fn>;
         setMock.mockClear();
 
         // Switch to workspace B

@@ -3204,6 +3204,11 @@ export class Orchestrator {
     return this.tasksByWorkspace.size > 0;
   }
 
+  hasActiveTask(workspaceId: string | null | undefined): boolean {
+    if (!workspaceId) return false;
+    return this.tasksByWorkspace.has(workspaceId);
+  }
+
   private getRecentCompletionContext(workspaceId: string): string {
     const now = Date.now();
     const freshEntries = (this.recentCompletionHistory.get(workspaceId) ?? [])
@@ -3284,17 +3289,7 @@ export class Orchestrator {
       }
     } else {
       // Task finished (completed / failed / stopped) — re-send completion
-      const subtaskResults: SubtaskResult[] = task.nodes.map((node) => ({
-        description: node.description,
-        status:
-          node.status === "completed"
-            ? "completed"
-            : isUserSkippedNode(node)
-              ? "skipped"
-              : "failed",
-        turnsUsed: 0,
-        result: node.result || node.error || "",
-      }));
+      const subtaskResults: SubtaskResult[] = this.buildSubtaskResults(task);
       const completed = subtaskResults.filter(
         (r) => r.status === "completed",
       ).length;
@@ -3305,16 +3300,21 @@ export class Orchestrator {
         payload: {
           taskId: task.id,
           status:
-            task.status === "completed"
-              ? completed === subtaskResults.length
-                ? "completed"
-                : "partial"
-              : "failed",
+            task.status === "stopped"
+              ? "stopped"
+              : task.status === "completed"
+                ? completed === subtaskResults.length
+                  ? "completed"
+                  : "partial"
+                : "failed",
           totalTurnsUsed: 0,
           totalTimeMs:
             (task.finishedAt || Date.now()) -
             (task.startedAt || task.createdAt),
-          summary: this.buildProgrammaticSummary(task),
+          summary:
+            task.status === "stopped"
+              ? task.terminationReason || "Stopped by user"
+              : this.buildProgrammaticSummary(task),
           subtaskResults,
           urlHistory: [],
           metrics: task.sessionMetrics,
@@ -5976,6 +5976,7 @@ export class Orchestrator {
     }
     const recent = this.recentCompletion.get(workspaceId);
     if (!recent) return null;
+    if (recent.payload.status === "stopped") return "stopped";
     // "partial" maps to "completed" — partial success is still success at the overlay level
     return recent.payload.status === "failed" ? "failed" : "completed";
   }
@@ -6597,6 +6598,7 @@ export class Orchestrator {
   }
 
   private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
+    const taskStopped = task.status === "stopped" || task.status === "stopping";
     return task.nodes.map((node) => ({
       description: node.description,
       status:
@@ -6604,7 +6606,13 @@ export class Orchestrator {
           ? "completed"
           : isUserSkippedNode(node)
             ? "skipped"
-            : "failed",
+            : taskStopped &&
+                (node.status !== "failed" ||
+                  /(?:stopped|cancelled) by user/i.test(
+                    `${node.result || ""}\n${node.error || ""}`,
+                  ))
+              ? "stopped"
+              : "failed",
       turnsUsed: 0,
       result: node.result || node.error || "",
     }));
@@ -6626,10 +6634,11 @@ export class Orchestrator {
     const completed = subtaskResults.filter(
       (r) => r.status === "completed",
     ).length;
+    const stopped = task.status === "stopped" || task.status === "stopping";
 
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
-      status: completed > 0 ? "partial" : "failed",
+      status: stopped ? "stopped" : completed > 0 ? "partial" : "failed",
       totalTurnsUsed: 0,
       totalTimeMs:
         (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
@@ -6920,9 +6929,13 @@ export class Orchestrator {
     payload: { approvalId: string; approved: boolean },
     workspaceId?: string | null,
   ): boolean {
+    const workspaceTask = workspaceId
+      ? this.tasksByWorkspace.get(workspaceId)
+      : undefined;
     const task =
-      (workspaceId
-        ? this.tasksByWorkspace.get(workspaceId)
+      (workspaceTask?.pendingInteraction?.kind === "approval" &&
+      workspaceTask.pendingInteraction.approvalId === payload.approvalId
+        ? workspaceTask
         : [...this.tasksByWorkspace.values()].find(
             (candidate) =>
               candidate.pendingInteraction?.kind === "approval" &&
@@ -6946,9 +6959,14 @@ export class Orchestrator {
     payload: { clarificationId: string; answer: string },
     workspaceId?: string | null,
   ): boolean {
+    const workspaceTask = workspaceId
+      ? this.tasksByWorkspace.get(workspaceId)
+      : undefined;
     const task =
-      (workspaceId
-        ? this.tasksByWorkspace.get(workspaceId)
+      (workspaceTask?.pendingInteraction?.kind === "clarification" &&
+      workspaceTask.pendingInteraction.clarificationId ===
+        payload.clarificationId
+        ? workspaceTask
         : [...this.tasksByWorkspace.values()].find(
             (candidate) =>
               candidate.pendingInteraction?.kind === "clarification" &&
@@ -7062,7 +7080,7 @@ export class Orchestrator {
     workspaceId: string,
     status: AgentStatus,
     detail: string,
-    completionStatus?: "completed" | "partial" | "failed",
+    completionStatus?: "completed" | "partial" | "failed" | "stopped",
   ): void {
     this.sendMessage({
       type: "AGENT_STATUS",

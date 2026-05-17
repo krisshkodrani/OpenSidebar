@@ -77,9 +77,11 @@ export function useWorkspaceSync(settings: UserSettings): string | null {
     const isE2EPanel = getE2EPanelConfig() != null;
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
+      // Overlay harness keeps live step screenshots only in memory.
+      if (isE2EPanel) return;
       const workspaceId = useStore.getState().activeWorkspaceId;
       void loadMessagesFromStorage().then(() => loadAgentStateFromStorage());
-      if (workspaceId && !isE2EPanel) {
+      if (workspaceId) {
         uiRuntime
           .sendMessage({
             type: "WORKSPACE_SYNC",

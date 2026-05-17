@@ -8,7 +8,6 @@ import { initDatabase, closeDatabase } from "../src/db";
 // We test the route handlers directly by building a minimal server.
 
 import { handleProfileRoutes } from "../src/routes/profile";
-import { handleRealtimeRoutes } from "../src/routes/realtime";
 import { handleTaskRunRoutes } from "../src/routes/task-runs";
 import type { RouteContext } from "../src/server";
 
@@ -103,11 +102,6 @@ beforeAll(async () => {
       return;
     }
 
-    if (url.pathname.startsWith("/realtime")) {
-      await handleRealtimeRoutes(req, res, ctx);
-      return;
-    }
-
     sendError(res, "Not found", 404);
   });
 
@@ -136,7 +130,6 @@ afterAll(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete process.env.OPENAI_REALTIME_API_KEY;
 });
 
 // Helper
@@ -155,90 +148,11 @@ async function api(
   };
 }
 
-async function rawApi(
-  path: string,
-  body: string,
-  contentType = "application/sdp",
-): Promise<{ status: number; text: string; contentType: string | null }> {
-  const res = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": contentType },
-    body,
-  });
-  return {
-    status: res.status,
-    text: await res.text(),
-    contentType: res.headers.get("Content-Type"),
-  };
-}
-
 describe("GET /health", () => {
   test("returns 200 with status", async () => {
     const { status, data } = await api("/health");
     expect(status).toBe(200);
     expect(data.status).toBe("ok");
-  });
-});
-
-describe("POST /realtime/calls", () => {
-  test("answers Realtime CORS preflight", async () => {
-    const res = await fetch(`${baseUrl}/realtime/calls`, {
-      method: "OPTIONS",
-    });
-    expect(res.status).toBe(204);
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
-    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST");
-  });
-
-  test("returns a Realtime SDP answer from OpenAI", async () => {
-    const realFetch = globalThis.fetch;
-    process.env.OPENAI_REALTIME_API_KEY = "sk-realtime-test";
-    vi.spyOn(globalThis, "fetch").mockImplementation(
-      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-        const url = String(input);
-        if (url === "https://api.openai.com/v1/realtime/calls") {
-          expect(init?.method).toBe("POST");
-          expect((init?.headers as Record<string, string>).Authorization).toBe(
-            "Bearer sk-realtime-test",
-          );
-          const body = init?.body as FormData;
-          expect(body.get("sdp")).toBe("offer-sdp");
-          const session = JSON.parse(String(body.get("session")));
-          expect(session.model).toBe("gpt-realtime-2");
-          expect(session.tools.map((tool: any) => tool.name)).toContain(
-            "start_browser_task",
-          );
-          return new Response("answer-sdp", {
-            status: 201,
-            headers: { "Content-Type": "application/sdp" },
-          });
-        }
-        return realFetch(input, init);
-      },
-    );
-
-    const { status, text, contentType } = await rawApi(
-      "/realtime/calls",
-      "offer-sdp",
-    );
-
-    expect(status).toBe(201);
-    expect(text).toBe("answer-sdp");
-    expect(contentType).toContain("application/sdp");
-  });
-
-  test("fails clearly when OpenAI Realtime is not configured", async () => {
-    const previousOpenAIKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      const { status, text } = await rawApi("/realtime/calls", "offer-sdp");
-      expect(status).toBe(503);
-      expect(JSON.parse(text).error).toContain(
-        "OpenAI Realtime is not configured",
-      );
-    } finally {
-      if (previousOpenAIKey) process.env.OPENAI_API_KEY = previousOpenAIKey;
-    }
   });
 });
 

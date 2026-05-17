@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { clsx } from "clsx";
-import { MessageCircle } from "lucide-react";
+import { Eye, MessageCircle } from "lucide-react";
 import type { ChatEntry, ToolCallSummary } from "../../types";
 import { formatStepLabel } from "../../background/agent/step-labels";
 import {
@@ -52,6 +52,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const isUser = message.role === "user";
   const isFeedback = isUser && message.isFeedback;
   const isGuidance = isFeedback;
+  const isPassive = !isUser && message.isPassive;
   const assistantContentSource = !isUser
     ? message.content?.trim()
       ? message.content
@@ -158,7 +159,11 @@ export const MessageBubble = React.memo(function MessageBubble({
                     ? "border border-primary-200 bg-primary-50/90 text-primary-900 dark:border-primary-800 dark:bg-primary-950/20 dark:text-primary-100"
                     : "bg-warm-200 text-warm-800 dark:bg-warm-700 dark:text-warm-100",
                 )
-              : "text-warm-800 dark:text-warm-100",
+              : clsx(
+                  "text-warm-800 dark:text-warm-100",
+                  isPassive &&
+                    "rounded-lg border border-sky-200/60 bg-sky-50/55 px-3 py-2 dark:border-sky-800/50 dark:bg-sky-950/20",
+                ),
             !isUser && message.isStreaming && "streaming-cursor",
           )}
         >
@@ -166,6 +171,12 @@ export const MessageBubble = React.memo(function MessageBubble({
             <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-primary-600 dark:text-primary-300">
               <MessageCircle size={11} />
               <span>Guidance</span>
+            </div>
+          ) : null}
+          {isPassive ? (
+            <div className="mb-1 flex items-center gap-1 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+              <Eye size={11} />
+              <span>Watching</span>
             </div>
           ) : null}
           {isUser ? (

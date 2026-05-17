@@ -1,4 +1,5 @@
 import { AgentStatus } from "../../types";
+import type { PendingApproval, PendingClarification } from "../../types";
 import { logger } from "../../utils";
 import { uiRuntime } from "../runtime";
 import type { AgentSlice, SliceCreator, Store } from "./types";
@@ -28,6 +29,38 @@ function persistAgentState(get: () => Store) {
     detail: get().statusDetail,
   };
   uiRuntime.storage.local.set({ [agentStateKey(wsId)]: data }).catch(() => {});
+}
+
+function mergePendingApprovalDeadline(
+  current: PendingApproval | null,
+  next: PendingApproval,
+): PendingApproval {
+  if (!current || current.approvalId !== next.approvalId) return next;
+  const currentDeadline = current.requestedAt + current.timeoutMs;
+  const nextDeadline = next.requestedAt + next.timeoutMs;
+  const deadline = Math.min(currentDeadline, nextDeadline);
+  return {
+    ...next,
+    requestedAt: current.requestedAt,
+    timeoutMs: Math.max(0, deadline - current.requestedAt),
+  };
+}
+
+function mergePendingClarificationDeadline(
+  current: PendingClarification | null,
+  next: PendingClarification,
+): PendingClarification {
+  if (!current || current.clarificationId !== next.clarificationId) {
+    return next;
+  }
+  const currentDeadline = current.requestedAt + current.timeoutMs;
+  const nextDeadline = next.requestedAt + next.timeoutMs;
+  const deadline = Math.min(currentDeadline, nextDeadline);
+  return {
+    ...next,
+    requestedAt: current.requestedAt,
+    timeoutMs: Math.max(0, deadline - current.requestedAt),
+  };
 }
 
 export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
@@ -155,7 +188,10 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
 
   setPendingApproval: (approval) =>
     set((state) => {
-      state.pendingApproval = approval;
+      state.pendingApproval = mergePendingApprovalDeadline(
+        state.pendingApproval,
+        approval,
+      );
     }),
 
   clearPendingApproval: () =>
@@ -185,7 +221,10 @@ export const createAgentSlice: SliceCreator<AgentSlice> = (set, get) => ({
 
   setPendingClarification: (clarification) =>
     set((state) => {
-      state.pendingClarification = clarification;
+      state.pendingClarification = mergePendingClarificationDeadline(
+        state.pendingClarification,
+        clarification,
+      );
     }),
 
   clearPendingClarification: () =>

@@ -11,7 +11,11 @@
  */
 
 import { detectFramework } from "./framework-detect";
-import { deriveAgentCueTransition } from "./agent-cue";
+import {
+  deriveAgentCueTransition,
+  reduceAgentActivitySignal,
+  type AgentActivitySignalState,
+} from "./agent-cue";
 import { logger } from "../utils";
 import {
   RuntimeMessage,
@@ -33,6 +37,32 @@ import {
   isSensitiveInput,
   withTimelineText,
 } from "../utils/website-skills";
+import {
+  ensureSkillRecordingStyles,
+  isRecordingOverlayElement,
+  pulseSkillRecordingElement,
+  removeSkillRecordingOverlay,
+  renderSkillRecordingOverlay,
+} from "./in-page-ui/skill-recording-hud";
+import {
+  AGENT_BORDER_ID,
+  ensureAgentBorderVisible as ensureAgentBorderElementVisible,
+  removeAgentBorder,
+  type AgentBorderVisualState,
+} from "./in-page-ui/agent-border";
+import {
+  createFloatingActionHud,
+  DIVIDER_ID,
+  FLOATING_WRAP_ID,
+  resetFloatingActionHudForActiveRun,
+  STEP_LABEL_ID,
+  STOP_BTN_ID,
+} from "./in-page-ui/floating-action-hud";
+import {
+  removeE2ERail,
+  renderE2ERail as renderE2ERailElement,
+  type E2ERailState,
+} from "./in-page-ui/e2e-rail";
 
 logger.info("system", "Content Script Loaded");
 
@@ -161,7 +191,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
 
 // --- Overlay Detection Helpers ---
 
-const AGENT_BORDER_ID = "opensidebar-agent-border";
 const E2E_OVERLAY_HOST_ID = "opensidebar-harness-host";
 const E2E_OVERLAY_CONFIG_ID = "opensidebar-overlay-config";
 const E2E_OVERLAY_SEND_MESSAGE_EVENT = "opensidebar:overlay:send-message";
@@ -381,7 +410,12 @@ async function mountE2EOverlay(
     await waitForE2EOverlayHost();
     e2eOverlayMounted = true;
     removeE2ERail();
-    removeFloatingAgentCue();
+    removeFloatingHudOnly();
+    if (agentSessionActive && agentPageActivityActive) {
+      setAgentBorder(true, undefined, "active");
+    } else if (watchPageActivityActive) {
+      ensureAgentBorderElementVisible("active");
+    }
     return { ok: true, loaded: true };
   }
   if (payload.scriptUrl) {
@@ -394,7 +428,12 @@ async function mountE2EOverlay(
   await waitForE2EOverlayHost();
   e2eOverlayMounted = true;
   removeE2ERail();
-  removeFloatingAgentCue();
+  removeFloatingHudOnly();
+  if (agentSessionActive && agentPageActivityActive) {
+    setAgentBorder(true, undefined, "active");
+  } else if (watchPageActivityActive) {
+    ensureAgentBorderElementVisible("active");
+  }
   return { ok: true, loaded: true };
 }
 
@@ -871,38 +910,49 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       dispatchE2EOverlayRuntimeMessage(message);
 
       if (message.type === "AGENT_ACTIVITY") {
-        agentSessionActive = message.payload.active;
-        if (message.payload.active) currentFloatingStep = null;
-        agentPageActivityActive =
-          message.payload.active && (message.payload.pageActivity ?? true);
-        e2eRailState = {
-          ...e2eRailState,
+        const previousSignalState = readAgentActivitySignalState();
+        const reduction = reduceAgentActivitySignal(previousSignalState, {
+          type: "activity",
           active: message.payload.active,
-          status: message.payload.active
-            ? "Running"
-            : message.payload.outcome?.status === "completed"
-              ? "Done"
-              : message.payload.outcome?.status === "failed"
-                ? "Failed"
-                : message.payload.outcome?.status === "stopped"
-                  ? "Stopped"
-                  : "Idle",
-          detail:
-            message.payload.outcome?.label ??
-            (message.payload.active ? "Agent is working" : "Task complete"),
-          outcome: message.payload.outcome?.status ?? "",
-          updatedAt: Date.now(),
-        };
-        void renderE2ERail();
+          outcome: message.payload.outcome,
+          pageActivity: message.payload.pageActivity,
+        });
+        applyAgentActivitySignalState(reduction.state);
+        if (message.payload.active && !previousSignalState.sessionActive) {
+          currentFloatingStep = null;
+        }
+        if (reduction.accepted) {
+          e2eRailState = {
+            ...e2eRailState,
+            detail: message.payload.active
+              ? "Agent is working"
+              : (message.payload.outcome?.label ?? "Task complete"),
+            updatedAt: Date.now(),
+          };
+          void renderE2ERail();
+        }
         clearAgentCueTimer();
-        if (agentPageActivityActive) {
+        if (
+          reduction.state.sessionActive &&
+          reduction.state.pageActivityActive &&
+          (!previousSignalState.sessionActive ||
+            !previousSignalState.pageActivityActive)
+        ) {
           setAgentBorder(true, undefined, "active");
-        } else if (message.payload.active) {
+        } else if (
+          reduction.state.sessionActive &&
+          !reduction.state.pageActivityActive &&
+          !previousSignalState.sessionActive
+        ) {
           removeFloatingAgentCue();
-        } else {
-          agentPageActivityActive = false;
+        } else if (previousSignalState.sessionActive && !message.payload.active) {
           setAgentBorder(false, message.payload.outcome);
         }
+        return;
+      }
+
+      if (message.type === "PASSIVE_MONITOR_PAGE_ACTIVITY") {
+        applyWatchPageActivity(message.payload.active);
         return;
       }
 
@@ -940,27 +990,25 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (message.type === "AGENT_STEP_LABEL") {
+        const reduction = reduceAgentActivitySignal(
+          readAgentActivitySignalState(),
+          {
+            type: "step",
+            status: message.payload.status,
+          },
+        );
+        if (!reduction.accepted) {
+          return;
+        }
+        applyAgentActivitySignalState(reduction.state);
         e2eRailState = {
           ...e2eRailState,
-          active: message.payload.status === "running",
-          status:
-            message.payload.status === "running"
-              ? "Running"
-              : message.payload.status === "done"
-                ? "Done"
-                : "Failed",
           detail: message.payload.label,
-          outcome:
-            message.payload.status === "done"
-              ? "completed"
-              : message.payload.status === "error"
-                ? "failed"
-                : "",
           updatedAt: Date.now(),
         };
         void renderE2ERail();
         const transition = deriveAgentCueTransition({
-          sessionActive: agentPageActivityActive,
+          sessionActive: reduction.state.pageActivityActive,
           stepStatus: message.payload.status,
         });
         if (transition.showCue && transition.borderState) {
@@ -1231,16 +1279,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
 
 // --- Website Skill Recording Overlay ---
 
-const RECORDING_HUD_ID = "opensidebar-recording-hud";
-const RECORDING_BORDER_ID = "opensidebar-recording-border";
-const RECORDING_STYLE_ID = "opensidebar-recording-style";
-const RECORDING_FEEDBACK_CLASS = "opensidebar-recording-feedback";
-const RECORDING_BORDER_EDGE_GLOW = [
-  "linear-gradient(to bottom, rgba(220,38,38,0.16), rgba(245,158,11,0.10) 42px, transparent 92px)",
-  "linear-gradient(to right, rgba(220,38,38,0.14), rgba(245,158,11,0.08) 42px, transparent 86px)",
-  "linear-gradient(to left, rgba(220,38,38,0.14), rgba(245,158,11,0.08) 42px, transparent 86px)",
-].join(", ");
-
 let skillRecordingActive = false;
 let skillRecordingAbort: AbortController | null = null;
 let skillRecordingLastHref = window.location.href;
@@ -1255,7 +1293,28 @@ function startSkillRecording() {
   skillRecordingLastHref = window.location.href;
   skillRecordingAbort = new AbortController();
   ensureSkillRecordingStyles();
-  renderSkillRecordingOverlay();
+  renderSkillRecordingOverlay({
+    onStop: () => {
+      chrome.runtime
+        .sendMessage({
+          type: "SKILL_RECORDING_STOP",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.CONTENT,
+          payload: {},
+        })
+        .catch(() => {});
+    },
+    onCancel: () => {
+      chrome.runtime
+        .sendMessage({
+          type: "SKILL_RECORDING_CANCEL",
+          requestId: crypto.randomUUID(),
+          source: MessageSource.CONTENT,
+          payload: {},
+        })
+        .catch(() => {});
+    },
+  });
   emitSkillRecordingEvent("page", document.title || "page");
 
   const signal = skillRecordingAbort.signal;
@@ -1283,11 +1342,7 @@ function stopSkillRecording() {
   skillRecordingActive = false;
   skillRecordingAbort?.abort();
   skillRecordingAbort = null;
-  document.getElementById(RECORDING_HUD_ID)?.remove();
-  document.getElementById(RECORDING_BORDER_ID)?.remove();
-  document
-    .querySelectorAll(`.${RECORDING_FEEDBACK_CLASS}`)
-    .forEach((node) => node.remove());
+  removeSkillRecordingOverlay();
 }
 
 function handleSkillRecordingClick(event: MouseEvent) {
@@ -1314,6 +1369,7 @@ function handleSkillRecordingInput(event: Event) {
   if (!skillRecordingActive) return;
   const el = event.target instanceof HTMLElement ? event.target : null;
   if (!el || isRecordingOverlayElement(el)) return;
+  if (isCheckableInput(el)) return;
   if (!isEditableElement(el)) return;
   const previous = skillRecordingInputTimers.get(el);
   if (previous) clearTimeout(previous);
@@ -1344,9 +1400,14 @@ function captureSkillRecordingField(el: HTMLElement) {
     return;
   }
 
-  if (el instanceof HTMLInputElement && el.type === "checkbox") {
+  if (
+    el instanceof HTMLInputElement &&
+    (el.type === "checkbox" || el.type === "radio")
+  ) {
     emitSkillRecordingEvent("checkbox", label, el, {
       checked: el.checked,
+      controlType: el.type === "radio" ? "radio" : "checkbox",
+      inputType,
     });
     return;
   }
@@ -1411,8 +1472,11 @@ function isEditableElement(el: HTMLElement): boolean {
   );
 }
 
-function isRecordingOverlayElement(el: Element): boolean {
-  return Boolean(el.closest(`#${RECORDING_HUD_ID}, #${RECORDING_BORDER_ID}`));
+function isCheckableInput(el: HTMLElement): el is HTMLInputElement {
+  return (
+    el instanceof HTMLInputElement &&
+    (el.type === "checkbox" || el.type === "radio")
+  );
 }
 
 function getElementLabel(el: HTMLElement): string {
@@ -1443,233 +1507,22 @@ function getElementLabel(el: HTMLElement): string {
   return el.getAttribute("name") || el.id || el.tagName.toLowerCase();
 }
 
-function pulseSkillRecordingElement(el: HTMLElement, mode: "click" | "field") {
-  const rect = el.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return;
-  const pulse = document.createElement("div");
-  pulse.className = RECORDING_FEEDBACK_CLASS;
-  pulse.setAttribute("data-mode", mode);
-  Object.assign(pulse.style, {
-    position: "fixed",
-    left: `${Math.max(0, rect.left - 4)}px`,
-    top: `${Math.max(0, rect.top - 4)}px`,
-    width: `${rect.width + 8}px`,
-    height: `${rect.height + 8}px`,
-    pointerEvents: "none",
-    zIndex: "2147483647",
-  });
-  document.documentElement.appendChild(pulse);
-  setTimeout(() => pulse.remove(), 760);
-}
-
-function renderSkillRecordingOverlay() {
-  if (!document.getElementById(RECORDING_BORDER_ID)) {
-    const border = document.createElement("div");
-    border.id = RECORDING_BORDER_ID;
-    document.documentElement.appendChild(border);
-  }
-
-  if (document.getElementById(RECORDING_HUD_ID)) return;
-  const hud = document.createElement("div");
-  hud.id = RECORDING_HUD_ID;
-  hud.innerHTML = `
-    <div data-main>
-      <span data-dot></span>
-      <span data-title>Recording site skill</span>
-      <span data-privacy>Typed values are redacted</span>
-    </div>
-    <div data-actions>
-      <button type="button" data-stop>Stop</button>
-      <button type="button" data-cancel>Cancel</button>
-    </div>
-  `;
-  hud.querySelector("[data-stop]")?.addEventListener("click", () => {
-    chrome.runtime
-      .sendMessage({
-        type: "SKILL_RECORDING_STOP",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.CONTENT,
-        payload: {},
-      })
-      .catch(() => {});
-  });
-  hud.querySelector("[data-cancel]")?.addEventListener("click", () => {
-    chrome.runtime
-      .sendMessage({
-        type: "SKILL_RECORDING_CANCEL",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.CONTENT,
-        payload: {},
-      })
-      .catch(() => {});
-  });
-  document.documentElement.appendChild(hud);
-}
-
-function ensureSkillRecordingStyles() {
-  if (document.getElementById(RECORDING_STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = RECORDING_STYLE_ID;
-  style.textContent = `
-    #${RECORDING_BORDER_ID} {
-      position: fixed;
-      inset: 0;
-      z-index: 2147483645;
-      pointer-events: none;
-      box-shadow:
-        inset 0 0 0 2px rgba(220, 38, 38, 0.88),
-        inset 0 0 0 7px rgba(245, 158, 11, 0.28);
-    }
-
-    #${RECORDING_BORDER_ID}::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: ${RECORDING_BORDER_EDGE_GLOW};
-      background-repeat: no-repeat;
-      background-size: 100% 100px, 100px 100%, 100px 100%;
-      background-position: top, left, right;
-      opacity: 0.82;
-    }
-
-    #${RECORDING_HUD_ID} {
-      position: fixed;
-      left: 50%;
-      bottom: 18px;
-      transform: translateX(-50%);
-      z-index: 2147483647;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      max-width: min(620px, calc(100vw - 28px));
-      padding: 8px 9px 8px 12px;
-      border: 1px solid rgba(185, 28, 28, 0.28);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.96);
-      color: #7f1d1d;
-      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      pointer-events: auto;
-    }
-
-    #${RECORDING_HUD_ID} [data-main] {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-    }
-
-    #${RECORDING_HUD_ID} [data-dot] {
-      width: 8px;
-      height: 8px;
-      border-radius: 999px;
-      background: #dc2626;
-      box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.16);
-      animation: opensidebar-recording-dot 1.2s ease-in-out infinite;
-      flex-shrink: 0;
-    }
-
-    #${RECORDING_HUD_ID} [data-title] {
-      font-size: 12px;
-      line-height: 16px;
-      font-weight: 700;
-      white-space: nowrap;
-    }
-
-    #${RECORDING_HUD_ID} [data-privacy] {
-      font-size: 11px;
-      line-height: 15px;
-      color: #92400e;
-      white-space: nowrap;
-    }
-
-    #${RECORDING_HUD_ID} [data-actions] {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    #${RECORDING_HUD_ID} button {
-      border: 1px solid rgba(185, 28, 28, 0.24);
-      border-radius: 7px;
-      background: rgba(254, 242, 242, 0.9);
-      color: #991b1b;
-      cursor: pointer;
-      font-size: 12px;
-      line-height: 16px;
-      font-weight: 650;
-      padding: 5px 9px;
-      letter-spacing: 0;
-    }
-
-    #${RECORDING_HUD_ID} button:hover {
-      background: #fee2e2;
-    }
-
-    .${RECORDING_FEEDBACK_CLASS} {
-      border: 2px solid rgba(220, 38, 38, 0.88);
-      border-radius: 8px;
-      animation: opensidebar-recording-pulse 720ms ease-out forwards;
-    }
-
-    .${RECORDING_FEEDBACK_CLASS}[data-mode="field"] {
-      border-color: rgba(245, 158, 11, 0.94);
-      background: rgba(245, 158, 11, 0.08);
-    }
-
-    @keyframes opensidebar-recording-dot {
-      0%, 100% { opacity: 0.66; transform: scale(0.9); }
-      50% { opacity: 1; transform: scale(1.08); }
-    }
-
-    @keyframes opensidebar-recording-pulse {
-      0% { opacity: 0; transform: scale(0.98); }
-      18% { opacity: 1; transform: scale(1); }
-      100% { opacity: 0; transform: scale(1.08); }
-    }
-
-    @media (max-width: 640px) {
-      #${RECORDING_HUD_ID} {
-        align-items: stretch;
-        flex-direction: column;
-        width: calc(100vw - 28px);
-      }
-
-      #${RECORDING_HUD_ID} [data-main] {
-        flex-wrap: wrap;
-      }
-
-      #${RECORDING_HUD_ID} [data-actions] {
-        justify-content: flex-end;
-      }
-    }
-  `;
-  document.documentElement.appendChild(style);
-}
-
 // --- Agent Activity Border Overlay ---
 
-const BORDER_ID = "opensidebar-agent-border";
-const BORDER_STYLE_ID = "opensidebar-agent-border-style";
-const HUD_STYLE_ID = "opensidebar-agent-hud-style";
-const STOP_BTN_ID = "opensidebar-stop-btn";
-const STEP_LABEL_ID = "opensidebar-step-label";
-const FLOATING_WRAP_ID = "opensidebar-floating-wrap";
-const DIVIDER_ID = "opensidebar-divider";
-const E2E_RAIL_ID = "opensidebar-e2e-rail";
-const E2E_RAIL_STYLE_ID = "opensidebar-e2e-rail-style";
 const E2E_VISIBLE_RAIL_STORAGE_KEY = "opensidebar:e2eVisibleRail";
 let agentSessionActive = false;
 let agentPageActivityActive = false;
+let watchPageActivityActive = false;
 let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
+let floatingCueRemoveTimer: ReturnType<typeof setTimeout> | null = null;
+let agentCueFadeTimer: ReturnType<typeof setTimeout> | null = null;
 let e2eRailEnabled: boolean | null = null;
 let currentPlanProgress: { currentIndex: number; total: number } | null = null;
 let currentFloatingStep: {
   label: string;
   status: "running" | "done" | "error";
 } | null = null;
-let e2eRailState = {
+let e2eRailState: E2ERailState = {
   active: false,
   status: "Idle",
   detail: "Waiting for task",
@@ -1686,43 +1539,62 @@ let e2eRailState = {
   finalText: "",
 };
 
-type AgentBorderVisualState = "active" | "settle";
+function readAgentActivitySignalState(): AgentActivitySignalState {
+  return {
+    sessionActive: agentSessionActive,
+    pageActivityActive: agentPageActivityActive,
+    rail: {
+      active: e2eRailState.active,
+      status: e2eRailState.status as AgentActivitySignalState["rail"]["status"],
+      outcome:
+        e2eRailState.outcome as AgentActivitySignalState["rail"]["outcome"],
+    },
+  };
+}
 
-const AGENT_BORDER_ACTIVE_SHADOW = [
-  "inset 0 0 0 2px rgba(37,99,235,0.78)",
-  "inset 0 0 0 6px rgba(37,99,235,0.32)",
-  "inset 0 0 0 12px rgba(37,99,235,0.18)",
-  "inset 0 0 0 20px rgba(37,99,235,0.10)",
-  "inset 0 0 40px rgba(37,99,235,0.14)",
-  "inset 0 0 84px rgba(37,99,235,0.07)",
-].join(", ");
-const AGENT_BORDER_PULSE_SHADOW = [
-  "inset 0 0 0 2px rgba(37,99,235,0.92)",
-  "inset 0 0 0 7px rgba(37,99,235,0.44)",
-  "inset 0 0 0 15px rgba(37,99,235,0.24)",
-  "inset 0 0 0 24px rgba(37,99,235,0.14)",
-  "inset 0 0 56px rgba(37,99,235,0.20)",
-  "inset 0 0 120px rgba(37,99,235,0.10)",
-].join(", ");
-const AGENT_BORDER_SETTLE_SHADOW = [
-  "inset 0 0 0 2px rgba(37,99,235,0.58)",
-  "inset 0 0 0 5px rgba(37,99,235,0.20)",
-  "inset 0 0 0 10px rgba(37,99,235,0.11)",
-  "inset 0 0 28px rgba(37,99,235,0.08)",
-  "inset 0 0 72px rgba(37,99,235,0.04)",
-].join(", ");
-
-const AGENT_BORDER_EDGE_GLOW = [
-  "linear-gradient(to bottom, rgba(37,99,235,0.18), transparent 86px)",
-  "linear-gradient(to right, rgba(37,99,235,0.16), transparent 82px)",
-  "linear-gradient(to left, rgba(37,99,235,0.16), transparent 82px)",
-].join(", ");
+function applyAgentActivitySignalState(
+  state: AgentActivitySignalState,
+): void {
+  agentSessionActive = state.sessionActive;
+  agentPageActivityActive = state.pageActivityActive;
+  e2eRailState = {
+    ...e2eRailState,
+    active: state.rail.active,
+    status: state.rail.status,
+    outcome: state.rail.outcome,
+  };
+}
 
 function clearAgentCueTimer() {
   if (agentCueTimer) {
     clearTimeout(agentCueTimer);
     agentCueTimer = null;
   }
+}
+
+function clearFloatingCueRemoveTimer() {
+  if (floatingCueRemoveTimer) {
+    clearTimeout(floatingCueRemoveTimer);
+    floatingCueRemoveTimer = null;
+  }
+}
+
+function clearAgentCueFadeTimer() {
+  if (agentCueFadeTimer) {
+    clearTimeout(agentCueFadeTimer);
+    agentCueFadeTimer = null;
+  }
+}
+
+function resetFloatingCueForActiveRun() {
+  clearFloatingCueRemoveTimer();
+  clearAgentCueFadeTimer();
+
+  const existing = document.getElementById(AGENT_BORDER_ID);
+  existing?.getAnimations?.().forEach((animation) => animation.cancel());
+  if (existing) existing.style.opacity = "1";
+
+  resetFloatingActionHudForActiveRun();
 }
 
 function scheduleAgentCueHide(delayMs: number) {
@@ -1737,257 +1609,6 @@ function scheduleAgentCueHide(delayMs: number) {
   }, delayMs);
 }
 
-function ensureAgentBorderStyles() {
-  if (document.getElementById(BORDER_STYLE_ID)) return;
-
-  const style = document.createElement("style");
-  style.id = BORDER_STYLE_ID;
-  style.textContent = `
-    @keyframes opensidebar-agent-border-breathe {
-      0%, 100% {
-        box-shadow: ${AGENT_BORDER_ACTIVE_SHADOW};
-        opacity: 0.94;
-      }
-      50% {
-        box-shadow: ${AGENT_BORDER_PULSE_SHADOW};
-        opacity: 1;
-      }
-    }
-
-    #${BORDER_ID}[data-state="active"] {
-      box-shadow: ${AGENT_BORDER_ACTIVE_SHADOW};
-      opacity: 0.96;
-      animation: opensidebar-agent-border-breathe 2.6s ease-in-out infinite;
-    }
-
-    #${BORDER_ID}[data-state="settle"] {
-      box-shadow: ${AGENT_BORDER_SETTLE_SHADOW};
-      opacity: 0.92;
-      animation: none;
-    }
-
-    #${BORDER_ID}::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background: ${AGENT_BORDER_EDGE_GLOW};
-      background-repeat: no-repeat;
-      background-size: 100% 96px, 96px 100%, 96px 100%;
-      background-position: top, left, right;
-      opacity: 0.78;
-    }
-
-    #${BORDER_ID}[data-state="settle"]::before {
-      opacity: 0.44;
-    }
-  `;
-  document.documentElement.appendChild(style);
-}
-
-function ensureAgentHudStyles() {
-  if (document.getElementById(HUD_STYLE_ID)) return;
-
-  const style = document.createElement("style");
-  style.id = HUD_STYLE_ID;
-  style.textContent = `
-    @keyframes opensidebar-pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.42; }
-    }
-
-    #${FLOATING_WRAP_ID} {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      z-index: 2147483647;
-      width: 320px;
-      max-width: calc(100vw - 32px);
-      min-height: 40px;
-      display: flex;
-      align-items: stretch;
-      overflow: hidden;
-      color-scheme: light dark;
-      background: rgba(248, 250, 252, 0.92);
-      color: rgba(15, 23, 42, 0.95);
-      border: 1px solid rgba(37, 99, 235, 0.28);
-      border-radius: 8px;
-      box-shadow:
-        0 14px 32px rgba(15, 23, 42, 0.16),
-        0 0 0 1px rgba(255, 255, 255, 0.72);
-      backdrop-filter: blur(14px) saturate(1.12);
-      -webkit-backdrop-filter: blur(14px) saturate(1.12);
-      opacity: 0;
-      transform: translateX(-50%) translateY(8px);
-      transition: opacity 180ms ease-out, transform 180ms ease-out;
-    }
-
-    #${FLOATING_WRAP_ID}[data-visible="true"] {
-      opacity: 1;
-      transform: translateX(-50%) translateY(0);
-    }
-
-    #${STEP_LABEL_ID} {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 9px 0 9px 14px;
-    }
-
-    #${STEP_LABEL_ID} > span:first-child {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: rgba(37, 99, 235, 0.95);
-      flex-shrink: 0;
-      animation: opensidebar-pulse 1.5s ease-in-out infinite;
-      transition: background 160ms ease-out;
-    }
-
-    #${STEP_LABEL_ID} [data-label] {
-      min-width: 0;
-      color: currentColor;
-      font-size: 11px;
-      line-height: 16px;
-      font-weight: 500;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      letter-spacing: 0;
-      transition: color 160ms ease-out;
-    }
-
-    #${STEP_LABEL_ID}[data-status="completed"] > span:first-child {
-      background: #22c55e;
-      animation: none;
-    }
-
-    #${STEP_LABEL_ID}[data-status="failed"] > span:first-child {
-      background: #ef4444;
-      animation: none;
-    }
-
-    #${STEP_LABEL_ID}[data-status="stopped"] > span:first-child {
-      background: #f59e0b;
-      animation: none;
-    }
-
-    #${STEP_LABEL_ID}[data-status="completed"] [data-label] {
-      color: rgba(21, 128, 61, 0.95);
-    }
-
-    #${STEP_LABEL_ID}[data-status="failed"] [data-label] {
-      color: rgba(185, 28, 28, 0.95);
-    }
-
-    #${STEP_LABEL_ID}[data-status="stopped"] [data-label] {
-      color: rgba(180, 83, 9, 0.95);
-    }
-
-    #${DIVIDER_ID} {
-      width: 1px;
-      height: 18px;
-      margin: auto 0;
-      background: rgba(100, 116, 139, 0.24);
-      flex-shrink: 0;
-      transition: opacity 160ms ease-out;
-    }
-
-    #${STOP_BTN_ID} {
-      pointer-events: auto;
-      min-height: 40px;
-      display: flex;
-      align-items: center;
-      padding: 9px 16px 9px 12px;
-      background: transparent;
-      color: currentColor;
-      font-size: 11px;
-      line-height: 16px;
-      font-weight: 600;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      border: 0;
-      border-radius: 0;
-      cursor: pointer;
-      flex-shrink: 0;
-      letter-spacing: 0;
-      transition: background 140ms ease-out, color 140ms ease-out, opacity 160ms ease-out;
-    }
-
-    #${STOP_BTN_ID}:hover {
-      background: rgba(37, 99, 235, 0.12);
-      color: rgba(30, 64, 175, 1);
-    }
-
-    #${STOP_BTN_ID}:focus-visible {
-      outline: 2px solid rgba(37, 99, 235, 0.82);
-      outline-offset: -3px;
-      background: rgba(37, 99, 235, 0.12);
-    }
-
-    #${STOP_BTN_ID} svg {
-      flex-shrink: 0;
-    }
-
-    #${STOP_BTN_ID} rect {
-      fill: currentColor;
-      opacity: 0.76;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      #${FLOATING_WRAP_ID} {
-        background: rgba(15, 23, 42, 0.92);
-        color: rgba(226, 232, 240, 0.95);
-        border-color: rgba(96, 165, 250, 0.34);
-        box-shadow:
-          0 14px 32px rgba(15, 23, 42, 0.28),
-          0 0 0 1px rgba(255, 255, 255, 0.08);
-      }
-
-      #${STEP_LABEL_ID} > span:first-child {
-        background: rgba(96, 165, 250, 0.95);
-      }
-
-      #${DIVIDER_ID} {
-        background: rgba(148, 163, 184, 0.26);
-      }
-
-      #${STEP_LABEL_ID}[data-status="completed"] [data-label] {
-        color: rgba(134, 239, 172, 0.95);
-      }
-
-      #${STEP_LABEL_ID}[data-status="failed"] [data-label] {
-        color: rgba(252, 165, 165, 0.95);
-      }
-
-      #${STEP_LABEL_ID}[data-status="stopped"] [data-label] {
-        color: rgba(253, 224, 71, 0.95);
-      }
-
-      #${STOP_BTN_ID}:hover,
-      #${STOP_BTN_ID}:focus-visible {
-        background: rgba(37, 99, 235, 0.22);
-        color: rgba(255, 255, 255, 0.98);
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      #${BORDER_ID},
-      #${FLOATING_WRAP_ID},
-      #${STEP_LABEL_ID} > span:first-child,
-      #${STEP_LABEL_ID} [data-label],
-      #${DIVIDER_ID},
-      #${STOP_BTN_ID} {
-        animation: none !important;
-        transition: none !important;
-      }
-    }
-  `;
-  document.documentElement.appendChild(style);
-}
-
 async function isE2ERailEnabled(): Promise<boolean> {
   if (e2eRailEnabled != null) return e2eRailEnabled;
   try {
@@ -1999,428 +1620,56 @@ async function isE2ERailEnabled(): Promise<boolean> {
   return e2eRailEnabled;
 }
 
-function ensureE2ERailStyles() {
-  if (document.getElementById(E2E_RAIL_STYLE_ID)) return;
-
-  const style = document.createElement("style");
-  style.id = E2E_RAIL_STYLE_ID;
-  style.textContent = `
-    #${E2E_RAIL_ID} {
-      position: fixed;
-      top: 0;
-      right: 0;
-      z-index: 2147483646;
-      width: 360px;
-      max-width: min(360px, 42vw);
-      height: 100vh;
-      pointer-events: auto;
-      user-select: text;
-      color-scheme: light;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #0f172a;
-      background: rgba(255, 255, 255, 0.96);
-      border-left: 1px solid rgba(15, 23, 42, 0.12);
-      border-radius: 0;
-      box-shadow:
-        -18px 0 45px rgba(15, 23, 42, 0.16),
-        0 0 0 1px rgba(255, 255, 255, 0.82);
-      backdrop-filter: blur(16px) saturate(1.08);
-      -webkit-backdrop-filter: blur(16px) saturate(1.08);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    #${E2E_RAIL_ID} [data-header] {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 14px 16px;
-      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-      background: rgba(248, 250, 252, 0.86);
-    }
-
-    #${E2E_RAIL_ID} [data-title] {
-      font-size: 13px;
-      line-height: 18px;
-      font-weight: 700;
-      letter-spacing: 0;
-      text-transform: uppercase;
-      color: #334155;
-    }
-
-    #${E2E_RAIL_ID} [data-state] {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      line-height: 17px;
-      font-weight: 600;
-      color: #475569;
-    }
-
-    #${E2E_RAIL_ID} [data-dot] {
-      width: 7px;
-      height: 7px;
-      border-radius: 999px;
-      background: #94a3b8;
-      box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.16);
-    }
-
-    #${E2E_RAIL_ID}[data-active="true"] [data-dot] {
-      background: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
-    }
-
-    #${E2E_RAIL_ID}[data-outcome="completed"] [data-dot] {
-      background: #16a34a;
-      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.16);
-    }
-
-    #${E2E_RAIL_ID}[data-outcome="failed"] [data-dot] {
-      background: #dc2626;
-      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16);
-    }
-
-    #${E2E_RAIL_ID}[data-outcome="stopped"] [data-dot] {
-      background: #d97706;
-      box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.16);
-    }
-
-    #${E2E_RAIL_ID} [data-body] {
-      flex: 1;
-      min-height: 0;
-      padding: 12px;
-      display: grid;
-      align-content: start;
-      gap: 10px;
-      grid-template-rows:
-        minmax(70px, auto)
-        minmax(72px, auto)
-        minmax(120px, 1fr)
-        minmax(104px, auto)
-        minmax(110px, auto)
-        minmax(24px, auto);
-      overflow: hidden;
-    }
-
-    #${E2E_RAIL_ID} [data-section] {
-      display: grid;
-      gap: 6px;
-      padding: 10px;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 8px;
-      background: rgba(248, 250, 252, 0.72);
-      min-height: 0;
-      overflow: hidden;
-    }
-
-    #${E2E_RAIL_ID} [data-section-title] {
-      font-size: 10px;
-      line-height: 14px;
-      font-weight: 700;
-      letter-spacing: 0;
-      text-transform: uppercase;
-      color: #64748b;
-    }
-
-    #${E2E_RAIL_ID} [data-label] {
-      font-size: 14px;
-      line-height: 20px;
-      font-weight: 650;
-      color: #0f172a;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      overflow-wrap: anywhere;
-    }
-
-    #${E2E_RAIL_ID} [data-detail] {
-      font-size: 12px;
-      line-height: 17px;
-      color: #64748b;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      overflow-wrap: anywhere;
-    }
-
-    #${E2E_RAIL_ID} [data-plan-list],
-    #${E2E_RAIL_ID} [data-feed-list] {
-      display: grid;
-      gap: 7px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-
-    #${E2E_RAIL_ID} [data-plan-list] li {
-      position: relative;
-      padding-left: 14px;
-      font-size: 12px;
-      line-height: 17px;
-      color: #334155;
-      display: -webkit-box;
-      -webkit-line-clamp: 1;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      overflow-wrap: anywhere;
-    }
-
-    #${E2E_RAIL_ID} [data-plan-list] li::before {
-      content: "";
-      position: absolute;
-      top: 7px;
-      left: 2px;
-      width: 5px;
-      height: 5px;
-      border-radius: 999px;
-      background: #2563eb;
-    }
-
-    #${E2E_RAIL_ID} [data-feed-list] li {
-      display: grid;
-      gap: 2px;
-      padding: 6px 8px;
-      border-radius: 7px;
-      background: rgba(255, 255, 255, 0.78);
-      border: 1px solid rgba(15, 23, 42, 0.06);
-    }
-
-    #${E2E_RAIL_ID} [data-feed-kind] {
-      font-size: 10px;
-      line-height: 13px;
-      font-weight: 700;
-      letter-spacing: 0;
-      text-transform: uppercase;
-      color: #64748b;
-    }
-
-    #${E2E_RAIL_ID} [data-feed-text] {
-      font-size: 12px;
-      line-height: 17px;
-      color: #1e293b;
-      display: -webkit-box;
-      -webkit-line-clamp: 1;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      overflow-wrap: anywhere;
-    }
-
-    #${E2E_RAIL_ID} [data-final-text] {
-      font-size: 12px;
-      line-height: 18px;
-      color: #0f172a;
-      white-space: pre-wrap;
-      display: -webkit-box;
-      -webkit-line-clamp: 5;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      overflow-wrap: anywhere;
-    }
-
-    #${E2E_RAIL_ID} [data-timestamp] {
-      font-size: 11px;
-      line-height: 15px;
-      color: #94a3b8;
-    }
-
-    #${E2E_RAIL_ID} [data-meta-row] {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 0 2px;
-      min-height: 20px;
-    }
-
-    @media (max-width: 900px) {
-      #${E2E_RAIL_ID} {
-        width: 300px;
-        max-width: 50vw;
-      }
-    }
-  `;
-  document.documentElement.appendChild(style);
-}
-
 function isE2EOverlayPanelMounted(): boolean {
   return (
     e2eOverlayMounted || Boolean(document.getElementById(E2E_OVERLAY_HOST_ID))
   );
 }
 
-function removeE2ERail() {
-  document.getElementById(E2E_RAIL_ID)?.remove();
-}
-
 async function renderE2ERail() {
-  if (isE2EOverlayPanelMounted()) {
-    removeE2ERail();
-    return;
-  }
-  if (!(await isE2ERailEnabled())) return;
-  ensureE2ERailStyles();
-
-  let rail = document.getElementById(E2E_RAIL_ID);
-  if (!rail) {
-    rail = document.createElement("div");
-    rail.id = E2E_RAIL_ID;
-    rail.innerHTML = `
-      <div data-header>
-        <div data-title>OpenSidebar E2E</div>
-        <div data-state><span data-dot></span><span data-status></span></div>
-      </div>
-      <div data-body>
-        <div data-section>
-          <div data-section-title>Prompt</div>
-          <div data-detail data-prompt>Waiting for prompt.</div>
-        </div>
-        <div data-section>
-          <div data-section-title>Current Step</div>
-          <div data-label></div>
-          <div data-detail></div>
-        </div>
-        <div data-section>
-          <div data-section-title>Plan</div>
-          <ul data-plan-list></ul>
-        </div>
-        <div data-section>
-          <div data-section-title>Live Feed</div>
-          <ul data-feed-list></ul>
-        </div>
-        <div data-section>
-          <div data-section-title>Final Output</div>
-          <div data-final-text>Waiting for completion.</div>
-        </div>
-        <div data-meta-row>
-          <div data-section-title>Last Update</div>
-          <div data-timestamp></div>
-        </div>
-      </div>
-    `;
-    document.documentElement.appendChild(rail);
-  }
-
-  rail.dataset.active = String(e2eRailState.active);
-  rail.dataset.outcome = e2eRailState.outcome;
-  const status = rail.querySelector("[data-status]");
-  const label = rail.querySelector("[data-label]");
-  const detail = rail.querySelector("[data-detail]");
-  const timestamp = rail.querySelector("[data-timestamp]");
-  const prompt = rail.querySelector("[data-prompt]");
-  const planList = rail.querySelector("[data-plan-list]");
-  const feedList = rail.querySelector("[data-feed-list]");
-  const finalText = rail.querySelector("[data-final-text]");
-  if (status) status.textContent = e2eRailState.status;
-  if (label) {
-    label.textContent = e2eRailState.detail;
-    label.setAttribute("title", e2eRailState.detail);
-  }
-  if (detail) {
-    detail.textContent = e2eRailState.active
-      ? "Watch the page. Agent actions happen here."
-      : e2eRailState.outcome
-        ? `Task ${e2eRailState.outcome}.`
-        : "Ready for visible demo.";
-  }
-  if (timestamp) {
-    timestamp.textContent = e2eRailState.updatedAt
-      ? new Date(e2eRailState.updatedAt).toLocaleTimeString()
-      : "Not started";
-  }
-  if (prompt) {
-    prompt.textContent = e2eRailState.prompt || "Waiting for prompt.";
-    prompt.setAttribute("title", e2eRailState.prompt || "");
-  }
-  if (planList) {
-    planList.replaceChildren(
-      ...(e2eRailState.planItems.length > 0
-        ? e2eRailState.planItems.slice(0, 5)
-        : ["Waiting for plan/progress."]
-      ).map((item) => {
-        const li = document.createElement("li");
-        li.textContent = item;
-        li.title = item;
-        return li;
-      }),
-    );
-  }
-  if (feedList) {
-    feedList.replaceChildren(
-      ...e2eRailState.feed.slice(-3).map((item) => {
-        const li = document.createElement("li");
-        const kind = document.createElement("div");
-        kind.dataset.feedKind = "";
-        kind.textContent = item.kind;
-        const text = document.createElement("div");
-        text.dataset.feedText = "";
-        text.textContent = item.text;
-        text.title = item.text;
-        li.append(kind, text);
-        return li;
-      }),
-    );
-  }
-  if (finalText) {
-    finalText.textContent = e2eRailState.finalText || "Waiting for completion.";
-    finalText.setAttribute("title", e2eRailState.finalText || "");
-  }
-}
-
-function setAgentBorderVisualState(state: AgentBorderVisualState) {
-  const existing = document.getElementById(BORDER_ID);
-  if (!existing) return;
-  existing.setAttribute("data-state", state);
-}
-
-function ensureAgentBorderVisible(state: AgentBorderVisualState = "active") {
-  const existing = document.getElementById(BORDER_ID);
-  if (existing) {
-    setAgentBorderVisualState(state);
-    return;
-  }
-
-  ensureAgentBorderStyles();
-
-  const overlay = document.createElement("div");
-  overlay.id = BORDER_ID;
-  overlay.setAttribute("data-state", state);
-  Object.assign(overlay.style, {
-    position: "fixed",
-    inset: "0",
-    zIndex: "2147483646",
-    pointerEvents: "none",
-    boxShadow:
-      state === "active"
-        ? AGENT_BORDER_ACTIVE_SHADOW
-        : AGENT_BORDER_SETTLE_SHADOW,
-    opacity: "0",
-  });
-  document.documentElement.appendChild(overlay);
-
-  overlay.animate([{ opacity: "0" }, { opacity: "1" }], {
-    duration: 600,
-    easing: "ease-out",
-    fill: "forwards",
+  await renderE2ERailElement(e2eRailState, {
+    isPanelMounted: isE2EOverlayPanelMounted,
+    isEnabled: isE2ERailEnabled,
   });
 }
 
 function hideFloatingCue() {
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
   if (!existingBtn) return;
+  clearFloatingCueRemoveTimer();
   existingBtn.setAttribute("data-visible", "false");
-  setTimeout(() => {
+  floatingCueRemoveTimer = setTimeout(() => {
     if (existingBtn.isConnected) existingBtn.remove();
+    floatingCueRemoveTimer = null;
   }, 220);
 }
 
-function removeFloatingAgentCue() {
-  document.getElementById(BORDER_ID)?.remove();
+function removeFloatingHudOnly() {
+  clearAgentCueTimer();
+  clearFloatingCueRemoveTimer();
+  clearAgentCueFadeTimer();
   document.getElementById(FLOATING_WRAP_ID)?.remove();
+}
+
+function removeFloatingAgentCue() {
+  removeFloatingHudOnly();
+  removeAgentBorder();
+}
+
+function applyWatchPageActivity(active: boolean): void {
+  watchPageActivityActive = active;
+  if (active) {
+    clearAgentCueFadeTimer();
+    ensureAgentBorderElementVisible("active");
+    if (isE2EOverlayPanelMounted() && !agentPageActivityActive) {
+      removeFloatingHudOnly();
+    }
+    return;
+  }
+
+  if (!agentPageActivityActive) {
+    removeAgentBorder();
+  }
 }
 
 /** Update the step label text above the floating stop button */
@@ -2469,59 +1718,24 @@ function setAgentBorder(
   outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
   visualState: AgentBorderVisualState = "active",
 ) {
-  const existing = document.getElementById(BORDER_ID);
+  const existing = document.getElementById(AGENT_BORDER_ID);
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
 
-  if (isE2EOverlayPanelMounted()) {
-    removeFloatingAgentCue();
-    return;
-  }
+  const overlayMounted = isE2EOverlayPanelMounted();
 
   if (active) {
+    resetFloatingCueForActiveRun();
     // No animation — just a persistent "agent is active" indicator.
-    ensureAgentBorderVisible(visualState);
+    ensureAgentBorderElementVisible(visualState);
+
+    if (overlayMounted) {
+      removeFloatingHudOnly();
+      return;
+    }
 
     // --- Floating HUD bar: [ ● Step label…  ⏹ Stop ] ---
     if (!existingBtn) {
-      ensureAgentHudStyles();
-
-      // Single-row bar — fixed width so label changes don't shift layout
-      const bar = document.createElement("div");
-      bar.id = FLOATING_WRAP_ID;
-      bar.setAttribute("data-visible", "false");
-
-      // Left section: dot + label (takes remaining space)
-      const labelSection = document.createElement("div");
-      labelSection.id = STEP_LABEL_ID;
-
-      const dot = document.createElement("span");
-      dot.setAttribute("aria-hidden", "true");
-
-      const labelText = document.createElement("span");
-      labelText.setAttribute("data-label", "");
-      labelText.textContent = "Starting\u2026";
-
-      labelSection.appendChild(dot);
-      labelSection.appendChild(labelText);
-      bar.appendChild(labelSection);
-
-      // Divider
-      const divider = document.createElement("div");
-      divider.id = DIVIDER_ID;
-      divider.setAttribute("aria-hidden", "true");
-      bar.appendChild(divider);
-
-      // Right section: stop button
-      const btn = document.createElement("button");
-      btn.id = STOP_BTN_ID;
-      btn.type = "button";
-      btn.title = "Stop agent";
-      btn.setAttribute("aria-label", "Stop agent");
-      btn.innerHTML =
-        '<svg width="9" height="9" viewBox="0 0 10 10" style="flex-shrink:0">' +
-        '<rect width="10" height="10" rx="2"/></svg>' +
-        '<span style="margin-left:6px;letter-spacing:0">Stop</span>';
-      btn.addEventListener("click", () => {
+      createFloatingActionHud(() => {
         chrome.runtime
           .sendMessage({
             type: "STOP_AGENT",
@@ -2530,13 +1744,6 @@ function setAgentBorder(
             payload: {},
           })
           .catch(() => {});
-      });
-      bar.appendChild(btn);
-      document.documentElement.appendChild(bar);
-
-      // Slide up + fade in
-      requestAnimationFrame(() => {
-        bar.setAttribute("data-visible", "true");
       });
     }
   } else {
@@ -2584,13 +1791,19 @@ function setAgentBorder(
     }
 
     // --- Remove border + bar (delayed if showing outcome flash) ---
-    setTimeout(() => {
+    clearAgentCueFadeTimer();
+    agentCueFadeTimer = setTimeout(() => {
+      agentCueFadeTimer = null;
       if (existing) {
-        existing.animate([{ opacity: "1" }, { opacity: "0" }], {
-          duration: 600,
-          easing: "ease-in",
-          fill: "forwards",
-        }).onfinish = () => existing.remove();
+        if (watchPageActivityActive) {
+          ensureAgentBorderElementVisible("active");
+        } else {
+          existing.animate([{ opacity: "1" }, { opacity: "0" }], {
+            duration: 600,
+            easing: "ease-in",
+            fill: "forwards",
+          }).onfinish = () => existing.remove();
+        }
       }
       if (existingBtn) {
         hideFloatingCue();

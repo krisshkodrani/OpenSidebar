@@ -164,6 +164,8 @@ export type SkillRecordingEventKind =
   | "navigation"
   | "page";
 
+export type SkillRecordingControlType = "checkbox" | "radio";
+
 export interface SkillRecordingEvent {
   id: string;
   kind: SkillRecordingEventKind;
@@ -173,6 +175,7 @@ export interface SkillRecordingEvent {
   label: string;
   tagName?: string;
   inputType?: string;
+  controlType?: SkillRecordingControlType;
   valueKind?: "redacted" | "email" | "phone" | "number" | "date" | "text";
   selectedLabel?: string;
   checked?: boolean;
@@ -187,9 +190,11 @@ export interface UserWebsiteSkillDraft {
   pathPattern: string;
   triggerPhrase: string;
   workflowSteps: string[];
+  guardrails: string[];
   requiredEvidence: string[];
   privacySummary: string;
   capturedEventCount: number;
+  capturedInputCount: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -222,6 +227,8 @@ export interface ChatEntry {
   thinking?: string;
   /** Synthetic entry that renders as PlanTimelineCard instead of MessageBubble */
   isPlanCard?: boolean;
+  /** Synthetic passive-monitor entry. Render lighter than normal assistant output. */
+  isPassive?: boolean;
 }
 
 /** Stagnation detection state for the side panel */

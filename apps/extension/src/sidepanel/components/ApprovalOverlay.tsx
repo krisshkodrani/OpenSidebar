@@ -11,6 +11,7 @@ import { useStore } from "../store";
 import { logger } from "../../utils";
 import { formatStepLabel } from "../../background/agent/step-labels";
 import { uiRuntime } from "../runtime";
+import { Button, Card } from "@/ui";
 
 function describeRisk(toolName: string): string {
   if (/submit|delete|close|download|upload|cookie|navigate/i.test(toolName)) {
@@ -95,7 +96,7 @@ export function ApprovalOverlay() {
   if (!pendingApproval) return null;
 
   return (
-    <div
+    <Card
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
@@ -144,20 +145,26 @@ export function ApprovalOverlay() {
 
       {/* Buttons */}
       <div className="flex items-center gap-2">
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={() => void sendDecision(false)}
-          className="flex-1 rounded border border-red-300 dark:border-red-700 px-2 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+          className="flex-1 border-red-300 text-xs text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/40"
         >
           Reject
-        </button>
-        <button
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          size="sm"
           onClick={() => void sendDecision(true)}
           ref={approveButtonRef}
-          className="flex-1 rounded bg-red-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors"
+          className="flex-1 text-xs"
         >
           Approve action
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

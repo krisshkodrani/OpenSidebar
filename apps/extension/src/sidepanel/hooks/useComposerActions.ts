@@ -8,6 +8,22 @@ import {
 import { uiRuntime } from "../runtime";
 import { useStore } from "../store";
 
+function isNewChatCommand(text: string): boolean {
+  return text.trim() === "/new";
+}
+
+function hasActiveRunOrWatch(store: ReturnType<typeof useStore.getState>): boolean {
+  return (
+    store.isAgentRunning ||
+    store.passiveStatus === "watching" ||
+    store.passiveStatus === "paused" ||
+    store.pendingApproval != null ||
+    store.pendingEscalation != null ||
+    store.pendingPlanConfirmation != null ||
+    store.pendingClarification != null
+  );
+}
+
 export function useComposerActions(options: { onSendStarted: () => void }): {
   handleSend: (text: string) => Promise<void>;
   handleSendFeedback: (text: string) => Promise<void>;
@@ -19,12 +35,25 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
   const setAgentRunning = useStore((s) => s.setAgentRunning);
   const updateStatus = useStore((s) => s.updateStatus);
   const setError = useStore((s) => s.setError);
+  const startNewChat = useStore((s) => s.startNewChat);
 
   const handleSend = useCallback(
     async (text: string) => {
       const store = useStore.getState();
       const trimmedText = text.trim();
-      if (!trimmedText || store.isAgentRunning) return;
+      if (!trimmedText) return;
+
+      if (isNewChatCommand(trimmedText)) {
+        if (hasActiveRunOrWatch(store)) {
+          setError("Stop the active run or watch mode before starting a new chat.");
+          setInputText("");
+          return;
+        }
+        startNewChat();
+        return;
+      }
+
+      if (store.isAgentRunning) return;
 
       const providerKeyStatus = getProviderKeyStatus(store.settings);
       if (!providerKeyStatus.hasRequiredKeys) {
@@ -90,14 +119,26 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
       setAgentRunning,
       setError,
       setInputText,
+      startNewChat,
       updateStatus,
     ],
   );
 
   const handleSendFeedback = useCallback(
     async (text: string) => {
+      const store = useStore.getState();
       const trimmedText = text.trim();
       if (!trimmedText) return;
+
+      if (isNewChatCommand(trimmedText)) {
+        if (hasActiveRunOrWatch(store)) {
+          setError("Stop the active run or watch mode before starting a new chat.");
+          setInputText("");
+          return;
+        }
+        startNewChat();
+        return;
+      }
 
       const userEntry: ChatEntry = {
         id: crypto.randomUUID(),
@@ -130,7 +171,7 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
         setError("Failed to send feedback to agent.");
       }
     },
-    [addMessage, setError],
+    [addMessage, setError, setInputText, startNewChat],
   );
 
   const handleStop = useCallback(async () => {
