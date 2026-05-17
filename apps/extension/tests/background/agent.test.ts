@@ -2620,6 +2620,97 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("deterministic done accepts current quiz selection despite stale planner question", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery = "Select the correct option/s";
+    (agent as any).hasReadPage = true;
+    (agent as any).taskId = "task-quiz";
+    (agent as any).planSubtasks = [
+      {
+        description:
+          "Read the current quiz question and select the correct answer(s) for Question 31",
+        status: "running",
+      },
+      { description: "Report completion", status: "pending" },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective: "Select quiz answers",
+        successCriteria: "Question 31 answers are selected",
+      },
+      { objective: "Report completion" },
+    ];
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "stale planner should not run",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Quiz",
+      url: "https://example.test/quiz",
+      visibleContent:
+        "Question 32. Which approaches help adapt a foundation model? (Select two)",
+      pageContent:
+        "Question 32. Which approaches help adapt a foundation model? (Select two)",
+      elements: [
+        {
+          tag: 158,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-158",
+            control: "choice-158",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Domain Adaptation Fine-Tuning",
+          },
+          rect: { x: 0, y: 0, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 159,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-159",
+            control: "choice-159",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Continued Pre-Training",
+          },
+          rect: { x: 0, y: 20, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-1",
+      "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+      123,
+    );
+
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      summary:
+        "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+    });
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect((agent as any).doneRejections).toBe(0);
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",

@@ -1692,6 +1692,27 @@ export interface RecentOutcome {
  * Strips variable parts (IDs, numbers) so different-but-equivalent errors match.
  */
 export function normalizeOutcome(result: string): string {
+  const preserveSuccessfulElementRefs =
+    /^(?:Set|Clicked|Typed|Selected|Hovered|Right-clicked|Uploaded|Read)\s+\[\d+\]/i.test(
+      result.trim(),
+    );
+  if (preserveSuccessfulElementRefs) {
+    const refs: string[] = [];
+    return result
+      .replace(/\[(\d+)\]/g, (_match, id: string) => {
+        const token = `__ELEMENT_REF_${String.fromCharCode(65 + refs.length)}__`;
+        refs.push(id);
+        return token;
+      })
+      .replace(/\b\d+\b/g, "N")
+      .replace(/__ELEMENT_REF_([A-Z])__/g, (_match, letter: string) => {
+        const index = letter.charCodeAt(0) - 65;
+        return `[${refs[index] ?? "N"}]`;
+      })
+      .slice(0, 120)
+      .trim();
+  }
+
   return result
     .replace(/\[(\d+)\]/g, "«$1»") // protect [N] element refs
     .replace(/\b\d+\b/g, "N") // normalize other numbers

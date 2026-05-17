@@ -742,6 +742,12 @@ export async function executeParallelToolCalls(
           result = `${result}\n${autocompleteRewriteReason}`;
         }
         host.trackListDetailToolSuccess(toolName, args, preActionSnapshot);
+        host.recordCompletionToolEvidence?.(
+          toolName,
+          args,
+          result,
+          preActionSnapshot,
+        );
         const toolMs = recordSuccessfulToolExecution(host, {
           toolCall,
           toolName,
