@@ -4071,6 +4071,7 @@ function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
         "",
       )
       .replace(/\b(?:is|are|was|were)\s+there$/i, "")
+      .replace(/^(?:total\s+)?(?:number|count|quantity)\s+of\s+/i, "")
       .replace(/[?.!]+$/g, "") ?? "",
   );
   return label || null;
