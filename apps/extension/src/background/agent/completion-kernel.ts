@@ -243,7 +243,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 type WorkflowConfirmationTextMode = "summary" | "visible";
 type TargetAwareVisibleWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "close"
+  "delete" | "archive" | "close" | "cancel"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2703,6 +2703,8 @@ function workflowTargetActionPattern(
       return "(?:archive)";
     case "close":
       return "(?:close|resolve)";
+    case "cancel":
+      return "(?:cancel)";
     default:
       return null;
   }
@@ -2773,7 +2775,12 @@ function workflowConfirmationMatchesTarget(
 function isTargetAwareVisibleWorkflowAction(
   action: WorkflowConfirmationAction | undefined,
 ): action is TargetAwareVisibleWorkflowAction {
-  return action === "delete" || action === "archive" || action === "close";
+  return (
+    action === "delete" ||
+    action === "archive" ||
+    action === "close" ||
+    action === "cancel"
+  );
 }
 
 function workflowTargetLabelCoveredByText(
@@ -2858,6 +2865,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:archived)";
     case "close":
       return "(?:closed|resolved)";
+    case "cancel":
+      return "(?:cancell?ed)";
   }
 }
 
@@ -2871,6 +2880,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:archival)";
     case "close":
       return "(?:closure|resolution)";
+    case "cancel":
+      return "(?:cancellation)";
   }
 }
 
@@ -2895,7 +2906,7 @@ function normalizeWorkflowTargetTokenSlice(
 ): string | null {
   const cleaned = cleanLabel(value)
     .replace(
-      /\b(?:the|this|that|selected|current|visible|target|record|item|row|entry|object|button|link|delete|remove|archive|was|has|been)\b/gi,
+      /\b(?:the|this|that|selected|current|visible|target|record|item|row|entry|object|button|link|delete|remove|archive|cancel|was|has|been)\b/gi,
       " ",
     )
     .replace(/\s+/g, " ")
