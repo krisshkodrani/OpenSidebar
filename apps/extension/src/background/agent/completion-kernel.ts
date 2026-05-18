@@ -2641,6 +2641,8 @@ function textConfirmsWorkflowAction(
   mode: WorkflowConfirmationTextMode,
 ): boolean {
   const text = normalizeText(value);
+  if (workflowActionTextIsNegated(text, action)) return false;
+
   switch (action) {
     case "delete":
       if (mode === "visible") {
@@ -2904,6 +2906,76 @@ function textConfirmsWorkflowAction(
       );
   }
   return false;
+}
+
+function workflowActionTextIsNegated(
+  text: string,
+  action: WorkflowConfirmationAction,
+): boolean {
+  const actionTerms = workflowActionTermPattern(action);
+  const noAction = new RegExp(
+    `\\bno\\s+(?:successful\\s+)?${actionTerms}\\b`,
+  );
+  if (noAction.test(text)) return true;
+
+  const negationBeforeAction = new RegExp(
+    `\\b(?:not|never|failed\\s+to|fails?\\s+to|did\\s+not|didn't|does\\s+not|doesn't|was\\s+not|wasn't|is\\s+not|isn't|has\\s+not|hasn't|have\\s+not|haven't|cannot|can't|could\\s+not|couldn't|unable\\s+to)\\b.{0,60}\\b${actionTerms}\\b`,
+  );
+  if (negationBeforeAction.test(text)) return true;
+
+  const failureAfterAction = new RegExp(
+    `\\b${actionTerms}\\b.{0,60}\\b(?:failed|unsuccessful|not\\s+successful|did\\s+not\\s+complete|didn't\\s+complete|was\\s+not\\s+completed|wasn't\\s+completed|could\\s+not\\s+complete|couldn't\\s+complete)\\b`,
+  );
+  return failureAfterAction.test(text);
+}
+
+function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
+  switch (action) {
+    case "delete":
+      return "(?:deleted|removed|deletion|removal|delete|remove)";
+    case "archive":
+      return "(?:archived|archival|archive)";
+    case "save":
+      return "(?:saved|save)";
+    case "send":
+      return "(?:sent|send)";
+    case "post":
+      return "(?:posted|published|post|publish)";
+    case "approve":
+      return "(?:approved|approval|approve)";
+    case "reject":
+      return "(?:rejected|denied|rejection|denial|reject|deny)";
+    case "close":
+      return "(?:closed|resolved|closure|resolution|close|resolve)";
+    case "reopen":
+      return "(?:re[-\\s]?opened|re[-\\s]?open)";
+    case "cancel":
+      return "(?:cancell?ed|cancellation|cancel)";
+    case "enable":
+      return "(?:enabled|activated|activation|enable|activate)";
+    case "disable":
+      return "(?:disabled|deactivated|deactivation|disable|deactivate)";
+    case "assign":
+      return "(?:assigned|assignment|assign)";
+    case "unassign":
+      return "(?:unassigned|unassign|assignee\\s+cleared|assignee\\s+removed)";
+    case "escalate":
+      return "(?:escalated|escalation|escalate)";
+    case "deescalate":
+      return "(?:de[-\\s]?escalated|de[-\\s]?escalation|de[-\\s]?escalate)";
+    case "lock":
+      return "(?:locked|lock)";
+    case "unlock":
+      return "(?:unlocked|unlock)";
+    case "dismiss":
+      return "(?:dismissed|closed|canceled|cancelled|removed|hidden|cleared|dismissal|dismiss|hide|clear)";
+    case "update":
+      return "(?:updated|changed|applied|update|change|apply)";
+    case "submit":
+      return "(?:submitted|submission|submit)";
+    case "complete":
+      return "(?:completed|completion|complete)";
+  }
 }
 
 function extractFeedbackEvidence(

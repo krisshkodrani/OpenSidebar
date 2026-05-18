@@ -1672,6 +1672,84 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("does not accept workflow confirmation when summary negates the action", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Account deleted successfully.",
+      pageContent: "Account deleted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The account was not deleted.",
+    });
+
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not infer visible workflow confirmation from negated success wording", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Account was not deleted successfully.",
+      pageContent: "Account was not deleted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Deleted the account successfully.",
+    });
+
+    expect(evidence).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:delete",
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("needs_verification");
+  });
+
+  test("does not treat unrelated no wording as workflow negation", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "No errors. Account deleted successfully.",
+      pageContent: "No errors. Account deleted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "No errors. Deleted the account successfully.",
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:delete",
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts modal dismissal from pre/post dialog disappearance evidence", () => {
     const pre = modalSnapshot();
     const current = workflowSnapshot({
