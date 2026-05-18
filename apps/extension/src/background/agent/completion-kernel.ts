@@ -2178,7 +2178,9 @@ function summaryConfirmsWorkflowAction(
     case "delete":
       return /\b(?:deleted|removed|deletion|removal)\b/i.test(text);
     case "save":
-      return /\bsaved\b/i.test(text);
+      return /\b(?:saved|save complete|save completed|save successful)\b/i.test(
+        text,
+      );
     case "send":
       return /\bsent\b/i.test(text);
     case "post":
@@ -2196,7 +2198,9 @@ function summaryConfirmsWorkflowAction(
     case "dismiss":
       return /\b(?:dismissed|closed|removed|hidden|cleared)\b/i.test(text);
     case "update":
-      return /\b(?:updated|changed|applied)\b/i.test(text);
+      return /\b(?:updated|changed|applied|update complete|update completed|update successful)\b/i.test(
+        text,
+      );
     case "submit":
       return /\b(?:submitted|submission)\b/i.test(text);
   }
@@ -2347,7 +2351,8 @@ function extractWorkflowConfirmationEvidence(
   }
   if (
     /\b(?:saved|changes saved)\s+successfully\b/i.test(text) ||
-    /\bsuccessfully\s+saved\b/i.test(text)
+    /\bsuccessfully\s+saved\b/i.test(text) ||
+    /\bsave\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("save");
   }
@@ -2385,7 +2390,8 @@ function extractWorkflowConfirmationEvidence(
   if (/\bdismissed\s+successfully\b/i.test(text)) actions.add("dismiss");
   if (
     /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
-    /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text)
+    /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text) ||
+    /\bupdate\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("update");
   }
