@@ -4,6 +4,7 @@ import {
   CompletionEvidenceLedger,
   buildCompletionEnvelope,
   buildCompletionRecoveryHint,
+  buildTrustedReadAnswerCompletionCandidate,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
@@ -611,5 +612,41 @@ describe("completion kernel", () => {
     });
     expect(envelope.resultId).toBe(duplicate.resultId);
     expect(envelope.evidenceEpoch).toBe(duplicate.evidenceEpoch);
+  });
+
+  test("builds typed trusted read-answer completion evidence", () => {
+    const candidate = buildTrustedReadAnswerCompletionCandidate({
+      workflow: "search-answer-extraction",
+      answer: "100",
+      source: "knowledge_base_search",
+      turn: 9,
+      question:
+        "Each year, how many new hires does the company typically make?",
+      evidenceText:
+        "The average number of yearly hires is 100, reflecting sustained growth.",
+      url: "https://example.service-now.test/kb",
+    });
+
+    expect(candidate).toMatchObject({
+      contractKind: "read_answer",
+      decisionReason: expect.stringContaining(
+        "grounded knowledge base search evidence",
+      ),
+      evidence: [
+        expect.objectContaining({
+          type: "answer_state",
+          confidence: "high",
+          logicalKey: expect.stringContaining(
+            "trusted:search-answer-extraction:answer",
+          ),
+          observedAtTurn: 9,
+          detail: expect.objectContaining({
+            answer: "100",
+            source: "knowledge_base_search",
+            url: "https://example.service-now.test/kb",
+          }),
+        }),
+      ],
+    });
   });
 });

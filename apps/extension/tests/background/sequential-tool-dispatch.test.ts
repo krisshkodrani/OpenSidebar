@@ -1,6 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { RiskLevel, ToolCall, ToolName } from "../../src/types";
 import {
+  handleGenericSequentialToolCall,
+  type AgentLoopToolHandlerHost,
+  type GenericSequentialToolCallParams,
+} from "../../src/background/agent/loop-tool-handlers";
+import {
   executeSequentialToolCalls,
   type SequentialToolDispatchHost,
   type SequentialToolDispatchState,
@@ -61,14 +66,18 @@ function createHost(): SequentialToolDispatchHost {
     elementResolver: undefined,
     ensureToolApproval: vi.fn(async () => true),
     executeToolCall: vi.fn(),
+    consecutiveAutoAdvances: 0,
     getActiveToolProfileForStep: () => null,
     getConsequentialActionTaskText: () => "finish the task",
     getPendingInlineEditVerificationBlock: () => null,
     getUncommittedInlineEditDoneRejection: () => null,
     getWorkflowTabToolRedirect: vi.fn(async () => null),
+    hasExplicitPageRead: false,
+    hasReadPage: false,
     handleClarifyToolCall: vi.fn(),
     handleDoneToolCall: vi.fn(async () => true),
     isRunning: true,
+    lastDomStep: null,
     listDetailOpenedTargets: new Set<string>(),
     listDetailReviewedTargets: new Set<string>(),
     listDetailVisibleActionCount: 0,
@@ -77,6 +86,14 @@ function createHost(): SequentialToolDispatchHost {
       warn: vi.fn(),
       error: vi.fn(),
     },
+    maxTurns: 10,
+    maybeAdvanceTrustedFormFillStep: vi.fn(),
+    maybeAutoSubmitTrustedServiceNowForm: vi.fn(async () => null),
+    maybeCompleteTrustedFormSubmitStep: vi.fn(() => null),
+    maybeCompleteTrustedListSortStep: vi.fn(() => null),
+    maybeCompleteTrustedListFilterStep: vi.fn(() => null),
+    maybeCompleteTrustedCatalogOrderSubmit: vi.fn(async () => null),
+    maybeAutoSubmitConfiguredCatalogItem: vi.fn(async () => {}),
     middleware: {
       evaluatePreTool: (toolName: ToolName) => ({
         toolName,
@@ -89,6 +106,9 @@ function createHost(): SequentialToolDispatchHost {
       evaluatePostTool: vi.fn(),
     },
     originalQuery: "finish the task",
+    pendingInlineEditVerification: null,
+    planSubtasks: [],
+    recordCompletionToolEvidence: vi.fn(),
     recordSkillToolSelection: vi.fn(),
     recordMutationSensitiveAction: vi.fn(),
     refreshPerceptionAndTriage: vi.fn(),
@@ -99,12 +119,47 @@ function createHost(): SequentialToolDispatchHost {
     stepHandler: vi.fn(),
     throwIfGracefulStopRequested: vi.fn(),
     toolCache: new ToolResultCache(),
+    trackListDetailToolSuccess: vi.fn(),
     traceRecorder: {
       recordEvent: vi.fn(),
       recordToolExecution: vi.fn(),
     },
     turnCount: 4,
+    updateMoneyTableAggregate: vi.fn(() => null),
+    workspaceId: null,
   } as unknown as SequentialToolDispatchHost;
+}
+
+function genericParams(
+  name: ToolName,
+  args: Record<string, unknown> = {},
+): GenericSequentialToolCallParams {
+  return {
+    toolCall: toolCall(name, args),
+    toolName: name,
+    args,
+    tabId: 1,
+    prevElementCount: 0,
+    autocompleteRewriteReason: null,
+    discoveredTagIds: new Set<number>(),
+    preDecision: {
+      toolName: name,
+      riskLevel: RiskLevel.LOW,
+      allowed: true,
+      requiresApproval: false,
+      approvalMode: "none",
+      approvalReason: "test",
+    },
+    llmIntention: null,
+    currentStepIndex: 0,
+    shouldArmInlineEditVerification: false,
+    cacheType: undefined,
+    orientationPhase: false,
+    orientationToolsUsed: new Set<string>(),
+    domModified: false,
+    visuallyModified: false,
+    lastDomAffectingToolName: null,
+  };
 }
 
 describe("executeSequentialToolCalls", () => {
@@ -128,6 +183,80 @@ describe("executeSequentialToolCalls", () => {
     expect(output.doneSignaled).toBe(true);
     expect(output.doneSummary).toBe("All set.");
     expect(completed).not.toHaveBeenCalled();
+  });
+
+  test("attaches read_answer completion candidate for grounded knowledge answers", async () => {
+    const host = createHost() as unknown as AgentLoopToolHandlerHost;
+    host.selectedSkillId = "search-answer-extraction";
+    host.originalQuery =
+      'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."';
+    (host.executeToolCall as any).mockResolvedValue(
+      [
+        "Knowledge base search result.",
+        "Answer candidate: 100",
+        "Evidence sentence: The average number of yearly hires is 100.",
+      ].join("\n"),
+    );
+
+    const output = await handleGenericSequentialToolCall(
+      host,
+      genericParams(ToolName.SEARCH_KNOWLEDGE_BASE, { query: "hires" }),
+    );
+
+    expect(output.breakLoop).toBe(true);
+    expect(output.completedSummary).toBe("100");
+    expect(output.completionCandidate).toMatchObject({
+      contractKind: "read_answer",
+      decisionReason: expect.stringContaining(
+        "grounded knowledge base search evidence",
+      ),
+      evidence: [
+        expect.objectContaining({
+          type: "answer_state",
+          confidence: "high",
+          logicalKey: expect.stringContaining(
+            "trusted:search-answer-extraction:answer",
+          ),
+          detail: expect.objectContaining({
+            answer: "100",
+            source: "knowledge_base_search",
+          }),
+        }),
+      ],
+    });
+  });
+
+  test("attaches read_answer completion candidate for knowledge page reads", async () => {
+    const host = createHost() as unknown as AgentLoopToolHandlerHost;
+    host.selectedSkillId = "search-answer-extraction";
+    host.originalQuery =
+      'Answer the following question using the knowledge base: "Each year, how many new hires does the company typically make? Your answer should be a number."';
+    (host.executeToolCall as any).mockResolvedValue(
+      [
+        "Page: Knowledge Article",
+        "The average number of yearly hires is 100, reflecting sustained growth.",
+      ].join(" "),
+    );
+
+    const output = await handleGenericSequentialToolCall(
+      host,
+      genericParams(ToolName.READ_PAGE),
+    );
+
+    expect(output.breakLoop).toBe(true);
+    expect(output.completedSummary).toBe("100");
+    expect(output.completionCandidate).toMatchObject({
+      contractKind: "read_answer",
+      evidence: [
+        expect.objectContaining({
+          type: "answer_state",
+          detail: expect.objectContaining({
+            answer: "100",
+            source: "page_read",
+          }),
+        }),
+      ],
+    });
   });
 
   test("blocks same-page anchor clicks before execution", async () => {

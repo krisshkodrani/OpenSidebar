@@ -18,7 +18,10 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
-import type { TrustedCompletionCandidate } from "./completion-kernel";
+import {
+  buildTrustedReadAnswerCompletionCandidate,
+  type TrustedCompletionCandidate,
+} from "./completion-kernel";
 
 function getTabUrl(tab: chrome.tabs.Tab): string {
   return tab.url || tab.pendingUrl || "";
@@ -156,6 +159,28 @@ export type GenericSequentialToolState = {
   completedSummary: string | null;
   completionCandidate?: TrustedCompletionCandidate;
 };
+
+function buildKnowledgeAnswerCompletionCandidate(
+  loop: AgentLoopToolHandlerHost,
+  params: {
+    answer: string;
+    result: string;
+    source: "knowledge_base_search" | "page_read";
+  },
+): TrustedCompletionCandidate {
+  const getCurrentUrl = loop.context?.getCurrentUrl;
+  return buildTrustedReadAnswerCompletionCandidate({
+    workflow: "search-answer-extraction",
+    answer: params.answer,
+    source: params.source,
+    question: loop.originalQuery,
+    evidenceText: params.result,
+    turn: loop.turnCount,
+    ...(typeof getCurrentUrl === "function"
+      ? { url: getCurrentUrl.call(loop.context) }
+      : {}),
+  });
+}
 
 export function recordSuccessfulToolExecution(
   loop: AgentLoopToolHandlerHost,
@@ -1149,6 +1174,11 @@ export async function handleGenericSequentialToolCall(
         lastDomAffectingToolName,
         breakLoop: true,
         completedSummary: answerCandidate,
+        completionCandidate: buildKnowledgeAnswerCompletionCandidate(loop, {
+          answer: answerCandidate,
+          result,
+          source: "knowledge_base_search",
+        }),
       };
     }
   }
@@ -1176,6 +1206,11 @@ export async function handleGenericSequentialToolCall(
         lastDomAffectingToolName,
         breakLoop: true,
         completedSummary: answerCandidate,
+        completionCandidate: buildKnowledgeAnswerCompletionCandidate(loop, {
+          answer: answerCandidate,
+          result,
+          source: "page_read",
+        }),
       };
     }
   }
