@@ -81,6 +81,7 @@ import {
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionSummaryPreflight,
   evaluateCompletionContract,
   generateCompletionContract,
   type CompletionCandidateSource,
@@ -313,29 +314,7 @@ import {
   refreshPostToolSnapshot,
   type PostToolSnapshotRefreshHost,
 } from "./post-tool-snapshot-refresh";
-import { getIncompleteDoneSummaryReason } from "./summary-completeness";
-
-export function isDoneSummaryAskingClarification(summary: string): boolean {
-  const text = summary.trim();
-  if (!text.includes("?")) return false;
-
-  const lower = text.toLowerCase();
-  const hasCompletionFrame =
-    /\b(completed|successfully|identified|found|located|confirmed|verified|posted|sent|drafted|updated|read|analysis complete|summary)\b/.test(
-      lower,
-    );
-  if (hasCompletionFrame) return false;
-
-  if (
-    /^(can|could|should|do|does|did|is|are|which|what|when|where|who|why|how|would|please)\b/i.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-
-  return /\?$/.test(text);
-}
+export { isDoneSummaryAskingClarification } from "./completion-kernel";
 
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
@@ -1701,33 +1680,6 @@ export class AgentLoop {
     });
   }
 
-  private rejectDoneQuestionAsClarification(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    if (this.turnCount > 2 || !isDoneSummaryAskingClarification(summary)) {
-      return false;
-    }
-
-    this.log.warn(
-      "agent",
-      "DONE rejected: summary is a question on T1, redirecting to clarify",
-      {
-        turn: this.turnCount,
-        summary: summary.slice(0, 150),
-      },
-    );
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content:
-        "done() REJECTED: Your summary is a question, not a completion report. " +
-        "Use the clarify() tool to ask the user a question. " +
-        "Do NOT call done() to ask questions.",
-    });
-    return true;
-  }
-
   private async rejectDoneBeforeGroundingRead(
     toolCallId: string,
     summary: string,
@@ -1809,10 +1761,6 @@ export class AgentLoop {
     // done() attempts after it's already been told to stop.
     if (this.doneRejections >= this.limits.maxDoneRejections) {
       this.rejectDoneAfterMaxRejections(toolCallId);
-      return true;
-    }
-
-    if (this.rejectDoneQuestionAsClarification(toolCallId, summary)) {
       return true;
     }
 
@@ -2468,7 +2416,7 @@ export class AgentLoop {
       return true;
     }
 
-    if (this.rejectDoneForIncompleteUserFacingSummary(toolCallId, summary)) {
+    if (this.rejectDoneForCompletionSummaryPreflight(toolCallId, summary)) {
       return false;
     }
 
@@ -2572,14 +2520,11 @@ export class AgentLoop {
     return true;
   }
 
-  private rejectDoneForIncompleteUserFacingSummary(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
+  private getCompletionSummaryTaskContext(): string {
     const runningIdx = this.planSubtasks.findIndex(
       (step) => step.status === "running",
     );
-    const taskContext = [
+    return [
       this.originalQuery,
       runningIdx >= 0 ? this.planSubtasks[runningIdx]?.description : undefined,
       runningIdx >= 0 ? this.planSteps[runningIdx]?.successCriteria : undefined,
@@ -2588,26 +2533,56 @@ export class AgentLoop {
         (part): part is string => typeof part === "string" && part.length > 0,
       )
       .join("\n");
-    const reason = getIncompleteDoneSummaryReason({ summary, taskContext });
-    if (!reason) return false;
+  }
+
+  private rejectDoneForCompletionSummaryPreflight(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary,
+      taskContext: this.getCompletionSummaryTaskContext(),
+      turnCount: this.turnCount,
+    });
+    if (decision.status === "valid") return false;
+
+    if (decision.status === "needs_clarification") {
+      this.log.warn(
+        "agent",
+        "DONE rejected: summary is a question on T1, redirecting to clarify",
+        {
+          turn: this.turnCount,
+          summary: summary.slice(0, 150),
+        },
+      );
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content:
+          "done() REJECTED: Your summary is a question, not a completion report. " +
+          "Use the clarify() tool to ask the user a question. " +
+          "Do NOT call done() to ask questions.",
+      });
+      return true;
+    }
 
     this.doneRejections++;
     this.log.warn("agent", "DONE rejected: incomplete summary", {
       turn: this.turnCount,
       rejections: this.doneRejections,
-      reason,
+      reason: decision.reason,
       summaryTail: summary.slice(-120),
     });
     this.traceRecorder?.recordEvent("done_rejected_incomplete_summary", {
       rejections: this.doneRejections,
-      reason,
+      reason: decision.reason,
       summaryTail: summary.slice(-120),
     });
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content:
-        `done() REJECTED: The summary appears cut off (${reason}).\n\n` +
+        `done() REJECTED: The summary appears cut off (${decision.reason}).\n\n` +
         "YOUR NEXT ACTION: call done() again with a complete, concise summary using complete sentences. Do not continue browsing unless page evidence is missing.",
     });
     return true;

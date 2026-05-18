@@ -8,6 +8,7 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
+  evaluateCompletionSummaryPreflight,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
 import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
@@ -215,6 +216,34 @@ function modalSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
 }
 
 describe("completion kernel", () => {
+  test("routes question-shaped done summaries to clarification preflight", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "Which account should I use for this request?",
+      taskContext: "Use the requested account to update the form.",
+      turnCount: 1,
+    });
+
+    expect(decision).toEqual({
+      status: "needs_clarification",
+      reason: "done_summary_is_question",
+    });
+  });
+
+  test("rejects incomplete long summaries in summary preflight", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary:
+        "The page summarizes the onboarding process, including account setup, security requirements, approval steps, access review, team ownership, support escalation, audit notes, implementation risks, and",
+      taskContext: "Summarize this page and list the key risks.",
+      turnCount: 4,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "incomplete_summary",
+      reason: "summary ends with an unfinished phrase",
+    });
+  });
+
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
       userRequest: "Select the correct option/s",
