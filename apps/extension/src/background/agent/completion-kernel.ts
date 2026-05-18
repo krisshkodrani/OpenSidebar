@@ -2127,7 +2127,7 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:send|sent)\b/i.test(text)) return "send";
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
-  if (/\b(?:reject|rejected)\b/i.test(text)) return "reject";
+  if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2188,7 +2188,7 @@ function summaryConfirmsWorkflowAction(
         text,
       );
     case "reject":
-      return /\b(?:rejected|rejection complete|rejection completed)\b/i.test(
+      return /\b(?:rejected|rejection complete|rejection completed|denied|denial complete|denial completed)\b/i.test(
         text,
       );
     case "close":
@@ -2691,7 +2691,7 @@ function inferStatusChangeAction(
   const text = normalizeText(elementControlText(element));
   if (!text) return null;
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
-  if (/\b(?:reject|rejected)\b/i.test(text)) return "reject";
+  if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   return null;
 }
@@ -2722,7 +2722,7 @@ function findWorkflowStatusChangeText(
     action === "approve"
       ? "(?:approved|approval complete|approval completed)"
       : action === "reject"
-        ? "(?:rejected|rejection complete|rejection completed)"
+        ? "(?:rejected|rejection complete|rejection completed|denied|denial complete|denial completed)"
         : "(?:closed|resolved)";
   const patterns = [
     new RegExp(
