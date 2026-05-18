@@ -4463,6 +4463,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     expectedAnswerLabel,
   );
   if (preciseConciseValue) {
+    if (isPathValue(preciseConciseValue)) {
+      return precisePathValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isDomainNameValue(preciseConciseValue)) {
       return preciseDomainValueCoveredBySummary(
         normalizedSummary,
@@ -4523,6 +4529,19 @@ function extractPreciseConciseLabelValue(
     return cleanLabel((urlMatch[1] ?? "").replace(/[),.;!?]+$/g, "")) || null;
   }
 
+  if (labelCanHavePathValue(expectedAnswerLabel)) {
+    const pathMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\.{1,2})?\\/[^\\s,;!)]{1,160})(?=$|[\\s,;!)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (pathMatch) {
+      return (
+        cleanLabel((pathMatch[1] ?? "").replace(/[),;!?]+$/g, "").replace(/\.$/g, "")) ||
+        null
+      );
+    }
+  }
+
   const emailMatch = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4573,6 +4592,12 @@ function extractPreciseConciseLabelValue(
   return cleanLabel(match?.[1] ?? "") || null;
 }
 
+function labelCanHavePathValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:path|file|folder|directory|dir|route)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
 function labelCanHaveDomainValue(expectedAnswerLabel: string): boolean {
   return /\b(?:domain|host|hostname|site|server|endpoint)\b/i.test(
     expectedAnswerLabel,
@@ -4589,6 +4614,20 @@ function isDomainNameValue(value: string): boolean {
   return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
     cleanLabel(value),
   );
+}
+
+function isPathValue(value: string): boolean {
+  return /^(?:~|\.{1,2})?\/\S+$/i.test(cleanLabel(value));
+}
+
+function precisePathValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[\\s"'(])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)"']|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
 }
 
 function preciseDomainValueCoveredBySummary(
