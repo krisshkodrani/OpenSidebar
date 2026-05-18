@@ -1129,6 +1129,47 @@ describe("completion kernel", () => {
     });
   });
 
+  test("accepts page-scoped factual question as grounded read-answer completion", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units.",
+      pageContent:
+        "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units. The page compares inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer factual warehouse questions from the page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the Warehouse Beta inventory count on this page?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Warehouse Beta inventory count is 7,318 units.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      requiresGroundedPageEvidence: true,
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not use read-answer for dashboard chart value extraction", () => {
+    const generated = generateCompletionContract({
+      userRequest: "What is the highest value on this dashboard chart?",
+      snapshot: workflowSnapshot({
+        title: "Revenue Dashboard",
+        visibleContent: "Revenue dashboard with a line chart",
+        pageContent: "Revenue dashboard with a line chart",
+      }),
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("requires page evidence before read-answer completion", () => {
     const snap = workflowSnapshot({
       title: "Sparse",
