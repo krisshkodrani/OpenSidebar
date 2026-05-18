@@ -2352,6 +2352,34 @@ export class AgentLoop {
     });
   }
 
+  private getCompletionRejectionInstruction(
+    decision: Extract<
+      CompletionEvaluation,
+      { status: "rejected" | "needs_verification" }
+    >,
+  ): string {
+    if (decision.status === "needs_verification") {
+      return decision.hint;
+    }
+
+    switch (decision.contract.kind) {
+      case "quiz_selection":
+        return "Verify the current page state, repair the selected options if needed, then call done() again.";
+      case "form_fill":
+        return "Verify the current form state, select or repair the required field values, then call done() again.";
+      case "draft_only":
+        return "Verify the draft remains visible and unsent, repair the draft if needed, then call done() again.";
+      case "navigation":
+        return "Navigate to the requested page or verify the current URL, then call done() again.";
+      case "read_answer":
+        return "Read or verify the current page evidence, repair the answer summary if needed, then call done() again.";
+      case "workflow_confirmation":
+        return "Verify the requested workflow result is visible or structurally confirmed, repair any missing action, then call done() again.";
+      default:
+        return "Verify the current page state, repair the missing completion evidence, then call done() again.";
+    }
+  }
+
   private rejectDoneFromCompletionDecision(
     toolCallId: string,
     decision: Extract<
@@ -2379,10 +2407,7 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        decision.status === "needs_verification"
-          ? `done() REJECTED: ${decision.reason}\n\n${decision.hint}`
-          : `done() REJECTED: ${decision.reason}\n\nVerify the current page state, repair the selected options if needed, then call done() again.`,
+      content: `done() REJECTED: ${decision.reason}\n\n${this.getCompletionRejectionInstruction(decision)}`,
     });
   }
 
