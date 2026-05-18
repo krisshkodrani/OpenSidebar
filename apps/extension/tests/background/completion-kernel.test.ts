@@ -1304,6 +1304,76 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts restart-class workflow confirmation after visible restart success", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Service restarted successfully.",
+      pageContent: "Service restarted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Restart the service.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Restarted the service successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "restart",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:restart",
+          detail: expect.objectContaining({ action: "restart" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts restart-class workflow confirmation after visible restart completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Restart completed.",
+      pageContent: "Restart completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Restart the workflow.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Restart completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "restart",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:restart",
+          detail: expect.objectContaining({ action: "restart" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts reject-class workflow confirmation after visible denial success", () => {
     const snap = workflowSnapshot({
       visibleContent: "Request denied successfully.",
@@ -3787,6 +3857,34 @@ describe("completion kernel", () => {
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
       expectedAnswerLabel: "service stopped",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("keeps restart requirement questions as read-answer contracts", () => {
+    const snap = workflowSnapshot({
+      title: "Service Matrix",
+      url: "https://example.test/service",
+      visibleContent:
+        "Service Matrix Restart required: No Owner: platform operations",
+      pageContent:
+        "Service Matrix Restart required: No. Owner: platform operations. The page explains service coverage, restart policy, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer service questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is restart required?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "No",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "restart required",
     });
     expect(decision.status).toBe("accepted");
   });
