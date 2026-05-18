@@ -243,7 +243,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 type WorkflowConfirmationTextMode = "summary" | "visible";
 type TargetAwareVisibleWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "close" | "cancel"
+  "delete" | "archive" | "close" | "reopen" | "cancel"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2703,6 +2703,8 @@ function workflowTargetActionPattern(
       return "(?:archive)";
     case "close":
       return "(?:close|resolve)";
+    case "reopen":
+      return "(?:re[-\\s]?open)";
     case "cancel":
       return "(?:cancel)";
     default:
@@ -2779,6 +2781,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "delete" ||
     action === "archive" ||
     action === "close" ||
+    action === "reopen" ||
     action === "cancel"
   );
 }
@@ -2865,6 +2868,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:archived)";
     case "close":
       return "(?:closed|resolved)";
+    case "reopen":
+      return "(?:re[-\\s]?opened)";
     case "cancel":
       return "(?:cancell?ed)";
   }
@@ -2880,6 +2885,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:archival)";
     case "close":
       return "(?:closure|resolution)";
+    case "reopen":
+      return "(?:re[-\\s]?opening|re[-\\s]?open)";
     case "cancel":
       return "(?:cancellation)";
   }

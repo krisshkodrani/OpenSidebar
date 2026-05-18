@@ -1987,6 +1987,121 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware visible reopen confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Incident Beta remains closed. Incident Alpha reopened successfully.",
+      pageContent:
+        "Incident Beta remains closed. Incident Alpha reopened successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Reopen Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Reopened Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reopen",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:reopen",
+          detail: expect.objectContaining({
+            action: "reopen",
+            source: "visible_text",
+            text: "Incident Alpha reopened successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible reopen confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Incident Alpha remains closed. Incident Beta reopened successfully.",
+      pageContent:
+        "Incident Alpha remains closed. Incident Beta reopened successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Reopen Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Reopened Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reopen",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:reopen",
+          detail: expect.objectContaining({
+            action: "reopen",
+            source: "visible_text",
+            text: "Incident Beta reopened successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible reopen completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Reopen completed.",
+      pageContent: "Reopen completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Reopen Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Reopen completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reopen",
+      targetLabel: "Incident Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts cancel-class workflow confirmation after visible cancellation completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Cancellation completed.",
