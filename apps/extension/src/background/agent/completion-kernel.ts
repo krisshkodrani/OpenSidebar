@@ -188,6 +188,7 @@ export type WorkflowConfirmationAction =
   | "reject"
   | "close"
   | "reopen"
+  | "cancel"
   | "dismiss"
   | "update"
   | "submit"
@@ -203,6 +204,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "reject",
   "close",
   "reopen",
+  "cancel",
   "dismiss",
   "update",
   "submit",
@@ -2499,6 +2501,9 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
+  if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
+    return "cancel";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2523,7 +2528,7 @@ function isModalDismissalWorkflowRequest(value: string): boolean {
     /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
       value,
     ) &&
-    /\b(?:dismiss|dismissed|close|closed|hide|hidden|remove|removed|clear|cleared)\b/i.test(
+    /\b(?:dismiss|dismissed|close|closed|cancel|canceled|cancelled|hide|hidden|remove|removed|clear|cleared)\b/i.test(
       value,
     )
   );
@@ -2532,7 +2537,7 @@ function isModalDismissalWorkflowRequest(value: string): boolean {
 function isDismissalPartOfLargerTask(value: string): boolean {
   const text = normalizeText(value);
   if (
-    !/\b(?:dismiss|close|hide|remove|clear)\b/i.test(text) ||
+    !/\b(?:dismiss|close|cancel|hide|remove|clear)\b/i.test(text) ||
     !/\b(?:and|then|after that|next|,)\b/i.test(text)
   ) {
     return false;
@@ -2674,6 +2679,18 @@ function textConfirmsWorkflowAction(
       return /\b(?:re[-\s]?opened|re[-\s]?open complete|re[-\s]?open completed|re[-\s]?open successful)\b/i.test(
         text,
       );
+    case "cancel":
+      if (mode === "visible") {
+        return (
+          /\bcancell?ed\s+successfully\b/i.test(text) ||
+          /\bcancel(?:lation)?\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:cancell?ed|cancel complete|cancel completed|cancel successful|cancellation complete|cancellation completed|cancellation successful)\b/i.test(
+        text,
+      );
     case "dismiss":
       if (mode === "visible") {
         return (
@@ -2683,7 +2700,7 @@ function textConfirmsWorkflowAction(
           )
         );
       }
-      return /\b(?:dismissed|closed|removed|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
+      return /\b(?:dismissed|closed|canceled|cancelled|removed|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
         text,
       );
     case "update":
@@ -3243,7 +3260,13 @@ function inferDraftSubmissionAction(
 
 type StatusChangeWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "approve" | "reject" | "close" | "reopen" | "submit" | "complete"
+  | "approve"
+  | "reject"
+  | "close"
+  | "reopen"
+  | "cancel"
+  | "submit"
+  | "complete"
 >;
 
 function inferStatusChangeAction(
@@ -3254,6 +3277,9 @@ function inferStatusChangeAction(
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
+  if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
+    return "cancel";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3306,6 +3332,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:closed|resolved)\b/i.test(text);
     case "reopen":
       return /\bre[-\s]?opened\b/i.test(text);
+    case "cancel":
+      return /\bcancell?ed\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3348,9 +3376,11 @@ function findWorkflowStatusChangeText(
           ? "(?:closed|resolved)"
           : action === "reopen"
             ? "(?:open|reopened|re-opened)"
-            : action === "submit"
-              ? "(?:submitted|submission complete|submission completed|submission successful)"
-              : "(?:complete|completed)";
+            : action === "cancel"
+              ? "(?:canceled|cancelled|cancellation complete|cancellation completed|cancellation successful)"
+              : action === "submit"
+                ? "(?:submitted|submission complete|submission completed|submission successful)"
+                : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
