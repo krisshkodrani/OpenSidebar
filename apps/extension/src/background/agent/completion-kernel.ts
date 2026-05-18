@@ -4287,9 +4287,7 @@ function findGroundedLabelValueQuestionLabel(
   const label = extractDirectQuestionLabel(normalizedQuestion);
   if (!label) return null;
 
-  const labelTokens = tokenizeCompletionText(label).filter(
-    (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
-  );
+  const labelTokens = tokenizeLabelValueQuestionLabel(label);
   if (labelTokens.length < 1 || labelTokens.length > 3) return null;
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
@@ -4305,6 +4303,16 @@ function findGroundedLabelValueQuestionLabel(
     return null;
   }
   return cleanLabel(labelTokens.join(" "));
+}
+
+function tokenizeLabelValueQuestionLabel(label: string): string[] {
+  return [
+    ...new Set(normalizeText(label).match(/[a-z0-9$@._-]+/g) ?? []),
+  ].filter(
+    (token) =>
+      (token.length >= 3 || token === "id") &&
+      !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
+  );
 }
 
 function labelValueSeparatorNeedsAnswerShape(
@@ -4427,9 +4435,7 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   evidenceText: string,
   expectedAnswerLabel: string,
 ): boolean {
-  const labelTokens = tokenizeCompletionText(expectedAnswerLabel).filter(
-    (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
-  );
+  const labelTokens = tokenizeLabelValueQuestionLabel(expectedAnswerLabel);
   if (labelTokens.length < 1 || labelTokens.length > 3) return false;
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
@@ -4530,6 +4536,14 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
 
+  if (labelCanHaveUuidValue(expectedAnswerLabel)) {
+    const uuidMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (uuidMatch) return cleanLabel(uuidMatch[1] ?? "") || null;
+  }
+
   if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
     const versionMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:v(?:ersion)?\\s*)?\\d+(?:\\.\\d+){1,5}(?:[-+][a-z0-9][a-z0-9.-]*)?)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4543,6 +4557,12 @@ function extractPreciseConciseLabelValue(
     "i",
   ).exec(evidenceText);
   return cleanLabel(match?.[1] ?? "") || null;
+}
+
+function labelCanHaveUuidValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:id|identifier|uuid|session|request|trace|run|correlation|result)\b/i.test(
+    expectedAnswerLabel,
+  );
 }
 
 function isDottedVersionValue(value: string): boolean {

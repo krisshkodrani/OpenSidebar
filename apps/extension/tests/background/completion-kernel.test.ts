@@ -4839,6 +4839,62 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded uuid label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Session Matrix",
+      url: "https://example.test/sessions",
+      visibleContent:
+        "Session Matrix Session ID: 4a0402d6-ad57-435e-8db0-6bf179f30366 Request ID: 7d9dcf6e-b399-4d33-a8f2-9a60f0217a2a",
+      pageContent:
+        "Session Matrix Session ID: 4a0402d6-ad57-435e-8db0-6bf179f30366. Request ID: 7d9dcf6e-b399-4d33-a8f2-9a60f0217a2a. The page explains session ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer session questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the session ID?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "4a0402d6-ad57-435e-8db0-6bf179f30366",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "session id",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling uuid label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Session Matrix",
+      url: "https://example.test/sessions",
+      visibleContent:
+        "Session Matrix Session ID: 4a0402d6-ad57-435e-8db0-6bf179f30366 Request ID: 7d9dcf6e-b399-4d33-a8f2-9a60f0217a2a",
+      pageContent:
+        "Session Matrix Session ID: 4a0402d6-ad57-435e-8db0-6bf179f30366. Request ID: 7d9dcf6e-b399-4d33-a8f2-9a60f0217a2a. The page explains session ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer session questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the session ID?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "7d9dcf6e-b399-4d33-a8f2-9a60f0217a2a",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "session id",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded version label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Release Matrix",
