@@ -210,8 +210,23 @@ function isTurnCheckpointCompatible(
   return getSnapshotFingerprint(snapshot) === checkpoint.snapshotFingerprint;
 }
 
+function buildCompletionEnvelopeRepairObjective(
+  objective: string | undefined,
+): string {
+  const trimmedObjective = objective?.trim();
+  const prefix = trimmedObjective
+    ? `Verify and repair the completion for: ${trimmedObjective}.`
+    : "Verify and repair the previous completion.";
+  return (
+    `${prefix} The previous executor lane reported completion through a ` +
+    "deterministic envelope, but the envelope lacked required evidence. " +
+    "Re-check the current page state, complete only missing verification or repair actions, then call done with explicit evidence."
+  );
+}
+
 function verifyDeterministicCompletionEnvelope(
   envelope: CompletionEnvelope,
+  objective?: string,
 ): NodeVerificationResult | null {
   if (envelope.contractKind === "legacy_done_guards") {
     return null;
@@ -227,11 +242,12 @@ function verifyDeterministicCompletionEnvelope(
     envelope.evidenceKeys.length === 0
   ) {
     return {
-      decision: "retry",
+      decision: "reroute",
       reason:
         "Completion envelope was present but lacked the deterministic evidence required for node acceptance.",
       confidence: 0.85,
       failureType: "insufficient_evidence",
+      rerouteObjective: buildCompletionEnvelopeRepairObjective(objective),
     };
   }
 
@@ -4815,7 +4831,10 @@ export class Orchestrator {
               { enabledSkillPackIds: task.enabledSkillPackIds },
             )?.requiredEvidenceTypes;
             const envelopeVerification = result.completionEnvelope
-              ? verifyDeterministicCompletionEnvelope(result.completionEnvelope)
+              ? verifyDeterministicCompletionEnvelope(
+                  result.completionEnvelope,
+                  node.description,
+                )
               : null;
             let verification: NodeVerificationResult;
             if (envelopeVerification) {
@@ -4830,6 +4849,8 @@ export class Orchestrator {
                   resultId: result.completionEnvelope?.resultId,
                   contractKind: result.completionEnvelope?.contractKind,
                   evidenceKeys: result.completionEnvelope?.evidenceKeys ?? [],
+                  failureType: verification.failureType,
+                  rerouteObjective: verification.rerouteObjective,
                 },
                 "verifier",
               );

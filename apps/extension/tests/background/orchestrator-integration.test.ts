@@ -1511,6 +1511,99 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
   });
 
+  test("reroutes malformed deterministic completion envelopes instead of retrying a completed lane", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "select the correct quiz options"),
+    ];
+    loopStartImpl = async (nodeId) => {
+      if (nodeId === "n1") {
+        return {
+          outcome: "completed",
+          summary: "Selected the correct options.",
+          completionEnvelope: {
+            status: "completed",
+            resultId: "completion-node-1",
+            source: "model_done",
+            contractKind: "quiz_selection",
+            decisionReason: "selected options match expected answers",
+            evidenceKeys: [],
+            evidenceEpoch: "turn:2",
+          },
+        };
+      }
+      return {
+        outcome: "completed",
+        summary: "Re-verified the selected options with explicit evidence.",
+        completionEnvelope: {
+          status: "completed",
+          resultId: "completion-repair-1",
+          source: "model_done",
+          contractKind: "quiz_selection",
+          decisionReason: "selected options match expected answers after repair",
+          evidenceKeys: ["quiz:question:32:selected:domain-adaptation"],
+          evidenceEpoch: "turn:3",
+        },
+      };
+    };
+    verifierDecisionImpl = async () => {
+      throw new Error("verifier should not run for deterministic envelopes");
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Select the correct option/s"));
+
+    expect(verifierDecisionCalls).toBe(0);
+    expect(createdLoopNodeIds).toHaveLength(2);
+    expect(createdLoopNodeIds[0]).toBe("n1");
+    expect(createdLoopNodeIds[1]).not.toBe("n1");
+    expect(capturedInstructions[1].instruction).toContain(
+      "Verify and repair the completion for: select the correct quiz options.",
+    );
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_envelope_verification" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.decision === "reroute" &&
+          entry.body.data?.failureType === "insufficient_evidence" &&
+          entry.body.data?.rerouteObjective ===
+            "Verify and repair the completion for: select the correct quiz options. The previous executor lane reported completion through a deterministic envelope, but the envelope lacked required evidence. Re-check the current page state, complete only missing verification or repair actions, then call done with explicit evidence.",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "node_verified" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.decision === "reroute" &&
+          entry.body.data?.failureType === "insufficient_evidence",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "node" &&
+          entry.body.data?.status === "completed" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.resultId === "completion-node-1",
+      ),
+    ).toBe(false);
+  });
+
   test("restores a compatible turn checkpoint only on the first recovered launch", async () => {
     plannerBuildNodesImpl = async () => [makeNode("n1", "recoverable step")];
 
