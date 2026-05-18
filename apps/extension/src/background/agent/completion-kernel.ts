@@ -243,7 +243,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 type WorkflowConfirmationTextMode = "summary" | "visible";
 type TargetAwareVisibleWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "close" | "reopen" | "cancel"
+  "delete" | "archive" | "approve" | "reject" | "close" | "reopen" | "cancel"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2701,6 +2701,10 @@ function workflowTargetActionPattern(
       return "(?:delete|remove)";
     case "archive":
       return "(?:archive)";
+    case "approve":
+      return "(?:approve)";
+    case "reject":
+      return "(?:reject|deny)";
     case "close":
       return "(?:close|resolve)";
     case "reopen":
@@ -2780,6 +2784,8 @@ function isTargetAwareVisibleWorkflowAction(
   return (
     action === "delete" ||
     action === "archive" ||
+    action === "approve" ||
+    action === "reject" ||
     action === "close" ||
     action === "reopen" ||
     action === "cancel"
@@ -2866,6 +2872,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:deleted|removed)";
     case "archive":
       return "(?:archived)";
+    case "approve":
+      return "(?:approved)";
+    case "reject":
+      return "(?:rejected|denied)";
     case "close":
       return "(?:closed|resolved)";
     case "reopen":
@@ -2883,6 +2893,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:deletion|removal)";
     case "archive":
       return "(?:archival)";
+    case "approve":
+      return "(?:approval)";
+    case "reject":
+      return "(?:rejection|denial)";
     case "close":
       return "(?:closure|resolution)";
     case "reopen":
