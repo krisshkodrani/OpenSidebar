@@ -4681,6 +4681,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   ) {
     return false;
   }
+  if (
+    !labelCanHaveDateRangeValue(expectedAnswerLabel) &&
+    labelValueStartsWithDateRange(evidenceText, labelPattern)
+  ) {
+    return false;
+  }
   const rawValue = cleanLabel(match?.[3] ?? "");
   if (!rawValue) return false;
   if (
@@ -4692,6 +4698,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   if (
     !labelCanHaveCoordinatePairValue(expectedAnswerLabel) &&
     isCoordinatePairValue(rawValue)
+  ) {
+    return false;
+  }
+  if (
+    !labelCanHaveDateRangeValue(expectedAnswerLabel) &&
+    isDateRangeValue(rawValue)
   ) {
     return false;
   }
@@ -4850,6 +4862,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isDateRangeValue(preciseConciseValue)) {
+      return preciseDateRangeValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isTimeRangeValue(preciseConciseValue)) {
       return preciseTimeRangeValueCoveredBySummary(
         normalizedSummary,
@@ -4930,6 +4948,18 @@ function labelValueStartsWithCoordinatePair(
   ).exec(evidenceText);
   const candidate = cleanLabel(match?.[1] ?? "");
   return candidate ? isCoordinatePairValue(candidate) : false;
+}
+
+function labelValueStartsWithDateRange(
+  evidenceText: string,
+  labelPattern: string,
+): boolean {
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${dateRangeValuePattern()})`,
+    "i",
+  ).exec(evidenceText);
+  const candidate = cleanLabel(match?.[1] ?? "");
+  return candidate ? isDateRangeValue(candidate) : false;
 }
 
 function extractPreciseConciseLabelValue(
@@ -5219,6 +5249,15 @@ function extractPreciseConciseLabelValue(
     if (frequencyMatch) return cleanLabel(frequencyMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveDateRangeValue(expectedAnswerLabel)) {
+    const dateRangeMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${dateRangeValuePattern()})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(dateRangeMatch?.[1] ?? "");
+    if (candidate && isDateRangeValue(candidate)) return candidate;
+  }
+
   if (labelCanHaveTimeRangeValue(expectedAnswerLabel)) {
     const timeRangeMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${timeRangeValuePattern()})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -5378,6 +5417,12 @@ function labelCanHavePressureValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveFrequencyValue(expectedAnswerLabel: string): boolean {
   return /\b(?:frequency|hertz|hz|refresh|sample|sampling|clock|oscillator|cycle|rpm|rotation)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveDateRangeValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:date range|date window|dates?|window|schedule|scheduled|period|validity|effective|coverage|start date|end date)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5990,6 +6035,59 @@ function preciseFrequencyValueCoveredBySummary(
   const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function dateRangeValuePattern(): string {
+  const date = "\\d{4}-\\d{2}-\\d{2}";
+  return `${date}\\s*(?:-|to|through)\\s*${date}`;
+}
+
+function canonicalDateRangeValue(value: string): string | null {
+  const date = "\\d{4}-\\d{2}-\\d{2}";
+  const parts = new RegExp(
+    `^(${date})\\s*(?:-|to|through)\\s*(${date})$`,
+    "i",
+  ).exec(cleanLabel(value));
+  if (!parts) return null;
+  const start = parts[1] ?? "";
+  const end = parts[2] ?? "";
+  return isIsoDateValue(start) && isIsoDateValue(end)
+    ? `${start}-${end}`
+    : null;
+}
+
+function isIsoDateValue(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cleanLabel(value));
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isDateRangeValue(value: string): boolean {
+  return canonicalDateRangeValue(value) !== null;
+}
+
+function preciseDateRangeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  const value = canonicalDateRangeValue(normalizedValue);
+  if (!value) return false;
+  const start = value.slice(0, 10);
+  const end = value.slice(11, 21);
+  if (!start || !end) return false;
+  return new RegExp(
+    `(^|[^0-9-])${escapeRegExp(start)}\\s*(?:-|to|through)\\s*${escapeRegExp(end)}(?=$|[^0-9-])`,
+    "i",
   ).test(normalizedSummary);
 }
 

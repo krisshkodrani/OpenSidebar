@@ -6593,6 +6593,98 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise date-range label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix Deployment window: 2026-05-18 - 2026-05-20 Backup window: 2026-06-01 - 2026-06-03",
+      pageContent:
+        "Release Matrix Deployment window: 2026-05-18 - 2026-05-20. Backup window: 2026-06-01 - 2026-06-03. The page explains release ownership, deployment policy, schedule windows, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the deployment window?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-18-2026-05-20",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-06-01-2026-06-03",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "deployment window",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("accepts date-range label-value answer with to separator", () => {
+    const snap = workflowSnapshot({
+      title: "Freeze Matrix",
+      url: "https://example.test/freezes",
+      visibleContent:
+        "Freeze Matrix Freeze period: 2026-11-01 to 2026-11-15 Backup period: 2026-12-01 to 2026-12-15",
+      pageContent:
+        "Freeze Matrix Freeze period: 2026-11-01 to 2026-11-15. Backup period: 2026-12-01 to 2026-12-15. The page explains freeze ownership, release policy, schedule windows, audit notes, incident routing, maintenance coordination, environment ownership, escalation routing, and manager review so operators can answer freeze questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the freeze period?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-11-01 to 2026-11-15",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "freeze period",
+    });
+    expect(accepted.status).toBe("accepted");
+  });
+
+  test("does not accept date-range concise answers without a date-range label", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix Team code: 2026-05-18 - 2026-05-20 Backup code: 2026-06-01 - 2026-06-03",
+      pageContent:
+        "Release Matrix Team code: 2026-05-18 - 2026-05-20. Backup code: 2026-06-01 - 2026-06-03. The page explains release ownership, deployment policy, schedule windows, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-18 - 2026-05-20",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded time label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Schedule Matrix",
