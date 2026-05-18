@@ -4838,6 +4838,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isTimezoneValue(preciseConciseValue)) {
+      return preciseTimezoneValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -5171,6 +5177,15 @@ function extractPreciseConciseLabelValue(
     if (frequencyMatch) return cleanLabel(frequencyMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveTimezoneValue(expectedAnswerLabel)) {
+    const timezoneMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${timezoneValuePattern()})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(timezoneMatch?.[1] ?? "");
+    if (candidate && isTimezoneValue(candidate)) return candidate;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -5296,6 +5311,10 @@ function labelCanHaveFrequencyValue(expectedAnswerLabel: string): boolean {
   return /\b(?:frequency|hertz|hz|refresh|sample|sampling|clock|oscillator|cycle|rpm|rotation)\b/i.test(
     expectedAnswerLabel,
   );
+}
+
+function labelCanHaveTimezoneValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:timezone|time zone|tz|utc|gmt)\b/i.test(expectedAnswerLabel);
 }
 
 function isDomainNameValue(value: string): boolean {
@@ -5884,6 +5903,43 @@ function preciseFrequencyValueCoveredBySummary(
   const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function timezoneValuePattern(): string {
+  const offset = "(?:[01]?\\d|2[0-3])(?::?[0-5]\\d)?";
+  const offsetZone = `(?:(?:utc|gmt)(?:\\s*[+-]\\s*${offset})?|z|[+-]\\s*${offset})`;
+  const ianaZone =
+    "[a-z]+(?:[_+-][a-z0-9]+)*\\/[a-z0-9]+(?:[_+-][a-z0-9]+)*(?:\\/[a-z0-9]+(?:[_+-][a-z0-9]+)*)?";
+  const abbreviation = "[a-z]{2,5}(?:[+-]\\d{1,2})?";
+  return `(?:${offsetZone}|${ianaZone}|${abbreviation})`;
+}
+
+function isTimezoneValue(value: string): boolean {
+  const cleaned = cleanLabel(value);
+  const offset = "(?:[01]?\\d|2[0-3])(?::?[0-5]\\d)?";
+  const offsetZone = new RegExp(
+    `^(?:(?:utc|gmt)(?:\\s*[+-]\\s*${offset})?|z|[+-]\\s*${offset})$`,
+    "i",
+  );
+  const ianaZone =
+    /^[a-z]+(?:[_+-][a-z0-9]+)*\/[a-z0-9]+(?:[_+-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[_+-][a-z0-9]+)*)?$/i;
+  const abbreviation = /^[A-Z]{2,5}(?:[+-]\d{1,2})?$/;
+  return (
+    offsetZone.test(cleaned) ||
+    ianaZone.test(cleaned) ||
+    abbreviation.test(cleaned)
+  );
+}
+
+function preciseTimezoneValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9_/+-])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
