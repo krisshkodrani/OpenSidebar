@@ -4451,7 +4451,7 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   if (valueWords.length === 0) return false;
 
   const normalizedSummary = normalizeText(summary);
-  const preciseConciseValue = extractPreciseConciseNumericLabelValue(
+  const preciseConciseValue = extractPreciseConciseLabelValue(
     evidenceText,
     labelPattern,
   );
@@ -4491,10 +4491,16 @@ function labelValuePhraseCoveredBySummary(
   return Boolean(phrase) && normalizedSummary.includes(phrase);
 }
 
-function extractPreciseConciseNumericLabelValue(
+function extractPreciseConciseLabelValue(
   evidenceText: string,
   labelPattern: string,
 ): string | null {
+  const emailMatch = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+    "i",
+  ).exec(evidenceText);
+  if (emailMatch) return cleanLabel(emailMatch[1] ?? "") || null;
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",

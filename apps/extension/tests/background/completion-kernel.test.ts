@@ -4137,6 +4137,62 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded email label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Owner email: support@example.com Backup email: help@example.com",
+      pageContent:
+        "Support Matrix Owner email: support@example.com. Backup email: help@example.com. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the owner email?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "support@example.com",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "owner email",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling email label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Owner email: support@example.com Backup email: help@example.com",
+      pageContent:
+        "Support Matrix Owner email: support@example.com. Backup email: help@example.com. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the owner email?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "help@example.com",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "owner email",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded numeric label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
