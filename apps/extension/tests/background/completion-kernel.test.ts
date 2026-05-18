@@ -7542,6 +7542,98 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise time-window label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Maintenance Matrix",
+      url: "https://example.test/maintenance",
+      visibleContent:
+        "Maintenance Matrix Maintenance window: 02:00-04:00 Backup window: 05:00-07:00",
+      pageContent:
+        "Maintenance Matrix Maintenance window: 02:00-04:00. Backup window: 05:00-07:00. The page explains maintenance ownership, schedule policy, service windows, audit notes, incident routing, coordination plans, device ownership, escalation routing, and manager review so operators can answer maintenance questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the maintenance window?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "02:00-04:00",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "05:00-07:00",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "maintenance window",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("accepts spaced time-window label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Service window: 09:00 - 17:30 Backup window: 18:00 - 20:00",
+      pageContent:
+        "Support Matrix Service window: 09:00 - 17:30. Backup window: 18:00 - 20:00. The page explains support ownership, service hours, schedule policy, audit notes, incident routing, coordination plans, queue ownership, escalation routing, and manager review so operators can answer support questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the service window?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "09:00-17:30",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "service window",
+    });
+    expect(accepted.status).toBe("accepted");
+  });
+
+  test("does not accept time-window concise answers without a time-window label", () => {
+    const snap = workflowSnapshot({
+      title: "Maintenance Matrix",
+      url: "https://example.test/maintenance",
+      visibleContent:
+        "Maintenance Matrix Team code: 02:00-04:00 Backup code: 05:00-07:00",
+      pageContent:
+        "Maintenance Matrix Team code: 02:00-04:00. Backup code: 05:00-07:00. The page explains maintenance ownership, schedule policy, service windows, audit notes, incident routing, coordination plans, device ownership, escalation routing, and manager review so operators can answer maintenance questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "02:00-04:00",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts only the expected concise physical speed label-value answer", () => {
     const snap = workflowSnapshot({
       title: "Route Matrix",
