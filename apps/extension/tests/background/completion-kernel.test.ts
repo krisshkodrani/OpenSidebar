@@ -3628,6 +3628,236 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware visible start confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Service Beta remains stopped. Service Alpha started successfully.",
+      pageContent:
+        "Service Beta remains stopped. Service Alpha started successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Start Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Started Service Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "start",
+      targetLabel: "Service Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:start",
+          detail: expect.objectContaining({
+            action: "start",
+            source: "visible_text",
+            text: "Service Alpha started successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible start confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Service Alpha remains stopped. Service Beta started successfully.",
+      pageContent:
+        "Service Alpha remains stopped. Service Beta started successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Start Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Started Service Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "start",
+      targetLabel: "Service Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:start",
+          detail: expect.objectContaining({
+            action: "start",
+            source: "visible_text",
+            text: "Service Beta started successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible start completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Start completed.",
+      pageContent: "Start completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Start Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Start completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "start",
+      targetLabel: "Service Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts target-aware visible stop confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Service Beta remains running. Service Alpha stopped successfully.",
+      pageContent:
+        "Service Beta remains running. Service Alpha stopped successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Stop Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Stopped Service Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "stop",
+      targetLabel: "Service Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:stop",
+          detail: expect.objectContaining({
+            action: "stop",
+            source: "visible_text",
+            text: "Service Alpha stopped successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible stop confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Service Alpha remains running. Service Beta stopped successfully.",
+      pageContent:
+        "Service Alpha remains running. Service Beta stopped successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Stop Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Stopped Service Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "stop",
+      targetLabel: "Service Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:stop",
+          detail: expect.objectContaining({
+            action: "stop",
+            source: "visible_text",
+            text: "Service Beta stopped successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible stop completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Stop completed.",
+      pageContent: "Stop completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Stop Service Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Stop completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "stop",
+      targetLabel: "Service Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Dismiss completed.",
