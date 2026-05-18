@@ -5623,6 +5623,62 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded hyphenated identifier label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Incident Matrix",
+      url: "https://example.test/incidents",
+      visibleContent:
+        "Incident Matrix Case number: CASE-1234 Related case: CASE-1234-B",
+      pageContent:
+        "Incident Matrix Case number: CASE-1234. Related case: CASE-1234-B. The page explains service coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer incident questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the case number?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "CASE-1234",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "case number",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept identifier prefix inside a longer identifier", () => {
+    const snap = workflowSnapshot({
+      title: "Incident Matrix",
+      url: "https://example.test/incidents",
+      visibleContent:
+        "Incident Matrix Case number: CASE-1234 Related case: CASE-1234-B",
+      pageContent:
+        "Incident Matrix Case number: CASE-1234. Related case: CASE-1234-B. The page explains service coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer incident questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the case number?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "CASE-1234-B",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "case number",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded uuid label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Session Matrix",
