@@ -1872,6 +1872,121 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware visible close confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Incident Beta remains open. Incident Alpha closed successfully.",
+      pageContent:
+        "Incident Beta remains open. Incident Alpha closed successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Closed Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:close",
+          detail: expect.objectContaining({
+            action: "close",
+            source: "visible_text",
+            text: "Incident Alpha closed successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible close confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Incident Alpha remains open. Incident Beta closed successfully.",
+      pageContent:
+        "Incident Alpha remains open. Incident Beta closed successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Closed Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:close",
+          detail: expect.objectContaining({
+            action: "close",
+            source: "visible_text",
+            text: "Incident Beta closed successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible close completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Close completed.",
+      pageContent: "Close completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close Incident Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Close completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+      targetLabel: "Incident Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts cancel-class workflow confirmation after visible cancellation completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Cancellation completed.",

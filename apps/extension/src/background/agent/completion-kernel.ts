@@ -241,6 +241,10 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 ];
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
+type TargetAwareVisibleWorkflowAction = Extract<
+  WorkflowConfirmationAction,
+  "delete" | "archive" | "close"
+>;
 
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
@@ -2662,10 +2666,8 @@ function inferWorkflowConfirmationTargetLabel(
   value: string,
   action: WorkflowConfirmationAction,
 ): string | null {
-  if (action !== "delete" && action !== "archive") return null;
-
-  const actionPattern =
-    action === "delete" ? "(?:delete|remove)" : "(?:archive)";
+  const actionPattern = workflowTargetActionPattern(action);
+  if (!actionPattern) return null;
   const lines = value
     .split(/\n+/g)
     .map((line) => cleanLabel(line))
@@ -2689,6 +2691,21 @@ function inferWorkflowConfirmationTargetLabel(
   }
 
   return null;
+}
+
+function workflowTargetActionPattern(
+  action: WorkflowConfirmationAction,
+): string | null {
+  switch (action) {
+    case "delete":
+      return "(?:delete|remove)";
+    case "archive":
+      return "(?:archive)";
+    case "close":
+      return "(?:close|resolve)";
+    default:
+      return null;
+  }
 }
 
 function normalizeWorkflowTargetLabel(
@@ -2742,7 +2759,7 @@ function workflowConfirmationMatchesTarget(
   }
   if (
     event.detail.source === "visible_text" &&
-    (event.detail.action === "delete" || event.detail.action === "archive")
+    isTargetAwareVisibleWorkflowAction(event.detail.action)
   ) {
     return visibleWorkflowConfirmationMatchesTarget(
       event.detail.text,
@@ -2751,6 +2768,12 @@ function workflowConfirmationMatchesTarget(
     );
   }
   return true;
+}
+
+function isTargetAwareVisibleWorkflowAction(
+  action: WorkflowConfirmationAction | undefined,
+): action is TargetAwareVisibleWorkflowAction {
+  return action === "delete" || action === "archive" || action === "close";
 }
 
 function workflowTargetLabelCoveredByText(
@@ -2774,7 +2797,7 @@ function workflowTargetLabelCoveredByText(
 
 function visibleWorkflowConfirmationMatchesTarget(
   text: string,
-  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+  action: TargetAwareVisibleWorkflowAction,
   targetLabel: string,
 ): boolean {
   const candidate = extractVisibleWorkflowConfirmationTarget(
@@ -2788,7 +2811,7 @@ function visibleWorkflowConfirmationMatchesTarget(
 
 function extractVisibleWorkflowConfirmationTarget(
   text: string,
-  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+  action: TargetAwareVisibleWorkflowAction,
   targetLabel: string,
 ): string | null {
   const normalizedText = cleanLabel(text);
@@ -2796,10 +2819,8 @@ function extractVisibleWorkflowConfirmationTarget(
 
   const targetTokens = tokenizeCompletionText(targetLabel);
   const targetTokenCount = Math.max(1, Math.min(targetTokens.length, 8));
-  const resultTerms =
-    action === "delete" ? "(?:deleted|removed)" : "(?:archived)";
-  const nounTerms =
-    action === "delete" ? "(?:deletion|removal)" : "(?:archival)";
+  const resultTerms = workflowTargetVisibleResultPattern(action);
+  const nounTerms = workflowTargetVisibleNounPattern(action);
   const beforeResult = new RegExp(
     `(.{2,180}?)\\s+(?:was\\s+)?${resultTerms}\\s+(?:successfully|complete|completed|confirmed)\\b`,
     "i",
@@ -2825,6 +2846,32 @@ function extractVisibleWorkflowConfirmationTarget(
     "i",
   ).exec(normalizedText)?.[1];
   return normalizeWorkflowTargetTail(beforeNoun ?? "", targetTokenCount);
+}
+
+function workflowTargetVisibleResultPattern(
+  action: TargetAwareVisibleWorkflowAction,
+): string {
+  switch (action) {
+    case "delete":
+      return "(?:deleted|removed)";
+    case "archive":
+      return "(?:archived)";
+    case "close":
+      return "(?:closed|resolved)";
+  }
+}
+
+function workflowTargetVisibleNounPattern(
+  action: TargetAwareVisibleWorkflowAction,
+): string {
+  switch (action) {
+    case "delete":
+      return "(?:deletion|removal)";
+    case "archive":
+      return "(?:archival)";
+    case "close":
+      return "(?:closure|resolution)";
+  }
 }
 
 function normalizeWorkflowTargetTail(
