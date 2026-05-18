@@ -3678,6 +3678,80 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts update confirmation from cleared standalone unsaved indicator", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Unsaved Apply changes",
+      pageContent: "Settings Unsaved Apply changes",
+      elements: [actionButton(702, "Apply changes")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Apply changes",
+      pageContent: "Settings Apply changes",
+      elements: [actionButton(702, "Apply changes")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Apply changes.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 702 },
+      result: "Clicked element 702.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 13,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Applied changes.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "update",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:update:dirty-indicator-cleared",
+        detail: expect.objectContaining({
+          action: "update",
+          source: "dirty_indicator_cleared",
+          text: "Unsaved-changes indicator is no longer visible.",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer update confirmation while standalone unsaved indicator remains", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Unsaved Apply changes",
+      pageContent: "Settings Unsaved Apply changes",
+      elements: [actionButton(702, "Apply changes")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Unsaved Apply changes",
+      pageContent: "Settings Unsaved Apply changes",
+      elements: [actionButton(702, "Apply changes")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 702 },
+      result: "Clicked element 702.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 13,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("rejects form completion when visible validation is active", () => {
     const snap = formSnapshot();
     const generated = generateCompletionContract({
