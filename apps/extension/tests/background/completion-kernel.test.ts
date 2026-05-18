@@ -134,6 +134,34 @@ function navigationSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function draftSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Email thread",
+    url: "https://mail.example.test/thread/123",
+    visibleContent: "Email thread Reply message",
+    pageContent: "Email thread Reply message",
+    elements: [
+      {
+        ...textField(
+          301,
+          "Reply message",
+          "Hi David, Monday at 2 PM works for me.",
+        ),
+        tagName: "textarea",
+        attributes: {
+          id: "reply-message",
+          name: "reply-message",
+          label: "Reply message",
+          value: "Hi David, Monday at 2 PM works for me.",
+        },
+      },
+    ],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  };
+}
+
 describe("completion kernel", () => {
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
@@ -429,6 +457,71 @@ describe("completion kernel", () => {
 
     expect(decision.status).toBe("rejected");
     expect(decision.reason).toContain("validation");
+  });
+
+  test("accepts draft-only completion when an unsent draft is visible", () => {
+    const snap = draftSnapshot();
+    const generated = generateCompletionContract({
+      userRequest:
+        "Read David's email and draft a short reply in the reply box. Don't click send.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Drafted the reply and left it unsent in the editor.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "draft_only",
+      requiresUnsent: true,
+    });
+    expect(decision.status).toBe("accepted");
+    expect(decision.evidence).toEqual([
+      expect.objectContaining({
+        type: "draft_state",
+        logicalKey: expect.stringContaining("draft:reply-message"),
+      }),
+    ]);
+    expect(buildCompletionRecoveryHint(decision)).toContain("draft remains");
+  });
+
+  test("rejects draft-only completion when sent evidence is visible", () => {
+    const snap = draftSnapshot({
+      visibleContent: "Email thread Message sent",
+      pageContent: "Email thread Message sent",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Read David's email, draft a short reply, and leave it unsent.",
+      snapshot: snap,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The reply was sent.",
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "draft_only" });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("sent");
+  });
+
+  test("does not treat unrelated draft wording as a draft-only contract", () => {
+    const generated = generateCompletionContract({
+      userRequest:
+        "Read the project-updates channel to identify who should draft the changelog.",
+      snapshot: draftSnapshot(),
+    });
+
+    expect(generated?.contract.kind).not.toBe("draft_only");
   });
 
   test("accepts explicit-url navigation completion from current URL evidence", () => {

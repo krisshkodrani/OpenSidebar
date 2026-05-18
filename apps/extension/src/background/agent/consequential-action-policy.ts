@@ -182,7 +182,7 @@ function isCommunicationSendAction(
   return /\b(send|post|reply)\b/.test(label);
 }
 
-function isDraftOnlyCommunicationTask(taskText: string): boolean {
+export function isDraftOnlyCommunicationTask(taskText: string): boolean {
   if (!isCommunicationWorkflow(taskText)) return false;
 
   if (
@@ -210,7 +210,7 @@ function isDraftOnlyCommunicationTask(taskText: string): boolean {
   );
 }
 
-function hasStrongCommunicationSentEvidence(text: string): boolean {
+export function hasStrongCommunicationSentEvidence(text: string): boolean {
   return /\b(?:message|reply|email|e-mail|comment|post)\b[\s\S]{0,50}\b(?:sent|posted|submitted|published)\b/i.test(
     text,
   ) ||
@@ -222,7 +222,7 @@ function hasStrongCommunicationSentEvidence(text: string): boolean {
     );
 }
 
-function hasDraftPreservedEvidence(text: string): boolean {
+export function hasDraftPreservedEvidence(text: string): boolean {
   return /\b(?:unsent|not sent|not been sent|draft|drafted|remains in the editor|left in the editor)\b/i.test(
     text,
   );
