@@ -211,6 +211,40 @@ describe("executeSequentialToolCalls", () => {
     expect(completed).not.toHaveBeenCalled();
   });
 
+  test("stops queued tools in the same lane after trusted completion", async () => {
+    const host = createHost();
+    const completed = vi.fn();
+    (host.executeToolCall as any).mockResolvedValue("Clicked sort header.");
+    (host.maybeCompleteTrustedListSortStep as any).mockReturnValue({
+      finalSummary: "The list is sorted.",
+    });
+
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [
+        toolCall(ToolName.CLICK_ELEMENT, { id: 1 }, "trusted-sort-click"),
+        toolCall(ToolName.CLICK_ELEMENT, { id: 2 }, "click-after-trusted"),
+      ],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: completed,
+      state: baseState(),
+    });
+
+    expect(host.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(host.maybeCompleteTrustedListSortStep).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolName: ToolName.CLICK_ELEMENT,
+        toolResult: "Clicked sort header.",
+        mode: "sequential",
+      }),
+    );
+    expect(completed).toHaveBeenCalledWith("The list is sorted.", {
+      completionCandidate: undefined,
+    });
+    expect(output.doneSignaled).toBe(true);
+    expect(output.doneSummary).toBe("The list is sorted.");
+  });
+
   test("attaches read_answer completion candidate for grounded knowledge answers", async () => {
     const host = createHost() as unknown as AgentLoopToolHandlerHost;
     host.selectedSkillId = "search-answer-extraction";
