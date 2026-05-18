@@ -3978,11 +3978,13 @@ function hasGroundedDirectPageQuestion(
   snapshot?: DomSnapshot | null,
 ): boolean {
   if (!snapshot) return false;
-  if (
-    !/\b(?:what(?:'s| is)?|who(?:'s| is)?|when|where|which|how many|how much)\b/.test(
+  const hasBroadQuestionStarter =
+    /\b(?:what(?:'s| is)?|who(?:'s| is)?|when|where|which|how many|how much)\b/.test(
       normalizedQuestion,
-    )
-  ) {
+    );
+  const hasBooleanLabelQuestionStarter =
+    /^(?:please\s+)?(?:is|are|was|were)\b/.test(normalizedQuestion);
+  if (!hasBroadQuestionStarter && !hasBooleanLabelQuestionStarter) {
     return false;
   }
 
@@ -3991,6 +3993,7 @@ function hasGroundedDirectPageQuestion(
   if (findGroundedLabelValueQuestionLabel(normalizedQuestion, pageText)) {
     return true;
   }
+  if (hasBooleanLabelQuestionStarter) return false;
 
   const questionTokens = tokenizeCompletionText(normalizedQuestion).filter(
     (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
@@ -4057,8 +4060,12 @@ function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
     /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
       normalizedQuestion,
     );
+  const booleanMatch =
+    /^(?:please\s+)?(?:is|are|was|were)\s+(?:the\s+)?(.+?)(?:\?|$)/i.exec(
+      normalizedQuestion,
+    );
   const label = cleanLabel(
-    match?.[1]
+    (match?.[1] ?? booleanMatch?.[1])
       ?.replace(
         /\b(?:on|in|according to|from) (?:this|the) (?:page|article|document|post|readme)\b.*$/i,
         "",
@@ -4184,7 +4191,7 @@ function readAnswerSummaryMatchesExpectedLabelValue(
 
   const normalizedValue = normalizeText(valueWords[0]);
   if (
-    isConciseNumericLabelValue(rawValue) &&
+    isConciseSingleTokenLabelValue(rawValue) &&
     valueTokenCoveredBySummary(normalizedSummary, normalizedValue)
   ) {
     return true;
@@ -4197,8 +4204,29 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   );
 }
 
-function isConciseNumericLabelValue(value: string): boolean {
-  return /^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleanLabel(value));
+const CONCISE_STATUS_LABEL_VALUES = new Set([
+  "active",
+  "approved",
+  "closed",
+  "disabled",
+  "enabled",
+  "false",
+  "inactive",
+  "no",
+  "open",
+  "pending",
+  "rejected",
+  "submitted",
+  "true",
+  "yes",
+]);
+
+function isConciseSingleTokenLabelValue(value: string): boolean {
+  const cleaned = cleanLabel(value);
+  if (/^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleaned)) {
+    return true;
+  }
+  return CONCISE_STATUS_LABEL_VALUES.has(normalizeText(cleaned));
 }
 
 function valueTokenCoveredBySummary(
@@ -4206,9 +4234,9 @@ function valueTokenCoveredBySummary(
   normalizedValue: string,
 ): boolean {
   if (!normalizedValue) return false;
-  return new RegExp(`(^|\\s)${escapeRegExp(normalizedValue)}($|\\s)`).test(
-    normalizedSummary,
-  );
+  return new RegExp(
+    `(^|[^a-z0-9])${escapeRegExp(normalizedValue)}($|[^a-z0-9])`,
+  ).test(normalizedSummary);
 }
 
 function tokenizeCompletionText(value: string): string[] {
