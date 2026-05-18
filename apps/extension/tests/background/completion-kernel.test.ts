@@ -2737,8 +2737,65 @@ describe("completion kernel", () => {
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
       requiresGroundedPageEvidence: true,
+      expectedAnswerLabel: "sla",
     });
     expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts concise grounded label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix SLA: four hours Escalation owner: platform operations",
+      pageContent:
+        "Support Matrix SLA: four hours for urgent incidents. Escalation owner: platform operations. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the SLA?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "SLA: four hours",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "sla",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept another page value for a label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix SLA: four hours Escalation owner: platform operations",
+      pageContent:
+        "Support Matrix SLA: four hours for urgent incidents. Escalation owner: platform operations. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the SLA?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "platform operations",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "sla",
+    });
+    expect(decision.status).toBe("inconclusive");
   });
 
   test("does not use label-value read-answer when the page has no value-like label", () => {
