@@ -1247,6 +1247,80 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts save confirmation from cleared dirty-state indicator", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Unsaved changes Save changes",
+      pageContent: "Settings Unsaved changes Save changes",
+      elements: [actionButton(701, "Save changes")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Save changes",
+      pageContent: "Settings Save changes",
+      elements: [actionButton(701, "Save changes")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Save changes.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 701 },
+      result: "Clicked element 701.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 12,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Saved changes.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "save",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:save:dirty-indicator-cleared",
+        detail: expect.objectContaining({
+          action: "save",
+          source: "dirty_indicator_cleared",
+          text: "Unsaved-changes indicator is no longer visible.",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer save confirmation while dirty-state indicator remains", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Unsaved changes Save changes",
+      pageContent: "Settings Unsaved changes Save changes",
+      elements: [actionButton(701, "Save changes")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Unsaved changes Save changes",
+      pageContent: "Settings Unsaved changes Save changes",
+      elements: [actionButton(701, "Save changes")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 701 },
+      result: "Clicked element 701.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 12,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("rejects form completion when visible validation is active", () => {
     const snap = formSnapshot();
     const generated = generateCompletionContract({
