@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 import {
   CompletionEvidenceLedger,
+  buildCompletionEnvelope,
   buildCompletionRecoveryHint,
   deriveCompletionEvidenceFromSnapshot,
+  deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
-import type { DomSnapshot, TaggedElement } from "../../src/types";
+import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
 
 function choice(
   tag: number,
@@ -52,6 +54,73 @@ function snapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function textField(
+  tag: number,
+  label: string,
+  value = "",
+  type = "text",
+): TaggedElement {
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "input",
+    role: "textbox",
+    text: value,
+    attributes: {
+      id: key,
+      name: key,
+      type,
+      value,
+      label,
+    },
+    rect: { x: 0, y: tag * 20, width: 180, height: 24 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
+function checkboxField(
+  tag: number,
+  label: string,
+  checked: boolean,
+): TaggedElement {
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "input",
+    role: "checkbox",
+    text: "",
+    attributes: {
+      id: key,
+      control: key,
+      name: key,
+      type: "checkbox",
+      checked: String(checked),
+      label,
+    },
+    rect: { x: 0, y: tag * 20, width: 16, height: 16 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
+function formSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Profile",
+    url: "https://example.test/profile",
+    visibleContent: "Profile form Email Address Password Remember me",
+    pageContent: "Profile form Email Address Password Remember me",
+    elements: [
+      textField(201, "Email Address"),
+      textField(202, "Password", "", "password"),
+      checkboxField(203, "Remember me", false),
+    ],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  };
+}
+
 describe("completion kernel", () => {
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
@@ -69,6 +138,46 @@ describe("completion kernel", () => {
       selectionCardinality: 2,
     });
     expect(generated?.notes.join("\n")).toContain("Question 31");
+  });
+
+  test("uses embedded original request instead of stale planner verification text", () => {
+    const snap = snapshot();
+    const generated = generateCompletionContract({
+      userRequest: [
+        "Objective: Complete the workflow for the original request: Select the correct option/s",
+        "Read the current quiz question and select the correct answer(s) for Question 31",
+        "Success criteria: The task is fully completed and verified.",
+        "",
+        "Original user request (reference for specific values - names, emails, codes): Select the correct option/s Stay focused on this goal.",
+        "## Page Context",
+        "Question 32 / 40",
+      ].join("\n"),
+      activeObjective:
+        "Read the current quiz question and select the correct answer(s) for Question 31",
+      successCriteria: "Question 31 has the correct answer options selected",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 3);
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "quiz_selection",
+      target: { kind: "current_visible_question", questionNumber: 32 },
+      requiresSubmit: false,
+      requiresCorrectFeedback: false,
+    });
+    expect(generated?.notes.join("\n")).toContain("Question 31");
+    expect(decision.status).toBe("accepted");
+    expect(buildCompletionRecoveryHint(decision)).toContain(
+      "Completion evidence indicates",
+    );
   });
 
   test("accepts select-only quiz completion from active selected-state evidence", () => {
@@ -177,5 +286,171 @@ describe("completion kernel", () => {
       confidence: "high",
       detail: { checked: true },
     });
+  });
+
+  test("generates a form-fill contract from explicit field values", () => {
+    const generated = generateCompletionContract({
+      userRequest:
+        "Fill the profile form with email admin@example.com and password secret123. Check the Remember me box too.",
+      snapshot: formSnapshot(),
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiresSubmit: false,
+      requiresConfirmation: false,
+      requiredFields: [
+        { label: "Email Address", value: "admin@example.com" },
+        { label: "Password", value: "secret123" },
+        { label: "Remember me", value: "true" },
+      ],
+    });
+  });
+
+  test("accepts form-fill completion from high-confidence tool evidence", () => {
+    const snap = formSnapshot();
+    const generated = generateCompletionContract({
+      userRequest:
+        "Fill the profile form with email admin@example.com and password secret123. Check the Remember me box too.",
+      snapshot: snap,
+    });
+    const evidence = [
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.TYPE_TEXT,
+        args: { id: 201, text: "admin@example.com" },
+        result: "Typed text.",
+        preActionSnapshot: snap,
+        turn: 4,
+      }),
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.TYPE_TEXT,
+        args: { id: 202, text: "secret123" },
+        result: "Typed text.",
+        preActionSnapshot: snap,
+        turn: 4,
+      }),
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.SET_CHECKBOX,
+        args: { id: 203, checked: true },
+        result: "Set checkbox.",
+        preActionSnapshot: snap,
+        turn: 4,
+      }),
+    ];
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Filled email, password, and Remember me.",
+    });
+
+    expect(decision.status).toBe("accepted");
+    expect(buildCompletionRecoveryHint(decision)).toContain("form fields");
+  });
+
+  test("requires verification when a form request implies submit", () => {
+    const snap = formSnapshot();
+    const generated = generateCompletionContract({
+      userRequest:
+        "Log in with email admin@example.com and password secret123. Check the Remember me box too.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(
+      formSnapshot({
+        elements: [
+          textField(201, "Email Address", "admin@example.com"),
+          textField(202, "Password", "secret123", "password"),
+          checkboxField(203, "Remember me", true),
+        ],
+      }),
+      5,
+    );
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Filled email, password, and Remember me.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiresSubmit: true,
+    });
+    expect(decision.status).toBe("needs_verification");
+    expect(buildCompletionRecoveryHint(decision)).toContain("Submit");
+  });
+
+  test("rejects form completion when visible validation is active", () => {
+    const snap = formSnapshot();
+    const generated = generateCompletionContract({
+      userRequest:
+        "Fill the profile form with email admin@example.com and password secret123.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(
+      formSnapshot({
+        visibleContent:
+          "Profile form Email Address Password Error: Password is required",
+        pageContent:
+          "Profile form Email Address Password Error: Password is required",
+        elements: [
+          textField(201, "Email Address", "admin@example.com"),
+          textField(202, "Password", "", "password"),
+          checkboxField(203, "Remember me", false),
+        ],
+      }),
+      6,
+    );
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Filled the form.",
+    });
+
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("validation");
+  });
+
+  test("builds stable completion envelope metadata from accepted evidence", () => {
+    const snap = snapshot();
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 8);
+
+    const envelope = buildCompletionEnvelope({
+      source: "model_done",
+      contractKind: "quiz_selection",
+      decisionReason: "Quiz select-only contract is satisfied.",
+      evidence,
+      turn: 8,
+      summary:
+        "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+    });
+    const duplicate = buildCompletionEnvelope({
+      source: "model_done",
+      contractKind: "quiz_selection",
+      decisionReason: "Quiz select-only contract is satisfied.",
+      evidence,
+      turn: 8,
+      summary:
+        "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+    });
+
+    expect(envelope).toMatchObject({
+      status: "completed",
+      source: "model_done",
+      contractKind: "quiz_selection",
+      decisionReason: "Quiz select-only contract is satisfied.",
+      evidenceKeys: expect.arrayContaining([
+        expect.stringContaining("domain-adaptation-fine-tuning"),
+      ]),
+    });
+    expect(envelope.resultId).toBe(duplicate.resultId);
+    expect(envelope.evidenceEpoch).toBe(duplicate.evidenceEpoch);
   });
 });

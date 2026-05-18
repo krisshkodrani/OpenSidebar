@@ -1,6 +1,9 @@
 import type { CDPSession } from "puppeteer";
 
-export type LocalMockProviderScenarioName = "login" | "navigation";
+export type LocalMockProviderScenarioName =
+  | "login"
+  | "navigation"
+  | "quiz-derailment";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -18,6 +21,8 @@ interface ToolCallSpec {
 interface LocalMockProviderState {
   loginSubmitReturned: boolean;
   navigationCodeSubmitReturned: boolean;
+  quizCorrectSelectionsReturned: boolean;
+  quizReadsAfterSelection: number;
 }
 
 export const localMockProviderScenarios: Record<
@@ -37,6 +42,13 @@ export const localMockProviderScenarios: Record<
     label: "local-mock-navigation-ux-rfc-post",
     prompt:
       "Click Advance three times to reveal the secret code, then enter it and submit.",
+    maxTurns: 12,
+    timeoutMs: 180_000,
+  },
+  "quiz-derailment": {
+    fixture: "quiz-derailment",
+    label: "completion-done-quiz-derailment",
+    prompt: "Select the correct option/s",
     maxTurns: 12,
     timeoutMs: 180_000,
   },
@@ -133,12 +145,49 @@ function plannerJson(text: string): string {
       reason: "Local mock monitor sees progress aligned with the fixture task.",
     });
   }
+  if (/Quiz Derailment Fixture|Question 32|Select the correct option\/s/i.test(text)) {
+    return JSON.stringify({
+      isMultiStep: true,
+      difficulty: "moderate",
+      subtasks: [
+        "Read the current quiz question and select the correct answer(s) for Question 31",
+        "Report completion",
+      ],
+      steps: [
+        {
+          objective:
+            "Read the current quiz question and select the correct answer(s) for Question 31",
+          successCriteria:
+            "Question 31 has the correct answer options selected",
+          dependencies: [],
+          assumptions: [
+            "The planner target is intentionally stale for this fixture.",
+          ],
+          toolProfile: "full",
+        },
+        {
+          objective: "Report completion",
+          successCriteria: "The selected answer names are reported",
+          dependencies: [0],
+          assumptions: [],
+          toolProfile: "read_only",
+        },
+      ],
+    });
+  }
   return JSON.stringify({
     isMultiStep: false,
     difficulty: "simple",
     subtasks: [],
     steps: [],
   });
+}
+
+function quizOptionSelected(text: string, option: string): boolean {
+  return new RegExp(
+    `Selected answers:[^\\n]*(?:${option.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "i",
+  ).test(text);
 }
 
 function executorToolCalls(
@@ -162,6 +211,18 @@ function executorToolCalls(
       {
         name: "done",
         args: { summary: "Challenge completed with code ALPHA-7492." },
+      },
+    ];
+  }
+
+  if (/Completion evidence indicates/i.test(text) && scenarioName === "quiz-derailment") {
+    return [
+      {
+        name: "done",
+        args: {
+          summary:
+            "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+        },
       },
     ];
   }
@@ -222,6 +283,43 @@ function executorToolCalls(
     ];
   }
 
+  if (scenarioName === "quiz-derailment") {
+    const correctSelected =
+      quizOptionSelected(text, "Domain Adaptation Fine-Tuning") &&
+      quizOptionSelected(text, "Continued Pre-Training") &&
+      !quizOptionSelected(text, "Incremental Learning");
+    if (correctSelected) {
+      state.quizReadsAfterSelection += 1;
+      if (state.quizReadsAfterSelection >= 3) {
+        const wrongId =
+          parseTaggedId(text, /Incremental Learning|quiz-incremental-learning/i) ??
+          160;
+        return [{ name: "set_checkbox", args: { id: wrongId, checked: true } }];
+      }
+      return [{ name: "read_page", args: {} }];
+    }
+
+    if (!state.quizCorrectSelectionsReturned) {
+      const domainId =
+        parseTaggedId(
+          text,
+          /Domain Adaptation Fine-Tuning|quiz-domain-adaptation-fine-tuning/i,
+        ) ?? 158;
+      const continuedId =
+        parseTaggedId(
+          text,
+          /Continued Pre-Training|quiz-continued-pre-training/i,
+        ) ?? 159;
+      state.quizCorrectSelectionsReturned = true;
+      return [
+        { name: "set_checkbox", args: { id: domainId, checked: true } },
+        { name: "set_checkbox", args: { id: continuedId, checked: true } },
+      ];
+    }
+
+    return [{ name: "read_page", args: {} }];
+  }
+
   return [{ name: "read_page", args: {} }];
 }
 
@@ -265,6 +363,8 @@ export async function installLocalMockProviderInterceptor(
   const state: LocalMockProviderState = {
     loginSubmitReturned: false,
     navigationCodeSubmitReturned: false,
+    quizCorrectSelectionsReturned: false,
+    quizReadsAfterSelection: 0,
   };
 
   await session.send("Fetch.enable", {

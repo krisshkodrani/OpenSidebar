@@ -50,6 +50,7 @@ const FINAL_SCREENSHOT_CAPTURE_TIMEOUT_MS = 5_000;
 export interface HarnessOptions {
   maxTurns?: number;
   testLabel?: string;
+  videoStart?: "auto" | "manual";
 }
 
 interface E2EVideoRecording {
@@ -97,6 +98,7 @@ export interface E2EHarness {
   beforeEachHook(): Promise<void>;
   afterEachHook(testName?: string, result?: E2ETestResultInput): Promise<void>;
   afterAllHook(): Promise<void>;
+  startVideoRecording(): Promise<void>;
 
   printTraceSummary(
     workspaceId?: string | null,
@@ -316,6 +318,23 @@ async function startE2EVideoRecording(input: {
     void writeTimelineFrame(recording);
   }, recording.frameIntervalMs);
   return recording;
+}
+
+async function settleVideoSurface(page: Page): Promise<void> {
+  if (page.isClosed()) return;
+  await page.bringToFront().catch(() => {});
+  await blurArtifactFocus(page).catch(() => {});
+  await page
+    .evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        }),
+    )
+    .catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 250));
 }
 
 async function runMediaTool(
@@ -856,6 +875,7 @@ async function stopE2EVideoRecording(
 export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
   const maxTurns = options.maxTurns ?? 20;
   const testLabel = options.testLabel ?? "e2e";
+  const videoStart = options.videoStart ?? "auto";
 
   const providerConfig = resolveE2EProviderConfig();
   const providerMode = providerConfig.providerMode;
@@ -980,6 +1000,14 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       tracesBefore = snapshotTraceFiles();
       testStartTime = Date.now();
       page = freshPage || (await ctx.browser.newPage());
+      if (videoStart === "auto") {
+        await harness.startVideoRecording();
+      }
+    },
+
+    async startVideoRecording() {
+      if (activeVideoRecording) return;
+      await settleVideoSurface(page);
       activeVideoRecording = await startE2EVideoRecording({
         page,
         testLabel,
@@ -1033,6 +1061,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const traceArtifacts = await collectTraceArtifacts({
         tracesBefore,
         workspaceId,
+        timeoutMs: 10_000,
       });
       const traceFiles = traceArtifacts.traceFiles;
       const allTurns = traceFiles.flatMap((f) => readTrace(f));

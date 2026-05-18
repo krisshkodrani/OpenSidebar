@@ -2706,7 +2706,26 @@ describe("AgentLoop", () => {
       outcome: "completed",
       summary:
         "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+      completionEnvelope: {
+        status: "completed",
+        source: "model_done",
+        contractKind: "quiz_selection",
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining("domain-adaptation-fine-tuning"),
+        ]),
+      },
     });
+    const resultId = (agent as any).completedResult.completionEnvelope.resultId;
+    const duplicateAccepted = await (agent as any).handleDoneToolCall(
+      "done-call-2",
+      "Trying to finish again should reuse the first result.",
+      123,
+    );
+
+    expect(duplicateAccepted).toBe(true);
+    expect((agent as any).completedResult.completionEnvelope.resultId).toBe(
+      resultId,
+    );
     expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
     expect((agent as any).doneRejections).toBe(0);
   });
@@ -4607,6 +4626,12 @@ Showing 6-10 of 50`,
 
     expect(result.outcome).toBe("completed");
     expect(result.summary).toBe("Planless task is complete.");
+    expect(result.completionEnvelope).toMatchObject({
+      status: "completed",
+      source: "model_done",
+      contractKind: "legacy_done_guards",
+      decisionReason: "legacy_done_guards_passed",
+    });
     expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
     expect(onMessage).toHaveBeenCalledWith("Planless task is complete.", []);
   });

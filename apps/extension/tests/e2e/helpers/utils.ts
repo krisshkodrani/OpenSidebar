@@ -321,6 +321,20 @@ function panelFocusTextareaExpression(mode: "overlay" | "detached"): string {
   })()`;
 }
 
+function panelBlurActiveExpression(mode: "overlay" | "detached"): string {
+  return `(() => new Promise((resolve) => {
+    ${panelRootLookupScript(mode)}
+    const blurElement = (element) => {
+      if (element instanceof HTMLElement) element.blur();
+    };
+    blurElement(document.activeElement);
+    if (root) blurElement(root.activeElement);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve(true));
+    });
+  }))()`;
+}
+
 async function getPuppeteerPageForChromeTab(
   ctx: ExtensionContext,
   tabId: number,
@@ -372,6 +386,7 @@ async function submitPromptOnPanelPage(
   });
   await page.evaluate(panelFocusTextareaExpression(mode));
   await page.keyboard.press("Enter");
+  await page.evaluate(panelBlurActiveExpression(mode)).catch(() => {});
 }
 
 async function submitUserChatThroughE2EPanel(
