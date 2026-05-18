@@ -1093,6 +1093,98 @@ describe("completion kernel", () => {
     expect(decision.reason).toContain("does not match requested host");
   });
 
+  test("accepts read-answer completion from grounded snapshot evidence", () => {
+    const snap = workflowSnapshot({
+      title: "Onboarding Guide",
+      url: "https://example.test/onboarding",
+      visibleContent:
+        "The onboarding guide says new employees must set up accounts, enroll in security training, review access policies, and meet their manager before requesting production access.",
+      pageContent:
+        "The onboarding guide says new employees must set up accounts, enroll in security training, review access policies, and meet their manager before requesting production access. The guide also explains that access requests are audited every quarter and that support tickets should include the employee department and manager approval.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Summarize this page and mention the key onboarding steps.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "The page says employees set up accounts, enroll in security training, review access policies, and meet their manager before production access.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      requiresGroundedPageEvidence: true,
+    });
+    expect(decision.status).toBe("accepted");
+    expect(decision.evidence[0]).toMatchObject({
+      type: "answer_state",
+      detail: {
+        source: "page_read",
+        url: "https://example.test/onboarding",
+      },
+    });
+  });
+
+  test("requires page evidence before read-answer completion", () => {
+    const snap = workflowSnapshot({
+      title: "Sparse",
+      visibleContent: "Loading...",
+      pageContent: "Loading...",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Summarize this page.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: [],
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The page has a useful overview.",
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+    expect(decision.status).toBe("needs_verification");
+    expect(decision.reason).toContain("no grounded page-read evidence");
+  });
+
+  test("derives read-answer evidence from read_page results", () => {
+    const snap = workflowSnapshot({
+      title: "Release Notes",
+      url: "https://example.test/releases",
+      visibleContent: "Release notes",
+      pageContent: "Release notes",
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content: Release notes explain that version 2.4 adds audit exports, improves dashboard load time, updates permission checks, and fixes the account settings save flow for administrators.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "answer_state",
+          confidence: "high",
+          logicalKey: expect.stringContaining("read_answer:page:"),
+          observedAtTurn: 9,
+          detail: expect.objectContaining({
+            source: "page_read",
+            url: "https://example.test/releases",
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("builds stable completion envelope metadata from accepted evidence", () => {
     const snap = snapshot();
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 8);

@@ -148,6 +148,11 @@ export interface DraftOnlyContract {
   requiresUnsent: true;
 }
 
+export interface ReadAnswerContract {
+  kind: "read_answer";
+  requiresGroundedPageEvidence: true;
+}
+
 export type WorkflowConfirmationAction =
   | "delete"
   | "save"
@@ -170,6 +175,7 @@ export type CompletionContract =
   | FormFillContract
   | NavigationContract
   | DraftOnlyContract
+  | ReadAnswerContract
   | WorkflowConfirmationContract;
 
 export interface GeneratedCompletionContract {
@@ -346,6 +352,9 @@ export function generateCompletionContract(params: {
 
   const navigationContract = generateNavigationContract(params, snapshot);
   if (navigationContract) return navigationContract;
+
+  const readAnswerContract = generateReadAnswerContract(params, snapshot);
+  if (readAnswerContract) return readAnswerContract;
 
   const workflowConfirmationContract = generateWorkflowConfirmationContract(
     params,
@@ -603,6 +612,36 @@ function generateNavigationContract(
   };
 }
 
+function generateReadAnswerContract(
+  params: {
+    userRequest: string;
+    snapshot: DomSnapshot | null | undefined;
+    activeObjective?: string;
+    successCriteria?: string;
+  },
+  _snapshot: DomSnapshot,
+): GeneratedCompletionContract | null {
+  const requestText = [
+    extractCanonicalUserRequest(params.userRequest),
+    params.activeObjective,
+    params.successCriteria,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (!hasPageReadAnswerIntent(requestText)) return null;
+
+  return {
+    contract: {
+      kind: "read_answer",
+      requiresGroundedPageEvidence: true,
+    },
+    confidence: "medium",
+    source: "heuristic",
+    repairable: true,
+    notes: [],
+  };
+}
+
 function generateWorkflowConfirmationContract(
   params: {
     userRequest: string;
@@ -714,6 +753,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   }
 
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
+  evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
   return evidence;
 }
@@ -803,6 +843,14 @@ export function evaluateCompletionContract(params: {
       evidence: params.evidence,
     });
   }
+  if (params.contract.kind === "read_answer") {
+    return evaluateReadAnswer({
+      contract: params.contract,
+      evidence: params.evidence,
+      snapshot: params.snapshot,
+      summary: params.summary,
+    });
+  }
   if (params.contract.kind === "workflow_confirmation") {
     return evaluateWorkflowConfirmation({
       contract: params.contract,
@@ -845,6 +893,12 @@ export function buildCompletionRecoveryHint(
       return (
         "Completion evidence indicates the requested page is already open. " +
         'Call done({"summary":"..."}) now with the current page URL instead of navigating again.'
+      );
+    }
+    if (evaluation.contract.kind === "read_answer") {
+      return (
+        "Completion evidence indicates the page has been grounded for the requested answer. " +
+        'Call done({"summary":"..."}) now with the answer from the page evidence.'
       );
     }
     if (evaluation.contract.kind === "workflow_confirmation") {
@@ -1356,6 +1410,65 @@ function evaluateNavigation(params: {
   };
 }
 
+function evaluateReadAnswer(params: {
+  contract: ReadAnswerContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): CompletionEvaluation {
+  const contract = params.contract;
+  const pageEvidence = params.evidence
+    .filter(
+      (event): event is Extract<CompletionEvidence, { type: "answer_state" }> =>
+        event.type === "answer_state" && event.detail.source === "page_read",
+    )
+    .sort(compareEvidenceRecency);
+  const groundedEvidence = pageEvidence.find((event) =>
+    hasSubstantiveReadAnswerEvidence(event.detail.evidenceText),
+  );
+
+  const snapshotEvidence =
+    params.snapshot && hasSubstantiveReadAnswerEvidence(snapshotPageText(params.snapshot))
+      ? readAnswerSnapshotEvidence({
+          snapshot: params.snapshot,
+          observedAtTurn: latestObservedTurn(params.evidence),
+        })
+      : null;
+
+  const sourceEvidence = groundedEvidence ?? snapshotEvidence;
+  if (!sourceEvidence) {
+    return {
+      status: "needs_verification",
+      reason:
+        "Requested page-answer task has no grounded page-read evidence yet.",
+      hint:
+        "Call read_page first to verify the current page content, then call done with the answer from that evidence.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  if (
+    params.summary &&
+    !readAnswerSummaryGroundedInEvidence(params.summary, sourceEvidence)
+  ) {
+    return {
+      status: "inconclusive",
+      reason:
+        "Page-read evidence exists, but the done summary is not grounded strongly enough for deterministic read-answer acceptance.",
+      contract,
+      evidence: [sourceEvidence],
+    };
+  }
+
+  return {
+    status: "accepted",
+    reason: "Read-answer contract is satisfied by grounded page evidence.",
+    contract,
+    evidence: [sourceEvidence],
+  };
+}
+
 function evaluateWorkflowConfirmation(params: {
   contract: WorkflowConfirmationContract;
   evidence: CompletionEvidence[];
@@ -1487,6 +1600,57 @@ function navigationStateEvidence(
       detail: {
         url: snapshot.url,
         ...(snapshot.title ? { title: snapshot.title } : {}),
+      },
+    },
+  ];
+}
+
+function readAnswerSnapshotEvidence(params: {
+  snapshot: DomSnapshot;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "answer_state" }> {
+  const evidenceText = snapshotPageText(params.snapshot);
+  const pageKey =
+    compactKey(params.snapshot.url) ||
+    compactKey(params.snapshot.title ?? "") ||
+    "current-page";
+  return {
+    type: "answer_state",
+    confidence: "medium",
+    logicalKey: `read_answer:page:${pageKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      answer: evidenceText.slice(0, 1000),
+      source: "page_read",
+      evidenceText: evidenceText.slice(0, 4000),
+      ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
+    },
+  };
+}
+
+function readAnswerToolEvidence(params: {
+  result: string;
+  snapshot?: DomSnapshot | null;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "answer_state" }>[] {
+  const evidenceText = cleanReadAnswerEvidenceText(params.result);
+  if (!hasSubstantiveReadAnswerEvidence(evidenceText)) return [];
+
+  const pageKey =
+    compactKey(params.snapshot?.url ?? "") ||
+    compactKey(params.snapshot?.title ?? "") ||
+    hashStableString(evidenceText.slice(0, 500));
+  return [
+    {
+      type: "answer_state",
+      confidence: "high",
+      logicalKey: `read_answer:page:${pageKey}`,
+      observedAtTurn: params.observedAtTurn,
+      detail: {
+        answer: evidenceText.slice(0, 1000),
+        source: "page_read",
+        evidenceText: evidenceText.slice(0, 4000),
+        ...(params.snapshot?.url ? { url: params.snapshot.url } : {}),
       },
     },
   ];
@@ -2233,6 +2397,22 @@ function extractModalDismissalEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractReadAnswerEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  if (params.toolName !== "read_page") return [];
+  return readAnswerToolEvidence({
+    result: params.result,
+    snapshot: params.currentSnapshot ?? params.preActionSnapshot,
+    observedAtTurn: params.turn,
+  });
+}
+
 function isModalDismissalToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -2675,6 +2855,112 @@ function normalizeNavigationPath(url: URL): string {
   const path = url.pathname.replace(/\/+$/g, "") || "/";
   const search = url.searchParams.toString();
   return search ? `${path}?${search}` : path;
+}
+
+function hasPageReadAnswerIntent(text: string): boolean {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+
+  const trivialPageQuestions = [
+    /\bwhat(?:'s| is) the title\b/,
+    /\bwhat(?:'s| is) the url\b/,
+    /\bwhat page is this\b/,
+    /\bwhich page is this\b/,
+    /\bwhat site is this\b/,
+    /\bwhat domain is this\b/,
+  ];
+  if (trivialPageQuestions.some((pattern) => pattern.test(normalized))) {
+    return false;
+  }
+
+  const chartValueExtraction =
+    /\b(chart|dashboard|graph|plot|highcharts|visualization)\b/.test(
+      normalized,
+    ) &&
+    /\b(value|count|percentage|percent|number|label|maximum|minimum|highest|lowest|largest|smallest)\b/.test(
+      normalized,
+    );
+  const wholePageReadIntent = [
+    /\bsummari[sz]e\b/,
+    /\bsummary\b/,
+    /\bdescribe (?:this|the) page\b/,
+    /\breport (?:on|about) (?:this|the) page\b/,
+    /\breview (?:this|the) page\b/,
+    /\bmain points?\b/,
+    /\bkey points?\b/,
+    /\bheadlines?\b/,
+    /\bwhat does (?:this|the) page say\b/,
+    /\bread (?:this|the) page\b/,
+    /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
+  ].some((pattern) => pattern.test(normalized));
+  if (chartValueExtraction && !wholePageReadIntent) return false;
+
+  const pageReadTasks = [
+    /\bsummari[sz]e\b/,
+    /\bsummary\b/,
+    /\bdescribe (?:this|the) page\b/,
+    /\breport (?:on|about) (?:this|the) page\b/,
+    /\breview (?:this|the) page\b/,
+    /\bextract\b.+\b(page|article|post|document|readme|content)\b/,
+    /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\b(?:source|reference|citation)\b.{0,50}\b(?:referenced|cited|cites?)\b.{0,120}\b(?:article|document|page|post|readme)\b/,
+    /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\bfootnote\b.{0,120}\b(?:article|document|page|post|readme)\b/,
+    /\bmain points?\b/,
+    /\bkey points?\b/,
+    /\bheadlines?\b/,
+    /\bwhat does (?:this|the) page say\b/,
+    /\bread (?:this|the) page\b/,
+    /\bfrom (?:this|the) page\b/,
+    /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
+  ];
+
+  return pageReadTasks.some((pattern) => pattern.test(normalized));
+}
+
+function snapshotPageText(snapshot: DomSnapshot): string {
+  return cleanLabel(
+    [snapshot.pageContent, snapshot.visibleContent].filter(Boolean).join(" "),
+  );
+}
+
+function cleanReadAnswerEvidenceText(value: string): string {
+  return cleanLabel(
+    value
+      .replace(/^Page\s+(?:content|text|read)\s*:\s*/i, "")
+      .replace(/^Result\s*:\s*/i, ""),
+  );
+}
+
+function hasSubstantiveReadAnswerEvidence(value: string): boolean {
+  return tokenizeCompletionText(value).length >= 12 && cleanLabel(value).length > 100;
+}
+
+function readAnswerSummaryGroundedInEvidence(
+  summary: string,
+  evidence: Extract<CompletionEvidence, { type: "answer_state" }>,
+): boolean {
+  const sourceTokens = new Set(
+    tokenizeCompletionText(evidence.detail.evidenceText),
+  );
+  if (sourceTokens.size < 12) return false;
+
+  const summaryTokens = tokenizeCompletionText(summary);
+  if (summaryTokens.length < 4) return false;
+  const overlap = new Set(
+    summaryTokens.filter((token) => sourceTokens.has(token)),
+  ).size;
+  const requiredOverlap = Math.min(
+    5,
+    Math.max(3, Math.ceil(summaryTokens.length * 0.25)),
+  );
+  return overlap >= requiredOverlap;
+}
+
+function tokenizeCompletionText(value: string): string[] {
+  return [
+    ...new Set(
+      normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? [],
+    ),
+  ].filter((token) => !LABEL_STOPWORDS.has(token));
 }
 
 function cleanLabel(value: string): string {
