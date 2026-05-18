@@ -203,6 +203,8 @@ export type WorkflowConfirmationAction =
   | "restore"
   | "create"
   | "share"
+  | "grant"
+  | "revoke"
   | "install"
   | "uninstall"
   | "connect"
@@ -271,6 +273,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "restore",
   "create",
   "share",
+  "grant",
+  "revoke",
   "install",
   "uninstall",
   "connect",
@@ -342,6 +346,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "restore"
   | "create"
   | "share"
+  | "grant"
+  | "revoke"
   | "install"
   | "uninstall"
   | "connect"
@@ -2814,6 +2820,20 @@ function inferWorkflowConfirmationAction(
     return "share";
   }
   if (
+    /\bgrant(?:ed)?\s+(?:the\s+)?(?:access|permission|permissions?|privilege|privileges?|role|roles?|license|licence|licenses|licences|entitlement|entitlements?|membership|admin|administrator|viewer|editor|owner|read\s+access|write\s+access)\b/i.test(
+      text,
+    )
+  ) {
+    return "grant";
+  }
+  if (
+    /\brevok(?:e|ed)\s+(?:the\s+)?(?:access|permission|permissions?|privilege|privileges?|role|roles?|license|licence|licenses|licences|entitlement|entitlements?|membership|admin|administrator|viewer|editor|owner|read\s+access|write\s+access)\b/i.test(
+      text,
+    )
+  ) {
+    return "revoke";
+  }
+  if (
     /\binstall(?:ed)?\s+(?:the\s+)?(?:app|application|extension|plugin|package|module|integration|connector|driver|dependency|tool|theme|add[-\s]?on|update|workflow|rule)\b/i.test(
       text,
     )
@@ -3155,6 +3175,10 @@ function workflowTargetActionPattern(
       return "(?:create|add|register)";
     case "share":
       return "(?:share)";
+    case "grant":
+      return "(?:grant)";
+    case "revoke":
+      return "(?:revoke)";
     case "install":
       return "(?:install)";
     case "uninstall":
@@ -3374,6 +3398,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "restore" ||
     action === "create" ||
     action === "share" ||
+    action === "grant" ||
+    action === "revoke" ||
     action === "install" ||
     action === "uninstall" ||
     action === "connect" ||
@@ -3552,6 +3578,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:created|added|registered)";
     case "share":
       return "(?:shared)";
+    case "grant":
+      return "(?:granted)";
+    case "revoke":
+      return "(?:revoked)";
     case "install":
       return "(?:installed)";
     case "uninstall":
@@ -3689,6 +3719,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:create|creation|add|registration|register)";
     case "share":
       return "(?:share|sharing)";
+    case "grant":
+      return "(?:grant|access|permission|role|license|licence|entitlement|membership)";
+    case "revoke":
+      return "(?:revoke|revocation|access|permission|role|license|licence|entitlement|membership)";
     case "install":
       return "(?:install|installation)";
     case "uninstall":
@@ -4159,6 +4193,36 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:shared|share complete|share completed|share successful|sharing complete|sharing completed|sharing successful)\b/i.test(
+        text,
+      );
+    case "grant":
+      if (mode === "visible") {
+        return (
+          /\bgranted\s+successfully\b/i.test(text) ||
+          /\b(?:access|permission|permissions?|privilege|privileges?|role|roles?|license|licence|licenses|licences|entitlement|entitlements?|membership|admin|administrator|viewer|editor|owner)\s+granted\b/i.test(
+            text,
+          ) ||
+          /\b(?:grant|access|permission)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:granted|grant complete|grant completed|grant successful|access granted|access complete|access completed|access successful|permission granted|permission complete|permission completed|permission successful)\b/i.test(
+        text,
+      );
+    case "revoke":
+      if (mode === "visible") {
+        return (
+          /\brevoked\s+successfully\b/i.test(text) ||
+          /\b(?:access|permission|permissions?|privilege|privileges?|role|roles?|license|licence|licenses|licences|entitlement|entitlements?|membership|admin|administrator|viewer|editor|owner)\s+revoked\b/i.test(
+            text,
+          ) ||
+          /\b(?:revoke|revocation|access|permission)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:revoked|revoke complete|revoke completed|revoke successful|revocation complete|revocation completed|revocation successful|access revoked|permission revoked)\b/i.test(
         text,
       );
     case "install":
@@ -4777,6 +4841,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:created|added|registered|create|creation|add|registration|register)";
     case "share":
       return "(?:shared|share|sharing)";
+    case "grant":
+      return "(?:granted|grant|access|permission)";
+    case "revoke":
+      return "(?:revoked|revoke|revocation)";
     case "install":
       return "(?:installed|install|installation)";
     case "uninstall":
@@ -5657,6 +5725,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:created|added|registered)\b/i.test(text);
     case "share":
       return /\bshared\b/i.test(text);
+    case "grant":
+      return /\bgranted\b/i.test(text);
+    case "revoke":
+      return /\brevoked\b/i.test(text);
     case "install":
       return /\binstalled\b/i.test(text);
     case "uninstall":
