@@ -185,6 +185,32 @@ describe("executeSequentialToolCalls", () => {
     expect(completed).not.toHaveBeenCalled();
   });
 
+  test("stops queued tools in the same lane after accepted done", async () => {
+    const host = createHost();
+    const completed = vi.fn();
+
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [
+        toolCall(ToolName.DONE, { summary: "All set." }, "done-1"),
+        toolCall(ToolName.CLICK_ELEMENT, { id: 42 }, "click-after-done"),
+      ],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: completed,
+      state: baseState(),
+    });
+
+    expect(host.handleDoneToolCall).toHaveBeenCalledWith(
+      "done-1",
+      "All set.",
+      1,
+    );
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+    expect(output.doneSignaled).toBe(true);
+    expect(output.doneSummary).toBe("All set.");
+    expect(completed).not.toHaveBeenCalled();
+  });
+
   test("attaches read_answer completion candidate for grounded knowledge answers", async () => {
     const host = createHost() as unknown as AgentLoopToolHandlerHost;
     host.selectedSkillId = "search-answer-extraction";
