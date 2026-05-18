@@ -6877,6 +6877,70 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise hex color label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Theme Matrix",
+      url: "https://example.test/theme",
+      visibleContent:
+        "Theme Matrix Primary color: #1A2B3C Backup color: #00FF00",
+      pageContent:
+        "Theme Matrix Primary color: #1A2B3C. Backup color: #00FF00. The page explains theme ownership, palette policy, service limits, audit notes, incident routing, maintenance coordination, design ownership, escalation routing, and manager review so operators can answer theme questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary color?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "#1A2B3C",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "#00FF00",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary color",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept hex color concise answers without a color label", () => {
+    const snap = workflowSnapshot({
+      title: "Theme Matrix",
+      url: "https://example.test/theme",
+      visibleContent:
+        "Theme Matrix Team code: #1A2B3C Backup code: #00FF00",
+      pageContent:
+        "Theme Matrix Team code: #1A2B3C. Backup code: #00FF00. The page explains theme ownership, palette policy, service limits, audit notes, incident routing, maintenance coordination, design ownership, escalation routing, and manager review so operators can answer theme questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "#1A2B3C",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",

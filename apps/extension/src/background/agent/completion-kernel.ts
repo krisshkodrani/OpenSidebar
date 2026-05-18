@@ -4582,6 +4582,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isHexColorValue(preciseConciseValue)) {
+      return preciseHexColorValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isDurationValue(preciseConciseValue)) {
       return preciseDurationValueCoveredBySummary(
         normalizedSummary,
@@ -4836,6 +4842,14 @@ function extractPreciseConciseLabelValue(
     if (hashMatch) return cleanLabel(hashMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveColorValue(expectedAnswerLabel)) {
+    const colorMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(#[a-f0-9]{3}(?:[a-f0-9]{3})?(?:[a-f0-9]{2})?)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (colorMatch) return cleanLabel(colorMatch[1] ?? "") || null;
+  }
+
   if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
     const versionMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:v(?:ersion)?\\s*)?\\d+(?:\\.\\d+){1,5}(?:[-+][a-z0-9][a-z0-9.-]*)?)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4987,6 +5001,12 @@ function labelCanHaveUuidValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveHashValue(expectedAnswerLabel: string): boolean {
   return /\b(?:hash|checksum|digest|sha(?:-?\d+)?|md5)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveColorValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:color|colour|hex|palette|theme|background|foreground|accent|brand|fill|stroke)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5211,6 +5231,22 @@ function preciseHashValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isHexColorValue(value: string): boolean {
+  return /^#[a-f0-9]{3}(?:[a-f0-9]{3})?(?:[a-f0-9]{2})?$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseHexColorValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9.])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
