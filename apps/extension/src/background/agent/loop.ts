@@ -80,6 +80,7 @@ import {
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
@@ -229,7 +230,6 @@ import {
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
-  isDoneSummaryGroundedInSnapshot,
   isPendingAsyncChangeSatisfied,
   isFillerText,
   matchSuccessCriteria,
@@ -1689,27 +1689,24 @@ export class AgentLoop {
     // has substantive content - prevents hallucinated summaries from filename/URL alone.
     // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
     // includes substantive content (system prompt provides it via {{pageContent}}).
-    const needsGroundingRead = requiresGroundingReadBeforeDone(
-      this.originalQuery,
-    );
-    const hasEnoughGrounding = needsGroundingRead
-      ? this.hasExplicitPageRead
-      : this.hasReadPage;
-    if (hasEnoughGrounding || (!this.taskId && !needsGroundingRead)) {
+    const snap = this.context.getSnapshot();
+    const groundingPreflight = evaluateCompletionGroundingReadPreflight({
+      userRequest: this.originalQuery,
+      summary,
+      snapshot: snap,
+      hasReadPage: this.hasReadPage,
+      hasExplicitPageRead: this.hasExplicitPageRead,
+      hasTaskId: Boolean(this.taskId),
+    });
+    if (groundingPreflight.status === "valid") {
       return false;
     }
 
-    const snap = this.context.getSnapshot();
-    const elementCount = snap?.elements?.length ?? 0;
-    const visibleLen = (snap?.visibleContent || snap?.pageContent || "").length;
-    if (elementCount <= 5 || visibleLen <= 100) {
-      return false;
-    }
-    if (isDoneSummaryGroundedInSnapshot(summary, snap)) {
+    if (groundingPreflight.status === "grounded_from_snapshot") {
       this.traceRecorder?.recordEvent("done_grounded_from_snapshot", {
         turn: this.turnCount,
-        elementCount,
-        visibleLen,
+        elementCount: groundingPreflight.elementCount,
+        visibleLen: groundingPreflight.visibleLen,
       });
       return false;
     }
@@ -1721,16 +1718,17 @@ export class AgentLoop {
         turn: this.turnCount,
         taskId: this.taskId,
         hasExplicitPageRead: this.hasExplicitPageRead,
-        requiresGroundingReadBeforeDone: needsGroundingRead,
-        elementCount,
-        visibleLen,
+        requiresGroundingReadBeforeDone:
+          groundingPreflight.needsGroundingRead,
+        elementCount: groundingPreflight.elementCount,
+        visibleLen: groundingPreflight.visibleLen,
         summary: summary.slice(0, 150),
       },
     );
     this.traceRecorder?.recordEvent("done_rejected_no_read", {
       turn: this.turnCount,
-      elementCount,
-      visibleLen,
+      elementCount: groundingPreflight.elementCount,
+      visibleLen: groundingPreflight.visibleLen,
     });
     this.context.addMessage({
       role: "tool",
@@ -1739,7 +1737,7 @@ export class AgentLoop {
         "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
         "Do NOT summarize from the page title or URL alone.",
     });
-    if (needsGroundingRead) {
+    if (groundingPreflight.needsGroundingRead) {
       await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
       this.context.addMessage({
         role: "user",
