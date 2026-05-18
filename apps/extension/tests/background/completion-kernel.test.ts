@@ -1833,6 +1833,34 @@ describe("completion kernel", () => {
       genericSummary: "Unfavorite completed.",
     },
     {
+      action: "watch",
+      request: "Watch Repository Alpha.",
+      summary: "Watched Repository Alpha.",
+      targetLabel: "Repository Alpha",
+      requestedVisible:
+        "Repository Beta remains unwatched. Repository Alpha watched successfully.",
+      requestedEvidenceText: "Repository Alpha watched successfully.",
+      otherVisible:
+        "Repository Alpha remains unwatched. Repository Beta watched successfully.",
+      otherEvidenceText: "Repository Beta watched successfully.",
+      genericVisible: "Watch completed.",
+      genericSummary: "Watch completed.",
+    },
+    {
+      action: "unwatch",
+      request: "Unwatch Repository Alpha.",
+      summary: "Unwatched Repository Alpha.",
+      targetLabel: "Repository Alpha",
+      requestedVisible:
+        "Repository Beta remains watched. Repository Alpha unwatched successfully.",
+      requestedEvidenceText: "Repository Alpha unwatched successfully.",
+      otherVisible:
+        "Repository Alpha remains watched. Repository Beta unwatched successfully.",
+      otherEvidenceText: "Repository Beta unwatched successfully.",
+      genericVisible: "Unwatch completed.",
+      genericSummary: "Unwatch completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
