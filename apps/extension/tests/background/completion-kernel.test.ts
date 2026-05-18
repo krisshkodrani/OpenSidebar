@@ -1539,6 +1539,34 @@ describe("completion kernel", () => {
       genericSummary: "Download completed.",
     },
     {
+      action: "upload",
+      request: "Upload Attachment Alpha.",
+      summary: "Uploaded Attachment Alpha.",
+      targetLabel: "Attachment Alpha",
+      requestedVisible:
+        "Attachment Beta remains pending. Attachment Alpha uploaded successfully.",
+      requestedEvidenceText: "Attachment Alpha uploaded successfully.",
+      otherVisible:
+        "Attachment Alpha remains pending. Attachment Beta uploaded successfully.",
+      otherEvidenceText: "Attachment Beta uploaded successfully.",
+      genericVisible: "Upload completed.",
+      genericSummary: "Upload completed.",
+    },
+    {
+      action: "import",
+      request: "Import Contacts Alpha.",
+      summary: "Imported Contacts Alpha.",
+      targetLabel: "Contacts Alpha",
+      requestedVisible:
+        "Contacts Beta remains pending. Contacts Alpha imported successfully.",
+      requestedEvidenceText: "Contacts Alpha imported successfully.",
+      otherVisible:
+        "Contacts Alpha remains pending. Contacts Beta imported successfully.",
+      otherEvidenceText: "Contacts Beta imported successfully.",
+      genericVisible: "Import completed.",
+      genericSummary: "Import completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
