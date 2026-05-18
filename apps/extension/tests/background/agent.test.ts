@@ -2625,6 +2625,57 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("done rejects missing required typed evidence through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "servicenow-module-navigation",
+      },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      'Navigate to the "Database Instances > HBase" module of the "Configuration" application.';
+    (agent as any).hasReadPage = true;
+    (agent as any).turnCount = 4;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner approved",
+    }));
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-required-evidence",
+      "Opened the Configuration > Database Instances > HBase module.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_missing_evidence",
+      {
+        rejections: 1,
+        selectedSkillId: "servicenow-module-navigation",
+        missingRequiredEvidence: [
+          "navigation_reached",
+          "goal_state_verified",
+        ],
+      },
+    );
+    expect((agent as any).context.getMessages().at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-required-evidence",
+      content: expect.stringContaining("Missing required typed evidence"),
+    });
+  });
+
   test("deterministic done accepts current quiz selection despite stale planner question", async () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),

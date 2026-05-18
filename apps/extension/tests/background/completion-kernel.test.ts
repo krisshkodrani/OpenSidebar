@@ -13,6 +13,7 @@ import {
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
+  evaluateCompletionRequiredEvidencePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionWorkflowContractPreflight,
   generateCompletionContract,
@@ -830,6 +831,32 @@ describe("completion kernel", () => {
     expect(evaluateCompletionMoneyTableAggregatePreflight({})).toEqual({
       status: "valid",
     });
+  });
+
+  test("rejects missing required typed evidence through kernel preflight", () => {
+    const decision = evaluateCompletionRequiredEvidencePreflight({
+      missingRequiredEvidence: [
+        "navigation_reached",
+        "goal_state_verified",
+      ],
+    });
+
+    expect(decision).toEqual({
+      status: "rejected",
+      kind: "missing_required_evidence",
+      missingRequiredEvidence: [
+        "navigation_reached",
+        "goal_state_verified",
+      ],
+    });
+  });
+
+  test("accepts required evidence preflight when no evidence is missing", () => {
+    expect(
+      evaluateCompletionRequiredEvidencePreflight({
+        missingRequiredEvidence: [],
+      }),
+    ).toEqual({ status: "valid" });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
