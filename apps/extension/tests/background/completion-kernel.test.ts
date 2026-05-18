@@ -1567,6 +1567,20 @@ describe("completion kernel", () => {
       genericSummary: "Import completed.",
     },
     {
+      action: "duplicate",
+      request: "Duplicate Record Alpha.",
+      summary: "Duplicated Record Alpha.",
+      targetLabel: "Record Alpha",
+      requestedVisible:
+        "Record Beta remains original. Record Alpha duplicated successfully.",
+      requestedEvidenceText: "Record Alpha duplicated successfully.",
+      otherVisible:
+        "Record Alpha remains original. Record Beta duplicated successfully.",
+      otherEvidenceText: "Record Beta duplicated successfully.",
+      genericVisible: "Duplicate completed.",
+      genericSummary: "Duplicate completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
