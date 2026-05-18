@@ -2660,6 +2660,154 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts enable confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security MFA Status: Disabled Enable MFA",
+      pageContent: "Security MFA Status: Disabled Enable MFA",
+      elements: [actionButton(608, "Enable MFA")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security MFA Status: Enabled",
+      pageContent: "Security MFA Status: Enabled",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable MFA.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 608 },
+      result: "Clicked element 608.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Enabled MFA.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:enable:status:status-enabled",
+        detail: expect.objectContaining({
+          action: "enable",
+          source: "status_change",
+          text: "Status: Enabled",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts disable confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security MFA Status: Enabled Disable MFA",
+      pageContent: "Security MFA Status: Enabled Disable MFA",
+      elements: [actionButton(609, "Disable MFA")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security MFA Status: Disabled",
+      pageContent: "Security MFA Status: Disabled",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable MFA.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 609 },
+      result: "Clicked element 609.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disabled MFA.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disable:status:status-disabled",
+        detail: expect.objectContaining({
+          action: "disable",
+          source: "status_change",
+          text: "Status: Disabled",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer enable confirmation when status was already enabled", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security MFA Status: Enabled Enable MFA",
+      pageContent: "Security MFA Status: Enabled Enable MFA",
+      elements: [actionButton(608, "Enable MFA")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security MFA Status: Enabled",
+      pageContent: "Security MFA Status: Enabled",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 608 },
+      result: "Clicked element 608.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer disable confirmation when status was already disabled", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security MFA Status: Disabled Disable MFA",
+      pageContent: "Security MFA Status: Disabled Disable MFA",
+      elements: [actionButton(609, "Disable MFA")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security MFA Status: Disabled",
+      pageContent: "Security MFA Status: Disabled",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 609 },
+      result: "Clicked element 609.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts submit confirmation from same-page status change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ004 Status: Draft Submit request",
