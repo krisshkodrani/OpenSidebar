@@ -1481,6 +1481,175 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  for (const scenario of [
+    {
+      action: "save",
+      request: "Save Draft Alpha.",
+      summary: "Saved Draft Alpha.",
+      targetLabel: "Draft Alpha",
+      requestedVisible:
+        "Draft Beta remains unsaved. Draft Alpha saved successfully.",
+      requestedEvidenceText: "Draft Alpha saved successfully.",
+      otherVisible: "Draft Alpha remains unsaved. Draft Beta saved successfully.",
+      otherEvidenceText: "Draft Beta saved successfully.",
+      genericVisible: "Save completed.",
+      genericSummary: "Save completed.",
+    },
+    {
+      action: "send",
+      request: "Send Message Alpha.",
+      summary: "Sent Message Alpha.",
+      targetLabel: "Message Alpha",
+      requestedVisible:
+        "Message Beta remains draft. Message Alpha sent successfully.",
+      requestedEvidenceText: "Message Alpha sent successfully.",
+      otherVisible:
+        "Message Alpha remains draft. Message Beta sent successfully.",
+      otherEvidenceText: "Message Beta sent successfully.",
+      genericVisible: "Send completed.",
+      genericSummary: "Send completed.",
+    },
+    {
+      action: "post",
+      request: "Publish Article Alpha.",
+      summary: "Published Article Alpha.",
+      targetLabel: "Article Alpha",
+      requestedVisible:
+        "Article Beta remains draft. Article Alpha published successfully.",
+      requestedEvidenceText: "Article Alpha published successfully.",
+      otherVisible:
+        "Article Alpha remains draft. Article Beta published successfully.",
+      otherEvidenceText: "Article Beta published successfully.",
+      genericVisible: "Publish completed.",
+      genericSummary: "Publish completed.",
+    },
+    {
+      action: "update",
+      request: "Update Request Alpha.",
+      summary: "Updated Request Alpha.",
+      targetLabel: "Request Alpha",
+      requestedVisible:
+        "Request Beta remains stale. Request Alpha updated successfully.",
+      requestedEvidenceText: "Request Alpha updated successfully.",
+      otherVisible:
+        "Request Alpha remains stale. Request Beta updated successfully.",
+      otherEvidenceText: "Request Beta updated successfully.",
+      genericVisible: "Update completed.",
+      genericSummary: "Update completed.",
+    },
+  ] as const) {
+    test(`accepts target-aware visible ${scenario.action} confirmation for the requested target`, () => {
+      const snap = workflowSnapshot({
+        visibleContent: scenario.requestedVisible,
+        pageContent: scenario.requestedVisible,
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: snap,
+      });
+      const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.targetLabel,
+      });
+      expect(evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "confirmation_state",
+            logicalKey: `workflow:confirmation:${scenario.action}`,
+            detail: expect.objectContaining({
+              action: scenario.action,
+              source: "visible_text",
+              text: scenario.requestedEvidenceText,
+            }),
+          }),
+        ]),
+      );
+      expect(decision.status).toBe("accepted");
+    });
+
+    test(`rejects target-aware visible ${scenario.action} confirmation for a different target`, () => {
+      const snap = workflowSnapshot({
+        visibleContent: scenario.otherVisible,
+        pageContent: scenario.otherVisible,
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: snap,
+      });
+      const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.targetLabel,
+      });
+      expect(evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "confirmation_state",
+            logicalKey: `workflow:confirmation:${scenario.action}`,
+            detail: expect.objectContaining({
+              action: scenario.action,
+              source: "visible_text",
+              text: scenario.otherEvidenceText,
+            }),
+          }),
+        ]),
+      );
+      expect(decision).toMatchObject({
+        status: "rejected",
+        reason:
+          "Workflow confirmation evidence is for a different target than the requested action.",
+      });
+    });
+
+    test(`keeps generic visible ${scenario.action} completion valid for a named target`, () => {
+      const snap = workflowSnapshot({
+        visibleContent: scenario.genericVisible,
+        pageContent: scenario.genericVisible,
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: snap,
+      });
+      const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: scenario.genericSummary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.targetLabel,
+      });
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
   test("accepts restart-class workflow confirmation after visible restart success", () => {
     const snap = workflowSnapshot({
       visibleContent: "Service restarted successfully.",
