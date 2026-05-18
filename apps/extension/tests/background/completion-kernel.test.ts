@@ -1152,6 +1152,70 @@ describe("completion kernel", () => {
     expect(decision.reason).toContain("no grounded page-read evidence");
   });
 
+  test("rejects read-answer completion missing required multi-return coverage", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Gamma inventory count is 6,412 units. Warehouse Alpha inventory count is 4,827 units.",
+      pageContent:
+        "Warehouse Gamma inventory count is 6,412 units. Warehouse Alpha inventory count is 4,827 units. The page compares current stock levels, receiving backlog, audit status, and replenishment timing for both warehouses so operators can report both requested inventory numbers from the page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Warehouse Gamma inventory count is 6,412 units.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      taskContract: {
+        multiReturnCount: 2,
+        requiredEntities: expect.arrayContaining([
+          "warehouse gamma",
+          "warehouse alpha",
+        ]),
+      },
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("multi-return");
+    expect(decision.reason).toContain("warehouse alpha");
+  });
+
+  test("accepts read-answer completion with required multi-return coverage", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Gamma inventory count is 6,412 units. Warehouse Alpha inventory count is 4,827 units.",
+      pageContent:
+        "Warehouse Gamma inventory count is 6,412 units. Warehouse Alpha inventory count is 4,827 units. The page compares current stock levels, receiving backlog, audit status, and replenishment timing for both warehouses so operators can report both requested inventory numbers from the page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Warehouse Gamma inventory count is 6,412 units. Warehouse Alpha inventory count is 4,827 units.",
+    });
+
+    expect(generated?.source).toBe("task_contract");
+    expect(decision.status).toBe("accepted");
+  });
+
   test("derives read-answer evidence from read_page results", () => {
     const snap = workflowSnapshot({
       title: "Release Notes",
