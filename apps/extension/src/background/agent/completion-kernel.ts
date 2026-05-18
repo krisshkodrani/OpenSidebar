@@ -3534,7 +3534,7 @@ function controlLabelConfirmsWorkflowAction(
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
-      return /\b(?:updated|changed|applied)\b/i.test(text);
+      return /\b(?:updated|changed|applied|up[-\s]+to[-\s]+date)\b/i.test(text);
     case "submit":
       return /\bsubmitted\b/i.test(text);
     case "complete":

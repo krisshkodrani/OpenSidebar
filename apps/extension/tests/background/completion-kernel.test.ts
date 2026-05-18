@@ -2374,6 +2374,80 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts update confirmation from same-control up-to-date label change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Edit mode Apply changes",
+      pageContent: "Settings Edit mode Apply changes",
+      elements: [stableActionButton(608, "Apply changes", "settings-apply")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Up to date",
+      pageContent: "Settings Up to date",
+      elements: [stableActionButton(608, "Up to date", "settings-apply")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Apply changes.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 608 },
+      result: "Clicked element 608.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Applied changes.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "update",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:update:control:settings-apply",
+        detail: expect.objectContaining({
+          action: "update",
+          source: "control_label_change",
+          text: "Control label changed to confirmed state: Up to date",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer up-to-date update confirmation when label was already final", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Settings Up to date",
+      pageContent: "Settings Up to date",
+      elements: [stableActionButton(608, "Up to date", "settings-apply")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Settings Up to date",
+      pageContent: "Settings Up to date",
+      elements: [stableActionButton(608, "Up to date", "settings-apply")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 608 },
+      result: "Clicked element 608.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts approval-complete summary for approve status-change evidence", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ001 Status: Awaiting approval Approve request",
