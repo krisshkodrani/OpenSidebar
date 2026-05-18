@@ -78,7 +78,8 @@ export type CompletionEvidence =
         source?:
           | "visible_text"
           | "modal_disappearance"
-          | "target_disappearance";
+          | "target_disappearance"
+          | "draft_disappearance";
       };
     }
   | {
@@ -772,6 +773,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
 
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
   return evidence;
@@ -2478,6 +2480,63 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractDraftSubmissionEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferDraftSubmissionAction(element);
+  if (!action) return [];
+
+  const draft = extractDraftEvidence(pre, params.turn)
+    .filter(
+      (event): event is Extract<CompletionEvidence, { type: "draft_state" }> =>
+        event.type === "draft_state" &&
+        !event.detail.submitted &&
+        tokenizeCompletionText(event.detail.text).length >= 3 &&
+        cleanLabel(event.detail.text).length >= 12,
+    )
+    .sort((a, b) => b.detail.text.length - a.detail.text.length)[0];
+  if (!draft) return [];
+
+  const normalizedDraftText = normalizeText(draft.detail.text);
+  if (!snapshotContainsNormalizedText(pre, normalizedDraftText)) return [];
+  if (snapshotContainsNormalizedText(current, normalizedDraftText)) return [];
+
+  const key =
+    compactKey(draft.detail.target) ||
+    compactKey(draft.detail.text) ||
+    `tag-${id}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:draft:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `${action === "send" ? "Sent" : "Posted"} draft no longer visible: ${draft.detail.target}`,
+        action,
+        source: "draft_disappearance",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractReadAnswerEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -2522,6 +2581,18 @@ function isModalDismissalToolOutcome(params: {
 function isDeleteControl(element: TaggedElement): boolean {
   const text = normalizeText(elementControlText(element));
   return /\b(?:delete|remove)\b/i.test(text);
+}
+
+function inferDraftSubmissionAction(
+  element: TaggedElement,
+): Extract<WorkflowConfirmationAction, "send" | "post"> | null {
+  const text = normalizeText(elementControlText(element));
+  if (!text) return null;
+  if (/\b(?:post|publish)\b/i.test(text)) return "post";
+  if (/\b(?:send|email)\b/i.test(text)) return "send";
+  if (/\b(?:comment|reply)\b/i.test(text)) return "post";
+  if (/\bmessage\b/i.test(text)) return "send";
+  return null;
 }
 
 function extractDeletionTargetFromControl(element: TaggedElement): string | null {
@@ -2573,6 +2644,7 @@ function elementControlText(element: TaggedElement): string {
     element.attributes.title,
     element.attributes.name,
     element.attributes.id,
+    element.attributes.value,
   ]
     .filter(Boolean)
     .join(" ");
@@ -2595,6 +2667,7 @@ function snapshotContainsNormalizedText(
         element.attributes.title,
         element.attributes.name,
         element.attributes.id,
+        element.attributes.value,
       ]),
     ]
       .filter(Boolean)

@@ -232,6 +232,23 @@ function deleteButton(tag: number, target: string): TaggedElement {
   };
 }
 
+function actionButton(tag: number, label: string): TaggedElement {
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "button",
+    role: "button",
+    text: label,
+    attributes: {
+      id: key,
+      "aria-label": label,
+    },
+    rect: { x: 500, y: tag * 20, width: 120, height: 32 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 describe("completion kernel", () => {
   test("routes question-shaped done summaries to clarification preflight", () => {
     const decision = evaluateCompletionSummaryPreflight({
@@ -1047,6 +1064,110 @@ describe("completion kernel", () => {
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("accepts send confirmation from draft disappearance", () => {
+    const pre = draftSnapshot({
+      visibleContent: "Email thread Reply message Send reply",
+      pageContent: "Email thread Reply message Send reply",
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: "Email thread",
+      pageContent: "Email thread",
+      elements: [actionButton(302, "Send reply")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send the reply.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent the reply.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:draft:reply-message",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "draft_disappearance",
+          text: "Sent draft no longer visible: Reply message",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer send confirmation while draft text remains visible", () => {
+    const pre = draftSnapshot({
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+      ],
+    });
+    const current = draftSnapshot({
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer draft submission from a generic submit button", () => {
+    const pre = draftSnapshot({
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Submit"),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: "Email thread",
+      pageContent: "Email thread",
+      elements: [actionButton(302, "Submit")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
     });
 
     expect(evidence).toEqual([]);
