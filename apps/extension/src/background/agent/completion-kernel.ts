@@ -191,6 +191,7 @@ export type WorkflowConfirmationAction =
   | "upload"
   | "import"
   | "duplicate"
+  | "restore"
   | "post"
   | "approve"
   | "reject"
@@ -226,6 +227,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "upload",
   "import",
   "duplicate",
+  "restore",
   "post",
   "approve",
   "reject",
@@ -264,6 +266,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "upload"
   | "import"
   | "duplicate"
+  | "restore"
   | "post"
   | "approve"
   | "reject"
@@ -2630,6 +2633,13 @@ function inferWorkflowConfirmationAction(
   ) {
     return "duplicate";
   }
+  if (
+    /\b(?:restore(?:d)?|recover(?:ed)?|reinstate(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|archive|version|backup)\b/i.test(
+      text,
+    )
+  ) {
+    return "restore";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2801,6 +2811,8 @@ function workflowTargetActionPattern(
       return "(?:import)";
     case "duplicate":
       return "(?:duplicate|clone)";
+    case "restore":
+      return "(?:restore|recover|reinstate)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -2966,6 +2978,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "upload" ||
     action === "import" ||
     action === "duplicate" ||
+    action === "restore" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3099,6 +3112,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:imported)";
     case "duplicate":
       return "(?:duplicated|cloned)";
+    case "restore":
+      return "(?:restored|recovered|reinstated)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3170,6 +3185,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:import)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
+    case "restore":
+      return "(?:restore|restoration|recover|recovery|reinstate|reinstatement)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3436,6 +3453,21 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:duplicated|cloned|duplicate complete|duplicate completed|duplicate successful|clone complete|clone completed|clone successful)\b/i.test(
+        text,
+      );
+    case "restore":
+      if (mode === "visible") {
+        return (
+          /\b(?:restored|recovered|reinstated)\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|archive|version|backup)\s+(?:restored|recovered|reinstated)\b/i.test(
+            text,
+          ) ||
+          /\b(?:restore|restoration|recover|recovery|reinstate|reinstatement)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:restored|recovered|reinstated|restore complete|restore completed|restore successful|restoration complete|restoration completed|restoration successful|recover complete|recover completed|recover successful|recovery complete|recovery completed|recovery successful|reinstate complete|reinstate completed|reinstate successful|reinstatement complete|reinstatement completed|reinstatement successful)\b/i.test(
         text,
       );
     case "post":
@@ -3753,6 +3785,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:imported|import)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
+    case "restore":
+      return "(?:restored|recovered|reinstated|restore|restoration|recover|recovery|reinstate|reinstatement)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4567,6 +4601,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\bimported\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
+    case "restore":
+      return /\b(?:restored|recovered|reinstated)\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
