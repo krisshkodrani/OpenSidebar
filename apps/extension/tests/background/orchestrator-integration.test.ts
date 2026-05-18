@@ -1461,6 +1461,34 @@ describe("Orchestrator integration join tests", () => {
           entry.body.data?.contractKind === "quiz_selection",
       ),
     ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "lane" &&
+          entry.body.data?.status === "completed" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.resultId === "completion-node-1",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "node" &&
+          entry.body.data?.status === "completed" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.resultId === "completion-node-1",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "root" &&
+          entry.body.data?.status === "completed",
+      ),
+    ).toBe(true);
   });
 
   test("restores a compatible turn checkpoint only on the first recovered launch", async () => {
