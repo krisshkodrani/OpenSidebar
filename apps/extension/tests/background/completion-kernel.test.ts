@@ -4285,6 +4285,34 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("does not accept multi-word label-value answer inside a longer phrase", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Primary region: North America East Backup region: North America West",
+      pageContent:
+        "Support Matrix Primary region: North America East. Backup region: North America West. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Where is the primary region?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "North America East Coast",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary region",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded email label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",

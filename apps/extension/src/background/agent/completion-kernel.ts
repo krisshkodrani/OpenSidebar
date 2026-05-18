@@ -4403,14 +4403,13 @@ function readAnswerSummaryGroundedInEvidence(
   expectedAnswerLabel?: string,
 ): boolean {
   if (
-    expectedAnswerLabel &&
-    readAnswerSummaryMatchesExpectedLabelValue(
+    expectedAnswerLabel
+  ) {
+    return readAnswerSummaryMatchesExpectedLabelValue(
       summary,
       evidence.detail.evidenceText,
       expectedAnswerLabel,
-    )
-  ) {
-    return true;
+    );
   }
 
   const sourceTokens = new Set(
@@ -4549,7 +4548,11 @@ function labelValuePhraseCoveredBySummary(
   const requiredWords =
     valueWords.length <= 4 ? valueWords : valueWords.slice(0, 2);
   const phrase = normalizeText(requiredWords.join(" "));
-  return Boolean(phrase) && normalizedSummary.includes(phrase);
+  if (!phrase) return false;
+  if (valueWords.length > 4) return normalizedSummary.includes(phrase);
+  return new RegExp(
+    `(^|[^a-z0-9])${escapeRegExp(phrase)}(?=$|[.,;:!?)]|\\s+(?:and|are|as|for|from|in|is|on|was|were|with)\\b)`,
+  ).test(normalizedSummary);
 }
 
 function extractPreciseConciseLabelValue(
