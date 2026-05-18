@@ -4594,6 +4594,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isDataRateValue(preciseConciseValue)) {
+      return preciseDataRateValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4800,6 +4806,14 @@ function extractPreciseConciseLabelValue(
     if (dataSizeMatch) return cleanLabel(dataSizeMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveDataRateValue(expectedAnswerLabel)) {
+    const dataRateMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:bps|kbps|mbps|gbps|tbps|kbit\\/s|mbit\\/s|gbit\\/s|tbit\\/s|kb\\/s|kib\\/s|mb\\/s|mib\\/s|gb\\/s|gib\\/s|tb\\/s|tib\\/s|bytes?\\/s|bytes?\\s+per\\s+second))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (dataRateMatch) return cleanLabel(dataRateMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4857,6 +4871,12 @@ function labelCanHaveDurationValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveDataSizeValue(expectedAnswerLabel: string): boolean {
   return /\b(?:size|capacity|quota|limit|storage|memory|disk|upload|download|payload|artifact|file|bundle|cache)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveDataRateValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:bandwidth|throughput|speed|bitrate|transfer|download|upload|network|connection|link)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5035,6 +5055,23 @@ function isDataSizeValue(value: string): boolean {
 }
 
 function preciseDataSizeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isDataRateValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:bps|kbps|mbps|gbps|tbps|kbit\/s|mbit\/s|gbit\/s|tbit\/s|kb\/s|kib\/s|mb\/s|mib\/s|gb\/s|gib\/s|tb\/s|tib\/s|bytes?\/s|bytes?\s+per\s+second)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseDataRateValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
