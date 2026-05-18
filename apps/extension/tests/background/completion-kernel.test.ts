@@ -1247,6 +1247,44 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts approval-complete summary for approve status-change evidence", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Awaiting approval Approve request",
+      pageContent: "Request REQ001 Status: Awaiting approval Approve request",
+      elements: [actionButton(601, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Approved",
+      pageContent: "Request REQ001 Status: Approved",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 601 },
+      result: "Clicked element 601.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approval completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts resolve confirmation from same-page state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Incident INC001 State: In Progress Resolve incident",

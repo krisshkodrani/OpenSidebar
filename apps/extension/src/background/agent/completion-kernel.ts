@@ -2184,9 +2184,13 @@ function summaryConfirmsWorkflowAction(
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
-      return /\bapproved\b/i.test(text);
+      return /\b(?:approved|approval complete|approval completed)\b/i.test(
+        text,
+      );
     case "reject":
-      return /\brejected\b/i.test(text);
+      return /\b(?:rejected|rejection complete|rejection completed)\b/i.test(
+        text,
+      );
     case "close":
       return /\b(?:closed|resolved)\b/i.test(text);
     case "dismiss":
