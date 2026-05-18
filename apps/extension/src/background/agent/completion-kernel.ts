@@ -4182,10 +4182,32 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     return normalizedSummary.includes(valuePrefix);
   }
 
+  const normalizedValue = normalizeText(valueWords[0]);
+  if (
+    isConciseNumericLabelValue(rawValue) &&
+    valueTokenCoveredBySummary(normalizedSummary, normalizedValue)
+  ) {
+    return true;
+  }
+
   const normalizedLabel = normalizeText(expectedAnswerLabel);
   return (
     normalizedSummary.includes(normalizedLabel) &&
-    normalizedSummary.includes(normalizeText(valueWords[0]))
+    normalizedSummary.includes(normalizedValue)
+  );
+}
+
+function isConciseNumericLabelValue(value: string): boolean {
+  return /^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleanLabel(value));
+}
+
+function valueTokenCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(`(^|\\s)${escapeRegExp(normalizedValue)}($|\\s)`).test(
+    normalizedSummary,
   );
 }
 
