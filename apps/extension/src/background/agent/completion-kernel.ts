@@ -2877,7 +2877,12 @@ function workflowConfirmationMatchesTarget(
       targetLabel,
     );
   }
-  if (event.detail.source === "status_change" && event.detail.targetText) {
+  if (
+    (event.detail.source === "status_change" ||
+      event.detail.source === "control_label_change" ||
+      event.detail.source === "control_state_change") &&
+    event.detail.targetText
+  ) {
     return workflowTargetLabelCoveredByText(targetLabel, event.detail.targetText);
   }
   return true;
@@ -4033,6 +4038,7 @@ function extractControlLabelChangeEvidenceFromToolOutcome(params: {
   if (normalizeText(beforeText) === normalizeText(afterText)) return [];
   if (controlLabelConfirmsWorkflowAction(beforeText, action)) return [];
   if (!controlLabelConfirmsWorkflowAction(afterText, action)) return [];
+  const targetText = inferWorkflowTargetTextFromControl(element, action);
 
   const label = cleanLabel(
     currentElement.text ||
@@ -4051,6 +4057,7 @@ function extractControlLabelChangeEvidenceFromToolOutcome(params: {
         text: `Control label changed to confirmed state: ${label}`,
         action,
         source: "control_label_change",
+        ...(targetText ? { targetText } : {}),
         ...(current.url ? { url: current.url } : {}),
       },
     },
@@ -4105,6 +4112,7 @@ function extractControlStateChangeEvidenceFromToolOutcome(params: {
       element.attributes["aria-label"] ||
       elementControlText(element),
   );
+  const targetText = inferWorkflowTargetTextFromControl(element, action);
 
   return [
     {
@@ -4116,6 +4124,7 @@ function extractControlStateChangeEvidenceFromToolOutcome(params: {
         text: `Control state changed to ${controlStateCompletionWord(action)}${label ? `: ${label}` : ""}`,
         action,
         source: "control_state_change",
+        ...(targetText ? { targetText } : {}),
         ...(current.url ? { url: current.url } : {}),
       },
     },
@@ -4537,6 +4546,34 @@ function statusTargetTextSegments(snapshot: DomSnapshot): string[] {
     }
   }
   return segments;
+}
+
+function inferWorkflowTargetTextFromControl(
+  element: TaggedElement,
+  action: WorkflowConfirmationAction,
+): string | null {
+  const candidates = [
+    element.text,
+    element.attributes.label,
+    element.attributes["aria-label"],
+    element.attributes.title,
+    element.attributes.value,
+  ];
+  const seen = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    for (const value of [candidate, candidate.replace(/[-_]+/g, " ")]) {
+      const text = cleanLabel(value);
+      const key = normalizeText(text);
+      if (!text || seen.has(key)) continue;
+      seen.add(key);
+
+      const target = inferWorkflowConfirmationTargetLabel(text, action);
+      if (target) return target;
+    }
+  }
+  return null;
 }
 
 function snapshotCompletionText(snapshot: DomSnapshot): string {

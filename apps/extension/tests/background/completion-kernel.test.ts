@@ -5577,6 +5577,177 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware control-label confirmation for the requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request Alpha Awaiting approval",
+      pageContent: "Request Alpha Awaiting approval",
+      elements: [
+        stableActionButton(630, "Approve Request Alpha", "approve-alpha-action"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request Alpha Approved",
+      pageContent: "Request Alpha Approved",
+      elements: [stableActionButton(630, "Approved", "approve-alpha-action")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 630 },
+      result: "Clicked element 630.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:control:approve-alpha-action",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "control_label_change",
+          targetText: "Request Alpha",
+          text: "Control label changed to confirmed state: Approved",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware control-label confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request Alpha Awaiting approval Request Beta Awaiting approval",
+      pageContent: "Request Alpha Awaiting approval Request Beta Awaiting approval",
+      elements: [
+        stableActionButton(630, "Approve Request Beta", "approve-beta-action"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request Alpha Awaiting approval Request Beta Approved",
+      pageContent: "Request Alpha Awaiting approval Request Beta Approved",
+      elements: [stableActionButton(630, "Approved", "approve-beta-action")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 630 },
+      result: "Clicked element 630.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:control:approve-beta-action",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "control_label_change",
+          targetText: "Request Beta",
+          text: "Control label changed to confirmed state: Approved",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic control-label confirmation valid for a named target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request Alpha Awaiting approval Approve request",
+      pageContent: "Request Alpha Awaiting approval Approve request",
+      elements: [
+        stableActionButton(630, "Approve request", "request-approval-action"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request Alpha Approved",
+      pageContent: "Request Alpha Approved",
+      elements: [
+        stableActionButton(630, "Approved", "request-approval-action"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 630 },
+      result: "Clicked element 630.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:approve:control:request-approval-action",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "control_label_change",
+          text: "Control label changed to confirmed state: Approved",
+        }),
+      }),
+    ]);
+    expect((evidence[0]?.detail as { targetText?: string }).targetText).toBe(
+      undefined,
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("does not infer control-label confirmation when label was already final", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ001 Approved",
@@ -6196,6 +6367,131 @@ describe("completion kernel", () => {
         }),
       }),
     ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware control-state confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Feature Alpha disabled Feature Beta disabled",
+      pageContent: "Feature Alpha disabled Feature Beta disabled",
+      elements: [
+        statefulActionButton(
+          640,
+          "Enable Feature Beta",
+          false,
+          "feature-beta-toggle",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Feature Alpha disabled Feature Beta enabled",
+      pageContent: "Feature Alpha disabled Feature Beta enabled",
+      elements: [
+        statefulActionButton(
+          641,
+          "Enable Feature Beta",
+          true,
+          "feature-beta-toggle",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable Feature Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 640 },
+      result: "Clicked element 640.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Enabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:enable:control-state:feature-beta-toggle",
+        detail: expect.objectContaining({
+          action: "enable",
+          source: "control_state_change",
+          targetText: "Feature Beta",
+          text: "Control state changed to enabled: Enable Feature Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic control-state confirmation valid for a named target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Feature Alpha disabled",
+      pageContent: "Feature Alpha disabled",
+      elements: [statefulActionButton(640, "Enable", false, "feature-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Feature Alpha enabled",
+      pageContent: "Feature Alpha enabled",
+      elements: [statefulActionButton(641, "Enable", true, "feature-toggle")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable Feature Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 640 },
+      result: "Clicked element 640.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Enabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:enable:control-state:feature-toggle",
+        detail: expect.objectContaining({
+          action: "enable",
+          source: "control_state_change",
+          text: "Control state changed to enabled: Enable",
+        }),
+      }),
+    ]);
+    expect((evidence[0]?.detail as { targetText?: string }).targetText).toBe(
+      undefined,
+    );
     expect(decision.status).toBe("accepted");
   });
 
