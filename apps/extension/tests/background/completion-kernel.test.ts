@@ -4305,6 +4305,62 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded ip address label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Server address: 10.42.0.8 Backup address: 10.42.0.9",
+      pageContent:
+        "Network Matrix Server address: 10.42.0.8. Backup address: 10.42.0.9. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the server address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.8",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "server address",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling ip address with same prefix", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Server address: 10.42.0.8 Backup address: 10.42.0.9",
+      pageContent:
+        "Network Matrix Server address: 10.42.0.8. Backup address: 10.42.0.9. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the server address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.9",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "server address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded numeric label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
