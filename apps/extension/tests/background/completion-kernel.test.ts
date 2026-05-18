@@ -1581,6 +1581,20 @@ describe("completion kernel", () => {
       genericSummary: "Duplicate completed.",
     },
     {
+      action: "restore",
+      request: "Restore Record Alpha.",
+      summary: "Restored Record Alpha.",
+      targetLabel: "Record Alpha",
+      requestedVisible:
+        "Record Beta remains archived. Record Alpha restored successfully.",
+      requestedEvidenceText: "Record Alpha restored successfully.",
+      otherVisible:
+        "Record Alpha remains archived. Record Beta restored successfully.",
+      otherEvidenceText: "Record Beta restored successfully.",
+      genericVisible: "Restore completed.",
+      genericSummary: "Restore completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
