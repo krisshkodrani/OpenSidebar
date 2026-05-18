@@ -243,7 +243,15 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 type WorkflowConfirmationTextMode = "summary" | "visible";
 type TargetAwareVisibleWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "approve" | "reject" | "close" | "reopen" | "cancel"
+  | "delete"
+  | "archive"
+  | "approve"
+  | "reject"
+  | "close"
+  | "reopen"
+  | "cancel"
+  | "enable"
+  | "disable"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2711,6 +2719,10 @@ function workflowTargetActionPattern(
       return "(?:re[-\\s]?open)";
     case "cancel":
       return "(?:cancel)";
+    case "enable":
+      return "(?:enable|activate|turn\\s+on)";
+    case "disable":
+      return "(?:disable|deactivate|turn\\s+off)";
     default:
       return null;
   }
@@ -2788,7 +2800,9 @@ function isTargetAwareVisibleWorkflowAction(
     action === "reject" ||
     action === "close" ||
     action === "reopen" ||
-    action === "cancel"
+    action === "cancel" ||
+    action === "enable" ||
+    action === "disable"
   );
 }
 
@@ -2882,6 +2896,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:re[-\\s]?opened)";
     case "cancel":
       return "(?:cancell?ed)";
+    case "enable":
+      return "(?:enabled|activated)";
+    case "disable":
+      return "(?:disabled|deactivated)";
   }
 }
 
@@ -2903,6 +2921,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:re[-\\s]?opening|re[-\\s]?open)";
     case "cancel":
       return "(?:cancellation)";
+    case "enable":
+      return "(?:enable|activation)";
+    case "disable":
+      return "(?:disable|deactivation)";
   }
 }
 
