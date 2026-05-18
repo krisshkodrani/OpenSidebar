@@ -4765,10 +4765,21 @@ export class Orchestrator {
           );
           return;
         }
-        if (
-          (task.status as string) === "stopping" &&
-          result.outcome !== "completed"
-        ) {
+        if ((task.status as string) === "stopping") {
+          this.emitTraceEvent(
+            task,
+            "worker_result_ignored",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              workerId,
+              currentStatus: node.status,
+              executorOutcome: result.outcome,
+              reason: "task_stop_requested",
+              ...buildParallelRunState(task),
+            },
+            "system",
+          );
           node.status = "failed";
           node.error = appendRecentSideEffects(
             "Stopped by user",

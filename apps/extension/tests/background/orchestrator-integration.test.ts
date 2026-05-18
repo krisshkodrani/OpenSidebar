@@ -2440,6 +2440,73 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.subtaskResults?.[0]?.status).toBe("stopped");
   });
 
+  test("gives user stop precedence over a worker completion result", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "completion racing with stop"),
+    ];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+
+    loopStartImpl = async (nodeId) =>
+      await new Promise((resolve) => {
+        const poll = () => {
+          if (nodeId && gracefulStopLoopNodeIds.includes(nodeId)) {
+            resolve({
+              outcome: "completed",
+              summary: "Completed after stop request.",
+              metrics: undefined,
+            });
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const runPromise = orchestrator.startTask(makeInput("stop race"));
+
+    await vi.waitFor(() => {
+      expect(createdLoopNodeIds).toContain("n1");
+    });
+
+    await orchestrator.stopTask("ws-1");
+    await runPromise;
+
+    expect(gracefulStopLoopNodeIds).toContain("n1");
+    expect(stoppedLoopNodeIds).not.toContain("n1");
+    expect(verifierDecisionCalls).toBe(0);
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("stopped");
+    expect(completion?.payload?.subtaskResults?.[0]?.status).toBe("stopped");
+    expect(completion?.payload?.subtaskResults?.[0]?.result).toContain(
+      "Stopped by user",
+    );
+    expect(completion?.payload?.subtaskResults?.[0]?.result).not.toContain(
+      "Completed after stop request",
+    );
+
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_result_ignored" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.currentStatus === "running" &&
+          entry.body.data?.executorOutcome === "completed" &&
+          entry.body.data?.reason === "task_stop_requested",
+      ),
+    ).toBe(true);
+  });
+
   test("isolates verifier lane and stops cross-node contamination", async () => {
     plannerBuildNodesImpl = async () => [
       makeNode("n1", "verify lane node one"),
