@@ -9,6 +9,7 @@ import {
   TraceFailureInfo,
 } from "../../types";
 import type { SideEffectEntry } from "./checkpoint-types";
+import type { CompletionEnvelope } from "./completion-kernel";
 
 export interface PendingApprovalInteraction {
   kind: "approval";
@@ -62,4 +63,6 @@ export interface LoopResult {
   sideEffectsLog?: SideEffectEntry[];
   /** Trusted typed evidence emitted by tools during the run. */
   evidence?: EvidenceEvent[];
+  /** Structured metadata explaining why completion was accepted. */
+  completionEnvelope?: CompletionEnvelope;
 }

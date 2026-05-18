@@ -75,6 +75,7 @@ import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import {
+  buildCompletionEnvelope,
   buildCompletionRecoveryHint,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
@@ -82,6 +83,7 @@ import {
   evaluateCompletionContract,
   generateCompletionContract,
   type CompletionCandidateSource,
+  type CompletionEnvelope,
   type CompletionEvaluation,
 } from "./completion-kernel";
 import {
@@ -538,8 +540,11 @@ export class AgentLoop {
    * retrying a subtask that already completed — prevents duplicate actions
    * (e.g. adding the same item to cart multiple times).
    */
-  public completedResult: { outcome: "completed"; summary: string } | null =
-    null;
+  public completedResult: {
+    outcome: "completed";
+    summary: string;
+    completionEnvelope?: CompletionEnvelope;
+  } | null = null;
 
   private llm: LLMClient;
   private context: ContextManager;
@@ -716,6 +721,7 @@ export class AgentLoop {
   private evidenceAccumulator = new EvidenceAccumulator();
   private completionEvidence = new CompletionEvidenceLedger();
   private lastCompletionRejection: CompletionEvaluation | null = null;
+  private lastCompletionRecoveryHint: string | null = null;
 
   /** Collected source citations (deduplicated by URL) */
   private citations: Citation[] = [];
@@ -1441,15 +1447,50 @@ export class AgentLoop {
     }
   }
 
-  private acceptDoneToolCall(summary: string, toolCallId: string): void {
+  private createCompletionEnvelope(params: {
+    source: CompletionCandidateSource;
+    contractKind: string;
+    decisionReason: string;
+    evidence?: CompletionEvaluation["evidence"];
+    summary: string;
+  }): CompletionEnvelope {
+    return buildCompletionEnvelope({
+      source: params.source,
+      contractKind: params.contractKind,
+      decisionReason: params.decisionReason,
+      evidence: params.evidence ?? [],
+      turn: this.turnCount,
+      summary: params.summary,
+    });
+  }
+
+  private recordCompletionEnvelope(envelope: CompletionEnvelope): void {
+    this.traceRecorder?.recordEvent("completion_envelope_created", {
+      turn: this.turnCount,
+      ...envelope,
+    });
+  }
+
+  private acceptDoneToolCall(
+    summary: string,
+    toolCallId: string,
+    completionEnvelope: CompletionEnvelope,
+  ): void {
     // Signal completion immediately - the orchestrator reads this after a lane
     // timeout to avoid retrying completed subtasks.
-    this.completedResult = { outcome: "completed", summary };
+    this.completedResult = {
+      outcome: "completed",
+      summary,
+      completionEnvelope,
+    };
+    this.recordCompletionEnvelope(completionEnvelope);
     this.traceRecorder?.recordEvent("completion_state_transition", {
       turn: this.turnCount,
       from: "working",
       to: "completed",
       source: "model_done",
+      resultId: completionEnvelope.resultId,
+      contractKind: completionEnvelope.contractKind,
     });
 
     this.context.clearPlanStatus();
@@ -2115,9 +2156,9 @@ export class AgentLoop {
   private recordCompletionEvidence(
     evidence: ReturnType<typeof deriveCompletionEvidenceFromSnapshot>,
     source: string,
-  ): void {
+  ): number {
     const added = this.completionEvidence.addMany(evidence);
-    if (added === 0) return;
+    if (added === 0) return 0;
     this.traceRecorder?.recordEvent("completion_evidence_recorded", {
       turn: this.turnCount,
       source,
@@ -2128,6 +2169,7 @@ export class AgentLoop {
         logicalKey: event.logicalKey,
       })),
     });
+    return added;
   }
 
   private refreshCompletionEvidenceFromSnapshot(source: string): void {
@@ -2146,7 +2188,7 @@ export class AgentLoop {
     result: string,
     preActionSnapshot?: DomSnapshot | null,
   ): void {
-    this.recordCompletionEvidence(
+    const added = this.recordCompletionEvidence(
       deriveCompletionEvidenceFromToolOutcome({
         toolName,
         args,
@@ -2157,6 +2199,9 @@ export class AgentLoop {
       }),
       "tool_result",
     );
+    if (added > 0) {
+      this.maybeAddCompletionRecoveryHint("tool_result");
+    }
   }
 
   private evaluateCompletionCandidate(
@@ -2206,6 +2251,14 @@ export class AgentLoop {
       activeObjective: completionContext.activeObjective,
       successCriteria: completionContext.successCriteria,
     });
+    if (generated?.notes.length) {
+      this.traceRecorder?.recordEvent("completion_contract_repaired", {
+        turn: this.turnCount,
+        notes: generated.notes,
+        contractKind: generated.contract.kind,
+        source: "recovery_consult",
+      });
+    }
     const decision = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: this.completionEvidence.toArray(),
@@ -2213,6 +2266,20 @@ export class AgentLoop {
       candidateSource: "model_done",
     });
     return buildCompletionRecoveryHint(decision);
+  }
+
+  private maybeAddCompletionRecoveryHint(trigger: string): void {
+    const hint = this.getCompletionRecoveryHintForCurrentState();
+    if (!hint || hint === this.lastCompletionRecoveryHint) return;
+    this.lastCompletionRecoveryHint = hint;
+    this.traceRecorder?.recordEvent("completion_recovery_hint", {
+      turn: this.turnCount,
+      trigger,
+    });
+    this.context.addMessage({
+      role: "user",
+      content: hint,
+    });
   }
 
   private rejectDoneFromCompletionDecision(
@@ -2256,11 +2323,20 @@ export class AgentLoop {
   ): Promise<boolean> {
     if (this.completedResult) {
       const completedSummary = this.completedResult.summary;
+      const completionEnvelope = this.completedResult.completionEnvelope;
       this.traceRecorder?.recordEvent("completion_decision", {
         turn: this.turnCount,
         status: "accepted",
         reason: "duplicate_done_after_terminal_completion",
         source: "model_done",
+        ...(completionEnvelope
+          ? {
+              resultId: completionEnvelope.resultId,
+              contractKind: completionEnvelope.contractKind,
+              evidenceKeys: completionEnvelope.evidenceKeys,
+              completionEnvelope,
+            }
+          : {}),
       });
       this.context.addMessage({
         role: "tool",
@@ -2279,17 +2355,26 @@ export class AgentLoop {
       summary,
     );
     if (deterministicDone.status === "accepted") {
+      const completionEnvelope = this.createCompletionEnvelope({
+        source: "model_done",
+        contractKind: deterministicDone.contract.kind,
+        decisionReason: deterministicDone.reason,
+        evidence: deterministicDone.evidence,
+        summary,
+      });
       this.traceRecorder?.recordEvent("completion_decision", {
         turn: this.turnCount,
         status: deterministicDone.status,
         source: "model_done",
         reason: deterministicDone.reason,
         contractKind: deterministicDone.contract.kind,
+        resultId: completionEnvelope.resultId,
         evidenceKeys: deterministicDone.evidence.map(
           (event) => event.logicalKey,
         ),
+        completionEnvelope,
       });
-      this.acceptDoneToolCall(summary, toolCallId);
+      this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
       return true;
     }
     if (
@@ -2340,13 +2425,24 @@ export class AgentLoop {
       return false;
     }
 
+    const completionEnvelope = this.createCompletionEnvelope({
+      source: "model_done",
+      contractKind: "legacy_done_guards",
+      decisionReason: "legacy_done_guards_passed",
+      evidence: this.completionEvidence.toArray(),
+      summary,
+    });
     this.traceRecorder?.recordEvent("completion_decision", {
       turn: this.turnCount,
       status: "accepted",
       source: "model_done",
       reason: "legacy_done_guards_passed",
+      resultId: completionEnvelope.resultId,
+      contractKind: completionEnvelope.contractKind,
+      evidenceKeys: completionEnvelope.evidenceKeys,
+      completionEnvelope,
     });
-    this.acceptDoneToolCall(summary, toolCallId);
+    this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
     return true;
   }
 
@@ -3269,6 +3365,7 @@ export class AgentLoop {
     this.pendingAsyncVerification = null;
     this.pendingFormSubmissionReset = null;
     this.lastCompletionRejection = null;
+    this.lastCompletionRecoveryHint = null;
     this.completionEvidence.clear();
     this.perception.reset();
     this.metrics = emptySessionMetrics();
@@ -7867,6 +7964,7 @@ export class AgentLoop {
             failure: { category: "none", code: "none" },
             metrics: this.getMetrics(),
             evidence: this.evidenceAccumulator.toArray(),
+            completionEnvelope: this.completedResult?.completionEnvelope,
           };
         }
         let domModified = false;
@@ -9856,6 +9954,7 @@ export class AgentLoop {
       summary: doneSummary,
       failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
+      completionEnvelope: this.completedResult?.completionEnvelope,
     };
   }
 
