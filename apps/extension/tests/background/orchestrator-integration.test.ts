@@ -26,11 +26,17 @@ type MockLoopConfig = {
   completionDeterministicAcceptanceEnabled?: boolean;
 };
 
+type MockCompletedResult = {
+  summary: string;
+  completionEnvelope?: Record<string, unknown>;
+};
+
 const createdLoopNodeIds: string[] = [];
 const createdLoopConfigs: MockLoopConfig[] = [];
 const capturedInstructions: Array<{ nodeId?: string; instruction: string }> = [];
 const stoppedLoopNodeIds: string[] = [];
 const gracefulStopLoopNodeIds: string[] = [];
+const mockLoopCompletedResults = new Map<string, MockCompletedResult>();
 const plannerOverrideCalls: Array<Record<string, unknown> | undefined> = [];
 const verifierOverrideCalls: Array<Record<string, unknown> | undefined> = [];
 let plannerBuildNodeCalls = 0;
@@ -221,6 +227,7 @@ describe("Orchestrator integration join tests", () => {
     capturedInstructions.length = 0;
     stoppedLoopNodeIds.length = 0;
     gracefulStopLoopNodeIds.length = 0;
+    mockLoopCompletedResults.clear();
     plannerOverrideCalls.length = 0;
     verifierOverrideCalls.length = 0;
     plannerBuildNodeCalls = 0;
@@ -466,6 +473,11 @@ describe("Orchestrator integration join tests", () => {
             return false;
           },
           injectFeedback(_text: string) {},
+          get completedResult() {
+            return cfg.nodeId
+              ? (mockLoopCompletedResults.get(cfg.nodeId) ?? null)
+              : null;
+          },
         } as any;
       },
       workspaceManager: {
@@ -2304,6 +2316,156 @@ describe("Orchestrator integration join tests", () => {
 
     await orchestrator.stopTask("ws-1");
     await runPromise;
+  });
+
+  test("accepts terminal completion when executor timeout follows done", async () => {
+    plannerBuildNodesImpl = async () => [makeNode("n1", "timeout after done")];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => {
+      if (nodeId) {
+        mockLoopCompletedResults.set(nodeId, {
+          summary: "Done before executor timeout.",
+          completionEnvelope: {
+            status: "completed",
+            resultId: "result-timeout-after-done",
+            source: "model_done",
+            contractKind: "workflow_confirmation",
+            decisionReason: "done accepted before timeout",
+            evidenceKeys: ["confirmation:done"],
+            evidenceEpoch: "1:page",
+          },
+        });
+      }
+      return await new Promise<{ outcome: "completed"; summary: string }>(
+        () => {
+          // Intentionally never resolve to force executor lane timeout.
+        },
+      );
+    };
+    orchestratorDeps.lanePolicies = {
+      executor: {
+        maxCallMs: 30,
+        maxFailuresBeforeIsolation: 99,
+        isolationCooldownMs: 60_000,
+      },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("timeout after done"));
+
+    expect(verifierDecisionCalls).toBe(0);
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.summary).toContain(
+      "Done before executor timeout",
+    );
+
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "lane" &&
+          entry.body.data?.reason ===
+            "executor_timeout_after_terminal_completion",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "node" &&
+          entry.body.data?.reason ===
+            "accepted_terminal_completion_after_executor_timeout",
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps user stop terminal when timeout sees completed result", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "timeout completed result during stop"),
+    ];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async (nodeId) => {
+      if (nodeId) {
+        mockLoopCompletedResults.set(nodeId, {
+          summary: "Done before stop-drain timeout.",
+          completionEnvelope: {
+            status: "completed",
+            resultId: "result-timeout-during-stop",
+            source: "model_done",
+            contractKind: "workflow_confirmation",
+            decisionReason: "done accepted before stop timeout",
+            evidenceKeys: ["confirmation:done"],
+            evidenceEpoch: "1:page",
+          },
+        });
+      }
+      return await new Promise<{ outcome: "completed"; summary: string }>(
+        () => {
+          // Intentionally never resolve to force executor lane timeout.
+        },
+      );
+    };
+    orchestratorDeps.lanePolicies = {
+      executor: {
+        maxCallMs: 40,
+        maxFailuresBeforeIsolation: 99,
+        isolationCooldownMs: 60_000,
+      },
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const runPromise = orchestrator.startTask(makeInput("timeout stop race"));
+
+    await vi.waitFor(() => {
+      expect(createdLoopNodeIds).toContain("n1");
+    });
+
+    await orchestrator.stopTask("ws-1");
+    await runPromise;
+
+    expect(gracefulStopLoopNodeIds).toContain("n1");
+    expect(verifierDecisionCalls).toBe(0);
+
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("stopped");
+    expect(completion?.payload?.subtaskResults?.[0]?.status).toBe("stopped");
+    expect(completion?.payload?.subtaskResults?.[0]?.result).toContain(
+      "Stopped by user",
+    );
+    expect(completion?.payload?.subtaskResults?.[0]?.result).not.toContain(
+      "Done before stop-drain timeout",
+    );
+
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_result_ignored" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.executorOutcome === "timeout" &&
+          entry.body.data?.reason === "task_stop_requested" &&
+          entry.body.data?.hadCompletedResult === true,
+      ),
+    ).toBe(true);
   });
 
   test("reopens the durable root URL when a retry tab degrades to about:blank", async () => {
