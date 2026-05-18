@@ -4070,6 +4070,7 @@ function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
         /\b(?:on|in|according to|from) (?:this|the) (?:page|article|document|post|readme)\b.*$/i,
         "",
       )
+      .replace(/\b(?:is|are|was|were)\s+there$/i, "")
       .replace(/[?.!]+$/g, "") ?? "",
   );
   return label || null;
