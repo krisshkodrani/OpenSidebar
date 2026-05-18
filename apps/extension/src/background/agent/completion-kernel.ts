@@ -4600,6 +4600,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isPhysicalSpeedValue(preciseConciseValue)) {
+      return precisePhysicalSpeedValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isTemperatureValue(preciseConciseValue)) {
       return preciseTemperatureValueCoveredBySummary(
         normalizedSummary,
@@ -4856,6 +4862,16 @@ function extractPreciseConciseLabelValue(
     if (dataRateMatch) return cleanLabel(dataRateMatch[1] ?? "") || null;
   }
 
+  if (labelCanHavePhysicalSpeedValue(expectedAnswerLabel)) {
+    const physicalSpeedMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:mph|mi\\/h|kph|kmph|km\\/h|m\\/s|meters?\\s+per\\s+second|metres?\\s+per\\s+second|ft\\/s|feet\\s+per\\s+second|knots?|kt|kts))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (physicalSpeedMatch) {
+      return cleanLabel(physicalSpeedMatch[1] ?? "") || null;
+    }
+  }
+
   if (labelCanHaveTemperatureValue(expectedAnswerLabel)) {
     const temperatureMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*[+-]?\\d+(?:\\.\\d+)?\\s*(?:\\u00b0\\s*)?(?:c|f|k|celsius|fahrenheit|kelvin))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4975,6 +4991,12 @@ function labelCanHaveDataSizeValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveDataRateValue(expectedAnswerLabel: string): boolean {
   return /\b(?:bandwidth|throughput|speed|bitrate|transfer|download|upload|network|connection|link)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHavePhysicalSpeedValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:speed|velocity|pace|wind|cruise|travel|groundspeed|airspeed|knots?)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5212,6 +5234,23 @@ function isDataRateValue(value: string): boolean {
 }
 
 function preciseDataRateValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isPhysicalSpeedValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:mph|mi\/h|kph|kmph|km\/h|m\/s|meters?\s+per\s+second|metres?\s+per\s+second|ft\/s|feet\s+per\s+second|knots?|kt|kts)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function precisePhysicalSpeedValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
