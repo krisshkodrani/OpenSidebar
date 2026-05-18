@@ -4243,6 +4243,89 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded identifier label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Incident Matrix",
+      url: "https://example.test/incidents",
+      visibleContent:
+        "Incident Matrix Incident number: INC0012345 Change number: CHG0099",
+      pageContent:
+        "Incident Matrix Incident number: INC0012345. Change number: CHG0099. The page explains service coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer incident questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the incident number?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "INC0012345",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "incident number",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept the wrong concise identifier label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Incident Matrix",
+      url: "https://example.test/incidents",
+      visibleContent:
+        "Incident Matrix Incident number: INC0012345 Change number: CHG0099",
+      pageContent:
+        "Incident Matrix Incident number: INC0012345. Change number: CHG0099. The page explains service coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer incident questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the incident number?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "CHG0099",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "incident number",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept arbitrary single-word label-value answer summaries", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent: "Support Matrix Escalation owner: Alice Team: Bob",
+      pageContent:
+        "Support Matrix Escalation owner: Alice. Team: Bob. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is the escalation owner?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Alice",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "escalation owner",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",

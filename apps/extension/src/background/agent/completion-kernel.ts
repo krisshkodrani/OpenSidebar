@@ -4493,6 +4493,9 @@ function isConciseSingleTokenLabelValue(value: string): boolean {
   if (/^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleaned)) {
     return true;
   }
+  if (/^[a-z]+[a-z0-9_-]*\d[a-z0-9_-]*$/i.test(cleaned)) {
+    return true;
+  }
   return CONCISE_STATUS_LABEL_VALUES.has(normalizeText(cleaned));
 }
 
