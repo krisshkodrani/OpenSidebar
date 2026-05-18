@@ -2913,6 +2913,46 @@ describe("AgentLoop", () => {
     expect(String(rejectionMessage.content)).not.toContain("selected options");
   });
 
+  test("done rejects missing multi-return coverage through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-multi-return",
+      "Warehouse Gamma inventory count is 6,412 units.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_incomplete_multi_return",
+      expect.objectContaining({
+        reason: expect.stringContaining("warehouse alpha"),
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-multi-return",
+      content: expect.stringContaining("Return all requested results"),
+    });
+  });
+
   test("trusted workflow completion creates a trusted_tool completion envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(

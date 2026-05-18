@@ -265,7 +265,7 @@ export type CompletionSummaryPreflight =
   | {
       status: "rejected";
       reason: string;
-      kind: "incomplete_summary";
+      kind: "incomplete_summary" | "missing_multi_return_coverage";
     };
 
 type ChoiceKind = "checkbox" | "radio";
@@ -418,6 +418,8 @@ export function evaluateCompletionSummaryPreflight(params: {
   summary: string;
   taskContext: string;
   turnCount: number;
+  rootUserRequest?: string;
+  isOrchestratorNode?: boolean;
 }): CompletionSummaryPreflight {
   if (
     params.turnCount <= 2 &&
@@ -439,6 +441,27 @@ export function evaluateCompletionSummaryPreflight(params: {
       kind: "incomplete_summary",
       reason: incompleteReason,
     };
+  }
+
+  if (params.rootUserRequest && !params.isOrchestratorNode) {
+    const multiReturnContract = buildTaskContract(params.rootUserRequest);
+    if ((multiReturnContract.multiReturnCount ?? 0) >= 2) {
+      const multiCoverage = assessTaskContractCoverage({
+        contract: multiReturnContract,
+        text: params.summary,
+      });
+      if (!multiCoverage.satisfied) {
+        return {
+          status: "rejected",
+          kind: "missing_multi_return_coverage",
+          reason:
+            `Query requires ${multiReturnContract.multiReturnCount} results ` +
+            `(detected "both"/"all") but summary only covers ` +
+            `${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. ` +
+            `Missing: ${multiCoverage.missingEntities.join(", ")}`,
+        };
+      }
+    }
   }
 
   return { status: "valid" };

@@ -248,7 +248,6 @@ import {
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
 import {
-  assessTaskContractCoverage,
   buildTaskContract,
   extractFieldValuePairs,
 } from "./task-contract";
@@ -1776,10 +1775,6 @@ export class AgentLoop {
       return true;
     }
 
-    if (this.rejectDoneForIncompleteMultiReturn(toolCallId, summary)) {
-      return true;
-    }
-
     if (this.rejectDoneForIncompleteTaskContract(toolCallId, summary)) {
       return true;
     }
@@ -2568,6 +2563,8 @@ export class AgentLoop {
       summary,
       taskContext: this.getCompletionSummaryTaskContext(),
       turnCount: this.turnCount,
+      rootUserRequest: this.originalQuery,
+      isOrchestratorNode: Boolean(this.nodeId),
     });
     if (decision.status === "valid") return false;
 
@@ -2592,6 +2589,26 @@ export class AgentLoop {
     }
 
     this.doneRejections++;
+    if (decision.kind === "missing_multi_return_coverage") {
+      this.log.warn("agent", "DONE rejected: incomplete multi-return summary", {
+        turn: this.turnCount,
+        rejections: this.doneRejections,
+        reason: decision.reason,
+      });
+      this.traceRecorder?.recordEvent("done_rejected_incomplete_multi_return", {
+        rejections: this.doneRejections,
+        reason: decision.reason,
+      });
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content:
+          `done() REJECTED: ${decision.reason}\n\n` +
+          "Return all requested results before calling done().",
+      });
+      return true;
+    }
+
     this.log.warn("agent", "DONE rejected: incomplete summary", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -3064,38 +3081,6 @@ export class AgentLoop {
       content:
         `done() REJECTED: The task has ${stepCount} steps but you have only completed the first action. ` +
         "Continue working through the remaining steps before calling done().",
-    });
-    return true;
-  }
-
-  private rejectDoneForIncompleteMultiReturn(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    // Multi-return guard: only for root agent (no nodeId).
-    // For orchestrator nodes, individual steps handle their own
-    // objectives - the task-level final verification in the
-    // orchestrator catches multi-return requirements after all
-    // nodes complete.
-    if (this.nodeId) return false;
-
-    const multiReturnContract = buildTaskContract(this.originalQuery);
-    if ((multiReturnContract.multiReturnCount ?? 0) < 2) return false;
-
-    const multiCoverage = assessTaskContractCoverage({
-      contract: multiReturnContract,
-      text: summary,
-    });
-    if (multiCoverage.satisfied) return false;
-
-    const rejectReason = `Query requires ${multiReturnContract.multiReturnCount} results (detected "both"/"all") but summary only covers ${multiReturnContract.requiredEntities.length - multiCoverage.missingEntities.length}. Missing: ${multiCoverage.missingEntities.join(", ")}`;
-    this.doneRejections++;
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${rejectReason}\n\n` +
-        "Return all requested results before calling done().",
     });
     return true;
   }
