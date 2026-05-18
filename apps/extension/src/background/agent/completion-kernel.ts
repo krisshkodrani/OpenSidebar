@@ -4630,6 +4630,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isAreaValue(preciseConciseValue)) {
+      return preciseAreaValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isVolumeValue(preciseConciseValue)) {
       return preciseVolumeValueCoveredBySummary(
         normalizedSummary,
@@ -4904,6 +4910,14 @@ function extractPreciseConciseLabelValue(
     if (lengthMatch) return cleanLabel(lengthMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveAreaValue(expectedAnswerLabel)) {
+    const areaMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:mm2|cm2|m2|km2|in2|ft2|yd2|mi2|sq\\.?\\s*(?:mm|cm|m|km|in|ft|feet|yd|mi)|square\\s+(?:millimeters?|millimetres?|centimeters?|centimetres?|meters?|metres?|kilometers?|kilometres?|inches|feet|yards?|miles?)|acres?|hectares?|ha))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (areaMatch) return cleanLabel(areaMatch[1] ?? "") || null;
+  }
+
   if (labelCanHaveVolumeValue(expectedAnswerLabel)) {
     const volumeMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?|fl\\s*oz|fluid\\s+ounces?|m3|cm3|cubic\\s+meters?|cubic\\s+metres?|cubic\\s+centimeters?|cubic\\s+centimetres?|cu\\s*ft|cubic\\s+feet))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -5021,6 +5035,12 @@ function labelCanHaveMassValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveLengthValue(expectedAnswerLabel: string): boolean {
   return /\b(?:length|height|width|depth|distance|radius|diameter|dimension|span|clearance|offset|elevation|altitude)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveAreaValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:area|surface|footprint|coverage|square footage|floor space|acreage|plot|parcel)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5323,6 +5343,23 @@ function isLengthValue(value: string): boolean {
 }
 
 function preciseLengthValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isAreaValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:mm2|cm2|m2|km2|in2|ft2|yd2|mi2|sq\.?\s*(?:mm|cm|m|km|in|ft|feet|yd|mi)|square\s+(?:millimeters?|millimetres?|centimeters?|centimetres?|meters?|metres?|kilometers?|kilometres?|inches|feet|yards?|miles?)|acres?|hectares?|ha)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseAreaValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
