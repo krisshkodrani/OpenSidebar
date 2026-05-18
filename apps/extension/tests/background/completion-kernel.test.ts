@@ -2432,6 +2432,80 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts reopen confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Incident INC003 Status: Closed Reopen incident",
+      pageContent: "Incident INC003 Status: Closed Reopen incident",
+      elements: [actionButton(604, "Reopen incident")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Incident INC003 Status: Open",
+      pageContent: "Incident INC003 Status: Open",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Reopen the incident.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 604 },
+      result: "Clicked element 604.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Reopened the incident.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reopen",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:reopen:status:status-open",
+        detail: expect.objectContaining({
+          action: "reopen",
+          source: "status_change",
+          text: "Status: Open",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer reopen confirmation when status was already open", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Incident INC003 Status: Open Reopen incident",
+      pageContent: "Incident INC003 Status: Open Reopen incident",
+      elements: [actionButton(604, "Reopen incident")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Incident INC003 Status: Open",
+      pageContent: "Incident INC003 Status: Open",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 604 },
+      result: "Clicked element 604.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts submit confirmation from same-page status change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ004 Status: Draft Submit request",
