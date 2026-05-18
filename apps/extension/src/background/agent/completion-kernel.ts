@@ -4630,6 +4630,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isPressureValue(preciseConciseValue)) {
+      return precisePressureValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4884,6 +4890,14 @@ function extractPreciseConciseLabelValue(
     if (volumeMatch) return cleanLabel(volumeMatch[1] ?? "") || null;
   }
 
+  if (labelCanHavePressureValue(expectedAnswerLabel)) {
+    const pressureMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:pa|kpa|mpa|gpa|psi|psig|psia|bar|mbar|millibars?|atm|atmospheres?|pascals?))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (pressureMatch) return cleanLabel(pressureMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4977,6 +4991,12 @@ function labelCanHaveLengthValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveVolumeValue(expectedAnswerLabel: string): boolean {
   return /\b(?:volume|capacity|displacement|tank|reservoir|fluid|liquid|container|bottle|dose|dosage)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHavePressureValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:pressure|psi|pascal|bar|hydraulic|pneumatic|vacuum|gauge|tire)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5261,6 +5281,23 @@ function isVolumeValue(value: string): boolean {
 }
 
 function preciseVolumeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isPressureValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:pa|kpa|mpa|gpa|psi|psig|psia|bar|mbar|millibars?|atm|atmospheres?|pascals?)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function precisePressureValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
