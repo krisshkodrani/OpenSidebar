@@ -5679,6 +5679,93 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded hash label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      pageContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08. Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the release SHA256 hash?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "release sha256 hash",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling hash label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      pageContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08. Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the release SHA256 hash?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "release sha256 hash",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept hash prefix inside a longer value", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      pageContent:
+        "Release Matrix Release SHA256 hash: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08. Backup hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the release SHA256 hash?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08-backup",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "release sha256 hash",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded version label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Release Matrix",
