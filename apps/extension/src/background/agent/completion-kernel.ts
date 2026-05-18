@@ -4,6 +4,7 @@ import {
   hasStrongCommunicationSentEvidence,
   isDraftOnlyCommunicationTask,
 } from "./consequential-action-policy";
+import { getIncompleteDoneSummaryReason } from "./summary-completeness";
 import {
   getAutocompleteSuggestionDoneRejection,
   type AutocompleteSuggestionDoneRejection,
@@ -222,6 +223,18 @@ export type CompletionEvaluation =
       evidence: CompletionEvidence[];
     };
 
+export type CompletionSummaryPreflight =
+  | { status: "valid" }
+  | {
+      status: "needs_clarification";
+      reason: "done_summary_is_question";
+    }
+  | {
+      status: "rejected";
+      reason: string;
+      kind: "incomplete_summary";
+    };
+
 type ChoiceKind = "checkbox" | "radio";
 
 interface ChoiceObservation {
@@ -341,6 +354,58 @@ export function generateCompletionContract(params: {
   if (workflowConfirmationContract) return workflowConfirmationContract;
 
   return null;
+}
+
+export function isDoneSummaryAskingClarification(summary: string): boolean {
+  const text = summary.trim();
+  if (!text.includes("?")) return false;
+
+  const lower = text.toLowerCase();
+  const hasCompletionFrame =
+    /\b(completed|successfully|identified|found|located|confirmed|verified|posted|sent|drafted|updated|read|analysis complete|summary)\b/.test(
+      lower,
+    );
+  if (hasCompletionFrame) return false;
+
+  if (
+    /^(can|could|should|do|does|did|is|are|which|what|when|where|who|why|how|would|please)\b/i.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+
+  return /\?$/.test(text);
+}
+
+export function evaluateCompletionSummaryPreflight(params: {
+  summary: string;
+  taskContext: string;
+  turnCount: number;
+}): CompletionSummaryPreflight {
+  if (
+    params.turnCount <= 2 &&
+    isDoneSummaryAskingClarification(params.summary)
+  ) {
+    return {
+      status: "needs_clarification",
+      reason: "done_summary_is_question",
+    };
+  }
+
+  const incompleteReason = getIncompleteDoneSummaryReason({
+    summary: params.summary,
+    taskContext: params.taskContext,
+  });
+  if (incompleteReason) {
+    return {
+      status: "rejected",
+      kind: "incomplete_summary",
+      reason: incompleteReason,
+    };
+  }
+
+  return { status: "valid" };
 }
 
 function generateDraftOnlyContract(
