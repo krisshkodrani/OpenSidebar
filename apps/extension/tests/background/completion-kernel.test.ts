@@ -1374,6 +1374,76 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts refresh-class workflow confirmation after visible refresh success", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Report refreshed successfully.",
+      pageContent: "Report refreshed successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Refresh the report.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Refreshed the report successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "refresh",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:refresh",
+          detail: expect.objectContaining({ action: "refresh" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts refresh-class workflow confirmation after visible refresh completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Refresh completed.",
+      pageContent: "Refresh completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Refresh the dashboard.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Refresh completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "refresh",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:refresh",
+          detail: expect.objectContaining({ action: "refresh" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts reject-class workflow confirmation after visible denial success", () => {
     const snap = workflowSnapshot({
       visibleContent: "Request denied successfully.",
@@ -3885,6 +3955,34 @@ describe("completion kernel", () => {
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
       expectedAnswerLabel: "restart required",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("keeps refresh rate questions as read-answer contracts", () => {
+    const snap = workflowSnapshot({
+      title: "Monitor Matrix",
+      url: "https://example.test/monitor",
+      visibleContent:
+        "Monitor Matrix Refresh rate: 60Hz Owner: platform operations",
+      pageContent:
+        "Monitor Matrix Refresh rate: 60Hz. Owner: platform operations. The page explains monitor coverage, refresh policy, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer monitor questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the refresh rate?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "60Hz",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "refresh rate",
     });
     expect(decision.status).toBe("accepted");
   });
