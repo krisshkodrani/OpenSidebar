@@ -789,6 +789,41 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts close-class workflow confirmation after visible resolution success", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Incident resolved successfully.",
+      pageContent: "Incident resolved successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Resolve the incident.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Resolved the incident successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:close",
+          detail: expect.objectContaining({ action: "close" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("requires verification for workflow confirmation without visible success", () => {
     const snap = workflowSnapshot();
     const generated = generateCompletionContract({
