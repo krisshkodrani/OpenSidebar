@@ -80,7 +80,8 @@ export type CompletionEvidence =
           | "modal_disappearance"
           | "target_disappearance"
           | "draft_disappearance"
-          | "status_change";
+          | "status_change"
+          | "dirty_indicator_cleared";
       };
     }
   | {
@@ -776,6 +777,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
+  evidence.push(...extractDirtyIndicatorClearedEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
   return evidence;
@@ -2581,6 +2583,46 @@ function extractStatusChangeEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractDirtyIndicatorClearedEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferSaveUpdateAction(element);
+  if (!action) return [];
+  if (!hasDirtyStateIndicator(pre)) return [];
+  if (hasDirtyStateIndicator(current)) return [];
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:dirty-indicator-cleared`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: "Unsaved-changes indicator is no longer visible.",
+        action,
+        source: "dirty_indicator_cleared",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractReadAnswerEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -2650,28 +2692,28 @@ function inferStatusChangeAction(
   return null;
 }
 
+function inferSaveUpdateAction(
+  element: TaggedElement,
+): Extract<WorkflowConfirmationAction, "save" | "update"> | null {
+  const text = normalizeText(elementControlText(element));
+  if (!text) return null;
+  if (/\b(?:update|apply changes|apply)\b/i.test(text)) return "update";
+  if (/\b(?:save|save changes)\b/i.test(text)) return "save";
+  return null;
+}
+
+function hasDirtyStateIndicator(snapshot: DomSnapshot): boolean {
+  const text = normalizeText(snapshotCompletionText(snapshot));
+  return /\b(?:unsaved changes|changes not saved|changes have not been saved|not saved|pending changes|you have unsaved)\b/i.test(
+    text,
+  );
+}
+
 function findWorkflowStatusChangeText(
   snapshot: DomSnapshot,
   action: Extract<WorkflowConfirmationAction, "approve" | "reject" | "close">,
 ): string | null {
-  const text = cleanLabel(
-    [
-      snapshot.title,
-      snapshot.visibleContent,
-      snapshot.pageContent,
-      ...snapshot.elements.flatMap((element) => [
-        element.text,
-        element.attributes.label,
-        element.attributes["aria-label"],
-        element.attributes.title,
-        element.attributes.name,
-        element.attributes.id,
-        element.attributes.value,
-      ]),
-    ]
-      .filter(Boolean)
-      .join(" "),
-  ).slice(0, 20_000);
+  const text = snapshotCompletionText(snapshot);
   const statusWord =
     action === "approve"
       ? "(?:approved|approval complete|approval completed)"
@@ -2693,6 +2735,27 @@ function findWorkflowStatusChangeText(
     if (match?.[0]) return cleanLabel(match[0]);
   }
   return null;
+}
+
+function snapshotCompletionText(snapshot: DomSnapshot): string {
+  return cleanLabel(
+    [
+      snapshot.title,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      ...snapshot.elements.flatMap((element) => [
+        element.text,
+        element.attributes.label,
+        element.attributes["aria-label"],
+        element.attributes.title,
+        element.attributes.name,
+        element.attributes.id,
+        element.attributes.value,
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).slice(0, 20_000);
 }
 
 function extractDeletionTargetFromControl(element: TaggedElement): string | null {
