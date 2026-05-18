@@ -7069,6 +7069,106 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise modern rgb color label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Theme Matrix",
+      url: "https://example.test/theme",
+      visibleContent:
+        "Theme Matrix Primary color: rgb(12 34 56 / 0.5) Backup color: rgb(90 80 70 / 75%)",
+      pageContent:
+        "Theme Matrix Primary color: rgb(12 34 56 / 0.5). Backup color: rgb(90 80 70 / 75%). The page explains theme ownership, palette policy, service limits, audit notes, incident routing, maintenance coordination, design ownership, escalation routing, and manager review so operators can answer theme questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary color?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "rgb(12 34 56/0.5)",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "rgb(90 80 70/75%)",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary color",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("accepts only the expected concise modern hsl color label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Theme Matrix",
+      url: "https://example.test/theme",
+      visibleContent:
+        "Theme Matrix Primary color: hsl(210 50% 40% / 0.75) Backup color: hsl(120 60% 50% / 75%)",
+      pageContent:
+        "Theme Matrix Primary color: hsl(210 50% 40% / 0.75). Backup color: hsl(120 60% 50% / 75%). The page explains theme ownership, palette policy, service limits, audit notes, incident routing, maintenance coordination, design ownership, escalation routing, and manager review so operators can answer theme questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary color?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "hsl(210 50% 40%/0.75)",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "hsl(120 60% 50%/75%)",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary color",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept modern slash color concise answers without a color label", () => {
+    const snap = workflowSnapshot({
+      title: "Theme Matrix",
+      url: "https://example.test/theme",
+      visibleContent:
+        "Theme Matrix Team code: rgb(12 34 56 / 0.5) Backup code: hsl(120 60% 50% / 75%)",
+      pageContent:
+        "Theme Matrix Team code: rgb(12 34 56 / 0.5). Backup code: hsl(120 60% 50% / 75%). The page explains theme ownership, palette policy, service limits, audit notes, incident routing, maintenance coordination, design ownership, escalation routing, and manager review so operators can answer theme questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "rgb(12 34 56/0.5)",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts only the expected concise named color label-value answer", () => {
     const snap = workflowSnapshot({
       title: "Theme Matrix",
