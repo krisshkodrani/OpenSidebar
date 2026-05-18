@@ -4505,6 +4505,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isHashValue(preciseConciseValue)) {
+      return preciseHashValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4668,6 +4674,14 @@ function extractPreciseConciseLabelValue(
     if (uuidMatch) return cleanLabel(uuidMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveHashValue(expectedAnswerLabel)) {
+    const hashMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-f0-9]{128}|[a-f0-9]{96}|[a-f0-9]{64}|[a-f0-9]{56}|[a-f0-9]{40}|[a-f0-9]{32})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (hashMatch) return cleanLabel(hashMatch[1] ?? "") || null;
+  }
+
   if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
     const versionMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:v(?:ersion)?\\s*)?\\d+(?:\\.\\d+){1,5}(?:[-+][a-z0-9][a-z0-9.-]*)?)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4715,6 +4729,12 @@ function labelCanHaveDomainValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveUuidValue(expectedAnswerLabel: string): boolean {
   return /\b(?:id|identifier|uuid|session|request|trace|run|correlation|result)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveHashValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:hash|checksum|digest|sha(?:-?\d+)?|md5)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -4845,6 +4865,22 @@ function isDottedVersionValue(value: string): boolean {
 }
 
 function preciseVersionValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isHashValue(value: string): boolean {
+  return /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{56}|[a-f0-9]{64}|[a-f0-9]{96}|[a-f0-9]{128})$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseHashValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
