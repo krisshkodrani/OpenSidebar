@@ -4,6 +4,10 @@ import {
   hasStrongCommunicationSentEvidence,
   isDraftOnlyCommunicationTask,
 } from "./consequential-action-policy";
+import {
+  getAutocompleteSuggestionDoneRejection,
+  type AutocompleteSuggestionDoneRejection,
+} from "./text-entry-guards";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -89,6 +93,9 @@ export type CompletionEvidence =
       detail: {
         text: string;
         fieldLabel?: string;
+        value?: string;
+        inputElementId?: number;
+        suggestionElementId?: number;
       };
     }
   | {
@@ -714,6 +721,8 @@ export function evaluateCompletionContract(params: {
     return evaluateFormFill({
       contract: params.contract,
       evidence: params.evidence,
+      snapshot: params.snapshot,
+      summary: params.summary,
     });
   }
   if (params.contract.kind === "draft_only") {
@@ -1043,6 +1052,8 @@ function evaluateQuizSelection(params: {
 function evaluateFormFill(params: {
   contract: FormFillContract;
   evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
 }): CompletionEvaluation {
   const contract = params.contract;
   const validationError = params.evidence.find(
@@ -1053,6 +1064,32 @@ function evaluateFormFill(params: {
       event.type === "validation_error" &&
       event.logicalKey.startsWith("form:"),
   );
+
+  const autocompleteRejection = getAutocompleteSuggestionDoneRejection({
+    snapshot: params.snapshot,
+    originalQuery: contract.requiredFields
+      .map((field) => `"${field.value}"`)
+      .join(" "),
+    summary: params.summary,
+  });
+  const autocompleteMatchesRequiredField =
+    autocompleteRejection &&
+    contract.requiredFields.some((field) =>
+      formValueMatches(autocompleteRejection.value, field.value),
+    );
+  if (autocompleteRejection && autocompleteMatchesRequiredField) {
+    const autocompleteEvidence = formAutocompletePendingEvidence({
+      rejection: autocompleteRejection,
+      observedAtTurn: latestObservedTurn(params.evidence),
+    });
+    return {
+      status: "rejected",
+      reason: `Form-fill contract is not satisfied: ${autocompleteRejection.reason}`,
+      contract,
+      evidence: [...params.evidence, autocompleteEvidence],
+    };
+  }
+
   if (validationError) {
     return {
       status: "rejected",
@@ -1326,6 +1363,25 @@ function fieldValueEvidence(params: FormFieldObservation & {
       stableKey: params.stableKey,
       label: params.label,
       value: params.value,
+    },
+  };
+}
+
+function formAutocompletePendingEvidence(params: {
+  rejection: AutocompleteSuggestionDoneRejection;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "validation_error" }> {
+  const valueKey = compactKey(params.rejection.value) || "value";
+  return {
+    type: "validation_error",
+    confidence: "high",
+    logicalKey: `form:autocomplete_pending:${valueKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      text: params.rejection.reason,
+      value: params.rejection.value,
+      inputElementId: params.rejection.inputTag,
+      suggestionElementId: params.rejection.suggestionTag,
     },
   };
 }
@@ -2469,6 +2525,13 @@ function compareEvidenceRecency(
   return (
     b.observedAtTurn - a.observedAtTurn ||
     evidenceConfidenceRank(b) - evidenceConfidenceRank(a)
+  );
+}
+
+function latestObservedTurn(evidence: CompletionEvidence[]): number {
+  return evidence.reduce(
+    (latest, event) => Math.max(latest, event.observedAtTurn),
+    0,
   );
 }
 
