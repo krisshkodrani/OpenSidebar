@@ -195,6 +195,8 @@ export type WorkflowConfirmationAction =
   | "move"
   | "rename"
   | "merge"
+  | "schedule"
+  | "unschedule"
   | "duplicate"
   | "restore"
   | "create"
@@ -257,6 +259,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "move",
   "rename",
   "merge",
+  "schedule",
+  "unschedule",
   "duplicate",
   "restore",
   "create",
@@ -322,6 +326,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "move"
   | "rename"
   | "merge"
+  | "schedule"
+  | "unschedule"
   | "duplicate"
   | "restore"
   | "create"
@@ -2740,6 +2746,20 @@ function inferWorkflowConfirmationAction(
     return "merge";
   }
   if (
+    /\bunschedule(?:d)?\s+(?:the\s+)?(?:report|dashboard|job|task|ticket|request|entry|row|case|issue|incident|project|workflow|rule|automation|process|pipeline|message|email|notification|reminder|meeting|event|appointment|sync|backup|export|import|deployment|release)\b/i.test(
+      text,
+    )
+  ) {
+    return "unschedule";
+  }
+  if (
+    /\bschedule(?:d)?\s+(?:the\s+)?(?:report|dashboard|job|task|ticket|request|entry|row|case|issue|incident|project|workflow|rule|automation|process|pipeline|message|email|notification|reminder|meeting|event|appointment|sync|backup|export|import|deployment|release)\b/i.test(
+      text,
+    )
+  ) {
+    return "schedule";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3079,6 +3099,10 @@ function workflowTargetActionPattern(
       return "(?:rename)";
     case "merge":
       return "(?:merge)";
+    case "schedule":
+      return "(?:schedule)";
+    case "unschedule":
+      return "(?:unschedule)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3294,6 +3318,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "move" ||
     action === "rename" ||
     action === "merge" ||
+    action === "schedule" ||
+    action === "unschedule" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3458,6 +3484,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:renamed)";
     case "merge":
       return "(?:merged)";
+    case "schedule":
+      return "(?:scheduled)";
+    case "unschedule":
+      return "(?:unscheduled)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3583,6 +3613,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:rename)";
     case "merge":
       return "(?:merge)";
+    case "schedule":
+      return "(?:schedule)";
+    case "unschedule":
+      return "(?:unschedule)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -3947,6 +3981,32 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:merged|merge complete|merge completed|merge successful)\b/i.test(
+        text,
+      );
+    case "schedule":
+      if (mode === "visible") {
+        return (
+          /\bscheduled\s+successfully\b/i.test(text) ||
+          /\b(?:report|dashboard|job|task|ticket|request|entry|row|case|issue|incident|project|workflow|rule|automation|process|pipeline|message|email|notification|reminder|meeting|event|appointment|sync|backup|export|import|deployment|release)\s+scheduled\b/i.test(
+            text,
+          ) ||
+          /\bschedule\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:scheduled|schedule complete|schedule completed|schedule successful)\b/i.test(
+        text,
+      );
+    case "unschedule":
+      if (mode === "visible") {
+        return (
+          /\bunscheduled\s+successfully\b/i.test(text) ||
+          /\b(?:report|dashboard|job|task|ticket|request|entry|row|case|issue|incident|project|workflow|rule|automation|process|pipeline|message|email|notification|reminder|meeting|event|appointment|sync|backup|export|import|deployment|release)\s+unscheduled\b/i.test(
+            text,
+          ) ||
+          /\bunschedule\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unscheduled|unschedule complete|unschedule completed|unschedule successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4579,6 +4639,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:renamed|rename)";
     case "merge":
       return "(?:merged|merge)";
+    case "schedule":
+      return "(?:scheduled|schedule)";
+    case "unschedule":
+      return "(?:unscheduled|unschedule)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5447,6 +5511,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\brenamed\b/i.test(text);
     case "merge":
       return /\bmerged\b/i.test(text);
+    case "schedule":
+      return /\bscheduled\b/i.test(text);
+    case "unschedule":
+      return /\bunscheduled\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
