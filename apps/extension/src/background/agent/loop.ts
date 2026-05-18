@@ -584,6 +584,7 @@ export class AgentLoop {
   private disableInternalPlanning: boolean;
   private bypassApprovals: boolean;
   private approvalTimeoutMs: number;
+  private completionDeterministicAcceptanceEnabled: boolean;
   private middleware: AgentMiddleware;
 
   /** Workspace ID for session isolation */
@@ -921,6 +922,7 @@ export class AgentLoop {
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
       useVLExecutor?: boolean;
+      completionDeterministicAcceptanceEnabled?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
       /** Pending user interaction state injected by the orchestrator on resume. */
@@ -960,6 +962,8 @@ export class AgentLoop {
     this.disableInternalPlanning = options?.disableInternalPlanning ?? false;
     this.bypassApprovals = options?.bypassApprovals ?? false;
     this.approvalTimeoutMs = options?.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
+    this.completionDeterministicAcceptanceEnabled =
+      options?.completionDeterministicAcceptanceEnabled ?? true;
     this.middleware = new AgentMiddleware({
       disabledTools: this.disabledTools,
       bypassApprovals: this.bypassApprovals,
@@ -1566,11 +1570,62 @@ export class AgentLoop {
     });
   }
 
-  private recordCompletionEnvelope(envelope: CompletionEnvelope): void {
+  private recordCompletionEnvelope(
+    envelope: CompletionEnvelope,
+    metadata: Record<string, unknown> = {},
+  ): void {
     this.traceRecorder?.recordEvent("completion_envelope_created", {
       turn: this.turnCount,
       ...envelope,
+      ...metadata,
     });
+  }
+
+  private recordShadowCompletionDecision(
+    decision: CompletionEvaluation,
+    summary: string,
+  ): void {
+    const metadata = {
+      authoritative: false,
+      gatedBy: "completionDeterministicAcceptanceEnabled",
+      fallback: "legacy_done_guards",
+    };
+    if (decision.status === "accepted") {
+      const completionEnvelope = this.createCompletionEnvelope({
+        source: "model_done",
+        contractKind: decision.contract.kind,
+        decisionReason: decision.reason,
+        evidence: decision.evidence,
+        summary,
+      });
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: decision.status,
+        source: "model_done",
+        reason: decision.reason,
+        contractKind: decision.contract.kind,
+        resultId: completionEnvelope.resultId,
+        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
+        completionEnvelope,
+        ...metadata,
+      });
+      this.recordCompletionEnvelope(completionEnvelope, metadata);
+      return;
+    }
+    if (
+      decision.status === "rejected" ||
+      decision.status === "needs_verification"
+    ) {
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: decision.status,
+        source: "model_done",
+        reason: decision.reason,
+        contractKind: decision.contract.kind,
+        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
+        ...metadata,
+      });
+    }
   }
 
   private acceptDoneToolCall(
@@ -2456,35 +2511,39 @@ export class AgentLoop {
       "model_done",
       summary,
     );
-    if (deterministicDone.status === "accepted") {
-      const completionEnvelope = this.createCompletionEnvelope({
-        source: "model_done",
-        contractKind: deterministicDone.contract.kind,
-        decisionReason: deterministicDone.reason,
-        evidence: deterministicDone.evidence,
-        summary,
-      });
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: deterministicDone.status,
-        source: "model_done",
-        reason: deterministicDone.reason,
-        contractKind: deterministicDone.contract.kind,
-        resultId: completionEnvelope.resultId,
-        evidenceKeys: deterministicDone.evidence.map(
-          (event) => event.logicalKey,
-        ),
-        completionEnvelope,
-      });
-      this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
-      return true;
-    }
-    if (
-      deterministicDone.status === "rejected" ||
-      deterministicDone.status === "needs_verification"
-    ) {
-      this.rejectDoneFromCompletionDecision(toolCallId, deterministicDone);
-      return false;
+    if (this.completionDeterministicAcceptanceEnabled) {
+      if (deterministicDone.status === "accepted") {
+        const completionEnvelope = this.createCompletionEnvelope({
+          source: "model_done",
+          contractKind: deterministicDone.contract.kind,
+          decisionReason: deterministicDone.reason,
+          evidence: deterministicDone.evidence,
+          summary,
+        });
+        this.traceRecorder?.recordEvent("completion_decision", {
+          turn: this.turnCount,
+          status: deterministicDone.status,
+          source: "model_done",
+          reason: deterministicDone.reason,
+          contractKind: deterministicDone.contract.kind,
+          resultId: completionEnvelope.resultId,
+          evidenceKeys: deterministicDone.evidence.map(
+            (event) => event.logicalKey,
+          ),
+          completionEnvelope,
+        });
+        this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
+        return true;
+      }
+      if (
+        deterministicDone.status === "rejected" ||
+        deterministicDone.status === "needs_verification"
+      ) {
+        this.rejectDoneFromCompletionDecision(toolCallId, deterministicDone);
+        return false;
+      }
+    } else {
+      this.recordShadowCompletionDecision(deterministicDone, summary);
     }
 
     if (await this.rejectDoneBeforePlanValidation(toolCallId, summary, tabId)) {

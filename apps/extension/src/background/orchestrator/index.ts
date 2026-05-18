@@ -4487,6 +4487,8 @@ export class Orchestrator {
           maxImagePromptTokenEstimate:
             input.settings.maxImagePromptTokenEstimate,
           useVLExecutor: input.settings.useVLExecutor,
+          completionDeterministicAcceptanceEnabled:
+            input.settings.completionDeterministicAcceptanceEnabled,
           // Durable turn checkpoint: injected by orchestrator on SW restart recovery
           turnCheckpoint: validatedTurnCheckpoint,
           // Resumable approval/clarification state: injected after user response.

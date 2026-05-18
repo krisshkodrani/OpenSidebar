@@ -94,6 +94,11 @@ export interface UserSettings {
    * back to structured DOM mode when this budget is exhausted.
    */
   maxImagePromptTokenEstimate?: number;
+  /**
+   * Backstop for deterministic done() acceptance while completion contract
+   * coverage is still expanding. Defaults to true.
+   */
+  completionDeterministicAcceptanceEnabled?: boolean;
   /** @deprecated Use `perceptionMode` instead. */
   /** Legacy unified executor toggle. Ignored during settings migration. */
   useVLExecutor?: boolean;

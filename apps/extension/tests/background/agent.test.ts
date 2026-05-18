@@ -2734,6 +2734,124 @@ describe("AgentLoop", () => {
     expect((agent as any).doneRejections).toBe(0);
   });
 
+  test("disabled deterministic completion acceptance falls back to legacy done validation", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        completionDeterministicAcceptanceEnabled: false,
+      },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery = "Select the correct option/s";
+    (agent as any).hasReadPage = true;
+    (agent as any).abortController = new AbortController();
+    (agent as any).taskId = "task-quiz";
+    (agent as any).planSubtasks = [
+      {
+        description: "Read the current quiz question and select the answers",
+        status: "running",
+      },
+    ];
+    (agent as any).planSteps = [
+      {
+        objective: "Select quiz answers",
+        successCriteria: "Current question answers are selected",
+      },
+    ];
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "legacy planner rejected completion",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Quiz",
+      url: "https://example.test/quiz",
+      visibleContent:
+        "Question 32. Which approaches help adapt a foundation model? (Select two)",
+      pageContent:
+        "Question 32. Which approaches help adapt a foundation model? (Select two)",
+      elements: [
+        {
+          tag: 158,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-158",
+            control: "choice-158",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Domain Adaptation Fine-Tuning",
+          },
+          rect: { x: 0, y: 0, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 159,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-159",
+            control: "choice-159",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Continued Pre-Training",
+          },
+          rect: { x: 0, y: 20, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-shadow",
+      "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).planner.validateDone).toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "completion_decision",
+      expect.objectContaining({
+        status: "accepted",
+        source: "model_done",
+        contractKind: "quiz_selection",
+        authoritative: false,
+        gatedBy: "completionDeterministicAcceptanceEnabled",
+        fallback: "legacy_done_guards",
+      }),
+    );
+    expect(recordEvent).toHaveBeenCalledWith(
+      "completion_envelope_created",
+      expect.objectContaining({
+        source: "model_done",
+        contractKind: "quiz_selection",
+        authoritative: false,
+        gatedBy: "completionDeterministicAcceptanceEnabled",
+      }),
+    );
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected",
+      expect.objectContaining({
+        reason: "legacy planner rejected completion",
+      }),
+    );
+  });
+
   test("trusted workflow completion creates a trusted_tool completion envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(
