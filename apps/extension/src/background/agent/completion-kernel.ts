@@ -187,6 +187,7 @@ export type WorkflowConfirmationAction =
   | "approve"
   | "reject"
   | "close"
+  | "reopen"
   | "dismiss"
   | "update"
   | "submit"
@@ -201,6 +202,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "approve",
   "reject",
   "close",
+  "reopen",
   "dismiss",
   "update",
   "submit",
@@ -2496,6 +2498,7 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
+  if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2509,7 +2512,9 @@ function inferWorkflowConfirmationAction(
 function isBrowserManagementWorkflowRequest(value: string): boolean {
   return (
     /\b(?:tab|tabs|window|windows|browser)\b/i.test(value) &&
-    /\b(?:close|closed|switch|open|activate|focus|navigate)\b/i.test(value)
+    /\b(?:close|closed|switch|open|re[-\s]?open|activate|focus|navigate)\b/i.test(
+      value,
+    )
   );
 }
 
@@ -2657,6 +2662,16 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:closed|resolved|close complete|close completed|close successful|closure complete|closure completed|closure successful)\b/i.test(
+        text,
+      );
+    case "reopen":
+      if (mode === "visible") {
+        return (
+          /\bre[-\s]?opened\s+successfully\b/i.test(text) ||
+          /\bre[-\s]?open\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:re[-\s]?opened|re[-\s]?open complete|re[-\s]?open completed|re[-\s]?open successful)\b/i.test(
         text,
       );
     case "dismiss":
@@ -3228,7 +3243,7 @@ function inferDraftSubmissionAction(
 
 type StatusChangeWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "approve" | "reject" | "close" | "submit" | "complete"
+  "approve" | "reject" | "close" | "reopen" | "submit" | "complete"
 >;
 
 function inferStatusChangeAction(
@@ -3238,6 +3253,7 @@ function inferStatusChangeAction(
   if (!text) return null;
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
+  if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3288,6 +3304,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:rejected|denied)\b/i.test(text);
     case "close":
       return /\b(?:closed|resolved)\b/i.test(text);
+    case "reopen":
+      return /\bre[-\s]?opened\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3328,9 +3346,11 @@ function findWorkflowStatusChangeText(
         ? "(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)"
         : action === "close"
           ? "(?:closed|resolved)"
-          : action === "submit"
-            ? "(?:submitted|submission complete|submission completed|submission successful)"
-            : "(?:complete|completed)";
+          : action === "reopen"
+            ? "(?:open|reopened|re-opened)"
+            : action === "submit"
+              ? "(?:submitted|submission complete|submission completed|submission successful)"
+              : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
