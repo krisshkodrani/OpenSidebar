@@ -3337,6 +3337,107 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts publish confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Article ART001 Status: Draft Publish article",
+      pageContent: "Article ART001 Status: Draft Publish article",
+      elements: [actionButton(616, "Publish article")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Article ART001 Status: Published",
+      pageContent: "Article ART001 Status: Published",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Publish the article.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 616 },
+      result: "Clicked element 616.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Published the article.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "post",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:post:status:status-published",
+        detail: expect.objectContaining({
+          action: "post",
+          source: "status_change",
+          text: "Status: Published",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer publish confirmation when status was already published", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Article ART001 Status: Published Publish article",
+      pageContent: "Article ART001 Status: Published Publish article",
+      elements: [actionButton(616, "Publish article")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Article ART001 Status: Published",
+      pageContent: "Article ART001 Status: Published",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 616 },
+      result: "Clicked element 616.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("keeps published status questions as read-answer contracts", () => {
+    const snap = workflowSnapshot({
+      title: "Article Matrix",
+      url: "https://example.test/articles",
+      visibleContent: "Article Matrix Article published: Yes Priority: High",
+      pageContent:
+        "Article Matrix Article published: Yes. Priority: High. The page explains article status, review policy, customer impact, response timing, audit notes, routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer article questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is the article published?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Yes",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "article published",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts submit confirmation from same-page status change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ004 Status: Draft Submit request",

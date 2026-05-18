@@ -3421,6 +3421,7 @@ type StatusChangeWorkflowAction = Extract<
   WorkflowConfirmationAction,
   | "approve"
   | "reject"
+  | "post"
   | "close"
   | "reopen"
   | "cancel"
@@ -3443,6 +3444,7 @@ function inferStatusChangeAction(
   if (!text) return null;
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
+  if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
   if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
     return "cancel";
@@ -3567,31 +3569,33 @@ function findWorkflowStatusChangeText(
       ? "(?:approved|approval complete|approval completed|approval successful)"
       : action === "reject"
         ? "(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)"
-        : action === "close"
-          ? "(?:closed|resolved)"
-          : action === "reopen"
-            ? "(?:open|reopened|re-opened)"
-            : action === "cancel"
-              ? "(?:canceled|cancelled|cancellation complete|cancellation completed|cancellation successful)"
-              : action === "enable"
-                ? "(?:enabled|activated|activation complete|activation completed|activation successful)"
-                : action === "disable"
-                  ? "(?:disabled|deactivated|deactivation complete|deactivation completed|deactivation successful)"
-                  : action === "assign"
-                    ? "(?:assigned|assignment complete|assignment completed|assignment successful)"
-                    : action === "unassign"
-                      ? "(?:unassigned|unassign complete|unassign completed|unassign successful)"
-                      : action === "escalate"
-                        ? "(?:escalated|escalation complete|escalation completed|escalation successful)"
-                        : action === "deescalate"
-                          ? "(?:de[-\\s]?escalated|de[-\\s]?escalation complete|de[-\\s]?escalation completed|de[-\\s]?escalation successful)"
-                          : action === "lock"
-                            ? "(?:locked|lock complete|lock completed|lock successful)"
-                            : action === "unlock"
-                              ? "(?:unlocked|unlock complete|unlock completed|unlock successful)"
-                              : action === "submit"
-                                ? "(?:submitted|submission complete|submission completed|submission successful)"
-                                : "(?:complete|completed)";
+        : action === "post"
+          ? "(?:posted|published|post complete|post completed|post successful|publish complete|publish completed|publish successful)"
+          : action === "close"
+            ? "(?:closed|resolved)"
+            : action === "reopen"
+              ? "(?:open|reopened|re-opened)"
+              : action === "cancel"
+                ? "(?:canceled|cancelled|cancellation complete|cancellation completed|cancellation successful)"
+                : action === "enable"
+                  ? "(?:enabled|activated|activation complete|activation completed|activation successful)"
+                  : action === "disable"
+                    ? "(?:disabled|deactivated|deactivation complete|deactivation completed|deactivation successful)"
+                    : action === "assign"
+                      ? "(?:assigned|assignment complete|assignment completed|assignment successful)"
+                      : action === "unassign"
+                        ? "(?:unassigned|unassign complete|unassign completed|unassign successful)"
+                        : action === "escalate"
+                          ? "(?:escalated|escalation complete|escalation completed|escalation successful)"
+                          : action === "deescalate"
+                            ? "(?:de[-\\s]?escalated|de[-\\s]?escalation complete|de[-\\s]?escalation completed|de[-\\s]?escalation successful)"
+                            : action === "lock"
+                              ? "(?:locked|lock complete|lock completed|lock successful)"
+                              : action === "unlock"
+                                ? "(?:unlocked|unlock complete|unlock completed|unlock successful)"
+                                : action === "submit"
+                                  ? "(?:submitted|submission complete|submission completed|submission successful)"
+                                  : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
