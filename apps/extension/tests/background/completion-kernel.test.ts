@@ -4839,6 +4839,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded version label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix App version: v2.4.1 API version: v2.4.0",
+      pageContent:
+        "Release Matrix App version: v2.4.1. API version: v2.4.0. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the app version?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "v2.4.1",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "app version",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling version label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix App version: v2.4.1 API version: v2.4.0",
+      pageContent:
+        "Release Matrix App version: v2.4.1. API version: v2.4.0. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the app version?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "v2.4.0",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "app version",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept same-prefix longer version label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Release Matrix",
+      url: "https://example.test/releases",
+      visibleContent:
+        "Release Matrix App version: v2.4.1 API version: v2.4.10",
+      pageContent:
+        "Release Matrix App version: v2.4.1. API version: v2.4.10. The page explains release ownership, support coverage, rollout timing, incident routing, customer impact, compatibility guidance, audit notes, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer release questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the app version?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "v2.4.10",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "app version",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("does not accept arbitrary single-word label-value answer summaries", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
