@@ -3001,6 +3001,48 @@ describe("AgentLoop", () => {
     expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
   });
 
+  test("deterministic done accepts visible workflow confirmation", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery = "Delete the account and confirm it is gone.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "workflow confirmation should not require planner validation",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Account Settings",
+      url: "https://example.test/account",
+      visibleContent: "Account deleted successfully.",
+      pageContent: "Account deleted successfully.",
+      elements: [],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-workflow",
+      "Deleted the account successfully.",
+      123,
+    );
+
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      completionEnvelope: {
+        status: "completed",
+        source: "model_done",
+        contractKind: "workflow_confirmation",
+        evidenceKeys: expect.arrayContaining([
+          "workflow:confirmation:delete",
+        ]),
+      },
+    });
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+  });
+
   test("deterministic done accepts visible unsent draft completion", async () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
