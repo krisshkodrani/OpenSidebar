@@ -199,6 +199,8 @@ export type WorkflowConfirmationAction =
   | "invite"
   | "subscribe"
   | "unsubscribe"
+  | "pin"
+  | "unpin"
   | "post"
   | "approve"
   | "reject"
@@ -242,6 +244,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "invite",
   "subscribe",
   "unsubscribe",
+  "pin",
+  "unpin",
   "post",
   "approve",
   "reject",
@@ -288,6 +292,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "invite"
   | "subscribe"
   | "unsubscribe"
+  | "pin"
+  | "unpin"
   | "post"
   | "approve"
   | "reject"
@@ -2710,6 +2716,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "subscribe";
   }
+  if (
+    /\bunpin(?:ned)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic)\b/i.test(
+      text,
+    )
+  ) {
+    return "unpin";
+  }
+  if (
+    /\bpin(?:ned)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic)\b/i.test(
+      text,
+    )
+  ) {
+    return "pin";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2897,6 +2917,10 @@ function workflowTargetActionPattern(
       return "(?:subscribe(?:\\s+to)?)";
     case "unsubscribe":
       return "(?:unsubscribe(?:\\s+from)?)";
+    case "pin":
+      return "(?:pin)";
+    case "unpin":
+      return "(?:unpin)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3070,6 +3094,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "invite" ||
     action === "subscribe" ||
     action === "unsubscribe" ||
+    action === "pin" ||
+    action === "unpin" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3219,6 +3245,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:subscribed)";
     case "unsubscribe":
       return "(?:unsubscribed)";
+    case "pin":
+      return "(?:pinned)";
+    case "unpin":
+      return "(?:unpinned)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3306,6 +3336,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:subscribe|subscription)";
     case "unsubscribe":
       return "(?:unsubscribe|unsubscription)";
+    case "pin":
+      return "(?:pin)";
+    case "unpin":
+      return "(?:unpin)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3684,6 +3718,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unsubscribed|unsubscribe complete|unsubscribe completed|unsubscribe successful|unsubscription complete|unsubscription completed|unsubscription successful)\b/i.test(
         text,
       );
+    case "pin":
+      if (mode === "visible") {
+        return (
+          /\bpinned\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic)\s+pinned\b/i.test(
+            text,
+          ) ||
+          /\bpin\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:pinned|pin complete|pin completed|pin successful)\b/i.test(
+        text,
+      );
+    case "unpin":
+      if (mode === "visible") {
+        return (
+          /\bunpinned\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic)\s+unpinned\b/i.test(
+            text,
+          ) ||
+          /\bunpin\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unpinned|unpin complete|unpin completed|unpin successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -4015,6 +4075,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:subscribed|subscribe|subscription)";
     case "unsubscribe":
       return "(?:unsubscribed|unsubscribe|unsubscription)";
+    case "pin":
+      return "(?:pinned|pin)";
+    case "unpin":
+      return "(?:unpinned|unpin)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4845,6 +4909,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bsubscribed\b/i.test(text);
     case "unsubscribe":
       return /\bunsubscribed\b/i.test(text);
+    case "pin":
+      return /\bpinned\b/i.test(text);
+    case "unpin":
+      return /\bunpinned\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":

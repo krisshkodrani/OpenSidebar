@@ -1693,6 +1693,34 @@ describe("completion kernel", () => {
       genericSummary: "Unsubscription completed.",
     },
     {
+      action: "pin",
+      request: "Pin Report Alpha.",
+      summary: "Pinned Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains unpinned. Report Alpha pinned successfully.",
+      requestedEvidenceText: "Report Alpha pinned successfully.",
+      otherVisible:
+        "Report Alpha remains unpinned. Report Beta pinned successfully.",
+      otherEvidenceText: "Report Beta pinned successfully.",
+      genericVisible: "Pin completed.",
+      genericSummary: "Pin completed.",
+    },
+    {
+      action: "unpin",
+      request: "Unpin Report Alpha.",
+      summary: "Unpinned Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains pinned. Report Alpha unpinned successfully.",
+      requestedEvidenceText: "Report Alpha unpinned successfully.",
+      otherVisible:
+        "Report Alpha remains pinned. Report Beta unpinned successfully.",
+      otherEvidenceText: "Report Beta unpinned successfully.",
+      genericVisible: "Unpin completed.",
+      genericSummary: "Unpin completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
