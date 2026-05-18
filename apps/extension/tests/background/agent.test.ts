@@ -2953,6 +2953,84 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects pending autocomplete through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Search for Laptop Stand in the product autocomplete field.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Product Search",
+      url: "https://example.test/products",
+      visibleContent: "Product autocomplete suggestions Laptop Stand",
+      pageContent: "Product autocomplete suggestions Laptop Stand",
+      elements: [
+        {
+          tag: 201,
+          tagName: "input",
+          role: "combobox",
+          text: "Laptop Stand",
+          attributes: {
+            id: "product-search",
+            name: "product-search",
+            value: "Laptop Stand",
+            label: "Product Search",
+            "aria-autocomplete": "list",
+          },
+          rect: { x: 0, y: 40, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 202,
+          tagName: "li",
+          role: "option",
+          text: "Laptop Stand",
+          attributes: { id: "product-option-laptop-stand" },
+          rect: { x: 0, y: 60, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-autocomplete",
+      "The product search field contains Laptop Stand.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_autocomplete_suggestion_pending",
+      expect.objectContaining({
+        inputTag: 201,
+        suggestionTag: 202,
+        value: "laptop stand",
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-autocomplete",
+      content: expect.stringContaining('click_element({"id": 202})'),
+    });
+  });
+
   test("trusted workflow completion creates a trusted_tool completion envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(

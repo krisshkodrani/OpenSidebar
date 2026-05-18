@@ -268,6 +268,13 @@ export type CompletionSummaryPreflight =
       kind: "incomplete_summary" | "missing_multi_return_coverage";
     };
 
+export type CompletionPendingAutocompletePreflight =
+  | { status: "valid" }
+  | ({
+      status: "rejected";
+      kind: "pending_autocomplete_suggestion";
+    } & AutocompleteSuggestionDoneRejection);
+
 type ChoiceKind = "checkbox" | "radio";
 
 interface ChoiceObservation {
@@ -465,6 +472,29 @@ export function evaluateCompletionSummaryPreflight(params: {
   }
 
   return { status: "valid" };
+}
+
+export function evaluateCompletionPendingAutocompletePreflight(params: {
+  snapshot: DomSnapshot | null | undefined;
+  userRequest: string;
+  activeObjective?: string;
+  successCriteria?: string;
+  summary?: string;
+}): CompletionPendingAutocompletePreflight {
+  const rejection = getAutocompleteSuggestionDoneRejection({
+    snapshot: params.snapshot,
+    originalQuery: params.userRequest,
+    activeObjective: params.activeObjective,
+    successCriteria: params.successCriteria,
+    summary: params.summary,
+  });
+  if (!rejection) return { status: "valid" };
+
+  return {
+    status: "rejected",
+    kind: "pending_autocomplete_suggestion",
+    ...rejection,
+  };
 }
 
 function generateDraftOnlyContract(
