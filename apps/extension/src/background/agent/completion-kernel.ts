@@ -252,6 +252,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "cancel"
   | "enable"
   | "disable"
+  | "assign"
+  | "unassign"
   | "lock"
   | "unlock"
 >;
@@ -2725,6 +2727,10 @@ function workflowTargetActionPattern(
       return "(?:enable|activate|turn\\s+on)";
     case "disable":
       return "(?:disable|deactivate|turn\\s+off)";
+    case "assign":
+      return "(?:assign)";
+    case "unassign":
+      return "(?:unassign)";
     case "lock":
       return "(?:lock)";
     case "unlock":
@@ -2809,6 +2815,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "cancel" ||
     action === "enable" ||
     action === "disable" ||
+    action === "assign" ||
+    action === "unassign" ||
     action === "lock" ||
     action === "unlock"
   );
@@ -2908,6 +2916,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:enabled|activated)";
     case "disable":
       return "(?:disabled|deactivated)";
+    case "assign":
+      return "(?:assigned)";
+    case "unassign":
+      return "(?:unassigned|assignee\\s+(?:cleared|removed))";
     case "lock":
       return "(?:locked)";
     case "unlock":
@@ -2937,6 +2949,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:enable|activation)";
     case "disable":
       return "(?:disable|deactivation)";
+    case "assign":
+      return "(?:assignment)";
+    case "unassign":
+      return "(?:unassign|assignment)";
     case "lock":
       return "(?:lock)";
     case "unlock":
