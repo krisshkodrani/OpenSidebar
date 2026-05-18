@@ -2128,7 +2128,7 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected)\b/i.test(text)) return "reject";
-  if (/\b(?:close|closed)\b/i.test(text)) return "close";
+  if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
     return "update";
@@ -2188,7 +2188,7 @@ function summaryConfirmsWorkflowAction(
     case "reject":
       return /\brejected\b/i.test(text);
     case "close":
-      return /\bclosed\b/i.test(text);
+      return /\b(?:closed|resolved)\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|closed|removed|hidden|cleared)\b/i.test(text);
     case "update":
