@@ -121,6 +121,19 @@ function formSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function navigationSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Documentation",
+    url: "https://docs.example.test/getting-started",
+    visibleContent: "Documentation Getting started",
+    pageContent: "Documentation Getting started",
+    elements: [],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  };
+}
+
 describe("completion kernel", () => {
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
@@ -416,6 +429,59 @@ describe("completion kernel", () => {
 
     expect(decision.status).toBe("rejected");
     expect(decision.reason).toContain("validation");
+  });
+
+  test("accepts explicit-url navigation completion from current URL evidence", () => {
+    const snap = navigationSnapshot();
+    const generated = generateCompletionContract({
+      userRequest: "Open https://docs.example.test/getting-started",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Opened https://docs.example.test/getting-started.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "navigation",
+      targetUrl: "https://docs.example.test/getting-started",
+      targetHost: "docs.example.test",
+    });
+    expect(decision.status).toBe("accepted");
+    expect(decision.reason).toContain("current URL");
+    expect(buildCompletionRecoveryHint(decision)).toContain(
+      "requested page is already open",
+    );
+  });
+
+  test("rejects explicit-url navigation completion on the wrong host", () => {
+    const snap = navigationSnapshot({
+      url: "https://other.example.test/getting-started",
+      title: "Other docs",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Navigate to docs.example.test/getting-started",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Opened the docs page.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "navigation",
+      targetHost: "docs.example.test",
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("does not match requested host");
   });
 
   test("builds stable completion envelope metadata from accepted evidence", () => {

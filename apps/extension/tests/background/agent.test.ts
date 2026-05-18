@@ -2796,6 +2796,50 @@ describe("AgentLoop", () => {
     expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
   });
 
+  test("deterministic done accepts explicit-url navigation completion", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Open https://docs.example.test/getting-started";
+    (agent as any).hasReadPage = true;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "navigation should not require planner validation",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Documentation",
+      url: "https://docs.example.test/getting-started",
+      visibleContent: "Documentation Getting started",
+      pageContent: "Documentation Getting started",
+      elements: [],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-navigation",
+      "Opened https://docs.example.test/getting-started.",
+      123,
+    );
+
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      completionEnvelope: {
+        status: "completed",
+        source: "model_done",
+        contractKind: "navigation",
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining("navigation:page:docs-example-test"),
+        ]),
+      },
+    });
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",

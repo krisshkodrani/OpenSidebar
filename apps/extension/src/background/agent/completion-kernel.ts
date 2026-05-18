@@ -70,6 +70,16 @@ export type CompletionEvidence =
         text: string;
         fieldLabel?: string;
       };
+    }
+  | {
+      type: "navigation_state";
+      confidence: CompletionConfidence;
+      logicalKey: string;
+      observedAtTurn: number;
+      detail: {
+        url: string;
+        title?: string;
+      };
     };
 
 export type QuizTarget =
@@ -99,7 +109,16 @@ export interface FormFillContract {
   requiresConfirmation: boolean;
 }
 
-export type CompletionContract = QuizSelectionContract | FormFillContract;
+export interface NavigationContract {
+  kind: "navigation";
+  targetUrl: string;
+  targetHost: string;
+}
+
+export type CompletionContract =
+  | QuizSelectionContract
+  | FormFillContract
+  | NavigationContract;
 
 export interface GeneratedCompletionContract {
   contract: CompletionContract;
@@ -258,6 +277,9 @@ export function generateCompletionContract(params: {
   const formContract = generateFormFillContract(params, snapshot);
   if (formContract) return formContract;
 
+  const navigationContract = generateNavigationContract(params, snapshot);
+  if (navigationContract) return navigationContract;
+
   return null;
 }
 
@@ -387,6 +409,46 @@ function generateFormFillContract(
   };
 }
 
+function generateNavigationContract(
+  params: {
+    userRequest: string;
+    snapshot: DomSnapshot | null | undefined;
+    activeObjective?: string;
+    successCriteria?: string;
+  },
+  _snapshot: DomSnapshot,
+): GeneratedCompletionContract | null {
+  const requestText = [
+    extractCanonicalUserRequest(params.userRequest),
+    params.activeObjective,
+    params.successCriteria,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (
+    !/\b(?:go\s+to|open|navigate|visit|load|take\s+me\s+to|switch\s+to)\b/i.test(
+      requestText,
+    )
+  ) {
+    return null;
+  }
+
+  const target = extractNavigationTarget(requestText);
+  if (!target) return null;
+
+  return {
+    contract: {
+      kind: "navigation",
+      targetUrl: target.href,
+      targetHost: target.host,
+    },
+    confidence: "high",
+    source: "heuristic",
+    repairable: false,
+    notes: [],
+  };
+}
+
 export function deriveCompletionEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -486,11 +548,13 @@ export function deriveCompletionEvidenceFromSnapshot(
   );
   const feedbackEvidence = extractFeedbackEvidence(snapshot, turn);
   const validationEvidence = extractValidationErrorEvidence(snapshot, turn);
+  const navigationEvidence = extractNavigationEvidence(snapshot, turn);
   return [
     ...selectedEvidence,
     ...fieldEvidence,
     ...feedbackEvidence,
     ...validationEvidence,
+    ...navigationEvidence,
   ];
 }
 
@@ -523,6 +587,12 @@ export function evaluateCompletionContract(params: {
       evidence: params.evidence,
     });
   }
+  if (params.contract.kind === "navigation") {
+    return evaluateNavigation({
+      contract: params.contract,
+      evidence: params.evidence,
+    });
+  }
   return {
     status: "inconclusive",
     reason: "No deterministic evaluator is available for this contract.",
@@ -545,6 +615,12 @@ export function buildCompletionRecoveryHint(
       return (
         "Completion evidence indicates the requested form fields are already filled. " +
         'Call done({"summary":"..."}) now with the completed field names instead of exploring further.'
+      );
+    }
+    if (evaluation.contract.kind === "navigation") {
+      return (
+        "Completion evidence indicates the requested page is already open. " +
+        'Call done({"summary":"..."}) now with the current page URL instead of navigating again.'
       );
     }
   }
@@ -868,6 +944,56 @@ function evaluateFormFill(params: {
   };
 }
 
+function evaluateNavigation(params: {
+  contract: NavigationContract;
+  evidence: CompletionEvidence[];
+}): CompletionEvaluation {
+  const contract = params.contract;
+  const navigationEvidence = params.evidence
+    .filter(
+      (event): event is Extract<
+        CompletionEvidence,
+        { type: "navigation_state" }
+      > => event.type === "navigation_state",
+    )
+    .sort(compareEvidenceRecency);
+  const current = navigationEvidence[0];
+  if (!current) {
+    return {
+      status: "rejected",
+      reason: "No navigation evidence is active for the requested page.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  const currentTarget = parseNavigationTarget(current.detail.url);
+  if (!currentTarget) {
+    return {
+      status: "rejected",
+      reason: `Current URL is not a verifiable web URL: ${current.detail.url}`,
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  if (!navigationTargetMatches(currentTarget, contract)) {
+    return {
+      status: "rejected",
+      reason: `Current URL ${current.detail.url} does not match requested host ${contract.targetHost}.`,
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  return {
+    status: "accepted",
+    reason: "Navigation contract is satisfied by current URL evidence.",
+    contract,
+    evidence: [current],
+  };
+}
+
 function fieldValueEvidence(params: FormFieldObservation & {
   confidence: CompletionConfidence;
   observedAtTurn: number;
@@ -888,6 +1014,27 @@ function fieldValueEvidence(params: FormFieldObservation & {
       value: params.value,
     },
   };
+}
+
+function navigationStateEvidence(
+  snapshot: DomSnapshot,
+  turn: number,
+): Extract<CompletionEvidence, { type: "navigation_state" }>[] {
+  if (!snapshot.url) return [];
+  const parsed = parseNavigationTarget(snapshot.url);
+  if (!parsed) return [];
+  return [
+    {
+      type: "navigation_state",
+      confidence: "medium",
+      logicalKey: `navigation:page:${compactKey(parsed.host)}`,
+      observedAtTurn: turn,
+      detail: {
+        url: snapshot.url,
+        ...(snapshot.title ? { title: snapshot.title } : {}),
+      },
+    },
+  ];
 }
 
 function selectedStateEvidence(params: ChoiceObservation & {
@@ -1361,6 +1508,13 @@ function extractValidationErrorEvidence(
   ];
 }
 
+function extractNavigationEvidence(
+  snapshot: DomSnapshot,
+  turn: number,
+): CompletionEvidence[] {
+  return navigationStateEvidence(snapshot, turn);
+}
+
 function getChoiceKind(element: TaggedElement): ChoiceKind | null {
   const type = normalizeText(element.attributes.type || "");
   const role = normalizeText(element.role || "");
@@ -1596,6 +1750,52 @@ function snapshotText(snapshot: DomSnapshot): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function extractNavigationTarget(value: string): URL | null {
+  const explicitUrl =
+    value.match(/\bhttps?:\/\/[^\s"'<>]+/i)?.[0]?.replace(/[),.;]+$/g, "") ??
+    null;
+  if (explicitUrl) return parseNavigationTarget(explicitUrl);
+
+  const domain =
+    value
+      .match(
+        /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|ai|app|dev|test|local|co|uk|de|fr|ca|us)\b(?:\/[^\s"'<>]*)?/i,
+      )?.[0]
+      ?.replace(/[),.;]+$/g, "") ?? null;
+  return domain ? parseNavigationTarget(`https://${domain}`) : null;
+}
+
+function parseNavigationTarget(value: string): URL | null {
+  try {
+    const parsed = new URL(value);
+    if (!/^https?:$/.test(parsed.protocol)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function navigationTargetMatches(
+  current: URL,
+  contract: NavigationContract,
+): boolean {
+  if (current.host.toLowerCase() !== contract.targetHost.toLowerCase()) {
+    return false;
+  }
+
+  const target = parseNavigationTarget(contract.targetUrl);
+  if (!target) return false;
+  const targetPath = normalizeNavigationPath(target);
+  if (targetPath === "/") return true;
+  return normalizeNavigationPath(current) === targetPath;
+}
+
+function normalizeNavigationPath(url: URL): string {
+  const path = url.pathname.replace(/\/+$/g, "") || "/";
+  const search = url.searchParams.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 function cleanLabel(value: string): string {
