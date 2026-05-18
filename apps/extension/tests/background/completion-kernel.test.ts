@@ -1637,6 +1637,34 @@ describe("completion kernel", () => {
       genericSummary: "Merge completed.",
     },
     {
+      action: "schedule",
+      request: "Schedule Report Alpha.",
+      summary: "Scheduled Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains unscheduled. Report Alpha scheduled successfully.",
+      requestedEvidenceText: "Report Alpha scheduled successfully.",
+      otherVisible:
+        "Report Alpha remains unscheduled. Report Beta scheduled successfully.",
+      otherEvidenceText: "Report Beta scheduled successfully.",
+      genericVisible: "Schedule completed.",
+      genericSummary: "Schedule completed.",
+    },
+    {
+      action: "unschedule",
+      request: "Unschedule Report Alpha.",
+      summary: "Unscheduled Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains scheduled. Report Alpha unscheduled successfully.",
+      requestedEvidenceText: "Report Alpha unscheduled successfully.",
+      otherVisible:
+        "Report Alpha remains scheduled. Report Beta unscheduled successfully.",
+      otherEvidenceText: "Report Beta unscheduled successfully.",
+      genericVisible: "Unschedule completed.",
+      genericSummary: "Unschedule completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
