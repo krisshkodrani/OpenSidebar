@@ -3779,6 +3779,7 @@ function hasGroundedDirectPageQuestion(
 
   const pageText = snapshotPageText(snapshot);
   if (!hasSubstantiveReadAnswerEvidence(pageText)) return false;
+  if (hasGroundedLabelValueQuestion(normalizedQuestion, pageText)) return true;
 
   const questionTokens = tokenizeCompletionText(normalizedQuestion).filter(
     (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
@@ -3788,6 +3789,40 @@ function hasGroundedDirectPageQuestion(
   const pageTokens = new Set(tokenizeCompletionText(pageText));
   const overlap = questionTokens.filter((token) => pageTokens.has(token));
   return overlap.length >= Math.min(3, questionTokens.length);
+}
+
+function hasGroundedLabelValueQuestion(
+  normalizedQuestion: string,
+  pageText: string,
+): boolean {
+  const label = extractDirectQuestionLabel(normalizedQuestion);
+  if (!label) return false;
+
+  const labelTokens = tokenizeCompletionText(label).filter(
+    (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
+  );
+  if (labelTokens.length < 1 || labelTokens.length > 3) return false;
+
+  const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
+  return new RegExp(`\\b${labelPattern}\\b\\s*(?::|=)\\s*\\S`, "i").test(
+    pageText,
+  );
+}
+
+function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
+  const match =
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is)|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
+      normalizedQuestion,
+    );
+  const label = cleanLabel(
+    match?.[1]
+      ?.replace(
+        /\b(?:on|in|according to|from) (?:this|the) (?:page|article|document|post|readme)\b.*$/i,
+        "",
+      )
+      .replace(/[?.!]+$/g, "") ?? "",
+  );
+  return label || null;
 }
 
 function snapshotPageText(snapshot: DomSnapshot): string {
