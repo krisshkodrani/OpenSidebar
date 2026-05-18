@@ -1777,6 +1777,34 @@ describe("completion kernel", () => {
       genericSummary: "Unfollow completed.",
     },
     {
+      action: "bookmark",
+      request: "Bookmark Page Alpha.",
+      summary: "Bookmarked Page Alpha.",
+      targetLabel: "Page Alpha",
+      requestedVisible:
+        "Page Beta remains unbookmarked. Page Alpha bookmarked successfully.",
+      requestedEvidenceText: "Page Alpha bookmarked successfully.",
+      otherVisible:
+        "Page Alpha remains unbookmarked. Page Beta bookmarked successfully.",
+      otherEvidenceText: "Page Beta bookmarked successfully.",
+      genericVisible: "Bookmark completed.",
+      genericSummary: "Bookmark completed.",
+    },
+    {
+      action: "unbookmark",
+      request: "Unbookmark Page Alpha.",
+      summary: "Unbookmarked Page Alpha.",
+      targetLabel: "Page Alpha",
+      requestedVisible:
+        "Page Beta remains bookmarked. Page Alpha unbookmarked successfully.",
+      requestedEvidenceText: "Page Alpha unbookmarked successfully.",
+      otherVisible:
+        "Page Alpha remains bookmarked. Page Beta unbookmarked successfully.",
+      otherEvidenceText: "Page Beta unbookmarked successfully.",
+      genericVisible: "Unbookmark completed.",
+      genericSummary: "Unbookmark completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
