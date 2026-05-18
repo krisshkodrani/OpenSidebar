@@ -4624,6 +4624,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isVolumeValue(preciseConciseValue)) {
+      return preciseVolumeValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4870,6 +4876,14 @@ function extractPreciseConciseLabelValue(
     if (lengthMatch) return cleanLabel(lengthMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveVolumeValue(expectedAnswerLabel)) {
+    const volumeMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?|fl\\s*oz|fluid\\s+ounces?|m3|cm3|cubic\\s+meters?|cubic\\s+metres?|cubic\\s+centimeters?|cubic\\s+centimetres?|cu\\s*ft|cubic\\s+feet))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (volumeMatch) return cleanLabel(volumeMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4957,6 +4971,12 @@ function labelCanHaveMassValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveLengthValue(expectedAnswerLabel: string): boolean {
   return /\b(?:length|height|width|depth|distance|radius|diameter|dimension|span|clearance|offset|elevation|altitude)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveVolumeValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:volume|capacity|displacement|tank|reservoir|fluid|liquid|container|bottle|dose|dosage)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5224,6 +5244,23 @@ function isLengthValue(value: string): boolean {
 }
 
 function preciseLengthValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isVolumeValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:ml|milliliters?|millilitres?|l|liters?|litres?|gal|gallons?|qt|quarts?|pt|pints?|fl\s*oz|fluid\s+ounces?|m3|cm3|cubic\s+meters?|cubic\s+metres?|cubic\s+centimeters?|cubic\s+centimetres?|cu\s*ft|cubic\s+feet)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseVolumeValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
