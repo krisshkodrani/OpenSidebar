@@ -5431,6 +5431,29 @@ export class Orchestrator {
           }
         }
       } catch (error: any) {
+        if ((task.status as string) === "stopping") {
+          this.emitTraceEvent(
+            task,
+            "worker_result_ignored",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              workerId,
+              currentStatus: node.status,
+              executorOutcome:
+                error instanceof LaneTimeoutError ? "timeout" : "error",
+              reason: "task_stop_requested",
+              hadCompletedResult: Boolean(loop.completedResult),
+              error: error?.message || String(error),
+              ...buildParallelRunState(task),
+            },
+            "system",
+          );
+          node.status = "failed";
+          node.error = "Stopped by user";
+          return;
+        }
+
         // Race-condition guard: the agent may have called done() just before
         // the lane timeout killed the worker. Check the loop's eagerly-set
         // completedResult — if present, treat as success instead of retrying.
