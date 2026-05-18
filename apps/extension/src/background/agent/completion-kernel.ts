@@ -2200,9 +2200,13 @@ function summaryConfirmsWorkflowAction(
         text,
       );
     case "close":
-      return /\b(?:closed|resolved)\b/i.test(text);
+      return /\b(?:closed|resolved|close complete|close completed|close successful|closure complete|closure completed|closure successful)\b/i.test(
+        text,
+      );
     case "dismiss":
-      return /\b(?:dismissed|closed|removed|hidden|cleared)\b/i.test(text);
+      return /\b(?:dismissed|closed|removed|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
+        text,
+      );
     case "update":
       return /\b(?:updated|changed|applied|update complete|update completed|update successful)\b/i.test(
         text,
@@ -2394,11 +2398,19 @@ function extractWorkflowConfirmationEvidence(
   }
   if (
     /\b(?:closed|resolved)\s+successfully\b/i.test(text) ||
-    /\bresolution\s+(?:complete|completed|successful)\b/i.test(text)
+    /\bresolution\s+(?:complete|completed|successful)\b/i.test(text) ||
+    /\b(?:close|closure)\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("close");
   }
-  if (/\bdismissed\s+successfully\b/i.test(text)) actions.add("dismiss");
+  if (
+    /\b(?:dismissed|hidden|cleared)\s+successfully\b/i.test(text) ||
+    /\b(?:dismiss|dismissal|hide|clear)\s+(?:complete|completed|successful)\b/i.test(
+      text,
+    )
+  ) {
+    actions.add("dismiss");
+  }
   if (
     /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
     /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text) ||

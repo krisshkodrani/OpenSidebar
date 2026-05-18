@@ -1172,6 +1172,76 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts close-class workflow confirmation after visible close completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Close completed.",
+      pageContent: "Close completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close the incident.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Close completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:close",
+          detail: expect.objectContaining({ action: "close" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Dismiss completed.",
+      pageContent: "Dismiss completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Dismiss the popup.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Dismiss completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:dismiss",
+          detail: expect.objectContaining({ action: "dismiss" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("requires verification for workflow confirmation without visible success", () => {
     const snap = workflowSnapshot();
     const generated = generateCompletionContract({
