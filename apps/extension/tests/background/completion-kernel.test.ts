@@ -3288,6 +3288,130 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts lock confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(624, "Lock account", false, "account-lock")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(625, "Lock account", true, "account-lock")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Lock the account.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 624 },
+      result: "Clicked element 624.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Locked the account.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "lock",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:lock:control-state:account-lock",
+        detail: expect.objectContaining({
+          action: "lock",
+          source: "control_state_change",
+          text: "Control state changed to locked: Lock account",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts unlock confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Unlock account",
+      pageContent: "Security settings Unlock account",
+      elements: [statefulActionButton(626, "Unlock account", true, "account-lock")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Unlock account",
+      pageContent: "Security settings Unlock account",
+      elements: [statefulActionButton(627, "Unlock account", false, "account-lock")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlock the account.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 626 },
+      result: "Clicked element 626.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlocked the account.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlock",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlock:control-state:account-lock",
+        detail: expect.objectContaining({
+          action: "unlock",
+          source: "control_state_change",
+          text: "Control state changed to unlocked: Unlock account",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer lock confirmation when control state flips the wrong direction", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(624, "Lock account", true, "account-lock")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(625, "Lock account", false, "account-lock")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 624 },
+      result: "Clicked element 624.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts assign confirmation from same-page status change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Ticket INC005 Status: Open Assign ticket",
