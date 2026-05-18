@@ -322,6 +322,14 @@ export type CompletionMoneyTableAggregatePreflight =
       reason: string;
     };
 
+export type CompletionRequiredEvidencePreflight =
+  | { status: "valid" }
+  | {
+      status: "rejected";
+      kind: "missing_required_evidence";
+      missingRequiredEvidence: string[];
+    };
+
 export interface CompletionTaskContractPreflight {
   blocked: boolean;
   reason: string | null;
@@ -719,6 +727,20 @@ export function evaluateCompletionMoneyTableAggregatePreflight(params: {
   }
 
   return { status: "valid" };
+}
+
+export function evaluateCompletionRequiredEvidencePreflight(params: {
+  missingRequiredEvidence: string[];
+}): CompletionRequiredEvidencePreflight {
+  if (params.missingRequiredEvidence.length === 0) {
+    return { status: "valid" };
+  }
+
+  return {
+    status: "rejected",
+    kind: "missing_required_evidence",
+    missingRequiredEvidence: [...params.missingRequiredEvidence],
+  };
 }
 
 export function evaluateCompletionListDetailReviewPreflight(params: {

@@ -85,6 +85,7 @@ import {
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
+  evaluateCompletionRequiredEvidencePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
   evaluateCompletionWorkflowContractPreflight,
@@ -2719,25 +2720,31 @@ export class AgentLoop {
     ) {
       missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
     }
-    if (missingRequiredEvidence.length === 0) return false;
+    const requiredEvidencePreflight =
+      evaluateCompletionRequiredEvidencePreflight({
+        missingRequiredEvidence,
+      });
+    if (requiredEvidencePreflight.status === "valid") return false;
 
     this.doneRejections++;
     this.log.warn("agent", "DONE rejected: missing typed evidence", {
       turn: this.turnCount,
       rejections: this.doneRejections,
       selectedSkillId: this.selectedSkillId,
-      missingRequiredEvidence,
+      missingRequiredEvidence:
+        requiredEvidencePreflight.missingRequiredEvidence,
     });
     this.traceRecorder?.recordEvent("done_rejected_missing_evidence", {
       rejections: this.doneRejections,
       selectedSkillId: this.selectedSkillId,
-      missingRequiredEvidence,
+      missingRequiredEvidence:
+        requiredEvidencePreflight.missingRequiredEvidence,
     });
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content:
-        `done() REJECTED: Missing required typed evidence: ${missingRequiredEvidence.join(", ")}.\n\n` +
+        `done() REJECTED: Missing required typed evidence: ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}.\n\n` +
         "Use the selected workflow tool to complete and verify the action before calling done().",
     });
     return true;
