@@ -193,6 +193,8 @@ export type WorkflowConfirmationAction =
   | "disable"
   | "assign"
   | "unassign"
+  | "escalate"
+  | "deescalate"
   | "dismiss"
   | "update"
   | "submit"
@@ -213,6 +215,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "disable",
   "assign",
   "unassign",
+  "escalate",
+  "deescalate",
   "dismiss",
   "update",
   "submit",
@@ -2542,6 +2546,18 @@ function inferWorkflowConfirmationAction(
   ) {
     return "assign";
   }
+  if (
+    /\bde[-\s]?escalate\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\bde[-\s]?escalated\b/i.test(text)
+  ) {
+    return "deescalate";
+  }
+  if (
+    /\bescalate\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\bescalated\b/i.test(text)
+  ) {
+    return "escalate";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2772,6 +2788,30 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:unassigned|unassign complete|unassign completed|unassign successful|assignee cleared|assignee removed)\b/i.test(
+        text,
+      );
+    case "escalate":
+      if (mode === "visible") {
+        return (
+          /\bescalated\s+successfully\b/i.test(text) ||
+          /\bescalat(?:e|ion)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:escalated|escalate complete|escalate completed|escalate successful|escalation complete|escalation completed|escalation successful)\b/i.test(
+        text,
+      );
+    case "deescalate":
+      if (mode === "visible") {
+        return (
+          /\bde[-\s]?escalated\s+successfully\b/i.test(text) ||
+          /\bde[-\s]?escalat(?:e|ion)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:de[-\s]?escalated|de[-\s]?escalate complete|de[-\s]?escalate completed|de[-\s]?escalate successful|de[-\s]?escalation complete|de[-\s]?escalation completed|de[-\s]?escalation successful)\b/i.test(
         text,
       );
     case "dismiss":
@@ -3352,6 +3392,8 @@ type StatusChangeWorkflowAction = Extract<
   | "disable"
   | "assign"
   | "unassign"
+  | "escalate"
+  | "deescalate"
   | "submit"
   | "complete"
 >;
@@ -3375,6 +3417,8 @@ function inferStatusChangeAction(
   }
   if (/\bunassign(?:ed)?\b/i.test(text)) return "unassign";
   if (/\bassign(?:ed)?\b/i.test(text)) return "assign";
+  if (/\bde[-\s]?escalat(?:e|ed)\b/i.test(text)) return "deescalate";
+  if (/\bescalat(?:e|ed)\b/i.test(text)) return "escalate";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3437,6 +3481,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bassigned\b/i.test(text);
     case "unassign":
       return /\bunassigned\b/i.test(text);
+    case "escalate":
+      return /\bescalated\b/i.test(text);
+    case "deescalate":
+      return /\bde[-\s]?escalated\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3489,9 +3537,13 @@ function findWorkflowStatusChangeText(
                     ? "(?:assigned|assignment complete|assignment completed|assignment successful)"
                     : action === "unassign"
                       ? "(?:unassigned|unassign complete|unassign completed|unassign successful)"
-                      : action === "submit"
-                        ? "(?:submitted|submission complete|submission completed|submission successful)"
-                        : "(?:complete|completed)";
+                      : action === "escalate"
+                        ? "(?:escalated|escalation complete|escalation completed|escalation successful)"
+                        : action === "deescalate"
+                          ? "(?:de[-\\s]?escalated|de[-\\s]?escalation complete|de[-\\s]?escalation completed|de[-\\s]?escalation successful)"
+                          : action === "submit"
+                            ? "(?:submitted|submission complete|submission completed|submission successful)"
+                            : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
