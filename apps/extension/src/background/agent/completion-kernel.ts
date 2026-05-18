@@ -4495,6 +4495,14 @@ function extractPreciseConciseLabelValue(
   evidenceText: string,
   labelPattern: string,
 ): string | null {
+  const urlMatch = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(https?:\\/\\/[^\\s<>"']+)`,
+    "i",
+  ).exec(evidenceText);
+  if (urlMatch) {
+    return cleanLabel((urlMatch[1] ?? "").replace(/[),.;!?]+$/g, "")) || null;
+  }
+
   const emailMatch = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",

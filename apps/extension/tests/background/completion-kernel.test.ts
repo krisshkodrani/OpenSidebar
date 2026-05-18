@@ -4193,6 +4193,62 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded url label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Portal URL: https://portal.example.com/login Backup URL: https://backup.example.com/login",
+      pageContent:
+        "Support Matrix Portal URL: https://portal.example.com/login. Backup URL: https://backup.example.com/login. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the portal URL?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "https://portal.example.com/login",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "portal url",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling url label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Portal URL: https://portal.example.com/login Backup URL: https://backup.example.com/login",
+      pageContent:
+        "Support Matrix Portal URL: https://portal.example.com/login. Backup URL: https://backup.example.com/login. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the portal URL?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "https://backup.example.com/login",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "portal url",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded numeric label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
