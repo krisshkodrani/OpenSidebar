@@ -1665,6 +1665,34 @@ describe("completion kernel", () => {
       genericSummary: "Unschedule completed.",
     },
     {
+      action: "deploy",
+      request: "Deploy Release Alpha.",
+      summary: "Deployed Release Alpha.",
+      targetLabel: "Release Alpha",
+      requestedVisible:
+        "Release Beta remains staged. Release Alpha deployed successfully.",
+      requestedEvidenceText: "Release Alpha deployed successfully.",
+      otherVisible:
+        "Release Alpha remains staged. Release Beta deployed successfully.",
+      otherEvidenceText: "Release Beta deployed successfully.",
+      genericVisible: "Deployment completed.",
+      genericSummary: "Deployment completed.",
+    },
+    {
+      action: "rollback",
+      request: "Rollback Release Alpha.",
+      summary: "Rolled back Release Alpha.",
+      targetLabel: "Release Alpha",
+      requestedVisible:
+        "Release Beta remains active. Release Alpha rolled back successfully.",
+      requestedEvidenceText: "Release Alpha rolled back successfully.",
+      otherVisible:
+        "Release Alpha remains active. Release Beta rolled back successfully.",
+      otherEvidenceText: "Release Beta rolled back successfully.",
+      genericVisible: "Rollback completed.",
+      genericSummary: "Rollback completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
