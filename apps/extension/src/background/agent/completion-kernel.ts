@@ -174,6 +174,7 @@ export interface ReadAnswerContract {
   kind: "read_answer";
   requiresGroundedPageEvidence: true;
   taskContract?: TaskContract;
+  expectedAnswerLabel?: string;
 }
 
 export type WorkflowConfirmationAction =
@@ -998,12 +999,17 @@ function generateReadAnswerContract(
   const hasConcreteMultiReturn =
     (taskContract.multiReturnCount ?? 0) >= 2 &&
     taskContract.requiredEntities.length >= (taskContract.multiReturnCount ?? 0);
+  const expectedAnswerLabel = getGroundedLabelValueQuestionLabel(
+    requestText,
+    _snapshot,
+  );
 
   return {
     contract: {
       kind: "read_answer",
       requiresGroundedPageEvidence: true,
       ...(hasConcreteMultiReturn ? { taskContract } : {}),
+      ...(expectedAnswerLabel ? { expectedAnswerLabel } : {}),
     },
     confidence: "medium",
     source: hasConcreteMultiReturn ? "task_contract" : "heuristic",
@@ -1844,7 +1850,11 @@ function evaluateReadAnswer(params: {
 
   if (
     params.summary &&
-    !readAnswerSummaryGroundedInEvidence(params.summary, sourceEvidence)
+    !readAnswerSummaryGroundedInEvidence(
+      params.summary,
+      sourceEvidence,
+      contract.expectedAnswerLabel,
+    )
   ) {
     return {
       status: "inconclusive",
@@ -3807,7 +3817,9 @@ function hasGroundedDirectPageQuestion(
 
   const pageText = snapshotPageText(snapshot);
   if (!hasSubstantiveReadAnswerEvidence(pageText)) return false;
-  if (hasGroundedLabelValueQuestion(normalizedQuestion, pageText)) return true;
+  if (findGroundedLabelValueQuestionLabel(normalizedQuestion, pageText)) {
+    return true;
+  }
 
   const questionTokens = tokenizeCompletionText(normalizedQuestion).filter(
     (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
@@ -3819,22 +3831,34 @@ function hasGroundedDirectPageQuestion(
   return overlap.length >= Math.min(3, questionTokens.length);
 }
 
-function hasGroundedLabelValueQuestion(
+function getGroundedLabelValueQuestionLabel(
+  question: string,
+  snapshot?: DomSnapshot | null,
+): string | null {
+  if (!snapshot) return null;
+  const pageText = snapshotPageText(snapshot);
+  if (!hasSubstantiveReadAnswerEvidence(pageText)) return null;
+  return findGroundedLabelValueQuestionLabel(normalizeText(question), pageText);
+}
+
+function findGroundedLabelValueQuestionLabel(
   normalizedQuestion: string,
   pageText: string,
-): boolean {
+): string | null {
   const label = extractDirectQuestionLabel(normalizedQuestion);
-  if (!label) return false;
+  if (!label) return null;
 
   const labelTokens = tokenizeCompletionText(label).filter(
     (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
   );
-  if (labelTokens.length < 1 || labelTokens.length > 3) return false;
+  if (labelTokens.length < 1 || labelTokens.length > 3) return null;
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
   return new RegExp(`\\b${labelPattern}\\b\\s*(?::|=)\\s*\\S`, "i").test(
     pageText,
-  );
+  )
+    ? cleanLabel(label)
+    : null;
 }
 
 function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
@@ -3903,7 +3927,19 @@ function hasSubstantiveReadAnswerEvidence(value: string): boolean {
 function readAnswerSummaryGroundedInEvidence(
   summary: string,
   evidence: Extract<CompletionEvidence, { type: "answer_state" }>,
+  expectedAnswerLabel?: string,
 ): boolean {
+  if (
+    expectedAnswerLabel &&
+    readAnswerSummaryMatchesExpectedLabelValue(
+      summary,
+      evidence.detail.evidenceText,
+      expectedAnswerLabel,
+    )
+  ) {
+    return true;
+  }
+
   const sourceTokens = new Set(
     tokenizeCompletionText(evidence.detail.evidenceText),
   );
@@ -3919,6 +3955,40 @@ function readAnswerSummaryGroundedInEvidence(
     Math.max(3, Math.ceil(summaryTokens.length * 0.25)),
   );
   return overlap >= requiredOverlap;
+}
+
+function readAnswerSummaryMatchesExpectedLabelValue(
+  summary: string,
+  evidenceText: string,
+  expectedAnswerLabel: string,
+): boolean {
+  const labelTokens = tokenizeCompletionText(expectedAnswerLabel).filter(
+    (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
+  );
+  if (labelTokens.length < 1 || labelTokens.length > 3) return false;
+
+  const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?::|=)\\s*([^.;\\n]{1,160})`,
+    "i",
+  ).exec(evidenceText);
+  const rawValue = cleanLabel(match?.[1] ?? "");
+  if (!rawValue) return false;
+
+  const valueWords = rawValue.split(/\s+/).filter(Boolean);
+  if (valueWords.length === 0) return false;
+
+  const normalizedSummary = normalizeText(summary);
+  const valuePrefix = normalizeText(valueWords.slice(0, 2).join(" "));
+  if (valueWords.length >= 2) {
+    return normalizedSummary.includes(valuePrefix);
+  }
+
+  const normalizedLabel = normalizeText(expectedAnswerLabel);
+  return (
+    normalizedSummary.includes(normalizedLabel) &&
+    normalizedSummary.includes(normalizeText(valueWords[0]))
+  );
 }
 
 function tokenizeCompletionText(value: string): string[] {
