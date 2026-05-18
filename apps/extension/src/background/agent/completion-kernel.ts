@@ -4054,7 +4054,7 @@ function labelValueLooksAnswerLike(value: string): boolean {
 
 function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
   const match =
-    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is)|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
       normalizedQuestion,
     );
   const label = cleanLabel(
