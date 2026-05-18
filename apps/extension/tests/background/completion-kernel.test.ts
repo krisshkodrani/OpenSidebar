@@ -2995,6 +2995,86 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts concise grounded who-when-where label-value answer summaries", () => {
+    const cases = [
+      {
+        request: "Who is the escalation owner?",
+        visible: "Escalation owner: platform operations",
+        label: "escalation owner",
+        summary: "platform operations",
+      },
+      {
+        request: "When is the maintenance window?",
+        visible: "Maintenance window: Friday morning",
+        label: "maintenance window",
+        summary: "Friday morning",
+      },
+      {
+        request: "Where is the data center?",
+        visible: "Data center: Berlin Germany",
+        label: "data center",
+        summary: "Berlin Germany",
+      },
+    ];
+
+    for (const scenario of cases) {
+      const snap = workflowSnapshot({
+        title: "Support Matrix",
+        url: "https://example.test/support",
+        visibleContent: `Support Matrix ${scenario.visible}`,
+        pageContent:
+          `Support Matrix ${scenario.visible}. ` +
+          "The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer support policy questions from visible page evidence.",
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: snap,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+        snapshot: snap,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "read_answer",
+        expectedAnswerLabel: scenario.label,
+      });
+      expect(decision.status).toBe("accepted");
+    }
+  });
+
+  test("does not accept concise who label-value answer for explanatory boilerplate", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix Escalation owner is documented in this policy and related routing notes.",
+      pageContent:
+        "Support Matrix Escalation owner is documented in this policy and related routing notes. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, escalation routing, and manager review, but it does not state a final escalation owner value.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is the escalation owner?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "platform operations",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerLabel
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
