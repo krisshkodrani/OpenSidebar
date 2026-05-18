@@ -191,6 +191,8 @@ export type WorkflowConfirmationAction =
   | "cancel"
   | "enable"
   | "disable"
+  | "assign"
+  | "unassign"
   | "dismiss"
   | "update"
   | "submit"
@@ -209,6 +211,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "cancel",
   "enable",
   "disable",
+  "assign",
+  "unassign",
   "dismiss",
   "update",
   "submit",
@@ -2524,6 +2528,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "disable";
   }
+  if (
+    /\bunassign\b/i.test(text) ||
+    /\bclear\s+(?:the\s+)?assignee\b/i.test(text) ||
+    /\bremove\s+(?:the\s+)?assignment\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\bunassigned\b/i.test(text)
+  ) {
+    return "unassign";
+  }
+  if (
+    /\bassign\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\bassigned\b/i.test(text)
+  ) {
+    return "assign";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2733,6 +2751,27 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:disabled|deactivated|disable complete|disable completed|disable successful|deactivation complete|deactivation completed|deactivation successful)\b/i.test(
+        text,
+      );
+    case "assign":
+      if (mode === "visible") {
+        return (
+          /\bassigned\s+successfully\b/i.test(text) ||
+          /\bassignment\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:assigned|assignment complete|assignment completed|assignment successful)\b/i.test(
+        text,
+      );
+    case "unassign":
+      if (mode === "visible") {
+        return (
+          /\bunassigned\s+successfully\b/i.test(text) ||
+          /\bunassign\s+(?:complete|completed|successful)\b/i.test(text) ||
+          /\bassignee\s+(?:cleared|removed)\b/i.test(text)
+        );
+      }
+      return /\b(?:unassigned|unassign complete|unassign completed|unassign successful|assignee cleared|assignee removed)\b/i.test(
         text,
       );
     case "dismiss":
@@ -3311,6 +3350,8 @@ type StatusChangeWorkflowAction = Extract<
   | "cancel"
   | "enable"
   | "disable"
+  | "assign"
+  | "unassign"
   | "submit"
   | "complete"
 >;
@@ -3332,6 +3373,8 @@ function inferStatusChangeAction(
   if (/\b(?:disable|disabled|deactivate|deactivated)\b/i.test(text)) {
     return "disable";
   }
+  if (/\bunassign(?:ed)?\b/i.test(text)) return "unassign";
+  if (/\bassign(?:ed)?\b/i.test(text)) return "assign";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3390,6 +3433,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:enabled|activated)\b/i.test(text);
     case "disable":
       return /\b(?:disabled|deactivated)\b/i.test(text);
+    case "assign":
+      return /\bassigned\b/i.test(text);
+    case "unassign":
+      return /\bunassigned\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3438,9 +3485,13 @@ function findWorkflowStatusChangeText(
                 ? "(?:enabled|activated|activation complete|activation completed|activation successful)"
                 : action === "disable"
                   ? "(?:disabled|deactivated|deactivation complete|deactivation completed|deactivation successful)"
-                  : action === "submit"
-                    ? "(?:submitted|submission complete|submission completed|submission successful)"
-                    : "(?:complete|completed)";
+                  : action === "assign"
+                    ? "(?:assigned|assignment complete|assignment completed|assignment successful)"
+                    : action === "unassign"
+                      ? "(?:unassigned|unassign complete|unassign completed|unassign successful)"
+                      : action === "submit"
+                        ? "(?:submitted|submission complete|submission completed|submission successful)"
+                        : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
