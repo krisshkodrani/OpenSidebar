@@ -197,6 +197,8 @@ export type WorkflowConfirmationAction =
   | "install"
   | "uninstall"
   | "invite"
+  | "subscribe"
+  | "unsubscribe"
   | "post"
   | "approve"
   | "reject"
@@ -238,6 +240,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "install",
   "uninstall",
   "invite",
+  "subscribe",
+  "unsubscribe",
   "post",
   "approve",
   "reject",
@@ -282,6 +286,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "install"
   | "uninstall"
   | "invite"
+  | "subscribe"
+  | "unsubscribe"
   | "post"
   | "approve"
   | "reject"
@@ -2690,6 +2696,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "invite";
   }
+  if (
+    /\bunsubscrib(?:e|ed)\s+(?:from\s+)?(?:the\s+)?(?:channel|topic|list|newsletter|report|dashboard|board|project|queue|feed|service|plan|notification|notifications?|updates?|digest|subscription)\b/i.test(
+      text,
+    )
+  ) {
+    return "unsubscribe";
+  }
+  if (
+    /\bsubscrib(?:e|ed)\s+(?:to\s+)?(?:the\s+)?(?:channel|topic|list|newsletter|report|dashboard|board|project|queue|feed|service|plan|notification|notifications?|updates?|digest|subscription)\b/i.test(
+      text,
+    )
+  ) {
+    return "subscribe";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2873,6 +2893,10 @@ function workflowTargetActionPattern(
       return "(?:uninstall)";
     case "invite":
       return "(?:invite)";
+    case "subscribe":
+      return "(?:subscribe(?:\\s+to)?)";
+    case "unsubscribe":
+      return "(?:unsubscribe(?:\\s+from)?)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3044,6 +3068,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "install" ||
     action === "uninstall" ||
     action === "invite" ||
+    action === "subscribe" ||
+    action === "unsubscribe" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3189,6 +3215,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:uninstalled)";
     case "invite":
       return "(?:invited)";
+    case "subscribe":
+      return "(?:subscribed)";
+    case "unsubscribe":
+      return "(?:unsubscribed)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3272,6 +3302,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:uninstall|uninstallation)";
     case "invite":
       return "(?:invite|invitation)";
+    case "subscribe":
+      return "(?:subscribe|subscription)";
+    case "unsubscribe":
+      return "(?:unsubscribe|unsubscription)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3622,6 +3656,34 @@ function textConfirmsWorkflowAction(
       return /\b(?:invited|invite complete|invite completed|invite successful|invitation complete|invitation completed|invitation successful|invitation sent)\b/i.test(
         text,
       );
+    case "subscribe":
+      if (mode === "visible") {
+        return (
+          /\bsubscribed\s+successfully\b/i.test(text) ||
+          /\b(?:channel|topic|list|newsletter|report|dashboard|board|project|queue|feed|service|plan|notification|notifications?|updates?|digest|subscription)\s+subscribed\b/i.test(
+            text,
+          ) ||
+          /\bsubscription\s+(?:complete|completed|successful|active)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:subscribed|subscribe complete|subscribe completed|subscribe successful|subscription complete|subscription completed|subscription successful|subscription active)\b/i.test(
+        text,
+      );
+    case "unsubscribe":
+      if (mode === "visible") {
+        return (
+          /\bunsubscribed\s+successfully\b/i.test(text) ||
+          /\b(?:channel|topic|list|newsletter|report|dashboard|board|project|queue|feed|service|plan|notification|notifications?|updates?|digest|subscription)\s+unsubscribed\b/i.test(
+            text,
+          ) ||
+          /\bunsubscription\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unsubscribed|unsubscribe complete|unsubscribe completed|unsubscribe successful|unsubscription complete|unsubscription completed|unsubscription successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -3949,6 +4011,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:uninstalled|uninstall|uninstallation)";
     case "invite":
       return "(?:invited|invite|invitation)";
+    case "subscribe":
+      return "(?:subscribed|subscribe|subscription)";
+    case "unsubscribe":
+      return "(?:unsubscribed|unsubscribe|unsubscription)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4775,6 +4841,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\buninstalled\b/i.test(text);
     case "invite":
       return /\binvited\b/i.test(text);
+    case "subscribe":
+      return /\bsubscribed\b/i.test(text);
+    case "unsubscribe":
+      return /\bunsubscribed\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":

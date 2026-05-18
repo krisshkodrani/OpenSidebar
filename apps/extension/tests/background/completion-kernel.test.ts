@@ -1665,6 +1665,34 @@ describe("completion kernel", () => {
       genericSummary: "Invitation completed.",
     },
     {
+      action: "subscribe",
+      request: "Subscribe to Channel Alpha.",
+      summary: "Subscribed to Channel Alpha.",
+      targetLabel: "Channel Alpha",
+      requestedVisible:
+        "Channel Beta remains inactive. Channel Alpha subscribed successfully.",
+      requestedEvidenceText: "Channel Alpha subscribed successfully.",
+      otherVisible:
+        "Channel Alpha remains inactive. Channel Beta subscribed successfully.",
+      otherEvidenceText: "Channel Beta subscribed successfully.",
+      genericVisible: "Subscription completed.",
+      genericSummary: "Subscription completed.",
+    },
+    {
+      action: "unsubscribe",
+      request: "Unsubscribe from Channel Alpha.",
+      summary: "Unsubscribed from Channel Alpha.",
+      targetLabel: "Channel Alpha",
+      requestedVisible:
+        "Channel Beta remains active. Channel Alpha unsubscribed successfully.",
+      requestedEvidenceText: "Channel Alpha unsubscribed successfully.",
+      otherVisible:
+        "Channel Alpha remains active. Channel Beta unsubscribed successfully.",
+      otherEvidenceText: "Channel Beta unsubscribed successfully.",
+      genericVisible: "Unsubscription completed.",
+      genericSummary: "Unsubscription completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
