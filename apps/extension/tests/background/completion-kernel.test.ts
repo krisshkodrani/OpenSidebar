@@ -4565,6 +4565,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded UNC path label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml Backup file: \\\\fileserver\\share\\config.bak",
+      pageContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml. Backup file: \\\\fileserver\\share\\config.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the shared config file?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "\\\\fileserver\\share\\config.yaml",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "shared config file",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling UNC path label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml Backup file: \\\\fileserver\\share\\config.bak",
+      pageContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml. Backup file: \\\\fileserver\\share\\config.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the shared config file?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "\\\\fileserver\\share\\config.bak",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "shared config file",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept UNC path prefix inside a longer path", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml Archive file: \\\\fileserver\\share\\config.yaml.bak",
+      pageContent:
+        "Runtime Matrix Shared config file: \\\\fileserver\\share\\config.yaml. Archive file: \\\\fileserver\\share\\config.yaml.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the shared config file?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "\\\\fileserver\\share\\config.yaml.bak",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "shared config file",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded domain label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Network Matrix",
