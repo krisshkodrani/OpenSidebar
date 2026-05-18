@@ -1609,6 +1609,20 @@ describe("completion kernel", () => {
       genericSummary: "Create completed.",
     },
     {
+      action: "share",
+      request: "Share Report Alpha.",
+      summary: "Shared Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains private. Report Alpha shared successfully.",
+      requestedEvidenceText: "Report Alpha shared successfully.",
+      otherVisible:
+        "Report Alpha remains private. Report Beta shared successfully.",
+      otherEvidenceText: "Report Beta shared successfully.",
+      genericVisible: "Share completed.",
+      genericSummary: "Share completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",

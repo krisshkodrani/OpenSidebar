@@ -193,6 +193,7 @@ export type WorkflowConfirmationAction =
   | "duplicate"
   | "restore"
   | "create"
+  | "share"
   | "post"
   | "approve"
   | "reject"
@@ -230,6 +231,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "duplicate",
   "restore",
   "create",
+  "share",
   "post",
   "approve",
   "reject",
@@ -270,6 +272,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "duplicate"
   | "restore"
   | "create"
+  | "share"
   | "post"
   | "approve"
   | "reject"
@@ -2650,6 +2653,13 @@ function inferWorkflowConfirmationAction(
   ) {
     return "create";
   }
+  if (
+    /\bshare\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|folder|workflow|rule|dashboard|view|list|policy|profile|link|board|project|invoice|receipt)\b/i.test(
+      text,
+    )
+  ) {
+    return "share";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2825,6 +2835,8 @@ function workflowTargetActionPattern(
       return "(?:restore|recover|reinstate)";
     case "create":
       return "(?:create|add|register)";
+    case "share":
+      return "(?:share)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -2992,6 +3004,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
+    action === "share" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3129,6 +3142,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:restored|recovered|reinstated)";
     case "create":
       return "(?:created|added|registered)";
+    case "share":
+      return "(?:shared)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3204,6 +3219,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:restore|restoration|recover|recovery|reinstate|reinstatement)";
     case "create":
       return "(?:create|creation|add|registration|register)";
+    case "share":
+      return "(?:share|sharing)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3500,6 +3517,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:created|added|registered|create complete|create completed|create successful|creation complete|creation completed|creation successful|add complete|add completed|add successful|registration complete|registration completed|registration successful|register complete|register completed|register successful)\b/i.test(
+        text,
+      );
+    case "share":
+      if (mode === "visible") {
+        return (
+          /\bshared\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|folder|workflow|rule|dashboard|view|list|policy|profile|link|board|project|invoice|receipt)\s+shared\b/i.test(
+            text,
+          ) ||
+          /\bshar(?:e|ing)\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:shared|share complete|share completed|share successful|sharing complete|sharing completed|sharing successful)\b/i.test(
         text,
       );
     case "post":
@@ -3821,6 +3851,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:restored|recovered|reinstated|restore|restoration|recover|recovery|reinstate|reinstatement)";
     case "create":
       return "(?:created|added|registered|create|creation|add|registration|register)";
+    case "share":
+      return "(?:shared|share|sharing)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4639,6 +4671,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:restored|recovered|reinstated)\b/i.test(text);
     case "create":
       return /\b(?:created|added|registered)\b/i.test(text);
+    case "share":
+      return /\bshared\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
