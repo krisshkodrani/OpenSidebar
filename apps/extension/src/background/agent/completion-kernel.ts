@@ -6,6 +6,11 @@ import {
 } from "./consequential-action-policy";
 import { getIncompleteDoneSummaryReason } from "./summary-completeness";
 import {
+  assessTaskContractCoverage,
+  buildTaskContract,
+  type TaskContract,
+} from "./task-contract";
+import {
   getAutocompleteSuggestionDoneRejection,
   type AutocompleteSuggestionDoneRejection,
 } from "./text-entry-guards";
@@ -151,6 +156,7 @@ export interface DraftOnlyContract {
 export interface ReadAnswerContract {
   kind: "read_answer";
   requiresGroundedPageEvidence: true;
+  taskContract?: TaskContract;
 }
 
 export type WorkflowConfirmationAction =
@@ -629,16 +635,25 @@ function generateReadAnswerContract(
     .filter(Boolean)
     .join("\n");
   if (!hasPageReadAnswerIntent(requestText)) return null;
+  const taskContract = buildTaskContract(requestText);
+  const hasConcreteMultiReturn =
+    (taskContract.multiReturnCount ?? 0) >= 2 &&
+    taskContract.requiredEntities.length >= (taskContract.multiReturnCount ?? 0);
 
   return {
     contract: {
       kind: "read_answer",
       requiresGroundedPageEvidence: true,
+      ...(hasConcreteMultiReturn ? { taskContract } : {}),
     },
     confidence: "medium",
-    source: "heuristic",
+    source: hasConcreteMultiReturn ? "task_contract" : "heuristic",
     repairable: true,
-    notes: [],
+    notes: hasConcreteMultiReturn
+      ? [
+          `multi-return coverage requires ${taskContract.multiReturnCount} returned entities`,
+        ]
+      : [],
   };
 }
 
@@ -1417,6 +1432,22 @@ function evaluateReadAnswer(params: {
   summary?: string;
 }): CompletionEvaluation {
   const contract = params.contract;
+  if (params.summary && contract.taskContract?.multiReturnCount) {
+    const coverage = assessTaskContractCoverage({
+      contract: contract.taskContract,
+      text: params.summary,
+    });
+    if (coverage.missingMultiReturnCoverage) {
+      return {
+        status: "rejected",
+        reason:
+          `Read-answer summary is missing required multi-return coverage. ` +
+          `Missing: ${coverage.missingEntities.join(", ") || "additional requested result"}.`,
+        contract,
+        evidence: params.evidence,
+      };
+    }
+  }
   const pageEvidence = params.evidence
     .filter(
       (event): event is Extract<CompletionEvidence, { type: "answer_state" }> =>
