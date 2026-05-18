@@ -2915,6 +2915,77 @@ describe("AgentLoop", () => {
     expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
   });
 
+  test("submit-form reset completion creates a trusted_tool completion envelope", () => {
+    const onMessage = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage,
+      onStep: vi.fn(),
+    });
+    setPlanContext(agent, {
+      subtasks: [
+        {
+          description: "Submit the completed form",
+          status: "running",
+        },
+      ],
+      planSteps: [
+        {
+          objective: "Submit the completed form",
+          successCriteria: "A fresh record form is visible after submit",
+        },
+      ],
+      snapshotText: "New record INC0034275",
+    });
+
+    const trustedCompletion = (agent as any).completeSubmitFormReset(0, {
+      reason:
+        "Submit advanced from populated record INC0034274 to fresh record form INC0034275; treating the prior record submission as complete.",
+      previousRecordId: "INC0034274",
+      currentRecordId: "INC0034275",
+      filledFieldsBeforeSubmit: 3,
+    });
+
+    expect(trustedCompletion).toMatchObject({
+      finalSummary: expect.stringContaining("INC0034274"),
+      completionCandidate: {
+        contractKind: "workflow_confirmation",
+        decisionReason: expect.stringContaining("form submit reset"),
+        evidence: [
+          expect.objectContaining({
+            type: "confirmation_state",
+            confidence: "high",
+            logicalKey: expect.stringContaining(
+              "trusted:form-submit-reset:confirmation:inc0034274",
+            ),
+          }),
+        ],
+      },
+    });
+
+    (agent as any).completeTaskResult(trustedCompletion.finalSummary, {
+      completionCandidate: trustedCompletion.completionCandidate,
+      saveCheckpoint: false,
+    });
+
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      summary: trustedCompletion.finalSummary,
+      completionEnvelope: {
+        status: "completed",
+        source: "trusted_tool",
+        contractKind: "workflow_confirmation",
+        decisionReason: expect.stringContaining("form submit reset"),
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining(
+            "trusted:form-submit-reset:confirmation:inc0034274",
+          ),
+        ]),
+      },
+    });
+    expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
+  });
+
   test("trusted read-answer completion creates a read_answer envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop("test-key", {
