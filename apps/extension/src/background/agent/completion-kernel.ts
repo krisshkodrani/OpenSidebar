@@ -4606,6 +4606,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isElectricalValue(preciseConciseValue)) {
+      return preciseElectricalValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4828,6 +4834,14 @@ function extractPreciseConciseLabelValue(
     if (temperatureMatch) return cleanLabel(temperatureMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveElectricalValue(expectedAnswerLabel)) {
+    const electricalMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:mv|v|kv|ma|a|ka|mw|w|kw|wh|kwh|mwh|va|kva|mah|ah))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (electricalMatch) return cleanLabel(electricalMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4897,6 +4911,12 @@ function labelCanHaveDataRateValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveTemperatureValue(expectedAnswerLabel: string): boolean {
   return /\b(?:temperature|temp|thermal|ambient)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveElectricalValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:voltage|volt|current|amp|amperage|power|watt|energy|battery|charge|load|draw|consumption|input|output|electrical)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5121,6 +5141,23 @@ function preciseTemperatureValueCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(summary);
+}
+
+function isElectricalValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:mv|v|kv|ma|a|ka|mw|w|kw|wh|kwh|mwh|va|kva|mah|ah)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseElectricalValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
 }
 
 const CONCISE_STATUS_LABEL_VALUES = new Set([
