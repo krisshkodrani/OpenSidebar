@@ -4509,6 +4509,12 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (emailMatch) return cleanLabel(emailMatch[1] ?? "") || null;
 
+  const phoneMatch = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:\\+?\\d{1,3}[\\s.-]?)?(?:\\(?\\d{3}\\)?[\\s.-]?)\\d{3}[\\s.-]?\\d{4}(?:\\s*(?:x|ext\\.?|extension)\\s*\\d{1,6})?)`,
+    "i",
+  ).exec(evidenceText);
+  if (phoneMatch) return cleanLabel(phoneMatch[1] ?? "") || null;
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
