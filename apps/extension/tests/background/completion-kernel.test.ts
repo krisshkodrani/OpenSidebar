@@ -4397,6 +4397,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded path label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml Backup path: /etc/open-sidebar/config.bak",
+      pageContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml. Backup path: /etc/open-sidebar/config.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the config path?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "/etc/open-sidebar/config.yaml",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "config path",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling path label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml Backup path: /etc/open-sidebar/config.bak",
+      pageContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml. Backup path: /etc/open-sidebar/config.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the config path?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "/etc/open-sidebar/config.bak",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "config path",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept path prefix inside a longer path", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml Archive path: /etc/open-sidebar/config.yaml.bak",
+      pageContent:
+        "Runtime Matrix Config path: /etc/open-sidebar/config.yaml. Archive path: /etc/open-sidebar/config.yaml.bak. The page explains runtime ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the config path?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "/etc/open-sidebar/config.yaml.bak",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "config path",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded domain label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Network Matrix",
