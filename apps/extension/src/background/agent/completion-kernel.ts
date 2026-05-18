@@ -637,7 +637,7 @@ function generateReadAnswerContract(
   ]
     .filter(Boolean)
     .join("\n");
-  if (!hasPageReadAnswerIntent(requestText)) return null;
+  if (!hasPageReadAnswerIntent(requestText, _snapshot)) return null;
   const taskContract = buildTaskContract(requestText);
   const hasConcreteMultiReturn =
     (taskContract.multiReturnCount ?? 0) >= 2 &&
@@ -3010,7 +3010,10 @@ function normalizeNavigationPath(url: URL): string {
   return search ? `${path}?${search}` : path;
 }
 
-function hasPageReadAnswerIntent(text: string): boolean {
+function hasPageReadAnswerIntent(
+  text: string,
+  snapshot?: DomSnapshot | null,
+): boolean {
   const normalized = normalizeText(text);
   if (!normalized) return false;
 
@@ -3068,7 +3071,58 @@ function hasPageReadAnswerIntent(text: string): boolean {
     /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
   ];
 
-  return pageReadTasks.some((pattern) => pattern.test(normalized));
+  if (pageReadTasks.some((pattern) => pattern.test(normalized))) return true;
+
+  return hasGroundedDirectPageQuestion(normalized, snapshot);
+}
+
+const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
+  ...LABEL_STOPWORDS,
+  "about",
+  "according",
+  "answer",
+  "does",
+  "from",
+  "give",
+  "how",
+  "many",
+  "much",
+  "page",
+  "please",
+  "tell",
+  "what",
+  "whats",
+  "when",
+  "where",
+  "which",
+  "who",
+  "whose",
+]);
+
+function hasGroundedDirectPageQuestion(
+  normalizedQuestion: string,
+  snapshot?: DomSnapshot | null,
+): boolean {
+  if (!snapshot) return false;
+  if (
+    !/\b(?:what(?:'s| is)?|who(?:'s| is)?|when|where|which|how many|how much)\b/.test(
+      normalizedQuestion,
+    )
+  ) {
+    return false;
+  }
+
+  const pageText = snapshotPageText(snapshot);
+  if (!hasSubstantiveReadAnswerEvidence(pageText)) return false;
+
+  const questionTokens = tokenizeCompletionText(normalizedQuestion).filter(
+    (token) => !DIRECT_PAGE_QUESTION_STOPWORDS.has(token),
+  );
+  if (questionTokens.length < 2) return false;
+
+  const pageTokens = new Set(tokenizeCompletionText(pageText));
+  const overlap = questionTokens.filter((token) => pageTokens.has(token));
+  return overlap.length >= Math.min(3, questionTokens.length);
 }
 
 function snapshotPageText(snapshot: DomSnapshot): string {
