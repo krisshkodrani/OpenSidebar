@@ -260,6 +260,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unlock"
   | "pause"
   | "resume"
+  | "start"
+  | "stop"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2747,6 +2749,10 @@ function workflowTargetActionPattern(
       return "(?:pause)";
     case "resume":
       return "(?:resume)";
+    case "start":
+      return "(?:start)";
+    case "stop":
+      return "(?:stop)";
     default:
       return null;
   }
@@ -2834,7 +2840,9 @@ function isTargetAwareVisibleWorkflowAction(
     action === "lock" ||
     action === "unlock" ||
     action === "pause" ||
-    action === "resume"
+    action === "resume" ||
+    action === "start" ||
+    action === "stop"
   );
 }
 
@@ -2948,6 +2956,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:paused)";
     case "resume":
       return "(?:resumed)";
+    case "start":
+      return "(?:started)";
+    case "stop":
+      return "(?:stopped)";
   }
 }
 
@@ -2989,6 +3001,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:pause)";
     case "resume":
       return "(?:resume)";
+    case "start":
+      return "(?:start)";
+    case "stop":
+      return "(?:stop)";
   }
 }
 
