@@ -1502,7 +1502,7 @@ export class AgentLoop {
       turn: this.turnCount,
       from: "working",
       to: "completed",
-      source: "trusted_tool",
+      source: candidate ? "trusted_tool" : "direct_completion",
       ...(completionEnvelope
         ? {
             resultId: completionEnvelope.resultId,
