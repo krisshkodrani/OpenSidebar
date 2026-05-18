@@ -1749,6 +1749,34 @@ describe("completion kernel", () => {
       genericSummary: "Uninstallation completed.",
     },
     {
+      action: "connect",
+      request: "Connect Integration Alpha.",
+      summary: "Connected Integration Alpha.",
+      targetLabel: "Integration Alpha",
+      requestedVisible:
+        "Integration Beta remains disconnected. Integration Alpha connected successfully.",
+      requestedEvidenceText: "Integration Alpha connected successfully.",
+      otherVisible:
+        "Integration Alpha remains disconnected. Integration Beta connected successfully.",
+      otherEvidenceText: "Integration Beta connected successfully.",
+      genericVisible: "Connection completed.",
+      genericSummary: "Connection completed.",
+    },
+    {
+      action: "disconnect",
+      request: "Disconnect Integration Alpha.",
+      summary: "Disconnected Integration Alpha.",
+      targetLabel: "Integration Alpha",
+      requestedVisible:
+        "Integration Beta remains connected. Integration Alpha disconnected successfully.",
+      requestedEvidenceText: "Integration Alpha disconnected successfully.",
+      otherVisible:
+        "Integration Alpha remains connected. Integration Beta disconnected successfully.",
+      otherEvidenceText: "Integration Beta disconnected successfully.",
+      genericVisible: "Disconnection completed.",
+      genericSummary: "Disconnection completed.",
+    },
+    {
       action: "invite",
       request: "Invite Member Alpha.",
       summary: "Invited Member Alpha.",
