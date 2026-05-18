@@ -245,6 +245,9 @@ type TargetAwareVisibleWorkflowAction = Extract<
   WorkflowConfirmationAction,
   | "delete"
   | "archive"
+  | "save"
+  | "send"
+  | "post"
   | "approve"
   | "reject"
   | "close"
@@ -264,6 +267,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "stop"
   | "restart"
   | "refresh"
+  | "update"
   | "submit"
 >;
 
@@ -2722,6 +2726,12 @@ function workflowTargetActionPattern(
       return "(?:delete|remove)";
     case "archive":
       return "(?:archive)";
+    case "save":
+      return "(?:save)";
+    case "send":
+      return "(?:send)";
+    case "post":
+      return "(?:post|publish)";
     case "approve":
       return "(?:approve)";
     case "reject":
@@ -2760,6 +2770,8 @@ function workflowTargetActionPattern(
       return "(?:restart)";
     case "refresh":
       return "(?:refresh)";
+    case "update":
+      return "(?:update|change|apply)";
     case "submit":
       return "(?:submit)";
     default:
@@ -2835,6 +2847,9 @@ function isTargetAwareVisibleWorkflowAction(
   return (
     action === "delete" ||
     action === "archive" ||
+    action === "save" ||
+    action === "send" ||
+    action === "post" ||
     action === "approve" ||
     action === "reject" ||
     action === "close" ||
@@ -2854,6 +2869,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "stop" ||
     action === "restart" ||
     action === "refresh" ||
+    action === "update" ||
     action === "submit"
   );
 }
@@ -2938,6 +2954,12 @@ function workflowTargetVisibleResultPattern(
       return "(?:deleted|removed)";
     case "archive":
       return "(?:archived)";
+    case "save":
+      return "(?:saved)";
+    case "send":
+      return "(?:sent)";
+    case "post":
+      return "(?:posted|published)";
     case "approve":
       return "(?:approved)";
     case "reject":
@@ -2976,6 +2998,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:restarted)";
     case "refresh":
       return "(?:refreshed)";
+    case "update":
+      return "(?:updated|changed|applied)";
     case "submit":
       return "(?:submitted)";
   }
@@ -2989,6 +3013,12 @@ function workflowTargetVisibleNounPattern(
       return "(?:deletion|removal)";
     case "archive":
       return "(?:archival)";
+    case "save":
+      return "(?:save)";
+    case "send":
+      return "(?:send)";
+    case "post":
+      return "(?:post|publish)";
     case "approve":
       return "(?:approval)";
     case "reject":
@@ -3027,6 +3057,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:restart)";
     case "refresh":
       return "(?:refresh)";
+    case "update":
+      return "(?:update|change)";
     case "submit":
       return "(?:submission|submit)";
   }
