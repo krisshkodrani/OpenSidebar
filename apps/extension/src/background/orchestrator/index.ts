@@ -843,6 +843,56 @@ export class Orchestrator {
       });
   }
 
+  private emitCompletionScopeTransition(
+    task:
+      | { runId?: string; id?: string; workspaceId?: string; nodes?: TaskNode[] }
+      | null
+      | undefined,
+    data: {
+      scope: "lane" | "node" | "root";
+      status: "completed" | "sibling_ignored";
+      nodeId?: string;
+      reason: string;
+      envelope?: CompletionEnvelope;
+      skippedNodeIds?: string[];
+    },
+  ): void {
+    this.emitTraceEvent(
+      task,
+      "completion_scope_transition",
+      {
+        taskId: task?.id,
+        scope: data.scope,
+        status: data.status,
+        nodeId: data.nodeId,
+        reason: data.reason,
+        ...(data.envelope
+          ? {
+              resultId: data.envelope.resultId,
+              source: data.envelope.source,
+              contractKind: data.envelope.contractKind,
+              evidenceKeys: data.envelope.evidenceKeys,
+            }
+          : {}),
+        ...(data.skippedNodeIds ? { skippedNodeIds: data.skippedNodeIds } : {}),
+        ...(task?.nodes
+          ? {
+              pendingNodes: task.nodes.filter(
+                (node) => node.status === "pending",
+              ).length,
+              runningNodes: task.nodes.filter(
+                (node) => node.status === "running",
+              ).length,
+              completedNodes: task.nodes.filter(
+                (node) => node.status === "completed",
+              ).length,
+            }
+          : {}),
+      },
+      "system",
+    );
+  }
+
   private attachPlannerUsageTrace(
     planner: unknown,
     task:
@@ -4736,6 +4786,13 @@ export class Orchestrator {
           "executor",
         );
         if (result.outcome === "completed") {
+          this.emitCompletionScopeTransition(task, {
+            scope: "lane",
+            status: "completed",
+            nodeId: node.id,
+            reason: "executor_loop_completed",
+            envelope: result.completionEnvelope,
+          });
           {
             const verifierHandoffContext = buildVerifierContext(
               node,
@@ -4947,6 +5004,13 @@ export class Orchestrator {
               this.recordCompletedPhase(task, node.description);
               this.maybeRecordReviewedItem(task, node);
               this.maybeRecordExtractedFacts(task, node, compactResultSummary);
+              this.emitCompletionScopeTransition(task, {
+                scope: "node",
+                status: "completed",
+                nodeId: node.id,
+                reason: verification.reason || "verifier_accept",
+                envelope: result.completionEnvelope,
+              });
             } else if (
               verification.decision === "reroute" &&
               verification.rerouteObjective &&
@@ -5293,6 +5357,20 @@ export class Orchestrator {
           );
           node.status = "completed";
           node.result = loop.completedResult.summary;
+          this.emitCompletionScopeTransition(task, {
+            scope: "lane",
+            status: "completed",
+            nodeId: node.id,
+            reason: "executor_timeout_after_terminal_completion",
+            envelope: loop.completedResult.completionEnvelope,
+          });
+          this.emitCompletionScopeTransition(task, {
+            scope: "node",
+            status: "completed",
+            nodeId: node.id,
+            reason: "accepted_terminal_completion_after_executor_timeout",
+            envelope: loop.completedResult.completionEnvelope,
+          });
           return;
         }
 
@@ -5532,6 +5610,12 @@ export class Orchestrator {
               pending.status = "skipped";
               pending.result = "Skipped: navigation goal already achieved";
             }
+            this.emitCompletionScopeTransition(task, {
+              scope: "root",
+              status: "sibling_ignored",
+              reason: "navigation_goal_already_achieved",
+              skippedNodeIds: remainingPending.map((node) => node.id),
+            });
             this.emitTraceEvent(
               task,
               "navigation_goal_gate",
@@ -5614,6 +5698,12 @@ export class Orchestrator {
                   pending.status = "skipped";
                   pending.result = "Skipped: global goal already achieved";
                 }
+                this.emitCompletionScopeTransition(task, {
+                  scope: "root",
+                  status: "sibling_ignored",
+                  reason: "global_goal_already_achieved",
+                  skippedNodeIds: remainingPending.map((node) => node.id),
+                });
                 this.emitTraceEvent(
                   task,
                   "global_goal_gate",
@@ -6010,6 +6100,13 @@ export class Orchestrator {
     this.notifyTaskCompletion(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
+    if (completionStatus === "completed") {
+      this.emitCompletionScopeTransition(task, {
+        scope: "root",
+        status: "completed",
+        reason: "task_completion_payload_completed",
+      });
+    }
     this.emitTraceEvent(
       task,
       "task_completed",
