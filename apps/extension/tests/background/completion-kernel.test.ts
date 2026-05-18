@@ -824,6 +824,76 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts send-class workflow confirmation after visible send completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Send completed.",
+      pageContent: "Send completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send the message.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Send completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:send",
+          detail: expect.objectContaining({ action: "send" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts post-class workflow confirmation after visible publish completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Publish completed.",
+      pageContent: "Publish completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Publish the announcement.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Publish completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "post",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:post",
+          detail: expect.objectContaining({ action: "post" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts save-class workflow confirmation after visible save completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Save completed.",
