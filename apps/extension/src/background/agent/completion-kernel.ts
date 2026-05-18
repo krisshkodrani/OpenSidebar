@@ -3835,6 +3835,21 @@ const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
   "whose",
 ]);
 
+const EXPLANATORY_LABEL_VALUE_START_WORDS = new Set([
+  "available",
+  "covered",
+  "described",
+  "documented",
+  "explained",
+  "included",
+  "listed",
+  "mentioned",
+  "provided",
+  "shown",
+  "specified",
+  "visible",
+]);
+
 function hasGroundedDirectPageQuestion(
   normalizedQuestion: string,
   snapshot?: DomSnapshot | null,
@@ -3887,11 +3902,19 @@ function findGroundedLabelValueQuestionLabel(
   if (labelTokens.length < 1 || labelTokens.length > 3) return null;
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
-  return new RegExp(`\\b${labelPattern}\\b\\s*(?::|=)\\s*\\S`, "i").test(
-    pageText,
-  )
-    ? cleanLabel(label)
-    : null;
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(:|=)|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
+    "i",
+  ).exec(pageText);
+  if (!match) return null;
+  if (match[2] && !labelValueLooksAnswerLike(match[3] ?? "")) return null;
+  return cleanLabel(label);
+}
+
+function labelValueLooksAnswerLike(value: string): boolean {
+  const tokens = tokenizeCompletionText(value);
+  if (tokens.length === 0) return false;
+  return !EXPLANATORY_LABEL_VALUE_START_WORDS.has(tokens[0]);
 }
 
 function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
@@ -4002,10 +4025,13 @@ function readAnswerSummaryMatchesExpectedLabelValue(
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
   const match = new RegExp(
-    `\\b${labelPattern}\\b\\s*(?::|=)\\s*([^.;\\n]{1,160})`,
+    `\\b${labelPattern}\\b\\s*(?:(:|=)|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
     "i",
   ).exec(evidenceText);
-  const rawValue = cleanLabel(match?.[1] ?? "");
+  if (match?.[2] && !labelValueLooksAnswerLike(match[3] ?? "")) {
+    return false;
+  }
+  const rawValue = cleanLabel(match?.[3] ?? "");
   if (!rawValue) return false;
 
   const valueWords = rawValue.split(/\s+/).filter(Boolean);
