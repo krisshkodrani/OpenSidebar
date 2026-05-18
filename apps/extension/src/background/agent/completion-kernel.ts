@@ -254,6 +254,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "disable"
   | "assign"
   | "unassign"
+  | "escalate"
+  | "deescalate"
   | "lock"
   | "unlock"
 >;
@@ -2731,6 +2733,10 @@ function workflowTargetActionPattern(
       return "(?:assign)";
     case "unassign":
       return "(?:unassign)";
+    case "escalate":
+      return "(?:escalate)";
+    case "deescalate":
+      return "(?:de[-\\s]?escalate)";
     case "lock":
       return "(?:lock)";
     case "unlock":
@@ -2817,6 +2823,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "disable" ||
     action === "assign" ||
     action === "unassign" ||
+    action === "escalate" ||
+    action === "deescalate" ||
     action === "lock" ||
     action === "unlock"
   );
@@ -2920,6 +2928,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:assigned)";
     case "unassign":
       return "(?:unassigned|assignee\\s+(?:cleared|removed))";
+    case "escalate":
+      return "(?:escalated)";
+    case "deescalate":
+      return "(?:de[-\\s]?escalated)";
     case "lock":
       return "(?:locked)";
     case "unlock":
@@ -2953,6 +2965,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:assignment)";
     case "unassign":
       return "(?:unassign|assignment)";
+    case "escalate":
+      return "(?:escalation|escalate)";
+    case "deescalate":
+      return "(?:de[-\\s]?escalation|de[-\\s]?escalate)";
     case "lock":
       return "(?:lock)";
     case "unlock":
