@@ -278,6 +278,37 @@ describe("completion kernel", () => {
     });
   });
 
+  test("rejects root multi-return summaries missing a requested result", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "Warehouse Gamma inventory count is 6,412 units.",
+      taskContext:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      rootUserRequest:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      turnCount: 4,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "missing_multi_return_coverage",
+      reason: expect.stringContaining("warehouse alpha"),
+    });
+  });
+
+  test("does not apply root multi-return preflight inside orchestrator nodes", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "Warehouse Gamma inventory count is 6,412 units.",
+      taskContext:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      rootUserRequest:
+        "From this page, tell me both numbers for Warehouse Gamma and Warehouse Alpha.",
+      isOrchestratorNode: true,
+      turnCount: 4,
+    });
+
+    expect(decision).toEqual({ status: "valid" });
+  });
+
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
       userRequest: "Select the correct option/s",
