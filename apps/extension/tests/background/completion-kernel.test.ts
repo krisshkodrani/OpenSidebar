@@ -4135,6 +4135,118 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded decimal percent label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Reliability Matrix",
+      url: "https://example.test/reliability",
+      visibleContent:
+        "Reliability Matrix Uptime percentage: 99.9% Target uptime: 99%",
+      pageContent:
+        "Reliability Matrix Uptime percentage: 99.9%. Target uptime: 99%. The page explains reliability ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer reliability questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the uptime percentage?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "99.9%",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "uptime percentage",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept truncated decimal percent label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Reliability Matrix",
+      url: "https://example.test/reliability",
+      visibleContent:
+        "Reliability Matrix Uptime percentage: 99.9% Target uptime: 99%",
+      pageContent:
+        "Reliability Matrix Uptime percentage: 99.9%. Target uptime: 99%. The page explains reliability ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer reliability questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the uptime percentage?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "99%",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "uptime percentage",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept truncated decimal currency label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Budget Matrix",
+      url: "https://example.test/budget",
+      visibleContent:
+        "Budget Matrix Monthly budget: $1,250.50 Monthly spend: $1,250.00",
+      pageContent:
+        "Budget Matrix Monthly budget: $1,250.50. Monthly spend: $1,250.00. The page explains budget ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer budget questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the monthly budget?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "$1,250",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "monthly budget",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("accepts concise grounded decimal currency label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Budget Matrix",
+      url: "https://example.test/budget",
+      visibleContent:
+        "Budget Matrix Monthly budget: $1,250.50 Monthly spend: $1,250.00",
+      pageContent:
+        "Budget Matrix Monthly budget: $1,250.50. Monthly spend: $1,250.00. The page explains budget ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer budget questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the monthly budget?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "$1,250.50",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "monthly budget",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts concise numeric label-value answer with existential count wording", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
