@@ -8,6 +8,7 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
+  evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
@@ -597,6 +598,49 @@ describe("completion kernel", () => {
         }),
       ]),
     );
+  });
+
+  test("rejects pending autocomplete completion through kernel preflight", () => {
+    const snap = formSnapshot({
+      visibleContent: "Product autocomplete suggestions Laptop Stand",
+      pageContent: "Product autocomplete suggestions Laptop Stand",
+      elements: [
+        {
+          ...textField(201, "Product Search", "Laptop Stand"),
+          attributes: {
+            id: "product-search",
+            name: "product-search",
+            value: "Laptop Stand",
+            label: "Product Search",
+            "aria-autocomplete": "list",
+          },
+        },
+        {
+          tag: 202,
+          tagName: "li",
+          role: "option",
+          text: "Laptop Stand",
+          attributes: { id: "product-option-laptop-stand" },
+          rect: { x: 0, y: 60, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+
+    const decision = evaluateCompletionPendingAutocompletePreflight({
+      snapshot: snap,
+      userRequest: "Search for Laptop Stand in the product autocomplete field.",
+      summary: "The product search field contains Laptop Stand.",
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "pending_autocomplete_suggestion",
+      inputTag: 201,
+      suggestionTag: 202,
+      value: "laptop stand",
+    });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {

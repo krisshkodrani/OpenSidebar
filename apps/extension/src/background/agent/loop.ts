@@ -81,6 +81,7 @@ import {
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionContract,
   generateCompletionContract,
@@ -98,7 +99,6 @@ import type { TurnCheckpoint } from "./checkpoint-types";
 import { MutationLedger } from "./mutation-ledger";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
-  getAutocompleteSuggestionDoneRejection,
   isTextLikeInputElement,
   normalizeGuardText,
 } from "./text-entry-guards";
@@ -2511,7 +2511,7 @@ export class AgentLoop {
       }
     }
 
-    if (this.rejectDoneForPendingAutocompleteSuggestion(toolCallId, summary)) {
+    if (this.rejectDoneForPendingAutocompletePreflight(toolCallId, summary)) {
       return false;
     }
 
@@ -2630,7 +2630,7 @@ export class AgentLoop {
     return true;
   }
 
-  private rejectDoneForPendingAutocompleteSuggestion(
+  private rejectDoneForPendingAutocompletePreflight(
     toolCallId: string,
     summary: string,
   ): boolean {
@@ -2653,38 +2653,38 @@ export class AgentLoop {
       effectivePlanIdx >= 0
         ? this.planSteps[effectivePlanIdx]?.successCriteria
         : undefined;
-    const rejection = getAutocompleteSuggestionDoneRejection({
+    const decision = evaluateCompletionPendingAutocompletePreflight({
       snapshot: this.context.getSnapshot(),
-      originalQuery: this.originalQuery,
+      userRequest: this.originalQuery,
       activeObjective,
       successCriteria,
       summary,
     });
-    if (!rejection) return false;
+    if (decision.status === "valid") return false;
 
     this.doneRejections++;
     this.log.warn("agent", "DONE rejected: autocomplete suggestion pending", {
       turn: this.turnCount,
       rejections: this.doneRejections,
-      inputTag: rejection.inputTag,
-      suggestionTag: rejection.suggestionTag,
-      value: rejection.value,
+      inputTag: decision.inputTag,
+      suggestionTag: decision.suggestionTag,
+      value: decision.value,
     });
     this.traceRecorder?.recordEvent(
       "done_rejected_autocomplete_suggestion_pending",
       {
         rejections: this.doneRejections,
-        inputTag: rejection.inputTag,
-        suggestionTag: rejection.suggestionTag,
-        value: rejection.value,
+        inputTag: decision.inputTag,
+        suggestionTag: decision.suggestionTag,
+        value: decision.value,
       },
     );
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content:
-        `done() REJECTED: ${rejection.reason}\n\n` +
-        `YOUR NEXT ACTION: click_element({"id": ${rejection.suggestionTag}}), then verify the selected value is visible.`,
+        `done() REJECTED: ${decision.reason}\n\n` +
+        `YOUR NEXT ACTION: click_element({"id": ${decision.suggestionTag}}), then verify the selected value is visible.`,
     });
     return true;
   }
