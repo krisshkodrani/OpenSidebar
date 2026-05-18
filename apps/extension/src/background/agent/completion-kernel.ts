@@ -4530,6 +4530,20 @@ function extractPreciseConciseLabelValue(
   }
 
   if (labelCanHavePathValue(expectedAnswerLabel)) {
+    const windowsPathMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z]:\\\\[^\\s,;!)]{1,160})(?=$|[\\s,;!)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (windowsPathMatch) {
+      return (
+        cleanLabel(
+          (windowsPathMatch[1] ?? "")
+            .replace(/[),;!?]+$/g, "")
+            .replace(/\.$/g, ""),
+        ) || null
+      );
+    }
+
     const pathMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\.{1,2})?\\/[^\\s,;!)]{1,160})(?=$|[\\s,;!)]|\\.(?:\\s|$))`,
       "i",
@@ -4617,7 +4631,7 @@ function isDomainNameValue(value: string): boolean {
 }
 
 function isPathValue(value: string): boolean {
-  return /^(?:~|\.{1,2})?\/\S+$/i.test(cleanLabel(value));
+  return /^(?:(?:~|\.{1,2})?\/|[a-z]:\\)\S+$/i.test(cleanLabel(value));
 }
 
 function precisePathValueCoveredBySummary(
