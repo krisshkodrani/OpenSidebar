@@ -1609,6 +1609,20 @@ describe("completion kernel", () => {
       genericSummary: "Move completed.",
     },
     {
+      action: "rename",
+      request: "Rename File Alpha.",
+      summary: "Renamed File Alpha.",
+      targetLabel: "File Alpha",
+      requestedVisible:
+        "File Beta keeps its name. File Alpha renamed successfully.",
+      requestedEvidenceText: "File Alpha renamed successfully.",
+      otherVisible:
+        "File Alpha keeps its name. File Beta renamed successfully.",
+      otherEvidenceText: "File Beta renamed successfully.",
+      genericVisible: "Rename completed.",
+      genericSummary: "Rename completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
