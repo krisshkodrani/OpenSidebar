@@ -209,6 +209,8 @@ export type WorkflowConfirmationAction =
   | "unbookmark"
   | "favorite"
   | "unfavorite"
+  | "watch"
+  | "unwatch"
   | "post"
   | "approve"
   | "reject"
@@ -262,6 +264,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unbookmark",
   "favorite",
   "unfavorite",
+  "watch",
+  "unwatch",
   "post",
   "approve",
   "reject",
@@ -318,6 +322,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unbookmark"
   | "favorite"
   | "unfavorite"
+  | "watch"
+  | "unwatch"
   | "post"
   | "approve"
   | "reject"
@@ -2810,6 +2816,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "favorite";
   }
+  if (
+    /\bunwatch(?:ed)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\b/i.test(
+      text,
+    )
+  ) {
+    return "unwatch";
+  }
+  if (
+    /\bwatch(?:ed)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\b/i.test(
+      text,
+    )
+  ) {
+    return "watch";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -3017,6 +3037,10 @@ function workflowTargetActionPattern(
       return "(?:favorite)";
     case "unfavorite":
       return "(?:unfavorite)";
+    case "watch":
+      return "(?:watch)";
+    case "unwatch":
+      return "(?:unwatch)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3200,6 +3224,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unbookmark" ||
     action === "favorite" ||
     action === "unfavorite" ||
+    action === "watch" ||
+    action === "unwatch" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3369,6 +3395,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:favorited)";
     case "unfavorite":
       return "(?:unfavorited)";
+    case "watch":
+      return "(?:watched)";
+    case "unwatch":
+      return "(?:unwatched)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3476,6 +3506,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:favorite)";
     case "unfavorite":
       return "(?:unfavorite)";
+    case "watch":
+      return "(?:watch)";
+    case "unwatch":
+      return "(?:unwatch)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3984,6 +4018,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unfavorited|unfavorite complete|unfavorite completed|unfavorite successful)\b/i.test(
         text,
       );
+    case "watch":
+      if (mode === "visible") {
+        return (
+          /\bwatched\s+successfully\b/i.test(text) ||
+          /\b(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\s+watched\b/i.test(
+            text,
+          ) ||
+          /\bwatch\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:watched|watch complete|watch completed|watch successful)\b/i.test(
+        text,
+      );
+    case "unwatch":
+      if (mode === "visible") {
+        return (
+          /\bunwatched\s+successfully\b/i.test(text) ||
+          /\b(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\s+unwatched\b/i.test(
+            text,
+          ) ||
+          /\bunwatch\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unwatched|unwatch complete|unwatch completed|unwatch successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -4335,6 +4395,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:favorited|favorite)";
     case "unfavorite":
       return "(?:unfavorited|unfavorite)";
+    case "watch":
+      return "(?:watched|watch)";
+    case "unwatch":
+      return "(?:unwatched|unwatch)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -5185,6 +5249,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bfavorited\b/i.test(text);
     case "unfavorite":
       return /\bunfavorited\b/i.test(text);
+    case "watch":
+      return /\bwatched\b/i.test(text);
+    case "unwatch":
+      return /\bunwatched\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
