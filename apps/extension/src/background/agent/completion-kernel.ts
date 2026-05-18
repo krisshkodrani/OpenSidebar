@@ -86,6 +86,7 @@ export type CompletionEvidence =
         recordId?: string;
         url?: string;
         action?: WorkflowConfirmationAction;
+        targetText?: string;
         source?:
           | "visible_text"
           | "modal_disappearance"
@@ -2876,6 +2877,9 @@ function workflowConfirmationMatchesTarget(
       targetLabel,
     );
   }
+  if (event.detail.source === "status_change" && event.detail.targetText) {
+    return workflowTargetLabelCoveredByText(targetLabel, event.detail.targetText);
+  }
   return true;
 }
 
@@ -3974,6 +3978,7 @@ function extractStatusChangeEvidenceFromToolOutcome(params: {
   const currentStatus = findWorkflowStatusChangeText(current, action);
   if (!currentStatus) return [];
   if (findWorkflowStatusChangeText(pre, action)) return [];
+  const targetText = findWorkflowStatusChangeTargetText(current, currentStatus);
 
   return [
     {
@@ -3985,6 +3990,7 @@ function extractStatusChangeEvidenceFromToolOutcome(params: {
         text: currentStatus,
         action,
         source: "status_change",
+        ...(targetText ? { targetText } : {}),
         ...(current.url ? { url: current.url } : {}),
       },
     },
@@ -4485,6 +4491,52 @@ function findWorkflowStatusChangeText(
     if (match?.[0]) return cleanLabel(match[0]);
   }
   return null;
+}
+
+function findWorkflowStatusChangeTargetText(
+  snapshot: DomSnapshot,
+  statusText: string,
+): string | null {
+  const status = cleanLabel(statusText);
+  if (!status) return null;
+  const normalizedStatus = normalizeText(status);
+
+  for (const segment of statusTargetTextSegments(snapshot)) {
+    const text = cleanLabel(segment);
+    const index = normalizeText(text).indexOf(normalizedStatus);
+    if (index <= 0) continue;
+
+    const prefix = cleanLabel(text.slice(0, index).replace(/[,:=-]+$/g, ""));
+    if (!prefix || /\b(?:status|state|stage)\b/i.test(prefix)) continue;
+
+    const target = normalizeWorkflowTargetLabel(prefix, {
+      allowShort: /[\d_-]/.test(prefix),
+    });
+    if (target) return target;
+  }
+  return null;
+}
+
+function statusTargetTextSegments(snapshot: DomSnapshot): string[] {
+  const segments: string[] = [];
+  const seen = new Set<string>();
+  for (const value of [
+    snapshot.visibleContent,
+    snapshot.pageContent,
+    snapshot.title,
+  ]) {
+    if (!value) continue;
+    for (const segment of value
+      .replace(/([.!?;])\s+/g, "$1\n")
+      .split(/[\r\n]+/g)) {
+      const text = cleanLabel(segment);
+      const key = normalizeText(text);
+      if (!text || seen.has(key)) continue;
+      seen.add(key);
+      segments.push(text);
+    }
+  }
+  return segments;
 }
 
 function snapshotCompletionText(snapshot: DomSnapshot): string {

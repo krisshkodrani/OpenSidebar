@@ -5328,6 +5328,176 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware approve status-change confirmation for the requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Awaiting approval\nApprove request",
+      pageContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Awaiting approval\nApprove request",
+      elements: [actionButton(602, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Request Alpha Status: Approved\nRequest Beta Status: Awaiting approval",
+      pageContent:
+        "Request Alpha Status: Approved\nRequest Beta Status: Awaiting approval",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 602 },
+      result: "Clicked element 602.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:status:status-approved",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "status_change",
+          targetText: "Request Alpha",
+          text: "Status: Approved",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware approve status-change confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Awaiting approval\nApprove request",
+      pageContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Awaiting approval\nApprove request",
+      elements: [actionButton(602, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Approved",
+      pageContent:
+        "Request Alpha Status: Awaiting approval\nRequest Beta Status: Approved",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 602 },
+      result: "Clicked element 602.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:status:status-approved",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "status_change",
+          targetText: "Request Beta",
+          text: "Status: Approved",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic approve status-change confirmation valid for a named target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Status: Awaiting approval Approve request",
+      pageContent: "Status: Awaiting approval Approve request",
+      elements: [actionButton(602, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Status: Approved",
+      pageContent: "Status: Approved",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 602 },
+      result: "Clicked element 602.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:status:status-approved",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "status_change",
+          text: "Status: Approved",
+        }),
+      }),
+    ]);
+    expect((evidence[0]?.detail as { targetText?: string }).targetText).toBe(
+      undefined,
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("does not infer status-change confirmation when status was already final", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ001 Status: Approved Approve request",
@@ -7385,6 +7555,66 @@ describe("completion kernel", () => {
       }),
     ]);
     expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware mark-complete status-change confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Task TASK001 Status: In Progress\nTask TASK002 Status: In Progress\nMark task complete",
+      pageContent:
+        "Task TASK001 Status: In Progress\nTask TASK002 Status: In Progress\nMark task complete",
+      elements: [actionButton(606, "Mark task complete")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Task TASK001 Status: In Progress\nTask TASK002 Status: Completed",
+      pageContent:
+        "Task TASK001 Status: In Progress\nTask TASK002 Status: Completed",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mark TASK001 complete.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 606 },
+      result: "Clicked element 606.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Marked TASK001 complete.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "complete",
+      targetLabel: "TASK001",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:complete:status:status-completed",
+        detail: expect.objectContaining({
+          action: "complete",
+          source: "status_change",
+          targetText: "Task TASK002",
+          text: "Status: Completed",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("does not infer mark-complete confirmation when status was already complete", () => {
