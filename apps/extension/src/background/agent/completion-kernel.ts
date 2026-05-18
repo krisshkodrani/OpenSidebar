@@ -3550,10 +3550,7 @@ function extractControlStateChangeEvidenceFromToolOutcome(params: {
   const afterState = readControlState(currentElement);
   if (beforeState == null || afterState == null) return [];
   if (beforeState === afterState) return [];
-  if (action === "enable" && !(beforeState === false && afterState === true)) {
-    return [];
-  }
-  if (action === "disable" && !(beforeState === true && afterState === false)) {
+  if (!controlStateChangeMatchesAction(action, beforeState, afterState)) {
     return [];
   }
 
@@ -3574,7 +3571,7 @@ function extractControlStateChangeEvidenceFromToolOutcome(params: {
       logicalKey: `workflow:confirmation:${action}:control-state:${compactKey(identity)}`,
       observedAtTurn: params.turn,
       detail: {
-        text: `Control state changed to ${afterState ? "enabled" : "disabled"}${label ? `: ${label}` : ""}`,
+        text: `Control state changed to ${controlStateCompletionWord(action)}${label ? `: ${label}` : ""}`,
         action,
         source: "control_state_change",
         ...(current.url ? { url: current.url } : {}),
@@ -3767,12 +3764,47 @@ function inferControlLabelChangeAction(
 
 function inferControlStateChangeAction(
   element: TaggedElement,
-): Extract<WorkflowConfirmationAction, "enable" | "disable"> | null {
+): ControlStateWorkflowAction | null {
   const text = normalizeText(elementControlText(element));
   if (!text) return null;
   if (/\b(?:enable|activate|turn\s+on)\b/i.test(text)) return "enable";
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
+  if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
+  if (/\block(?:ed)?\b/i.test(text)) return "lock";
   return null;
+}
+
+type ControlStateWorkflowAction = Extract<
+  WorkflowConfirmationAction,
+  "enable" | "disable" | "lock" | "unlock"
+>;
+
+function controlStateChangeMatchesAction(
+  action: ControlStateWorkflowAction,
+  beforeState: boolean,
+  afterState: boolean,
+): boolean {
+  switch (action) {
+    case "enable":
+    case "lock":
+      return beforeState === false && afterState === true;
+    case "disable":
+    case "unlock":
+      return beforeState === true && afterState === false;
+  }
+}
+
+function controlStateCompletionWord(action: ControlStateWorkflowAction): string {
+  switch (action) {
+    case "enable":
+      return "enabled";
+    case "disable":
+      return "disabled";
+    case "lock":
+      return "locked";
+    case "unlock":
+      return "unlocked";
+  }
 }
 
 function controlLabelConfirmsWorkflowAction(
