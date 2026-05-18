@@ -2184,9 +2184,13 @@ function summaryConfirmsWorkflowAction(
         text,
       );
     case "send":
-      return /\bsent\b/i.test(text);
+      return /\b(?:sent|send complete|send completed|send successful)\b/i.test(
+        text,
+      );
     case "post":
-      return /\b(?:posted|published)\b/i.test(text);
+      return /\b(?:posted|published|post complete|post completed|post successful|publish complete|publish completed|publish successful)\b/i.test(
+        text,
+      );
     case "approve":
       return /\b(?:approved|approval complete|approval completed|approval successful)\b/i.test(
         text,
@@ -2363,13 +2367,15 @@ function extractWorkflowConfirmationEvidence(
   }
   if (
     /\b(?:sent)\s+successfully\b/i.test(text) ||
-    /\b(?:message|email|notification)\s+sent\b/i.test(text)
+    /\b(?:message|email|notification)\s+sent\b/i.test(text) ||
+    /\bsend\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("send");
   }
   if (
     /\b(?:posted|published)\s+successfully\b/i.test(text) ||
-    /\b(?:comment|reply|post)\s+posted\b/i.test(text)
+    /\b(?:comment|reply|post)\s+posted\b/i.test(text) ||
+    /\b(?:post|publish)\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("post");
   }
