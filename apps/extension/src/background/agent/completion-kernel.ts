@@ -24,6 +24,7 @@ import {
   isDoneSummaryGroundedInSnapshot,
   requiresGroundingReadBeforeDone,
 } from "./loop-helpers";
+import { countExplicitSteps } from "./explicit-steps";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -308,6 +309,10 @@ export type CompletionGroundingReadPreflight =
       elementCount: number;
       visibleLen: number;
     };
+
+export type CompletionEarlyMultiStepPreflight =
+  | { status: "valid"; stepCount: number }
+  | { status: "rejected"; kind: "early_multi_step"; stepCount: number };
 
 export interface CompletionTaskContractPreflight {
   blocked: boolean;
@@ -659,6 +664,30 @@ export function evaluateCompletionGroundingReadPreflight(params: {
     elementCount,
     visibleLen,
   };
+}
+
+export function evaluateCompletionEarlyMultiStepPreflight(params: {
+  userRequest: string;
+  doneRejections: number;
+  turnCount: number;
+  hasNodeId: boolean;
+}): CompletionEarlyMultiStepPreflight {
+  if (
+    params.doneRejections !== 0 ||
+    !params.userRequest ||
+    params.hasNodeId
+  ) {
+    return { status: "valid", stepCount: 0 };
+  }
+
+  const stepCount = countExplicitSteps(params.userRequest);
+  // turnCount includes planner setup; <=3 means the executor has had at most
+  // one action turn before trying to complete a 3+ step root task.
+  if (stepCount < 3 || params.turnCount > 3) {
+    return { status: "valid", stepCount };
+  }
+
+  return { status: "rejected", kind: "early_multi_step", stepCount };
 }
 
 export function evaluateCompletionListDetailReviewPreflight(params: {

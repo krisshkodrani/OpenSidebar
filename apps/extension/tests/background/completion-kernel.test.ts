@@ -8,6 +8,7 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
+  evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
@@ -759,6 +760,44 @@ describe("completion kernel", () => {
       needsGroundingRead: true,
       elementCount: 6,
     });
+  });
+
+  test("rejects first early done for explicit multi-step tasks", () => {
+    const decision = evaluateCompletionEarlyMultiStepPreflight({
+      userRequest:
+        "1. Open the account.\n2. Update the status.\n3. Verify the saved result.",
+      doneRejections: 0,
+      turnCount: 3,
+      hasNodeId: false,
+    });
+
+    expect(decision).toEqual({
+      status: "rejected",
+      kind: "early_multi_step",
+      stepCount: 3,
+    });
+  });
+
+  test("allows multi-step done preflight after enough turns or a prior rejection", () => {
+    expect(
+      evaluateCompletionEarlyMultiStepPreflight({
+        userRequest:
+          "1. Open the account.\n2. Update the status.\n3. Verify the saved result.",
+        doneRejections: 0,
+        turnCount: 4,
+        hasNodeId: false,
+      }),
+    ).toEqual({ status: "valid", stepCount: 3 });
+
+    expect(
+      evaluateCompletionEarlyMultiStepPreflight({
+        userRequest:
+          "1. Open the account.\n2. Update the status.\n3. Verify the saved result.",
+        doneRejections: 1,
+        turnCount: 3,
+        hasNodeId: false,
+      }),
+    ).toEqual({ status: "valid", stepCount: 0 });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
