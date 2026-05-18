@@ -194,6 +194,8 @@ export type WorkflowConfirmationAction =
   | "restore"
   | "create"
   | "share"
+  | "install"
+  | "uninstall"
   | "post"
   | "approve"
   | "reject"
@@ -232,6 +234,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "restore",
   "create",
   "share",
+  "install",
+  "uninstall",
   "post",
   "approve",
   "reject",
@@ -273,6 +277,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "restore"
   | "create"
   | "share"
+  | "install"
+  | "uninstall"
   | "post"
   | "approve"
   | "reject"
@@ -2660,6 +2666,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "share";
   }
+  if (
+    /\binstall(?:ed)?\s+(?:the\s+)?(?:app|application|extension|plugin|package|module|integration|connector|driver|dependency|tool|theme|add[-\s]?on|update|workflow|rule)\b/i.test(
+      text,
+    )
+  ) {
+    return "install";
+  }
+  if (
+    /\buninstall(?:ed)?\s+(?:the\s+)?(?:app|application|extension|plugin|package|module|integration|connector|driver|dependency|tool|theme|add[-\s]?on|update|workflow|rule)\b/i.test(
+      text,
+    )
+  ) {
+    return "uninstall";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2837,6 +2857,10 @@ function workflowTargetActionPattern(
       return "(?:create|add|register)";
     case "share":
       return "(?:share)";
+    case "install":
+      return "(?:install)";
+    case "uninstall":
+      return "(?:uninstall)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3005,6 +3029,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "restore" ||
     action === "create" ||
     action === "share" ||
+    action === "install" ||
+    action === "uninstall" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3144,6 +3170,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:created|added|registered)";
     case "share":
       return "(?:shared)";
+    case "install":
+      return "(?:installed)";
+    case "uninstall":
+      return "(?:uninstalled)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3221,6 +3251,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:create|creation|add|registration|register)";
     case "share":
       return "(?:share|sharing)";
+    case "install":
+      return "(?:install|installation)";
+    case "uninstall":
+      return "(?:uninstall|uninstallation)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3530,6 +3564,32 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:shared|share complete|share completed|share successful|sharing complete|sharing completed|sharing successful)\b/i.test(
+        text,
+      );
+    case "install":
+      if (mode === "visible") {
+        return (
+          /\binstalled\s+successfully\b/i.test(text) ||
+          /\b(?:app|application|extension|plugin|package|module|integration|connector|driver|dependency|tool|theme|add[-\s]?on|update|workflow|rule)\s+installed\b/i.test(
+            text,
+          ) ||
+          /\binstallation\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:installed|install complete|install completed|install successful|installation complete|installation completed|installation successful)\b/i.test(
+        text,
+      );
+    case "uninstall":
+      if (mode === "visible") {
+        return (
+          /\buninstalled\s+successfully\b/i.test(text) ||
+          /\b(?:app|application|extension|plugin|package|module|integration|connector|driver|dependency|tool|theme|add[-\s]?on|update|workflow|rule)\s+uninstalled\b/i.test(
+            text,
+          ) ||
+          /\buninstallation\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:uninstalled|uninstall complete|uninstall completed|uninstall successful|uninstallation complete|uninstallation completed|uninstallation successful)\b/i.test(
         text,
       );
     case "post":
@@ -3853,6 +3913,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:created|added|registered|create|creation|add|registration|register)";
     case "share":
       return "(?:shared|share|sharing)";
+    case "install":
+      return "(?:installed|install|installation)";
+    case "uninstall":
+      return "(?:uninstalled|uninstall|uninstallation)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4673,6 +4737,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:created|added|registered)\b/i.test(text);
     case "share":
       return /\bshared\b/i.test(text);
+    case "install":
+      return /\binstalled\b/i.test(text);
+    case "uninstall":
+      return /\buninstalled\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
