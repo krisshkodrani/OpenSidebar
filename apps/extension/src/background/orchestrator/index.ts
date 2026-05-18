@@ -191,6 +191,7 @@ import type {
   TurnCheckpoint,
 } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
+import type { CompletionEnvelope } from "../agent/completion-kernel";
 
 function isTurnCheckpointCompatible(
   checkpoint: TurnCheckpoint,
@@ -207,6 +208,38 @@ function isTurnCheckpointCompatible(
   if (!snapshot) return false;
   if ((snapshot.url ?? null) !== checkpoint.pageUrl) return false;
   return getSnapshotFingerprint(snapshot) === checkpoint.snapshotFingerprint;
+}
+
+function verifyDeterministicCompletionEnvelope(
+  envelope: CompletionEnvelope,
+): NodeVerificationResult | null {
+  if (envelope.contractKind === "legacy_done_guards") {
+    return null;
+  }
+
+  if (
+    envelope.status !== "completed" ||
+    !envelope.resultId ||
+    !envelope.contractKind ||
+    !envelope.decisionReason ||
+    !envelope.evidenceEpoch ||
+    !Array.isArray(envelope.evidenceKeys) ||
+    envelope.evidenceKeys.length === 0
+  ) {
+    return {
+      decision: "retry",
+      reason:
+        "Completion envelope was present but lacked the deterministic evidence required for node acceptance.",
+      confidence: 0.85,
+      failureType: "insufficient_evidence",
+    };
+  }
+
+  return {
+    decision: "accept",
+    reason: `Accepted deterministic completion envelope (${envelope.contractKind}): ${envelope.decisionReason}`,
+    confidence: 0.95,
+  };
 }
 
 function summaryOfCompletedNodes(nodes: TaskNode[]): string {
@@ -4677,6 +4710,15 @@ export class Orchestrator {
                   : 0.4,
             sourceToolCall: event.source,
           })),
+          ...(result.completionEnvelope
+            ? [
+                {
+                  claim: `Completion envelope ${result.completionEnvelope.resultId} accepted by ${result.completionEnvelope.contractKind}: ${result.completionEnvelope.decisionReason}`,
+                  basis: "tool_output" as const,
+                  confidence: 1,
+                },
+              ]
+            : []),
         ];
         this.appendHandoffArtifact(node, {
           role: "executor",
@@ -4713,62 +4755,93 @@ export class Orchestrator {
               node.selectedSkillId,
               { enabledSkillPackIds: task.enabledSkillPackIds },
             )?.requiredEvidenceTypes;
-            const programmaticResult = programmaticVerify({
-              taskQuery: task.query,
-              output: result.summary,
-              objective: node.description,
-              successCriteria: node.successCriteria,
-              evidence: executorEvidence,
-              requiredEvidenceTypes,
-              previousUrl: snapshot?.url,
-              currentUrl,
-              previousTitle: snapshot?.title,
-              currentTitle,
-              executorOutcome: result.outcome,
-            });
+            const envelopeVerification = result.completionEnvelope
+              ? verifyDeterministicCompletionEnvelope(result.completionEnvelope)
+              : null;
             let verification: NodeVerificationResult;
-            if (programmaticResult) {
-              verification = programmaticResult;
+            if (envelopeVerification) {
+              verification = envelopeVerification;
+              this.emitTraceEvent(
+                task,
+                "completion_envelope_verification",
+                {
+                  nodeId: node.id,
+                  decision: verification.decision,
+                  confidence: verification.confidence,
+                  resultId: result.completionEnvelope?.resultId,
+                  contractKind: result.completionEnvelope?.contractKind,
+                  evidenceKeys: result.completionEnvelope?.evidenceKeys ?? [],
+                },
+                "verifier",
+              );
               logger.debug(
                 "orchestrator",
-                "Programmatic verification resolved",
+                "Completion envelope verification resolved",
                 {
                   taskId: task.id,
                   nodeId: node.id,
                   decision: verification.decision,
                   confidence: verification.confidence,
+                  contractKind: result.completionEnvelope?.contractKind,
                 },
               );
-            } else if (
-              !shouldUseVerifier(
-                resolveLaneTopologyFromSettings({
-                  laneTopologyMode: task.laneTopologyMode,
-                }),
-              )
-            ) {
-              verification = {
-                decision: "accept",
-                reason:
-                  "Verifier skipped by lane topology after executor completion.",
-                confidence: 0.7,
-              };
             } else {
-              verification = await this.runInLane(task, "verifier", async () =>
-                verifier.verifyNode({
-                  taskQuery: task.query,
-                  objective: node.description,
-                  successCriteria: node.successCriteria,
-                  output: result.summary,
-                  handoffContext: verifierHandoffContext,
-                  executorOutcome: result.outcome,
-                  evidence: executorEvidence,
-                  requiredEvidenceTypes,
-                  previousUrl: snapshot?.url,
-                  currentUrl,
-                  previousTitle: snapshot?.title,
-                  currentTitle,
-                }),
-              );
+              const programmaticResult = programmaticVerify({
+                taskQuery: task.query,
+                output: result.summary,
+                objective: node.description,
+                successCriteria: node.successCriteria,
+                evidence: executorEvidence,
+                requiredEvidenceTypes,
+                previousUrl: snapshot?.url,
+                currentUrl,
+                previousTitle: snapshot?.title,
+                currentTitle,
+                executorOutcome: result.outcome,
+              });
+              if (programmaticResult) {
+                verification = programmaticResult;
+                logger.debug(
+                  "orchestrator",
+                  "Programmatic verification resolved",
+                  {
+                    taskId: task.id,
+                    nodeId: node.id,
+                    decision: verification.decision,
+                    confidence: verification.confidence,
+                  },
+                );
+              } else if (
+                !shouldUseVerifier(
+                  resolveLaneTopologyFromSettings({
+                    laneTopologyMode: task.laneTopologyMode,
+                  }),
+                )
+              ) {
+                verification = {
+                  decision: "accept",
+                  reason:
+                    "Verifier skipped by lane topology after executor completion.",
+                  confidence: 0.7,
+                };
+              } else {
+                verification = await this.runInLane(task, "verifier", async () =>
+                  verifier.verifyNode({
+                    taskQuery: task.query,
+                    objective: node.description,
+                    successCriteria: node.successCriteria,
+                    output: result.summary,
+                    handoffContext: verifierHandoffContext,
+                    executorOutcome: result.outcome,
+                    evidence: executorEvidence,
+                    requiredEvidenceTypes,
+                    previousUrl: snapshot?.url,
+                    currentUrl,
+                    previousTitle: snapshot?.title,
+                    currentTitle,
+                  }),
+                );
+              }
             }
             const verificationConfidence =
               typeof verification.confidence === "number"

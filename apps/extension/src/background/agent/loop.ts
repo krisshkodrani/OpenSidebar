@@ -1037,6 +1037,28 @@ export class AgentLoop {
     this.context.setPlanStatus(restored.statusEntries, restored.currentIndex);
   }
 
+  private async finalizeLoopStartResult(result: LoopResult): Promise<void> {
+    await finalizeStartResult({
+      result,
+      taskId: this.taskId,
+      planSubtasks: this.planSubtasks,
+      mutationLedger: this.mutationLedger,
+      evidenceAccumulator: this.evidenceAccumulator,
+      context: this.context,
+      traceRecorder: this.traceRecorder,
+      toolCache: this.toolCache,
+      clearTurnCheckpoint: () => this.clearTurnCheckpoint(),
+      broadcastPlanTermination: (outcome, summary) =>
+        this.broadcastPlanTermination(outcome, summary),
+      setRunning: (isRunning) => {
+        this.isRunning = isRunning;
+      },
+      clearTraceRecorder: () => {
+        this.traceRecorder = null;
+      },
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Durable turn checkpoints (Phase 1 + 2)
   // ---------------------------------------------------------------------------
@@ -1081,6 +1103,18 @@ export class AgentLoop {
 
         // Phase 4
         sideEffectsLog: this.mutationLedger.sideEffects,
+        completedResult: this.completedResult
+          ? {
+              outcome: "completed",
+              summary: this.completedResult.summary,
+              ...(this.completedResult.completionEnvelope
+                ? {
+                    completionEnvelope:
+                      this.completedResult.completionEnvelope,
+                  }
+                : {}),
+            }
+          : undefined,
       };
       const key = turnCheckpointKey(this.workspaceId, this.nodeId);
       await chrome.storage.local.set({ [key]: cp });
@@ -1130,12 +1164,22 @@ export class AgentLoop {
       }
 
       this.mutationLedger.restore(cp.stepMutationLedger, cp.sideEffectsLog);
+      this.completedResult = cp.completedResult
+        ? {
+            outcome: "completed",
+            summary: cp.completedResult.summary,
+            ...(cp.completedResult.completionEnvelope
+              ? { completionEnvelope: cp.completedResult.completionEnvelope }
+              : {}),
+          }
+        : null;
 
       this.log.info("agent", "Restored from turn checkpoint", {
         turn: cp.turnCount,
         historyMessages: cp.history.originalCount,
         ledgerEntries: this.mutationLedger.entries.length,
         sideEffects: this.mutationLedger.sideEffects.length,
+        completed: Boolean(this.completedResult),
       });
       return true;
     } catch (e) {
@@ -3367,6 +3411,7 @@ export class AgentLoop {
     this.lastCompletionRejection = null;
     this.lastCompletionRecoveryHint = null;
     this.completionEvidence.clear();
+    this.completedResult = null;
     this.perception.reset();
     this.metrics = emptySessionMetrics();
     this.contextSpend.reset();
@@ -3430,6 +3475,30 @@ export class AgentLoop {
           priorTurn: cp.turnCount,
           nodeId: this.nodeId,
         });
+        const restoredCompletion = cp.completedResult ?? null;
+        if (restoredCompletion) {
+          this.traceRecorder?.recordEvent("completion_resume_short_circuit", {
+            turn: this.turnCount,
+            nodeId: this.nodeId,
+            resultId: restoredCompletion.completionEnvelope?.resultId,
+            contractKind: restoredCompletion.completionEnvelope?.contractKind,
+          });
+          this.statusHandler(AgentStatus.IDLE, "Done");
+          this.messageHandler(restoredCompletion.summary, []);
+          const result: LoopResult = {
+            outcome: "completed",
+            turnCount: this.turnCount,
+            summary: restoredCompletion.summary,
+            failure: { category: "none", code: "none" },
+            metrics: this.getMetrics(),
+            completionEnvelope: restoredCompletion.completionEnvelope,
+          };
+          try {
+            return result;
+          } finally {
+            await this.finalizeLoopStartResult(result);
+          }
+        }
       }
     }
 
@@ -3692,25 +3761,7 @@ export class AgentLoop {
     try {
       return result;
     } finally {
-      await finalizeStartResult({
-        result,
-        taskId: this.taskId,
-        planSubtasks: this.planSubtasks,
-        mutationLedger: this.mutationLedger,
-        evidenceAccumulator: this.evidenceAccumulator,
-        context: this.context,
-        traceRecorder: this.traceRecorder,
-        toolCache: this.toolCache,
-        clearTurnCheckpoint: () => this.clearTurnCheckpoint(),
-        broadcastPlanTermination: (outcome, summary) =>
-          this.broadcastPlanTermination(outcome, summary),
-        setRunning: (isRunning) => {
-          this.isRunning = isRunning;
-        },
-        clearTraceRecorder: () => {
-          this.traceRecorder = null;
-        },
-      });
+      await this.finalizeLoopStartResult(result);
     }
   }
 
@@ -9593,6 +9644,7 @@ export class AgentLoop {
         }
 
         if (doneSignaled) {
+          await this.saveTurnCheckpoint();
           await this.traceRecorder?.endTurn();
           break;
         }

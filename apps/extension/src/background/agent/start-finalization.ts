@@ -33,7 +33,11 @@ export async function finalizeStartResult(
   result.sideEffectsLog = [...deps.mutationLedger.sideEffects];
   result.evidence = deps.evidenceAccumulator.toArray();
 
+  const shouldRetainTerminalCompletionCheckpoint =
+    result.outcome === "completed" && Boolean(result.completionEnvelope);
+
   if (
+    !shouldRetainTerminalCompletionCheckpoint &&
     result.outcome !== "awaiting_approval" &&
     result.outcome !== "awaiting_clarification"
   ) {

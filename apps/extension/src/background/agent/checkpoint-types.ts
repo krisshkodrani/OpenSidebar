@@ -9,6 +9,7 @@
 import type { LLMMessage } from "../llm/types";
 import type { LastActionOutcome, PlanStatus } from "./context-types";
 import type { ToolName } from "../../types";
+import type { CompletionEnvelope } from "./completion-kernel";
 
 // ---------------------------------------------------------------------------
 // Turn checkpoint
@@ -47,6 +48,13 @@ export interface TurnCheckpoint {
 
   // Phase 4 — side-effects log
   sideEffectsLog: SideEffectEntry[];
+  completedResult?: CheckpointCompletedResult;
+}
+
+export interface CheckpointCompletedResult {
+  outcome: "completed";
+  summary: string;
+  completionEnvelope?: CompletionEnvelope;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,5 +142,57 @@ export function sanitizeTurnCheckpoint(
   if (typeof obj.workspaceId !== "string") return null;
   if (typeof obj.nodeId !== "string") return null;
   if (typeof obj.turnCount !== "number") return null;
+  if (
+    obj.completedResult !== undefined &&
+    !sanitizeCheckpointCompletedResult(obj.completedResult)
+  ) {
+    return null;
+  }
   return obj as unknown as TurnCheckpoint;
+}
+
+function sanitizeCheckpointCompletedResult(
+  raw: unknown,
+): CheckpointCompletedResult | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.outcome !== "completed") return null;
+  if (typeof obj.summary !== "string") return null;
+  if (
+    obj.completionEnvelope !== undefined &&
+    !sanitizeCompletionEnvelope(obj.completionEnvelope)
+  ) {
+    return null;
+  }
+  return obj as unknown as CheckpointCompletedResult;
+}
+
+function sanitizeCompletionEnvelope(raw: unknown): CompletionEnvelope | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.status !== "completed") return null;
+  if (typeof obj.resultId !== "string" || obj.resultId.length === 0) return null;
+  if (obj.source !== "model_done" && obj.source !== "trusted_tool") return null;
+  if (typeof obj.contractKind !== "string" || obj.contractKind.length === 0) {
+    return null;
+  }
+  if (
+    typeof obj.decisionReason !== "string" ||
+    obj.decisionReason.length === 0
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(obj.evidenceKeys) ||
+    obj.evidenceKeys.some((key) => typeof key !== "string")
+  ) {
+    return null;
+  }
+  if (
+    typeof obj.evidenceEpoch !== "string" ||
+    obj.evidenceEpoch.length === 0
+  ) {
+    return null;
+  }
+  return obj as unknown as CompletionEnvelope;
 }

@@ -105,6 +105,36 @@ describe("finalizeStartResult", () => {
     expect(deps.clearTraceRecorder).toHaveBeenCalled();
   });
 
+  test("keeps completed-envelope checkpoint for orchestrator recovery window", async () => {
+    const result: LoopResult = {
+      outcome: "completed",
+      turnCount: 3,
+      summary: "Done",
+      completionEnvelope: {
+        status: "completed",
+        resultId: "completion-1",
+        source: "model_done",
+        contractKind: "quiz_selection",
+        decisionReason: "selected options match expected answers",
+        evidenceKeys: ["quiz:question:32:selected:domain-adaptation"],
+        evidenceEpoch: "turn:3",
+      },
+    };
+    const deps = makeDeps(result);
+
+    await finalizeStartResult(deps);
+
+    expect(deps.clearTurnCheckpoint).not.toHaveBeenCalled();
+    expect(deps.setRunning).toHaveBeenCalledWith(false);
+    expect(deps.traceRecorder.finalize).toHaveBeenCalledWith(
+      "completed",
+      "Done",
+      3,
+      null,
+      null,
+    );
+  });
+
   test("omits Chrome-specific tool args from replay trajectory summaries", async () => {
     const result: LoopResult = {
       outcome: "completed",

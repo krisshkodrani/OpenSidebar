@@ -98,6 +98,10 @@ import {
   validateTextEntryTarget,
 } from "../../src/background/agent/loop";
 import { getSnapshotFingerprint } from "../../src/background/agent/loop-helpers";
+import {
+  TURN_CHECKPOINT_VERSION,
+  type TurnCheckpoint,
+} from "../../src/background/agent/checkpoint-types";
 import { assessInlineEditTextEntryRetarget } from "../../src/background/agent/text-entry-guards";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
@@ -5854,6 +5858,76 @@ describe("High-risk approval policy", () => {
     (chrome.runtime as any).sendMessage = vi.fn(async () => ({
       success: true,
     }));
+  });
+
+  test("short-circuits resumed terminal completion from turn checkpoint", async () => {
+    const checkpoint: TurnCheckpoint = {
+      version: TURN_CHECKPOINT_VERSION,
+      workspaceId: "ws-1",
+      nodeId: "node-done",
+      savedAt: Date.now(),
+      turnCount: 4,
+      maxTurns: 10,
+      currentPlanIndex: 0,
+      turnsOnCurrentStep: 1,
+      escalationsOnCurrentStep: 0,
+      guardAfterDoneRejection: false,
+      history: {
+        recentMessages: [],
+        olderSummaries: [],
+        originalCount: 0,
+      },
+      planStatus: null,
+      workingNotes: "",
+      lastActionOutcome: null,
+      modelTier: "executor",
+      isFirstTurn: false,
+      snapshotFingerprint: "https://example.com/quiz|0|123",
+      pageUrl: "https://example.com/quiz",
+      stepMutationLedger: [],
+      sideEffectsLog: [],
+      completedResult: {
+        outcome: "completed",
+        summary: "Selected the correct options.",
+        completionEnvelope: {
+          status: "completed",
+          resultId: "completion-restored-1",
+          source: "model_done",
+          contractKind: "quiz_selection",
+          decisionReason: "selected options match expected answers",
+          evidenceKeys: ["quiz:question:32:selected:domain-adaptation"],
+          evidenceEpoch: "turn:4",
+        },
+      },
+    };
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        workspaceId: "ws-1",
+        nodeId: "node-done",
+        turnCheckpoint: checkpoint,
+      },
+    );
+
+    const result = await agent.start("Select the correct option/s", 123);
+
+    expect(result).toMatchObject({
+      outcome: "completed",
+      turnCount: 4,
+      summary: "Selected the correct options.",
+      completionEnvelope: {
+        resultId: "completion-restored-1",
+        contractKind: "quiz_selection",
+      },
+    });
+    expect(mockCompleteStream).not.toHaveBeenCalled();
+    expect(onMessage).toHaveBeenCalledWith("Selected the correct options.", []);
   });
 
   test("requests explicit approval for high-risk tool when bypass is off", async () => {
