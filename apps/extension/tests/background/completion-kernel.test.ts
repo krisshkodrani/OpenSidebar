@@ -7250,6 +7250,106 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise UTC timezone label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Schedule Matrix",
+      url: "https://example.test/schedule",
+      visibleContent:
+        "Schedule Matrix Time zone: UTC+02:00 Backup time zone: UTC-05:00",
+      pageContent:
+        "Schedule Matrix Time zone: UTC+02:00. Backup time zone: UTC-05:00. The page explains schedule ownership, time zone policy, service windows, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer schedule questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the time zone?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "UTC+02:00",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "UTC-05:00",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "time zone",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("accepts only the expected concise IANA timezone label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Deployment Matrix",
+      url: "https://example.test/deployments",
+      visibleContent:
+        "Deployment Matrix Deployment timezone: Europe/Berlin Backup timezone: America/New_York",
+      pageContent:
+        "Deployment Matrix Deployment timezone: Europe/Berlin. Backup timezone: America/New_York. The page explains deployment ownership, time zone policy, service windows, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer deployment questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the deployment timezone?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Europe/Berlin",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "America/New_York",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "deployment timezone",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept timezone concise answers without a timezone label", () => {
+    const snap = workflowSnapshot({
+      title: "Schedule Matrix",
+      url: "https://example.test/schedule",
+      visibleContent:
+        "Schedule Matrix Team code: UTC+02:00 Backup code: UTC-05:00",
+      pageContent:
+        "Schedule Matrix Team code: UTC+02:00. Backup code: UTC-05:00. The page explains schedule ownership, time zone policy, service windows, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer schedule questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "UTC+02:00",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts only the expected concise physical speed label-value answer", () => {
     const snap = workflowSnapshot({
       title: "Route Matrix",
