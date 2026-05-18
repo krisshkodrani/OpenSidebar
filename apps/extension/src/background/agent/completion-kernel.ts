@@ -269,6 +269,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "refresh"
   | "update"
   | "submit"
+  | "complete"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2691,6 +2692,11 @@ function inferWorkflowConfirmationTargetLabel(
   value: string,
   action: WorkflowConfirmationAction,
 ): string | null {
+  if (action === "complete") {
+    const completeTarget = inferCompleteWorkflowTargetLabel(value);
+    if (completeTarget) return completeTarget;
+  }
+
   const actionPattern = workflowTargetActionPattern(action);
   if (!actionPattern) return null;
   const lines = value
@@ -2774,9 +2780,41 @@ function workflowTargetActionPattern(
       return "(?:update|change|apply)";
     case "submit":
       return "(?:submit)";
+    case "complete":
+      return "(?:complete|mark|set)";
     default:
       return null;
   }
+}
+
+function inferCompleteWorkflowTargetLabel(value: string): string | null {
+  const lines = value
+    .split(/\n+/g)
+    .map((line) => cleanLabel(line))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (!isCompleteWorkflowRequest(line)) continue;
+
+    const quoted = /["']([^"']{2,120})["']/.exec(line)?.[1];
+    const quotedTarget = normalizeWorkflowTargetLabel(quoted ?? "", {
+      quoted: true,
+    });
+    if (quotedTarget) return quotedTarget;
+
+    const markTarget = /\b(?:mark|set)\s+(?:the\s+)?(.{2,120}?)\s+(?:as\s+)?complete(?:d)?\b/i.exec(
+      line,
+    )?.[1];
+    const completeTarget = /\bcomplete(?:d)?\s+(?:the\s+)?(.{2,120}?)(?:[.;,]|$)/i.exec(
+      line,
+    )?.[1];
+    const target = normalizeWorkflowTargetLabel(
+      markTarget ?? completeTarget ?? "",
+    );
+    if (target) return target;
+  }
+
+  return null;
 }
 
 function normalizeWorkflowTargetLabel(
@@ -2870,7 +2908,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "restart" ||
     action === "refresh" ||
     action === "update" ||
-    action === "submit"
+    action === "submit" ||
+    action === "complete"
   );
 }
 
@@ -3002,6 +3041,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:updated|changed|applied)";
     case "submit":
       return "(?:submitted)";
+    case "complete":
+      return "(?:completed)";
   }
 }
 
@@ -3061,6 +3102,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:update|change)";
     case "submit":
       return "(?:submission|submit)";
+    case "complete":
+      return "(?:completion|complete)";
   }
 }
 

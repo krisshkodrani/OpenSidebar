@@ -4372,6 +4372,121 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware visible complete confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Task TASK002 remains incomplete. Task TASK001 completed successfully.",
+      pageContent:
+        "Task TASK002 remains incomplete. Task TASK001 completed successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mark TASK001 complete.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Marked TASK001 complete.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "complete",
+      targetLabel: "TASK001",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:complete",
+          detail: expect.objectContaining({
+            action: "complete",
+            source: "visible_text",
+            text: "Task TASK001 completed successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible complete confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Task TASK001 remains incomplete. Task TASK002 completed successfully.",
+      pageContent:
+        "Task TASK001 remains incomplete. Task TASK002 completed successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mark TASK001 complete.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Marked TASK001 complete.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "complete",
+      targetLabel: "TASK001",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:complete",
+          detail: expect.objectContaining({
+            action: "complete",
+            source: "visible_text",
+            text: "Task TASK002 completed successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible complete completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Completion successful.",
+      pageContent: "Completion successful.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mark TASK001 complete.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Completion successful.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "complete",
+      targetLabel: "TASK001",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Dismiss completed.",
