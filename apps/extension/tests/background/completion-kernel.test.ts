@@ -2142,6 +2142,7 @@ describe("completion kernel", () => {
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
       action: "delete",
+      targetLabel: "Warehouse Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
@@ -2156,6 +2157,66 @@ describe("completion kernel", () => {
       }),
     ]);
     expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects delete target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Accounts Warehouse Alpha Delete Warehouse Alpha Warehouse Beta Delete Warehouse Beta",
+      pageContent:
+        "Accounts Warehouse Alpha Delete Warehouse Alpha Warehouse Beta Delete Warehouse Beta",
+      elements: [
+        deleteButton(501, "Warehouse Alpha"),
+        deleteButton(502, "Warehouse Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      pageContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      elements: [deleteButton(501, "Warehouse Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete Warehouse Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 502 },
+      result: "Clicked element 502.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Deleted Warehouse Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+      targetLabel: "Warehouse Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:delete:warehouse-beta",
+        detail: expect.objectContaining({
+          action: "delete",
+          source: "target_disappearance",
+          text: "Deleted target no longer visible: Warehouse Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("does not infer delete confirmation while the named target remains visible", () => {
@@ -2258,6 +2319,7 @@ describe("completion kernel", () => {
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
       action: "archive",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
@@ -2272,6 +2334,66 @@ describe("completion kernel", () => {
       }),
     ]);
     expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects archive target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Reports Report Alpha Archive Report Alpha Report Beta Archive Report Beta",
+      pageContent:
+        "Reports Report Alpha Archive Report Alpha Report Beta Archive Report Beta",
+      elements: [
+        actionButton(503, "Archive Report Alpha"),
+        actionButton(504, "Archive Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Reports Report Alpha Archive Report Alpha",
+      pageContent: "Reports Report Alpha Archive Report Alpha",
+      elements: [actionButton(503, "Archive Report Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Archive Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Archived Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "archive",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:archive:report-beta",
+        detail: expect.objectContaining({
+          action: "archive",
+          source: "target_disappearance",
+          text: "Archived target no longer visible: Report Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("does not infer archive confirmation from a generic archive button", () => {
