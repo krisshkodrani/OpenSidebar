@@ -1861,6 +1861,34 @@ describe("completion kernel", () => {
       genericSummary: "Unwatch completed.",
     },
     {
+      action: "star",
+      request: "Star Repository Alpha.",
+      summary: "Starred Repository Alpha.",
+      targetLabel: "Repository Alpha",
+      requestedVisible:
+        "Repository Beta remains unstarred. Repository Alpha starred successfully.",
+      requestedEvidenceText: "Repository Alpha starred successfully.",
+      otherVisible:
+        "Repository Alpha remains unstarred. Repository Beta starred successfully.",
+      otherEvidenceText: "Repository Beta starred successfully.",
+      genericVisible: "Star completed.",
+      genericSummary: "Star completed.",
+    },
+    {
+      action: "unstar",
+      request: "Unstar Repository Alpha.",
+      summary: "Unstarred Repository Alpha.",
+      targetLabel: "Repository Alpha",
+      requestedVisible:
+        "Repository Beta remains starred. Repository Alpha unstarred successfully.",
+      requestedEvidenceText: "Repository Alpha unstarred successfully.",
+      otherVisible:
+        "Repository Alpha remains starred. Repository Beta unstarred successfully.",
+      otherEvidenceText: "Repository Beta unstarred successfully.",
+      genericVisible: "Unstar completed.",
+      genericSummary: "Unstar completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",

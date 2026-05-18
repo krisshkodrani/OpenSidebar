@@ -211,6 +211,8 @@ export type WorkflowConfirmationAction =
   | "unfavorite"
   | "watch"
   | "unwatch"
+  | "star"
+  | "unstar"
   | "post"
   | "approve"
   | "reject"
@@ -266,6 +268,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unfavorite",
   "watch",
   "unwatch",
+  "star",
+  "unstar",
   "post",
   "approve",
   "reject",
@@ -324,6 +328,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unfavorite"
   | "watch"
   | "unwatch"
+  | "star"
+  | "unstar"
   | "post"
   | "approve"
   | "reject"
@@ -2830,6 +2836,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "watch";
   }
+  if (
+    /\bunstar(?:red)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|document|file|folder|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|record|item|message|comment|article|link|site|user|member|contact|profile)\b/i.test(
+      text,
+    )
+  ) {
+    return "unstar";
+  }
+  if (
+    /\bstar(?:red)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|document|file|folder|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|record|item|message|comment|article|link|site|user|member|contact|profile)\b/i.test(
+      text,
+    )
+  ) {
+    return "star";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -3041,6 +3061,10 @@ function workflowTargetActionPattern(
       return "(?:watch)";
     case "unwatch":
       return "(?:unwatch)";
+    case "star":
+      return "(?:star)";
+    case "unstar":
+      return "(?:unstar)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3226,6 +3250,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unfavorite" ||
     action === "watch" ||
     action === "unwatch" ||
+    action === "star" ||
+    action === "unstar" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3399,6 +3425,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:watched)";
     case "unwatch":
       return "(?:unwatched)";
+    case "star":
+      return "(?:starred)";
+    case "unstar":
+      return "(?:unstarred)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3510,6 +3540,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:watch)";
     case "unwatch":
       return "(?:unwatch)";
+    case "star":
+      return "(?:star)";
+    case "unstar":
+      return "(?:unstar)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -4044,6 +4078,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unwatched|unwatch complete|unwatch completed|unwatch successful)\b/i.test(
         text,
       );
+    case "star":
+      if (mode === "visible") {
+        return (
+          /\bstarred\s+successfully\b/i.test(text) ||
+          /\b(?:repository|repo|project|board|list|report|dashboard|page|document|file|folder|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|record|item|message|comment|article|link|site|user|member|contact|profile)\s+starred\b/i.test(
+            text,
+          ) ||
+          /\bstar\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:starred|star complete|star completed|star successful)\b/i.test(
+        text,
+      );
+    case "unstar":
+      if (mode === "visible") {
+        return (
+          /\bunstarred\s+successfully\b/i.test(text) ||
+          /\b(?:repository|repo|project|board|list|report|dashboard|page|document|file|folder|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|record|item|message|comment|article|link|site|user|member|contact|profile)\s+unstarred\b/i.test(
+            text,
+          ) ||
+          /\bunstar\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unstarred|unstar complete|unstar completed|unstar successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -4399,6 +4459,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:watched|watch)";
     case "unwatch":
       return "(?:unwatched|unwatch)";
+    case "star":
+      return "(?:starred|star)";
+    case "unstar":
+      return "(?:unstarred|unstar)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -5253,6 +5317,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bwatched\b/i.test(text);
     case "unwatch":
       return /\bunwatched\b/i.test(text);
+    case "star":
+      return /\bstarred\b/i.test(text);
+    case "unstar":
+      return /\bunstarred\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
