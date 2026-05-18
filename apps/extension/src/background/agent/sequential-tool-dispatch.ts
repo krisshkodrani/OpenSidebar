@@ -87,6 +87,7 @@ import {
   validateTextEntryTarget,
 } from "./text-entry-guards";
 import { shouldCheckWorkflowTabRedirect } from "./workflow-tab-controller";
+import type { TrustedCompletionCandidate } from "./completion-kernel";
 
 export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
   broadcastTaskProgress(currentIndex: number): void;
@@ -171,7 +172,10 @@ export async function executeSequentialToolCalls(
     state: SequentialToolDispatchState;
     signalCompletedResult: (
       summary: string,
-      options?: { saveCheckpoint?: boolean },
+      options?: {
+        saveCheckpoint?: boolean;
+        completionCandidate?: TrustedCompletionCandidate;
+      },
     ) => void;
   },
 ): Promise<SequentialToolDispatchOutput> {
@@ -201,7 +205,10 @@ export async function executeSequentialToolCalls(
 
   const signalCompletedResult = (
     summary: string,
-    options?: { saveCheckpoint?: boolean },
+    options?: {
+      saveCheckpoint?: boolean;
+      completionCandidate?: TrustedCompletionCandidate;
+    },
   ) => {
     doneSummary = summary;
     doneSignaled = true;
@@ -1279,7 +1286,9 @@ export async function executeSequentialToolCalls(
     visuallyModified = mergedSequentialState.visuallyModified;
     lastDomAffectingToolName = mergedSequentialState.lastDomAffectingToolName;
     if (genericToolState.breakLoop) {
-      signalCompletedResult(genericToolState.completedSummary || "");
+      signalCompletedResult(genericToolState.completedSummary || "", {
+        completionCandidate: genericToolState.completionCandidate,
+      });
       break;
     }
   }

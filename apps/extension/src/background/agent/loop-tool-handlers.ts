@@ -18,6 +18,7 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import type { TrustedCompletionCandidate } from "./completion-kernel";
 
 function getTabUrl(tab: chrome.tabs.Tab): string {
   return tab.url || tab.pendingUrl || "";
@@ -83,15 +84,19 @@ export interface AgentLoopToolHandlerHost {
   maybeAdvanceTrustedFormFillStep(params: any): void;
   maybeAutoSubmitTrustedServiceNowForm(params: any): Promise<{
     finalSummary: string;
+    completionCandidate?: TrustedCompletionCandidate;
   } | null>;
   maybeCompleteTrustedFormSubmitStep(params: any): {
     finalSummary: string;
+    completionCandidate?: TrustedCompletionCandidate;
   } | null;
   maybeCompleteTrustedListSortStep(params: any): {
     finalSummary: string;
+    completionCandidate?: TrustedCompletionCandidate;
   } | null;
   maybeCompleteTrustedListFilterStep(params: any): {
     finalSummary: string;
+    completionCandidate?: TrustedCompletionCandidate;
   } | null;
   maybeCompleteTrustedCatalogOrderSubmit(params: any): Promise<{
     finalSummary: string;
@@ -149,6 +154,7 @@ export type GenericSequentialToolState = {
   lastDomAffectingToolName: string | null;
   breakLoop: boolean;
   completedSummary: string | null;
+  completionCandidate?: TrustedCompletionCandidate;
 };
 
 export function recordSuccessfulToolExecution(
@@ -1188,6 +1194,7 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedSubmitCompletion.finalSummary,
+      completionCandidate: trustedSubmitCompletion.completionCandidate,
     };
   }
 
@@ -1213,6 +1220,7 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedListSortCompletion.finalSummary,
+      completionCandidate: trustedListSortCompletion.completionCandidate,
     };
   }
 
@@ -1230,6 +1238,7 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedListFilterCompletion.finalSummary,
+      completionCandidate: trustedListFilterCompletion.completionCandidate,
     };
   }
 
@@ -1276,6 +1285,7 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedAutoSubmitCompletion.finalSummary,
+      completionCandidate: trustedAutoSubmitCompletion.completionCandidate,
     };
   }
 
