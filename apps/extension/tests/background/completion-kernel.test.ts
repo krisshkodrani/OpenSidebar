@@ -4397,6 +4397,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded domain label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix API host: api.example.com Backup host: backup.example.com",
+      pageContent:
+        "Network Matrix API host: api.example.com. Backup host: backup.example.com. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the API host?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "api.example.com",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "api host",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling domain label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix API host: api.example.com Backup host: backup.example.com",
+      pageContent:
+        "Network Matrix API host: api.example.com. Backup host: backup.example.com. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the API host?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "backup.example.com",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "api host",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept domain suffix inside a longer hostname", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Base domain: example.com Full host: api.example.com",
+      pageContent:
+        "Network Matrix Base domain: example.com. Full host: api.example.com. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the base domain?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "api.example.com",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "base domain",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded phone label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",

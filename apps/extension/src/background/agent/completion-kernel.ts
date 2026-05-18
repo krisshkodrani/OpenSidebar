@@ -4463,6 +4463,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     expectedAnswerLabel,
   );
   if (preciseConciseValue) {
+    if (isDomainNameValue(preciseConciseValue)) {
+      return preciseDomainValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isDottedVersionValue(preciseConciseValue)) {
       return preciseVersionValueCoveredBySummary(
         normalizedSummary,
@@ -4536,6 +4542,14 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
 
+  if (labelCanHaveDomainValue(expectedAnswerLabel)) {
+    const domainMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (domainMatch) return cleanLabel(domainMatch[1] ?? "") || null;
+  }
+
   if (labelCanHaveUuidValue(expectedAnswerLabel)) {
     const uuidMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4559,10 +4573,32 @@ function extractPreciseConciseLabelValue(
   return cleanLabel(match?.[1] ?? "") || null;
 }
 
+function labelCanHaveDomainValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:domain|host|hostname|site|server|endpoint)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
 function labelCanHaveUuidValue(expectedAnswerLabel: string): boolean {
   return /\b(?:id|identifier|uuid|session|request|trace|run|correlation|result)\b/i.test(
     expectedAnswerLabel,
   );
+}
+
+function isDomainNameValue(value: string): boolean {
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseDomainValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9.-])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
 }
 
 function isDottedVersionValue(value: string): boolean {
