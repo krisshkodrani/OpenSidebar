@@ -191,6 +191,7 @@ export type WorkflowConfirmationAction =
   | "upload"
   | "import"
   | "copy"
+  | "transfer"
   | "duplicate"
   | "restore"
   | "create"
@@ -249,6 +250,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "upload",
   "import",
   "copy",
+  "transfer",
   "duplicate",
   "restore",
   "create",
@@ -310,6 +312,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "upload"
   | "import"
   | "copy"
+  | "transfer"
   | "duplicate"
   | "restore"
   | "create"
@@ -2700,6 +2703,13 @@ function inferWorkflowConfirmationAction(
     return "copy";
   }
   if (
+    /\b(?:transfer|transferred)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|contact|account|customer|project|file|folder|document|report|page|workflow|rule|ownership|assignment)\b/i.test(
+      text,
+    )
+  ) {
+    return "transfer";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3031,6 +3041,8 @@ function workflowTargetActionPattern(
       return "(?:import)";
     case "copy":
       return "(?:copy)";
+    case "transfer":
+      return "(?:transfer)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3242,6 +3254,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "upload" ||
     action === "import" ||
     action === "copy" ||
+    action === "transfer" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3398,6 +3411,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:imported)";
     case "copy":
       return "(?:copied)";
+    case "transfer":
+      return "(?:transferred)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3515,6 +3530,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:import)";
     case "copy":
       return "(?:copy)";
+    case "transfer":
+      return "(?:transfer)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -3827,6 +3844,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:copied|copy complete|copy completed|copy successful)\b/i.test(
+        text,
+      );
+    case "transfer":
+      if (mode === "visible") {
+        return (
+          /\btransferred\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|contact|account|customer|project|file|folder|document|report|page|workflow|rule|ownership|assignment)\s+transferred\b/i.test(
+            text,
+          ) ||
+          /\btransfer\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:transferred|transfer complete|transfer completed|transfer successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4451,6 +4481,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:imported|import)";
     case "copy":
       return "(?:copied|copy)";
+    case "transfer":
+      return "(?:transferred|transfer)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5311,6 +5343,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\bimported\b/i.test(text);
     case "copy":
       return /\bcopied\b/i.test(text);
+    case "transfer":
+      return /\btransferred\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":

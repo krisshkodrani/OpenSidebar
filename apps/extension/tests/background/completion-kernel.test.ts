@@ -1581,6 +1581,20 @@ describe("completion kernel", () => {
       genericSummary: "Copy completed.",
     },
     {
+      action: "transfer",
+      request: "Transfer Ticket Alpha.",
+      summary: "Transferred Ticket Alpha.",
+      targetLabel: "Ticket Alpha",
+      requestedVisible:
+        "Ticket Beta remains in the queue. Ticket Alpha transferred successfully.",
+      requestedEvidenceText: "Ticket Alpha transferred successfully.",
+      otherVisible:
+        "Ticket Alpha remains in the queue. Ticket Beta transferred successfully.",
+      otherEvidenceText: "Ticket Beta transferred successfully.",
+      genericVisible: "Transfer completed.",
+      genericSummary: "Transfer completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
