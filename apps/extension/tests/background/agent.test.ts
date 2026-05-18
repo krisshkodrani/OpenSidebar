@@ -2958,6 +2958,66 @@ describe("AgentLoop", () => {
     expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
   });
 
+  test("deterministic done accepts visible unsent draft completion", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Read David's email and draft a short reply in the reply box. Don't click send.";
+    (agent as any).hasReadPage = true;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "draft-only deterministic acceptance should bypass planner",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Email thread",
+      url: "https://mail.example.test/thread/123",
+      visibleContent: "Email thread Reply message",
+      pageContent: "Email thread Reply message",
+      elements: [
+        {
+          tag: 301,
+          tagName: "textarea",
+          role: "textbox",
+          text: "Hi David, Monday at 2 PM works for me.",
+          attributes: {
+            id: "reply-message",
+            name: "reply-message",
+            label: "Reply message",
+            value: "Hi David, Monday at 2 PM works for me.",
+          },
+          rect: { x: 0, y: 0, width: 320, height: 120 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-draft-only",
+      "Drafted the reply and left it unsent in the editor.",
+      123,
+    );
+
+    expect(accepted).toBe(true);
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      completionEnvelope: {
+        status: "completed",
+        source: "model_done",
+        contractKind: "draft_only",
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining("draft:reply-message"),
+        ]),
+      },
+    });
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",

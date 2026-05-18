@@ -1,4 +1,9 @@
 import type { DomSnapshot, TaggedElement, ToolName } from "../../types";
+import {
+  hasDraftPreservedEvidence,
+  hasStrongCommunicationSentEvidence,
+  isDraftOnlyCommunicationTask,
+} from "./consequential-action-policy";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -115,10 +120,16 @@ export interface NavigationContract {
   targetHost: string;
 }
 
+export interface DraftOnlyContract {
+  kind: "draft_only";
+  requiresUnsent: true;
+}
+
 export type CompletionContract =
   | QuizSelectionContract
   | FormFillContract
-  | NavigationContract;
+  | NavigationContract
+  | DraftOnlyContract;
 
 export interface GeneratedCompletionContract {
   contract: CompletionContract;
@@ -274,6 +285,9 @@ export function generateCompletionContract(params: {
   const quizContract = generateQuizSelectionContract(params, snapshot);
   if (quizContract) return quizContract;
 
+  const draftOnlyContract = generateDraftOnlyContract(params, snapshot);
+  if (draftOnlyContract) return draftOnlyContract;
+
   const formContract = generateFormFillContract(params, snapshot);
   if (formContract) return formContract;
 
@@ -281,6 +295,36 @@ export function generateCompletionContract(params: {
   if (navigationContract) return navigationContract;
 
   return null;
+}
+
+function generateDraftOnlyContract(
+  params: {
+    userRequest: string;
+    snapshot: DomSnapshot | null | undefined;
+    activeObjective?: string;
+    successCriteria?: string;
+  },
+  _snapshot: DomSnapshot,
+): GeneratedCompletionContract | null {
+  const requestText = [
+    extractCanonicalUserRequest(params.userRequest),
+    params.activeObjective,
+    params.successCriteria,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  if (!isDraftOnlyCommunicationTask(requestText)) return null;
+
+  return {
+    contract: {
+      kind: "draft_only",
+      requiresUnsent: true,
+    },
+    confidence: "medium",
+    source: "heuristic",
+    repairable: true,
+    notes: [],
+  };
 }
 
 function generateQuizSelectionContract(
@@ -546,12 +590,14 @@ export function deriveCompletionEvidenceFromSnapshot(
       observedAtTurn: turn,
     }),
   );
+  const draftEvidence = extractDraftEvidence(snapshot, turn);
   const feedbackEvidence = extractFeedbackEvidence(snapshot, turn);
   const validationEvidence = extractValidationErrorEvidence(snapshot, turn);
   const navigationEvidence = extractNavigationEvidence(snapshot, turn);
   return [
     ...selectedEvidence,
     ...fieldEvidence,
+    ...draftEvidence,
     ...feedbackEvidence,
     ...validationEvidence,
     ...navigationEvidence,
@@ -587,6 +633,14 @@ export function evaluateCompletionContract(params: {
       evidence: params.evidence,
     });
   }
+  if (params.contract.kind === "draft_only") {
+    return evaluateDraftOnly({
+      contract: params.contract,
+      evidence: params.evidence,
+      snapshot: params.snapshot,
+      summary: params.summary,
+    });
+  }
   if (params.contract.kind === "navigation") {
     return evaluateNavigation({
       contract: params.contract,
@@ -615,6 +669,12 @@ export function buildCompletionRecoveryHint(
       return (
         "Completion evidence indicates the requested form fields are already filled. " +
         'Call done({"summary":"..."}) now with the completed field names instead of exploring further.'
+      );
+    }
+    if (evaluation.contract.kind === "draft_only") {
+      return (
+        "Completion evidence indicates the requested draft remains unsent in the editor. " +
+        'Call done({"summary":"..."}) now and state that the draft is unsent.'
       );
     }
     if (evaluation.contract.kind === "navigation") {
@@ -944,6 +1004,71 @@ function evaluateFormFill(params: {
   };
 }
 
+function evaluateDraftOnly(params: {
+  contract: DraftOnlyContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): CompletionEvaluation {
+  const contract = params.contract;
+  const snapshotText = [
+    params.snapshot?.title,
+    params.snapshot?.url,
+    params.snapshot?.visibleContent,
+    params.snapshot?.pageContent,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const summary = params.summary ?? "";
+
+  if (hasStrongCommunicationSentEvidence(snapshotText)) {
+    return {
+      status: "rejected",
+      reason:
+        "Visible page state indicates the communication was sent, but the task required an unsent draft.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+  if (
+    hasStrongCommunicationSentEvidence(summary) &&
+    !hasDraftPreservedEvidence(summary)
+  ) {
+    return {
+      status: "rejected",
+      reason:
+        "Completion summary says the communication was sent, but the task required an unsent draft.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  const drafts = params.evidence
+    .filter(
+      (event): event is Extract<CompletionEvidence, { type: "draft_state" }> =>
+        event.type === "draft_state",
+    )
+    .sort(compareEvidenceRecency);
+  const activeDraft = drafts.find(
+    (event) => !event.detail.submitted && cleanLabel(event.detail.text),
+  );
+  if (!activeDraft) {
+    return {
+      status: "rejected",
+      reason: "No active unsent draft evidence is visible.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  return {
+    status: "accepted",
+    reason: "Draft-only contract is satisfied by visible unsent draft evidence.",
+    contract,
+    evidence: [activeDraft],
+  };
+}
+
 function evaluateNavigation(params: {
   contract: NavigationContract;
   evidence: CompletionEvidence[];
@@ -1012,6 +1137,27 @@ function fieldValueEvidence(params: FormFieldObservation & {
       stableKey: params.stableKey,
       label: params.label,
       value: params.value,
+    },
+  };
+}
+
+function draftStateEvidence(params: FormFieldObservation & {
+  confidence: CompletionConfidence;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "draft_state" }> {
+  const target = params.label || params.stableKey || `tag-${params.elementId}`;
+  const targetKey = compactKey(target) || `tag-${params.elementId}`;
+  const identityKey =
+    compactKey(params.stableKey) || compactKey(params.label) || targetKey;
+  return {
+    type: "draft_state",
+    confidence: params.confidence,
+    logicalKey: `draft:${targetKey}:${identityKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      target,
+      text: params.value,
+      submitted: false,
     },
   };
 }
@@ -1163,6 +1309,30 @@ function extractFormFieldObservations(
     }
   }
   return [...fields.values()];
+}
+
+function extractDraftEvidence(
+  snapshot: DomSnapshot,
+  turn: number,
+): CompletionEvidence[] {
+  return extractFormFieldObservations(snapshot)
+    .filter(isLikelyDraftEditorField)
+    .filter((field) => cleanLabel(field.value).length > 0)
+    .map((field) =>
+      draftStateEvidence({
+        ...field,
+        confidence: "medium",
+        observedAtTurn: turn,
+      }),
+    );
+}
+
+function isLikelyDraftEditorField(field: FormFieldObservation): boolean {
+  if (field.kind !== "text") return false;
+  const labelText = normalizeText([field.label, field.stableKey].join(" "));
+  return /\b(?:reply|response|message|comment|body|compose|draft|editor|post)\b/i.test(
+    labelText,
+  );
 }
 
 function findFormFieldObservationByElementId(
