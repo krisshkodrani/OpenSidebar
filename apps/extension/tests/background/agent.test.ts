@@ -102,6 +102,7 @@ import {
   TURN_CHECKPOINT_VERSION,
   type TurnCheckpoint,
 } from "../../src/background/agent/checkpoint-types";
+import { buildTrustedReadAnswerCompletionCandidate } from "../../src/background/agent/completion-kernel";
 import { assessInlineEditTextEntryRetarget } from "../../src/background/agent/text-entry-guards";
 import { buildDomAwareProfile } from "../../src/background/tools/metadata";
 import { workspaceManager } from "../../src/background/workspaces/manager";
@@ -2912,6 +2913,48 @@ describe("AgentLoop", () => {
       },
     });
     expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
+  });
+
+  test("trusted read-answer completion creates a read_answer envelope", () => {
+    const onMessage = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage,
+      onStep: vi.fn(),
+    });
+    const completionCandidate = buildTrustedReadAnswerCompletionCandidate({
+      workflow: "search-answer-extraction",
+      answer: "100",
+      source: "knowledge_base_search",
+      turn: 5,
+      question:
+        "Each year, how many new hires does the company typically make?",
+      evidenceText:
+        "The average number of yearly hires is 100, reflecting sustained growth.",
+      url: "https://example.service-now.test/kb",
+    });
+
+    (agent as any).completeTaskResult("100", {
+      completionCandidate,
+      saveCheckpoint: false,
+    });
+
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      summary: "100",
+      completionEnvelope: {
+        status: "completed",
+        source: "trusted_tool",
+        contractKind: "read_answer",
+        decisionReason: expect.stringContaining(
+          "grounded knowledge base search evidence",
+        ),
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining("trusted:search-answer-extraction:answer"),
+        ]),
+      },
+    });
+    expect(onMessage).toHaveBeenCalledWith("100", []);
   });
 
   test("deterministic done accepts explicit-url navigation completion", async () => {

@@ -67,6 +67,19 @@ export type CompletionEvidence =
       };
     }
   | {
+      type: "answer_state";
+      confidence: CompletionConfidence;
+      logicalKey: string;
+      observedAtTurn: number;
+      detail: {
+        answer: string;
+        question?: string;
+        source: "knowledge_base_search" | "page_read";
+        evidenceText: string;
+        url?: string;
+      };
+    }
+  | {
       type: "validation_error";
       confidence: CompletionConfidence;
       logicalKey: string;
@@ -762,6 +775,45 @@ export function buildTrustedCompletionCandidate(params: {
         detail: {
           text: (params.evidenceText ?? params.summary).slice(0, 1000),
           ...(params.recordId ? { recordId: params.recordId } : {}),
+          ...(params.url ? { url: params.url } : {}),
+        },
+      },
+    ],
+  };
+}
+
+export function buildTrustedReadAnswerCompletionCandidate(params: {
+  workflow: string;
+  answer: string;
+  source: "knowledge_base_search" | "page_read";
+  turn: number;
+  question?: string;
+  evidenceText?: string;
+  url?: string;
+}): TrustedCompletionCandidate {
+  const workflowKey = compactKey(params.workflow) || "read-answer";
+  const questionKey = params.question ? compactKey(params.question) : "";
+  const answerKey = compactKey(params.answer) || hashStableString(params.answer);
+  const logicalKey = questionKey
+    ? `trusted:${workflowKey}:answer:${questionKey}:${answerKey}`
+    : `trusted:${workflowKey}:answer:${answerKey}`;
+  return {
+    contractKind: "read_answer",
+    decisionReason:
+      params.source === "knowledge_base_search"
+        ? "Trusted knowledge answer extraction produced an answer from grounded knowledge base search evidence."
+        : "Trusted knowledge answer extraction produced an answer from grounded page-read evidence.",
+    evidence: [
+      {
+        type: "answer_state",
+        confidence: "high",
+        logicalKey,
+        observedAtTurn: params.turn,
+        detail: {
+          answer: params.answer.slice(0, 1000),
+          ...(params.question ? { question: params.question.slice(0, 1000) } : {}),
+          source: params.source,
+          evidenceText: (params.evidenceText ?? params.answer).slice(0, 1000),
           ...(params.url ? { url: params.url } : {}),
         },
       },
