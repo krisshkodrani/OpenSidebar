@@ -1169,6 +1169,14 @@ describe("completion kernel", () => {
         }),
       ]),
     );
+    expect(evidence).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:dismiss",
+        }),
+      ]),
+    );
     expect(decision.status).toBe("accepted");
   });
 

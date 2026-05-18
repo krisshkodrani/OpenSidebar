@@ -177,6 +177,21 @@ export type WorkflowConfirmationAction =
   | "update"
   | "submit";
 
+const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
+  "delete",
+  "save",
+  "send",
+  "post",
+  "approve",
+  "reject",
+  "close",
+  "dismiss",
+  "update",
+  "submit",
+];
+
+type WorkflowConfirmationTextMode = "summary" | "visible";
+
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
   action: WorkflowConfirmationAction;
@@ -2173,45 +2188,132 @@ function summaryConfirmsWorkflowAction(
   summary: string,
   action: WorkflowConfirmationAction,
 ): boolean {
-  const text = normalizeText(summary);
+  return textConfirmsWorkflowAction(summary, action, "summary");
+}
+
+function textConfirmsWorkflowAction(
+  value: string,
+  action: WorkflowConfirmationAction,
+  mode: WorkflowConfirmationTextMode,
+): boolean {
+  const text = normalizeText(value);
   switch (action) {
     case "delete":
+      if (mode === "visible") {
+        return (
+          /\b(?:deleted|removed)\s+successfully\b/i.test(text) ||
+          /\b(?:deletion|removal)\s+(?:complete|completed|confirmed|successful)\b/i.test(
+            text,
+          ) ||
+          /\b(?:delete|remove)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
       return /\b(?:deleted|removed|deletion|removal|delete complete|delete completed|delete successful|remove complete|remove completed|remove successful)\b/i.test(
         text,
       );
     case "save":
+      if (mode === "visible") {
+        return (
+          /\b(?:saved|changes saved)\s+successfully\b/i.test(text) ||
+          /\bsuccessfully\s+saved\b/i.test(text) ||
+          /\bsave\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:saved|save complete|save completed|save successful)\b/i.test(
         text,
       );
     case "send":
+      if (mode === "visible") {
+        return (
+          /\b(?:sent)\s+successfully\b/i.test(text) ||
+          /\b(?:message|email|notification)\s+sent\b/i.test(text) ||
+          /\bsend\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:sent|send complete|send completed|send successful)\b/i.test(
         text,
       );
     case "post":
+      if (mode === "visible") {
+        return (
+          /\b(?:posted|published)\s+successfully\b/i.test(text) ||
+          /\b(?:comment|reply|post)\s+posted\b/i.test(text) ||
+          /\b(?:post|publish)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
       return /\b(?:posted|published|post complete|post completed|post successful|publish complete|publish completed|publish successful)\b/i.test(
         text,
       );
     case "approve":
+      if (mode === "visible") {
+        return (
+          /\bapproved\s+successfully\b/i.test(text) ||
+          /\bapproval\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:approved|approval complete|approval completed|approval successful)\b/i.test(
         text,
       );
     case "reject":
+      if (mode === "visible") {
+        return (
+          /\b(?:rejected|denied)\s+successfully\b/i.test(text) ||
+          /\brejection\s+(?:complete|completed|successful)\b/i.test(text) ||
+          /\bdenial\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)\b/i.test(
         text,
       );
     case "close":
+      if (mode === "visible") {
+        return (
+          /\b(?:closed|resolved)\s+successfully\b/i.test(text) ||
+          /\bresolution\s+(?:complete|completed|successful)\b/i.test(text) ||
+          /\b(?:close|closure)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
       return /\b(?:closed|resolved|close complete|close completed|close successful|closure complete|closure completed|closure successful)\b/i.test(
         text,
       );
     case "dismiss":
+      if (mode === "visible") {
+        return (
+          /\b(?:dismissed|hidden|cleared)\s+successfully\b/i.test(text) ||
+          /\b(?:dismiss|dismissal|hide|clear)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
       return /\b(?:dismissed|closed|removed|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
         text,
       );
     case "update":
+      if (mode === "visible") {
+        return (
+          /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
+          /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text) ||
+          /\bupdate\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:updated|changed|applied|update complete|update completed|update successful)\b/i.test(
         text,
       );
     case "submit":
+      if (mode === "visible") {
+        return (
+          /\bsubmitted\s+successfully\b/i.test(text) ||
+          /\bsuccessfully\s+submitted\b/i.test(text) ||
+          /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text) ||
+          /\bsubmit\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
       return /\b(?:submitted|submission|submit complete|submit completed|submit successful)\b/i.test(
         text,
       );
@@ -2353,78 +2455,10 @@ function extractWorkflowConfirmationEvidence(
     .slice(0, 20_000);
   const actions = new Set<WorkflowConfirmationAction>();
 
-  if (
-    /\b(?:deleted|removed)\s+successfully\b/i.test(text) ||
-    /\b(?:deletion|removal)\s+(?:complete|completed|confirmed|successful)\b/i.test(
-      text,
-    ) ||
-    /\b(?:delete|remove)\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("delete");
-  }
-  if (
-    /\b(?:saved|changes saved)\s+successfully\b/i.test(text) ||
-    /\bsuccessfully\s+saved\b/i.test(text) ||
-    /\bsave\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("save");
-  }
-  if (
-    /\b(?:sent)\s+successfully\b/i.test(text) ||
-    /\b(?:message|email|notification)\s+sent\b/i.test(text) ||
-    /\bsend\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("send");
-  }
-  if (
-    /\b(?:posted|published)\s+successfully\b/i.test(text) ||
-    /\b(?:comment|reply|post)\s+posted\b/i.test(text) ||
-    /\b(?:post|publish)\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("post");
-  }
-  if (
-    /\bapproved\s+successfully\b/i.test(text) ||
-    /\bapproval\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("approve");
-  }
-  if (
-    /\b(?:rejected|denied)\s+successfully\b/i.test(text) ||
-    /\brejection\s+(?:complete|completed|successful)\b/i.test(text) ||
-    /\bdenial\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("reject");
-  }
-  if (
-    /\b(?:closed|resolved)\s+successfully\b/i.test(text) ||
-    /\bresolution\s+(?:complete|completed|successful)\b/i.test(text) ||
-    /\b(?:close|closure)\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("close");
-  }
-  if (
-    /\b(?:dismissed|hidden|cleared)\s+successfully\b/i.test(text) ||
-    /\b(?:dismiss|dismissal|hide|clear)\s+(?:complete|completed|successful)\b/i.test(
-      text,
-    )
-  ) {
-    actions.add("dismiss");
-  }
-  if (
-    /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
-    /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text) ||
-    /\bupdate\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("update");
-  }
-  if (
-    /\bsubmitted\s+successfully\b/i.test(text) ||
-    /\bsuccessfully\s+submitted\b/i.test(text) ||
-    /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text) ||
-    /\bsubmit\s+(?:complete|completed|successful)\b/i.test(text)
-  ) {
-    actions.add("submit");
+  for (const action of WORKFLOW_CONFIRMATION_ACTIONS) {
+    if (textConfirmsWorkflowAction(text, action, "visible")) {
+      actions.add(action);
+    }
   }
 
   return [...actions].map((action) => ({
