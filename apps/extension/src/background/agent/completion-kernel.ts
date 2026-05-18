@@ -4600,6 +4600,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isTemperatureValue(preciseConciseValue)) {
+      return preciseTemperatureValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4814,6 +4820,14 @@ function extractPreciseConciseLabelValue(
     if (dataRateMatch) return cleanLabel(dataRateMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveTemperatureValue(expectedAnswerLabel)) {
+    const temperatureMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*[+-]?\\d+(?:\\.\\d+)?\\s*(?:\\u00b0\\s*)?(?:c|f|k|celsius|fahrenheit|kelvin))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (temperatureMatch) return cleanLabel(temperatureMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4877,6 +4891,12 @@ function labelCanHaveDataSizeValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveDataRateValue(expectedAnswerLabel: string): boolean {
   return /\b(?:bandwidth|throughput|speed|bitrate|transfer|download|upload|network|connection|link)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveTemperatureValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:temperature|temp|thermal|ambient)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5080,6 +5100,27 @@ function preciseDataRateValueCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
+}
+
+function isTemperatureValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*[+-]?\d+(?:\.\d+)?\s*(?:\u00b0\s*)?(?:c|f|k|celsius|fahrenheit|kelvin)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseTemperatureValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const summary = normalizedSummary.replace(/\u00b0/g, "");
+  const valuePattern = escapeRegExp(normalizedValue.replace(/\u00b0/g, "")).replace(
+    /\s+/g,
+    "\\s*",
+  );
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(summary);
 }
 
 const CONCISE_STATUS_LABEL_VALUES = new Set([
