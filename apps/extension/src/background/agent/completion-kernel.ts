@@ -4515,6 +4515,13 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (phoneMatch) return cleanLabel(phoneMatch[1] ?? "") || null;
 
+  const ipv4Octet = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+  const ipv4Match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet})(?=$|[^\\d.])`,
+    "i",
+  ).exec(evidenceText);
+  if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
