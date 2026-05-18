@@ -457,4 +457,45 @@ describe("executeSequentialToolCalls", () => {
       expect.objectContaining({ mode: "sequential" }),
     );
   });
+
+  test("passes catalog-order trusted completion candidate to completion signal", async () => {
+    const host = createHost();
+    const completed = vi.fn();
+    const completionCandidate = {
+      contractKind: "workflow_confirmation",
+      decisionReason: "Catalog order submitted by trusted workflow.",
+      evidence: [
+        {
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: "trusted:catalog-order:completion",
+          turn: 4,
+          source: "tool_result",
+          detail: {
+            source: "trusted_workflow",
+            message: "Catalog order submitted.",
+          },
+        },
+      ],
+    };
+    (host.executeToolCall as any).mockResolvedValue("Order placed.");
+    (host.maybeCompleteTrustedCatalogOrderSubmit as any).mockResolvedValue({
+      finalSummary: "Catalog order submitted.",
+      completionCandidate,
+    });
+
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.CLICK_ELEMENT, { id: 7 }, "submit-order")],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: completed,
+      state: baseState(),
+    });
+
+    expect(completed).toHaveBeenCalledWith("Catalog order submitted.", {
+      completionCandidate,
+    });
+    expect(output.doneSignaled).toBe(true);
+    expect(output.doneSummary).toBe("Catalog order submitted.");
+  });
 });
