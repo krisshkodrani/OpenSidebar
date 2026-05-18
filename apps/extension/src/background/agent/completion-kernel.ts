@@ -4469,6 +4469,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isIpv6AddressValue(preciseConciseValue)) {
+      return preciseIpv6ValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isPathValue(preciseConciseValue)) {
       return precisePathValueCoveredBySummary(
         normalizedSummary,
@@ -4603,6 +4609,15 @@ function extractPreciseConciseLabelValue(
     if (macAddressMatch) return cleanLabel(macAddressMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveIpv6AddressValue(expectedAnswerLabel)) {
+    const ipv6Match = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?:%[a-z0-9_.-]+)?)(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(ipv6Match?.[1] ?? "");
+    if (candidate && isIpv6AddressValue(candidate)) return candidate;
+  }
+
   if (labelCanHaveDomainValue(expectedAnswerLabel)) {
     const domainMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4640,6 +4655,12 @@ function labelCanHaveMacAddressValue(expectedAnswerLabel: string): boolean {
   );
 }
 
+function labelCanHaveIpv6AddressValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:ipv6|ip|address|gateway|router|resolver|dns|nameserver|endpoint|host|server)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
 function labelCanHavePathValue(expectedAnswerLabel: string): boolean {
   return /\b(?:path|file|folder|directory|dir|route)\b/i.test(
     expectedAnswerLabel,
@@ -4668,6 +4689,26 @@ function isMacAddressValue(value: string): boolean {
   return /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(cleanLabel(value));
 }
 
+function isIpv6AddressValue(value: string): boolean {
+  const cleaned = cleanLabel(value);
+  if (!/^[0-9a-f:]+(?:%[a-z0-9_.-]+)?$/i.test(cleaned)) return false;
+  const address = cleaned.split("%", 1)[0] ?? "";
+  if (!address || address.includes(":::")) return false;
+
+  const validGroup = (part: string) => /^[0-9a-f]{1,4}$/i.test(part);
+  if (address.includes("::")) {
+    if (address.indexOf("::") !== address.lastIndexOf("::")) return false;
+    const [leftText = "", rightText = ""] = address.split("::");
+    const left = leftText ? leftText.split(":") : [];
+    const right = rightText ? rightText.split(":") : [];
+    if (![...left, ...right].every(validGroup)) return false;
+    return left.length + right.length < 8;
+  }
+
+  const groups = address.split(":");
+  return groups.length === 8 && groups.every(validGroup);
+}
+
 function preciseMacAddressValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
@@ -4675,6 +4716,16 @@ function preciseMacAddressValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9:-])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function preciseIpv6ValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9:%])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 

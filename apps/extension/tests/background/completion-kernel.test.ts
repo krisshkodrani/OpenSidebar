@@ -4817,6 +4817,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded IPv6 label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42 Backup IPv6 address: 2001:db8::43",
+      pageContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42. Backup IPv6 address: 2001:db8::43. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary IPv6 address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2001:db8::42",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary ipv6 address",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling IPv6 label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42 Backup IPv6 address: 2001:db8::43",
+      pageContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42. Backup IPv6 address: 2001:db8::43. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary IPv6 address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2001:db8::43",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary ipv6 address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept IPv6 prefix inside a longer address", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42 Backup IPv6 address: 2001:db8::43",
+      pageContent:
+        "Network Matrix Primary IPv6 address: 2001:db8::42. Backup IPv6 address: 2001:db8::43. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary IPv6 address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2001:db8::42:99",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary ipv6 address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded phone label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
