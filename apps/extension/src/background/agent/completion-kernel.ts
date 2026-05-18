@@ -4850,6 +4850,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isTimeRangeValue(preciseConciseValue)) {
+      return preciseTimeRangeValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isTimezoneValue(preciseConciseValue)) {
       return preciseTimezoneValueCoveredBySummary(
         normalizedSummary,
@@ -5213,6 +5219,15 @@ function extractPreciseConciseLabelValue(
     if (frequencyMatch) return cleanLabel(frequencyMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveTimeRangeValue(expectedAnswerLabel)) {
+    const timeRangeMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${timeRangeValuePattern()})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(timeRangeMatch?.[1] ?? "");
+    if (candidate && isTimeRangeValue(candidate)) return candidate;
+  }
+
   if (labelCanHaveTimezoneValue(expectedAnswerLabel)) {
     const timezoneMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${timezoneValuePattern()})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -5363,6 +5378,12 @@ function labelCanHavePressureValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveFrequencyValue(expectedAnswerLabel: string): boolean {
   return /\b(?:frequency|hertz|hz|refresh|sample|sampling|clock|oscillator|cycle|rpm|rotation)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveTimeRangeValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:time range|time window|window|schedule|scheduled|maintenance|service hours|business hours|office hours|hours|shift|slot|period)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5969,6 +5990,57 @@ function preciseFrequencyValueCoveredBySummary(
   const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function timeRangeValuePattern(): string {
+  const time = "(?:[01]?\\d|2[0-3]):[0-5]\\d";
+  return `${time}\\s*(?:-|to)\\s*${time}`;
+}
+
+function canonicalTimeRangeValue(value: string): string | null {
+  const time = "(?:[01]?\\d|2[0-3]):[0-5]\\d";
+  const parts = new RegExp(`^(${time})\\s*(?:-|to)\\s*(${time})$`, "i").exec(
+    cleanLabel(value),
+  );
+  if (!parts) return null;
+  const start = canonicalClockTime(parts[1] ?? "");
+  const end = canonicalClockTime(parts[2] ?? "");
+  return start && end ? `${start}-${end}` : null;
+}
+
+function canonicalClockTime(value: string): string | null {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(cleanLabel(value));
+  if (!match) return null;
+  return `${Number(match[1])}:${match[2]}`;
+}
+
+function isTimeRangeValue(value: string): boolean {
+  return canonicalTimeRangeValue(value) !== null;
+}
+
+function clockTimeSummaryPattern(canonicalTime: string): string {
+  const [hour, minute] = canonicalTime.split(":");
+  if (hour === undefined || minute === undefined) return "";
+  const hourPattern =
+    Number(hour) < 10 ? `0?${escapeRegExp(hour)}` : escapeRegExp(hour);
+  return `${hourPattern}:${escapeRegExp(minute)}`;
+}
+
+function preciseTimeRangeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  const value = canonicalTimeRangeValue(normalizedValue);
+  if (!value) return false;
+  const [start, end] = value.split("-");
+  if (!start || !end) return false;
+  const startPattern = clockTimeSummaryPattern(start);
+  const endPattern = clockTimeSummaryPattern(end);
+  if (!startPattern || !endPattern) return false;
+  return new RegExp(
+    `(^|[^0-9:])${startPattern}\\s*(?:-|to)\\s*${endPattern}(?=$|[^0-9:])`,
+    "i",
   ).test(normalizedSummary);
 }
 
