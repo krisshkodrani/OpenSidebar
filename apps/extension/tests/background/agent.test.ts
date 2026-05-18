@@ -1403,6 +1403,17 @@ describe("AgentLoop", () => {
     expect(completion?.summary).toContain("REQ0025875");
     expect(completion?.summary).toContain("Premium Monitor");
     expect(completion?.summary).toContain("Quantity: 10");
+    expect(
+      (agent as any).completionEvidence
+        .toArray()
+        .some(
+          (event: any) =>
+            event.type === "confirmation_state" &&
+            event.detail?.source === "trusted_workflow" &&
+            event.detail?.recordId === "REQ0025875" &&
+            event.detail?.targetText === "Premium Monitor",
+        ),
+    ).toBe(true);
     expect(onStatus).toHaveBeenCalledWith(AgentStatus.IDLE, "Done");
     expect(onMessage).toHaveBeenCalledWith(
       expect.stringContaining("REQ0025875"),
@@ -3546,6 +3557,11 @@ describe("AgentLoop", () => {
             logicalKey: expect.stringContaining(
               "trusted:form-submit-reset:confirmation:inc0034274",
             ),
+            detail: expect.objectContaining({
+              source: "trusted_workflow",
+              recordId: "INC0034274",
+              targetText: "INC0034274",
+            }),
           }),
         ],
       },

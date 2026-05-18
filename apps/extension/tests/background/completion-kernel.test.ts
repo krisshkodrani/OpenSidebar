@@ -4,6 +4,7 @@ import {
   CompletionEvidenceLedger,
   buildCompletionEnvelope,
   buildCompletionRecoveryHint,
+  buildTrustedCompletionCandidate,
   buildTrustedReadAnswerCompletionCandidate,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
@@ -12673,6 +12674,41 @@ describe("completion kernel", () => {
             answer: "100",
             source: "knowledge_base_search",
             url: "https://example.service-now.test/kb",
+          }),
+        }),
+      ],
+    });
+  });
+
+  test("preserves explicit trusted workflow target metadata", () => {
+    const candidate = buildTrustedCompletionCandidate({
+      workflow: "catalog_order",
+      summary: "Catalog order submitted: REQ0025875. Item: Premium Monitor.",
+      reason: "Trusted catalog order confirmation page matched the request.",
+      turn: 12,
+      evidenceText:
+        "Order Status REQ0025875 Premium Monitor Quantity 10 Total $11,000.00",
+      recordId: "REQ0025875",
+      targetText: "Premium Monitor",
+      url: "https://example.service-now.test/checkout",
+    });
+
+    expect(candidate).toMatchObject({
+      contractKind: "workflow_confirmation",
+      decisionReason: expect.stringContaining("catalog order"),
+      evidence: [
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: expect.stringContaining(
+            "trusted:catalog-order:confirmation:req0025875",
+          ),
+          observedAtTurn: 12,
+          detail: expect.objectContaining({
+            source: "trusted_workflow",
+            recordId: "REQ0025875",
+            targetText: "Premium Monitor",
+            url: "https://example.service-now.test/checkout",
           }),
         }),
       ],
