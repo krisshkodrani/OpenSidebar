@@ -203,6 +203,8 @@ export type WorkflowConfirmationAction =
   | "share"
   | "install"
   | "uninstall"
+  | "connect"
+  | "disconnect"
   | "invite"
   | "subscribe"
   | "unsubscribe"
@@ -267,6 +269,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "share",
   "install",
   "uninstall",
+  "connect",
+  "disconnect",
   "invite",
   "subscribe",
   "unsubscribe",
@@ -334,6 +338,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "share"
   | "install"
   | "uninstall"
+  | "connect"
+  | "disconnect"
   | "invite"
   | "subscribe"
   | "unsubscribe"
@@ -2802,6 +2808,20 @@ function inferWorkflowConfirmationAction(
     return "uninstall";
   }
   if (
+    /\bdisconnect(?:ed)?\s+(?:the\s+)?(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection)\b/i.test(
+      text,
+    )
+  ) {
+    return "disconnect";
+  }
+  if (
+    /\bconnect(?:ed)?\s+(?:the\s+)?(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection)\b/i.test(
+      text,
+    )
+  ) {
+    return "connect";
+  }
+  if (
     /\binvit(?:e|ed)\s+(?:the\s+)?(?:user|member|person|contact|customer|client|guest|reviewer|approver|editor|viewer|admin|administrator|collaborator|teammate|team|group)\b/i.test(
       text,
     )
@@ -3115,6 +3135,10 @@ function workflowTargetActionPattern(
       return "(?:install)";
     case "uninstall":
       return "(?:uninstall)";
+    case "connect":
+      return "(?:connect)";
+    case "disconnect":
+      return "(?:disconnect)";
     case "invite":
       return "(?:invite)";
     case "subscribe":
@@ -3326,6 +3350,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "share" ||
     action === "install" ||
     action === "uninstall" ||
+    action === "connect" ||
+    action === "disconnect" ||
     action === "invite" ||
     action === "subscribe" ||
     action === "unsubscribe" ||
@@ -3500,6 +3526,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:installed)";
     case "uninstall":
       return "(?:uninstalled)";
+    case "connect":
+      return "(?:connected)";
+    case "disconnect":
+      return "(?:disconnected)";
     case "invite":
       return "(?:invited)";
     case "subscribe":
@@ -3629,6 +3659,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:install|installation)";
     case "uninstall":
       return "(?:uninstall|uninstallation)";
+    case "connect":
+      return "(?:connect|connection)";
+    case "disconnect":
+      return "(?:disconnect|disconnection)";
     case "invite":
       return "(?:invite|invitation)";
     case "subscribe":
@@ -4091,6 +4125,34 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:uninstalled|uninstall complete|uninstall completed|uninstall successful|uninstallation complete|uninstallation completed|uninstallation successful)\b/i.test(
+        text,
+      );
+    case "connect":
+      if (mode === "visible") {
+        return (
+          /\bconnected\s+successfully\b/i.test(text) ||
+          /\b(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection)\s+connected\b/i.test(
+            text,
+          ) ||
+          /\bconnect(?:ion)?\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:connected|connect complete|connect completed|connect successful|connection complete|connection completed|connection successful)\b/i.test(
+        text,
+      );
+    case "disconnect":
+      if (mode === "visible") {
+        return (
+          /\bdisconnected\s+successfully\b/i.test(text) ||
+          /\b(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection)\s+disconnected\b/i.test(
+            text,
+          ) ||
+          /\bdisconnect(?:ion)?\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:disconnected|disconnect complete|disconnect completed|disconnect successful|disconnection complete|disconnection completed|disconnection successful)\b/i.test(
         text,
       );
     case "invite":
@@ -4655,6 +4717,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:installed|install|installation)";
     case "uninstall":
       return "(?:uninstalled|uninstall|uninstallation)";
+    case "connect":
+      return "(?:connected|connect|connection)";
+    case "disconnect":
+      return "(?:disconnected|disconnect|disconnection)";
     case "invite":
       return "(?:invited|invite|invitation)";
     case "subscribe":
@@ -5527,6 +5593,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\binstalled\b/i.test(text);
     case "uninstall":
       return /\buninstalled\b/i.test(text);
+    case "connect":
+      return /\bconnected\b/i.test(text);
+    case "disconnect":
+      return /\bdisconnected\b/i.test(text);
     case "invite":
       return /\binvited\b/i.test(text);
     case "subscribe":
