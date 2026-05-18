@@ -4594,6 +4594,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isCssHslColorValue(preciseConciseValue)) {
+      return preciseCssHslColorValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isDurationValue(preciseConciseValue)) {
       return preciseDurationValueCoveredBySummary(
         normalizedSummary,
@@ -4862,6 +4868,14 @@ function extractPreciseConciseLabelValue(
       "i",
     ).exec(evidenceText);
     if (rgbMatch) return cleanLabel(rgbMatch[1] ?? "") || null;
+
+    const hslHue = "(?:360|3[0-5]\\d|[12]?\\d?\\d)";
+    const hslPercent = "(?:100|[1-9]?\\d)%";
+    const hslMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:hsla?|HSLA?)\\(\\s*${hslHue}\\s*,\\s*${hslPercent}\\s*,\\s*${hslPercent}(?:\\s*,\\s*${rgbAlpha})?\\s*\\))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (hslMatch) return cleanLabel(hslMatch[1] ?? "") || null;
   }
 
   if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
@@ -5274,6 +5288,28 @@ function isCssRgbColorValue(value: string): boolean {
 }
 
 function preciseCssRgbColorValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  const compactValue = normalizedValue.replace(/\s+/g, "");
+  if (!compactValue) return false;
+  const compactSummary = normalizedSummary.replace(/\s+/g, "");
+  return new RegExp(
+    `(^|[^a-z0-9.#])${escapeRegExp(compactValue)}(?=$|[^a-z0-9])`,
+  ).test(compactSummary);
+}
+
+function isCssHslColorValue(value: string): boolean {
+  const hue = "(?:360|3[0-5]\\d|[12]?\\d?\\d)";
+  const percent = "(?:100|[1-9]?\\d)%";
+  const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
+  return new RegExp(
+    `^hsla?\\(\\s*${hue}\\s*,\\s*${percent}\\s*,\\s*${percent}(?:\\s*,\\s*${alpha})?\\s*\\)$`,
+    "i",
+  ).test(cleanLabel(value));
+}
+
+function preciseCssHslColorValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
