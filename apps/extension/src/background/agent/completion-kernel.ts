@@ -190,6 +190,7 @@ export type WorkflowConfirmationAction =
   | "download"
   | "upload"
   | "import"
+  | "duplicate"
   | "post"
   | "approve"
   | "reject"
@@ -224,6 +225,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "download",
   "upload",
   "import",
+  "duplicate",
   "post",
   "approve",
   "reject",
@@ -261,6 +263,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "download"
   | "upload"
   | "import"
+  | "duplicate"
   | "post"
   | "approve"
   | "reject"
@@ -2620,6 +2623,13 @@ function inferWorkflowConfirmationAction(
   ) {
     return "import";
   }
+  if (
+    /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
+      text,
+    )
+  ) {
+    return "duplicate";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2789,6 +2799,8 @@ function workflowTargetActionPattern(
       return "(?:upload)";
     case "import":
       return "(?:import)";
+    case "duplicate":
+      return "(?:duplicate|clone)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -2953,6 +2965,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "download" ||
     action === "upload" ||
     action === "import" ||
+    action === "duplicate" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -2990,6 +3003,19 @@ function workflowTargetLabelCoveredByText(
   }
 
   const targetTokens = tokenizeCompletionText(targetLabel);
+  const meaningfulTargetTokens = targetTokens.filter(
+    (token) =>
+      !/^(?:record|item|row|entry|object|button|link|target)$/i.test(token),
+  );
+  if (
+    meaningfulTargetTokens.length > 0 &&
+    meaningfulTargetTokens.length < targetTokens.length &&
+    meaningfulTargetTokens.every((token) =>
+      valueTokenCoveredBySummary(normalizedText, token),
+    )
+  ) {
+    return true;
+  }
   return (
     targetTokens.length > 0 &&
     targetTokens.every((token) =>
@@ -3071,6 +3097,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:uploaded)";
     case "import":
       return "(?:imported)";
+    case "duplicate":
+      return "(?:duplicated|cloned)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3140,6 +3168,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:upload)";
     case "import":
       return "(?:import)";
+    case "duplicate":
+      return "(?:duplicate|duplication|clone)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3208,7 +3238,10 @@ function normalizeWorkflowTargetTokenSlice(
   tokenCount: number,
   side: "head" | "tail",
 ): string | null {
-  const cleaned = cleanLabel(value)
+  const raw = cleanLabel(value);
+  const allowGenericObjectShortTarget =
+    /\b(?:record|item|row|entry|object|button|link)\b/i.test(raw);
+  const cleaned = raw
     .replace(
       /\b(?:the|this|that|selected|current|visible|target|record|item|row|entry|object|button|link|delete|remove|archive|cancel|was|has|been)\b/gi,
       " ",
@@ -3224,7 +3257,7 @@ function normalizeWorkflowTargetTokenSlice(
       ? words.slice(0, tokenCount)
       : words.slice(Math.max(0, words.length - tokenCount));
   return normalizeWorkflowTargetLabel(selected.join(" "), {
-    allowShort: tokenCount <= 1,
+    allowShort: tokenCount <= 1 || allowGenericObjectShortTarget,
   });
 }
 
@@ -3388,6 +3421,21 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:imported|import complete|import completed|import successful)\b/i.test(
+        text,
+      );
+    case "duplicate":
+      if (mode === "visible") {
+        return (
+          /\b(?:duplicated|cloned)\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\s+(?:duplicated|cloned)\b/i.test(
+            text,
+          ) ||
+          /\b(?:duplicate|clone)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:duplicated|cloned|duplicate complete|duplicate completed|duplicate successful|clone complete|clone completed|clone successful)\b/i.test(
         text,
       );
     case "post":
@@ -3703,6 +3751,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:uploaded|upload)";
     case "import":
       return "(?:imported|import)";
+    case "duplicate":
+      return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4515,6 +4565,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\buploaded\b/i.test(text);
     case "import":
       return /\bimported\b/i.test(text);
+    case "duplicate":
+      return /\b(?:duplicated|cloned)\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
