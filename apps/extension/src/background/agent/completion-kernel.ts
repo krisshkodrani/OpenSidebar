@@ -252,6 +252,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "cancel"
   | "enable"
   | "disable"
+  | "lock"
+  | "unlock"
 >;
 
 export interface WorkflowConfirmationContract {
@@ -2723,6 +2725,10 @@ function workflowTargetActionPattern(
       return "(?:enable|activate|turn\\s+on)";
     case "disable":
       return "(?:disable|deactivate|turn\\s+off)";
+    case "lock":
+      return "(?:lock)";
+    case "unlock":
+      return "(?:unlock)";
     default:
       return null;
   }
@@ -2802,7 +2808,9 @@ function isTargetAwareVisibleWorkflowAction(
     action === "reopen" ||
     action === "cancel" ||
     action === "enable" ||
-    action === "disable"
+    action === "disable" ||
+    action === "lock" ||
+    action === "unlock"
   );
 }
 
@@ -2900,6 +2908,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:enabled|activated)";
     case "disable":
       return "(?:disabled|deactivated)";
+    case "lock":
+      return "(?:locked)";
+    case "unlock":
+      return "(?:unlocked)";
   }
 }
 
@@ -2925,6 +2937,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:enable|activation)";
     case "disable":
       return "(?:disable|deactivation)";
+    case "lock":
+      return "(?:lock)";
+    case "unlock":
+      return "(?:unlock)";
   }
 }
 
