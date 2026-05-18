@@ -6375,6 +6375,69 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise electrical label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Power Matrix",
+      url: "https://example.test/power",
+      visibleContent:
+        "Power Matrix Output voltage: 12 V Backup voltage: 24 V",
+      pageContent:
+        "Power Matrix Output voltage: 12 V. Backup voltage: 24 V. The page explains power monitoring, electrical policy, service limits, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer power questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the output voltage?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "12V",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "24V",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "output voltage",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept electrical concise answers without an electrical label", () => {
+    const snap = workflowSnapshot({
+      title: "Power Matrix",
+      url: "https://example.test/power",
+      visibleContent: "Power Matrix Team code: 12V Backup code: 24V",
+      pageContent:
+        "Power Matrix Team code: 12V. Backup code: 24V. The page explains power monitoring, electrical policy, service limits, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer power questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "12V",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",
