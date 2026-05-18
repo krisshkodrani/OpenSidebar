@@ -64,6 +64,7 @@ let loopStartImpl: (
   metrics?: SessionMetrics;
   pendingInteraction?: Record<string, unknown>;
   sideEffectsLog?: Array<Record<string, unknown>>;
+  completionEnvelope?: Record<string, unknown>;
 }>;
 let loopEmitStaleSignal = false;
 let orchestratorDeps: OrchestratorDeps;
@@ -1409,6 +1410,57 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[0].instruction).toContain(
       "Success criteria: Page or tool output shows Warehouse Beta",
     );
+  });
+
+  test("accepts deterministic completion envelopes without verifier split-brain", async () => {
+    plannerBuildNodesImpl = async () => [
+      makeNode("n1", "select the correct quiz options"),
+    ];
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary: "Selected the correct options.",
+      completionEnvelope: {
+        status: "completed",
+        resultId: "completion-node-1",
+        source: "model_done",
+        contractKind: "quiz_selection",
+        decisionReason: "selected options match expected answers",
+        evidenceKeys: ["quiz:question:32:selected:domain-adaptation"],
+        evidenceEpoch: "turn:2",
+      },
+    });
+    verifierDecisionImpl = async () => {
+      throw new Error("verifier should not run for deterministic envelopes");
+    };
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(makeInput("Select the correct option/s"));
+
+    expect(verifierDecisionCalls).toBe(0);
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.summary).toContain(
+      "Selected the correct options.",
+    );
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.url.endsWith("/run-traces") &&
+          entry.body.type === "completion_envelope_verification" &&
+          entry.body.data?.nodeId === "n1" &&
+          entry.body.data?.decision === "accept" &&
+          entry.body.data?.contractKind === "quiz_selection",
+      ),
+    ).toBe(true);
   });
 
   test("restores a compatible turn checkpoint only on the first recovered launch", async () => {

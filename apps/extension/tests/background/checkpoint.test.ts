@@ -82,6 +82,62 @@ describe("checkpoint-types", () => {
       expect(result!.turnCount).toBe(5);
     });
 
+    test("accepts a terminal completed checkpoint with completion envelope", () => {
+      const result = sanitizeTurnCheckpoint({
+        ...validCheckpoint,
+        completedResult: {
+          outcome: "completed",
+          summary: "Selected the correct options.",
+          completionEnvelope: {
+            status: "completed",
+            resultId: "completion-1",
+            source: "model_done",
+            contractKind: "quiz_selection",
+            decisionReason: "selected options match expected answers",
+            evidenceKeys: ["quiz:question:32:selected:domain-adaptation"],
+            evidenceEpoch: "turn:3",
+          },
+        },
+      });
+
+      expect(result).not.toBeNull();
+      expect(result!.completedResult).toMatchObject({
+        outcome: "completed",
+        summary: "Selected the correct options.",
+        completionEnvelope: {
+          resultId: "completion-1",
+          contractKind: "quiz_selection",
+        },
+      });
+    });
+
+    test("rejects malformed terminal completed checkpoint", () => {
+      expect(
+        sanitizeTurnCheckpoint({
+          ...validCheckpoint,
+          completedResult: {
+            outcome: "completed",
+            summary: "done",
+            completionEnvelope: {
+              status: "completed",
+              resultId: "",
+              source: "model_done",
+              contractKind: "quiz_selection",
+              decisionReason: "accepted",
+              evidenceKeys: [],
+              evidenceEpoch: "turn:3",
+            },
+          },
+        }),
+      ).toBeNull();
+      expect(
+        sanitizeTurnCheckpoint({
+          ...validCheckpoint,
+          completedResult: { outcome: "failed", summary: "nope" },
+        }),
+      ).toBeNull();
+    });
+
     test("rejects null/undefined", () => {
       expect(sanitizeTurnCheckpoint(null)).toBeNull();
       expect(sanitizeTurnCheckpoint(undefined)).toBeNull();
