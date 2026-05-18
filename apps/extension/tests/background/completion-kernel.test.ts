@@ -1805,6 +1805,34 @@ describe("completion kernel", () => {
       genericSummary: "Unbookmark completed.",
     },
     {
+      action: "favorite",
+      request: "Favorite Report Alpha.",
+      summary: "Favorited Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains unfavorited. Report Alpha favorited successfully.",
+      requestedEvidenceText: "Report Alpha favorited successfully.",
+      otherVisible:
+        "Report Alpha remains unfavorited. Report Beta favorited successfully.",
+      otherEvidenceText: "Report Beta favorited successfully.",
+      genericVisible: "Favorite completed.",
+      genericSummary: "Favorite completed.",
+    },
+    {
+      action: "unfavorite",
+      request: "Unfavorite Report Alpha.",
+      summary: "Unfavorited Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains favorited. Report Alpha unfavorited successfully.",
+      requestedEvidenceText: "Report Alpha unfavorited successfully.",
+      otherVisible:
+        "Report Alpha remains favorited. Report Beta unfavorited successfully.",
+      otherEvidenceText: "Report Beta unfavorited successfully.",
+      genericVisible: "Unfavorite completed.",
+      genericSummary: "Unfavorite completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
