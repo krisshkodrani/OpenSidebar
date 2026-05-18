@@ -699,6 +699,111 @@ describe("Orchestrator integration join tests", () => {
     expect(completion?.payload?.status).toBe("completed");
   });
 
+  test("stops active global-goal siblings after root goal completion", async () => {
+    const first = makeNode(
+      "n1",
+      "Read the Overview tab and gather the key metrics needed for a comparison.",
+    );
+    first.successCriteria =
+      "The key Overview metrics are collected for the final comparison.";
+    const second = makeNode(
+      "n2",
+      "Review the remaining dashboard context for the final comparison.",
+    );
+    second.successCriteria =
+      "Final answer identifies traffic as the strongest area based on both tabs.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    orchestratorDeps.lanePolicies = {
+      executor: { maxConcurrent: 2 },
+    };
+    loopStartImpl = async (nodeId) => {
+      if (nodeId === "n1") {
+        return {
+          outcome: "completed",
+          summary:
+            "Traffic is strongest based on both tabs: Google Search traffic is up 15%, users are up 12%, and revenue is up 8%.",
+        };
+      }
+      return await new Promise((resolve) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          if (nodeId && gracefulStopLoopNodeIds.includes(nodeId)) {
+            resolve({
+              outcome: "stopped",
+              summary: "Stopped after global root completion.",
+            });
+            return;
+          }
+          if (Date.now() - startedAt > 250) {
+            resolve({
+              outcome: "completed",
+              summary: "Unexpectedly completed remaining dashboard review.",
+            });
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+    };
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Admin Dashboard",
+          url: "http://127.0.0.1:61549/dashboard",
+          visibleContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          pageContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 2000 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "Based on what you saw in both tabs, which area of the business looks strongest - user growth, revenue, or traffic? Give a brief answer referencing the data.",
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(expect.arrayContaining(["n1", "n2"]));
+    expect(gracefulStopLoopNodeIds).toContain("n2");
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]?.status).toBe("skipped");
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_cancelled" &&
+          entry.body.data?.nodeId === "n2" &&
+          entry.body.data?.reason === "global_goal_already_achieved",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "root" &&
+          entry.body.data?.status === "sibling_ignored" &&
+          Array.isArray(entry.body.data?.skippedNodeIds) &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n2"),
+      ),
+    ).toBe(true);
+  });
+
   test("preserves full user-facing completion summaries beyond compact handoff length", async () => {
     const longSummary = [
       "## Job Posting Summary",
