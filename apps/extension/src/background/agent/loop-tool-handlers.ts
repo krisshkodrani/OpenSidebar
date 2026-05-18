@@ -103,6 +103,7 @@ export interface AgentLoopToolHandlerHost {
   } | null;
   maybeCompleteTrustedCatalogOrderSubmit(params: any): Promise<{
     finalSummary: string;
+    completionCandidate?: TrustedCompletionCandidate;
   } | null>;
   maybeAutoSubmitConfiguredCatalogItem(params: any): Promise<void>;
   middleware: any;
@@ -1293,6 +1294,7 @@ export async function handleGenericSequentialToolCall(
       lastDomAffectingToolName,
       breakLoop: true,
       completedSummary: trustedCatalogOrderCompletion.finalSummary,
+      completionCandidate: trustedCatalogOrderCompletion.completionCandidate,
     };
   }
 
