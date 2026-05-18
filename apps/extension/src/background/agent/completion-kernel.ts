@@ -4556,7 +4556,7 @@ function labelValueLooksAnswerLike(value: string): boolean {
 
 function extractDirectQuestionLabel(normalizedQuestion: string): string | null {
   const match =
-    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is)|when|where|which|how many|how much)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:\?|$)/i.exec(
       normalizedQuestion,
     );
   const booleanMatch =
@@ -4675,11 +4675,23 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   ) {
     return false;
   }
+  if (
+    !labelCanHaveCoordinatePairValue(expectedAnswerLabel) &&
+    labelValueStartsWithCoordinatePair(evidenceText, labelPattern)
+  ) {
+    return false;
+  }
   const rawValue = cleanLabel(match?.[3] ?? "");
   if (!rawValue) return false;
   if (
     !labelCanHaveColorValue(expectedAnswerLabel) &&
     /\b(?:rgba?|hsla?)\s*\(/i.test(rawValue)
+  ) {
+    return false;
+  }
+  if (
+    !labelCanHaveCoordinatePairValue(expectedAnswerLabel) &&
+    isCoordinatePairValue(rawValue)
   ) {
     return false;
   }
@@ -4850,6 +4862,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isCoordinatePairValue(preciseConciseValue)) {
+      return preciseCoordinatePairValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4894,6 +4912,18 @@ function labelValuePhraseCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9])${escapeRegExp(phrase)}(?=$|[.,;:!?)]|\\s+(?:and|are|as|for|from|in|is|on|was|were|with)\\b)`,
   ).test(normalizedSummary);
+}
+
+function labelValueStartsWithCoordinatePair(
+  evidenceText: string,
+  labelPattern: string,
+): boolean {
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(\\(?\\s*[+-]?(?:(?:[0-8]?\\d)(?:\\.\\d+)?|90(?:\\.0+)?)\\s*,\\s*[+-]?(?:(?:(?:[0-9]?\\d)|(?:1[0-7]\\d))(?:\\.\\d+)?|180(?:\\.0+)?)\\s*\\)?)`,
+    "i",
+  ).exec(evidenceText);
+  const candidate = cleanLabel(match?.[1] ?? "");
+  return candidate ? isCoordinatePairValue(candidate) : false;
 }
 
 function extractPreciseConciseLabelValue(
@@ -5201,6 +5231,15 @@ function extractPreciseConciseLabelValue(
     if (candidate && isLocaleCodeValue(candidate)) return candidate;
   }
 
+  if (labelCanHaveCoordinatePairValue(expectedAnswerLabel)) {
+    const coordinatePairMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(\\(?\\s*[+-]?(?:(?:[0-8]?\\d)(?:\\.\\d+)?|90(?:\\.0+)?)\\s*,\\s*[+-]?(?:(?:(?:[0-9]?\\d)|(?:1[0-7]\\d))(?:\\.\\d+)?|180(?:\\.0+)?)\\s*\\)?)(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(coordinatePairMatch?.[1] ?? "");
+    if (candidate && isCoordinatePairValue(candidate)) return candidate;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -5334,6 +5373,12 @@ function labelCanHaveTimezoneValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveLocaleValue(expectedAnswerLabel: string): boolean {
   return /\b(?:locale|language|lang|i18n|regional format|region format)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveCoordinatePairValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:coordinates?|coordinate pair|gps|geo|geolocation|lat(?:itude)?\s*(?:\/|and|,)?\s*(?:lon|lng|longitude)|location)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5976,6 +6021,41 @@ function preciseLocaleCodeValueCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9_-])${escapeRegExp(normalizedValue)}(?=$|[^a-z0-9_-])`,
   ).test(normalizedSummary);
+}
+
+function canonicalCoordinatePair(value: string): string {
+  return cleanLabel(value)
+    .replace(/^\(\s*/, "")
+    .replace(/\s*\)$/, "")
+    .replace(/\s+/g, "");
+}
+
+function isCoordinatePairValue(value: string): boolean {
+  const match =
+    /^([+-]?(?:(?:[0-8]?\d)(?:\.\d+)?|90(?:\.0+)?)),([+-]?(?:(?:(?:[0-9]?\d)|(?:1[0-7]\d))(?:\.\d+)?|180(?:\.0+)?))$/.exec(
+      canonicalCoordinatePair(value),
+    );
+  if (!match) return false;
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 &&
+    Math.abs(longitude) <= 180
+  );
+}
+
+function preciseCoordinatePairValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  const value = canonicalCoordinatePair(normalizedValue);
+  if (!value) return false;
+  const summary = normalizedSummary.replace(/[()\s]+/g, "");
+  return new RegExp(
+    `(^|[^0-9.,+-])${escapeRegExp(value)}(?=$|[^0-9.,+-])`,
+  ).test(summary);
 }
 
 const CONCISE_STATUS_LABEL_VALUES = new Set([
