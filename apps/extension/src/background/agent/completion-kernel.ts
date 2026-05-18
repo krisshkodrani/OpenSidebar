@@ -199,6 +199,8 @@ export type WorkflowConfirmationAction =
   | "merge"
   | "schedule"
   | "unschedule"
+  | "deploy"
+  | "rollback"
   | "duplicate"
   | "restore"
   | "create"
@@ -269,6 +271,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "merge",
   "schedule",
   "unschedule",
+  "deploy",
+  "rollback",
   "duplicate",
   "restore",
   "create",
@@ -342,6 +346,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "merge"
   | "schedule"
   | "unschedule"
+  | "deploy"
+  | "rollback"
   | "duplicate"
   | "restore"
   | "create"
@@ -2792,6 +2798,20 @@ function inferWorkflowConfirmationAction(
     return "schedule";
   }
   if (
+    /\b(?:rollback|roll\s+back|rolled\s+back)\s+(?:the\s+)?(?:app|application|service|site|release|build|version|environment|deployment|package|workflow|pipeline|branch|change|changes)\b/i.test(
+      text,
+    )
+  ) {
+    return "rollback";
+  }
+  if (
+    /\bdeploy(?:ed)?\s+(?:the\s+)?(?:app|application|service|site|release|build|version|environment|deployment|package|workflow|pipeline|branch|change|changes)\b/i.test(
+      text,
+    )
+  ) {
+    return "deploy";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3167,6 +3187,10 @@ function workflowTargetActionPattern(
       return "(?:schedule)";
     case "unschedule":
       return "(?:unschedule)";
+    case "deploy":
+      return "(?:deploy)";
+    case "rollback":
+      return "(?:roll\\s+back|rollback)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3394,6 +3418,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "merge" ||
     action === "schedule" ||
     action === "unschedule" ||
+    action === "deploy" ||
+    action === "rollback" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3570,6 +3596,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:scheduled)";
     case "unschedule":
       return "(?:unscheduled)";
+    case "deploy":
+      return "(?:deployed)";
+    case "rollback":
+      return "(?:rolled\\s+back|reverted)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3711,6 +3741,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:schedule)";
     case "unschedule":
       return "(?:unschedule)";
+    case "deploy":
+      return "(?:deploy|deployment)";
+    case "rollback":
+      return "(?:rollback|roll\\s+back|reversion)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4135,6 +4169,34 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:unscheduled|unschedule complete|unschedule completed|unschedule successful)\b/i.test(
+        text,
+      );
+    case "deploy":
+      if (mode === "visible") {
+        return (
+          /\bdeployed\s+successfully\b/i.test(text) ||
+          /\b(?:app|application|service|site|release|build|version|environment|deployment|package|workflow|pipeline|branch|changes?)\s+deployed\b/i.test(
+            text,
+          ) ||
+          /\bdeploy(?:ment)?\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:deployed|deploy complete|deploy completed|deploy successful|deployment complete|deployment completed|deployment successful)\b/i.test(
+        text,
+      );
+    case "rollback":
+      if (mode === "visible") {
+        return (
+          /\b(?:rolled\s+back|reverted)\s+successfully\b/i.test(text) ||
+          /\b(?:app|application|service|site|release|build|version|environment|deployment|package|workflow|pipeline|branch|changes?)\s+(?:rolled\s+back|reverted)\b/i.test(
+            text,
+          ) ||
+          /\b(?:rollback|roll\s+back|reversion)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:rolled\s+back|reverted|rollback complete|rollback completed|rollback successful|roll back complete|roll back completed|roll back successful|reversion complete|reversion completed|reversion successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4833,6 +4895,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:scheduled|schedule)";
     case "unschedule":
       return "(?:unscheduled|unschedule)";
+    case "deploy":
+      return "(?:deployed|deploy|deployment)";
+    case "rollback":
+      return "(?:rolled\\s+back|reverted|rollback|roll\\s+back|reversion)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5717,6 +5783,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bscheduled\b/i.test(text);
     case "unschedule":
       return /\bunscheduled\b/i.test(text);
+    case "deploy":
+      return /\bdeployed\b/i.test(text);
+    case "rollback":
+      return /\b(?:rolled\s+back|reverted)\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
