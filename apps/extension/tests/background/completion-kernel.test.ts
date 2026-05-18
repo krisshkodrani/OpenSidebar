@@ -1285,6 +1285,56 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts deny confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ002 Status: Pending Deny request",
+      pageContent: "Request REQ002 Status: Pending Deny request",
+      elements: [actionButton(603, "Deny request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ002 Status: Denied",
+      pageContent: "Request REQ002 Status: Denied",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deny the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 603 },
+      result: "Clicked element 603.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Denied the request.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reject",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:reject:status:status-denied",
+        detail: expect.objectContaining({
+          action: "reject",
+          source: "status_change",
+          text: "Status: Denied",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts resolve confirmation from same-page state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Incident INC001 State: In Progress Resolve incident",
