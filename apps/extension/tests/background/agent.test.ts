@@ -2734,6 +2734,68 @@ describe("AgentLoop", () => {
     expect((agent as any).doneRejections).toBe(0);
   });
 
+  test("trusted workflow completion creates a trusted_tool completion envelope", () => {
+    const onMessage = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage,
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-sort-workflow",
+      },
+    );
+
+    const trustedCompletion = (agent as any).maybeCompleteTrustedListSortStep({
+      toolName: ToolName.APPLY_LIST_SORT,
+      toolArgs: {
+        sorts: [{ field: "priority", direction: "descending" }],
+      },
+      toolResult:
+        "Applied list sort.\nQuery state: sysparm_query=ORDERBYDESCpriority\nSorts: priority desc",
+      mode: "sequential",
+    });
+
+    expect(trustedCompletion).toMatchObject({
+      finalSummary: expect.stringContaining("Applied list sort"),
+      completionCandidate: {
+        contractKind: "workflow_confirmation",
+        decisionReason: expect.stringContaining("Trusted list sort"),
+        evidence: [
+          expect.objectContaining({
+            type: "confirmation_state",
+            confidence: "high",
+            logicalKey: expect.stringContaining(
+              "trusted:list-sort:confirmation",
+            ),
+          }),
+        ],
+      },
+    });
+
+    (agent as any).completeTaskResult(trustedCompletion.finalSummary, {
+      completionCandidate: trustedCompletion.completionCandidate,
+      saveCheckpoint: false,
+    });
+
+    expect((agent as any).completedResult).toMatchObject({
+      outcome: "completed",
+      summary: trustedCompletion.finalSummary,
+      completionEnvelope: {
+        status: "completed",
+        source: "trusted_tool",
+        contractKind: "workflow_confirmation",
+        decisionReason: expect.stringContaining("Trusted list sort"),
+        evidenceKeys: expect.arrayContaining([
+          expect.stringContaining("trusted:list-sort:confirmation"),
+        ]),
+      },
+    });
+    expect(onMessage).toHaveBeenCalledWith(trustedCompletion.finalSummary, []);
+  });
+
   test("applySkillToolRanking keeps inline-edit tools ahead of discouraged coordinate fallback", () => {
     const agent = new AgentLoop(
       "test-key",

@@ -119,6 +119,12 @@ export interface CompletionEnvelope {
   evidenceEpoch: string;
 }
 
+export interface TrustedCompletionCandidate {
+  contractKind: string;
+  decisionReason: string;
+  evidence: CompletionEvidence[];
+}
+
 export type CompletionEvaluation =
   | {
       status: "accepted";
@@ -590,6 +596,40 @@ export function buildCompletionEnvelope(params: {
     decisionReason: params.decisionReason,
     evidenceKeys,
     evidenceEpoch,
+  };
+}
+
+export function buildTrustedCompletionCandidate(params: {
+  workflow: string;
+  summary: string;
+  reason: string;
+  turn: number;
+  contractKind?: string;
+  evidenceText?: string;
+  recordId?: string;
+  url?: string;
+}): TrustedCompletionCandidate {
+  const workflowKey = compactKey(params.workflow) || "workflow";
+  const recordKey =
+    (params.recordId ? compactKey(params.recordId) : null) ||
+    compactKey(params.summary) ||
+    "completed";
+  return {
+    contractKind: params.contractKind ?? "workflow_confirmation",
+    decisionReason: params.reason,
+    evidence: [
+      {
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: `trusted:${workflowKey}:confirmation:${recordKey}`,
+        observedAtTurn: params.turn,
+        detail: {
+          text: (params.evidenceText ?? params.summary).slice(0, 1000),
+          ...(params.recordId ? { recordId: params.recordId } : {}),
+          ...(params.url ? { url: params.url } : {}),
+        },
+      },
+    ],
   };
 }
 

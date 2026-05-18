@@ -77,6 +77,7 @@ import { EvidenceAccumulator } from "./evidence";
 import {
   buildCompletionEnvelope,
   buildCompletionRecoveryHint,
+  buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
@@ -85,6 +86,7 @@ import {
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
+  type TrustedCompletionCandidate,
 } from "./completion-kernel";
 import {
   TURN_CHECKPOINT_VERSION,
@@ -1472,17 +1474,59 @@ export class AgentLoop {
 
   private completeTaskResult(
     summary: string,
-    options: { saveCheckpoint?: boolean } = {},
+    options: {
+      saveCheckpoint?: boolean;
+      completionCandidate?: TrustedCompletionCandidate;
+    } = {},
   ): void {
     if (this.completedResult) {
       return;
     }
-    this.completedResult = { outcome: "completed", summary };
+    let completionEnvelope: CompletionEnvelope | undefined;
+    const candidate = options.completionCandidate;
+    if (candidate) {
+      this.recordCompletionEvidence(candidate.evidence, "trusted_tool");
+      this.traceRecorder?.recordEvent("completion_candidate", {
+        turn: this.turnCount,
+        source: "trusted_tool",
+        contractKind: candidate.contractKind,
+        confidence: "high",
+      });
+      completionEnvelope = this.createCompletionEnvelope({
+        source: "trusted_tool",
+        contractKind: candidate.contractKind,
+        decisionReason: candidate.decisionReason,
+        evidence: candidate.evidence,
+        summary,
+      });
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: "accepted",
+        source: "trusted_tool",
+        reason: candidate.decisionReason,
+        contractKind: candidate.contractKind,
+        resultId: completionEnvelope.resultId,
+        evidenceKeys: completionEnvelope.evidenceKeys,
+        completionEnvelope,
+      });
+      this.recordCompletionEnvelope(completionEnvelope);
+    }
+    this.completedResult = {
+      outcome: "completed",
+      summary,
+      ...(completionEnvelope ? { completionEnvelope } : {}),
+    };
     this.traceRecorder?.recordEvent("completion_state_transition", {
       turn: this.turnCount,
       from: "working",
       to: "completed",
       source: "trusted_tool",
+      ...(completionEnvelope
+        ? {
+            resultId: completionEnvelope.resultId,
+            contractKind: completionEnvelope.contractKind,
+          }
+        : {}),
     });
     this.statusHandler(AgentStatus.IDLE, "Done");
     this.messageHandler(summary, []);
@@ -1505,6 +1549,20 @@ export class AgentLoop {
       evidence: params.evidence ?? [],
       turn: this.turnCount,
       summary: params.summary,
+    });
+  }
+
+  private createTrustedCompletionCandidate(params: {
+    workflow: string;
+    summary: string;
+    reason: string;
+    evidenceText?: string;
+    recordId?: string;
+  }): TrustedCompletionCandidate {
+    return buildTrustedCompletionCandidate({
+      ...params,
+      turn: this.turnCount,
+      url: this.context.getCurrentUrl(),
     });
   }
 
@@ -5364,7 +5422,11 @@ export class AgentLoop {
     toolArgs?: Record<string, unknown>;
     toolResult: string;
     mode: "parallel" | "sequential";
-  }): { finalSummary: string; newIndex: number } | null {
+  }): {
+    finalSummary: string;
+    newIndex: number;
+    completionCandidate: TrustedCompletionCandidate;
+  } | null {
     if (this.selectedSkillId !== "list-sort-workflow") return null;
     if (params.toolName !== ToolName.APPLY_LIST_SORT) return null;
     if (
@@ -5412,6 +5474,12 @@ export class AgentLoop {
       .map((sort) => `${sort.field} ${sort.direction}`)
       .join("; ");
     const finalSummary = `Applied list sort: ${sortSummary}. Evidence: ${queryLine}`;
+    const completionCandidate = this.createTrustedCompletionCandidate({
+      workflow: "list_sort",
+      summary: finalSummary,
+      reason: "Trusted list sort tool result matched the requested sort.",
+      evidenceText: params.toolResult,
+    });
 
     const plan = this.context.getPlanStatusRaw();
     if (
@@ -5433,7 +5501,7 @@ export class AgentLoop {
         completedAllSteps: true,
         planless: true,
       });
-      return { finalSummary, newIndex: 0 };
+      return { finalSummary, newIndex: 0, completionCandidate };
     }
 
     this.consecutiveAutoAdvances = 0;
@@ -5466,7 +5534,7 @@ export class AgentLoop {
       mode: params.mode,
       completedAllSteps: newIndex >= this.planSubtasks.length,
     });
-    return { finalSummary, newIndex };
+    return { finalSummary, newIndex, completionCandidate };
   }
 
   private maybeCompleteTrustedListFilterStep(params: {
@@ -5474,7 +5542,11 @@ export class AgentLoop {
     toolArgs?: Record<string, unknown>;
     toolResult: string;
     mode: "parallel" | "sequential";
-  }): { finalSummary: string; newIndex: number } | null {
+  }): {
+    finalSummary: string;
+    newIndex: number;
+    completionCandidate: TrustedCompletionCandidate;
+  } | null {
     if (this.selectedSkillId !== "list-filter-workflow") return null;
     if (params.toolName !== ToolName.APPLY_LIST_FILTER) return null;
     if (
@@ -5537,6 +5609,12 @@ export class AgentLoop {
       })
       .join("; ");
     const finalSummary = `Applied list filter: ${conditionSummary}. Evidence: ${queryLine}`;
+    const completionCandidate = this.createTrustedCompletionCandidate({
+      workflow: "list_filter",
+      summary: finalSummary,
+      reason: "Trusted list filter tool result matched the requested filter.",
+      evidenceText: params.toolResult,
+    });
 
     const plan = this.context.getPlanStatusRaw();
     if (
@@ -5563,7 +5641,7 @@ export class AgentLoop {
         completedAllSteps: true,
         planless: true,
       });
-      return { finalSummary, newIndex: 0 };
+      return { finalSummary, newIndex: 0, completionCandidate };
     }
 
     this.consecutiveAutoAdvances = 0;
@@ -5596,7 +5674,7 @@ export class AgentLoop {
       mode: params.mode,
       completedAllSteps: newIndex >= this.planSubtasks.length,
     });
-    return { finalSummary, newIndex };
+    return { finalSummary, newIndex, completionCandidate };
   }
 
   private isPureListFilterWorkflowRequest(): boolean {
@@ -5922,7 +6000,15 @@ export class AgentLoop {
       /completed|submitted|configured|opened|navigated/i.test(summary)
         ? summary
         : `${contract.name} completed: ${summary}`;
-    this.completeTaskResult(finalSummary);
+    this.completeTaskResult(finalSummary, {
+      completionCandidate: this.createTrustedCompletionCandidate({
+        workflow: "atomic_skill_controller",
+        summary: finalSummary,
+        reason: "Atomic skill controller completed with required evidence.",
+        evidenceText: result,
+        recordId: recordSummary,
+      }),
+    });
     this.traceRecorder?.recordEvent("atomic_skill_controller_completed", {
       turn: this.turnCount,
       selectedSkillId: contract.id,
@@ -5936,6 +6022,7 @@ export class AgentLoop {
       failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
       evidence: this.evidenceAccumulator.toArray(),
+      completionEnvelope: this.completedResult?.completionEnvelope,
     };
   }
 
@@ -6550,7 +6637,9 @@ export class AgentLoop {
       }
 
       const summary = completion.finalSummary;
-      this.completeTaskResult(summary);
+      this.completeTaskResult(summary, {
+        completionCandidate: completion.completionCandidate,
+      });
       this.traceRecorder?.recordEvent(
         "servicenow_record_controller_completed",
         {
@@ -6565,6 +6654,7 @@ export class AgentLoop {
         summary,
         failure: { category: "none", code: "none" },
         metrics: this.getMetrics(),
+        completionEnvelope: this.completedResult?.completionEnvelope,
       };
     } finally {
       await this.traceRecorder?.endTurn();
@@ -6715,7 +6805,11 @@ export class AgentLoop {
     toolResult: string;
     tabId: number;
     mode: "parallel" | "sequential";
-  }): Promise<{ finalSummary: string; newIndex: number } | null> {
+  }): Promise<{
+    finalSummary: string;
+    newIndex: number;
+    completionCandidate: TrustedCompletionCandidate;
+  } | null> {
     if (!this.shouldAutoSubmitTrustedServiceNowForm(params)) return null;
 
     const submitArgs = { submit: true, submitButton: "Submit" };
@@ -6786,13 +6880,24 @@ export class AgentLoop {
     toolArgs?: Record<string, unknown>;
     toolResult: string;
     mode: "parallel" | "sequential";
-  }): { finalSummary: string; newIndex: number } | null {
+  }): {
+    finalSummary: string;
+    newIndex: number;
+    completionCandidate: TrustedCompletionCandidate;
+  } | null {
     const signal = detectTrustedFormSubmitCompletion({
       toolName: params.toolName,
       toolArgs: params.toolArgs,
       toolResult: params.toolResult,
     });
     if (!signal) return null;
+    const completionCandidate = this.createTrustedCompletionCandidate({
+      workflow: "form_submit",
+      summary: signal.reason,
+      reason: "Trusted form submit tool result confirmed submission.",
+      evidenceText: params.toolResult,
+      recordId: signal.submittedRecord,
+    });
 
     const plan = this.context.getPlanStatusRaw();
     if (
@@ -6823,7 +6928,11 @@ export class AgentLoop {
         completedAllSteps: true,
         planless: true,
       });
-      return { finalSummary: signal.reason, newIndex: 0 };
+      return {
+        finalSummary: signal.reason,
+        newIndex: 0,
+        completionCandidate,
+      };
     }
 
     const currentSubtask = plan.subtasks[plan.currentIndex];
@@ -6865,7 +6974,7 @@ export class AgentLoop {
       mode: params.mode,
       completedAllSteps: newIndex >= this.planSubtasks.length,
     });
-    return { finalSummary: signal.reason, newIndex };
+    return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
   private maybeCompleteCatalogOrderFromSnapshot(): LoopResult | null {
@@ -6914,7 +7023,15 @@ export class AgentLoop {
       summaryParts.push("Requested configuration verified before submission.");
     }
     const summary = summaryParts.join(" ");
-    this.completeTaskResult(summary);
+    this.completeTaskResult(summary, {
+      completionCandidate: this.createTrustedCompletionCandidate({
+        workflow: "catalog_order",
+        summary,
+        reason: "Trusted catalog order confirmation page matched the request.",
+        evidenceText: pageText,
+        recordId: requestNumber,
+      }),
+    });
     this.traceRecorder?.recordEvent("catalog_order_snapshot_completed", {
       turn: this.turnCount,
       requestNumber,
@@ -6927,6 +7044,7 @@ export class AgentLoop {
       summary,
       failure: { category: "none", code: "none" },
       metrics: this.getMetrics(),
+      completionEnvelope: this.completedResult?.completionEnvelope,
     };
   }
 
@@ -7990,7 +8108,10 @@ export class AgentLoop {
         let doneSignaled = false;
         const signalCompletedResult = (
           summary: string,
-          options?: { saveCheckpoint?: boolean },
+          options?: {
+            saveCheckpoint?: boolean;
+            completionCandidate?: TrustedCompletionCandidate;
+          },
         ) => {
           doneSummary = summary;
           doneSignaled = true;
