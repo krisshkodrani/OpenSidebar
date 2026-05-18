@@ -1623,6 +1623,34 @@ describe("completion kernel", () => {
       genericSummary: "Share completed.",
     },
     {
+      action: "install",
+      request: "Install Package Alpha.",
+      summary: "Installed Package Alpha.",
+      targetLabel: "Package Alpha",
+      requestedVisible:
+        "Package Beta remains unavailable. Package Alpha installed successfully.",
+      requestedEvidenceText: "Package Alpha installed successfully.",
+      otherVisible:
+        "Package Alpha remains unavailable. Package Beta installed successfully.",
+      otherEvidenceText: "Package Beta installed successfully.",
+      genericVisible: "Installation completed.",
+      genericSummary: "Installation completed.",
+    },
+    {
+      action: "uninstall",
+      request: "Uninstall Package Alpha.",
+      summary: "Uninstalled Package Alpha.",
+      targetLabel: "Package Alpha",
+      requestedVisible:
+        "Package Beta remains installed. Package Alpha uninstalled successfully.",
+      requestedEvidenceText: "Package Alpha uninstalled successfully.",
+      otherVisible:
+        "Package Alpha remains installed. Package Beta uninstalled successfully.",
+      otherEvidenceText: "Package Beta uninstalled successfully.",
+      genericVisible: "Uninstallation completed.",
+      genericSummary: "Uninstallation completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
