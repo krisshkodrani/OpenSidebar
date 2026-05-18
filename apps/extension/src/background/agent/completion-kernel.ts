@@ -4844,6 +4844,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isLocaleCodeValue(preciseConciseValue)) {
+      return preciseLocaleCodeValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -5186,6 +5192,15 @@ function extractPreciseConciseLabelValue(
     if (candidate && isTimezoneValue(candidate)) return candidate;
   }
 
+  if (labelCanHaveLocaleValue(expectedAnswerLabel)) {
+    const localeMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z]{2,3}(?:[-_][a-z0-9]{2,8}){1,3})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const candidate = cleanLabel(localeMatch?.[1] ?? "");
+    if (candidate && isLocaleCodeValue(candidate)) return candidate;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -5315,6 +5330,12 @@ function labelCanHaveFrequencyValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveTimezoneValue(expectedAnswerLabel: string): boolean {
   return /\b(?:timezone|time zone|tz|utc|gmt)\b/i.test(expectedAnswerLabel);
+}
+
+function labelCanHaveLocaleValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:locale|language|lang|i18n|regional format|region format)\b/i.test(
+    expectedAnswerLabel,
+  );
 }
 
 function isDomainNameValue(value: string): boolean {
@@ -5940,6 +5961,20 @@ function preciseTimezoneValueCoveredBySummary(
   const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
   return new RegExp(
     `(^|[^a-z0-9_/+-])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isLocaleCodeValue(value: string): boolean {
+  return /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8}){1,3}$/i.test(cleanLabel(value));
+}
+
+function preciseLocaleCodeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9_-])${escapeRegExp(normalizedValue)}(?=$|[^a-z0-9_-])`,
   ).test(normalizedSummary);
 }
 

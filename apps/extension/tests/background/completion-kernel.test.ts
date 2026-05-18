@@ -7350,6 +7350,106 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise locale label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Localization Matrix",
+      url: "https://example.test/localization",
+      visibleContent:
+        "Localization Matrix Language locale: en-US Backup locale: fr-FR",
+      pageContent:
+        "Localization Matrix Language locale: en-US. Backup locale: fr-FR. The page explains localization ownership, language policy, regional formatting, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer localization questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the language locale?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "en-US",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "fr-FR",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "language locale",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("accepts only the expected concise extended locale label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Localization Matrix",
+      url: "https://example.test/localization",
+      visibleContent:
+        "Localization Matrix Preferred locale: zh-Hans-CN Backup locale: en-US",
+      pageContent:
+        "Localization Matrix Preferred locale: zh-Hans-CN. Backup locale: en-US. The page explains localization ownership, language policy, regional formatting, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer localization questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the preferred locale?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "zh-Hans-CN",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "en-US",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "preferred locale",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept locale concise answers without a locale label", () => {
+    const snap = workflowSnapshot({
+      title: "Localization Matrix",
+      url: "https://example.test/localization",
+      visibleContent:
+        "Localization Matrix Team code: en-US Backup code: fr-FR",
+      pageContent:
+        "Localization Matrix Team code: en-US. Backup code: fr-FR. The page explains localization ownership, language policy, regional formatting, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer localization questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "en-US",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts only the expected concise physical speed label-value answer", () => {
     const snap = workflowSnapshot({
       title: "Route Matrix",
