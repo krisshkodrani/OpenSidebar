@@ -3903,12 +3903,24 @@ function findGroundedLabelValueQuestionLabel(
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
   const match = new RegExp(
-    `\\b${labelPattern}\\b\\s*(?:(:|=)|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
+    `\\b${labelPattern}\\b\\s*(?:([:=-])|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
     "i",
   ).exec(pageText);
   if (!match) return null;
-  if (match[2] && !labelValueLooksAnswerLike(match[3] ?? "")) return null;
+  if (
+    labelValueSeparatorNeedsAnswerShape(match[1], match[2]) &&
+    !labelValueLooksAnswerLike(match[3] ?? "")
+  ) {
+    return null;
+  }
   return cleanLabel(label);
+}
+
+function labelValueSeparatorNeedsAnswerShape(
+  symbolSeparator?: string,
+  wordSeparator?: string,
+): boolean {
+  return symbolSeparator === "-" || normalizeText(wordSeparator ?? "") === "is";
 }
 
 function labelValueLooksAnswerLike(value: string): boolean {
@@ -4025,10 +4037,14 @@ function readAnswerSummaryMatchesExpectedLabelValue(
 
   const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
   const match = new RegExp(
-    `\\b${labelPattern}\\b\\s*(?:(:|=)|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
+    `\\b${labelPattern}\\b\\s*(?:([:=-])|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
     "i",
   ).exec(evidenceText);
-  if (match?.[2] && !labelValueLooksAnswerLike(match[3] ?? "")) {
+  if (
+    match &&
+    labelValueSeparatorNeedsAnswerShape(match[1], match[2]) &&
+    !labelValueLooksAnswerLike(match[3] ?? "")
+  ) {
     return false;
   }
   const rawValue = cleanLabel(match?.[3] ?? "");
