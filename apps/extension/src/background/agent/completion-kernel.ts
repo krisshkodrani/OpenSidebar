@@ -202,6 +202,7 @@ export type WorkflowConfirmationAction =
   | "start"
   | "stop"
   | "restart"
+  | "refresh"
   | "dismiss"
   | "update"
   | "submit"
@@ -231,6 +232,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "start",
   "stop",
   "restart",
+  "refresh",
   "dismiss",
   "update",
   "submit",
@@ -2606,6 +2608,13 @@ function inferWorkflowConfirmationAction(
     return "restart";
   }
   if (
+    /\brefresh\s+(?:the\s+)?(?:automation|cache|dashboard|data|dataset|job|list|operation|pipeline|queue|record|report|request|schedule|service|subscription|sync|table|task|ticket|view|workflow)\b/i.test(
+      text,
+    )
+  ) {
+    return "refresh";
+  }
+  if (
     /\bstart\s+(?:the\s+)?(?:automation|job|operation|pipeline|process|queue|record|request|schedule|service|subscription|sync|task|ticket|workflow)\b/i.test(
       text,
     )
@@ -2947,6 +2956,16 @@ function textConfirmsWorkflowAction(
       return /\b(?:restarted|restart complete|restart completed|restart successful)\b/i.test(
         text,
       );
+    case "refresh":
+      if (mode === "visible") {
+        return (
+          /\brefreshed\s+successfully\b/i.test(text) ||
+          /\brefresh\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:refreshed|refresh complete|refresh completed|refresh successful)\b/i.test(
+        text,
+      );
     case "dismiss":
       if (mode === "visible") {
         return (
@@ -3072,6 +3091,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:stopped|stop|inactive)";
     case "restart":
       return "(?:restarted|restart)";
+    case "refresh":
+      return "(?:refreshed|refresh)";
     case "dismiss":
       return "(?:dismissed|closed|canceled|cancelled|removed|hidden|cleared|dismissal|dismiss|hide|clear)";
     case "update":
@@ -3726,6 +3747,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:stopped|inactive)\b/i.test(text);
     case "restart":
       return /\brestarted\b/i.test(text);
+    case "refresh":
+      return /\brefreshed\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
