@@ -3003,6 +3003,98 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects incomplete list-detail review through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "list-detail-review-loop",
+      },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Review the job listings and tell me which ones are the best matches for my profile and why.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).listDetailReviewedTargets = new Set(["frontend engineer"]);
+    (agent as any).context.setSnapshot({
+      title: "Job Listings",
+      url: "https://jobs.example.test/listings",
+      visibleContent:
+        "View details for Frontend Engineer. View details for Backend Engineer. View details for Data Analyst.",
+      pageContent:
+        "View details for Frontend Engineer. View details for Backend Engineer. View details for Data Analyst.",
+      elements: [
+        {
+          tag: 101,
+          tagName: "button",
+          role: "button",
+          text: "View details for Frontend Engineer",
+          attributes: {},
+          rect: { x: 0, y: 10, width: 200, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 102,
+          tagName: "button",
+          role: "button",
+          text: "View details for Backend Engineer",
+          attributes: {},
+          rect: { x: 0, y: 40, width: 200, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 103,
+          tagName: "button",
+          role: "button",
+          text: "View details for Data Analyst",
+          attributes: {},
+          rect: { x: 0, y: 70, width: 200, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-list-detail",
+      "Reviewed the listings and selected the best matches.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_list_detail_incomplete",
+      expect.objectContaining({
+        reviewedDetailCount: 1,
+        visibleDetailActionCount: 3,
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-list-detail",
+      content: expect.stringContaining(
+        "Do NOT synthesize the recommendation from list-card snippets alone.",
+      ),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {

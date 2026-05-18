@@ -15,6 +15,7 @@ import {
   getAutocompleteSuggestionDoneRejection,
   type AutocompleteSuggestionDoneRejection,
 } from "./text-entry-guards";
+import { getListDetailDoneRejection } from "./list-detail-policy";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -275,6 +276,14 @@ export type CompletionPendingAutocompletePreflight =
       status: "rejected";
       kind: "pending_autocomplete_suggestion";
     } & AutocompleteSuggestionDoneRejection);
+
+export type CompletionListDetailReviewPreflight =
+  | { status: "valid" }
+  | {
+      status: "rejected";
+      kind: "incomplete_list_detail_review";
+      reason: string;
+    };
 
 export interface CompletionTaskContractPreflight {
   blocked: boolean;
@@ -576,6 +585,27 @@ export function evaluateCompletionTaskContractPreflight(params: {
     reason: reasons.length > 0 ? reasons.join("; ") : null,
     summaryCoverage,
     missingReturnTarget: Boolean(returnTargetCoverage?.missingReturnTarget),
+  };
+}
+
+export function evaluateCompletionListDetailReviewPreflight(params: {
+  selectedSkillId?: string | null;
+  userRequest: string;
+  reviewedDetailCount: number;
+  visibleDetailActionCount: number;
+}): CompletionListDetailReviewPreflight {
+  const rejection = getListDetailDoneRejection({
+    selectedSkillId: params.selectedSkillId,
+    query: params.userRequest,
+    reviewedDetailCount: params.reviewedDetailCount,
+    visibleDetailActionCount: params.visibleDetailActionCount,
+  });
+  if (!rejection) return { status: "valid" };
+
+  return {
+    status: "rejected",
+    kind: "incomplete_list_detail_review",
+    reason: rejection,
   };
 }
 

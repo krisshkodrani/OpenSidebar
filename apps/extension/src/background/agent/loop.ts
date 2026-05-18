@@ -81,6 +81,7 @@ import {
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
@@ -109,7 +110,6 @@ export {
 } from "./text-entry-guards";
 import {
   countVisibleListDetailActions,
-  getListDetailDoneRejection,
   getListDetailReturnControl,
   getListDetailWorkflowBlock,
   getNextUnreviewedListDetailAction,
@@ -2953,13 +2953,14 @@ export class AgentLoop {
       this.listDetailVisibleActionCount,
       latestListDetailActionCount,
     );
-    const listDetailDoneRejection = getListDetailDoneRejection({
+    const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
       selectedSkillId: this.selectedSkillId,
-      query: this.originalQuery,
+      userRequest: this.originalQuery,
       reviewedDetailCount: this.listDetailReviewedTargets.size,
       visibleDetailActionCount,
     });
-    if (!listDetailDoneRejection) return false;
+    if (listDetailPreflight.status === "valid") return false;
+    const listDetailDoneRejection = listDetailPreflight.reason;
 
     this.doneRejections++;
     this.log.warn("agent", "DONE rejected: list-detail review incomplete", {
