@@ -4618,6 +4618,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isLengthValue(preciseConciseValue)) {
+      return preciseLengthValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4856,6 +4862,14 @@ function extractPreciseConciseLabelValue(
     if (massMatch) return cleanLabel(massMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveLengthValue(expectedAnswerLabel)) {
+    const lengthMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:mm|millimeters?|millimetres?|cm|centimeters?|centimetres?|m|meters?|metres?|km|kilometers?|kilometres?|in|inch|inches|ft|foot|feet|yd|yards?|mi|miles?))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (lengthMatch) return cleanLabel(lengthMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4937,6 +4951,12 @@ function labelCanHaveElectricalValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveMassValue(expectedAnswerLabel: string): boolean {
   return /\b(?:weight|mass|payload|tare|gross|net)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveLengthValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:length|height|width|depth|distance|radius|diameter|dimension|span|clearance|offset|elevation|altitude)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5187,6 +5207,23 @@ function isMassValue(value: string): boolean {
 }
 
 function preciseMassValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isLengthValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:mm|millimeters?|millimetres?|cm|centimeters?|centimetres?|m|meters?|metres?|km|kilometers?|kilometres?|in|inch|inches|ft|foot|feet|yd|yards?|mi|miles?)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseLengthValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
