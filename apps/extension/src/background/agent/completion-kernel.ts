@@ -2939,6 +2939,8 @@ function hasPageReadAnswerIntent(text: string): boolean {
     /\bkey points?\b/,
     /\bheadlines?\b/,
     /\bwhat does (?:this|the) page say\b/,
+    /\b(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much|tell me|find|identify|locate)\b.{0,140}\b(?:on|in|according to) (?:this|the) (?:page|article|document|post|readme)\b/,
+    /\b(?:on|in|according to) (?:this|the) (?:page|article|document|post|readme)\b.{0,140}\b(?:what(?:'s| is)|who(?:'s| is)|when|where|which|how many|how much)\b/,
     /\bread (?:this|the) page\b/,
     /\bfrom (?:this|the) page\b/,
     /\b(article|post|document|readme|page content)\b.+\b(summarize|summary|describe|report|extract)\b/,
