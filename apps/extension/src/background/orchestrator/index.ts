@@ -4749,6 +4749,20 @@ export class Orchestrator {
         }
 
         if (node.status !== "running") {
+          this.emitTraceEvent(
+            task,
+            "worker_result_ignored",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              workerId,
+              currentStatus: node.status,
+              executorOutcome: result.outcome,
+              reason: "node_already_terminal",
+              ...buildParallelRunState(task),
+            },
+            "system",
+          );
           return;
         }
         if (
