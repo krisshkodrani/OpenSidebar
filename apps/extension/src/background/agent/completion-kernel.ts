@@ -205,6 +205,8 @@ export type WorkflowConfirmationAction =
   | "unmute"
   | "follow"
   | "unfollow"
+  | "bookmark"
+  | "unbookmark"
   | "post"
   | "approve"
   | "reject"
@@ -254,6 +256,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unmute",
   "follow",
   "unfollow",
+  "bookmark",
+  "unbookmark",
   "post",
   "approve",
   "reject",
@@ -306,6 +310,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unmute"
   | "follow"
   | "unfollow"
+  | "bookmark"
+  | "unbookmark"
   | "post"
   | "approve"
   | "reject"
@@ -2770,6 +2776,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "follow";
   }
+  if (
+    /\bunbookmark(?:ed)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic|article|link|url|site)\b/i.test(
+      text,
+    )
+  ) {
+    return "unbookmark";
+  }
+  if (
+    /\bbookmark(?:ed)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic|article|link|url|site)\b/i.test(
+      text,
+    )
+  ) {
+    return "bookmark";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2969,6 +2989,10 @@ function workflowTargetActionPattern(
       return "(?:follow)";
     case "unfollow":
       return "(?:unfollow)";
+    case "bookmark":
+      return "(?:bookmark)";
+    case "unbookmark":
+      return "(?:unbookmark)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3148,6 +3172,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unmute" ||
     action === "follow" ||
     action === "unfollow" ||
+    action === "bookmark" ||
+    action === "unbookmark" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3309,6 +3335,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:followed)";
     case "unfollow":
       return "(?:unfollowed)";
+    case "bookmark":
+      return "(?:bookmarked)";
+    case "unbookmark":
+      return "(?:unbookmarked)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3408,6 +3438,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:follow)";
     case "unfollow":
       return "(?:unfollow)";
+    case "bookmark":
+      return "(?:bookmark)";
+    case "unbookmark":
+      return "(?:unbookmark)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3864,6 +3898,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unfollowed|unfollow complete|unfollow completed|unfollow successful)\b/i.test(
         text,
       );
+    case "bookmark":
+      if (mode === "visible") {
+        return (
+          /\bbookmarked\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic|article|link|url|site)\s+bookmarked\b/i.test(
+            text,
+          ) ||
+          /\bbookmark\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:bookmarked|bookmark complete|bookmark completed|bookmark successful)\b/i.test(
+        text,
+      );
+    case "unbookmark":
+      if (mode === "visible") {
+        return (
+          /\bunbookmarked\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|report|dashboard|view|list|board|project|page|document|file|folder|message|comment|thread|conversation|channel|topic|article|link|url|site)\s+unbookmarked\b/i.test(
+            text,
+          ) ||
+          /\bunbookmark\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unbookmarked|unbookmark complete|unbookmark completed|unbookmark successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -4207,6 +4267,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:followed|follow)";
     case "unfollow":
       return "(?:unfollowed|unfollow)";
+    case "bookmark":
+      return "(?:bookmarked|bookmark)";
+    case "unbookmark":
+      return "(?:unbookmarked|unbookmark)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -5049,6 +5113,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bfollowed\b/i.test(text);
     case "unfollow":
       return /\bunfollowed\b/i.test(text);
+    case "bookmark":
+      return /\bbookmarked\b/i.test(text);
+    case "unbookmark":
+      return /\bunbookmarked\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
