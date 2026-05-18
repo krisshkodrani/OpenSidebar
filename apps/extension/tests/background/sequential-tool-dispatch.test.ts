@@ -185,6 +185,34 @@ describe("executeSequentialToolCalls", () => {
     expect(completed).not.toHaveBeenCalled();
   });
 
+  test("skips queued tools when the lane is already complete", async () => {
+    const host = createHost();
+    const completed = vi.fn();
+
+    const output = await executeSequentialToolCalls.call(host, {
+      toolCalls: [toolCall(ToolName.CLICK_ELEMENT, { id: 42 })],
+      repeatActionWindow: 20,
+      llmIntention: null,
+      signalCompletedResult: completed,
+      state: baseState({
+        doneSignaled: true,
+        doneSummary: "Already complete.",
+      }),
+    });
+
+    expect(host.executeToolCall).not.toHaveBeenCalled();
+    expect(completed).not.toHaveBeenCalled();
+    expect(output.doneSignaled).toBe(true);
+    expect(output.doneSummary).toBe("Already complete.");
+    expect(host.traceRecorder?.recordEvent).toHaveBeenCalledWith(
+      "sequential_tools_skipped_after_completion",
+      expect.objectContaining({
+        queuedToolCount: 1,
+        mode: "sequential",
+      }),
+    );
+  });
+
   test("stops queued tools in the same lane after accepted done", async () => {
     const host = createHost();
     const completed = vi.fn();

@@ -214,6 +214,13 @@ export async function executeSequentialToolCalls(
     doneSignaled = true;
     params.signalCompletedResult(summary, options);
   };
+  if (doneSignaled) {
+    this.traceRecorder?.recordEvent("sequential_tools_skipped_after_completion", {
+      queuedToolCount: params.toolCalls.length,
+      mode: "sequential",
+    });
+    return params.state;
+  }
   const sameResponseClickKeys = new Set<string>();
   for (const toolCall of params.toolCalls) {
     if (!this.isRunning) break;
