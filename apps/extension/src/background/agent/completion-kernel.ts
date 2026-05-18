@@ -188,7 +188,8 @@ export type WorkflowConfirmationAction =
   | "close"
   | "dismiss"
   | "update"
-  | "submit";
+  | "submit"
+  | "complete";
 
 const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "delete",
@@ -202,6 +203,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "dismiss",
   "update",
   "submit",
+  "complete",
 ];
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
@@ -2498,6 +2500,7 @@ function inferWorkflowConfirmationAction(
     return "update";
   }
   if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  if (isCompleteWorkflowRequest(text)) return "complete";
   return null;
 }
 
@@ -2530,6 +2533,16 @@ function isDismissalPartOfLargerTask(value: string): boolean {
 
   return /\b(?:and|then|after that|next|,)\s+(?:also\s+)?(?:fill|type|enter|select|choose|submit|send|post|delete|save|update|approve|reject|navigate|visit|go to|create|order|purchase|checkout|read|search|find)\b/i.test(
     text,
+  );
+}
+
+function isCompleteWorkflowRequest(value: string): boolean {
+  const text = normalizeText(value);
+  return (
+    /\b(?:mark(?:ed)?|set)\b.{0,40}\bcomplete(?:d)?\b/i.test(text) ||
+    /\bcomplete(?:d)?\s+(?:the\s+)?(?:task|item|record|request|ticket|todo|to-do)\b/i.test(
+      text,
+    )
   );
 }
 
@@ -2678,6 +2691,23 @@ function textConfirmsWorkflowAction(
       }
       return /\b(?:submitted|submission|submit complete|submit completed|submit successful)\b/i.test(
         text,
+      );
+    case "complete":
+      if (mode === "visible") {
+        return (
+          /\bmark(?:ed)?\b.{0,40}\bcomplete(?:d)?\b/i.test(text) ||
+          /\bcompleted\s+successfully\b/i.test(text) ||
+          /\b(?:task|item|record|request|ticket|todo|to-do)\s+completed\b/i.test(
+            text,
+          ) ||
+          /\bcompletion\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return (
+        /\bmark(?:ed)?\b.{0,40}\bcomplete(?:d)?\b/i.test(text) ||
+        /\b(?:completed|completion complete|completion completed|completion successful)\b/i.test(
+          text,
+        )
       );
   }
   return false;
@@ -3136,7 +3166,7 @@ function inferDraftSubmissionAction(
 
 type StatusChangeWorkflowAction = Extract<
   WorkflowConfirmationAction,
-  "approve" | "reject" | "close" | "submit"
+  "approve" | "reject" | "close" | "submit" | "complete"
 >;
 
 function inferStatusChangeAction(
@@ -3148,6 +3178,7 @@ function inferStatusChangeAction(
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
+  if (isCompleteWorkflowRequest(text)) return "complete";
   return null;
 }
 
@@ -3180,7 +3211,9 @@ function findWorkflowStatusChangeText(
         ? "(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)"
         : action === "close"
           ? "(?:closed|resolved)"
-          : "(?:submitted|submission complete|submission completed|submission successful)";
+          : action === "submit"
+            ? "(?:submitted|submission complete|submission completed|submission successful)"
+            : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
