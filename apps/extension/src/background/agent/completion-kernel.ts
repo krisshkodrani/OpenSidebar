@@ -4522,6 +4522,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   }
 
   const normalizedValue = normalizeText(valueWords[0]);
+  if (isIdentifierCodeValue(rawValue)) {
+    return preciseIdentifierCodeValueCoveredBySummary(
+      normalizedSummary,
+      normalizedValue,
+    );
+  }
   if (
     isConciseSingleTokenLabelValue(rawValue) &&
     valueTokenCoveredBySummary(normalizedSummary, normalizedValue)
@@ -4923,6 +4929,20 @@ function isConciseSingleTokenLabelValue(value: string): boolean {
     return true;
   }
   return CONCISE_STATUS_LABEL_VALUES.has(normalizeText(cleaned));
+}
+
+function isIdentifierCodeValue(value: string): boolean {
+  return /^[a-z]+[a-z0-9_-]*\d[a-z0-9_-]*$/i.test(cleanLabel(value));
+}
+
+function preciseIdentifierCodeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9_-])${escapeRegExp(normalizedValue)}($|[^a-z0-9_-])`,
+  ).test(normalizedSummary);
 }
 
 function valueTokenCoveredBySummary(
