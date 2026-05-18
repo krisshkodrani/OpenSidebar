@@ -4463,6 +4463,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     expectedAnswerLabel,
   );
   if (preciseConciseValue) {
+    if (isMacAddressValue(preciseConciseValue)) {
+      return preciseMacAddressValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isPathValue(preciseConciseValue)) {
       return precisePathValueCoveredBySummary(
         normalizedSummary,
@@ -4589,6 +4595,14 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
 
+  if (labelCanHaveMacAddressValue(expectedAnswerLabel)) {
+    const macAddressMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (macAddressMatch) return cleanLabel(macAddressMatch[1] ?? "") || null;
+  }
+
   if (labelCanHaveDomainValue(expectedAnswerLabel)) {
     const domainMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63})(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -4620,6 +4634,12 @@ function extractPreciseConciseLabelValue(
   return cleanLabel(match?.[1] ?? "") || null;
 }
 
+function labelCanHaveMacAddressValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:mac address|hardware address|ethernet address|bssid)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
 function labelCanHavePathValue(expectedAnswerLabel: string): boolean {
   return /\b(?:path|file|folder|directory|dir|route)\b/i.test(
     expectedAnswerLabel,
@@ -4642,6 +4662,20 @@ function isDomainNameValue(value: string): boolean {
   return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(
     cleanLabel(value),
   );
+}
+
+function isMacAddressValue(value: string): boolean {
+  return /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(cleanLabel(value));
+}
+
+function preciseMacAddressValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9:-])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
 }
 
 function isPathValue(value: string): boolean {
