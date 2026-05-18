@@ -2363,9 +2363,15 @@ function extractWorkflowConfirmationEvidence(
   ) {
     actions.add("post");
   }
-  if (/\bapproved\s+successfully\b/i.test(text)) actions.add("approve");
+  if (
+    /\bapproved\s+successfully\b/i.test(text) ||
+    /\bapproval\s+(?:complete|completed|successful)\b/i.test(text)
+  ) {
+    actions.add("approve");
+  }
   if (
     /\b(?:rejected|denied)\s+successfully\b/i.test(text) ||
+    /\brejection\s+(?:complete|completed|successful)\b/i.test(text) ||
     /\bdenial\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("reject");
