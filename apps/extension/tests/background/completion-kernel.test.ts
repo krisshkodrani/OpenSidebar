@@ -2172,6 +2172,80 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts submit confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ004 Status: Draft Submit request",
+      pageContent: "Request REQ004 Status: Draft Submit request",
+      elements: [actionButton(605, "Submit request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ004 Status: Submitted",
+      pageContent: "Request REQ004 Status: Submitted",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Submit the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 605 },
+      result: "Clicked element 605.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Submitted the request.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "submit",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:submit:status:status-submitted",
+        detail: expect.objectContaining({
+          action: "submit",
+          source: "status_change",
+          text: "Status: Submitted",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer submit status-change confirmation when status was already submitted", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ004 Status: Submitted Submit request",
+      pageContent: "Request REQ004 Status: Submitted Submit request",
+      elements: [actionButton(605, "Submit request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ004 Status: Submitted",
+      pageContent: "Request REQ004 Status: Submitted",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 605 },
+      result: "Clicked element 605.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from cleared dirty-state indicator", () => {
     const pre = workflowSnapshot({
       visibleContent: "Settings Unsaved changes Save changes",

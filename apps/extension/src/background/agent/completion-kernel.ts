@@ -3102,14 +3102,20 @@ function inferDraftSubmissionAction(
   return null;
 }
 
+type StatusChangeWorkflowAction = Extract<
+  WorkflowConfirmationAction,
+  "approve" | "reject" | "close" | "submit"
+>;
+
 function inferStatusChangeAction(
   element: TaggedElement,
-): Extract<WorkflowConfirmationAction, "approve" | "reject" | "close"> | null {
+): StatusChangeWorkflowAction | null {
   const text = normalizeText(elementControlText(element));
   if (!text) return null;
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
+  if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   return null;
 }
 
@@ -3132,7 +3138,7 @@ function hasDirtyStateIndicator(snapshot: DomSnapshot): boolean {
 
 function findWorkflowStatusChangeText(
   snapshot: DomSnapshot,
-  action: Extract<WorkflowConfirmationAction, "approve" | "reject" | "close">,
+  action: StatusChangeWorkflowAction,
 ): string | null {
   const text = snapshotCompletionText(snapshot);
   const statusWord =
@@ -3140,7 +3146,9 @@ function findWorkflowStatusChangeText(
       ? "(?:approved|approval complete|approval completed|approval successful)"
       : action === "reject"
         ? "(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)"
-        : "(?:closed|resolved)";
+        : action === "close"
+          ? "(?:closed|resolved)"
+          : "(?:submitted|submission complete|submission completed|submission successful)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
