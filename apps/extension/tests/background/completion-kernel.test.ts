@@ -4901,6 +4901,146 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded CIDR label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24 Backup subnet: 10.43.0.0/24",
+      pageContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24. Backup subnet: 10.43.0.0/24. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary subnet?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.0/24",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary subnet",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept truncated base address for CIDR label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24 Backup subnet: 10.43.0.0/24",
+      pageContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24. Backup subnet: 10.43.0.0/24. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary subnet?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.0",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary subnet",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept truncated CIDR base address for generic address label", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary address: 10.42.0.0/24 Backup address: 10.43.0.0/24",
+      pageContent:
+        "Network Matrix Primary address: 10.42.0.0/24. Backup address: 10.43.0.0/24. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.0",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept sibling CIDR label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24 Backup subnet: 10.43.0.0/24",
+      pageContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24. Backup subnet: 10.43.0.0/24. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary subnet?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.43.0.0/24",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary subnet",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept CIDR prefix inside a longer value", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24 Backup subnet: 10.43.0.0/24",
+      pageContent:
+        "Network Matrix Primary subnet: 10.42.0.0/24. Backup subnet: 10.43.0.0/24. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the primary subnet?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "10.42.0.0/24-backup",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "primary subnet",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded phone label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",

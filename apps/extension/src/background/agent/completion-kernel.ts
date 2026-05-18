@@ -4475,6 +4475,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isCidrValue(preciseConciseValue)) {
+      return preciseCidrValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isPathValue(preciseConciseValue)) {
       return precisePathValueCoveredBySummary(
         normalizedSummary,
@@ -4595,8 +4601,16 @@ function extractPreciseConciseLabelValue(
   if (phoneMatch) return cleanLabel(phoneMatch[1] ?? "") || null;
 
   const ipv4Octet = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+  if (labelCanHaveCidrValue(expectedAnswerLabel)) {
+    const cidrMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet}\\/(?:[0-9]|[12][0-9]|3[0-2]))(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (cidrMatch) return cleanLabel(cidrMatch[1] ?? "") || null;
+  }
+
   const ipv4Match = new RegExp(
-    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet})(?=$|[^\\d.])`,
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet}\\.${ipv4Octet})(?=$|[^\\d./])`,
     "i",
   ).exec(evidenceText);
   if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
@@ -4661,6 +4675,12 @@ function labelCanHaveIpv6AddressValue(expectedAnswerLabel: string): boolean {
   );
 }
 
+function labelCanHaveCidrValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:cidr|subnet|network|netblock|address|address block|ip block|prefix|route)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
 function labelCanHavePathValue(expectedAnswerLabel: string): boolean {
   return /\b(?:path|file|folder|directory|dir|route)\b/i.test(
     expectedAnswerLabel,
@@ -4709,6 +4729,21 @@ function isIpv6AddressValue(value: string): boolean {
   return groups.length === 8 && groups.every(validGroup);
 }
 
+function isCidrValue(value: string): boolean {
+  const cleaned = cleanLabel(value);
+  const match = /^(\d{1,3})(?:\.(\d{1,3})){3}\/(\d{1,2})$/.exec(cleaned);
+  if (!match) return false;
+  const prefix = Number(match[3]);
+  if (prefix < 0 || prefix > 32) return false;
+  return cleaned
+    .split("/", 1)[0]
+    .split(".")
+    .every((part) => {
+      const octet = Number(part);
+      return Number.isInteger(octet) && octet >= 0 && octet <= 255;
+    });
+}
+
 function preciseMacAddressValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
@@ -4726,6 +4761,16 @@ function preciseIpv6ValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9:%])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function preciseCidrValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9./])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
