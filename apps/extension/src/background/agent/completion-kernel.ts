@@ -4588,6 +4588,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isDataSizeValue(preciseConciseValue)) {
+      return preciseDataSizeValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4786,6 +4792,14 @@ function extractPreciseConciseLabelValue(
     if (durationMatch) return cleanLabel(durationMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveDataSizeValue(expectedAnswerLabel)) {
+    const dataSizeMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:b|bytes?|kb|kib|mb|mib|gb|gib|tb|tib|pb|pib))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (dataSizeMatch) return cleanLabel(dataSizeMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4837,6 +4851,12 @@ function labelCanHaveHashValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveDurationValue(expectedAnswerLabel: string): boolean {
   return /\b(?:duration|timeout|latency|delay|ttl|interval|sla|window|period|retention|expiry|expiration|rto|rpo)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveDataSizeValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:size|capacity|quota|limit|storage|memory|disk|upload|download|payload|artifact|file|bundle|cache)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5005,6 +5025,23 @@ function preciseDurationValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9.])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isDataSizeValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:b|bytes?|kb|kib|mb|mib|gb|gib|tb|tib|pb|pib)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseDataSizeValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
