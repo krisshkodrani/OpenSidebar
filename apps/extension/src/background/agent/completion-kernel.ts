@@ -2184,11 +2184,11 @@ function summaryConfirmsWorkflowAction(
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
-      return /\b(?:approved|approval complete|approval completed)\b/i.test(
+      return /\b(?:approved|approval complete|approval completed|approval successful)\b/i.test(
         text,
       );
     case "reject":
-      return /\b(?:rejected|rejection complete|rejection completed|denied|denial complete|denial completed)\b/i.test(
+      return /\b(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)\b/i.test(
         text,
       );
     case "close":
@@ -2736,9 +2736,9 @@ function findWorkflowStatusChangeText(
   const text = snapshotCompletionText(snapshot);
   const statusWord =
     action === "approve"
-      ? "(?:approved|approval complete|approval completed)"
+      ? "(?:approved|approval complete|approval completed|approval successful)"
       : action === "reject"
-        ? "(?:rejected|rejection complete|rejection completed|denied|denial complete|denial completed)"
+        ? "(?:rejected|rejection complete|rejection completed|rejection successful|denied|denial complete|denial completed|denial successful)"
         : "(?:closed|resolved)";
   const patterns = [
     new RegExp(

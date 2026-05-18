@@ -859,6 +859,74 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts approve-class workflow confirmation with successful noun summary", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Approval successful.",
+      pageContent: "Approval successful.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve the request.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Approval successful.",
+    });
+
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts reject-class status change with denial successful wording", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ003 Status: Pending Deny request",
+      pageContent: "Request REQ003 Status: Pending Deny request",
+      elements: [actionButton(604, "Deny request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ003 Status: Denial successful",
+      pageContent: "Request REQ003 Status: Denial successful",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deny the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 604 },
+      result: "Clicked element 604.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 12,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Denial successful.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:reject:status:status-denial-successful",
+        detail: expect.objectContaining({
+          action: "reject",
+          source: "status_change",
+          text: "Status: Denial successful",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts close-class workflow confirmation after visible resolution success", () => {
     const snap = workflowSnapshot({
       visibleContent: "Incident resolved successfully.",
