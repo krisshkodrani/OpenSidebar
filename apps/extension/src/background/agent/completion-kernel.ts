@@ -4523,6 +4523,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   }
   const rawValue = cleanLabel(match?.[3] ?? "");
   if (!rawValue) return false;
+  if (
+    !labelCanHaveColorValue(expectedAnswerLabel) &&
+    /\b(?:rgba?|hsla?)\s*\(/i.test(rawValue)
+  ) {
+    return false;
+  }
 
   const valueWords = rawValue.split(/\s+/).filter(Boolean);
   if (valueWords.length === 0) return false;
@@ -4874,6 +4880,13 @@ function extractPreciseConciseLabelValue(
       "i",
     ).exec(evidenceText);
     if (rgbMatch) return cleanLabel(rgbMatch[1] ?? "") || null;
+    const modernRgbMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:rgba?|RGBA?)\\(\\s*${rgbChannel}\\s+${rgbChannel}\\s+${rgbChannel}(?:\\s*\\/\\s*${rgbAlpha})?\\s*\\))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (modernRgbMatch) {
+      return cleanLabel(modernRgbMatch[1] ?? "") || null;
+    }
 
     const hslHue = "(?:360|3[0-5]\\d|[12]?\\d?\\d)";
     const hslPercent = "(?:100|[1-9]?\\d)%";
@@ -4882,6 +4895,13 @@ function extractPreciseConciseLabelValue(
       "i",
     ).exec(evidenceText);
     if (hslMatch) return cleanLabel(hslMatch[1] ?? "") || null;
+    const modernHslMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:hsla?|HSLA?)\\(\\s*${hslHue}\\s+${hslPercent}\\s+${hslPercent}(?:\\s*\\/\\s*${rgbAlpha})?\\s*\\))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (modernHslMatch) {
+      return cleanLabel(modernHslMatch[1] ?? "") || null;
+    }
 
     const namedColorMatch = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([a-z][a-z]+)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
@@ -5294,8 +5314,10 @@ function preciseHexColorValueCoveredBySummary(
 function isCssRgbColorValue(value: string): boolean {
   const channel = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
   const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
+  const legacy = `rgba?\\(\\s*${channel}\\s*,\\s*${channel}\\s*,\\s*${channel}(?:\\s*,\\s*${alpha})?\\s*\\)`;
+  const modern = `rgba?\\(\\s*${channel}\\s+${channel}\\s+${channel}(?:\\s*\\/\\s*${alpha})?\\s*\\)`;
   return new RegExp(
-    `^rgba?\\(\\s*${channel}\\s*,\\s*${channel}\\s*,\\s*${channel}(?:\\s*,\\s*${alpha})?\\s*\\)$`,
+    `^(?:${legacy}|${modern})$`,
     "i",
   ).test(cleanLabel(value));
 }
@@ -5316,8 +5338,10 @@ function isCssHslColorValue(value: string): boolean {
   const hue = "(?:360|3[0-5]\\d|[12]?\\d?\\d)";
   const percent = "(?:100|[1-9]?\\d)%";
   const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
+  const legacy = `hsla?\\(\\s*${hue}\\s*,\\s*${percent}\\s*,\\s*${percent}(?:\\s*,\\s*${alpha})?\\s*\\)`;
+  const modern = `hsla?\\(\\s*${hue}\\s+${percent}\\s+${percent}(?:\\s*\\/\\s*${alpha})?\\s*\\)`;
   return new RegExp(
-    `^hsla?\\(\\s*${hue}\\s*,\\s*${percent}\\s*,\\s*${percent}(?:\\s*,\\s*${alpha})?\\s*\\)$`,
+    `^(?:${legacy}|${modern})$`,
     "i",
   ).test(cleanLabel(value));
 }
