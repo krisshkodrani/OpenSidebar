@@ -9,6 +9,7 @@ import {
   assessTaskContractCoverage,
   buildTaskContract,
   type TaskContract,
+  type TaskContractCoverage,
 } from "./task-contract";
 import {
   getAutocompleteSuggestionDoneRejection,
@@ -275,6 +276,13 @@ export type CompletionPendingAutocompletePreflight =
       kind: "pending_autocomplete_suggestion";
     } & AutocompleteSuggestionDoneRejection);
 
+export interface CompletionTaskContractPreflight {
+  blocked: boolean;
+  reason: string | null;
+  summaryCoverage: TaskContractCoverage;
+  missingReturnTarget: boolean;
+}
+
 type ChoiceKind = "checkbox" | "radio";
 
 interface ChoiceObservation {
@@ -494,6 +502,80 @@ export function evaluateCompletionPendingAutocompletePreflight(params: {
     status: "rejected",
     kind: "pending_autocomplete_suggestion",
     ...rejection,
+  };
+}
+
+/**
+ * Reject done() when the final summary drops required task entities/results or
+ * when a round-trip task has not actually returned to the required page.
+ */
+export function evaluateCompletionTaskContractPreflight(params: {
+  userRequest: string;
+  summary: string;
+  snapshot: DomSnapshot | null | undefined;
+}): CompletionTaskContractPreflight {
+  const contract = buildTaskContract(params.userRequest);
+  const hasObligations =
+    contract.requiresRoundTrip ||
+    contract.requiredEntities.length > 0 ||
+    contract.requiredNumbers.length > 0;
+
+  const summaryCoverage = assessTaskContractCoverage({
+    contract,
+    text: params.summary,
+  });
+
+  if (!hasObligations) {
+    return {
+      blocked: false,
+      reason: null,
+      summaryCoverage,
+      missingReturnTarget: false,
+    };
+  }
+
+  const returnTargetCoverage = contract.requiresRoundTrip
+    ? assessTaskContractCoverage({
+        contract: {
+          ...contract,
+          requiredEntities: [],
+          requiredNumbers: [],
+        },
+        text: taskContractSnapshotSearchText(params.snapshot),
+        requireReturnTarget: true,
+      })
+    : null;
+
+  const reasons: string[] = [];
+  if (summaryCoverage.missingEntities.length > 0) {
+    reasons.push(
+      `final summary is missing required targets: ${summaryCoverage.missingEntities.join(", ")}`,
+    );
+  }
+  if (summaryCoverage.missingNumbers.length > 0) {
+    reasons.push(
+      `final summary is missing required values: ${summaryCoverage.missingNumbers.join(", ")}`,
+    );
+  }
+  if (summaryCoverage.missingExhaustiveCoverage) {
+    reasons.push(
+      "final summary does not confirm exhaustive coverage of the requested items",
+    );
+  }
+  if (summaryCoverage.missingMultiReturnCoverage) {
+    reasons.push("final summary does not cover all required requested results");
+  }
+  if (returnTargetCoverage?.missingReturnTarget) {
+    reasons.push(
+      `you have not actually returned to the required page before finishing`,
+    );
+  }
+
+  return {
+    blocked: reasons.length > 0,
+    reason: reasons.length > 0 ? reasons.join("; ") : null,
+    summaryCoverage,
+    missingReturnTarget: Boolean(returnTargetCoverage?.missingReturnTarget),
   };
 }
 
@@ -3503,6 +3585,35 @@ function snapshotPageText(snapshot: DomSnapshot): string {
   return cleanLabel(
     [snapshot.pageContent, snapshot.visibleContent].filter(Boolean).join(" "),
   );
+}
+
+function taskContractSnapshotSearchText(
+  snapshot: DomSnapshot | null | undefined,
+): string {
+  if (!snapshot) return "";
+  const elementText = snapshot.elements
+    .flatMap((element) => [
+      element.text,
+      element.tagName,
+      element.attributes.id,
+      element.attributes.name,
+      element.attributes.placeholder,
+      element.attributes["aria-label"],
+      element.attributes.label,
+      element.attributes.value,
+    ])
+    .filter(Boolean)
+    .join(" ");
+  return [
+    snapshot.title,
+    snapshot.url,
+    snapshot.pageContent,
+    snapshot.visibleContent,
+    elementText,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function cleanReadAnswerEvidenceText(value: string): string {
