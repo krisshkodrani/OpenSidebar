@@ -1595,6 +1595,20 @@ describe("completion kernel", () => {
       genericSummary: "Transfer completed.",
     },
     {
+      action: "move",
+      request: "Move Card Alpha.",
+      summary: "Moved Card Alpha.",
+      targetLabel: "Card Alpha",
+      requestedVisible:
+        "Card Beta remains in Backlog. Card Alpha moved successfully.",
+      requestedEvidenceText: "Card Alpha moved successfully.",
+      otherVisible:
+        "Card Alpha remains in Backlog. Card Beta moved successfully.",
+      otherEvidenceText: "Card Beta moved successfully.",
+      genericVisible: "Move completed.",
+      genericSummary: "Move completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
