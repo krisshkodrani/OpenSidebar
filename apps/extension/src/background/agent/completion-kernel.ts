@@ -178,6 +178,7 @@ export interface ReadAnswerContract {
 
 export type WorkflowConfirmationAction =
   | "delete"
+  | "archive"
   | "save"
   | "send"
   | "post"
@@ -190,6 +191,7 @@ export type WorkflowConfirmationAction =
 
 const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "delete",
+  "archive",
   "save",
   "send",
   "post",
@@ -2474,6 +2476,7 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:delete|deleted|deletion|remove|removed|removal)\b/i.test(text)) {
     return "delete";
   }
+  if (/\b(?:archive|archived|archival)\b/i.test(text)) return "archive";
   if (/\b(?:save|saved)\b/i.test(text)) return "save";
   if (/\b(?:send|sent)\b/i.test(text)) return "send";
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
@@ -2547,6 +2550,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:deleted|removed|deletion|removal|delete complete|delete completed|delete successful|remove complete|remove completed|remove successful)\b/i.test(
+        text,
+      );
+    case "archive":
+      if (mode === "visible") {
+        return (
+          /\barchived\s+successfully\b/i.test(text) ||
+          /\barchival\s+(?:complete|completed|confirmed|successful)\b/i.test(
+            text,
+          ) ||
+          /\barchive\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:archived|archival|archive complete|archive completed|archive successful)\b/i.test(
         text,
       );
     case "save":
@@ -2876,9 +2892,11 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
   const id = Number(params.args.id);
   if (!Number.isFinite(id)) return [];
   const element = pre.elements.find((candidate) => candidate.tag === id);
-  if (!element || !isDeleteControl(element)) return [];
+  if (!element) return [];
+  const action = inferTargetDisappearanceAction(element);
+  if (!action) return [];
 
-  const target = extractDeletionTargetFromControl(element);
+  const target = extractDisappearingTargetFromControl(element, action);
   if (!target) return [];
   const targetText = normalizeText(target);
   if (!targetText || !snapshotContainsNormalizedText(pre, targetText)) {
@@ -2893,11 +2911,11 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
     {
       type: "confirmation_state",
       confidence: "high",
-      logicalKey: `workflow:confirmation:delete:${key}`,
+      logicalKey: `workflow:confirmation:${action}:${key}`,
       observedAtTurn: params.turn,
       detail: {
-        text: `Deleted target no longer visible: ${target}`,
-        action: "delete",
+        text: `${action === "delete" ? "Deleted" : "Archived"} target no longer visible: ${target}`,
+        action,
         source: "target_disappearance",
         ...(current.url ? { url: current.url } : {}),
       },
@@ -3085,9 +3103,13 @@ function isModalDismissalToolOutcome(params: {
   return isDismissalControl(element);
 }
 
-function isDeleteControl(element: TaggedElement): boolean {
+function inferTargetDisappearanceAction(
+  element: TaggedElement,
+): Extract<WorkflowConfirmationAction, "delete" | "archive"> | null {
   const text = normalizeText(elementControlText(element));
-  return /\b(?:delete|remove)\b/i.test(text);
+  if (/\b(?:delete|remove)\b/i.test(text)) return "delete";
+  if (/\barchive\b/i.test(text)) return "archive";
+  return null;
 }
 
 function inferDraftSubmissionAction(
@@ -3187,7 +3209,10 @@ function snapshotCompletionText(snapshot: DomSnapshot): string {
   ).slice(0, 20_000);
 }
 
-function extractDeletionTargetFromControl(element: TaggedElement): string | null {
+function extractDisappearingTargetFromControl(
+  element: TaggedElement,
+  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+): string | null {
   const candidates = [
     element.text,
     element.attributes.label,
@@ -3199,12 +3224,14 @@ function extractDeletionTargetFromControl(element: TaggedElement): string | null
 
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const explicit = /\b(?:delete|remove)\b\s+(?:the\s+)?(.{3,120})/i.exec(
-      candidate,
-    );
+    const actionPattern = action === "delete" ? "(?:delete|remove)" : "archive";
+    const explicit = new RegExp(
+      `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
+      "i",
+    ).exec(candidate);
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
-      .replace(/\b(?:button|link|action|delete|remove)\b/gi, " ")
+      .replace(/\b(?:button|link|action|delete|remove|archive)\b/gi, " ")
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
       .replace(/^["'`]+|["'`]+$/g, "");
     target = cleanLabel(target);
@@ -3214,6 +3241,7 @@ function extractDeletionTargetFromControl(element: TaggedElement): string | null
       (token) =>
         ![
           "account",
+          "archive",
           "button",
           "delete",
           "entry",

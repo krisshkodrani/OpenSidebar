@@ -1080,6 +1080,41 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts archive-class workflow confirmation after visible archive completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Archive completed.",
+      pageContent: "Archive completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Archive the report.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Archive completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "archive",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:archive",
+          detail: expect.objectContaining({ action: "archive" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts submit-class workflow confirmation after visible submit completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Submit completed.",
@@ -1848,6 +1883,98 @@ describe("completion kernel", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 501 },
       result: "Clicked element 501.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("accepts archive confirmation from named target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Reports Report Alpha Archive Report Alpha Report Beta Archive Report Beta",
+      pageContent:
+        "Reports Report Alpha Archive Report Alpha Report Beta Archive Report Beta",
+      elements: [
+        actionButton(503, "Archive Report Alpha"),
+        actionButton(504, "Archive Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Reports Report Beta Archive Report Beta",
+      pageContent: "Reports Report Beta Archive Report Beta",
+      elements: [actionButton(504, "Archive Report Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Archive Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 503 },
+      result: "Clicked element 503.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Archived Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "archive",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:archive:report-alpha",
+        detail: expect.objectContaining({
+          action: "archive",
+          source: "target_disappearance",
+          text: "Archived target no longer visible: Report Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer archive confirmation from a generic archive button", () => {
+    const genericArchiveButton: TaggedElement = {
+      tag: 503,
+      tagName: "button",
+      role: "button",
+      text: "Archive",
+      attributes: {
+        id: "archive",
+        "aria-label": "Archive",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Reports Report Alpha Archive",
+      pageContent: "Reports Report Alpha Archive",
+      elements: [genericArchiveButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Reports",
+      pageContent: "Reports",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 503 },
+      result: "Clicked element 503.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
