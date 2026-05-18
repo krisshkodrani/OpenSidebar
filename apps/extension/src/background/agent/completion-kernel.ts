@@ -4493,6 +4493,13 @@ function isConciseSingleTokenLabelValue(value: string): boolean {
   if (/^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleaned)) {
     return true;
   }
+  if (
+    /^\d{4}-\d{2}-\d{2}(?:[t\s]\d{2}:\d{2}(?::\d{2})?)?$/i.test(cleaned) ||
+    /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(cleaned) ||
+    /^\d{1,2}:\d{2}$/i.test(cleaned)
+  ) {
+    return true;
+  }
   if (/^[a-z]+[a-z0-9_-]*\d[a-z0-9_-]*$/i.test(cleaned)) {
     return true;
   }
