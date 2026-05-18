@@ -754,6 +754,41 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts reject-class workflow confirmation after visible denial success", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Request denied successfully.",
+      pageContent: "Request denied successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deny the request.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Denied the request successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "reject",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:reject",
+          detail: expect.objectContaining({ action: "reject" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("requires verification for workflow confirmation without visible success", () => {
     const snap = workflowSnapshot();
     const generated = generateCompletionContract({
