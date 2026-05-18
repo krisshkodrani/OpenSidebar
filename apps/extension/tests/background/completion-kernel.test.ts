@@ -1173,6 +1173,80 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts approve confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Awaiting approval Approve request",
+      pageContent: "Request REQ001 Status: Awaiting approval Approve request",
+      elements: [actionButton(601, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Approved",
+      pageContent: "Request REQ001 Status: Approved",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 601 },
+      result: "Clicked element 601.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved the request.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:approve:status:status-approved",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "status_change",
+          text: "Status: Approved",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer status-change confirmation when status was already final", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Approved Approve request",
+      pageContent: "Request REQ001 Status: Approved Approve request",
+      elements: [actionButton(601, "Approve request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Status: Approved",
+      pageContent: "Request REQ001 Status: Approved",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 601 },
+      result: "Clicked element 601.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("rejects form completion when visible validation is active", () => {
     const snap = formSnapshot();
     const generated = generateCompletionContract({
