@@ -195,6 +195,8 @@ export type WorkflowConfirmationAction =
   | "unassign"
   | "escalate"
   | "deescalate"
+  | "lock"
+  | "unlock"
   | "dismiss"
   | "update"
   | "submit"
@@ -217,6 +219,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unassign",
   "escalate",
   "deescalate",
+  "lock",
+  "unlock",
   "dismiss",
   "update",
   "submit",
@@ -2558,6 +2562,18 @@ function inferWorkflowConfirmationAction(
   ) {
     return "escalate";
   }
+  if (
+    /\bunlock\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\bunlocked\b/i.test(text)
+  ) {
+    return "unlock";
+  }
+  if (
+    /\block\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\blocked\b/i.test(text)
+  ) {
+    return "lock";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2812,6 +2828,26 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:de[-\s]?escalated|de[-\s]?escalate complete|de[-\s]?escalate completed|de[-\s]?escalate successful|de[-\s]?escalation complete|de[-\s]?escalation completed|de[-\s]?escalation successful)\b/i.test(
+        text,
+      );
+    case "lock":
+      if (mode === "visible") {
+        return (
+          /\blocked\s+successfully\b/i.test(text) ||
+          /\block\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:locked|lock complete|lock completed|lock successful)\b/i.test(
+        text,
+      );
+    case "unlock":
+      if (mode === "visible") {
+        return (
+          /\bunlocked\s+successfully\b/i.test(text) ||
+          /\bunlock\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unlocked|unlock complete|unlock completed|unlock successful)\b/i.test(
         text,
       );
     case "dismiss":
@@ -3394,6 +3430,8 @@ type StatusChangeWorkflowAction = Extract<
   | "unassign"
   | "escalate"
   | "deescalate"
+  | "lock"
+  | "unlock"
   | "submit"
   | "complete"
 >;
@@ -3419,6 +3457,8 @@ function inferStatusChangeAction(
   if (/\bassign(?:ed)?\b/i.test(text)) return "assign";
   if (/\bde[-\s]?escalat(?:e|ed)\b/i.test(text)) return "deescalate";
   if (/\bescalat(?:e|ed)\b/i.test(text)) return "escalate";
+  if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
+  if (/\block(?:ed)?\b/i.test(text)) return "lock";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3485,6 +3525,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bescalated\b/i.test(text);
     case "deescalate":
       return /\bde[-\s]?escalated\b/i.test(text);
+    case "lock":
+      return /\blocked\b/i.test(text);
+    case "unlock":
+      return /\bunlocked\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3541,9 +3585,13 @@ function findWorkflowStatusChangeText(
                         ? "(?:escalated|escalation complete|escalation completed|escalation successful)"
                         : action === "deescalate"
                           ? "(?:de[-\\s]?escalated|de[-\\s]?escalation complete|de[-\\s]?escalation completed|de[-\\s]?escalation successful)"
-                          : action === "submit"
-                            ? "(?:submitted|submission complete|submission completed|submission successful)"
-                            : "(?:complete|completed)";
+                          : action === "lock"
+                            ? "(?:locked|lock complete|lock completed|lock successful)"
+                            : action === "unlock"
+                              ? "(?:unlocked|unlock complete|unlock completed|unlock successful)"
+                              : action === "submit"
+                                ? "(?:submitted|submission complete|submission completed|submission successful)"
+                                : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
