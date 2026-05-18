@@ -65,6 +65,7 @@ export type CompletionEvidence =
         recordId?: string;
         url?: string;
         action?: WorkflowConfirmationAction;
+        source?: "visible_text" | "modal_disappearance";
       };
     }
   | {
@@ -550,6 +551,9 @@ function generateWorkflowConfirmationContract(
   const action = inferWorkflowConfirmationAction(requestText);
   if (!action) return null;
   if (isBrowserManagementWorkflowRequest(requestText)) return null;
+  if (action === "dismiss" && isDismissalPartOfLargerTask(requestText)) {
+    return null;
+  }
 
   return {
     contract: {
@@ -637,6 +641,8 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
       );
     }
   }
+
+  evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
 
   return evidence;
 }
@@ -1296,7 +1302,7 @@ function evaluateWorkflowConfirmation(params: {
 
   return {
     status: "accepted",
-    reason: `Workflow confirmation contract is satisfied by visible ${contract.action} confirmation evidence.`,
+    reason: `Workflow confirmation contract is satisfied by matching ${contract.action} confirmation evidence.`,
     contract,
     evidence: [confirmation],
   };
@@ -1788,6 +1794,7 @@ function inferWorkflowConfirmationAction(
   value: string,
 ): WorkflowConfirmationAction | null {
   const text = normalizeText(value);
+  if (isModalDismissalWorkflowRequest(text)) return "dismiss";
   if (/\b(?:delete|deleted|deletion|remove|removed|removal)\b/i.test(text)) {
     return "delete";
   }
@@ -1812,6 +1819,31 @@ function isBrowserManagementWorkflowRequest(value: string): boolean {
   );
 }
 
+function isModalDismissalWorkflowRequest(value: string): boolean {
+  return (
+    /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
+      value,
+    ) &&
+    /\b(?:dismiss|dismissed|close|closed|hide|hidden|remove|removed|clear|cleared)\b/i.test(
+      value,
+    )
+  );
+}
+
+function isDismissalPartOfLargerTask(value: string): boolean {
+  const text = normalizeText(value);
+  if (
+    !/\b(?:dismiss|close|hide|remove|clear)\b/i.test(text) ||
+    !/\b(?:and|then|after that|next|,)\b/i.test(text)
+  ) {
+    return false;
+  }
+
+  return /\b(?:and|then|after that|next|,)\s+(?:also\s+)?(?:fill|type|enter|select|choose|submit|send|post|delete|save|update|approve|reject|navigate|visit|go to|create|order|purchase|checkout|read|search|find)\b/i.test(
+    text,
+  );
+}
+
 function summaryConfirmsWorkflowAction(
   summary: string,
   action: WorkflowConfirmationAction,
@@ -1833,7 +1865,7 @@ function summaryConfirmsWorkflowAction(
     case "close":
       return /\bclosed\b/i.test(text);
     case "dismiss":
-      return /\bdismissed\b/i.test(text);
+      return /\b(?:dismissed|closed|removed|hidden|cleared)\b/i.test(text);
     case "update":
       return /\b(?:updated|changed|applied)\b/i.test(text);
     case "submit":
@@ -1954,6 +1986,7 @@ function extractFormConfirmationEvidence(
         text: cleanLabel(
           snapshot.visibleContent || snapshot.pageContent || snapshot.title,
         ).slice(0, 1000),
+        source: "visible_text",
         ...(snapshot.url ? { url: snapshot.url } : {}),
       },
     },
@@ -2028,9 +2061,203 @@ function extractWorkflowConfirmationEvidence(
         snapshot.visibleContent || snapshot.pageContent || snapshot.title,
       ).slice(0, 1000),
       action,
+      source: "visible_text",
       ...(snapshot.url ? { url: snapshot.url } : {}),
     },
   }));
+}
+
+function extractModalDismissalEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (!isModalDismissalToolOutcome(params)) return [];
+
+  const dismissed = findModalLikeDescriptors(pre);
+  if (dismissed.length === 0) return [];
+  if (findModalLikeDescriptors(current).length > 0) return [];
+
+  const label = dismissed
+    .map((descriptor) => descriptor.label)
+    .filter(Boolean)
+    .join(" | ")
+    .slice(0, 240);
+  const identity = compactKey(
+    dismissed
+      .map((descriptor) => descriptor.key)
+      .filter(Boolean)
+      .join("-") || label || "modal",
+  );
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:dismiss:${identity || "modal"}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Modal dismissed${label ? `: ${label}` : ""}`,
+        action: "dismiss",
+        source: "modal_disappearance",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function isModalDismissalToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+}): boolean {
+  if (params.toolName === "dismiss_overlays") {
+    return /\bdismissed\s+[1-9][0-9]*\s+overlay/i.test(params.result);
+  }
+
+  if (params.toolName === "press_key") {
+    const key = String(params.args.key ?? params.args.keys ?? "").trim();
+    return /^(?:escape|esc)$/i.test(key);
+  }
+
+  if (params.toolName !== "click_element") return false;
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return false;
+  const element = params.preActionSnapshot?.elements.find(
+    (candidate) => candidate.tag === id,
+  );
+  if (!element) return false;
+  return isDismissalControl(element);
+}
+
+function isDismissalControl(element: TaggedElement): boolean {
+  const text = normalizeText(
+    [
+      element.text,
+      element.attributes.label,
+      element.attributes["aria-label"],
+      element.attributes.title,
+      element.attributes.name,
+      element.attributes.id,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  if (!text) return false;
+  return /\b(?:close|dismiss|no thanks|not now|cancel|got it|ok|okay|done|hide|skip|continue)\b/i.test(
+    text,
+  );
+}
+
+function findModalLikeDescriptors(snapshot: DomSnapshot): Array<{
+  key: string;
+  label: string;
+}> {
+  const descriptors: Array<{ key: string; label: string }> = [];
+  const overlayTagIds = new Set(
+    snapshot.survivingOverlays?.map((overlay) => overlay.tagId) ?? [],
+  );
+
+  for (const element of snapshot.elements) {
+    if (!element.isVisible) continue;
+    const role = normalizeText(element.role || "");
+    const tagName = normalizeText(element.tagName || "");
+    const attrs = element.attributes;
+    const attrText = normalizeText(
+      [
+        attrs.role,
+        attrs["aria-modal"],
+        attrs["aria-label"],
+        attrs.label,
+        attrs.id,
+        attrs.name,
+        attrs.class,
+        element.text,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const isSemanticDialog =
+      role === "dialog" ||
+      role === "alertdialog" ||
+      tagName === "dialog" ||
+      attrs["aria-modal"] === "true";
+    const isKnownOverlay = overlayTagIds.has(element.tag);
+    const isActionControl =
+      role === "button" ||
+      role === "link" ||
+      tagName === "button" ||
+      tagName === "a" ||
+      tagName === "input";
+    const isNamedModal =
+      !isActionControl &&
+      /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
+        attrText,
+      ) && (element.rect.width > 0 || element.rect.height > 0);
+
+    if (!isSemanticDialog && !isKnownOverlay && !isNamedModal) continue;
+
+    const label = cleanLabel(
+      [
+        element.text,
+        attrs["aria-label"],
+        attrs.label,
+        attrs.name,
+        attrs.id,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    descriptors.push({
+      key:
+        compactKey(
+          [
+            role || tagName,
+            attrs.id,
+            attrs.name,
+            attrs["aria-label"],
+            element.text,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        ) || `tag-${element.tag}`,
+      label: label || role || tagName || `overlay ${element.tag}`,
+    });
+  }
+
+  if (descriptors.length === 0) {
+    for (const overlay of snapshot.survivingOverlays ?? []) {
+      descriptors.push({
+        key: `overlay-${overlay.tagId}`,
+        label: `overlay ${overlay.tagId}`,
+      });
+    }
+  }
+
+  return descriptors;
+}
+
+function samePageUrl(before: string, after: string): boolean {
+  if (!before || !after) return before === after;
+  try {
+    const beforeUrl = new URL(before);
+    const afterUrl = new URL(after);
+    return (
+      beforeUrl.origin === afterUrl.origin &&
+      beforeUrl.pathname === afterUrl.pathname &&
+      beforeUrl.search === afterUrl.search
+    );
+  } catch {
+    return before === after;
+  }
 }
 
 function extractNavigationEvidence(
