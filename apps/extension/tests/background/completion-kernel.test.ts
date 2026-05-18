@@ -6123,6 +6123,69 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts only the expected concise duration label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent:
+        "Runtime Matrix Request timeout: 30s Retry timeout: 60s",
+      pageContent:
+        "Runtime Matrix Request timeout: 30s. Retry timeout: 60s. The page explains runtime ownership, service coverage, queue behavior, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the request timeout?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "30s",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "60s",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "request timeout",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept unit-like concise answers without a duration label", () => {
+    const snap = workflowSnapshot({
+      title: "Runtime Matrix",
+      url: "https://example.test/runtime",
+      visibleContent: "Runtime Matrix Team code: 30s Backup code: 60s",
+      pageContent:
+        "Runtime Matrix Team code: 30s. Backup code: 60s. The page explains runtime ownership, service coverage, queue behavior, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer runtime questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "30s",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",

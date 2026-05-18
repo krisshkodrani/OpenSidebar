@@ -4582,6 +4582,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isDurationValue(preciseConciseValue)) {
+      return preciseDurationValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4772,6 +4778,14 @@ function extractPreciseConciseLabelValue(
     if (versionMatch) return cleanLabel(versionMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveDurationValue(expectedAnswerLabel)) {
+    const durationMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:ms|msec|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|wk|wks|weeks?))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (durationMatch) return cleanLabel(durationMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4817,6 +4831,12 @@ function labelCanHaveUuidValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveHashValue(expectedAnswerLabel: string): boolean {
   return /\b(?:hash|checksum|digest|sha(?:-?\d+)?|md5)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveDurationValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:duration|timeout|latency|delay|ttl|interval|sla|window|period|retention|expiry|expiration|rto|rpo)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -4969,6 +4989,22 @@ function preciseHashValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isDurationValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:ms|msec|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|wk|wks|weeks?)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseDurationValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9.])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
