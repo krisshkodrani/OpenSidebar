@@ -2176,7 +2176,9 @@ function summaryConfirmsWorkflowAction(
   const text = normalizeText(summary);
   switch (action) {
     case "delete":
-      return /\b(?:deleted|removed|deletion|removal)\b/i.test(text);
+      return /\b(?:deleted|removed|deletion|removal|delete complete|delete completed|delete successful|remove complete|remove completed|remove successful)\b/i.test(
+        text,
+      );
     case "save":
       return /\b(?:saved|save complete|save completed|save successful)\b/i.test(
         text,
@@ -2202,7 +2204,9 @@ function summaryConfirmsWorkflowAction(
         text,
       );
     case "submit":
-      return /\b(?:submitted|submission)\b/i.test(text);
+      return /\b(?:submitted|submission|submit complete|submit completed|submit successful)\b/i.test(
+        text,
+      );
   }
   return false;
 }
@@ -2345,7 +2349,8 @@ function extractWorkflowConfirmationEvidence(
     /\b(?:deleted|removed)\s+successfully\b/i.test(text) ||
     /\b(?:deletion|removal)\s+(?:complete|completed|confirmed|successful)\b/i.test(
       text,
-    )
+    ) ||
+    /\b(?:delete|remove)\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("delete");
   }
@@ -2397,7 +2402,9 @@ function extractWorkflowConfirmationEvidence(
   }
   if (
     /\bsubmitted\s+successfully\b/i.test(text) ||
-    /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text)
+    /\bsuccessfully\s+submitted\b/i.test(text) ||
+    /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text) ||
+    /\bsubmit\s+(?:complete|completed|successful)\b/i.test(text)
   ) {
     actions.add("submit");
   }

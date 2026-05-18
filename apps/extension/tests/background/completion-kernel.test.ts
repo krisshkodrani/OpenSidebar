@@ -754,6 +754,76 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts delete-class workflow confirmation after visible delete completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Delete completed.",
+      pageContent: "Delete completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Delete completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:delete",
+          detail: expect.objectContaining({ action: "delete" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts submit-class workflow confirmation after visible submit completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Submit completed.",
+      pageContent: "Submit completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Submit the request.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Submit completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "submit",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:submit",
+          detail: expect.objectContaining({ action: "submit" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts save-class workflow confirmation after visible save completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Save completed.",
