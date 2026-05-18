@@ -4733,6 +4733,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded MAC address label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E Backup MAC address: 00:1A:2B:3C:4D:5F",
+      pageContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E. Backup MAC address: 00:1A:2B:3C:4D:5F. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the device MAC address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "00:1A:2B:3C:4D:5E",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "device mac address",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept sibling MAC address label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E Backup MAC address: 00:1A:2B:3C:4D:5F",
+      pageContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E. Backup MAC address: 00:1A:2B:3C:4D:5F. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the device MAC address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "00:1A:2B:3C:4D:5F",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "device mac address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("does not accept MAC address prefix inside a longer address", () => {
+    const snap = workflowSnapshot({
+      title: "Network Matrix",
+      url: "https://example.test/network",
+      visibleContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E Backup MAC address: 00:1A:2B:3C:4D:5F",
+      pageContent:
+        "Network Matrix Device MAC address: 00:1A:2B:3C:4D:5E. Backup MAC address: 00:1A:2B:3C:4D:5F. The page explains network ownership, service priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer network questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the device MAC address?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "00:1A:2B:3C:4D:5E:FF",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "device mac address",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded phone label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
