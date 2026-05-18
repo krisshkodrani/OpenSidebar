@@ -8,6 +8,7 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
+  evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   generateCompletionContract,
@@ -641,6 +642,34 @@ describe("completion kernel", () => {
       suggestionTag: 202,
       value: "laptop stand",
     });
+  });
+
+  test("rejects incomplete list-detail review through kernel preflight", () => {
+    const decision = evaluateCompletionListDetailReviewPreflight({
+      selectedSkillId: "list-detail-review-loop",
+      userRequest:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      reviewedDetailCount: 2,
+      visibleDetailActionCount: 10,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "incomplete_list_detail_review",
+      reason: expect.stringContaining("reviewed 2/10 visible detail pages"),
+    });
+  });
+
+  test("accepts list-detail review once visible candidates are reviewed", () => {
+    const decision = evaluateCompletionListDetailReviewPreflight({
+      selectedSkillId: "list-detail-review-loop",
+      userRequest:
+        "Review the job listings and tell me which ones are the best matches for my profile and why.",
+      reviewedDetailCount: 10,
+      visibleDetailActionCount: 10,
+    });
+
+    expect(decision).toEqual({ status: "valid" });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
