@@ -203,6 +203,8 @@ export type WorkflowConfirmationAction =
   | "unpin"
   | "mute"
   | "unmute"
+  | "follow"
+  | "unfollow"
   | "post"
   | "approve"
   | "reject"
@@ -250,6 +252,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unpin",
   "mute",
   "unmute",
+  "follow",
+  "unfollow",
   "post",
   "approve",
   "reject",
@@ -300,6 +304,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unpin"
   | "mute"
   | "unmute"
+  | "follow"
+  | "unfollow"
   | "post"
   | "approve"
   | "reject"
@@ -2750,6 +2756,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "mute";
   }
+  if (
+    /\bunfollow(?:ed)?\s+(?:the\s+)?(?:user|member|contact|account|profile|channel|topic|thread|conversation|project|board|list|report|dashboard|page|feed|newsletter|tag|repository|repo)\b/i.test(
+      text,
+    )
+  ) {
+    return "unfollow";
+  }
+  if (
+    /\bfollow(?:ed)?\s+(?:the\s+)?(?:user|member|contact|account|profile|channel|topic|thread|conversation|project|board|list|report|dashboard|page|feed|newsletter|tag|repository|repo)\b/i.test(
+      text,
+    )
+  ) {
+    return "follow";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2945,6 +2965,10 @@ function workflowTargetActionPattern(
       return "(?:mute)";
     case "unmute":
       return "(?:unmute)";
+    case "follow":
+      return "(?:follow)";
+    case "unfollow":
+      return "(?:unfollow)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3122,6 +3146,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unpin" ||
     action === "mute" ||
     action === "unmute" ||
+    action === "follow" ||
+    action === "unfollow" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3279,6 +3305,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:muted)";
     case "unmute":
       return "(?:unmuted)";
+    case "follow":
+      return "(?:followed)";
+    case "unfollow":
+      return "(?:unfollowed)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3374,6 +3404,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:mute)";
     case "unmute":
       return "(?:unmute)";
+    case "follow":
+      return "(?:follow)";
+    case "unfollow":
+      return "(?:unfollow)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3804,6 +3838,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unmuted|unmute complete|unmute completed|unmute successful)\b/i.test(
         text,
       );
+    case "follow":
+      if (mode === "visible") {
+        return (
+          /\bfollowed\s+successfully\b/i.test(text) ||
+          /\b(?:user|member|contact|account|profile|channel|topic|thread|conversation|project|board|list|report|dashboard|page|feed|newsletter|tag|repository|repo)\s+followed\b/i.test(
+            text,
+          ) ||
+          /\bfollow\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:followed|follow complete|follow completed|follow successful)\b/i.test(
+        text,
+      );
+    case "unfollow":
+      if (mode === "visible") {
+        return (
+          /\bunfollowed\s+successfully\b/i.test(text) ||
+          /\b(?:user|member|contact|account|profile|channel|topic|thread|conversation|project|board|list|report|dashboard|page|feed|newsletter|tag|repository|repo)\s+unfollowed\b/i.test(
+            text,
+          ) ||
+          /\bunfollow\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unfollowed|unfollow complete|unfollow completed|unfollow successful)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -4143,6 +4203,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:muted|mute)";
     case "unmute":
       return "(?:unmuted|unmute)";
+    case "follow":
+      return "(?:followed|follow)";
+    case "unfollow":
+      return "(?:unfollowed|unfollow)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4981,6 +5045,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bmuted\b/i.test(text);
     case "unmute":
       return /\bunmuted\b/i.test(text);
+    case "follow":
+      return /\bfollowed\b/i.test(text);
+    case "unfollow":
+      return /\bunfollowed\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":

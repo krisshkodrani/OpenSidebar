@@ -1749,6 +1749,34 @@ describe("completion kernel", () => {
       genericSummary: "Unmute completed.",
     },
     {
+      action: "follow",
+      request: "Follow Topic Alpha.",
+      summary: "Followed Topic Alpha.",
+      targetLabel: "Topic Alpha",
+      requestedVisible:
+        "Topic Beta remains unfollowed. Topic Alpha followed successfully.",
+      requestedEvidenceText: "Topic Alpha followed successfully.",
+      otherVisible:
+        "Topic Alpha remains unfollowed. Topic Beta followed successfully.",
+      otherEvidenceText: "Topic Beta followed successfully.",
+      genericVisible: "Follow completed.",
+      genericSummary: "Follow completed.",
+    },
+    {
+      action: "unfollow",
+      request: "Unfollow Topic Alpha.",
+      summary: "Unfollowed Topic Alpha.",
+      targetLabel: "Topic Alpha",
+      requestedVisible:
+        "Topic Beta remains followed. Topic Alpha unfollowed successfully.",
+      requestedEvidenceText: "Topic Alpha unfollowed successfully.",
+      otherVisible:
+        "Topic Alpha remains followed. Topic Beta unfollowed successfully.",
+      otherEvidenceText: "Topic Beta unfollowed successfully.",
+      genericVisible: "Unfollow completed.",
+      genericSummary: "Unfollow completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
