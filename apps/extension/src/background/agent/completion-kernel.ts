@@ -4454,8 +4454,15 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   const preciseConciseValue = extractPreciseConciseLabelValue(
     evidenceText,
     labelPattern,
+    expectedAnswerLabel,
   );
   if (preciseConciseValue) {
+    if (isDottedVersionValue(preciseConciseValue)) {
+      return preciseVersionValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4494,6 +4501,7 @@ function labelValuePhraseCoveredBySummary(
 function extractPreciseConciseLabelValue(
   evidenceText: string,
   labelPattern: string,
+  expectedAnswerLabel: string,
 ): string | null {
   const urlMatch = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*(https?:\\/\\/[^\\s<>"']+)`,
@@ -4522,11 +4530,35 @@ function extractPreciseConciseLabelValue(
   ).exec(evidenceText);
   if (ipv4Match) return cleanLabel(ipv4Match[1] ?? "") || null;
 
+  if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
+    const versionMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:v(?:ersion)?\\s*)?\\d+(?:\\.\\d+){1,5}(?:[-+][a-z0-9][a-z0-9.-]*)?)(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (versionMatch) return cleanLabel(versionMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
   ).exec(evidenceText);
   return cleanLabel(match?.[1] ?? "") || null;
+}
+
+function isDottedVersionValue(value: string): boolean {
+  return /^(?:v(?:ersion)?\s*)?\d+(?:\.\d+){1,5}(?:[-+][a-z0-9][a-z0-9.-]*)?$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseVersionValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
 }
 
 const CONCISE_STATUS_LABEL_VALUES = new Set([
