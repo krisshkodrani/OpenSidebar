@@ -4451,6 +4451,17 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   if (valueWords.length === 0) return false;
 
   const normalizedSummary = normalizeText(summary);
+  const preciseConciseValue = extractPreciseConciseNumericLabelValue(
+    evidenceText,
+    labelPattern,
+  );
+  if (preciseConciseValue) {
+    return valueTokenCoveredBySummary(
+      normalizedSummary,
+      normalizeText(preciseConciseValue),
+    );
+  }
+
   const valuePrefix = normalizeText(valueWords.slice(0, 2).join(" "));
   if (valueWords.length >= 2) {
     return normalizedSummary.includes(valuePrefix);
@@ -4469,6 +4480,17 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     normalizedSummary.includes(normalizedLabel) &&
     normalizedSummary.includes(normalizedValue)
   );
+}
+
+function extractPreciseConciseNumericLabelValue(
+  evidenceText: string,
+  labelPattern: string,
+): string | null {
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+    "i",
+  ).exec(evidenceText);
+  return cleanLabel(match?.[1] ?? "") || null;
 }
 
 const CONCISE_STATUS_LABEL_VALUES = new Set([
