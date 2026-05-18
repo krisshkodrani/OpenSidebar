@@ -1290,6 +1290,50 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts grounded direct factual question without explicit page wording", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units.",
+      pageContent:
+        "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units. The page compares inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer factual warehouse questions from the page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the Warehouse Beta inventory count?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Warehouse Beta inventory count is 7,318 units.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      requiresGroundedPageEvidence: true,
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not use read-answer for ungrounded direct factual question", () => {
+    const generated = generateCompletionContract({
+      userRequest: "What is the refund policy?",
+      snapshot: workflowSnapshot({
+        title: "Warehouse Counts",
+        url: "https://example.test/warehouses",
+        visibleContent:
+          "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units.",
+        pageContent:
+          "Warehouse Beta inventory count is 7,318 units. Warehouse Delta inventory count is 2,184 units. The page compares inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer factual warehouse questions from the page evidence.",
+      }),
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("does not use read-answer for dashboard chart value extraction", () => {
     const generated = generateCompletionContract({
       userRequest: "What is the highest value on this dashboard chart?",
