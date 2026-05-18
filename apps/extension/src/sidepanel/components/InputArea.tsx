@@ -11,6 +11,7 @@ import {
 } from "../interaction-mode";
 import { saveSettings } from "../../utils/settings-storage";
 import { useComposerTextarea } from "../hooks/useComposerTextarea";
+import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
 import { uiRuntime } from "../runtime";
 import { ComposerBox } from "./input/ComposerBox";
 import { InteractionModeMenu } from "./input/InteractionModeMenu";
@@ -113,6 +114,34 @@ export function InputArea({
     onStop,
   });
 
+  const insertTranscript = useCallback(
+    (transcriptText: string) => {
+      const transcript = transcriptText.trim();
+      if (!transcript) return;
+      const textarea = composer.textareaRef.current;
+      const selectionStart = textarea?.selectionStart ?? inputText.length;
+      const selectionEnd = textarea?.selectionEnd ?? inputText.length;
+      const before = inputText.slice(0, selectionStart);
+      const after = inputText.slice(selectionEnd);
+      const leading = before && !/\s$/.test(before) ? " " : "";
+      const trailing = after && !/^\s/.test(after) ? " " : "";
+      const insertion = `${leading}${transcript}${trailing}`;
+      const nextText = `${before}${insertion}${after}`;
+      const nextCursor = before.length + insertion.length;
+      setInputText(nextText);
+      requestAnimationFrame(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(nextCursor, nextCursor);
+      });
+    },
+    [composer.textareaRef, inputText, setInputText],
+  );
+
+  const speech = useSpeechRecorder({
+    disabled: Boolean(pendingApproval || pendingEscalation || pendingClarification),
+    onTranscript: insertTranscript,
+  });
+
   const handleInputChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       setInputText(event.target.value);
@@ -174,8 +203,10 @@ export function InputArea({
               onChange={handleInputChange}
               onFocus={composer.handleFocus}
               onKeyDown={composer.handleKeyDown}
+              onSpeechToggle={speech.toggle}
               onSubmit={handleSubmit}
               placeholder="Guide the agent..."
+              speechState={speech.state}
               value={inputText}
             />
             <p className="select-none px-1 text-[10px] text-warm-400 dark:text-warm-500">
@@ -196,8 +227,10 @@ export function InputArea({
               onChange={handleInputChange}
               onFocus={composer.handleFocus}
               onKeyDown={composer.handleKeyDown}
+              onSpeechToggle={speech.toggle}
               onSubmit={handleSubmit}
               placeholder="What can I help with?"
+              speechState={speech.state}
               value={inputText}
             />
             <div className="relative mt-1.5 flex items-center px-1">
