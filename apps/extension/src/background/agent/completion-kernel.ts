@@ -2370,7 +2370,12 @@ function extractWorkflowConfirmationEvidence(
   ) {
     actions.add("reject");
   }
-  if (/\bclosed\s+successfully\b/i.test(text)) actions.add("close");
+  if (
+    /\b(?:closed|resolved)\s+successfully\b/i.test(text) ||
+    /\bresolution\s+(?:complete|completed|successful)\b/i.test(text)
+  ) {
+    actions.add("close");
+  }
   if (/\bdismissed\s+successfully\b/i.test(text)) actions.add("dismiss");
   if (
     /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
