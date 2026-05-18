@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Eye, Monitor, Square } from "lucide-react";
+import { ChevronDown, Eye, Monitor, Square, Volume2 } from "lucide-react";
 import { clsx } from "clsx";
 import type { PassiveInputSource } from "../../types";
 import { uiRuntime } from "../runtime";
@@ -22,6 +22,9 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
   const [screenEnabled, setScreenEnabled] = useState(
     passiveInputSources.includes("screenshot"),
   );
+  const [audioEnabled, setAudioEnabled] = useState(
+    passiveInputSources.includes("tabAudio"),
+  );
   const [pending, setPending] = useState(false);
 
   const active = passiveStatus != null && ACTIVE_STATUSES.has(passiveStatus);
@@ -32,11 +35,16 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
 
   useEffect(() => {
     setScreenEnabled(passiveInputSources.includes("screenshot"));
+    setAudioEnabled(passiveInputSources.includes("tabAudio"));
   }, [passiveInputSources]);
 
   const inputSources = useMemo<PassiveInputSource[]>(
-    () => (screenEnabled ? ["page", "screenshot"] : ["page"]),
-    [screenEnabled],
+    () => [
+      "page",
+      ...(screenEnabled ? (["screenshot"] as const) : []),
+      ...(audioEnabled ? (["tabAudio"] as const) : []),
+    ],
+    [audioEnabled, screenEnabled],
   );
 
   const stop = useCallback(async () => {
@@ -189,6 +197,19 @@ export function WatchModeControl({ disabled }: { disabled?: boolean }) {
               />
               <Monitor size={12} />
               <span>Screen</span>
+            </label>
+            <label
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-warm-200 bg-white px-2 text-[11px] text-warm-600 dark:border-warm-700 dark:bg-warm-900 dark:text-warm-300"
+              title="Transcribe audio playing in this tab for Watch Mode"
+            >
+              <input
+                type="checkbox"
+                checked={audioEnabled}
+                onChange={(event) => setAudioEnabled(event.target.checked)}
+                className="h-3 w-3"
+              />
+              <Volume2 size={12} />
+              <span>Audio</span>
             </label>
             <button
               type="button"

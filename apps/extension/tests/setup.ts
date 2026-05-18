@@ -31,6 +31,7 @@ global.chrome = {
         },
         sendMessage: async () => { },
         getURL: (path: string) => `chrome-extension://test/${path}`,
+        getContexts: async () => [],
     },
     storage: {
         session: {
@@ -68,6 +69,13 @@ global.chrome = {
         TAB_ID_NONE: -1,
         onRemoved: { addListener: () => { }, removeListener: () => { } },
         onUpdated: { addListener: () => { }, removeListener: () => { } },
+    },
+    tabCapture: {
+        getMediaStreamId: (_options: any, callback: (streamId?: string) => void) => callback("mock-stream-id"),
+    },
+    offscreen: {
+        createDocument: async () => { },
+        closeDocument: async () => { },
     },
     tabGroups: {
         query: async () => [],

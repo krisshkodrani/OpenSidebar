@@ -37,6 +37,10 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 750,
       rollupOptions: {
         input: {
+          "offscreen-audio": path.resolve(
+            __dirname,
+            "src/offscreen/audio.html",
+          ),
           ...(isProduction
             ? {
                 "overlay-harness": path.resolve(

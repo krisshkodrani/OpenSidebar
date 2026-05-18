@@ -15,7 +15,7 @@ import type {
 } from "./agent";
 
 export type UiMessageSource = MessageSource.SIDEPANEL | MessageSource.UI;
-export type PassiveInputSource = "page" | "screenshot";
+export type PassiveInputSource = "page" | "screenshot" | "tabAudio";
 export type PassiveMonitorStatus =
   | "watching"
   | "paused"
@@ -42,6 +42,8 @@ export interface BaseMessage {
 export type RuntimeMessage =
   | UserChatMessage
   | UserChatAcceptedMessage
+  | SpeechTranscriptionRequestMessage
+  | SpeechTranscriptionResultMessage
   | PassiveMonitorStartMessage
   | PassiveMonitorStopMessage
   | PassiveMonitorStatusMessage
@@ -135,6 +137,31 @@ export interface UserChatAcceptedMessage extends BaseMessage {
     messageId: string;
     timestamp: number;
     isFeedback?: boolean;
+  };
+}
+
+/** Side panel asks the background to transcribe user-captured audio. */
+export interface SpeechTranscriptionRequestMessage extends BaseMessage {
+  type: "SPEECH_TRANSCRIPTION_REQUEST";
+  source: UiMessageSource;
+  payload: {
+    audioBase64: string;
+    mimeType: string;
+    workspaceId: string | null;
+    language?: string;
+    prompt?: string;
+  };
+}
+
+/** Background returns a speech transcription result. */
+export interface SpeechTranscriptionResultMessage extends BaseMessage {
+  type: "SPEECH_TRANSCRIPTION_RESULT";
+  source: MessageSource.BACKGROUND;
+  payload: {
+    ok: boolean;
+    text?: string;
+    detail?: string;
+    durationMs?: number;
   };
 }
 

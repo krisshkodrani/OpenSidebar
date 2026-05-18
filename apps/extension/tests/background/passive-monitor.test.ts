@@ -4,6 +4,7 @@ import { PassiveMonitorController } from "../../src/background/passive-monitor";
 import {
   MessageSource,
   type DomSnapshot,
+  type PassiveInputSource,
   type RuntimeMessage,
   type UserSettings,
 } from "../../src/types";
@@ -140,7 +141,7 @@ function createHarness(
 
 async function start(
   controller: PassiveMonitorController,
-  inputSources: ("page" | "screenshot")[] = ["page"],
+  inputSources: PassiveInputSource[] = ["page"],
 ) {
   return controller.startSession({
     tabId: 123,
@@ -358,6 +359,31 @@ describe("PassiveMonitorController", () => {
 
     expect(captureVisibleTab).not.toHaveBeenCalled();
     expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  test("passes tab audio transcript context to passive evaluator", async () => {
+    const { controller, evaluate } = createHarness();
+    await start(controller, ["page", "tabAudio"]);
+    expect(
+      controller.updateAudioTranscript("ws-1", {
+        source: "tabAudio",
+        text: "The presenter said revenue increased by twelve percent.",
+        startedAt: 1000,
+        endedAt: 2000,
+        chunkCount: 1,
+      }),
+    ).toBe(true);
+
+    await controller.evaluateNow("ws-1");
+
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audioTranscript: expect.objectContaining({
+          text: "The presenter said revenue increased by twelve percent.",
+          source: "tabAudio",
+        }),
+      }),
+    );
   });
 
   test("does not evaluate after a session has been stopped", async () => {
