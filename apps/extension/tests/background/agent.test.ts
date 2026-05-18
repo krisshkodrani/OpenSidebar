@@ -2953,6 +2953,56 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects incomplete task-contract obligations through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Open Warehouse Gamma, then use go_back twice to return to Warehouse Alpha before calling done.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Warehouse Gamma",
+      url: "https://shop.example.com/warehouse/gamma",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      elements: [],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-task-contract",
+      "Opened Warehouse Gamma successfully.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_task_contract",
+      expect.objectContaining({
+        reason: expect.stringContaining("warehouse alpha"),
+        missingReturnTarget: true,
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-task-contract",
+      content: expect.stringContaining("Complete the missing task obligations"),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {

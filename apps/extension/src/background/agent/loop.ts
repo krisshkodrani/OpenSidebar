@@ -83,6 +83,7 @@ import {
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
+  evaluateCompletionTaskContractPreflight,
   evaluateCompletionContract,
   generateCompletionContract,
   type CompletionCandidateSource,
@@ -225,7 +226,6 @@ import {
   detectTrustedFormFillStepCompletion,
   detectTrustedFormSubmitCompletion,
   extractAttemptSummary,
-  evaluateDoneTaskContractGuard,
   formatStateEvidence,
   formatStructuredFailureContext,
   getSnapshotFingerprint,
@@ -2850,8 +2850,8 @@ export class AgentLoop {
             },
             missingReturnTarget: false,
           }
-        : evaluateDoneTaskContractGuard({
-            query: this.originalQuery,
+        : evaluateCompletionTaskContractPreflight({
+            userRequest: this.originalQuery,
             summary,
             snapshot: this.context.getSnapshot(),
           });

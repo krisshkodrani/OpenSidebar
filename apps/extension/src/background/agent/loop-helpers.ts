@@ -11,11 +11,6 @@ import { ACTION_EFFECT } from "./constants";
 import { CACHEABLE_TOOLS } from "../tools/metadata";
 import { ToolResultCache } from "./tool-cache";
 import type { CacheType } from "./tool-cache";
-import {
-  assessTaskContractCoverage,
-  buildTaskContract,
-  TaskContractCoverage,
-} from "./task-contract";
 
 /** Tools that require a valid element `id` param — validated before dispatch. */
 export const ELEMENT_ID_TOOLS = new Set<string>([
@@ -2242,89 +2237,6 @@ export function requiresGroundingReadBeforeDone(query: string): boolean {
   }
 
   return pageReadTasks.some((pattern) => pattern.test(normalized));
-}
-
-export interface DoneTaskContractGuardResult {
-  blocked: boolean;
-  reason: string | null;
-  summaryCoverage: TaskContractCoverage;
-  missingReturnTarget: boolean;
-}
-
-/**
- * Reject done() when the final summary drops required task entities/results or
- * when a round-trip task has not actually returned to the required page.
- */
-export function evaluateDoneTaskContractGuard(params: {
-  query: string;
-  summary: string;
-  snapshot: DomSnapshot | null;
-}): DoneTaskContractGuardResult {
-  const contract = buildTaskContract(params.query);
-  const hasObligations =
-    contract.requiresRoundTrip ||
-    contract.requiredEntities.length > 0 ||
-    contract.requiredNumbers.length > 0;
-
-  const summaryCoverage = assessTaskContractCoverage({
-    contract,
-    text: params.summary,
-  });
-
-  if (!hasObligations) {
-    return {
-      blocked: false,
-      reason: null,
-      summaryCoverage,
-      missingReturnTarget: false,
-    };
-  }
-
-  const returnTargetCoverage = contract.requiresRoundTrip
-    ? assessTaskContractCoverage({
-        contract: {
-          ...contract,
-          requiredEntities: [],
-          requiredNumbers: [],
-        },
-        text: snapshotSearchText(params.snapshot),
-        requireReturnTarget: true,
-      })
-    : null;
-
-  const reasons: string[] = [];
-  if (summaryCoverage.missingEntities.length > 0) {
-    reasons.push(
-      `final summary is missing required targets: ${summaryCoverage.missingEntities.join(", ")}`,
-    );
-  }
-  if (summaryCoverage.missingNumbers.length > 0) {
-    reasons.push(
-      `final summary is missing required values: ${summaryCoverage.missingNumbers.join(", ")}`,
-    );
-  }
-  if (summaryCoverage.missingExhaustiveCoverage) {
-    reasons.push(
-      "final summary does not confirm exhaustive coverage of the requested items",
-    );
-  }
-  if (summaryCoverage.missingMultiReturnCoverage) {
-    reasons.push(
-      "final summary does not cover all required requested results",
-    );
-  }
-  if (returnTargetCoverage?.missingReturnTarget) {
-    reasons.push(
-      `you have not actually returned to the required page before finishing`,
-    );
-  }
-
-  return {
-    blocked: reasons.length > 0,
-    reason: reasons.length > 0 ? reasons.join("; ") : null,
-    summaryCoverage,
-    missingReturnTarget: Boolean(returnTargetCoverage?.missingReturnTarget),
-  };
 }
 
 /**

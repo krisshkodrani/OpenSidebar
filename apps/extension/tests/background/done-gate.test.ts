@@ -9,10 +9,10 @@
 import { describe, test, expect } from "vitest";
 import "../setup";
 import { isDoneSummaryAskingClarification } from "../../src/background/agent/loop";
+import { evaluateCompletionTaskContractPreflight } from "../../src/background/agent/completion-kernel";
 import {
   buildFirstTurnTextOnlyNudge,
   buildOverlayRecoveryCompletionSummary,
-  evaluateDoneTaskContractGuard,
   isDoneSummaryGroundedInSnapshot,
   matchSuccessCriteria,
   requiresGroundingReadBeforeDone,
@@ -444,10 +444,10 @@ describe("buildFirstTurnTextOnlyNudge", () => {
 
 // ── Rate limit (Layer 3) — behavioral documentation ──────────────────
 
-describe("evaluateDoneTaskContractGuard", () => {
+describe("evaluateCompletionTaskContractPreflight", () => {
   test("blocks done when final summary drops required report targets", () => {
-    const result = evaluateDoneTaskContractGuard({
-      query:
+    const result = evaluateCompletionTaskContractPreflight({
+      userRequest:
         "Click through to Warehouse Gamma, then go back to Warehouse Alpha and call done() reporting BOTH inventory counts: Gamma and Alpha.",
       summary: "Warehouse Gamma inventory was reviewed successfully.",
       snapshot: makeSnapshot({
@@ -463,8 +463,8 @@ describe("evaluateDoneTaskContractGuard", () => {
   });
 
   test("passes once the summary covers required entities and the page is back at the return target", () => {
-    const result = evaluateDoneTaskContractGuard({
-      query:
+    const result = evaluateCompletionTaskContractPreflight({
+      userRequest:
         "Click through to Warehouse Gamma, then go back to Warehouse Alpha and call done() reporting BOTH inventory counts: Gamma and Alpha.",
       summary:
         "Inventory counts collected: Warehouse Gamma has 6,412 units and Warehouse Alpha has 4,827 units.",
