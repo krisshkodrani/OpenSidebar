@@ -245,6 +245,7 @@ type WorkflowConfirmationTextMode = "summary" | "visible";
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
   action: WorkflowConfirmationAction;
+  targetLabel?: string;
 }
 
 export type CompletionContract =
@@ -1080,11 +1081,16 @@ function generateWorkflowConfirmationContract(
   if (action === "dismiss" && isDismissalPartOfLargerTask(requestText)) {
     return null;
   }
+  const targetLabel = inferWorkflowConfirmationTargetLabel(
+    requestText,
+    action,
+  );
 
   return {
     contract: {
       kind: "workflow_confirmation",
       action,
+      ...(targetLabel ? { targetLabel } : {}),
     },
     confidence: "medium",
     source: "heuristic",
@@ -1929,7 +1935,19 @@ function evaluateWorkflowConfirmation(params: {
         event.detail.action === contract.action,
     )
     .sort(compareEvidenceRecency);
-  const confirmation = confirmations[0];
+  const targetMatchedConfirmations = confirmations.filter((event) =>
+    workflowConfirmationMatchesTarget(event, contract.targetLabel),
+  );
+  if (confirmations.length > 0 && targetMatchedConfirmations.length === 0) {
+    return {
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+      contract,
+      evidence: confirmations,
+    };
+  }
+  const confirmation = targetMatchedConfirmations[0];
   if (!confirmation) {
     return {
       status: "needs_verification",
@@ -2638,6 +2656,103 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
   return null;
+}
+
+function inferWorkflowConfirmationTargetLabel(
+  value: string,
+  action: WorkflowConfirmationAction,
+): string | null {
+  if (action !== "delete" && action !== "archive") return null;
+
+  const actionPattern =
+    action === "delete" ? "(?:delete|remove)" : "(?:archive)";
+  const lines = value
+    .split(/\n+/g)
+    .map((line) => cleanLabel(line))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (!new RegExp(`\\b${actionPattern}\\b`, "i").test(line)) continue;
+
+    const quoted = /["']([^"']{2,120})["']/.exec(line)?.[1];
+    const quotedTarget = normalizeWorkflowTargetLabel(quoted ?? "", {
+      quoted: true,
+    });
+    if (quotedTarget) return quotedTarget;
+
+    const direct = new RegExp(
+      `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.+?)(?:[.;,]|$)`,
+      "i",
+    ).exec(line)?.[1];
+    const directTarget = normalizeWorkflowTargetLabel(direct ?? "");
+    if (directTarget) return directTarget;
+  }
+
+  return null;
+}
+
+function normalizeWorkflowTargetLabel(
+  value: string,
+  options: { quoted?: boolean } = {},
+): string | null {
+  let target = cleanLabel(value);
+  if (!target) return null;
+  target = target.replace(
+    /^(?:the|this|that|selected|current|visible)\s+/i,
+    "",
+  );
+  target = target.replace(
+    /\s+(?:and|then|after that)\s+(?:confirm|verify|make sure|ensure|check|click|press|select|open|go)\b.+$/i,
+    "",
+  );
+  target = target.replace(/\s+(?:from|in|on|under|inside)\s+.+$/i, "");
+  target = target.replace(/\s+(?:please|now)$/i, "");
+  target = cleanLabel(target);
+  if (!target) return null;
+
+  const normalized = normalizeText(target);
+  if (
+    /^(?:record|item|row|entry|target|object|selection|selected|current|this|that|it|them)$/i.test(
+      normalized,
+    )
+  ) {
+    return null;
+  }
+
+  const tokens = tokenizeCompletionText(target);
+  if (tokens.length === 0) return null;
+  if (!options.quoted && tokens.length < 2 && !/[\d_-]/.test(target)) {
+    return null;
+  }
+  return target.slice(0, 160);
+}
+
+function workflowConfirmationMatchesTarget(
+  event: Extract<CompletionEvidence, { type: "confirmation_state" }>,
+  targetLabel: string | undefined,
+): boolean {
+  if (!targetLabel) return true;
+  if (event.detail.source !== "target_disappearance") return true;
+  return workflowTargetLabelCoveredByText(targetLabel, event.detail.text);
+}
+
+function workflowTargetLabelCoveredByText(
+  targetLabel: string,
+  text: string,
+): boolean {
+  const normalizedTarget = normalizeText(targetLabel);
+  const normalizedText = normalizeText(text);
+  if (normalizedTarget && normalizedText.includes(normalizedTarget)) {
+    return true;
+  }
+
+  const targetTokens = tokenizeCompletionText(targetLabel);
+  return (
+    targetTokens.length > 0 &&
+    targetTokens.every((token) =>
+      valueTokenCoveredBySummary(normalizedText, token),
+    )
+  );
 }
 
 function isBrowserManagementWorkflowRequest(value: string): boolean {
