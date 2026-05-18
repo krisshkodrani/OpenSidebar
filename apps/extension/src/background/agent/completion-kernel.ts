@@ -16,6 +16,10 @@ import {
   type AutocompleteSuggestionDoneRejection,
 } from "./text-entry-guards";
 import { getListDetailDoneRejection } from "./list-detail-policy";
+import {
+  assessWorkflowDoneGuard,
+  type WorkflowDoneGuardResult,
+} from "./verification";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -291,6 +295,8 @@ export interface CompletionTaskContractPreflight {
   summaryCoverage: TaskContractCoverage;
   missingReturnTarget: boolean;
 }
+
+export type CompletionWorkflowContractPreflight = WorkflowDoneGuardResult;
 
 type ChoiceKind = "checkbox" | "radio";
 
@@ -607,6 +613,22 @@ export function evaluateCompletionListDetailReviewPreflight(params: {
     kind: "incomplete_list_detail_review",
     reason: rejection,
   };
+}
+
+export function evaluateCompletionWorkflowContractPreflight(params: {
+  userRequest: string;
+  summary: string;
+  selectedSkillId?: string | null;
+  pageUrl?: string;
+  pageTitle?: string;
+}): CompletionWorkflowContractPreflight {
+  return assessWorkflowDoneGuard({
+    query: params.userRequest,
+    summary: params.summary,
+    selectedSkillId: params.selectedSkillId,
+    pageUrl: params.pageUrl,
+    pageTitle: params.pageTitle,
+  });
 }
 
 function generateDraftOnlyContract(

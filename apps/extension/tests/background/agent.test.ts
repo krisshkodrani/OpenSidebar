@@ -3095,6 +3095,66 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects interim workflow completion through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {
+        selectedSkillId: "chart-value-extraction",
+      },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Tell me the value shown in the incident chart.";
+    (agent as any).hasReadPage = true;
+    (agent as any).hasExplicitPageRead = true;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Incident Chart",
+      url: "https://example.test/incidents/chart",
+      visibleContent: "Incident chart with critical incidents.",
+      pageContent: "Incident chart with critical incidents.",
+      elements: [],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-workflow",
+      "The incident chart page is open and visible.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_workflow_contract",
+      expect.objectContaining({
+        selectedSkillId: "chart-value-extraction",
+        reason: expect.stringContaining("concrete extracted value"),
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-workflow",
+      content: expect.stringContaining(
+        "Continue the workflow, verify the requested final state",
+      ),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {
