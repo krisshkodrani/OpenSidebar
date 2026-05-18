@@ -92,6 +92,7 @@ export type CompletionEvidence =
           | "target_disappearance"
           | "draft_disappearance"
           | "status_change"
+          | "control_label_change"
           | "dirty_indicator_cleared";
       };
     }
@@ -1138,6 +1139,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
+  evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractDirtyIndicatorClearedEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
@@ -3062,6 +3064,66 @@ function extractStatusChangeEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractControlLabelChangeEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferControlLabelChangeAction(element);
+  if (!action) return [];
+
+  const identity = stableControlIdentity(element);
+  if (!identity) return [];
+
+  const currentElement = current.elements.find(
+    (candidate) =>
+      candidate.isVisible && stableControlIdentity(candidate) === identity,
+  );
+  if (!currentElement) return [];
+
+  const beforeText = elementControlText(element);
+  const afterText = elementControlText(currentElement);
+  if (normalizeText(beforeText) === normalizeText(afterText)) return [];
+  if (controlLabelConfirmsWorkflowAction(beforeText, action)) return [];
+  if (!controlLabelConfirmsWorkflowAction(afterText, action)) return [];
+
+  const label = cleanLabel(
+    currentElement.text ||
+      currentElement.attributes.label ||
+      currentElement.attributes["aria-label"] ||
+      afterText,
+  );
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:control:${compactKey(identity)}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Control label changed to confirmed state: ${label}`,
+        action,
+        source: "control_label_change",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractDirtyIndicatorClearedEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -3190,6 +3252,61 @@ function inferSaveUpdateAction(
   if (/\b(?:update|apply changes|apply)\b/i.test(text)) return "update";
   if (/\b(?:save|save changes)\b/i.test(text)) return "save";
   return null;
+}
+
+function inferControlLabelChangeAction(
+  element: TaggedElement,
+): WorkflowConfirmationAction | null {
+  return (
+    inferStatusChangeAction(element) ??
+    inferSaveUpdateAction(element) ??
+    inferDraftSubmissionAction(element) ??
+    inferTargetDisappearanceAction(element) ??
+    (isDismissalControl(element) ? "dismiss" : null)
+  );
+}
+
+function controlLabelConfirmsWorkflowAction(
+  value: string,
+  action: WorkflowConfirmationAction,
+): boolean {
+  const text = normalizeText(value);
+  switch (action) {
+    case "delete":
+      return /\b(?:deleted|removed)\b/i.test(text);
+    case "archive":
+      return /\barchived\b/i.test(text);
+    case "save":
+      return /\bsaved\b/i.test(text);
+    case "send":
+      return /\bsent\b/i.test(text);
+    case "post":
+      return /\b(?:posted|published)\b/i.test(text);
+    case "approve":
+      return /\bapproved\b/i.test(text);
+    case "reject":
+      return /\b(?:rejected|denied)\b/i.test(text);
+    case "close":
+      return /\b(?:closed|resolved)\b/i.test(text);
+    case "dismiss":
+      return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
+    case "update":
+      return /\b(?:updated|changed|applied)\b/i.test(text);
+    case "submit":
+      return /\bsubmitted\b/i.test(text);
+    case "complete":
+      return /\bcompleted\b/i.test(text);
+  }
+  return false;
+}
+
+function stableControlIdentity(element: TaggedElement): string | null {
+  const identity =
+    element.attributes.control ||
+    element.attributes.id ||
+    element.attributes.name ||
+    element.attributes["data-testid"];
+  return identity ? normalizeText(identity) : null;
 }
 
 function hasDirtyStateIndicator(snapshot: DomSnapshot): boolean {

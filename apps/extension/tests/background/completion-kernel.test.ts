@@ -256,6 +256,20 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
+function stableActionButton(
+  tag: number,
+  label: string,
+  id: string,
+): TaggedElement {
+  return {
+    ...actionButton(tag, label),
+    attributes: {
+      id,
+      "aria-label": label,
+    },
+  };
+}
+
 describe("completion kernel", () => {
   test("routes question-shaped done summaries to clarification preflight", () => {
     const decision = evaluateCompletionSummaryPreflight({
@@ -2153,6 +2167,125 @@ describe("completion kernel", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 601 },
       result: "Clicked element 601.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("accepts approve confirmation from same-control label change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Awaiting approval Approve request",
+      pageContent: "Request REQ001 Awaiting approval Approve request",
+      elements: [
+        stableActionButton(607, "Approve request", "request-approval-action"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Approved",
+      pageContent: "Request REQ001 Approved",
+      elements: [
+        stableActionButton(607, "Approved", "request-approval-action"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Approve the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 607 },
+      result: "Clicked element 607.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Approved the request.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "approve",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:approve:control:request-approval-action",
+        detail: expect.objectContaining({
+          action: "approve",
+          source: "control_label_change",
+          text: "Control label changed to confirmed state: Approved",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer control-label confirmation when label was already final", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Approved",
+      pageContent: "Request REQ001 Approved",
+      elements: [
+        stableActionButton(607, "Approved", "request-approval-action"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Approved",
+      pageContent: "Request REQ001 Approved",
+      elements: [
+        stableActionButton(607, "Approved", "request-approval-action"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 607 },
+      result: "Clicked element 607.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer control-label confirmation without stable identity", () => {
+    const preButton = actionButton(607, "Approve request");
+    const currentButton = actionButton(607, "Approved");
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ001 Awaiting approval Approve request",
+      pageContent: "Request REQ001 Awaiting approval Approve request",
+      elements: [
+        {
+          ...preButton,
+          attributes: { "aria-label": "Approve request" },
+        },
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ001 Approved",
+      pageContent: "Request REQ001 Approved",
+      elements: [
+        {
+          ...currentButton,
+          attributes: { "aria-label": "Approved" },
+        },
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 607 },
+      result: "Clicked element 607.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
