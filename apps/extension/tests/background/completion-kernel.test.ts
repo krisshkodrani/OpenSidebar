@@ -1555,6 +1555,41 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts cancel-class workflow confirmation after visible cancellation completion", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Cancellation completed.",
+      pageContent: "Cancellation completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Cancel the order.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Cancellation completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "cancel",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:cancel",
+          detail: expect.objectContaining({ action: "cancel" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Dismiss completed.",
@@ -1675,6 +1710,51 @@ describe("completion kernel", () => {
         type: "confirmation_state",
         confidence: "high",
         logicalKey: expect.stringContaining("workflow:confirmation:dismiss"),
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "modal_disappearance",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("treats cancel-dialog requests as modal dismissal, not workflow cancellation", () => {
+    const pre = modalSnapshot();
+    const current = workflowSnapshot({
+      title: "Newsletter",
+      visibleContent: "Account settings",
+      pageContent: "Account settings",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Cancel the newsletter dialog.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 402 },
+      result: "Clicked element 402.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 8,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Canceled the newsletter dialog.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
         detail: expect.objectContaining({
           action: "dismiss",
           source: "modal_disappearance",
@@ -2498,6 +2578,80 @@ describe("completion kernel", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 604 },
       result: "Clicked element 604.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("accepts cancel confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Order ORD004 Status: Active Cancel order",
+      pageContent: "Order ORD004 Status: Active Cancel order",
+      elements: [actionButton(607, "Cancel order")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Order ORD004 Status: Cancelled",
+      pageContent: "Order ORD004 Status: Cancelled",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Cancel the order.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 607 },
+      result: "Clicked element 607.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Cancelled the order.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "cancel",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:cancel:status:status-cancelled",
+        detail: expect.objectContaining({
+          action: "cancel",
+          source: "status_change",
+          text: "Status: Cancelled",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer cancel confirmation when status was already canceled", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Order ORD004 Status: Canceled Cancel order",
+      pageContent: "Order ORD004 Status: Canceled Cancel order",
+      elements: [actionButton(607, "Cancel order")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Order ORD004 Status: Canceled",
+      pageContent: "Order ORD004 Status: Canceled",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 607 },
+      result: "Clicked element 607.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
