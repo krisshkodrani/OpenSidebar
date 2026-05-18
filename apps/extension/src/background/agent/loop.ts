@@ -83,6 +83,7 @@ import {
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
+  evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
@@ -2991,7 +2992,16 @@ export class AgentLoop {
   ): boolean {
     const incompleteMoneyTableScan =
       this.getIncompleteMoneyTableAggregateDoneRejection();
-    if (incompleteMoneyTableScan) {
+    const incorrectMoneyTableAnswer = incompleteMoneyTableScan
+      ? null
+      : this.getIncorrectMoneyTableAggregateDoneRejection(summary);
+    const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
+      incompleteScanReason: incompleteMoneyTableScan,
+      incorrectAnswerReason: incorrectMoneyTableAnswer,
+    });
+    if (moneyTablePreflight.status === "valid") return false;
+
+    if (moneyTablePreflight.kind === "incomplete_money_table_scan") {
       this.doneRejections++;
       this.log.warn(
         "agent",
@@ -2999,29 +3009,25 @@ export class AgentLoop {
         {
           turn: this.turnCount,
           rejections: this.doneRejections,
-          reason: incompleteMoneyTableScan.slice(0, 200),
+          reason: moneyTablePreflight.reason.slice(0, 200),
         },
       );
       this.traceRecorder?.recordEvent(
         "done_rejected_incomplete_money_table_scan",
         {
           turn: this.turnCount,
-          reason: incompleteMoneyTableScan,
+          reason: moneyTablePreflight.reason,
         },
       );
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
         content:
-          `done() REJECTED: ${incompleteMoneyTableScan}\n\n` +
+          `done() REJECTED: ${moneyTablePreflight.reason}\n\n` +
           "Do not call done() until the scan is exhaustive.",
       });
       return true;
     }
-
-    const incorrectMoneyTableAnswer =
-      this.getIncorrectMoneyTableAggregateDoneRejection(summary);
-    if (!incorrectMoneyTableAnswer) return false;
 
     this.doneRejections++;
     this.log.warn(
@@ -3030,21 +3036,21 @@ export class AgentLoop {
       {
         turn: this.turnCount,
         rejections: this.doneRejections,
-        reason: incorrectMoneyTableAnswer.slice(0, 200),
+        reason: moneyTablePreflight.reason.slice(0, 200),
       },
     );
     this.traceRecorder?.recordEvent(
       "done_rejected_incorrect_money_table_answer",
       {
         turn: this.turnCount,
-        reason: incorrectMoneyTableAnswer,
+        reason: moneyTablePreflight.reason,
       },
     );
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content:
-        `done() REJECTED: ${incorrectMoneyTableAnswer}\n\n` +
+        `done() REJECTED: ${moneyTablePreflight.reason}\n\n` +
         "Use the tracked aggregate candidate in the final answer.",
     });
     return true;

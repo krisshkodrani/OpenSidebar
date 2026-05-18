@@ -314,6 +314,14 @@ export type CompletionEarlyMultiStepPreflight =
   | { status: "valid"; stepCount: number }
   | { status: "rejected"; kind: "early_multi_step"; stepCount: number };
 
+export type CompletionMoneyTableAggregatePreflight =
+  | { status: "valid" }
+  | {
+      status: "rejected";
+      kind: "incomplete_money_table_scan" | "incorrect_money_table_answer";
+      reason: string;
+    };
+
 export interface CompletionTaskContractPreflight {
   blocked: boolean;
   reason: string | null;
@@ -688,6 +696,29 @@ export function evaluateCompletionEarlyMultiStepPreflight(params: {
   }
 
   return { status: "rejected", kind: "early_multi_step", stepCount };
+}
+
+export function evaluateCompletionMoneyTableAggregatePreflight(params: {
+  incompleteScanReason?: string | null;
+  incorrectAnswerReason?: string | null;
+}): CompletionMoneyTableAggregatePreflight {
+  if (params.incompleteScanReason) {
+    return {
+      status: "rejected",
+      kind: "incomplete_money_table_scan",
+      reason: params.incompleteScanReason,
+    };
+  }
+
+  if (params.incorrectAnswerReason) {
+    return {
+      status: "rejected",
+      kind: "incorrect_money_table_answer",
+      reason: params.incorrectAnswerReason,
+    };
+  }
+
+  return { status: "valid" };
 }
 
 export function evaluateCompletionListDetailReviewPreflight(params: {

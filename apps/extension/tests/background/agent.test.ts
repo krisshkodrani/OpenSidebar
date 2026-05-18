@@ -3268,6 +3268,50 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects incomplete money-table aggregate through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Review the employee directory and tell me which employee has the highest salary and what that salary is.";
+    (agent as any).hasReadPage = true;
+    (agent as any).turnCount = 4;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).updateMoneyTableAggregate(
+      "Page content: Employee Directory 10 employees, 5 per page. # Name Email Department Salary 1 Alice Smith alice.smith@company.com Engineering $55,000 2 Bob Johnson bob.johnson@company.com Sales $56,731 3 Cara Lopez cara.lopez@company.com HR $58,000 4 Dan Miller dan.miller@company.com Finance $59,000 5 Eva Moore eva.moore@company.com Legal $60,000 Showing 1 - 5 of 10 Page 1 of 2",
+    );
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-money-table",
+      "The highest salary is Eva Moore at $60,000.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_incomplete_money_table_scan",
+      expect.objectContaining({
+        turn: 4,
+        reason: expect.stringContaining("not exhaustive"),
+      }),
+    );
+    expect((agent as any).context.getMessages().at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-money-table",
+      content: expect.stringContaining("scan is exhaustive"),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {

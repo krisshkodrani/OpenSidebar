@@ -11,6 +11,7 @@ import {
   evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
+  evaluateCompletionMoneyTableAggregatePreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionWorkflowContractPreflight,
@@ -798,6 +799,37 @@ describe("completion kernel", () => {
         hasNodeId: false,
       }),
     ).toEqual({ status: "valid", stepCount: 0 });
+  });
+
+  test("rejects incomplete money-table scans before incorrect answer checks", () => {
+    const decision = evaluateCompletionMoneyTableAggregatePreflight({
+      incompleteScanReason: "The paginated table scan is not exhaustive yet.",
+      incorrectAnswerReason: "The final answer conflicts with the aggregate.",
+    });
+
+    expect(decision).toEqual({
+      status: "rejected",
+      kind: "incomplete_money_table_scan",
+      reason: "The paginated table scan is not exhaustive yet.",
+    });
+  });
+
+  test("rejects completed money-table answers that conflict with the aggregate", () => {
+    const decision = evaluateCompletionMoneyTableAggregatePreflight({
+      incorrectAnswerReason: "The final answer conflicts with the aggregate.",
+    });
+
+    expect(decision).toEqual({
+      status: "rejected",
+      kind: "incorrect_money_table_answer",
+      reason: "The final answer conflicts with the aggregate.",
+    });
+  });
+
+  test("accepts money-table aggregate completion when no rejection reason exists", () => {
+    expect(evaluateCompletionMoneyTableAggregatePreflight({})).toEqual({
+      status: "valid",
+    });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
