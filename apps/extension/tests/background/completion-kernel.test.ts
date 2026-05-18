@@ -1721,6 +1721,34 @@ describe("completion kernel", () => {
       genericSummary: "Unpin completed.",
     },
     {
+      action: "mute",
+      request: "Mute Channel Alpha.",
+      summary: "Muted Channel Alpha.",
+      targetLabel: "Channel Alpha",
+      requestedVisible:
+        "Channel Beta remains audible. Channel Alpha muted successfully.",
+      requestedEvidenceText: "Channel Alpha muted successfully.",
+      otherVisible:
+        "Channel Alpha remains audible. Channel Beta muted successfully.",
+      otherEvidenceText: "Channel Beta muted successfully.",
+      genericVisible: "Mute completed.",
+      genericSummary: "Mute completed.",
+    },
+    {
+      action: "unmute",
+      request: "Unmute Channel Alpha.",
+      summary: "Unmuted Channel Alpha.",
+      targetLabel: "Channel Alpha",
+      requestedVisible:
+        "Channel Beta remains muted. Channel Alpha unmuted successfully.",
+      requestedEvidenceText: "Channel Alpha unmuted successfully.",
+      otherVisible:
+        "Channel Alpha remains muted. Channel Beta unmuted successfully.",
+      otherEvidenceText: "Channel Beta unmuted successfully.",
+      genericVisible: "Unmute completed.",
+      genericSummary: "Unmute completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
