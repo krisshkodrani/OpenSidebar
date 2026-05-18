@@ -79,7 +79,8 @@ export type CompletionEvidence =
           | "visible_text"
           | "modal_disappearance"
           | "target_disappearance"
-          | "draft_disappearance";
+          | "draft_disappearance"
+          | "status_change";
       };
     }
   | {
@@ -774,6 +775,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
+  evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
   return evidence;
@@ -2537,6 +2539,48 @@ function extractDraftSubmissionEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractStatusChangeEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferStatusChangeAction(element);
+  if (!action) return [];
+
+  const currentStatus = findWorkflowStatusChangeText(current, action);
+  if (!currentStatus) return [];
+  if (findWorkflowStatusChangeText(pre, action)) return [];
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:status:${compactKey(currentStatus)}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: currentStatus,
+        action,
+        source: "status_change",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractReadAnswerEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -2592,6 +2636,62 @@ function inferDraftSubmissionAction(
   if (/\b(?:send|email)\b/i.test(text)) return "send";
   if (/\b(?:comment|reply)\b/i.test(text)) return "post";
   if (/\bmessage\b/i.test(text)) return "send";
+  return null;
+}
+
+function inferStatusChangeAction(
+  element: TaggedElement,
+): Extract<WorkflowConfirmationAction, "approve" | "reject" | "close"> | null {
+  const text = normalizeText(elementControlText(element));
+  if (!text) return null;
+  if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
+  if (/\b(?:reject|rejected)\b/i.test(text)) return "reject";
+  if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
+  return null;
+}
+
+function findWorkflowStatusChangeText(
+  snapshot: DomSnapshot,
+  action: Extract<WorkflowConfirmationAction, "approve" | "reject" | "close">,
+): string | null {
+  const text = cleanLabel(
+    [
+      snapshot.title,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      ...snapshot.elements.flatMap((element) => [
+        element.text,
+        element.attributes.label,
+        element.attributes["aria-label"],
+        element.attributes.title,
+        element.attributes.name,
+        element.attributes.id,
+        element.attributes.value,
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ).slice(0, 20_000);
+  const statusWord =
+    action === "approve"
+      ? "(?:approved|approval complete|approval completed)"
+      : action === "reject"
+        ? "(?:rejected|rejection complete|rejection completed)"
+        : "(?:closed|resolved)";
+  const patterns = [
+    new RegExp(
+      `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
+      "i",
+    ),
+    new RegExp(
+      `\\b${statusWord}\\s+(?:by|on|at|status|state|stage)\\b`,
+      "i",
+    ),
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[0]) return cleanLabel(match[0]);
+  }
   return null;
 }
 
