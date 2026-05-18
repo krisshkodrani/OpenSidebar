@@ -290,7 +290,6 @@ import {
 import { buildConsequentialActionTaskText } from "./consequential-action-context";
 import {
   assessConsequentialActionApproval,
-  assessDraftOnlyCompletionViolation,
 } from "./consequential-action-policy";
 import {
   addParallelToolResultsToContext,
@@ -1800,36 +1799,6 @@ export class AgentLoop {
     return true;
   }
 
-  private rejectDoneForDraftOnlyCompletionViolation(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const rejection = assessDraftOnlyCompletionViolation({
-      taskText: this.getConsequentialActionTaskText(),
-      summary,
-      snapshot: this.context.getSnapshot(),
-    });
-    if (!rejection) return false;
-
-    this.log.warn("agent", "DONE rejected: draft-only final state violated", {
-      turn: this.turnCount,
-      reason: rejection,
-    });
-    this.traceRecorder?.recordEvent("done_rejected_draft_only_violation", {
-      turn: this.turnCount,
-      reason: rejection,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${rejection}\n\n` +
-        "Do not report completion for a draft-only task after sending/posting. " +
-        "If the message is still editable, leave it as an unsent draft and verify that state before calling done().",
-    });
-    return true;
-  }
-
   private async rejectDoneBeforePlanValidation(
     toolCallId: string,
     summary: string,
@@ -1848,10 +1817,6 @@ export class AgentLoop {
     }
 
     if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
-      return true;
-    }
-
-    if (this.rejectDoneForDraftOnlyCompletionViolation(toolCallId, summary)) {
       return true;
     }
 

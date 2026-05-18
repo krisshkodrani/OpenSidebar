@@ -319,14 +319,14 @@ export function generateCompletionContract(params: {
   activeObjective?: string;
   successCriteria?: string;
 }): GeneratedCompletionContract | null {
+  const draftOnlyContract = generateDraftOnlyContract(params);
+  if (draftOnlyContract) return draftOnlyContract;
+
   const snapshot = params.snapshot;
   if (!snapshot) return null;
 
   const quizContract = generateQuizSelectionContract(params, snapshot);
   if (quizContract) return quizContract;
-
-  const draftOnlyContract = generateDraftOnlyContract(params, snapshot);
-  if (draftOnlyContract) return draftOnlyContract;
 
   const formContract = generateFormFillContract(params, snapshot);
   if (formContract) return formContract;
@@ -350,7 +350,6 @@ function generateDraftOnlyContract(
     activeObjective?: string;
     successCriteria?: string;
   },
-  _snapshot: DomSnapshot,
 ): GeneratedCompletionContract | null {
   const requestText = [
     extractCanonicalUserRequest(params.userRequest),

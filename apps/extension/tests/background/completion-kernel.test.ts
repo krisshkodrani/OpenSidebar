@@ -979,6 +979,28 @@ describe("completion kernel", () => {
     expect(decision.reason).toContain("sent");
   });
 
+  test("generates draft-only contracts without a snapshot", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Draft a reply to David and do not send it.",
+      snapshot: null,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: [],
+      snapshot: null,
+      candidateSource: "model_done",
+      summary: "The reply was sent.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "draft_only",
+      requiresUnsent: true,
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("sent");
+  });
+
   test("does not treat unrelated draft wording as a draft-only contract", () => {
     const generated = generateCompletionContract({
       userRequest:
