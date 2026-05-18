@@ -2880,7 +2880,8 @@ function workflowConfirmationMatchesTarget(
   if (
     (event.detail.source === "status_change" ||
       event.detail.source === "control_label_change" ||
-      event.detail.source === "control_state_change") &&
+      event.detail.source === "control_state_change" ||
+      event.detail.source === "dirty_indicator_cleared") &&
     event.detail.targetText
   ) {
     return workflowTargetLabelCoveredByText(targetLabel, event.detail.targetText);
@@ -4154,6 +4155,7 @@ function extractDirtyIndicatorClearedEvidenceFromToolOutcome(params: {
   if (!action) return [];
   if (!hasDirtyStateIndicator(pre)) return [];
   if (hasDirtyStateIndicator(current)) return [];
+  const targetText = inferWorkflowTargetTextFromControl(element, action);
 
   return [
     {
@@ -4165,6 +4167,7 @@ function extractDirtyIndicatorClearedEvidenceFromToolOutcome(params: {
         text: "Unsaved-changes indicator is no longer visible.",
         action,
         source: "dirty_indicator_cleared",
+        ...(targetText ? { targetText } : {}),
         ...(current.url ? { url: current.url } : {}),
       },
     },
