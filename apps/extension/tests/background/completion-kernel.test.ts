@@ -1623,6 +1623,20 @@ describe("completion kernel", () => {
       genericSummary: "Rename completed.",
     },
     {
+      action: "merge",
+      request: "Merge Pull Request Alpha.",
+      summary: "Merged Pull Request Alpha.",
+      targetLabel: "Pull Request Alpha",
+      requestedVisible:
+        "Pull Request Beta remains open. Pull Request Alpha merged successfully.",
+      requestedEvidenceText: "Pull Request Alpha merged successfully.",
+      otherVisible:
+        "Pull Request Alpha remains open. Pull Request Beta merged successfully.",
+      otherEvidenceText: "Pull Request Beta merged successfully.",
+      genericVisible: "Merge completed.",
+      genericSummary: "Merge completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
