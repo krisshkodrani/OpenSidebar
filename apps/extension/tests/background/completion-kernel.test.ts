@@ -426,6 +426,78 @@ describe("completion kernel", () => {
     expect(buildCompletionRecoveryHint(decision)).toContain("Submit");
   });
 
+  test("accepts submit-required form completion after visible confirmation", () => {
+    const snap = formSnapshot();
+    const generated = generateCompletionContract({
+      userRequest:
+        "Log in with email admin@example.com and password secret123. Check the Remember me box too.",
+      snapshot: snap,
+    });
+    const filledEvidence = deriveCompletionEvidenceFromSnapshot(
+      formSnapshot({
+        elements: [
+          textField(201, "Email Address", "admin@example.com"),
+          textField(202, "Password", "secret123", "password"),
+          checkboxField(203, "Remember me", true),
+        ],
+      }),
+      5,
+    );
+    const confirmationEvidence = deriveCompletionEvidenceFromSnapshot(
+      formSnapshot({
+        title: "Submission Complete",
+        url: "https://example.test/profile/confirmation",
+        visibleContent:
+          "Submission Complete! Reference Number REF-20481. Your request has been submitted successfully.",
+        pageContent:
+          "Submission Complete! Reference Number REF-20481. Your request has been submitted successfully.",
+        elements: [],
+      }),
+      6,
+    );
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: [...filledEvidence, ...confirmationEvidence],
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Submitted the profile form and reached confirmation REF-20481.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiresConfirmation: true,
+    });
+    expect(confirmationEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "form:confirmation",
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not treat a reference-number field label as confirmation", () => {
+    const evidence = deriveCompletionEvidenceFromSnapshot(
+      formSnapshot({
+        visibleContent: "Profile form Reference Number",
+        pageContent: "Profile form Reference Number",
+        elements: [textField(204, "Reference Number", "REF-20481")],
+      }),
+      6,
+    );
+
+    expect(
+      evidence.some(
+        (event) =>
+          event.type === "confirmation_state" &&
+          event.logicalKey === "form:confirmation",
+      ),
+    ).toBe(false);
+  });
+
   test("rejects form completion when visible validation is active", () => {
     const snap = formSnapshot();
     const generated = generateCompletionContract({
