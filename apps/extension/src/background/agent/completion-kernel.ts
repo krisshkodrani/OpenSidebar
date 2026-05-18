@@ -4636,6 +4636,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isFrequencyValue(preciseConciseValue)) {
+      return preciseFrequencyValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4898,6 +4904,14 @@ function extractPreciseConciseLabelValue(
     if (pressureMatch) return cleanLabel(pressureMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveFrequencyValue(expectedAnswerLabel)) {
+    const frequencyMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:hz|khz|mhz|ghz|thz|rpm|rps|cycles?\\s+per\\s+second))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (frequencyMatch) return cleanLabel(frequencyMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4997,6 +5011,12 @@ function labelCanHaveVolumeValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHavePressureValue(expectedAnswerLabel: string): boolean {
   return /\b(?:pressure|psi|pascal|bar|hydraulic|pneumatic|vacuum|gauge|tire)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveFrequencyValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:frequency|hertz|hz|refresh|sample|sampling|clock|oscillator|cycle|rpm|rotation)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5298,6 +5318,23 @@ function isPressureValue(value: string): boolean {
 }
 
 function precisePressureValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isFrequencyValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:hz|khz|mhz|ghz|thz|rpm|rps|cycles?\s+per\s+second)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseFrequencyValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {

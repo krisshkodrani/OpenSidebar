@@ -6689,6 +6689,69 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise frequency label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Display Matrix",
+      url: "https://example.test/display",
+      visibleContent:
+        "Display Matrix Refresh frequency: 60 Hz Backup frequency: 75 Hz",
+      pageContent:
+        "Display Matrix Refresh frequency: 60 Hz. Backup frequency: 75 Hz. The page explains display timing, refresh policy, service limits, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer display questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the refresh frequency?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "60Hz",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "75Hz",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "refresh frequency",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
+  test("does not accept frequency concise answers without a frequency label", () => {
+    const snap = workflowSnapshot({
+      title: "Display Matrix",
+      url: "https://example.test/display",
+      visibleContent: "Display Matrix Team code: 60Hz Backup code: 75Hz",
+      pageContent:
+        "Display Matrix Team code: 60Hz. Backup code: 75Hz. The page explains display timing, refresh policy, service limits, audit notes, incident routing, maintenance coordination, device ownership, escalation routing, and manager review so operators can answer display questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the team code?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "60Hz",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "team code",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",
