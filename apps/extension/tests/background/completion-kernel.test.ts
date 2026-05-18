@@ -1567,6 +1567,20 @@ describe("completion kernel", () => {
       genericSummary: "Import completed.",
     },
     {
+      action: "copy",
+      request: "Copy Link Alpha.",
+      summary: "Copied Link Alpha.",
+      targetLabel: "Link Alpha",
+      requestedVisible:
+        "Link Beta remains available. Link Alpha copied successfully.",
+      requestedEvidenceText: "Link Alpha copied successfully.",
+      otherVisible:
+        "Link Alpha remains available. Link Beta copied successfully.",
+      otherEvidenceText: "Link Beta copied successfully.",
+      genericVisible: "Copied to clipboard.",
+      genericSummary: "Copy completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
