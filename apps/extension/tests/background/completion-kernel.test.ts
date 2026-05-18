@@ -2586,6 +2586,50 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts grounded label-value question without explicit page wording", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix SLA: four hours Escalation owner: platform operations",
+      pageContent:
+        "Support Matrix SLA: four hours for urgent incidents. Escalation owner: platform operations. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the SLA?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The SLA is four hours for urgent incidents.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      requiresGroundedPageEvidence: true,
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not use label-value read-answer when the page has no value-like label", () => {
+    const generated = generateCompletionContract({
+      userRequest: "What is the SLA?",
+      snapshot: workflowSnapshot({
+        title: "Support Matrix",
+        url: "https://example.test/support",
+        visibleContent:
+          "Support Matrix The SLA applies to urgent incidents and escalation policies.",
+        pageContent:
+          "Support Matrix The SLA applies to urgent incidents and escalation policies, but this page has no final target value. It explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review.",
+      }),
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("does not use read-answer for ungrounded direct factual question", () => {
     const generated = generateCompletionContract({
       userRequest: "What is the refund policy?",
