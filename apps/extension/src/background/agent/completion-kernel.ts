@@ -262,6 +262,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "resume"
   | "start"
   | "stop"
+  | "restart"
+  | "refresh"
   | "submit"
 >;
 
@@ -2754,6 +2756,10 @@ function workflowTargetActionPattern(
       return "(?:start)";
     case "stop":
       return "(?:stop)";
+    case "restart":
+      return "(?:restart)";
+    case "refresh":
+      return "(?:refresh)";
     case "submit":
       return "(?:submit)";
     default:
@@ -2846,6 +2852,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "resume" ||
     action === "start" ||
     action === "stop" ||
+    action === "restart" ||
+    action === "refresh" ||
     action === "submit"
   );
 }
@@ -2964,6 +2972,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:started)";
     case "stop":
       return "(?:stopped)";
+    case "restart":
+      return "(?:restarted)";
+    case "refresh":
+      return "(?:refreshed)";
     case "submit":
       return "(?:submitted)";
   }
@@ -3011,6 +3023,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:start)";
     case "stop":
       return "(?:stop)";
+    case "restart":
+      return "(?:restart)";
+    case "refresh":
+      return "(?:refresh)";
     case "submit":
       return "(?:submission|submit)";
   }
