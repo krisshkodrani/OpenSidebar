@@ -2967,6 +2967,34 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts grounded label-value question with common label modifiers", () => {
+    const snap = workflowSnapshot({
+      title: "Support Matrix",
+      url: "https://example.test/support",
+      visibleContent:
+        "Support Matrix SLA: four hours Escalation owner: platform operations",
+      pageContent:
+        "Support Matrix SLA: four hours for urgent incidents. Escalation owner: platform operations. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review so operators can answer support policy questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the current SLA?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "SLA: four hours",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "sla",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts concise grounded label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",
@@ -3105,6 +3133,22 @@ describe("completion kernel", () => {
           "Support Matrix SLA - described in this policy and related escalation notes.",
         pageContent:
           "Support Matrix SLA - described in this policy and related escalation notes. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review, but it does not state a final SLA value.",
+      }),
+    });
+
+    expect(generated).toBeNull();
+  });
+
+  test("does not use label-value read-answer for modifier-only questions", () => {
+    const generated = generateCompletionContract({
+      userRequest: "What is the current?",
+      snapshot: workflowSnapshot({
+        title: "Support Matrix",
+        url: "https://example.test/support",
+        visibleContent:
+          "Support Matrix SLA: four hours Escalation owner: platform operations",
+        pageContent:
+          "Support Matrix SLA: four hours for urgent incidents. Escalation owner: platform operations. The page explains support coverage, ticket priority, customer impact, response timing, audit notes, incident routing, and manager review so operators can answer support policy questions from visible page evidence.",
       }),
     });
 

@@ -3934,12 +3934,17 @@ const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
   "about",
   "according",
   "answer",
+  "current",
   "does",
+  "existing",
   "from",
   "give",
   "how",
+  "latest",
   "many",
   "much",
+  "my",
+  "our",
   "page",
   "please",
   "tell",
@@ -3950,6 +3955,7 @@ const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
   "which",
   "who",
   "whose",
+  "your",
 ]);
 
 const EXPLANATORY_LABEL_VALUE_START_WORDS = new Set([
@@ -4030,7 +4036,7 @@ function findGroundedLabelValueQuestionLabel(
   ) {
     return null;
   }
-  return cleanLabel(label);
+  return cleanLabel(labelTokens.join(" "));
 }
 
 function labelValueSeparatorNeedsAnswerShape(
