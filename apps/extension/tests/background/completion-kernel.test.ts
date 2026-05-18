@@ -8,6 +8,7 @@ import {
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
+  evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
@@ -694,6 +695,70 @@ describe("completion kernel", () => {
     });
 
     expect(decision).toEqual({ blocked: false, reason: null });
+  });
+
+  test("rejects ungrounded page-read completion through kernel preflight", () => {
+    const decision = evaluateCompletionGroundingReadPreflight({
+      userRequest: "Summarize this page and report the key points.",
+      summary:
+        "The page provides a helpful overview with several important points and examples.",
+      snapshot: snapshot({
+        title: "Transformer Architecture",
+        visibleContent:
+          "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+        pageContent:
+          "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+        elements: [
+          choice(201, "Attention", false),
+          choice(202, "Encoder", false),
+          choice(203, "Decoder", false),
+          choice(204, "Residual", false),
+          choice(205, "Feed-forward", false),
+          choice(206, "Positional", false),
+        ],
+      }),
+      hasReadPage: false,
+      hasExplicitPageRead: false,
+      hasTaskId: false,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "missing_grounding_read",
+      needsGroundingRead: true,
+      elementCount: 6,
+    });
+  });
+
+  test("allows page-read completion grounded in current snapshot", () => {
+    const decision = evaluateCompletionGroundingReadPreflight({
+      userRequest: "Summarize this page and report the key points.",
+      summary:
+        "The page explains Transformer architecture with attention mechanisms, encoder and decoder layers, positional encodings, and feed-forward networks.",
+      snapshot: snapshot({
+        visibleContent:
+          "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+        pageContent:
+          "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+        elements: [
+          choice(201, "Attention", false),
+          choice(202, "Encoder", false),
+          choice(203, "Decoder", false),
+          choice(204, "Residual", false),
+          choice(205, "Feed-forward", false),
+          choice(206, "Positional", false),
+        ],
+      }),
+      hasReadPage: false,
+      hasExplicitPageRead: false,
+      hasTaskId: false,
+    });
+
+    expect(decision).toMatchObject({
+      status: "grounded_from_snapshot",
+      needsGroundingRead: true,
+      elementCount: 6,
+    });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {

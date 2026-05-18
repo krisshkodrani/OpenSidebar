@@ -20,6 +20,10 @@ import {
   assessWorkflowDoneGuard,
   type WorkflowDoneGuardResult,
 } from "./verification";
+import {
+  isDoneSummaryGroundedInSnapshot,
+  requiresGroundingReadBeforeDone,
+} from "./loop-helpers";
 
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
@@ -287,6 +291,22 @@ export type CompletionListDetailReviewPreflight =
       status: "rejected";
       kind: "incomplete_list_detail_review";
       reason: string;
+    };
+
+export type CompletionGroundingReadPreflight =
+  | { status: "valid"; needsGroundingRead: boolean }
+  | {
+      status: "grounded_from_snapshot";
+      needsGroundingRead: boolean;
+      elementCount: number;
+      visibleLen: number;
+    }
+  | {
+      status: "rejected";
+      kind: "missing_grounding_read";
+      needsGroundingRead: boolean;
+      elementCount: number;
+      visibleLen: number;
     };
 
 export interface CompletionTaskContractPreflight {
@@ -591,6 +611,53 @@ export function evaluateCompletionTaskContractPreflight(params: {
     reason: reasons.length > 0 ? reasons.join("; ") : null,
     summaryCoverage,
     missingReturnTarget: Boolean(returnTargetCoverage?.missingReturnTarget),
+  };
+}
+
+export function evaluateCompletionGroundingReadPreflight(params: {
+  userRequest: string;
+  summary: string;
+  snapshot: DomSnapshot | null | undefined;
+  hasReadPage: boolean;
+  hasExplicitPageRead: boolean;
+  hasTaskId: boolean;
+}): CompletionGroundingReadPreflight {
+  const needsGroundingRead = requiresGroundingReadBeforeDone(
+    params.userRequest,
+  );
+  const hasEnoughGrounding = needsGroundingRead
+    ? params.hasExplicitPageRead
+    : params.hasReadPage;
+  if (hasEnoughGrounding || (!params.hasTaskId && !needsGroundingRead)) {
+    return { status: "valid", needsGroundingRead };
+  }
+
+  const elementCount = params.snapshot?.elements?.length ?? 0;
+  const visibleLen = (
+    params.snapshot?.visibleContent ||
+    params.snapshot?.pageContent ||
+    ""
+  ).length;
+  if (elementCount <= 5 || visibleLen <= 100) {
+    return { status: "valid", needsGroundingRead };
+  }
+  if (
+    isDoneSummaryGroundedInSnapshot(params.summary, params.snapshot ?? null)
+  ) {
+    return {
+      status: "grounded_from_snapshot",
+      needsGroundingRead,
+      elementCount,
+      visibleLen,
+    };
+  }
+
+  return {
+    status: "rejected",
+    kind: "missing_grounding_read",
+    needsGroundingRead,
+    elementCount,
+    visibleLen,
   };
 }
 

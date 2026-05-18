@@ -3155,6 +3155,78 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects ungrounded page-read completion through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Summarize this page and report the key points.";
+    (agent as any).hasReadPage = false;
+    (agent as any).hasExplicitPageRead = false;
+    (agent as any).forceGroundingRefresh = vi.fn(async () => undefined);
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Transformer Architecture",
+      url: "https://example.test/transformers",
+      visibleContent:
+        "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+      pageContent:
+        "The Transformer architecture uses attention mechanisms, encoder and decoder layers, positional encodings, residual connections, and feed-forward networks to process sequences efficiently.",
+      elements: Array.from({ length: 6 }, (_, index) => ({
+        tag: 200 + index,
+        tagName: "section",
+        role: "region",
+        text: `Transformer section ${index + 1}`,
+        attributes: {},
+        rect: { x: 0, y: index * 30, width: 300, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      })),
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-grounding",
+      "The page provides a helpful overview with several important points and examples.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(0);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect((agent as any).forceGroundingRefresh).toHaveBeenCalledWith(
+      123,
+      "done_before_grounding_read",
+    );
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_no_read",
+      expect.objectContaining({
+        turn: 0,
+        elementCount: 6,
+      }),
+    );
+
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-2)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-grounding",
+      content: expect.stringContaining("Call read_page first"),
+    });
+    expect(messages.at(-1)).toMatchObject({
+      role: "user",
+      content: expect.stringContaining("refreshed for grounding"),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {
