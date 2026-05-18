@@ -2853,6 +2853,66 @@ describe("AgentLoop", () => {
     );
   });
 
+  test("deterministic form-fill rejection gives form-specific guidance", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery = 'Set Caller to "Joe Employee".';
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "deterministic form-fill rejection should not reach planner",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Incident",
+      url: "https://example.test/incident",
+      visibleContent: "Caller Jane Manager",
+      pageContent: "Caller Jane Manager",
+      elements: [
+        {
+          tag: 201,
+          tagName: "input",
+          role: "textbox",
+          text: "Jane Manager",
+          attributes: {
+            id: "caller",
+            name: "caller",
+            label: "Caller",
+            value: "Jane Manager",
+          },
+          rect: { x: 0, y: 40, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-form",
+      "Filled Caller with Joe Employee.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+
+    const messages = (agent as any).context.getMessages();
+    const toolMessages = messages.filter(
+      (message: any) => message.role === "tool",
+    );
+    const rejectionMessage = toolMessages[toolMessages.length - 1];
+    expect(rejectionMessage).toMatchObject({
+      tool_call_id: "done-call-form",
+      content: expect.stringContaining("Verify the current form state"),
+    });
+    expect(String(rejectionMessage.content)).not.toContain("selected options");
+  });
+
   test("trusted workflow completion creates a trusted_tool completion envelope", () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(
