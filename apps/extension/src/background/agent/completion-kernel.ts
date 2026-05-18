@@ -606,6 +606,7 @@ export function deriveCompletionEvidenceFromSnapshot(
   const draftEvidence = extractDraftEvidence(snapshot, turn);
   const feedbackEvidence = extractFeedbackEvidence(snapshot, turn);
   const validationEvidence = extractValidationErrorEvidence(snapshot, turn);
+  const confirmationEvidence = extractFormConfirmationEvidence(snapshot, turn);
   const navigationEvidence = extractNavigationEvidence(snapshot, turn);
   return [
     ...selectedEvidence,
@@ -613,6 +614,7 @@ export function deriveCompletionEvidenceFromSnapshot(
     ...draftEvidence,
     ...feedbackEvidence,
     ...validationEvidence,
+    ...confirmationEvidence,
     ...navigationEvidence,
   ];
 }
@@ -1725,6 +1727,47 @@ function extractValidationErrorEvidence(
       observedAtTurn: turn,
       detail: {
         text: "Visible form validation indicates required or invalid fields.",
+      },
+    },
+  ];
+}
+
+function extractFormConfirmationEvidence(
+  snapshot: DomSnapshot,
+  turn: number,
+): CompletionEvidence[] {
+  const text = [
+    snapshot.title,
+    snapshot.url,
+    snapshot.visibleContent,
+    snapshot.pageContent,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 20_000);
+  const hasStrongConfirmation =
+    /\b(?:submission complete|submitted successfully|request has been submitted|thank you,? your request|request received|form submitted|order confirmed)\b/i.test(
+      text,
+    );
+  const hasReferenceConfirmation =
+    /\b(?:reference number|confirmation number)\b/i.test(text) &&
+    /\b(?:submission|submitted|complete|thank you|received|confirmation)\b/i.test(
+      text,
+    );
+  if (!hasStrongConfirmation && !hasReferenceConfirmation) {
+    return [];
+  }
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "medium",
+      logicalKey: "form:confirmation",
+      observedAtTurn: turn,
+      detail: {
+        text: cleanLabel(
+          snapshot.visibleContent || snapshot.pageContent || snapshot.title,
+        ).slice(0, 1000),
+        ...(snapshot.url ? { url: snapshot.url } : {}),
       },
     },
   ];
