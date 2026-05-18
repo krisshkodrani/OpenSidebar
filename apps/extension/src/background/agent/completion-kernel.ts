@@ -93,6 +93,7 @@ export type CompletionEvidence =
           | "draft_disappearance"
           | "status_change"
           | "control_label_change"
+          | "control_state_change"
           | "dirty_indicator_cleared";
       };
     }
@@ -1172,6 +1173,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
+  evidence.push(...extractControlStateChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractDirtyIndicatorClearedEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
@@ -3513,6 +3515,74 @@ function extractControlLabelChangeEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractControlStateChangeEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferControlStateChangeAction(element);
+  if (!action) return [];
+
+  const identity = stableControlIdentity(element);
+  if (!identity) return [];
+
+  const currentElement = current.elements.find(
+    (candidate) =>
+      candidate.isVisible && stableControlIdentity(candidate) === identity,
+  );
+  if (!currentElement) return [];
+
+  const beforeState = readControlState(element);
+  const afterState = readControlState(currentElement);
+  if (beforeState == null || afterState == null) return [];
+  if (beforeState === afterState) return [];
+  if (action === "enable" && !(beforeState === false && afterState === true)) {
+    return [];
+  }
+  if (action === "disable" && !(beforeState === true && afterState === false)) {
+    return [];
+  }
+
+  const label = cleanLabel(
+    currentElement.text ||
+      currentElement.attributes.label ||
+      currentElement.attributes["aria-label"] ||
+      element.text ||
+      element.attributes.label ||
+      element.attributes["aria-label"] ||
+      elementControlText(element),
+  );
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:control-state:${compactKey(identity)}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Control state changed to ${afterState ? "enabled" : "disabled"}${label ? `: ${label}` : ""}`,
+        action,
+        source: "control_state_change",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractDirtyIndicatorClearedEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -3693,6 +3763,16 @@ function inferControlLabelChangeAction(
     inferTargetDisappearanceAction(element) ??
     (isDismissalControl(element) ? "dismiss" : null)
   );
+}
+
+function inferControlStateChangeAction(
+  element: TaggedElement,
+): Extract<WorkflowConfirmationAction, "enable" | "disable"> | null {
+  const text = normalizeText(elementControlText(element));
+  if (!text) return null;
+  if (/\b(?:enable|activate|turn\s+on)\b/i.test(text)) return "enable";
+  if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
+  return null;
 }
 
 function controlLabelConfirmsWorkflowAction(
@@ -4089,6 +4169,17 @@ function readChecked(element: TaggedElement): boolean | null {
   if (checked == null) return null;
   if (/^(?:true|checked|selected|1)$/i.test(checked)) return true;
   if (/^(?:false|0)$/i.test(checked)) return false;
+  return null;
+}
+
+function readControlState(element: TaggedElement): boolean | null {
+  const state =
+    element.attributes.checked ??
+    element.attributes["aria-checked"] ??
+    element.attributes["aria-pressed"];
+  if (state == null) return null;
+  if (/^(?:true|checked|pressed|selected|1)$/i.test(state)) return true;
+  if (/^(?:false|0)$/i.test(state)) return false;
   return null;
 }
 

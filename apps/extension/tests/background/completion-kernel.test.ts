@@ -270,6 +270,22 @@ function stableActionButton(
   };
 }
 
+function statefulActionButton(
+  tag: number,
+  label: string,
+  pressed: boolean,
+  id: string,
+): TaggedElement {
+  return {
+    ...stableActionButton(tag, label, id),
+    attributes: {
+      id,
+      "aria-label": label,
+      "aria-pressed": String(pressed),
+    },
+  };
+}
+
 describe("completion kernel", () => {
   test("routes question-shaped done summaries to clarification preflight", () => {
     const decision = evaluateCompletionSummaryPreflight({
@@ -3092,6 +3108,178 @@ describe("completion kernel", () => {
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 609 },
       result: "Clicked element 609.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("accepts enable confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(620, "Enable MFA", false, "mfa-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(621, "Enable MFA", true, "mfa-toggle")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable MFA.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 620 },
+      result: "Clicked element 620.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Enabled MFA.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:enable:control-state:mfa-toggle",
+        detail: expect.objectContaining({
+          action: "enable",
+          source: "control_state_change",
+          text: "Control state changed to enabled: Enable MFA",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts disable confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Disable MFA",
+      pageContent: "Security settings Disable MFA",
+      elements: [statefulActionButton(622, "Disable MFA", true, "mfa-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Disable MFA",
+      pageContent: "Security settings Disable MFA",
+      elements: [statefulActionButton(623, "Disable MFA", false, "mfa-toggle")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable MFA.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 622 },
+      result: "Clicked element 622.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disabled MFA.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disable:control-state:mfa-toggle",
+        detail: expect.objectContaining({
+          action: "disable",
+          source: "control_state_change",
+          text: "Control state changed to disabled: Disable MFA",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer enable confirmation when control state was already enabled", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(620, "Enable MFA", true, "mfa-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(621, "Enable MFA", true, "mfa-toggle")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 620 },
+      result: "Clicked element 620.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer enable confirmation when control state flips the wrong direction", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(620, "Enable MFA", true, "mfa-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Enable MFA",
+      pageContent: "Security settings Enable MFA",
+      elements: [statefulActionButton(621, "Enable MFA", false, "mfa-toggle")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 620 },
+      result: "Clicked element 620.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer enable confirmation from generic toggled control text", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings MFA",
+      pageContent: "Security settings MFA",
+      elements: [statefulActionButton(620, "MFA", false, "mfa-toggle")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings MFA",
+      pageContent: "Security settings MFA",
+      elements: [statefulActionButton(621, "MFA", true, "mfa-toggle")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 620 },
+      result: "Clicked element 620.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
