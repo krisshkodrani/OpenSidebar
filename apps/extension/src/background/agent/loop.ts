@@ -7294,12 +7294,27 @@ export class AgentLoop {
   private completeSubmitFormReset(
     currentIndex: number,
     signal: NonNullable<ReturnType<typeof detectFormSubmissionResetSuccess>>,
-  ): { finalSummary: string; newIndex: number } {
+  ): {
+    finalSummary: string;
+    newIndex: number;
+    completionCandidate: TrustedCompletionCandidate;
+  } {
     const newIndex = completeRemainingSubtasks(
       this as unknown as AgentLoopPlanProgressHost,
       currentIndex,
       signal.reason,
     );
+    const completionCandidate = this.createTrustedCompletionCandidate({
+      workflow: "form_submit_reset",
+      summary: signal.reason,
+      reason: "Trusted form submit reset evidence confirmed submission.",
+      evidenceText:
+        `${signal.reason}\n` +
+        `Previous record: ${signal.previousRecordId}\n` +
+        `Current record: ${signal.currentRecordId}\n` +
+        `Filled fields before submit: ${signal.filledFieldsBeforeSubmit}`,
+      recordId: signal.previousRecordId,
+    });
     this.syncPlanStatus(newIndex, "submit_form_reset_success", {
       reason: signal.reason,
       previousRecordId: signal.previousRecordId,
@@ -7324,7 +7339,7 @@ export class AgentLoop {
       filledFieldsBeforeSubmit: signal.filledFieldsBeforeSubmit,
     });
 
-    return { finalSummary: signal.reason, newIndex };
+    return { finalSummary: signal.reason, newIndex, completionCandidate };
   }
 
   private evaluateTextAdmissionAdvanceGate(params: {
@@ -9053,12 +9068,15 @@ export class AgentLoop {
                 });
 
                 if (delayedSubmitSignal) {
-                  const { finalSummary } = this.completeSubmitFormReset(
-                    pending.stepIndex,
-                    delayedSubmitSignal,
-                  );
+                  const { finalSummary, completionCandidate } =
+                    this.completeSubmitFormReset(
+                      pending.stepIndex,
+                      delayedSubmitSignal,
+                    );
                   this.pendingFormSubmissionReset = null;
-                  signalCompletedResult(finalSummary);
+                  signalCompletedResult(finalSummary, {
+                    completionCandidate,
+                  });
                   await this.traceRecorder?.endTurn();
                   break;
                 }
@@ -9263,11 +9281,14 @@ export class AgentLoop {
                     if (submitResetSignal) {
                       this.consecutiveAutoAdvances = 0;
                       const fromStep = planAfterAction.currentIndex;
-                      const { finalSummary } = this.completeSubmitFormReset(
-                        fromStep,
-                        submitResetSignal,
-                      );
-                      signalCompletedResult(finalSummary);
+                      const { finalSummary, completionCandidate } =
+                        this.completeSubmitFormReset(
+                          fromStep,
+                          submitResetSignal,
+                        );
+                      signalCompletedResult(finalSummary, {
+                        completionCandidate,
+                      });
                       await this.traceRecorder?.endTurn();
                       break;
                     } else if (
