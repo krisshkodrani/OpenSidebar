@@ -32,7 +32,6 @@ import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import {
   assessDoneSummary,
-  assessWorkflowDoneGuard,
   checkSummaryStepCoherence,
   detectAdmission,
 } from "./verification";
@@ -85,6 +84,7 @@ import {
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
+  evaluateCompletionWorkflowContractPreflight,
   evaluateCompletionContract,
   generateCompletionContract,
   type CompletionCandidateSource,
@@ -2914,8 +2914,8 @@ export class AgentLoop {
     summary: string,
   ): boolean {
     const workflowSnapshot = this.context.getSnapshot();
-    const workflowDoneGuard = assessWorkflowDoneGuard({
-      query: this.originalQuery,
+    const workflowDoneGuard = evaluateCompletionWorkflowContractPreflight({
+      userRequest: this.originalQuery,
       summary,
       selectedSkillId: this.selectedSkillId,
       pageUrl: workflowSnapshot?.url,

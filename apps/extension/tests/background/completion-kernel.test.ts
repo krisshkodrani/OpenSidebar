@@ -11,6 +11,7 @@ import {
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
   evaluateCompletionSummaryPreflight,
+  evaluateCompletionWorkflowContractPreflight,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
 import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
@@ -670,6 +671,29 @@ describe("completion kernel", () => {
     });
 
     expect(decision).toEqual({ status: "valid" });
+  });
+
+  test("rejects interim workflow completion through kernel preflight", () => {
+    const decision = evaluateCompletionWorkflowContractPreflight({
+      userRequest: "Tell me the value shown in the incident chart.",
+      summary: "The incident chart page is open and visible.",
+      selectedSkillId: "chart-value-extraction",
+    });
+
+    expect(decision).toMatchObject({
+      blocked: true,
+      reason: expect.stringContaining("concrete extracted value"),
+    });
+  });
+
+  test("accepts completed workflow summaries through kernel preflight", () => {
+    const decision = evaluateCompletionWorkflowContractPreflight({
+      userRequest: "Tell me the value shown in the incident chart.",
+      summary: "The chart value for Critical incidents is 12.",
+      selectedSkillId: "chart-value-extraction",
+    });
+
+    expect(decision).toEqual({ blocked: false, reason: null });
   });
 
   test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
