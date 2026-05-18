@@ -3028,6 +3028,46 @@ describe("AgentLoop", () => {
     expect(onMessage).toHaveBeenCalledWith("100", []);
   });
 
+  test("direct non-candidate completion is trace-visible without trusted envelope", () => {
+    const recordEvent = vi.fn();
+    const onMessage = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage,
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+
+    (agent as any).completeTaskResult("The requested field is unavailable.", {
+      saveCheckpoint: false,
+    });
+
+    expect((agent as any).completedResult).toEqual({
+      outcome: "completed",
+      summary: "The requested field is unavailable.",
+    });
+    expect(recordEvent).toHaveBeenCalledWith(
+      "completion_state_transition",
+      expect.objectContaining({
+        from: "working",
+        to: "completed",
+        source: "direct_completion",
+      }),
+    );
+    expect(recordEvent).not.toHaveBeenCalledWith(
+      "completion_candidate",
+      expect.anything(),
+    );
+    expect(recordEvent).not.toHaveBeenCalledWith(
+      "completion_envelope_created",
+      expect.anything(),
+    );
+    expect(onMessage).toHaveBeenCalledWith(
+      "The requested field is unavailable.",
+      [],
+    );
+  });
+
   test("deterministic done accepts explicit-url navigation completion", async () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
