@@ -1247,6 +1247,56 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts resolve confirmation from same-page state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Incident INC001 State: In Progress Resolve incident",
+      pageContent: "Incident INC001 State: In Progress Resolve incident",
+      elements: [actionButton(602, "Resolve incident")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Incident INC001 State: Resolved",
+      pageContent: "Incident INC001 State: Resolved",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Resolve the incident.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 602 },
+      result: "Clicked element 602.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Resolved the incident.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "close",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:close:status:state-resolved",
+        detail: expect.objectContaining({
+          action: "close",
+          source: "status_change",
+          text: "State: Resolved",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts save confirmation from cleared dirty-state indicator", () => {
     const pre = workflowSnapshot({
       visibleContent: "Settings Unsaved changes Save changes",
