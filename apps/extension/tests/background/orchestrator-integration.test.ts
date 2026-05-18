@@ -672,12 +672,18 @@ describe("Orchestrator integration join tests", () => {
       "The key Overview metrics are collected for the final comparison.";
     const second = makeNode(
       "n2",
-      "Switch to the Reports tab and compare it with the Overview data.",
+      "Review the remaining dashboard context for the final comparison.",
+      ["n1"],
     );
     second.successCriteria =
-      "Final answer identifies which area is strongest based on both tabs.";
+      "Final answer identifies traffic as the strongest area based on both tabs.";
     plannerBuildNodesImpl = async () => [first, second];
     verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    loopStartImpl = async () => ({
+      outcome: "completed",
+      summary:
+        "Traffic is strongest based on both tabs: Google Search traffic is up 15%, users are up 12%, and revenue is up 8%.",
+    });
     (chrome.tabs as any).sendMessage = vi.fn(async () => ({
       payload: {
         snapshot: {
@@ -709,6 +715,25 @@ describe("Orchestrator integration join tests", () => {
     const completion = messages.find((m) => m.type === "TASK_COMPLETION");
     expect(completion).toBeDefined();
     expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]?.status).toBe("skipped");
+    expect(completion?.payload?.subtaskResults?.[1]?.result).toContain(
+      "Skipped: global goal already achieved",
+    );
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "root" &&
+          entry.body.data?.status === "sibling_ignored" &&
+          entry.body.data?.reason === "global_goal_already_achieved" &&
+          Array.isArray(entry.body.data?.skippedNodeIds) &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n2"),
+      ),
+    ).toBe(true);
   });
 
   test("stops active global-goal siblings after root goal completion", async () => {
@@ -1094,6 +1119,18 @@ describe("Orchestrator integration join tests", () => {
           entry.url.endsWith("/run-traces") &&
           entry.body.type === "navigation_goal_gate" &&
           entry.body.data?.skippedNodes === 2,
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "root" &&
+          entry.body.data?.status === "sibling_ignored" &&
+          entry.body.data?.reason === "navigation_goal_already_achieved" &&
+          Array.isArray(entry.body.data?.skippedNodeIds) &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n2") &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n3"),
       ),
     ).toBe(true);
   });
