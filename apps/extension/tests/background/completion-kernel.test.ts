@@ -4326,6 +4326,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts concise grounded date label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Schedule Matrix",
+      url: "https://example.test/schedule",
+      visibleContent:
+        "Schedule Matrix Due date: 2026-05-18 Review date: 2026-06-01",
+      pageContent:
+        "Schedule Matrix Due date: 2026-05-18. Review date: 2026-06-01. The page explains schedule ownership, release priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer schedule questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When is the due date?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-18",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "due date",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not accept the wrong concise date label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Schedule Matrix",
+      url: "https://example.test/schedule",
+      visibleContent:
+        "Schedule Matrix Due date: 2026-05-18 Review date: 2026-06-01",
+      pageContent:
+        "Schedule Matrix Due date: 2026-05-18. Review date: 2026-06-01. The page explains schedule ownership, release priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer schedule questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When is the due date?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-06-01",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "due date",
+    });
+    expect(decision.status).toBe("inconclusive");
+  });
+
+  test("accepts concise grounded time label-value answer summary", () => {
+    const snap = workflowSnapshot({
+      title: "Schedule Matrix",
+      url: "https://example.test/schedule",
+      visibleContent:
+        "Schedule Matrix Maintenance time: 14:30 Review time: 15:30",
+      pageContent:
+        "Schedule Matrix Maintenance time: 14:30. Review time: 15:30. The page explains schedule ownership, release priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer schedule questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When is the maintenance time?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "14:30",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "maintenance time",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts concise grounded boolean label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Security Matrix",
