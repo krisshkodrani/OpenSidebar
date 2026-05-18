@@ -3554,7 +3554,7 @@ function stableControlIdentity(element: TaggedElement): string | null {
 
 function hasDirtyStateIndicator(snapshot: DomSnapshot): boolean {
   const text = normalizeText(snapshotCompletionText(snapshot));
-  return /\b(?:unsaved changes|changes not saved|changes have not been saved|not saved|pending changes|you have unsaved)\b/i.test(
+  return /\b(?:unsaved(?: changes)?|changes not saved|changes have not been saved|not saved|pending changes|you have unsaved)\b/i.test(
     text,
   );
 }
