@@ -2373,6 +2373,98 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts mark-complete confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Task TASK001 Status: In Progress Mark task complete",
+      pageContent: "Task TASK001 Status: In Progress Mark task complete",
+      elements: [actionButton(606, "Mark task complete")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Task TASK001 Status: Completed",
+      pageContent: "Task TASK001 Status: Completed",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mark TASK001 complete.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 606 },
+      result: "Clicked element 606.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Marked TASK001 complete.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "complete",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:complete:status:status-completed",
+        detail: expect.objectContaining({
+          action: "complete",
+          source: "status_change",
+          text: "Status: Completed",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer mark-complete confirmation when status was already complete", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Task TASK001 Status: Completed Mark task complete",
+      pageContent: "Task TASK001 Status: Completed Mark task complete",
+      elements: [actionButton(606, "Mark task complete")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Task TASK001 Status: Completed",
+      pageContent: "Task TASK001 Status: Completed",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 606 },
+      result: "Clicked element 606.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not generate complete workflow contract for generic form-completion wording", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Complete the profile form.",
+      snapshot: workflowSnapshot(),
+    });
+
+    expect(generated).toBeNull();
+  });
+
+  test("does not generate complete workflow contract for reporting a complete state", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Report that the task is complete.",
+      snapshot: workflowSnapshot(),
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("accepts save confirmation from cleared dirty-state indicator", () => {
     const pre = workflowSnapshot({
       visibleContent: "Settings Unsaved changes Save changes",
