@@ -2478,6 +2478,236 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts target-aware visible enable confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Feature Beta remains disabled. Feature Alpha enabled successfully.",
+      pageContent:
+        "Feature Beta remains disabled. Feature Alpha enabled successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Enabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:enable",
+          detail: expect.objectContaining({
+            action: "enable",
+            source: "visible_text",
+            text: "Feature Alpha enabled successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible enable confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Feature Alpha remains disabled. Feature Beta enabled successfully.",
+      pageContent:
+        "Feature Alpha remains disabled. Feature Beta enabled successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Enabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:enable",
+          detail: expect.objectContaining({
+            action: "enable",
+            source: "visible_text",
+            text: "Feature Beta enabled successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible enable completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Enable completed.",
+      pageContent: "Enable completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Enable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Enable completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts target-aware visible disable confirmation for the requested target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Feature Beta remains enabled. Feature Alpha disabled successfully.",
+      pageContent:
+        "Feature Beta remains enabled. Feature Alpha disabled successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Disabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:disable",
+          detail: expect.objectContaining({
+            action: "disable",
+            source: "visible_text",
+            text: "Feature Alpha disabled successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware visible disable confirmation for a different target", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Feature Alpha remains enabled. Feature Beta disabled successfully.",
+      pageContent:
+        "Feature Alpha remains enabled. Feature Beta disabled successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Disabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:disable",
+          detail: expect.objectContaining({
+            action: "disable",
+            source: "visible_text",
+            text: "Feature Beta disabled successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("keeps generic visible disable completion valid for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Disable completed.",
+      pageContent: "Disable completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable Feature Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Disable completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {
     const snap = workflowSnapshot({
       visibleContent: "Dismiss completed.",
