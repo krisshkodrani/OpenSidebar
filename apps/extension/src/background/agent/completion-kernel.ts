@@ -196,6 +196,7 @@ export type WorkflowConfirmationAction =
   | "share"
   | "install"
   | "uninstall"
+  | "invite"
   | "post"
   | "approve"
   | "reject"
@@ -236,6 +237,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "share",
   "install",
   "uninstall",
+  "invite",
   "post",
   "approve",
   "reject",
@@ -279,6 +281,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "share"
   | "install"
   | "uninstall"
+  | "invite"
   | "post"
   | "approve"
   | "reject"
@@ -2680,6 +2683,13 @@ function inferWorkflowConfirmationAction(
   ) {
     return "uninstall";
   }
+  if (
+    /\binvit(?:e|ed)\s+(?:the\s+)?(?:user|member|person|contact|customer|client|guest|reviewer|approver|editor|viewer|admin|administrator|collaborator|teammate|team|group)\b/i.test(
+      text,
+    )
+  ) {
+    return "invite";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2861,6 +2871,8 @@ function workflowTargetActionPattern(
       return "(?:install)";
     case "uninstall":
       return "(?:uninstall)";
+    case "invite":
+      return "(?:invite)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3031,6 +3043,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "share" ||
     action === "install" ||
     action === "uninstall" ||
+    action === "invite" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3174,6 +3187,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:installed)";
     case "uninstall":
       return "(?:uninstalled)";
+    case "invite":
+      return "(?:invited)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3255,6 +3270,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:install|installation)";
     case "uninstall":
       return "(?:uninstall|uninstallation)";
+    case "invite":
+      return "(?:invite|invitation)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3592,6 +3609,19 @@ function textConfirmsWorkflowAction(
       return /\b(?:uninstalled|uninstall complete|uninstall completed|uninstall successful|uninstallation complete|uninstallation completed|uninstallation successful)\b/i.test(
         text,
       );
+    case "invite":
+      if (mode === "visible") {
+        return (
+          /\binvited\s+successfully\b/i.test(text) ||
+          /\b(?:user|member|person|contact|customer|client|guest|reviewer|approver|editor|viewer|admin|administrator|collaborator|teammate|team|group)\s+invited\b/i.test(
+            text,
+          ) ||
+          /\binvitation\s+(?:complete|completed|successful|sent)\b/i.test(text)
+        );
+      }
+      return /\b(?:invited|invite complete|invite completed|invite successful|invitation complete|invitation completed|invitation successful|invitation sent)\b/i.test(
+        text,
+      );
     case "post":
       if (mode === "visible") {
         return (
@@ -3917,6 +3947,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:installed|install|installation)";
     case "uninstall":
       return "(?:uninstalled|uninstall|uninstallation)";
+    case "invite":
+      return "(?:invited|invite|invitation)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4741,6 +4773,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\binstalled\b/i.test(text);
     case "uninstall":
       return /\buninstalled\b/i.test(text);
+    case "invite":
+      return /\binvited\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":

@@ -1651,6 +1651,20 @@ describe("completion kernel", () => {
       genericSummary: "Uninstallation completed.",
     },
     {
+      action: "invite",
+      request: "Invite Member Alpha.",
+      summary: "Invited Member Alpha.",
+      targetLabel: "Member Alpha",
+      requestedVisible:
+        "Member Beta remains uninvited. Member Alpha invited successfully.",
+      requestedEvidenceText: "Member Alpha invited successfully.",
+      otherVisible:
+        "Member Alpha remains uninvited. Member Beta invited successfully.",
+      otherEvidenceText: "Member Beta invited successfully.",
+      genericVisible: "Invitation completed.",
+      genericSummary: "Invitation completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
