@@ -6229,6 +6229,42 @@ describe("completion kernel", () => {
     expect(rejected.status).toBe("inconclusive");
   });
 
+  test("accepts only the expected concise priority label-value answer", () => {
+    const snap = workflowSnapshot({
+      title: "Incident Matrix",
+      url: "https://example.test/incidents",
+      visibleContent:
+        "Incident Matrix Incident priority: High Approval priority: Low",
+      pageContent:
+        "Incident Matrix Incident priority: High. Approval priority: Low. The page explains service coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer incident priority questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the incident priority?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "High.",
+    });
+    const rejected = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Low",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "incident priority",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(rejected.status).toBe("inconclusive");
+  });
+
   test("accepts concise grounded label-value answer summary", () => {
     const snap = workflowSnapshot({
       title: "Support Matrix",

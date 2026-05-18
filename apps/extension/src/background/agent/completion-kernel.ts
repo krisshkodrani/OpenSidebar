@@ -4600,7 +4600,8 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     );
   }
   if (
-    isConciseSingleTokenLabelValue(rawValue) &&
+    (isConciseSingleTokenLabelValue(rawValue) ||
+      isConcisePriorityLabelValue(rawValue, expectedAnswerLabel)) &&
     valueTokenCoveredBySummary(normalizedSummary, normalizedValue)
   ) {
     return true;
@@ -4988,6 +4989,18 @@ const CONCISE_STATUS_LABEL_VALUES = new Set([
   "yes",
 ]);
 
+const CONCISE_PRIORITY_LABEL_VALUES = new Set([
+  "blocker",
+  "critical",
+  "high",
+  "low",
+  "major",
+  "medium",
+  "minor",
+  "normal",
+  "urgent",
+]);
+
 function isConciseSingleTokenLabelValue(value: string): boolean {
   const cleaned = cleanLabel(value);
   if (/^[~\u2248]?\s*\$?\d[\d,]*(?:\.\d+)?%?$/.test(cleaned)) {
@@ -5004,6 +5017,22 @@ function isConciseSingleTokenLabelValue(value: string): boolean {
     return true;
   }
   return CONCISE_STATUS_LABEL_VALUES.has(normalizeText(cleaned));
+}
+
+function isConcisePriorityLabelValue(
+  value: string,
+  expectedAnswerLabel: string,
+): boolean {
+  return (
+    labelCanHavePriorityValue(expectedAnswerLabel) &&
+    CONCISE_PRIORITY_LABEL_VALUES.has(normalizeText(cleanLabel(value)))
+  );
+}
+
+function labelCanHavePriorityValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:priority|severity|urgency|impact|risk|importance)\b/i.test(
+    expectedAnswerLabel,
+  );
 }
 
 function isIdentifierCodeValue(value: string): boolean {
