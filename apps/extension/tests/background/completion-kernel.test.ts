@@ -2808,6 +2808,181 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts assign confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Open Assign ticket",
+      pageContent: "Ticket INC005 Status: Open Assign ticket",
+      elements: [actionButton(610, "Assign ticket")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Assigned",
+      pageContent: "Ticket INC005 Status: Assigned",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Assign the ticket.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 610 },
+      result: "Clicked element 610.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Assigned the ticket.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "assign",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:assign:status:status-assigned",
+        detail: expect.objectContaining({
+          action: "assign",
+          source: "status_change",
+          text: "Status: Assigned",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts unassign confirmation from same-page status change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Assigned Unassign ticket",
+      pageContent: "Ticket INC005 Status: Assigned Unassign ticket",
+      elements: [actionButton(611, "Unassign ticket")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Unassigned",
+      pageContent: "Ticket INC005 Status: Unassigned",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unassign the ticket.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 611 },
+      result: "Clicked element 611.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unassigned the ticket.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unassign",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unassign:status:status-unassigned",
+        detail: expect.objectContaining({
+          action: "unassign",
+          source: "status_change",
+          text: "Status: Unassigned",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer assign confirmation when status was already assigned", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Assigned Assign ticket",
+      pageContent: "Ticket INC005 Status: Assigned Assign ticket",
+      elements: [actionButton(610, "Assign ticket")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Assigned",
+      pageContent: "Ticket INC005 Status: Assigned",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 610 },
+      result: "Clicked element 610.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unassign confirmation when status was already unassigned", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Unassigned Unassign ticket",
+      pageContent: "Ticket INC005 Status: Unassigned Unassign ticket",
+      elements: [actionButton(611, "Unassign ticket")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket INC005 Status: Unassigned",
+      pageContent: "Ticket INC005 Status: Unassigned",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 611 },
+      result: "Clicked element 611.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("keeps assigned status questions as read-answer contracts", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Matrix",
+      url: "https://example.test/tickets",
+      visibleContent: "Ticket Matrix Assigned: Priya Shah Priority: High",
+      pageContent:
+        "Ticket Matrix Assigned: Priya Shah. Priority: High. The page explains assignment coverage, ticket priority, customer impact, response timing, audit notes, incident routing, maintenance coordination, data center ownership, escalation routing, and manager review so operators can answer ticket questions from visible page evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is assigned?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Priya Shah",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "assigned",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts submit confirmation from same-page status change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Request REQ004 Status: Draft Submit request",
