@@ -2693,7 +2693,7 @@ function inferWorkflowConfirmationTargetLabel(
 
 function normalizeWorkflowTargetLabel(
   value: string,
-  options: { quoted?: boolean } = {},
+  options: { quoted?: boolean; allowShort?: boolean } = {},
 ): string | null {
   let target = cleanLabel(value);
   if (!target) return null;
@@ -2721,7 +2721,12 @@ function normalizeWorkflowTargetLabel(
 
   const tokens = tokenizeCompletionText(target);
   if (tokens.length === 0) return null;
-  if (!options.quoted && tokens.length < 2 && !/[\d_-]/.test(target)) {
+  if (
+    !options.quoted &&
+    !options.allowShort &&
+    tokens.length < 2 &&
+    !/[\d_-]/.test(target)
+  ) {
     return null;
   }
   return target.slice(0, 160);
@@ -2732,8 +2737,20 @@ function workflowConfirmationMatchesTarget(
   targetLabel: string | undefined,
 ): boolean {
   if (!targetLabel) return true;
-  if (event.detail.source !== "target_disappearance") return true;
-  return workflowTargetLabelCoveredByText(targetLabel, event.detail.text);
+  if (event.detail.source === "target_disappearance") {
+    return workflowTargetLabelCoveredByText(targetLabel, event.detail.text);
+  }
+  if (
+    event.detail.source === "visible_text" &&
+    (event.detail.action === "delete" || event.detail.action === "archive")
+  ) {
+    return visibleWorkflowConfirmationMatchesTarget(
+      event.detail.text,
+      event.detail.action,
+      targetLabel,
+    );
+  }
+  return true;
 }
 
 function workflowTargetLabelCoveredByText(
@@ -2753,6 +2770,100 @@ function workflowTargetLabelCoveredByText(
       valueTokenCoveredBySummary(normalizedText, token),
     )
   );
+}
+
+function visibleWorkflowConfirmationMatchesTarget(
+  text: string,
+  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+  targetLabel: string,
+): boolean {
+  const candidate = extractVisibleWorkflowConfirmationTarget(
+    text,
+    action,
+    targetLabel,
+  );
+  if (!candidate) return true;
+  return workflowTargetLabelCoveredByText(targetLabel, candidate);
+}
+
+function extractVisibleWorkflowConfirmationTarget(
+  text: string,
+  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+  targetLabel: string,
+): string | null {
+  const normalizedText = cleanLabel(text);
+  if (!normalizedText) return null;
+
+  const targetTokens = tokenizeCompletionText(targetLabel);
+  const targetTokenCount = Math.max(1, Math.min(targetTokens.length, 8));
+  const resultTerms =
+    action === "delete" ? "(?:deleted|removed)" : "(?:archived)";
+  const nounTerms =
+    action === "delete" ? "(?:deletion|removal)" : "(?:archival)";
+  const beforeResult = new RegExp(
+    `(.{2,180}?)\\s+(?:was\\s+)?${resultTerms}\\s+(?:successfully|complete|completed|confirmed)\\b`,
+    "i",
+  ).exec(normalizedText)?.[1];
+  const beforeCandidate = normalizeWorkflowTargetTail(
+    beforeResult ?? "",
+    targetTokenCount,
+  );
+  if (beforeCandidate) return beforeCandidate;
+
+  const afterResult = new RegExp(
+    `\\b${resultTerms}\\s+(.{2,180}?)\\s+(?:successfully|complete|completed|confirmed)\\b`,
+    "i",
+  ).exec(normalizedText)?.[1];
+  const afterCandidate = normalizeWorkflowTargetHead(
+    afterResult ?? "",
+    targetTokenCount,
+  );
+  if (afterCandidate) return afterCandidate;
+
+  const beforeNoun = new RegExp(
+    `(.{2,180}?)\\s+${nounTerms}\\s+(?:complete|completed|confirmed|successful)\\b`,
+    "i",
+  ).exec(normalizedText)?.[1];
+  return normalizeWorkflowTargetTail(beforeNoun ?? "", targetTokenCount);
+}
+
+function normalizeWorkflowTargetTail(
+  value: string,
+  tokenCount: number,
+): string | null {
+  return normalizeWorkflowTargetTokenSlice(value, tokenCount, "tail");
+}
+
+function normalizeWorkflowTargetHead(
+  value: string,
+  tokenCount: number,
+): string | null {
+  return normalizeWorkflowTargetTokenSlice(value, tokenCount, "head");
+}
+
+function normalizeWorkflowTargetTokenSlice(
+  value: string,
+  tokenCount: number,
+  side: "head" | "tail",
+): string | null {
+  const cleaned = cleanLabel(value)
+    .replace(
+      /\b(?:the|this|that|selected|current|visible|target|record|item|row|entry|object|button|link|delete|remove|archive|was|has|been)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+
+  const words = cleaned.split(/\s+/g).filter(Boolean);
+  if (words.length === 0) return null;
+  const selected =
+    side === "head"
+      ? words.slice(0, tokenCount)
+      : words.slice(Math.max(0, words.length - tokenCount));
+  return normalizeWorkflowTargetLabel(selected.join(" "), {
+    allowShort: tokenCount <= 1,
+  });
 }
 
 function isBrowserManagementWorkflowRequest(value: string): boolean {
@@ -3367,14 +3478,44 @@ function extractWorkflowConfirmationEvidence(
     logicalKey: `workflow:confirmation:${action}`,
     observedAtTurn: turn,
     detail: {
-      text: cleanLabel(
-        snapshot.visibleContent || snapshot.pageContent || snapshot.title,
-      ).slice(0, 1000),
+      text: workflowConfirmationEvidenceText(snapshot, action),
       action,
       source: "visible_text",
       ...(snapshot.url ? { url: snapshot.url } : {}),
     },
   }));
+}
+
+function workflowConfirmationEvidenceText(
+  snapshot: DomSnapshot,
+  action: WorkflowConfirmationAction,
+): string {
+  const source = cleanLabel(
+    snapshot.visibleContent || snapshot.pageContent || snapshot.title,
+  );
+  return (
+    extractWorkflowConfirmationSnippet(source, action) ?? source
+  ).slice(0, 1000);
+}
+
+function extractWorkflowConfirmationSnippet(
+  value: string,
+  action: WorkflowConfirmationAction,
+): string | null {
+  const text = cleanLabel(value);
+  if (!text) return null;
+
+  const sentence = text
+    .split(/(?<=[.!?])\s+|\n+/g)
+    .map((candidate) => cleanLabel(candidate))
+    .find((candidate) => textConfirmsWorkflowAction(candidate, action, "visible"));
+  if (sentence) return sentence;
+
+  const actionTerms = workflowActionTermPattern(action);
+  const match = new RegExp(`.{0,120}\\b${actionTerms}\\b.{0,120}`, "i").exec(
+    text,
+  )?.[0];
+  return match ? cleanLabel(match) : null;
 }
 
 function extractModalDismissalEvidenceFromToolOutcome(params: {
