@@ -4475,6 +4475,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isIpv6CidrValue(preciseConciseValue)) {
+      return preciseIpv6CidrValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isCidrValue(preciseConciseValue)) {
       return preciseCidrValueCoveredBySummary(
         normalizedSummary,
@@ -4623,6 +4629,20 @@ function extractPreciseConciseLabelValue(
     if (macAddressMatch) return cleanLabel(macAddressMatch[1] ?? "") || null;
   }
 
+  if (
+    labelCanHaveIpv6AddressValue(expectedAnswerLabel) ||
+    labelCanHaveCidrValue(expectedAnswerLabel)
+  ) {
+    const ipv6CidrMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?:%[a-z0-9_.-]+)?\\/(?:[0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    const ipv6CidrCandidate = cleanLabel(ipv6CidrMatch?.[1] ?? "");
+    if (ipv6CidrCandidate && isIpv6CidrValue(ipv6CidrCandidate)) {
+      return ipv6CidrCandidate;
+    }
+  }
+
   if (labelCanHaveIpv6AddressValue(expectedAnswerLabel)) {
     const ipv6Match = new RegExp(
       `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}(?:%[a-z0-9_.-]+)?)(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
@@ -4729,6 +4749,14 @@ function isIpv6AddressValue(value: string): boolean {
   return groups.length === 8 && groups.every(validGroup);
 }
 
+function isIpv6CidrValue(value: string): boolean {
+  const cleaned = cleanLabel(value);
+  const match = /^(.+)\/(\d{1,3})$/.exec(cleaned);
+  if (!match) return false;
+  const prefix = Number(match[2]);
+  return prefix >= 0 && prefix <= 128 && isIpv6AddressValue(match[1] ?? "");
+}
+
 function isCidrValue(value: string): boolean {
   const cleaned = cleanLabel(value);
   const match = /^(\d{1,3})(?:\.(\d{1,3})){3}\/(\d{1,2})$/.exec(cleaned);
@@ -4761,6 +4789,16 @@ function preciseIpv6ValueCoveredBySummary(
   if (!normalizedValue) return false;
   return new RegExp(
     `(^|[^a-z0-9:%])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function preciseIpv6CidrValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  return new RegExp(
+    `(^|[^a-z0-9:%./])${escapeRegExp(normalizedValue)}(?=$|[\\s,;!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
 }
 
