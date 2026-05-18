@@ -197,6 +197,8 @@ export type WorkflowConfirmationAction =
   | "deescalate"
   | "lock"
   | "unlock"
+  | "pause"
+  | "resume"
   | "dismiss"
   | "update"
   | "submit"
@@ -221,6 +223,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "deescalate",
   "lock",
   "unlock",
+  "pause",
+  "resume",
   "dismiss",
   "update",
   "submit",
@@ -2574,6 +2578,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "lock";
   }
+  if (
+    /\bpause\s+(?:the\s+)?(?:automation|job|operation|pipeline|process|queue|record|request|schedule|service|subscription|sync|task|ticket|workflow)\b/i.test(
+      text,
+    )
+  ) {
+    return "pause";
+  }
+  if (
+    /\bresume\s+(?:the\s+)?(?:automation|job|operation|pipeline|process|queue|record|request|schedule|service|subscription|sync|task|ticket|workflow)\b/i.test(
+      text,
+    )
+  ) {
+    return "resume";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2852,6 +2870,26 @@ function textConfirmsWorkflowAction(
       return /\b(?:unlocked|unlock complete|unlock completed|unlock successful)\b/i.test(
         text,
       );
+    case "pause":
+      if (mode === "visible") {
+        return (
+          /\bpaused\s+successfully\b/i.test(text) ||
+          /\bpause\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:paused|pause complete|pause completed|pause successful)\b/i.test(
+        text,
+      );
+    case "resume":
+      if (mode === "visible") {
+        return (
+          /\bresumed\s+successfully\b/i.test(text) ||
+          /\bresume\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:resumed|resume complete|resume completed|resume successful)\b/i.test(
+        text,
+      );
     case "dismiss":
       if (mode === "visible") {
         return (
@@ -2967,6 +3005,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:locked|lock)";
     case "unlock":
       return "(?:unlocked|unlock)";
+    case "pause":
+      return "(?:paused|pause)";
+    case "resume":
+      return "(?:resumed|resume)";
     case "dismiss":
       return "(?:dismissed|closed|canceled|cancelled|removed|hidden|cleared|dismissal|dismiss|hide|clear)";
     case "update":
@@ -3505,6 +3547,8 @@ type StatusChangeWorkflowAction = Extract<
   | "deescalate"
   | "lock"
   | "unlock"
+  | "pause"
+  | "resume"
   | "submit"
   | "complete"
 >;
@@ -3533,6 +3577,8 @@ function inferStatusChangeAction(
   if (/\bescalat(?:e|ed)\b/i.test(text)) return "escalate";
   if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
   if (/\block(?:ed)?\b/i.test(text)) return "lock";
+  if (/\bpause(?:d)?\b/i.test(text)) return "pause";
+  if (/\bresume(?:d)?\b/i.test(text)) return "resume";
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
   if (isCompleteWorkflowRequest(text)) return "complete";
@@ -3603,6 +3649,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\blocked\b/i.test(text);
     case "unlock":
       return /\bunlocked\b/i.test(text);
+    case "pause":
+      return /\bpaused\b/i.test(text);
+    case "resume":
+      return /\bresumed\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3665,9 +3715,13 @@ function findWorkflowStatusChangeText(
                               ? "(?:locked|lock complete|lock completed|lock successful)"
                               : action === "unlock"
                                 ? "(?:unlocked|unlock complete|unlock completed|unlock successful)"
-                                : action === "submit"
-                                  ? "(?:submitted|submission complete|submission completed|submission successful)"
-                                  : "(?:complete|completed)";
+                                : action === "pause"
+                                  ? "(?:paused|pause complete|pause completed|pause successful)"
+                                  : action === "resume"
+                                    ? "(?:resumed|running|active|resume complete|resume completed|resume successful)"
+                                    : action === "submit"
+                                      ? "(?:submitted|submission complete|submission completed|submission successful)"
+                                      : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
