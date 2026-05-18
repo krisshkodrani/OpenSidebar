@@ -4462,9 +4462,8 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     );
   }
 
-  const valuePrefix = normalizeText(valueWords.slice(0, 2).join(" "));
   if (valueWords.length >= 2) {
-    return normalizedSummary.includes(valuePrefix);
+    return labelValuePhraseCoveredBySummary(normalizedSummary, valueWords);
   }
 
   const normalizedValue = normalizeText(valueWords[0]);
@@ -4480,6 +4479,16 @@ function readAnswerSummaryMatchesExpectedLabelValue(
     normalizedSummary.includes(normalizedLabel) &&
     normalizedSummary.includes(normalizedValue)
   );
+}
+
+function labelValuePhraseCoveredBySummary(
+  normalizedSummary: string,
+  valueWords: string[],
+): boolean {
+  const requiredWords =
+    valueWords.length <= 4 ? valueWords : valueWords.slice(0, 2);
+  const phrase = normalizeText(requiredWords.join(" "));
+  return Boolean(phrase) && normalizedSummary.includes(phrase);
 }
 
 function extractPreciseConciseNumericLabelValue(
