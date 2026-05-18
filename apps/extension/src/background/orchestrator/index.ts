@@ -909,6 +909,48 @@ export class Orchestrator {
     );
   }
 
+  private ignoreSiblingsAfterRootCompletion(
+    task: OrchestratorTask,
+    params: {
+      reason: string;
+      result: string;
+    },
+  ): string[] {
+    const siblings = task.nodes.filter(
+      (node) => node.status === "pending" || node.status === "running",
+    );
+    if (siblings.length === 0) return [];
+
+    const skippedNodeIds = new Set(siblings.map((node) => node.id));
+    const workers = this.workersByWorkspace.get(task.workspaceId)?.executor;
+    for (const node of siblings) {
+      node.status = "skipped";
+      node.result = params.result;
+      node.error = undefined;
+    }
+
+    for (const worker of workers?.values() ?? []) {
+      if (!skippedNodeIds.has(worker.nodeId)) continue;
+      const node = task.nodes.find((candidate) => candidate.id === worker.nodeId);
+      this.emitTraceEvent(
+        task,
+        "worker_cancelled",
+        {
+          taskId: task.id,
+          nodeId: worker.nodeId,
+          workerId: worker.workerId,
+          reason: params.reason,
+          resources: node?.parallelContract?.resourceHints ?? [],
+          ...buildParallelRunState(task),
+        },
+        "system",
+      );
+      worker.loop.requestStop();
+    }
+
+    return [...skippedNodeIds];
+  }
+
   private attachPlannerUsageTrace(
     planner: unknown,
     task:
@@ -5519,8 +5561,17 @@ export class Orchestrator {
       }
     };
 
+    let rootGoalSatisfied = false;
+
     while (task.status === "running" || task.status === "stopping") {
       if (task.status === "stopping") {
+        if (running.size > 0) {
+          await Promise.race(running);
+          continue;
+        }
+        break;
+      }
+      if (rootGoalSatisfied) {
         if (running.size > 0) {
           await Promise.race(running);
           continue;
@@ -5593,8 +5644,12 @@ export class Orchestrator {
       });
 
       // Global goal gate: if a node just completed and the final node's
-      // success criteria are already satisfied on the page, skip remaining nodes.
+      // success criteria are already satisfied on the page, skip remaining
+      // pending or running sibling nodes.
       const completedNodes = task.nodes.filter((n) => n.status === "completed");
+      const remainingActive = task.nodes.filter(
+        (n) => n.status === "pending" || n.status === "running",
+      );
       const remainingPending = task.nodes.filter((n) => n.status === "pending");
       const hasUnresolvedAttemptedPendingNode = remainingPending.some(
         (node) =>
@@ -5607,7 +5662,7 @@ export class Orchestrator {
           ),
       );
       if (
-        remainingPending.length > 0 &&
+        remainingActive.length > 0 &&
         completedNodes.length > 0 &&
         !hasUnresolvedAttemptedPendingNode &&
         isNavigationOnlyRequest(task.query)
@@ -5626,29 +5681,34 @@ export class Orchestrator {
               {
                 taskId: task.id,
                 matchedLabels: navigationCompletion.matchedLabels,
-                remainingNodes: remainingPending.length,
+                remainingNodes: remainingActive.length,
               },
             );
-            for (const pending of remainingPending) {
-              pending.status = "skipped";
-              pending.result = "Skipped: navigation goal already achieved";
-            }
+            const skippedNodeIds = this.ignoreSiblingsAfterRootCompletion(task, {
+              reason: "navigation_goal_already_achieved",
+              result: "Skipped: navigation goal already achieved",
+            });
             this.emitCompletionScopeTransition(task, {
               scope: "root",
               status: "sibling_ignored",
               reason: "navigation_goal_already_achieved",
-              skippedNodeIds: remainingPending.map((node) => node.id),
+              skippedNodeIds,
             });
             this.emitTraceEvent(
               task,
               "navigation_goal_gate",
               {
                 matchedLabels: navigationCompletion.matchedLabels,
-                skippedNodes: remainingPending.length,
+                skippedNodes: skippedNodeIds.length,
                 reason: navigationCompletion.reason,
               },
               "system",
             );
+            rootGoalSatisfied = true;
+            if (running.size > 0) {
+              await Promise.race(running);
+              continue;
+            }
             break;
           }
           logger.debug("orchestrator", "Navigation goal gate not satisfied", {
@@ -5663,15 +5723,18 @@ export class Orchestrator {
           });
         }
       }
-      // Only allow skipping when at most 1 node remains pending.
+      // Only allow skipping when at most 1 node remains pending or running.
       // Prevents premature skipping after early steps when most work is still ahead.
       if (
-        remainingPending.length === 1 &&
+        remainingActive.length === 1 &&
         completedNodes.length > 0 &&
         !hasUnresolvedAttemptedPendingNode
       ) {
         const finalNode = task.nodes[task.nodes.length - 1];
-        if (finalNode.status === "pending" && finalNode.successCriteria) {
+        if (
+          (finalNode.status === "pending" || finalNode.status === "running") &&
+          finalNode.successCriteria
+        ) {
           try {
             const goalSnap = await this.getSnapshot(input.tabId);
             if (goalSnap) {
@@ -5700,7 +5763,7 @@ export class Orchestrator {
                 contract.reportTargets.length <= 1 &&
                 contract.requiredEntities.length <= 1 &&
                 contract.requiredNumbers.length === 0 &&
-                !remainingPending.some((node) => isActionOrMutationNode(node));
+                !remainingActive.some((node) => isActionOrMutationNode(node));
               if (
                 allowGlobalShortcut &&
                 goalCheck.satisfied &&
@@ -5714,28 +5777,36 @@ export class Orchestrator {
                     taskId: task.id,
                     matchedTokens: goalCheck.matchedTokens,
                     totalTokens: goalCheck.totalTokens,
-                    remainingNodes: remainingPending.length,
+                    remainingNodes: remainingActive.length,
                   },
                 );
-                for (const pending of remainingPending) {
-                  pending.status = "skipped";
-                  pending.result = "Skipped: global goal already achieved";
-                }
+                const skippedNodeIds = this.ignoreSiblingsAfterRootCompletion(
+                  task,
+                  {
+                    reason: "global_goal_already_achieved",
+                    result: "Skipped: global goal already achieved",
+                  },
+                );
                 this.emitCompletionScopeTransition(task, {
                   scope: "root",
                   status: "sibling_ignored",
                   reason: "global_goal_already_achieved",
-                  skippedNodeIds: remainingPending.map((node) => node.id),
+                  skippedNodeIds,
                 });
                 this.emitTraceEvent(
                   task,
                   "global_goal_gate",
                   {
                     matchedTokens: goalCheck.matchedTokens,
-                    skippedNodes: remainingPending.length,
+                    skippedNodes: skippedNodeIds.length,
                   },
                   "system",
                 );
+                rootGoalSatisfied = true;
+                if (running.size > 0) {
+                  await Promise.race(running);
+                  continue;
+                }
                 break;
               } else if (goalCheck.satisfied && !allowGlobalShortcut) {
                 logger.debug(
