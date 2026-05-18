@@ -4612,6 +4612,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isMassValue(preciseConciseValue)) {
+      return preciseMassValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     return valueTokenCoveredBySummary(
       normalizedSummary,
       normalizeText(preciseConciseValue),
@@ -4842,6 +4848,14 @@ function extractPreciseConciseLabelValue(
     if (electricalMatch) return cleanLabel(electricalMatch[1] ?? "") || null;
   }
 
+  if (labelCanHaveMassValue(expectedAnswerLabel)) {
+    const massMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:~|\\u2248)?\\s*\\d+(?:\\.\\d+)?\\s*(?:mg|milligrams?|g|grams?|kg|kgs|kilograms?|lb|lbs|pounds?|oz|ounces?|tons?|tonnes?))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (massMatch) return cleanLabel(massMatch[1] ?? "") || null;
+  }
+
   const match = new RegExp(
     `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:[~\\u2248]?\\s*\\$\\d[\\d,]*(?:\\.\\d+)?)|(?:[~\\u2248]?\\s*\\d[\\d,]*(?:\\.\\d+%?|%)))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
     "i",
@@ -4917,6 +4931,12 @@ function labelCanHaveTemperatureValue(expectedAnswerLabel: string): boolean {
 
 function labelCanHaveElectricalValue(expectedAnswerLabel: string): boolean {
   return /\b(?:voltage|volt|current|amp|amperage|power|watt|energy|battery|charge|load|draw|consumption|input|output|electrical)\b/i.test(
+    expectedAnswerLabel,
+  );
+}
+
+function labelCanHaveMassValue(expectedAnswerLabel: string): boolean {
+  return /\b(?:weight|mass|payload|tare|gross|net)\b/i.test(
     expectedAnswerLabel,
   );
 }
@@ -5150,6 +5170,23 @@ function isElectricalValue(value: string): boolean {
 }
 
 function preciseElectricalValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  if (!normalizedValue) return false;
+  const valuePattern = escapeRegExp(normalizedValue).replace(/\s+/g, "\\s*");
+  return new RegExp(
+    `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+  ).test(normalizedSummary);
+}
+
+function isMassValue(value: string): boolean {
+  return /^(?:~|\u2248)?\s*\d+(?:\.\d+)?\s*(?:mg|milligrams?|g|grams?|kg|kgs|kilograms?|lb|lbs|pounds?|oz|ounces?|tons?|tonnes?)$/i.test(
+    cleanLabel(value),
+  );
+}
+
+function preciseMassValueCoveredBySummary(
   normalizedSummary: string,
   normalizedValue: string,
 ): boolean {
