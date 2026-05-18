@@ -1721,6 +1721,34 @@ describe("completion kernel", () => {
       genericSummary: "Share completed.",
     },
     {
+      action: "grant",
+      request: "Grant Role Alpha.",
+      summary: "Granted Role Alpha.",
+      targetLabel: "Role Alpha",
+      requestedVisible:
+        "Role Beta remains unavailable. Role Alpha granted successfully.",
+      requestedEvidenceText: "Role Alpha granted successfully.",
+      otherVisible:
+        "Role Alpha remains unavailable. Role Beta granted successfully.",
+      otherEvidenceText: "Role Beta granted successfully.",
+      genericVisible: "Grant completed.",
+      genericSummary: "Grant completed.",
+    },
+    {
+      action: "revoke",
+      request: "Revoke Role Alpha.",
+      summary: "Revoked Role Alpha.",
+      targetLabel: "Role Alpha",
+      requestedVisible:
+        "Role Beta remains available. Role Alpha revoked successfully.",
+      requestedEvidenceText: "Role Alpha revoked successfully.",
+      otherVisible:
+        "Role Alpha remains available. Role Beta revoked successfully.",
+      otherEvidenceText: "Role Beta revoked successfully.",
+      genericVisible: "Revocation completed.",
+      genericSummary: "Revocation completed.",
+    },
+    {
       action: "install",
       request: "Install Package Alpha.",
       summary: "Installed Package Alpha.",
