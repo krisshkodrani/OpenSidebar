@@ -192,6 +192,7 @@ export type WorkflowConfirmationAction =
   | "import"
   | "duplicate"
   | "restore"
+  | "create"
   | "post"
   | "approve"
   | "reject"
@@ -228,6 +229,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "import",
   "duplicate",
   "restore",
+  "create",
   "post",
   "approve",
   "reject",
@@ -267,6 +269,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "import"
   | "duplicate"
   | "restore"
+  | "create"
   | "post"
   | "approve"
   | "reject"
@@ -2640,6 +2643,13 @@ function inferWorkflowConfirmationAction(
   ) {
     return "restore";
   }
+  if (
+    /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
+      text,
+    )
+  ) {
+    return "create";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2813,6 +2823,8 @@ function workflowTargetActionPattern(
       return "(?:duplicate|clone)";
     case "restore":
       return "(?:restore|recover|reinstate)";
+    case "create":
+      return "(?:create|add|register)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -2979,6 +2991,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "import" ||
     action === "duplicate" ||
     action === "restore" ||
+    action === "create" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3114,6 +3127,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:duplicated|cloned)";
     case "restore":
       return "(?:restored|recovered|reinstated)";
+    case "create":
+      return "(?:created|added|registered)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3187,6 +3202,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:duplicate|duplication|clone)";
     case "restore":
       return "(?:restore|restoration|recover|recovery|reinstate|reinstatement)";
+    case "create":
+      return "(?:create|creation|add|registration|register)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3468,6 +3485,21 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:restored|recovered|reinstated|restore complete|restore completed|restore successful|restoration complete|restoration completed|restoration successful|recover complete|recover completed|recover successful|recovery complete|recovery completed|recovery successful|reinstate complete|reinstate completed|reinstate successful|reinstatement complete|reinstatement completed|reinstatement successful)\b/i.test(
+        text,
+      );
+    case "create":
+      if (mode === "visible") {
+        return (
+          /\b(?:created|added|registered)\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\s+(?:created|added|registered)\b/i.test(
+            text,
+          ) ||
+          /\b(?:create|creation|add|registration|register)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:created|added|registered|create complete|create completed|create successful|creation complete|creation completed|creation successful|add complete|add completed|add successful|registration complete|registration completed|registration successful|register complete|register completed|register successful)\b/i.test(
         text,
       );
     case "post":
@@ -3787,6 +3819,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
       return "(?:restored|recovered|reinstated|restore|restoration|recover|recovery|reinstate|reinstatement)";
+    case "create":
+      return "(?:created|added|registered|create|creation|add|registration|register)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4603,6 +4637,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
       return /\b(?:restored|recovered|reinstated)\b/i.test(text);
+    case "create":
+      return /\b(?:created|added|registered)\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
