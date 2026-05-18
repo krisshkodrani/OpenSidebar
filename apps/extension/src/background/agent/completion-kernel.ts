@@ -189,6 +189,8 @@ export type WorkflowConfirmationAction =
   | "close"
   | "reopen"
   | "cancel"
+  | "enable"
+  | "disable"
   | "dismiss"
   | "update"
   | "submit"
@@ -205,6 +207,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "close",
   "reopen",
   "cancel",
+  "enable",
+  "disable",
   "dismiss",
   "update",
   "submit",
@@ -2504,6 +2508,22 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
     return "cancel";
   }
+  if (
+    /\b(?:enable|activate)\b/i.test(text) ||
+    /\bturn\s+on\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\b(?:enabled|activated|active)\b/i.test(text)
+  ) {
+    return "enable";
+  }
+  if (
+    /\b(?:disable|deactivate)\b/i.test(text) ||
+    /\bturn\s+off\b/i.test(text) ||
+    /\b(?:set|make|mark)\b.{0,40}\b(?:disabled|deactivated|inactive)\b/i.test(
+      text,
+    )
+  ) {
+    return "disable";
+  }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
@@ -2689,6 +2709,30 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:cancell?ed|cancel complete|cancel completed|cancel successful|cancellation complete|cancellation completed|cancellation successful)\b/i.test(
+        text,
+      );
+    case "enable":
+      if (mode === "visible") {
+        return (
+          /\b(?:enabled|activated)\s+successfully\b/i.test(text) ||
+          /\b(?:enable|activation)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:enabled|activated|enable complete|enable completed|enable successful|activation complete|activation completed|activation successful)\b/i.test(
+        text,
+      );
+    case "disable":
+      if (mode === "visible") {
+        return (
+          /\b(?:disabled|deactivated)\s+successfully\b/i.test(text) ||
+          /\b(?:disable|deactivation)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:disabled|deactivated|disable complete|disable completed|disable successful|deactivation complete|deactivation completed|deactivation successful)\b/i.test(
         text,
       );
     case "dismiss":
@@ -3265,6 +3309,8 @@ type StatusChangeWorkflowAction = Extract<
   | "close"
   | "reopen"
   | "cancel"
+  | "enable"
+  | "disable"
   | "submit"
   | "complete"
 >;
@@ -3279,6 +3325,12 @@ function inferStatusChangeAction(
   if (/\bre[-\s]?open(?:ed)?\b/i.test(text)) return "reopen";
   if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
     return "cancel";
+  }
+  if (/\b(?:enable|enabled|activate|activated)\b/i.test(text)) {
+    return "enable";
+  }
+  if (/\b(?:disable|disabled|deactivate|deactivated)\b/i.test(text)) {
+    return "disable";
   }
   if (/\b(?:close|closed|resolve|resolved)\b/i.test(text)) return "close";
   if (/\b(?:submit|submitted)\b/i.test(text)) return "submit";
@@ -3334,6 +3386,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bre[-\s]?opened\b/i.test(text);
     case "cancel":
       return /\bcancell?ed\b/i.test(text);
+    case "enable":
+      return /\b(?:enabled|activated)\b/i.test(text);
+    case "disable":
+      return /\b(?:disabled|deactivated)\b/i.test(text);
     case "dismiss":
       return /\b(?:dismissed|hidden|cleared)\b/i.test(text);
     case "update":
@@ -3378,9 +3434,13 @@ function findWorkflowStatusChangeText(
             ? "(?:open|reopened|re-opened)"
             : action === "cancel"
               ? "(?:canceled|cancelled|cancellation complete|cancellation completed|cancellation successful)"
-              : action === "submit"
-                ? "(?:submitted|submission complete|submission completed|submission successful)"
-                : "(?:complete|completed)";
+              : action === "enable"
+                ? "(?:enabled|activated|activation complete|activation completed|activation successful)"
+                : action === "disable"
+                  ? "(?:disabled|deactivated|deactivation complete|deactivation completed|deactivation successful)"
+                  : action === "submit"
+                    ? "(?:submitted|submission complete|submission completed|submission successful)"
+                    : "(?:complete|completed)";
   const patterns = [
     new RegExp(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
