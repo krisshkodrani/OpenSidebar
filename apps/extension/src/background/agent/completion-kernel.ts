@@ -194,6 +194,7 @@ export type WorkflowConfirmationAction =
   | "transfer"
   | "move"
   | "rename"
+  | "merge"
   | "duplicate"
   | "restore"
   | "create"
@@ -255,6 +256,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "transfer",
   "move",
   "rename",
+  "merge",
   "duplicate",
   "restore",
   "create",
@@ -319,6 +321,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "transfer"
   | "move"
   | "rename"
+  | "merge"
   | "duplicate"
   | "restore"
   | "create"
@@ -2730,6 +2733,13 @@ function inferWorkflowConfirmationAction(
     return "rename";
   }
   if (
+    /\b(?:merge|merged)\s+(?:the\s+)?(?:pull\s+request|merge\s+request|pr|branch|record|item|task|ticket|request|entry|row|case|issue|incident|lead|contact|account|customer|project|file|document|report|page|message|comment|thread|conversation|workspace)\b/i.test(
+      text,
+    )
+  ) {
+    return "merge";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3067,6 +3077,8 @@ function workflowTargetActionPattern(
       return "(?:move)";
     case "rename":
       return "(?:rename)";
+    case "merge":
+      return "(?:merge)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3281,6 +3293,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "transfer" ||
     action === "move" ||
     action === "rename" ||
+    action === "merge" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3443,6 +3456,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:moved)";
     case "rename":
       return "(?:renamed)";
+    case "merge":
+      return "(?:merged)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3566,6 +3581,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:move)";
     case "rename":
       return "(?:rename)";
+    case "merge":
+      return "(?:merge)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -3917,6 +3934,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:renamed|rename complete|rename completed|rename successful)\b/i.test(
+        text,
+      );
+    case "merge":
+      if (mode === "visible") {
+        return (
+          /\bmerged\s+successfully\b/i.test(text) ||
+          /\b(?:pull\s+request|merge\s+request|pr|branch|record|item|task|ticket|request|entry|row|case|issue|incident|lead|contact|account|customer|project|file|document|report|page|message|comment|thread|conversation|workspace)\s+merged\b/i.test(
+            text,
+          ) ||
+          /\bmerge\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:merged|merge complete|merge completed|merge successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4547,6 +4577,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:moved|move)";
     case "rename":
       return "(?:renamed|rename)";
+    case "merge":
+      return "(?:merged|merge)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5413,6 +5445,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\bmoved\b/i.test(text);
     case "rename":
       return /\brenamed\b/i.test(text);
+    case "merge":
+      return /\bmerged\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
