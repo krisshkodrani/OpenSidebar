@@ -188,6 +188,8 @@ export type WorkflowConfirmationAction =
   | "send"
   | "export"
   | "download"
+  | "upload"
+  | "import"
   | "post"
   | "approve"
   | "reject"
@@ -220,6 +222,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "send",
   "export",
   "download",
+  "upload",
+  "import",
   "post",
   "approve",
   "reject",
@@ -255,6 +259,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "send"
   | "export"
   | "download"
+  | "upload"
+  | "import"
   | "post"
   | "approve"
   | "reject"
@@ -2600,6 +2606,20 @@ function inferWorkflowConfirmationAction(
   ) {
     return "download";
   }
+  if (
+    /\bupload(?:ed)?\s+(?:the\s+)?(?:file|report|document|attachment|image|photo|csv|pdf|spreadsheet|data|dataset|results?|logs?|archive)\b/i.test(
+      text,
+    )
+  ) {
+    return "upload";
+  }
+  if (
+    /\bimport(?:ed)?\s+(?:the\s+)?(?:file|report|document|csv|spreadsheet|data|dataset|results?|table|list|view|contacts?|records?|items?)\b/i.test(
+      text,
+    )
+  ) {
+    return "import";
+  }
   if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
   if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
   if (/\b(?:reject|rejected|deny|denied)\b/i.test(text)) return "reject";
@@ -2765,6 +2785,10 @@ function workflowTargetActionPattern(
       return "(?:export)";
     case "download":
       return "(?:download)";
+    case "upload":
+      return "(?:upload)";
+    case "import":
+      return "(?:import)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -2927,6 +2951,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "send" ||
     action === "export" ||
     action === "download" ||
+    action === "upload" ||
+    action === "import" ||
     action === "post" ||
     action === "approve" ||
     action === "reject" ||
@@ -3041,6 +3067,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:exported)";
     case "download":
       return "(?:downloaded)";
+    case "upload":
+      return "(?:uploaded)";
+    case "import":
+      return "(?:imported)";
     case "post":
       return "(?:posted|published)";
     case "approve":
@@ -3106,6 +3136,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:export)";
     case "download":
       return "(?:download)";
+    case "upload":
+      return "(?:upload)";
+    case "import":
+      return "(?:import)";
     case "post":
       return "(?:post|publish)";
     case "approve":
@@ -3328,6 +3362,32 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:downloaded|download complete|download completed|download successful)\b/i.test(
+        text,
+      );
+    case "upload":
+      if (mode === "visible") {
+        return (
+          /\buploaded\s+successfully\b/i.test(text) ||
+          /\b(?:file|report|document|attachment|image|photo|csv|pdf|spreadsheet|data|dataset|results?|logs?|archive)\s+uploaded\b/i.test(
+            text,
+          ) ||
+          /\bupload\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:uploaded|upload complete|upload completed|upload successful)\b/i.test(
+        text,
+      );
+    case "import":
+      if (mode === "visible") {
+        return (
+          /\bimported\s+successfully\b/i.test(text) ||
+          /\b(?:file|report|document|csv|spreadsheet|data|dataset|results?|table|list|view|contacts?|records?|items?)\s+imported\b/i.test(
+            text,
+          ) ||
+          /\bimport\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:imported|import complete|import completed|import successful)\b/i.test(
         text,
       );
     case "post":
@@ -3639,6 +3699,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:exported|export)";
     case "download":
       return "(?:downloaded|download)";
+    case "upload":
+      return "(?:uploaded|upload)";
+    case "import":
+      return "(?:imported|import)";
     case "post":
       return "(?:posted|published|post|publish)";
     case "approve":
@@ -4447,6 +4511,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bexported\b/i.test(text);
     case "download":
       return /\bdownloaded\b/i.test(text);
+    case "upload":
+      return /\buploaded\b/i.test(text);
+    case "import":
+      return /\bimported\b/i.test(text);
     case "post":
       return /\b(?:posted|published)\b/i.test(text);
     case "approve":
