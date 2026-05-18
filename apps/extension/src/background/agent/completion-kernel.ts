@@ -4588,6 +4588,12 @@ function readAnswerSummaryMatchesExpectedLabelValue(
         normalizeText(preciseConciseValue),
       );
     }
+    if (isCssRgbColorValue(preciseConciseValue)) {
+      return preciseCssRgbColorValueCoveredBySummary(
+        normalizedSummary,
+        normalizeText(preciseConciseValue),
+      );
+    }
     if (isDurationValue(preciseConciseValue)) {
       return preciseDurationValueCoveredBySummary(
         normalizedSummary,
@@ -4848,6 +4854,14 @@ function extractPreciseConciseLabelValue(
       "i",
     ).exec(evidenceText);
     if (colorMatch) return cleanLabel(colorMatch[1] ?? "") || null;
+
+    const rgbChannel = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+    const rgbAlpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
+    const rgbMatch = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:(?:[:=-])|\\bis\\b)\\s*((?:rgba?|RGBA?)\\(\\s*${rgbChannel}\\s*,\\s*${rgbChannel}\\s*,\\s*${rgbChannel}(?:\\s*,\\s*${rgbAlpha})?\\s*\\))(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
+      "i",
+    ).exec(evidenceText);
+    if (rgbMatch) return cleanLabel(rgbMatch[1] ?? "") || null;
   }
 
   if (/\b(?:version|build|release|revision|rev)\b/i.test(expectedAnswerLabel)) {
@@ -5248,6 +5262,27 @@ function preciseHexColorValueCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9.])${escapeRegExp(normalizedValue)}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(normalizedSummary);
+}
+
+function isCssRgbColorValue(value: string): boolean {
+  const channel = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+  const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
+  return new RegExp(
+    `^rgba?\\(\\s*${channel}\\s*,\\s*${channel}\\s*,\\s*${channel}(?:\\s*,\\s*${alpha})?\\s*\\)$`,
+    "i",
+  ).test(cleanLabel(value));
+}
+
+function preciseCssRgbColorValueCoveredBySummary(
+  normalizedSummary: string,
+  normalizedValue: string,
+): boolean {
+  const compactValue = normalizedValue.replace(/\s+/g, "");
+  if (!compactValue) return false;
+  const compactSummary = normalizedSummary.replace(/\s+/g, "");
+  return new RegExp(
+    `(^|[^a-z0-9.#])${escapeRegExp(compactValue)}(?=$|[^a-z0-9])`,
+  ).test(compactSummary);
 }
 
 function isDurationValue(value: string): boolean {
