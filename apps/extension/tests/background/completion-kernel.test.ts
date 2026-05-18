@@ -443,6 +443,113 @@ describe("completion kernel", () => {
     expect(buildCompletionRecoveryHint(decision)).toContain("form fields");
   });
 
+  test("rejects form-fill completion while a required autocomplete suggestion is still pending", () => {
+    const snap = formSnapshot({
+      visibleContent: "Caller Type to search suggestions Joe Employee",
+      pageContent: "Caller Type to search suggestions Joe Employee",
+      elements: [
+        {
+          ...textField(201, "Caller", "Joe Employee"),
+          attributes: {
+            id: "caller",
+            name: "caller",
+            value: "Joe Employee",
+            label: "Caller",
+            "aria-autocomplete": "list",
+          },
+        },
+        {
+          tag: 202,
+          tagName: "li",
+          role: "option",
+          text: "Joe Employee",
+          attributes: { id: "caller-option-joe" },
+          rect: { x: 0, y: 60, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: 'Caller = "Joe Employee".',
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 5);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Filled Caller with Joe Employee.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiredFields: [{ label: "Caller", value: "Joe Employee" }],
+    });
+    expect(decision.status).toBe("rejected");
+    expect(decision.reason).toContain("autocomplete suggestion");
+    expect(decision.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "validation_error",
+          logicalKey: "form:autocomplete_pending:joe-employee",
+          detail: expect.objectContaining({
+            inputElementId: 201,
+            suggestionElementId: 202,
+            value: "joe employee",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  test("accepts form-fill completion when autocomplete selection confirmation is visible", () => {
+    const snap = formSnapshot({
+      visibleContent:
+        "Caller Type to search suggestions Joe Employee Selected: Joe Employee",
+      pageContent:
+        "Caller Type to search suggestions Joe Employee Selected: Joe Employee",
+      elements: [
+        {
+          ...textField(201, "Caller", "Joe Employee"),
+          attributes: {
+            id: "caller",
+            name: "caller",
+            value: "Joe Employee",
+            label: "Caller",
+            "aria-autocomplete": "list",
+          },
+        },
+        {
+          tag: 202,
+          tagName: "li",
+          role: "option",
+          text: "Joe Employee",
+          attributes: { id: "caller-option-joe" },
+          rect: { x: 0, y: 60, width: 180, height: 24 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: 'Caller = "Joe Employee".',
+      snapshot: snap,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 5),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Selected Joe Employee in the Caller field.",
+    });
+
+    expect(decision.status).toBe("accepted");
+  });
+
   test("requires verification when a form request implies submit", () => {
     const snap = formSnapshot();
     const generated = generateCompletionContract({
