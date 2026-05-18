@@ -95,7 +95,8 @@ export type CompletionEvidence =
           | "status_change"
           | "control_label_change"
           | "control_state_change"
-          | "dirty_indicator_cleared";
+          | "dirty_indicator_cleared"
+          | "trusted_workflow";
       };
     }
   | {
@@ -1426,6 +1427,7 @@ export function buildTrustedCompletionCandidate(params: {
   contractKind?: string;
   evidenceText?: string;
   recordId?: string;
+  targetText?: string;
   url?: string;
 }): TrustedCompletionCandidate {
   const workflowKey = compactKey(params.workflow) || "workflow";
@@ -1443,8 +1445,10 @@ export function buildTrustedCompletionCandidate(params: {
         logicalKey: `trusted:${workflowKey}:confirmation:${recordKey}`,
         observedAtTurn: params.turn,
         detail: {
+          source: "trusted_workflow",
           text: (params.evidenceText ?? params.summary).slice(0, 1000),
           ...(params.recordId ? { recordId: params.recordId } : {}),
+          ...(params.targetText ? { targetText: params.targetText } : {}),
           ...(params.url ? { url: params.url } : {}),
         },
       },

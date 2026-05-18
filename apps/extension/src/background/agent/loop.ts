@@ -1542,6 +1542,7 @@ export class AgentLoop {
     reason: string;
     evidenceText?: string;
     recordId?: string;
+    targetText?: string;
   }): TrustedCompletionCandidate {
     return buildTrustedCompletionCandidate({
       ...params,
@@ -6917,6 +6918,7 @@ export class AgentLoop {
       reason: "Trusted form submit tool result confirmed submission.",
       evidenceText: params.toolResult,
       recordId: signal.submittedRecord,
+      targetText: signal.submittedRecord,
     });
 
     const plan = this.context.getPlanStatusRaw();
@@ -7050,6 +7052,7 @@ export class AgentLoop {
         reason: "Trusted catalog order confirmation page matched the request.",
         evidenceText: pageText,
         recordId: requestNumber,
+        targetText: itemName ?? undefined,
       }),
     });
     this.traceRecorder?.recordEvent("catalog_order_snapshot_completed", {
@@ -7335,6 +7338,7 @@ export class AgentLoop {
         `Current record: ${signal.currentRecordId}\n` +
         `Filled fields before submit: ${signal.filledFieldsBeforeSubmit}`,
       recordId: signal.previousRecordId,
+      targetText: signal.previousRecordId,
     });
     this.syncPlanStatus(newIndex, "submit_form_reset_success", {
       reason: signal.reason,
