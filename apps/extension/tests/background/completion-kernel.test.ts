@@ -163,6 +163,19 @@ function draftSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Account Settings",
+    url: "https://example.test/account",
+    visibleContent: "Account settings",
+    pageContent: "Account settings",
+    elements: [],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  };
+}
+
 describe("completion kernel", () => {
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
@@ -496,6 +509,88 @@ describe("completion kernel", () => {
           event.logicalKey === "form:confirmation",
       ),
     ).toBe(false);
+  });
+
+  test("accepts workflow confirmation after visible delete success", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Account deleted successfully.",
+      pageContent: "Account deleted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Deleted the account successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:delete",
+          detail: expect.objectContaining({ action: "delete" }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("requires verification for workflow confirmation without visible success", () => {
+    const snap = workflowSnapshot();
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Deleted the account successfully.",
+    });
+
+    expect(decision.status).toBe("needs_verification");
+    expect(buildCompletionRecoveryHint(decision)).toContain("Verify");
+  });
+
+  test("does not generate workflow confirmation contracts for browser tab management", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Close the current tab quickly.",
+      snapshot: workflowSnapshot(),
+    });
+
+    expect(generated).toBeNull();
+  });
+
+  test("does not accept workflow confirmation when summary names the wrong action", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Account deleted successfully.",
+      pageContent: "Account deleted successfully.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm it is gone.",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Saved the account settings.",
+    });
+
+    expect(decision.status).toBe("inconclusive");
   });
 
   test("rejects form completion when visible validation is active", () => {

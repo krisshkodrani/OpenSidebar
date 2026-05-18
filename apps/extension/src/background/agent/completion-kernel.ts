@@ -64,6 +64,7 @@ export type CompletionEvidence =
         text: string;
         recordId?: string;
         url?: string;
+        action?: WorkflowConfirmationAction;
       };
     }
   | {
@@ -138,11 +139,29 @@ export interface DraftOnlyContract {
   requiresUnsent: true;
 }
 
+export type WorkflowConfirmationAction =
+  | "delete"
+  | "save"
+  | "send"
+  | "post"
+  | "approve"
+  | "reject"
+  | "close"
+  | "dismiss"
+  | "update"
+  | "submit";
+
+export interface WorkflowConfirmationContract {
+  kind: "workflow_confirmation";
+  action: WorkflowConfirmationAction;
+}
+
 export type CompletionContract =
   | QuizSelectionContract
   | FormFillContract
   | NavigationContract
-  | DraftOnlyContract;
+  | DraftOnlyContract
+  | WorkflowConfirmationContract;
 
 export interface GeneratedCompletionContract {
   contract: CompletionContract;
@@ -306,6 +325,12 @@ export function generateCompletionContract(params: {
 
   const navigationContract = generateNavigationContract(params, snapshot);
   if (navigationContract) return navigationContract;
+
+  const workflowConfirmationContract = generateWorkflowConfirmationContract(
+    params,
+    snapshot,
+  );
+  if (workflowConfirmationContract) return workflowConfirmationContract;
 
   return null;
 }
@@ -506,6 +531,38 @@ function generateNavigationContract(
   };
 }
 
+function generateWorkflowConfirmationContract(
+  params: {
+    userRequest: string;
+    snapshot: DomSnapshot | null | undefined;
+    activeObjective?: string;
+    successCriteria?: string;
+  },
+  _snapshot: DomSnapshot,
+): GeneratedCompletionContract | null {
+  const requestText = [
+    extractCanonicalUserRequest(params.userRequest),
+    params.activeObjective,
+    params.successCriteria,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const action = inferWorkflowConfirmationAction(requestText);
+  if (!action) return null;
+  if (isBrowserManagementWorkflowRequest(requestText)) return null;
+
+  return {
+    contract: {
+      kind: "workflow_confirmation",
+      action,
+    },
+    confidence: "medium",
+    source: "heuristic",
+    repairable: true,
+    notes: [],
+  };
+}
+
 export function deriveCompletionEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -607,6 +664,10 @@ export function deriveCompletionEvidenceFromSnapshot(
   const feedbackEvidence = extractFeedbackEvidence(snapshot, turn);
   const validationEvidence = extractValidationErrorEvidence(snapshot, turn);
   const confirmationEvidence = extractFormConfirmationEvidence(snapshot, turn);
+  const workflowConfirmationEvidence = extractWorkflowConfirmationEvidence(
+    snapshot,
+    turn,
+  );
   const navigationEvidence = extractNavigationEvidence(snapshot, turn);
   return [
     ...selectedEvidence,
@@ -615,6 +676,7 @@ export function deriveCompletionEvidenceFromSnapshot(
     ...feedbackEvidence,
     ...validationEvidence,
     ...confirmationEvidence,
+    ...workflowConfirmationEvidence,
     ...navigationEvidence,
   ];
 }
@@ -662,6 +724,14 @@ export function evaluateCompletionContract(params: {
       evidence: params.evidence,
     });
   }
+  if (params.contract.kind === "workflow_confirmation") {
+    return evaluateWorkflowConfirmation({
+      contract: params.contract,
+      evidence: params.evidence,
+      candidateSource: params.candidateSource,
+      summary: params.summary,
+    });
+  }
   return {
     status: "inconclusive",
     reason: "No deterministic evaluator is available for this contract.",
@@ -696,6 +766,12 @@ export function buildCompletionRecoveryHint(
       return (
         "Completion evidence indicates the requested page is already open. " +
         'Call done({"summary":"..."}) now with the current page URL instead of navigating again.'
+      );
+    }
+    if (evaluation.contract.kind === "workflow_confirmation") {
+      return (
+        "Completion evidence indicates the requested action is already confirmed. " +
+        'Call done({"summary":"..."}) now with the visible confirmation instead of repeating the action.'
       );
     }
   }
@@ -1170,6 +1246,59 @@ function evaluateNavigation(params: {
     reason: "Navigation contract is satisfied by current URL evidence.",
     contract,
     evidence: [current],
+  };
+}
+
+function evaluateWorkflowConfirmation(params: {
+  contract: WorkflowConfirmationContract;
+  evidence: CompletionEvidence[];
+  candidateSource: CompletionCandidateSource;
+  summary?: string;
+}): CompletionEvaluation {
+  const contract = params.contract;
+  const confirmations = params.evidence
+    .filter(
+      (event): event is Extract<
+        CompletionEvidence,
+        { type: "confirmation_state" }
+      > =>
+        event.type === "confirmation_state" &&
+        event.logicalKey.startsWith("workflow:confirmation:") &&
+        event.detail.action === contract.action,
+    )
+    .sort(compareEvidenceRecency);
+  const confirmation = confirmations[0];
+  if (!confirmation) {
+    return {
+      status: "needs_verification",
+      reason:
+        "Requested action has no matching visible confirmation evidence yet.",
+      hint:
+        "Verify the page shows the action result, such as a success or confirmation message, before calling done.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  if (
+    params.candidateSource === "model_done" &&
+    params.summary &&
+    !summaryConfirmsWorkflowAction(params.summary, contract.action)
+  ) {
+    return {
+      status: "inconclusive",
+      reason:
+        "Workflow confirmation evidence is visible, but the done summary does not state the confirmed action clearly enough for deterministic acceptance.",
+      contract,
+      evidence: [confirmation],
+    };
+  }
+
+  return {
+    status: "accepted",
+    reason: `Workflow confirmation contract is satisfied by visible ${contract.action} confirmation evidence.`,
+    contract,
+    evidence: [confirmation],
   };
 }
 
@@ -1655,6 +1784,64 @@ function formFieldAliases(field: FormFieldObservation): string[] {
     .sort((a, b) => b.length - a.length);
 }
 
+function inferWorkflowConfirmationAction(
+  value: string,
+): WorkflowConfirmationAction | null {
+  const text = normalizeText(value);
+  if (/\b(?:delete|deleted|deletion|remove|removed|removal)\b/i.test(text)) {
+    return "delete";
+  }
+  if (/\b(?:save|saved)\b/i.test(text)) return "save";
+  if (/\b(?:send|sent)\b/i.test(text)) return "send";
+  if (/\b(?:post|posted|publish|published)\b/i.test(text)) return "post";
+  if (/\b(?:approve|approved)\b/i.test(text)) return "approve";
+  if (/\b(?:reject|rejected)\b/i.test(text)) return "reject";
+  if (/\b(?:close|closed)\b/i.test(text)) return "close";
+  if (/\b(?:dismiss|dismissed)\b/i.test(text)) return "dismiss";
+  if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
+    return "update";
+  }
+  if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  return null;
+}
+
+function isBrowserManagementWorkflowRequest(value: string): boolean {
+  return (
+    /\b(?:tab|tabs|window|windows|browser)\b/i.test(value) &&
+    /\b(?:close|closed|switch|open|activate|focus|navigate)\b/i.test(value)
+  );
+}
+
+function summaryConfirmsWorkflowAction(
+  summary: string,
+  action: WorkflowConfirmationAction,
+): boolean {
+  const text = normalizeText(summary);
+  switch (action) {
+    case "delete":
+      return /\b(?:deleted|removed|deletion|removal)\b/i.test(text);
+    case "save":
+      return /\bsaved\b/i.test(text);
+    case "send":
+      return /\bsent\b/i.test(text);
+    case "post":
+      return /\b(?:posted|published)\b/i.test(text);
+    case "approve":
+      return /\bapproved\b/i.test(text);
+    case "reject":
+      return /\brejected\b/i.test(text);
+    case "close":
+      return /\bclosed\b/i.test(text);
+    case "dismiss":
+      return /\bdismissed\b/i.test(text);
+    case "update":
+      return /\b(?:updated|changed|applied)\b/i.test(text);
+    case "submit":
+      return /\b(?:submitted|submission)\b/i.test(text);
+  }
+  return false;
+}
+
 function extractFeedbackEvidence(
   snapshot: DomSnapshot,
   turn: number,
@@ -1771,6 +1958,79 @@ function extractFormConfirmationEvidence(
       },
     },
   ];
+}
+
+function extractWorkflowConfirmationEvidence(
+  snapshot: DomSnapshot,
+  turn: number,
+): CompletionEvidence[] {
+  const text = [
+    snapshot.title,
+    snapshot.url,
+    snapshot.visibleContent,
+    snapshot.pageContent,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 20_000);
+  const actions = new Set<WorkflowConfirmationAction>();
+
+  if (
+    /\b(?:deleted|removed)\s+successfully\b/i.test(text) ||
+    /\b(?:deletion|removal)\s+(?:complete|completed|confirmed|successful)\b/i.test(
+      text,
+    )
+  ) {
+    actions.add("delete");
+  }
+  if (
+    /\b(?:saved|changes saved)\s+successfully\b/i.test(text) ||
+    /\bsuccessfully\s+saved\b/i.test(text)
+  ) {
+    actions.add("save");
+  }
+  if (
+    /\b(?:sent)\s+successfully\b/i.test(text) ||
+    /\b(?:message|email|notification)\s+sent\b/i.test(text)
+  ) {
+    actions.add("send");
+  }
+  if (
+    /\b(?:posted|published)\s+successfully\b/i.test(text) ||
+    /\b(?:comment|reply|post)\s+posted\b/i.test(text)
+  ) {
+    actions.add("post");
+  }
+  if (/\bapproved\s+successfully\b/i.test(text)) actions.add("approve");
+  if (/\brejected\s+successfully\b/i.test(text)) actions.add("reject");
+  if (/\bclosed\s+successfully\b/i.test(text)) actions.add("close");
+  if (/\bdismissed\s+successfully\b/i.test(text)) actions.add("dismiss");
+  if (
+    /\b(?:updated|changed|applied)\s+successfully\b/i.test(text) ||
+    /\b(?:changes|settings)\s+(?:updated|applied)\b/i.test(text)
+  ) {
+    actions.add("update");
+  }
+  if (
+    /\bsubmitted\s+successfully\b/i.test(text) ||
+    /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text)
+  ) {
+    actions.add("submit");
+  }
+
+  return [...actions].map((action) => ({
+    type: "confirmation_state" as const,
+    confidence: "medium" as const,
+    logicalKey: `workflow:confirmation:${action}`,
+    observedAtTurn: turn,
+    detail: {
+      text: cleanLabel(
+        snapshot.visibleContent || snapshot.pageContent || snapshot.title,
+      ).slice(0, 1000),
+      action,
+      ...(snapshot.url ? { url: snapshot.url } : {}),
+    },
+  }));
 }
 
 function extractNavigationEvidence(
