@@ -1777,6 +1777,34 @@ describe("completion kernel", () => {
       genericSummary: "Disconnection completed.",
     },
     {
+      action: "attach",
+      request: "Attach File Alpha.",
+      summary: "Attached File Alpha.",
+      targetLabel: "File Alpha",
+      requestedVisible:
+        "File Beta remains unattached. File Alpha attached successfully.",
+      requestedEvidenceText: "File Alpha attached successfully.",
+      otherVisible:
+        "File Alpha remains unattached. File Beta attached successfully.",
+      otherEvidenceText: "File Beta attached successfully.",
+      genericVisible: "Attachment completed.",
+      genericSummary: "Attachment completed.",
+    },
+    {
+      action: "detach",
+      request: "Detach File Alpha.",
+      summary: "Detached File Alpha.",
+      targetLabel: "File Alpha",
+      requestedVisible:
+        "File Beta remains attached. File Alpha detached successfully.",
+      requestedEvidenceText: "File Alpha detached successfully.",
+      otherVisible:
+        "File Alpha remains attached. File Beta detached successfully.",
+      otherEvidenceText: "File Beta detached successfully.",
+      genericVisible: "Detachment completed.",
+      genericSummary: "Detachment completed.",
+    },
+    {
       action: "invite",
       request: "Invite Member Alpha.",
       summary: "Invited Member Alpha.",

@@ -190,6 +190,8 @@ export type WorkflowConfirmationAction =
   | "download"
   | "upload"
   | "import"
+  | "attach"
+  | "detach"
   | "copy"
   | "transfer"
   | "move"
@@ -256,6 +258,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "download",
   "upload",
   "import",
+  "attach",
+  "detach",
   "copy",
   "transfer",
   "move",
@@ -325,6 +329,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "download"
   | "upload"
   | "import"
+  | "attach"
+  | "detach"
   | "copy"
   | "transfer"
   | "move"
@@ -2717,6 +2723,20 @@ function inferWorkflowConfirmationAction(
     return "import";
   }
   if (
+    /\bdetach(?:ed)?\s+(?:the\s+)?(?:file|report|document|attachment|image|photo|invoice|receipt|log|logs|record|item|task|ticket|request|entry|row|comment|message|note|account|case|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "detach";
+  }
+  if (
+    /\battach(?:ed)?\s+(?:the\s+)?(?:file|report|document|attachment|image|photo|invoice|receipt|log|logs|record|item|task|ticket|request|entry|row|comment|message|note|account|case|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "attach";
+  }
+  if (
     /\b(?:copy|copied)\s+(?:the\s+)?(?:link|url|address|text|code|value|id|identifier|token|key|path|email|phone|file|report|document|message|comment|article|page|record|item|task|ticket|request|entry|row|table|list|view)\b/i.test(
       text,
     )
@@ -3109,6 +3129,10 @@ function workflowTargetActionPattern(
       return "(?:upload)";
     case "import":
       return "(?:import)";
+    case "attach":
+      return "(?:attach)";
+    case "detach":
+      return "(?:detach)";
     case "copy":
       return "(?:copy)";
     case "transfer":
@@ -3337,6 +3361,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "download" ||
     action === "upload" ||
     action === "import" ||
+    action === "attach" ||
+    action === "detach" ||
     action === "copy" ||
     action === "transfer" ||
     action === "move" ||
@@ -3500,6 +3526,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:uploaded)";
     case "import":
       return "(?:imported)";
+    case "attach":
+      return "(?:attached)";
+    case "detach":
+      return "(?:detached)";
     case "copy":
       return "(?:copied)";
     case "transfer":
@@ -3633,6 +3663,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:upload)";
     case "import":
       return "(?:import)";
+    case "attach":
+      return "(?:attach|attachment)";
+    case "detach":
+      return "(?:detach|detachment)";
     case "copy":
       return "(?:copy)";
     case "transfer":
@@ -3948,6 +3982,32 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:imported|import complete|import completed|import successful)\b/i.test(
+        text,
+      );
+    case "attach":
+      if (mode === "visible") {
+        return (
+          /\battached\s+successfully\b/i.test(text) ||
+          /\b(?:file|report|document|attachment|image|photo|invoice|receipt|log|logs|record|item|task|ticket|request|entry|row|comment|message|note|account|case|issue)\s+attached\b/i.test(
+            text,
+          ) ||
+          /\battach(?:ment)?\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:attached|attach complete|attach completed|attach successful|attachment complete|attachment completed|attachment successful)\b/i.test(
+        text,
+      );
+    case "detach":
+      if (mode === "visible") {
+        return (
+          /\bdetached\s+successfully\b/i.test(text) ||
+          /\b(?:file|report|document|attachment|image|photo|invoice|receipt|log|logs|record|item|task|ticket|request|entry|row|comment|message|note|account|case|issue)\s+detached\b/i.test(
+            text,
+          ) ||
+          /\bdetach(?:ment)?\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:detached|detach complete|detach completed|detach successful|detachment complete|detachment completed|detachment successful)\b/i.test(
         text,
       );
     case "copy":
@@ -4691,6 +4751,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:uploaded|upload)";
     case "import":
       return "(?:imported|import)";
+    case "attach":
+      return "(?:attached|attach|attachment)";
+    case "detach":
+      return "(?:detached|detach|detachment)";
     case "copy":
       return "(?:copied|copy)";
     case "transfer":
@@ -5567,6 +5631,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\buploaded\b/i.test(text);
     case "import":
       return /\bimported\b/i.test(text);
+    case "attach":
+      return /\battached\b/i.test(text);
+    case "detach":
+      return /\bdetached\b/i.test(text);
     case "copy":
       return /\bcopied\b/i.test(text);
     case "transfer":
