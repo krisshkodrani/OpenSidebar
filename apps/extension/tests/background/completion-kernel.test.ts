@@ -215,6 +215,23 @@ function modalSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   });
 }
 
+function deleteButton(tag: number, target: string): TaggedElement {
+  const key = target.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "button",
+    role: "button",
+    text: `Delete ${target}`,
+    attributes: {
+      id: `delete-${key}`,
+      "aria-label": `Delete ${target}`,
+    },
+    rect: { x: 500, y: tag * 20, width: 120, height: 32 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 describe("completion kernel", () => {
   test("routes question-shaped done summaries to clarification preflight", () => {
     const decision = evaluateCompletionSummaryPreflight({
@@ -917,6 +934,122 @@ describe("completion kernel", () => {
       action: "close",
     });
     expect(decision.status).toBe("needs_verification");
+  });
+
+  test("accepts delete confirmation from named target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Accounts Warehouse Alpha Delete Warehouse Alpha Warehouse Beta Delete Warehouse Beta",
+      pageContent:
+        "Accounts Warehouse Alpha Delete Warehouse Alpha Warehouse Beta Delete Warehouse Beta",
+      elements: [
+        deleteButton(501, "Warehouse Alpha"),
+        deleteButton(502, "Warehouse Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Accounts Warehouse Beta Delete Warehouse Beta",
+      pageContent: "Accounts Warehouse Beta Delete Warehouse Beta",
+      elements: [deleteButton(502, "Warehouse Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete Warehouse Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 501 },
+      result: "Clicked element 501.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Deleted Warehouse Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:delete:warehouse-alpha",
+        detail: expect.objectContaining({
+          action: "delete",
+          source: "target_disappearance",
+          text: "Deleted target no longer visible: Warehouse Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer delete confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      pageContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      elements: [deleteButton(501, "Warehouse Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      pageContent: "Accounts Warehouse Alpha Delete Warehouse Alpha",
+      elements: [deleteButton(501, "Warehouse Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 501 },
+      result: "Clicked element 501.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer delete confirmation from a generic delete button", () => {
+    const genericDeleteButton: TaggedElement = {
+      tag: 501,
+      tagName: "button",
+      role: "button",
+      text: "Delete",
+      attributes: {
+        id: "delete",
+        "aria-label": "Delete",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Accounts Warehouse Alpha Delete",
+      pageContent: "Accounts Warehouse Alpha Delete",
+      elements: [genericDeleteButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Accounts",
+      pageContent: "Accounts",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 501 },
+      result: "Clicked element 501.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
   });
 
   test("rejects form completion when visible validation is active", () => {

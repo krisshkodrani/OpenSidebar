@@ -75,7 +75,10 @@ export type CompletionEvidence =
         recordId?: string;
         url?: string;
         action?: WorkflowConfirmationAction;
-        source?: "visible_text" | "modal_disappearance";
+        source?:
+          | "visible_text"
+          | "modal_disappearance"
+          | "target_disappearance";
       };
     }
   | {
@@ -768,6 +771,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   }
 
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
+  evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractReadAnswerEvidenceFromToolOutcome(params));
 
   return evidence;
@@ -2428,6 +2432,52 @@ function extractModalDismissalEvidenceFromToolOutcome(params: {
   ];
 }
 
+function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element || !isDeleteControl(element)) return [];
+
+  const target = extractDeletionTargetFromControl(element);
+  if (!target) return [];
+  const targetText = normalizeText(target);
+  if (!targetText || !snapshotContainsNormalizedText(pre, targetText)) {
+    return [];
+  }
+  if (snapshotContainsNormalizedText(current, targetText)) {
+    return [];
+  }
+
+  const key = compactKey(target) || `tag-${element.tag}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:delete:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Deleted target no longer visible: ${target}`,
+        action: "delete",
+        source: "target_disappearance",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
 function extractReadAnswerEvidenceFromToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -2469,19 +2519,91 @@ function isModalDismissalToolOutcome(params: {
   return isDismissalControl(element);
 }
 
-function isDismissalControl(element: TaggedElement): boolean {
-  const text = normalizeText(
+function isDeleteControl(element: TaggedElement): boolean {
+  const text = normalizeText(elementControlText(element));
+  return /\b(?:delete|remove)\b/i.test(text);
+}
+
+function extractDeletionTargetFromControl(element: TaggedElement): string | null {
+  const candidates = [
+    element.text,
+    element.attributes.label,
+    element.attributes["aria-label"],
+    element.attributes.title,
+    element.attributes.name,
+    element.attributes.id,
+  ].map((value) => cleanLabel(value ?? ""));
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const explicit = /\b(?:delete|remove)\b\s+(?:the\s+)?(.{3,120})/i.exec(
+      candidate,
+    );
+    if (!explicit?.[1]) continue;
+    let target = cleanLabel(explicit[1])
+      .replace(/\b(?:button|link|action|delete|remove)\b/gi, " ")
+      .replace(/\b(?:item|entry|row|record)\b/gi, " ")
+      .replace(/^["'`]+|["'`]+$/g, "");
+    target = cleanLabel(target);
+    if (!target) continue;
+
+    const tokens = tokenizeCompletionText(target).filter(
+      (token) =>
+        ![
+          "account",
+          "button",
+          "delete",
+          "entry",
+          "item",
+          "record",
+          "remove",
+          "row",
+        ].includes(token),
+    );
+    if (tokens.length > 0) return target;
+  }
+  return null;
+}
+
+function elementControlText(element: TaggedElement): string {
+  return [
+    element.text,
+    element.attributes.label,
+    element.attributes["aria-label"],
+    element.attributes.title,
+    element.attributes.name,
+    element.attributes.id,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function snapshotContainsNormalizedText(
+  snapshot: DomSnapshot,
+  normalizedNeedle: string,
+): boolean {
+  if (!normalizedNeedle) return false;
+  return normalizeText(
     [
-      element.text,
-      element.attributes.label,
-      element.attributes["aria-label"],
-      element.attributes.title,
-      element.attributes.name,
-      element.attributes.id,
+      snapshot.title,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      ...snapshot.elements.flatMap((element) => [
+        element.text,
+        element.attributes.label,
+        element.attributes["aria-label"],
+        element.attributes.title,
+        element.attributes.name,
+        element.attributes.id,
+      ]),
     ]
       .filter(Boolean)
       .join(" "),
-  );
+  ).includes(normalizedNeedle);
+}
+
+function isDismissalControl(element: TaggedElement): boolean {
+  const text = normalizeText(elementControlText(element));
   if (!text) return false;
   return /\b(?:close|dismiss|no thanks|not now|cancel|got it|ok|okay|done|hide|skip|continue)\b/i.test(
     text,
