@@ -80,6 +80,7 @@ import {
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionEarlyMultiStepPreflight,
   evaluateCompletionGroundingReadPreflight,
   evaluateCompletionListDetailReviewPreflight,
   evaluateCompletionPendingAutocompletePreflight,
@@ -3053,32 +3054,30 @@ export class AgentLoop {
     toolCallId: string,
     summary: string,
   ): boolean {
-    if (this.doneRejections !== 0 || !this.originalQuery || this.nodeId) {
-      return false;
-    }
-
-    const stepCount = countExplicitSteps(this.originalQuery);
-    // Activate for queries with 3+ explicit steps where the agent
-    // has spent very few turns (turnCount includes planner's ~2 turns,
-    // so turnCount <= 3 means the executor ran at most 1 turn)
-    if (stepCount < 3 || this.turnCount > 3) return false;
+    const earlyMultiStepPreflight = evaluateCompletionEarlyMultiStepPreflight({
+      userRequest: this.originalQuery,
+      doneRejections: this.doneRejections,
+      turnCount: this.turnCount,
+      hasNodeId: Boolean(this.nodeId),
+    });
+    if (earlyMultiStepPreflight.status === "valid") return false;
 
     this.doneRejections++;
     this.log.warn("agent", "DONE rejected: multi-step query, too few turns", {
       turn: this.turnCount,
-      stepCount,
+      stepCount: earlyMultiStepPreflight.stepCount,
       doneRejections: this.doneRejections,
       summary: summary.slice(0, 150),
     });
     this.traceRecorder?.recordEvent("done_rejected_early_multistep", {
       turn: this.turnCount,
-      stepCount,
+      stepCount: earlyMultiStepPreflight.stepCount,
     });
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content:
-        `done() REJECTED: The task has ${stepCount} steps but you have only completed the first action. ` +
+        `done() REJECTED: The task has ${earlyMultiStepPreflight.stepCount} steps but you have only completed the first action. ` +
         "Continue working through the remaining steps before calling done().",
     });
     return true;

@@ -3227,6 +3227,47 @@ describe("AgentLoop", () => {
     });
   });
 
+  test("done rejects early multi-step completion through kernel preflight", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "1. Open the account.\n2. Update the status.\n3. Verify the saved result.";
+    (agent as any).hasReadPage = true;
+    (agent as any).turnCount = 3;
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-early-multistep",
+      "All three requested steps are complete.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).doneRejections).toBe(1);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_early_multistep",
+      {
+        turn: 3,
+        stepCount: 3,
+      },
+    );
+    expect((agent as any).context.getMessages().at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-early-multistep",
+      content: expect.stringContaining("The task has 3 steps"),
+    });
+  });
+
   test("done rejects pending autocomplete through kernel preflight", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop("test-key", {
