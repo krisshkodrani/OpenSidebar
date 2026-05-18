@@ -1511,6 +1511,34 @@ describe("completion kernel", () => {
       genericSummary: "Send completed.",
     },
     {
+      action: "export",
+      request: "Export Report Alpha.",
+      summary: "Exported Report Alpha.",
+      targetLabel: "Report Alpha",
+      requestedVisible:
+        "Report Beta remains available. Report Alpha exported successfully.",
+      requestedEvidenceText: "Report Alpha exported successfully.",
+      otherVisible:
+        "Report Alpha remains available. Report Beta exported successfully.",
+      otherEvidenceText: "Report Beta exported successfully.",
+      genericVisible: "Export completed.",
+      genericSummary: "Export completed.",
+    },
+    {
+      action: "download",
+      request: "Download File Alpha.",
+      summary: "Downloaded File Alpha.",
+      targetLabel: "File Alpha",
+      requestedVisible:
+        "File Beta remains available. File Alpha downloaded successfully.",
+      requestedEvidenceText: "File Alpha downloaded successfully.",
+      otherVisible:
+        "File Alpha remains available. File Beta downloaded successfully.",
+      otherEvidenceText: "File Beta downloaded successfully.",
+      genericVisible: "Download completed.",
+      genericSummary: "Download completed.",
+    },
+    {
       action: "post",
       request: "Publish Article Alpha.",
       summary: "Published Article Alpha.",
