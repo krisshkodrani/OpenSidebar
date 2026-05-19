@@ -3773,7 +3773,9 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "export" &&
       action !== "download" &&
       action !== "upload" &&
-      action !== "import"
+      action !== "import" &&
+      action !== "approve" &&
+      action !== "reject"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
