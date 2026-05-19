@@ -17597,6 +17597,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts export confirmation from named report disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending exports Report Alpha Export Report Alpha Report Beta Export Report Beta",
+      pageContent:
+        "Pending exports Report Alpha Export Report Alpha Report Beta Export Report Beta",
+      elements: [
+        actionButton(553, "Export Report Alpha"),
+        actionButton(554, "Export Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending exports Report Beta Export Report Beta",
+      pageContent: "Pending exports Report Beta Export Report Beta",
+      elements: [actionButton(554, "Export Report Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Export Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Exported Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "export",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:export:report-alpha",
+        detail: expect.objectContaining({
+          action: "export",
+          source: "target_disappearance",
+          text: "Exported target no longer visible: Report Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects export target-disappearance evidence for the wrong requested report", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending exports Report Alpha Export Report Alpha Report Beta Export Report Beta",
+      pageContent:
+        "Pending exports Report Alpha Export Report Alpha Report Beta Export Report Beta",
+      elements: [
+        actionButton(553, "Export Report Alpha"),
+        actionButton(554, "Export Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending exports Report Alpha Export Report Alpha",
+      pageContent: "Pending exports Report Alpha Export Report Alpha",
+      elements: [actionButton(553, "Export Report Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Export Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 554 },
+      result: "Clicked element 554.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Exported Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "export",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:export:report-beta",
+        detail: expect.objectContaining({
+          action: "export",
+          source: "target_disappearance",
+          text: "Exported target no longer visible: Report Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer export confirmation while the named report remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending exports Report Alpha Export Report Alpha",
+      pageContent: "Pending exports Report Alpha Export Report Alpha",
+      elements: [actionButton(553, "Export Report Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending exports Report Alpha Export Report Alpha",
+      pageContent: "Pending exports Report Alpha Export Report Alpha",
+      elements: [actionButton(553, "Export Report Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer export confirmation from a generic export report control", () => {
+    const genericExportReportButton: TaggedElement = {
+      tag: 553,
+      tagName: "button",
+      role: "button",
+      text: "Export report",
+      attributes: {
+        id: "export-report",
+        "aria-label": "Export report",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Pending exports Report Alpha Export report",
+      pageContent: "Pending exports Report Alpha Export report",
+      elements: [genericExportReportButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending exports",
+      pageContent: "Pending exports",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
