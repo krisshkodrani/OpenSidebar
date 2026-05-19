@@ -9283,7 +9283,11 @@ function findGroundedSentenceScopedAnswer(
   if (!parts) return null;
 
   const normalizedLabel = normalizeText(parts.label);
-  if (normalizedLabel !== "owner" && normalizedLabel !== "assignee") {
+  if (
+    normalizedLabel !== "owner" &&
+    normalizedLabel !== "assignee" &&
+    normalizedLabel !== "due date"
+  ) {
     return null;
   }
 
@@ -9853,10 +9857,24 @@ function extractSentenceScopedRelationAnswer(
 ): string | null {
   const targetPattern = workflowTargetTextPattern(target);
   if (!targetPattern) return null;
+  const normalizedLabel = normalizeText(expectedAnswerLabel);
+  if (normalizedLabel === "due date") {
+    const dueDatePatterns = [
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+due\\s+date\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were)?\\s*due\\s+(?:on|by)\\s+([^.;\\n]{2,120})`,
+    ];
+    for (const pattern of dueDatePatterns) {
+      const match = new RegExp(pattern, "i").exec(sentence);
+      const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
+      if (answer) return answer;
+    }
+    return null;
+  }
+
   const relationPattern =
-    normalizeText(expectedAnswerLabel) === "assignee"
+    normalizedLabel === "assignee"
       ? "assigned\\s+to"
-      : normalizeText(expectedAnswerLabel) === "owner"
+      : normalizedLabel === "owner"
         ? "owned\\s+by"
         : null;
   if (!relationPattern) return null;
