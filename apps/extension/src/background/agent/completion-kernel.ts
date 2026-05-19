@@ -2118,12 +2118,19 @@ function evaluateReadAnswer(params: {
     contract.expectedAnswerScope === "row" &&
     contract.expectedAnswerLabel &&
     contract.expectedAnswerTarget &&
-    params.snapshot
-      ? readAnswerRowScopedSnapshotEvidence({
-          snapshot: params.snapshot,
+    (params.snapshot || pageEvidence.length > 0)
+      ? (params.snapshot
+          ? readAnswerRowScopedSnapshotEvidence({
+              snapshot: params.snapshot,
+              expectedAnswerLabel: contract.expectedAnswerLabel,
+              expectedAnswerTarget: contract.expectedAnswerTarget,
+              observedAtTurn: latestObservedTurn(params.evidence),
+            })
+          : null) ??
+        readAnswerRowScopedTextEvidence({
+          evidence: pageEvidence,
           expectedAnswerLabel: contract.expectedAnswerLabel,
           expectedAnswerTarget: contract.expectedAnswerTarget,
-          observedAtTurn: latestObservedTurn(params.evidence),
         })
       : null;
 
@@ -2382,12 +2389,43 @@ function readAnswerRowScopedSnapshotEvidence(params: {
   };
 }
 
+function readAnswerRowScopedTextEvidence(params: {
+  evidence: Extract<CompletionEvidence, { type: "answer_state" }>[];
+  expectedAnswerLabel: string;
+  expectedAnswerTarget: string;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  for (const event of params.evidence) {
+    const rowText = findReadAnswerRowScopedLabelValueLine(
+      event.detail.evidenceText,
+      params.expectedAnswerTarget,
+      params.expectedAnswerLabel,
+    );
+    if (!rowText) continue;
+
+    const targetKey = compactKey(params.expectedAnswerTarget) || "target";
+    const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+    return {
+      ...event,
+      confidence: event.confidence === "high" ? "high" : "medium",
+      logicalKey: `read_answer:row-text:${targetKey}:${labelKey}`,
+      detail: {
+        ...event.detail,
+        answer: rowText.slice(0, 1000),
+        evidenceText: rowText.slice(0, 4000),
+      },
+    };
+  }
+  return null;
+}
+
 function readAnswerToolEvidence(params: {
   result: string;
   snapshot?: DomSnapshot | null;
   observedAtTurn: number;
 }): Extract<CompletionEvidence, { type: "answer_state" }>[] {
-  const evidenceText = cleanReadAnswerEvidenceText(params.result);
+  const evidenceText = cleanReadAnswerEvidenceText(params.result, {
+    preserveLines: true,
+  });
   if (!hasSubstantiveReadAnswerEvidence(evidenceText)) return [];
 
   const pageKey =
@@ -2401,7 +2439,7 @@ function readAnswerToolEvidence(params: {
       logicalKey: `read_answer:page:${pageKey}`,
       observedAtTurn: params.observedAtTurn,
       detail: {
-        answer: evidenceText.slice(0, 1000),
+        answer: cleanLabel(evidenceText).slice(0, 1000),
         source: "page_read",
         evidenceText: evidenceText.slice(0, 4000),
         ...(params.snapshot?.url ? { url: params.snapshot.url } : {}),
@@ -9057,6 +9095,26 @@ function findReadAnswerRowScopedLabelValueText(
   return null;
 }
 
+function findReadAnswerRowScopedLabelValueLine(
+  evidenceText: string,
+  target: string,
+  expectedAnswerLabel: string,
+): string | null {
+  const lines = evidenceText
+    .split(/[\r\n]+/g)
+    .map((line) => cleanLabel(line))
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+
+  for (const line of lines) {
+    if (line.length > 500) continue;
+    if (!workflowTargetLabelCoveredByText(target, line)) continue;
+    if (!extractExpectedLabelValueAnswer(line, expectedAnswerLabel)) continue;
+    return line;
+  }
+  return null;
+}
+
 function readAnswerRowElementText(element: TaggedElement): string {
   const attrs = element.attributes ?? {};
   return cleanLabel(
@@ -9171,12 +9229,19 @@ function taskContractSnapshotSearchText(
     .toLowerCase();
 }
 
-function cleanReadAnswerEvidenceText(value: string): string {
-  return cleanLabel(
-    value
-      .replace(/^Page\s+(?:content|text|read)\s*:\s*/i, "")
-      .replace(/^Result\s*:\s*/i, ""),
-  );
+function cleanReadAnswerEvidenceText(
+  value: string,
+  options: { preserveLines?: boolean } = {},
+): string {
+  const cleaned = value
+    .replace(/^Page\s+(?:content|text|read)\s*:\s*/i, "")
+    .replace(/^Result\s*:\s*/i, "");
+  if (!options.preserveLines) return cleanLabel(cleaned);
+  return cleaned
+    .split(/[\r\n]+/g)
+    .map((line) => cleanLabel(line))
+    .filter(Boolean)
+    .join("\n");
 }
 
 function hasSubstantiveReadAnswerEvidence(value: string): boolean {
@@ -9526,7 +9591,10 @@ function extractExpectedLabelValueAnswer(
 function cleanLabelValueAnswerText(value: string): string {
   return cleanLabel(
     cleanLabel(value)
-      .replace(/\s+[a-z][a-z0-9 /_-]{1,40}\s*(?::|=|\bis\b).*$/i, "")
+      .replace(
+        /\s+(?:\|\s*)?[a-z][a-z0-9 /_-]{1,40}\s*(?::|=|\bis\b).*$/i,
+        "",
+      )
       .replace(/[),.;!?]+$/g, ""),
   );
 }
