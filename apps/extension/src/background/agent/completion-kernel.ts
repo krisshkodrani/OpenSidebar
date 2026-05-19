@@ -5709,26 +5709,28 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
 
   const key = compactKey(target) || `tag-${element.tag}`;
   const actionLabel =
-    action === "link"
-      ? "Linked"
-      : action === "delete"
-      ? "Deleted"
-      : action === "archive"
-        ? "Archived"
-        : action === "detach"
-          ? "Detached"
-          : action === "disconnect"
-            ? "Disconnected"
-            : action === "connect"
-              ? "Connected"
-              : action === "unlink"
-                ? "Unlinked"
-                : action === "untag"
-                  ? "Untagged"
-                  : action === "unflag"
-                    ? "Unflagged"
-                    : action === "unsubscribe"
-                      ? "Unsubscribed"
+    action === "tag"
+      ? "Tagged"
+      : action === "link"
+        ? "Linked"
+        : action === "delete"
+          ? "Deleted"
+          : action === "archive"
+            ? "Archived"
+            : action === "detach"
+              ? "Detached"
+              : action === "disconnect"
+                ? "Disconnected"
+                : action === "connect"
+                  ? "Connected"
+                  : action === "unlink"
+                    ? "Unlinked"
+                    : action === "untag"
+                      ? "Untagged"
+                      : action === "unflag"
+                        ? "Unflagged"
+                        : action === "unsubscribe"
+                          ? "Unsubscribed"
                       : action === "unfollow"
                         ? "Unfollowed"
                         : action === "unwatch"
@@ -6121,6 +6123,7 @@ function inferTargetDisappearanceAction(
   | "unlink"
   | "link"
   | "untag"
+  | "tag"
   | "unflag"
   | "unsubscribe"
   | "unfollow"
@@ -6159,6 +6162,7 @@ function inferTargetDisappearanceAction(
   if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bblock(?:ed|ing)?\b/i.test(text)) return "block";
   if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
+  if (/\btag(?:ged|ging)?\b/i.test(text)) return "tag";
   if (/\bunflag(?:ged|ging)?\b/i.test(text)) return "unflag";
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
@@ -6696,6 +6700,7 @@ function extractDisappearingTargetFromControl(
     | "unlink"
     | "link"
     | "untag"
+    | "tag"
     | "unflag"
     | "unsubscribe"
     | "unfollow"
@@ -6740,22 +6745,24 @@ function extractDisappearingTargetFromControl(
     const actionPattern =
       action === "link"
         ? "link"
-        : action === "delete"
-        ? "(?:delete|remove)"
-        : action === "archive"
-          ? "archive"
-          : action === "detach"
-            ? "detach"
-            : action === "disconnect"
-              ? "disconnect"
-              : action === "connect"
-                ? "connect"
-                : action === "unlink"
-                  ? "unlink"
-                  : action === "untag"
-                    ? "untag"
-                    : action === "unflag"
-                      ? "unflag"
+        : action === "tag"
+          ? "tag"
+          : action === "delete"
+            ? "(?:delete|remove)"
+            : action === "archive"
+              ? "archive"
+              : action === "detach"
+                ? "detach"
+                : action === "disconnect"
+                  ? "disconnect"
+                  : action === "connect"
+                    ? "connect"
+                    : action === "unlink"
+                      ? "unlink"
+                      : action === "untag"
+                        ? "untag"
+                        : action === "unflag"
+                          ? "unflag"
                       : action === "unsubscribe"
                         ? "(?:unsubscribe(?:\\s+from)?)"
                         : action === "unfollow"
@@ -6816,7 +6823,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6936,6 +6943,7 @@ function extractDisappearingTargetFromControl(
           "tool",
           "topic",
           "tag",
+          "tagged",
           "tagging",
           "unblock",
           "unblocking",
