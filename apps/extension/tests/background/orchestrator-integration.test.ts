@@ -1053,6 +1053,110 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
   });
 
+  test("ignores thrown late sibling errors after root goal completion", async () => {
+    const first = makeNode(
+      "n1",
+      "Read the Overview tab and gather the key metrics needed for a comparison.",
+    );
+    first.successCriteria =
+      "The key Overview metrics are collected for the final comparison.";
+    const second = makeNode(
+      "n2",
+      "Review the remaining dashboard context for the final comparison.",
+    );
+    second.successCriteria =
+      "Final answer identifies traffic as the strongest area based on both tabs.";
+    plannerBuildNodesImpl = async () => [first, second];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    orchestratorDeps.lanePolicies = {
+      executor: { maxConcurrent: 2 },
+    };
+    loopStartImpl = async (nodeId) => {
+      if (nodeId === "n1") {
+        return {
+          outcome: "completed",
+          summary:
+            "Traffic is strongest based on both tabs: Google Search traffic is up 15%, users are up 12%, and revenue is up 8%.",
+        };
+      }
+      await new Promise<void>((resolve) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          if (
+            nodeId &&
+            gracefulStopLoopNodeIds.includes(nodeId) &&
+            Date.now() - startedAt > 10
+          ) {
+            resolve();
+            return;
+          }
+          if (Date.now() - startedAt > 250) {
+            resolve();
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+      throw new Error("Late thrown sibling failure that must not overwrite skipped.");
+    };
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Admin Dashboard",
+          url: "http://127.0.0.1:61549/dashboard",
+          visibleContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          pageContent:
+            "Overview: Users up 12%, Revenue up 8%, Google Search traffic up 15%. Reports: Monthly performance, engagement funnel, detailed traffic source analysis. Traffic is strongest based on both tabs.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 2000 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        "Based on what you saw in both tabs, which area of the business looks strongest - user growth, revenue, or traffic? Give a brief answer referencing the data.",
+      ),
+    );
+
+    expect(gracefulStopLoopNodeIds).toContain("n2");
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]?.status).toBe("skipped");
+    expect(completion?.payload?.subtaskResults?.[1]?.result).toContain(
+      "Skipped: global goal already achieved",
+    );
+    expect(completion?.payload?.subtaskResults?.[1]?.result).not.toContain(
+      "Late thrown sibling failure",
+    );
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_result_ignored" &&
+          entry.body.data?.nodeId === "n2" &&
+          entry.body.data?.currentStatus === "skipped" &&
+          entry.body.data?.executorOutcome === "error" &&
+          entry.body.data?.reason === "node_already_terminal" &&
+          String(entry.body.data?.error || "").includes(
+            "Late thrown sibling failure",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   test("preserves full user-facing completion summaries beyond compact handoff length", async () => {
     const longSummary = [
       "## Job Posting Summary",

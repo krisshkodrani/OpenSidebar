@@ -5472,6 +5472,26 @@ export class Orchestrator {
           }
         }
       } catch (error: any) {
+        if (node.status !== "running") {
+          this.emitTraceEvent(
+            task,
+            "worker_result_ignored",
+            {
+              taskId: task.id,
+              nodeId: node.id,
+              workerId,
+              currentStatus: node.status,
+              executorOutcome:
+                error instanceof LaneTimeoutError ? "timeout" : "error",
+              reason: "node_already_terminal",
+              hadCompletedResult: Boolean(loop.completedResult),
+              error: error?.message || String(error),
+              ...buildParallelRunState(task),
+            },
+            "system",
+          );
+          return;
+        }
         if ((task.status as string) === "stopping") {
           this.emitTraceEvent(
             task,
