@@ -9236,150 +9236,86 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "due date", target } : null;
   }
 
-  const ownerVerbMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+owns\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (ownerVerbMatch) {
-    const target = cleanLabel(ownerVerbMatch[1] ?? "");
-    return target ? { label: "owner", target } : null;
-  }
+  const sentenceScopedByRelation =
+    extractSentenceScopedByRelationQuestionParts(text);
+  if (sentenceScopedByRelation) return sentenceScopedByRelation;
 
-  const passiveOwnedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+owned\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveOwnedByMatch) {
-    const target = cleanLabel(passiveOwnedByMatch[1] ?? "");
-    return target ? { label: "owner", target } : null;
-  }
+  return null;
+}
 
-  const assignedToMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+assigned\s+to\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (assignedToMatch) {
-    const target = cleanLabel(assignedToMatch[1] ?? "");
-    return target ? { label: "assignee", target } : null;
-  }
+const SENTENCE_SCOPED_BY_RELATIONS = [
+  {
+    label: "owner",
+    directQuestionTail: "\\s+owns",
+    passiveTargetSuffix: "owned\\s+by",
+    sentenceRelationPattern: "owned\\s+by",
+  },
+  {
+    label: "assignee",
+    directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
+    passiveTargetSuffix: "assigned\\s+to",
+    sentenceRelationPattern: "assigned\\s+to",
+  },
+  {
+    label: "requester",
+    directQuestionTail: "\\s+requested",
+    passiveTargetSuffix: "requested\\s+by",
+    sentenceRelationPattern: "requested\\s+by",
+  },
+  {
+    label: "reporter",
+    directQuestionTail: "\\s+reported",
+    passiveTargetSuffix: "reported\\s+by",
+    sentenceRelationPattern: "reported\\s+by",
+  },
+  {
+    label: "creator",
+    directQuestionTail: "\\s+created",
+    passiveTargetSuffix: "created\\s+by",
+    sentenceRelationPattern: "created\\s+by",
+  },
+  {
+    label: "opener",
+    directQuestionTail: "\\s+opened",
+    passiveTargetSuffix: "opened\\s+by",
+    sentenceRelationPattern: "opened\\s+by",
+  },
+  {
+    label: "approver",
+    directQuestionTail: "\\s+approved",
+    passiveTargetSuffix: "approved\\s+by",
+    sentenceRelationPattern: "approved\\s+by",
+  },
+  {
+    label: "reviewer",
+    directQuestionTail: "\\s+reviewed",
+    passiveTargetSuffix: "reviewed\\s+by",
+    sentenceRelationPattern: "reviewed\\s+by",
+  },
+] as const;
 
-  const passiveAssignedToMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+assigned\s+to(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveAssignedToMatch) {
-    const target = cleanLabel(passiveAssignedToMatch[1] ?? "");
-    return target ? { label: "assignee", target } : null;
-  }
+function extractSentenceScopedByRelationQuestionParts(
+  text: string,
+): { label: string; target: string } | null {
+  for (const relation of SENTENCE_SCOPED_BY_RELATIONS) {
+    const directMatch = new RegExp(
+      `^(?:please\\s+)?(?:tell me\\s+)?who${relation.directQuestionTail}\\s+(?:the\\s+)?(.+?)(?:[?.!]|$)`,
+      "i",
+    ).exec(text);
+    if (directMatch) {
+      const target = cleanLabel(directMatch[1] ?? "");
+      if (target) return { label: relation.label, target };
+    }
 
-  const requestedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+requested\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (requestedByMatch) {
-    const target = cleanLabel(requestedByMatch[1] ?? "");
-    return target ? { label: "requester", target } : null;
+    const passiveMatch = new RegExp(
+      `^(?:please\\s+)?(?:tell me\\s+)?who(?:'s|\\s+is|\\s+was)\\s+(?:the\\s+)?(.+?)\\s+${relation.passiveTargetSuffix}(?:[?.!]|$)`,
+      "i",
+    ).exec(text);
+    if (passiveMatch) {
+      const target = cleanLabel(passiveMatch[1] ?? "");
+      if (target) return { label: relation.label, target };
+    }
   }
-
-  const passiveRequestedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+requested\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveRequestedByMatch) {
-    const target = cleanLabel(passiveRequestedByMatch[1] ?? "");
-    return target ? { label: "requester", target } : null;
-  }
-
-  const reportedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+reported\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (reportedByMatch) {
-    const target = cleanLabel(reportedByMatch[1] ?? "");
-    return target ? { label: "reporter", target } : null;
-  }
-
-  const passiveReportedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+reported\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveReportedByMatch) {
-    const target = cleanLabel(passiveReportedByMatch[1] ?? "");
-    return target ? { label: "reporter", target } : null;
-  }
-
-  const createdByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+created\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (createdByMatch) {
-    const target = cleanLabel(createdByMatch[1] ?? "");
-    return target ? { label: "creator", target } : null;
-  }
-
-  const passiveCreatedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+created\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveCreatedByMatch) {
-    const target = cleanLabel(passiveCreatedByMatch[1] ?? "");
-    return target ? { label: "creator", target } : null;
-  }
-
-  const openedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+opened\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (openedByMatch) {
-    const target = cleanLabel(openedByMatch[1] ?? "");
-    return target ? { label: "opener", target } : null;
-  }
-
-  const passiveOpenedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+opened\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveOpenedByMatch) {
-    const target = cleanLabel(passiveOpenedByMatch[1] ?? "");
-    return target ? { label: "opener", target } : null;
-  }
-
-  const approvedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+approved\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (approvedByMatch) {
-    const target = cleanLabel(approvedByMatch[1] ?? "");
-    return target ? { label: "approver", target } : null;
-  }
-
-  const passiveApprovedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+approved\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveApprovedByMatch) {
-    const target = cleanLabel(passiveApprovedByMatch[1] ?? "");
-    return target ? { label: "approver", target } : null;
-  }
-
-  const reviewedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who\s+reviewed\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (reviewedByMatch) {
-    const target = cleanLabel(reviewedByMatch[1] ?? "");
-    return target ? { label: "reviewer", target } : null;
-  }
-
-  const passiveReviewedByMatch =
-    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+reviewed\s+by(?:[?.!]|$)/i.exec(
-      text,
-    );
-  if (passiveReviewedByMatch) {
-    const target = cleanLabel(passiveReviewedByMatch[1] ?? "");
-    return target ? { label: "reviewer", target } : null;
-  }
-
   return null;
 }
 
@@ -9392,18 +9328,11 @@ function findGroundedSentenceScopedAnswer(
 
   const normalizedLabel = normalizeText(parts.label);
   if (
-    normalizedLabel !== "owner" &&
-    normalizedLabel !== "assignee" &&
     normalizedLabel !== "due date" &&
     normalizedLabel !== "status" &&
     normalizedLabel !== "priority" &&
     normalizedLabel !== "severity" &&
-    normalizedLabel !== "requester" &&
-    normalizedLabel !== "reporter" &&
-    normalizedLabel !== "creator" &&
-    normalizedLabel !== "opener" &&
-    normalizedLabel !== "approver" &&
-    normalizedLabel !== "reviewer"
+    !sentenceScopedByRelationPatternForLabel(normalizedLabel)
   ) {
     return null;
   }
@@ -10015,24 +9944,9 @@ function extractSentenceScopedRelationAnswer(
     return null;
   }
 
-  const relationPattern =
-    normalizedLabel === "assignee"
-      ? "assigned\\s+to"
-      : normalizedLabel === "owner"
-        ? "owned\\s+by"
-        : normalizedLabel === "requester"
-          ? "requested\\s+by"
-          : normalizedLabel === "reporter"
-            ? "reported\\s+by"
-            : normalizedLabel === "creator"
-              ? "created\\s+by"
-              : normalizedLabel === "opener"
-                ? "opened\\s+by"
-                : normalizedLabel === "approver"
-                  ? "approved\\s+by"
-                  : normalizedLabel === "reviewer"
-                    ? "reviewed\\s+by"
-        : null;
+  const relationPattern = sentenceScopedByRelationPatternForLabel(
+    normalizedLabel,
+  );
   if (!relationPattern) return null;
 
   const match = new RegExp(
@@ -10041,6 +9955,14 @@ function extractSentenceScopedRelationAnswer(
   ).exec(sentence);
   const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
   return answer || null;
+}
+
+function sentenceScopedByRelationPatternForLabel(label: string): string | null {
+  return (
+    SENTENCE_SCOPED_BY_RELATIONS.find(
+      (relation) => relation.label === normalizeText(label),
+    )?.sentenceRelationPattern ?? null
+  );
 }
 
 function workflowTargetTextPattern(target: string): string | null {
