@@ -3716,9 +3716,14 @@ function visibleWorkflowConfirmationMatchesTarget(
     targetLabel,
   );
   if (!candidate) {
-    // Clipboard and linking banners often omit the affected item, so named
-    // copy/link requests need visible target grounding before acceptance.
-    return action !== "copy" && action !== "link" && action !== "unlink";
+    // Clipboard, linking, and sharing banners often omit the affected item, so
+    // named requests need visible target grounding before acceptance.
+    return (
+      action !== "copy" &&
+      action !== "link" &&
+      action !== "unlink" &&
+      action !== "share"
+    );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
 }
