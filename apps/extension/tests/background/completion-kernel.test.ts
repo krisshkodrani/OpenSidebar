@@ -6653,6 +6653,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unflag confirmation from named flagged target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+      pageContent:
+        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+      elements: [
+        actionButton(525, "Unflag Message Alpha"),
+        actionButton(526, "Unflag Message Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Flagged messages Message Beta Unflag Message Beta",
+      pageContent: "Flagged messages Message Beta Unflag Message Beta",
+      elements: [actionButton(526, "Unflag Message Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unflag Message Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 525 },
+      result: "Clicked element 525.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unflagged Message Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unflag",
+      targetLabel: "Message Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unflag:message-alpha",
+        detail: expect.objectContaining({
+          action: "unflag",
+          source: "target_disappearance",
+          text: "Unflagged target no longer visible: Message Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unflag target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+      pageContent:
+        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+      elements: [
+        actionButton(525, "Unflag Message Alpha"),
+        actionButton(526, "Unflag Message Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      elements: [actionButton(525, "Unflag Message Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unflag Message Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 526 },
+      result: "Clicked element 526.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unflagged Message Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unflag",
+      targetLabel: "Message Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unflag:message-beta",
+        detail: expect.objectContaining({
+          action: "unflag",
+          source: "target_disappearance",
+          text: "Unflagged target no longer visible: Message Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unflag confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      elements: [actionButton(525, "Unflag Message Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
+      elements: [actionButton(525, "Unflag Message Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 525 },
+      result: "Clicked element 525.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unflag confirmation from a generic unflag button", () => {
+    const genericUnflagButton: TaggedElement = {
+      tag: 525,
+      tagName: "button",
+      role: "button",
+      text: "Unflag",
+      attributes: {
+        id: "unflag",
+        "aria-label": "Unflag",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Flagged messages Message Alpha Unflag",
+      pageContent: "Flagged messages Message Alpha Unflag",
+      elements: [genericUnflagButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Flagged messages",
+      pageContent: "Flagged messages",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 525 },
+      result: "Clicked element 525.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
