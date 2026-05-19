@@ -2460,7 +2460,11 @@ describe("completion kernel", () => {
       scenario.action === "unflag" ||
       scenario.action === "duplicate" ||
       scenario.action === "restore" ||
-      scenario.action === "create";
+      scenario.action === "create" ||
+      scenario.action === "export" ||
+      scenario.action === "download" ||
+      scenario.action === "upload" ||
+      scenario.action === "import";
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`
