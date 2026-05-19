@@ -20986,6 +20986,222 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts send confirmation from visible submitted draft row", () => {
+    const draftText = "Hi David, Monday at 2 PM works for me.";
+    const pre = draftSnapshot({
+      visibleContent: `Email thread Reply message ${draftText} Send reply`,
+      pageContent: `Email thread Reply message ${draftText} Send reply`,
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: `Email thread Sent ${draftText}`,
+      pageContent: `Email thread Sent ${draftText}`,
+      elements: [
+        {
+          ...textField(301, "Reply message", ""),
+          tagName: "textarea",
+          attributes: {
+            id: "reply-message",
+            name: "reply-message",
+            label: "Reply message",
+            value: "",
+          },
+        },
+        actionButton(302, "Send reply"),
+        rowElement(640, `Sent ${draftText}`),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send the reply.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent the reply.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:draft-row:reply-message",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "submitted_draft_row",
+          targetText: draftText,
+          text: "Sent draft visible as row: Reply message",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects submitted draft row evidence for the wrong requested target", () => {
+    const draftText = "Beta rollout message: please review before Friday.";
+    const pre = draftSnapshot({
+      visibleContent: `Email thread Reply message ${draftText} Send reply`,
+      pageContent: `Email thread Reply message ${draftText} Send reply`,
+      elements: [
+        {
+          ...textField(301, "Reply message", draftText),
+          tagName: "textarea",
+          attributes: {
+            id: "reply-message",
+            name: "reply-message",
+            label: "Reply message",
+            value: draftText,
+          },
+        },
+        actionButton(302, "Send reply"),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: `Email thread Sent ${draftText}`,
+      pageContent: `Email thread Sent ${draftText}`,
+      elements: [
+        {
+          ...textField(301, "Reply message", ""),
+          tagName: "textarea",
+          attributes: {
+            id: "reply-message",
+            name: "reply-message",
+            label: "Reply message",
+            value: "",
+          },
+        },
+        actionButton(302, "Send reply"),
+        rowElement(640, `Sent ${draftText}`),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send the Alpha rollout message.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent the Alpha rollout message.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:draft-row:reply-message",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "submitted_draft_row",
+          targetText: draftText,
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer submitted draft row while the editor still contains the draft", () => {
+    const draftText = "Hi David, Monday at 2 PM works for me.";
+    const pre = draftSnapshot({
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: `Email thread Reply message ${draftText} Sent ${draftText}`,
+      pageContent: `Email thread Reply message ${draftText} Sent ${draftText}`,
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+        rowElement(640, `Sent ${draftText}`),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer submitted draft row from a row that already existed", () => {
+    const draftText = "Hi David, Monday at 2 PM works for me.";
+    const pre = draftSnapshot({
+      visibleContent: `Email thread Reply message ${draftText} Sent ${draftText} Send reply`,
+      pageContent: `Email thread Reply message ${draftText} Sent ${draftText} Send reply`,
+      elements: [
+        ...(draftSnapshot().elements ?? []),
+        actionButton(302, "Send reply"),
+        rowElement(640, `Sent ${draftText}`),
+      ],
+    });
+    const current = draftSnapshot({
+      visibleContent: `Email thread Sent ${draftText}`,
+      pageContent: `Email thread Sent ${draftText}`,
+      elements: [
+        {
+          ...textField(301, "Reply message", ""),
+          tagName: "textarea",
+          attributes: {
+            id: "reply-message",
+            name: "reply-message",
+            label: "Reply message",
+            value: "",
+          },
+        },
+        actionButton(302, "Send reply"),
+        rowElement(640, `Sent ${draftText}`),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 302 },
+      result: "Clicked element 302.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 10,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("does not infer send confirmation while draft text remains visible", () => {
     const pre = draftSnapshot({
       elements: [
