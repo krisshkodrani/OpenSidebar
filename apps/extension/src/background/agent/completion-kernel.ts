@@ -5715,7 +5715,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
         ? "Archived"
         : action === "detach"
           ? "Detached"
-          : "Uninstalled";
+          : action === "unlink"
+            ? "Unlinked"
+            : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6049,10 +6051,11 @@ function inferTargetDisappearanceAction(
   element: TaggedElement,
 ): Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "detach" | "uninstall"
+  "delete" | "archive" | "detach" | "unlink" | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
+  if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\b(?:delete|remove)\b/i.test(text)) return "delete";
   if (/\barchive\b/i.test(text)) return "archive";
@@ -6549,7 +6552,7 @@ function extractDisappearingTargetFromControl(
   element: TaggedElement,
   action: Extract<
     WorkflowConfirmationAction,
-    "delete" | "archive" | "detach" | "uninstall"
+    "delete" | "archive" | "detach" | "unlink" | "uninstall"
   >,
 ): string | null {
   const candidates = [
@@ -6570,7 +6573,9 @@ function extractDisappearingTargetFromControl(
           ? "archive"
           : action === "detach"
             ? "detach"
-            : "uninstall";
+            : action === "unlink"
+              ? "unlink"
+              : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6578,7 +6583,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|unlink|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6610,6 +6615,8 @@ function extractDisappearingTargetFromControl(
           "file",
           "integration",
           "item",
+          "link",
+          "linked",
           "module",
           "package",
           "plugin",
@@ -6618,6 +6625,8 @@ function extractDisappearingTargetFromControl(
           "row",
           "theme",
           "tool",
+          "unlink",
+          "unlinking",
           "uninstall",
           "uninstallation",
           "workflow",

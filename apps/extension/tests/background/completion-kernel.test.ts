@@ -6299,6 +6299,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unlink confirmation from named relationship disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+      pageContent:
+        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+      elements: [
+        actionButton(509, "Unlink Account Alpha"),
+        actionButton(510, "Unlink Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Linked accounts Account Beta Unlink Account Beta",
+      pageContent: "Linked accounts Account Beta Unlink Account Beta",
+      elements: [actionButton(510, "Unlink Account Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlink Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 509 },
+      result: "Clicked element 509.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlinked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlink",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlink:account-alpha",
+        detail: expect.objectContaining({
+          action: "unlink",
+          source: "target_disappearance",
+          text: "Unlinked target no longer visible: Account Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unlink target-disappearance evidence for the wrong requested relationship", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+      pageContent:
+        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+      elements: [
+        actionButton(509, "Unlink Account Alpha"),
+        actionButton(510, "Unlink Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      elements: [actionButton(509, "Unlink Account Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlink Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 510 },
+      result: "Clicked element 510.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlinked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlink",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlink:account-beta",
+        detail: expect.objectContaining({
+          action: "unlink",
+          source: "target_disappearance",
+          text: "Unlinked target no longer visible: Account Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unlink confirmation while the named relationship remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      elements: [actionButton(509, "Unlink Account Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
+      elements: [actionButton(509, "Unlink Account Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 509 },
+      result: "Clicked element 509.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unlink confirmation from a generic unlink button", () => {
+    const genericUnlinkButton: TaggedElement = {
+      tag: 509,
+      tagName: "button",
+      role: "button",
+      text: "Unlink",
+      attributes: {
+        id: "unlink",
+        "aria-label": "Unlink",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Linked accounts Account Alpha Unlink",
+      pageContent: "Linked accounts Account Alpha Unlink",
+      elements: [genericUnlinkButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Linked accounts",
+      pageContent: "Linked accounts",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 509 },
+      result: "Clicked element 509.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
