@@ -5753,9 +5753,11 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                             ? "Bookmarked"
                                             : action === "unfavorite"
                                               ? "Unfavorited"
-                                              : action === "unpin"
-                                                ? "Unpinned"
-                                                : action === "unmute"
+                                              : action === "favorite"
+                                                ? "Favorited"
+                                                : action === "unpin"
+                                                  ? "Unpinned"
+                                                  : action === "unmute"
                                                   ? "Unmuted"
                                                   : action === "unschedule"
                                                     ? "Unscheduled"
@@ -6149,6 +6151,7 @@ function inferTargetDisappearanceAction(
   | "unbookmark"
   | "bookmark"
   | "unfavorite"
+  | "favorite"
   | "unpin"
   | "unmute"
   | "unschedule"
@@ -6198,6 +6201,7 @@ function inferTargetDisappearanceAction(
   if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
   if (/\bbookmark(?:ed|ing|s)?\b/i.test(text)) return "bookmark";
   if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
+  if (/\bfavorite(?:d|ing|s)?\b/i.test(text)) return "favorite";
   if (/\bunpin(?:ned|ning)?\b/i.test(text)) return "unpin";
   if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
   if (/\bunschedule(?:d|ing)?\b/i.test(text)) return "unschedule";
@@ -6740,6 +6744,7 @@ function extractDisappearingTargetFromControl(
     | "unbookmark"
     | "bookmark"
     | "unfavorite"
+    | "favorite"
     | "unpin"
     | "unmute"
     | "unschedule"
@@ -6819,9 +6824,11 @@ function extractDisappearingTargetFromControl(
                                     ? "bookmark"
                                     : action === "unfavorite"
                                       ? "unfavorite"
-                                      : action === "unpin"
-                                        ? "unpin"
-                                        : action === "unmute"
+                                      : action === "favorite"
+                                        ? "favorite"
+                                        : action === "unpin"
+                                          ? "unpin"
+                                          : action === "unmute"
                                           ? "unmute"
                                           : action === "unschedule"
                                             ? "unschedule"
@@ -6867,7 +6874,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6937,6 +6944,7 @@ function extractDisappearingTargetFromControl(
           "feed",
           "favorite",
           "favorited",
+          "favoriting",
           "integration",
           "item",
           "license",
