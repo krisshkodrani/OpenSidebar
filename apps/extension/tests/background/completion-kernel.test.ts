@@ -25903,6 +25903,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped priority answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Details",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Alpha is high priority. Ticket Beta is low priority.",
+      pageContent:
+        "Ticket Alpha is high priority. Ticket Beta is low priority. The page explains ticket priority, ticket status, ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the priority for Ticket Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "High",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Low",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "priority",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts sentence-scoped priority answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Details",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Alpha priority is High. Ticket Beta priority is Low.",
+      pageContent:
+        "Ticket Alpha priority is High. Ticket Beta priority is Low. The page explains ticket priority, ticket status, ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is Ticket Alpha's priority?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nTicket Alpha priority is High. Ticket Beta priority is Low. The page explains ticket priority, ticket status, ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "High",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Low",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "priority",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts row-scoped label-value answer for the requested target row", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",

@@ -9287,7 +9287,8 @@ function findGroundedSentenceScopedAnswer(
     normalizedLabel !== "owner" &&
     normalizedLabel !== "assignee" &&
     normalizedLabel !== "due date" &&
-    normalizedLabel !== "status"
+    normalizedLabel !== "status" &&
+    normalizedLabel !== "priority"
   ) {
     return null;
   }
@@ -9859,6 +9860,19 @@ function extractSentenceScopedRelationAnswer(
   const targetPattern = workflowTargetTextPattern(target);
   if (!targetPattern) return null;
   const normalizedLabel = normalizeText(expectedAnswerLabel);
+  if (normalizedLabel === "priority") {
+    const priorityPatterns = [
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+priority\\s+(?:is|are|was|were)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})(?:\\b|$)`,
+      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+priority(?:\\b|$)`,
+    ];
+    for (const pattern of priorityPatterns) {
+      const match = new RegExp(pattern, "i").exec(sentence);
+      const answer = cleanSentenceScopedPriorityAnswer(match?.[1] ?? "");
+      if (answer) return answer;
+    }
+    return null;
+  }
+
   if (normalizedLabel === "status") {
     const explicitStatusPatterns = [
       `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
@@ -9923,6 +9937,19 @@ function cleanSentenceScopedStatusAnswer(value: string): string {
   if (!answer) return "";
   const match = new RegExp(
     `^${SENTENCE_SCOPED_STATUS_ANSWER_PATTERN}$`,
+    "i",
+  ).exec(answer);
+  return match ? answer : "";
+}
+
+const SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN =
+  "(?:p[0-5]|sev\\s*[0-5]|critical|urgent|highest|high|medium|normal|standard|low|lowest|minor|major)";
+
+function cleanSentenceScopedPriorityAnswer(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  const match = new RegExp(
+    `^${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN}$`,
     "i",
   ).exec(answer);
   return match ? answer : "";
