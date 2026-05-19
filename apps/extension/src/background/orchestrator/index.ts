@@ -4995,6 +4995,47 @@ export class Orchestrator {
                 ? verification.confidence
                 : 0.5;
             const verificationFailureType = verification.failureType;
+            if (node.status !== "running") {
+              this.emitTraceEvent(
+                task,
+                "worker_result_ignored",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  workerId,
+                  currentStatus: node.status,
+                  executorOutcome: result.outcome,
+                  verifierDecision: verification.decision,
+                  reason: "node_already_terminal",
+                  ...buildParallelRunState(task),
+                },
+                "system",
+              );
+              return;
+            }
+            if ((task.status as string) === "stopping") {
+              this.emitTraceEvent(
+                task,
+                "worker_result_ignored",
+                {
+                  taskId: task.id,
+                  nodeId: node.id,
+                  workerId,
+                  currentStatus: node.status,
+                  executorOutcome: result.outcome,
+                  verifierDecision: verification.decision,
+                  reason: "task_stop_requested",
+                  ...buildParallelRunState(task),
+                },
+                "system",
+              );
+              node.status = "failed";
+              node.error = appendRecentSideEffects(
+                "Stopped by user",
+                result.sideEffectsLog,
+              );
+              return;
+            }
             logger.info("orchestrator", "Verifier decision", {
               taskId: task.id,
               nodeId: node.id,
