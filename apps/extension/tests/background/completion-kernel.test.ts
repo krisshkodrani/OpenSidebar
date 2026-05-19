@@ -17951,6 +17951,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts upload confirmation from named file disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+      pageContent:
+        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+      elements: [
+        actionButton(557, "Upload File Alpha"),
+        actionButton(558, "Upload File Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending uploads File Beta Upload File Beta",
+      pageContent: "Pending uploads File Beta Upload File Beta",
+      elements: [actionButton(558, "Upload File Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upload File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 557 },
+      result: "Clicked element 557.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Uploaded File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upload",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:upload:file-alpha",
+        detail: expect.objectContaining({
+          action: "upload",
+          source: "target_disappearance",
+          text: "Uploaded target no longer visible: File Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects upload target-disappearance evidence for the wrong requested file", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+      pageContent:
+        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+      elements: [
+        actionButton(557, "Upload File Alpha"),
+        actionButton(558, "Upload File Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending uploads File Alpha Upload File Alpha",
+      pageContent: "Pending uploads File Alpha Upload File Alpha",
+      elements: [actionButton(557, "Upload File Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upload File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 558 },
+      result: "Clicked element 558.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Uploaded File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upload",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:upload:file-beta",
+        detail: expect.objectContaining({
+          action: "upload",
+          source: "target_disappearance",
+          text: "Uploaded target no longer visible: File Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer upload confirmation while the named file remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending uploads File Alpha Upload File Alpha",
+      pageContent: "Pending uploads File Alpha Upload File Alpha",
+      elements: [actionButton(557, "Upload File Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending uploads File Alpha Upload File Alpha",
+      pageContent: "Pending uploads File Alpha Upload File Alpha",
+      elements: [actionButton(557, "Upload File Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 557 },
+      result: "Clicked element 557.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer upload confirmation from a generic upload file control", () => {
+    const genericUploadFileButton: TaggedElement = {
+      tag: 557,
+      tagName: "button",
+      role: "button",
+      text: "Upload file",
+      attributes: {
+        id: "upload-file",
+        "aria-label": "Upload file",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Pending uploads File Alpha Upload file",
+      pageContent: "Pending uploads File Alpha Upload file",
+      elements: [genericUploadFileButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending uploads",
+      pageContent: "Pending uploads",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 557 },
+      result: "Clicked element 557.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
