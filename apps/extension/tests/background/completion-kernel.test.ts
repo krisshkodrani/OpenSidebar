@@ -257,6 +257,22 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
+function rowElement(tag: number, text: string): TaggedElement {
+  const key = text.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "tr",
+    role: "row",
+    text,
+    attributes: {
+      id: `row-${key}`,
+    },
+    rect: { x: 0, y: tag * 20, width: 600, height: 32 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 function stableActionButton(
   tag: number,
   label: string,
@@ -20292,6 +20308,194 @@ describe("completion kernel", () => {
       reason:
         "Workflow confirmation evidence is for a different target than the requested action.",
     });
+  });
+
+  test("accepts create confirmation from visible created-row when form resets", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "New customer Name Create customer Customers Customer Alpha Active",
+      pageContent:
+        "New customer Name Create customer Customers Customer Alpha Active",
+      elements: [
+        textField(575, "Name", ""),
+        actionButton(576, "Create customer"),
+        rowElement(610, "Customer Alpha Active"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Create Customer Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Created Customer Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+      targetLabel: "Customer Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:create:row:customer-alpha",
+        detail: expect.objectContaining({
+          action: "create",
+          source: "created_row",
+          targetText: "Customer Alpha",
+          text: "Created row visible: Customer Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects visible created-row evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Beta Create customer",
+      pageContent: "New customer Name Customer Beta Create customer",
+      elements: [
+        textField(575, "Name", "Customer Beta"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "New customer Name Create customer Customers Customer Beta Active",
+      pageContent:
+        "New customer Name Create customer Customers Customer Beta Active",
+      elements: [
+        textField(575, "Name", ""),
+        actionButton(576, "Create customer"),
+        rowElement(610, "Customer Beta Active"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Create Customer Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Created Customer Alpha.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:create:row:customer-beta",
+        detail: expect.objectContaining({
+          action: "create",
+          source: "created_row",
+          targetText: "Customer Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer created-row evidence from plain visible text", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "New customer Name Create customer Customer Alpha was mentioned in help text",
+      pageContent:
+        "New customer Name Create customer Customer Alpha was mentioned in help text",
+      elements: [
+        textField(575, "Name", ""),
+        actionButton(576, "Create customer"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer created-row evidence from a row that already existed", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Customers Customer Alpha Active New customer Name Customer Alpha Create customer",
+      pageContent:
+        "Customers Customer Alpha Active New customer Name Customer Alpha Create customer",
+      elements: [
+        rowElement(610, "Customer Alpha Active"),
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Customers Customer Alpha Active New customer Name Create customer",
+      pageContent:
+        "Customers Customer Alpha Active New customer Name Create customer",
+      elements: [
+        rowElement(610, "Customer Alpha Active"),
+        textField(575, "Name", ""),
+        actionButton(576, "Create customer"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
   });
 
   test("does not infer create confirmation while the named form remains visible", () => {

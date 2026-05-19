@@ -92,6 +92,7 @@ export type CompletionEvidence =
           | "modal_disappearance"
           | "target_disappearance"
           | "form_disappearance"
+          | "created_row"
           | "draft_disappearance"
           | "status_change"
           | "control_label_change"
@@ -1377,6 +1378,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractCreateRowAppearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
@@ -3536,7 +3538,8 @@ function workflowConfirmationMatchesTarget(
   if (!targetLabel) return true;
   if (
     event.detail.source === "target_disappearance" ||
-    event.detail.source === "form_disappearance"
+    event.detail.source === "form_disappearance" ||
+    event.detail.source === "created_row"
   ) {
     return workflowTargetLabelCoveredByText(
       targetLabel,
@@ -5941,6 +5944,95 @@ function extractCreateFormDisappearanceEvidenceFromToolOutcome(params: {
       },
     },
   ];
+}
+
+function extractCreateRowAppearanceEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element || !isCreateFormSubmissionControl(element)) return [];
+
+  const preFields = extractFormFieldObservations(pre);
+  const target = inferCreatedFormTarget(preFields);
+  if (!target) return [];
+  if (didSubmittedFormDisappear(preFields, current)) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+  if (findCreatedRowText(pre, target)) return [];
+
+  const rowText = findCreatedRowText(current, target);
+  if (!rowText) return [];
+
+  const key = compactKey(target) || compactKey(rowText) || `tag-${element.tag}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:create:row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Created row visible: ${target}`,
+        action: "create",
+        targetText: target,
+        source: "created_row",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function findCreatedRowText(
+  snapshot: DomSnapshot,
+  target: string,
+): string | null {
+  const row = snapshot.elements.find((element) => {
+    if (!element.isVisible || element.isDisabled) return false;
+    if (!isCreatedRowLikeElement(element)) return false;
+    const text = createdRowElementText(element);
+    return Boolean(text) && workflowTargetLabelCoveredByText(target, text);
+  });
+  return row ? createdRowElementText(row) : null;
+}
+
+function isCreatedRowLikeElement(element: TaggedElement): boolean {
+  const tagName = element.tagName.toLowerCase();
+  const role = normalizeText(element.role || "");
+  return (
+    tagName === "tr" ||
+    tagName === "li" ||
+    tagName === "article" ||
+    role === "row" ||
+    role === "listitem" ||
+    role === "article"
+  );
+}
+
+function createdRowElementText(element: TaggedElement): string {
+  const attrs = element.attributes ?? {};
+  return cleanLabel(
+    [
+      element.text,
+      attrs["aria-label"],
+      attrs.title,
+      attrs.label,
+      attrs.name,
+      attrs.id,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function isCreateFormSubmissionControl(element: TaggedElement): boolean {
