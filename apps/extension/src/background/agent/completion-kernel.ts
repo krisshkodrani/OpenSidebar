@@ -5723,17 +5723,19 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                 ? "Untagged"
                 : action === "unflag"
                   ? "Unflagged"
-              : action === "revoke"
-                ? "Revoked"
-                : action === "unblock"
-                  ? "Unblocked"
-                  : action === "block"
-                    ? "Blocked"
-                  : action === "unsuspend"
-                    ? "Unsuspended"
-                    : action === "suspend"
-                      ? "Suspended"
-                      : "Uninstalled";
+                  : action === "unsubscribe"
+                    ? "Unsubscribed"
+                    : action === "revoke"
+                      ? "Revoked"
+                      : action === "unblock"
+                        ? "Unblocked"
+                        : action === "block"
+                          ? "Blocked"
+                          : action === "unsuspend"
+                            ? "Unsuspended"
+                            : action === "suspend"
+                              ? "Suspended"
+                              : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6074,6 +6076,7 @@ function inferTargetDisappearanceAction(
   | "unlink"
   | "untag"
   | "unflag"
+  | "unsubscribe"
   | "revoke"
   | "unblock"
   | "block"
@@ -6090,6 +6093,9 @@ function inferTargetDisappearanceAction(
   if (/\bblock(?:ed|ing)?\b/i.test(text)) return "block";
   if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
   if (/\bunflag(?:ged|ging)?\b/i.test(text)) return "unflag";
+  if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
+    return "unsubscribe";
+  }
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6595,6 +6601,7 @@ function extractDisappearingTargetFromControl(
     | "unlink"
     | "untag"
     | "unflag"
+    | "unsubscribe"
     | "revoke"
     | "unblock"
     | "block"
@@ -6629,17 +6636,19 @@ function extractDisappearingTargetFromControl(
                   ? "untag"
                   : action === "unflag"
                     ? "unflag"
-                    : action === "revoke"
-                      ? "(?:revoke|revocation)"
-                      : action === "unblock"
-                        ? "unblock"
-                        : action === "block"
-                          ? "block"
-                          : action === "unsuspend"
-                            ? "unsuspend"
-                            : action === "suspend"
-                              ? "suspend"
-                              : "uninstall";
+                    : action === "unsubscribe"
+                      ? "(?:unsubscribe(?:\\s+from)?)"
+                      : action === "revoke"
+                        ? "(?:revoke|revocation)"
+                        : action === "unblock"
+                          ? "unblock"
+                          : action === "block"
+                            ? "block"
+                            : action === "unsuspend"
+                              ? "unsuspend"
+                              : action === "suspend"
+                                ? "suspend"
+                                : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6647,7 +6656,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6671,6 +6680,7 @@ function extractDisappearingTargetFromControl(
           "button",
           "block",
           "blocking",
+          "channel",
           "connector",
           "delete",
           "detach",
@@ -6693,8 +6703,10 @@ function extractDisappearingTargetFromControl(
           "licence",
           "link",
           "linked",
+          "list",
           "membership",
           "module",
+          "newsletter",
           "package",
           "permission",
           "plugin",
@@ -6709,6 +6721,7 @@ function extractDisappearingTargetFromControl(
           "row",
           "service",
           "source",
+          "subscription",
           "suspend",
           "suspension",
           "theme",
@@ -6723,6 +6736,9 @@ function extractDisappearingTargetFromControl(
           "unflagging",
           "untag",
           "untagging",
+          "unsubscribe",
+          "unsubscribed",
+          "unsubscription",
           "unsuspend",
           "unsuspension",
           "uninstall",
