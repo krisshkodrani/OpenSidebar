@@ -19198,6 +19198,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts send confirmation from named queued message disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+      pageContent:
+        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+      elements: [
+        actionButton(571, "Send Message Alpha"),
+        actionButton(572, "Send Message Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Queued messages Message Beta Send Message Beta",
+      pageContent: "Queued messages Message Beta Send Message Beta",
+      elements: [actionButton(572, "Send Message Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send Message Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 571 },
+      result: "Clicked element 571.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent Message Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+      targetLabel: "Message Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:message-alpha",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "target_disappearance",
+          text: "Sent target no longer visible: Message Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects send target-disappearance evidence for the wrong requested message", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+      pageContent:
+        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+      elements: [
+        actionButton(571, "Send Message Alpha"),
+        actionButton(572, "Send Message Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Queued messages Message Alpha Send Message Alpha",
+      pageContent: "Queued messages Message Alpha Send Message Alpha",
+      elements: [actionButton(571, "Send Message Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send Message Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 572 },
+      result: "Clicked element 572.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent Message Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+      targetLabel: "Message Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:message-beta",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "target_disappearance",
+          text: "Sent target no longer visible: Message Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer send confirmation while the named queued message remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Queued messages Message Alpha Send Message Alpha",
+      pageContent: "Queued messages Message Alpha Send Message Alpha",
+      elements: [actionButton(571, "Send Message Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Queued messages Message Alpha Send Message Alpha",
+      pageContent: "Queued messages Message Alpha Send Message Alpha",
+      elements: [actionButton(571, "Send Message Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 571 },
+      result: "Clicked element 571.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer send confirmation from a generic send message control", () => {
+    const genericSendMessageButton: TaggedElement = {
+      tag: 571,
+      tagName: "button",
+      role: "button",
+      text: "Send message",
+      attributes: {
+        id: "send-message",
+        "aria-label": "Send message",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Queued messages Message Alpha Send message",
+      pageContent: "Queued messages Message Alpha Send message",
+      elements: [genericSendMessageButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Queued messages",
+      pageContent: "Queued messages",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 571 },
+      result: "Clicked element 571.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
