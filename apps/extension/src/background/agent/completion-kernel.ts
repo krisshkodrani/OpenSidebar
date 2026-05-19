@@ -5801,8 +5801,10 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                                       ? "Suspended"
                                                                       : action === "backup"
                                                                         ? "Backed up"
-                                                                        : action === "deploy"
-                                                                          ? "Deployed"
+                                                                      : action === "deploy"
+                                                                        ? "Deployed"
+                                                                        : action === "grant"
+                                                                          ? "Granted"
                                                                           : action === "reset"
                                                                             ? "Reset"
                                                                             : action === "install"
@@ -6181,6 +6183,7 @@ function inferTargetDisappearanceAction(
   | "resume"
   | "start"
   | "stop"
+  | "grant"
   | "revoke"
   | "unblock"
   | "block"
@@ -6249,6 +6252,7 @@ function inferTargetDisappearanceAction(
   if (/\bresume(?:d|ing)?\b/i.test(text)) return "resume";
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
+  if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\blink(?:ed|ing)?\b/i.test(text)) return "link";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
@@ -6788,6 +6792,7 @@ function extractDisappearingTargetFromControl(
     | "resume"
     | "start"
     | "stop"
+    | "grant"
     | "revoke"
     | "unblock"
     | "block"
@@ -6888,29 +6893,31 @@ function extractDisappearingTargetFromControl(
                                                           ? "pause"
                                                           : action === "resume"
                                                             ? "resume"
-                                                            : action === "start"
-                                                              ? "start"
-                                                              : action === "stop"
-                                                                ? "stop"
-                                                                : action === "revoke"
-                                                                  ? "(?:revoke|revocation)"
-                                                                  : action === "unblock"
-                                                                    ? "unblock"
-                                                                    : action === "block"
-                                                                      ? "block"
-                                                                      : action === "unsuspend"
-                                                                        ? "unsuspend"
-                                                                        : action === "suspend"
-                                                                          ? "suspend"
-                                                                          : action === "backup"
-                                                                            ? "(?:back\\s+up|backup)"
-                                                                            : action === "deploy"
-                                                                              ? "deploy"
-                                                                              : action === "reset"
-                                                                                ? "reset"
-                                                                                : action === "install"
-                                                                                  ? "install"
-                                                                                  : "uninstall";
+                                                              : action === "start"
+                                                                ? "start"
+                                                                : action === "stop"
+                                                                  ? "stop"
+                                                                  : action === "grant"
+                                                                    ? "grant"
+                                                                    : action === "revoke"
+                                                                      ? "(?:revoke|revocation)"
+                                                                      : action === "unblock"
+                                                                        ? "unblock"
+                                                                        : action === "block"
+                                                                          ? "block"
+                                                                          : action === "unsuspend"
+                                                                            ? "unsuspend"
+                                                                            : action === "suspend"
+                                                                              ? "suspend"
+                                                                              : action === "backup"
+                                                                                ? "(?:back\\s+up|backup)"
+                                                                                : action === "deploy"
+                                                                                  ? "deploy"
+                                                                                  : action === "reset"
+                                                                                    ? "reset"
+                                                                                    : action === "install"
+                                                                                      ? "install"
+                                                                                      : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6918,7 +6925,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6996,6 +7003,9 @@ function extractDisappearingTargetFromControl(
           "favorite",
           "favorited",
           "favoriting",
+          "grant",
+          "granted",
+          "granting",
           "integration",
           "install",
           "installation",

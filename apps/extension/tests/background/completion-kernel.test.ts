@@ -6122,6 +6122,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts grant confirmation from named role disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available grants Role Alpha Grant Role Alpha Role Beta Grant Role Beta",
+      pageContent:
+        "Available grants Role Alpha Grant Role Alpha Role Beta Grant Role Beta",
+      elements: [
+        actionButton(504, "Grant Role Alpha"),
+        actionButton(505, "Grant Role Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available grants Role Beta Grant Role Beta",
+      pageContent: "Available grants Role Beta Grant Role Beta",
+      elements: [actionButton(505, "Grant Role Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Grant Role Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Granted Role Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "grant",
+      targetLabel: "Role Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:grant:role-alpha",
+        detail: expect.objectContaining({
+          action: "grant",
+          source: "target_disappearance",
+          text: "Granted target no longer visible: Role Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects grant target-disappearance evidence for the wrong requested role", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available grants Role Alpha Grant Role Alpha Role Beta Grant Role Beta",
+      pageContent:
+        "Available grants Role Alpha Grant Role Alpha Role Beta Grant Role Beta",
+      elements: [
+        actionButton(504, "Grant Role Alpha"),
+        actionButton(505, "Grant Role Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available grants Role Alpha Grant Role Alpha",
+      pageContent: "Available grants Role Alpha Grant Role Alpha",
+      elements: [actionButton(504, "Grant Role Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Grant Role Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 505 },
+      result: "Clicked element 505.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Granted Role Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "grant",
+      targetLabel: "Role Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:grant:role-beta",
+        detail: expect.objectContaining({
+          action: "grant",
+          source: "target_disappearance",
+          text: "Granted target no longer visible: Role Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer grant confirmation while the named role remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Available grants Role Alpha Grant Role Alpha",
+      pageContent: "Available grants Role Alpha Grant Role Alpha",
+      elements: [actionButton(504, "Grant Role Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available grants Role Alpha Grant Role Alpha",
+      pageContent: "Available grants Role Alpha Grant Role Alpha",
+      elements: [actionButton(504, "Grant Role Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer grant confirmation from a generic grant button", () => {
+    const genericGrantButton: TaggedElement = {
+      tag: 504,
+      tagName: "button",
+      role: "button",
+      text: "Grant",
+      attributes: {
+        id: "grant",
+        "aria-label": "Grant",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Available grants Role Alpha Grant",
+      pageContent: "Available grants Role Alpha Grant",
+      elements: [genericGrantButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available grants",
+      pageContent: "Available grants",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts backup confirmation from named database disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
