@@ -9114,12 +9114,30 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "owner", target } : null;
   }
 
+  const passiveOwnedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+owned\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveOwnedByMatch) {
+    const target = cleanLabel(passiveOwnedByMatch[1] ?? "");
+    return target ? { label: "owner", target } : null;
+  }
+
   const assignedToMatch =
     /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+assigned\s+to\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
     );
   if (assignedToMatch) {
     const target = cleanLabel(assignedToMatch[1] ?? "");
+    return target ? { label: "assignee", target } : null;
+  }
+
+  const passiveAssignedToMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+assigned\s+to(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveAssignedToMatch) {
+    const target = cleanLabel(passiveAssignedToMatch[1] ?? "");
     return target ? { label: "assignee", target } : null;
   }
 
