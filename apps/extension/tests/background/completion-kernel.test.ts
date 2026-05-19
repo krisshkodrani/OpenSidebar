@@ -8817,6 +8817,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unlock confirmation from named locked target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+      pageContent:
+        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+      elements: [
+        actionButton(549, "Unlock Account Alpha"),
+        actionButton(550, "Unlock Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Locked accounts Account Beta Unlock Account Beta",
+      pageContent: "Locked accounts Account Beta Unlock Account Beta",
+      elements: [actionButton(550, "Unlock Account Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlock Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 549 },
+      result: "Clicked element 549.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlocked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlock",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlock:account-alpha",
+        detail: expect.objectContaining({
+          action: "unlock",
+          source: "target_disappearance",
+          text: "Unlocked target no longer visible: Account Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unlock target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+      pageContent:
+        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+      elements: [
+        actionButton(549, "Unlock Account Alpha"),
+        actionButton(550, "Unlock Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      elements: [actionButton(549, "Unlock Account Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlock Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 550 },
+      result: "Clicked element 550.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlocked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlock",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlock:account-beta",
+        detail: expect.objectContaining({
+          action: "unlock",
+          source: "target_disappearance",
+          text: "Unlocked target no longer visible: Account Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unlock confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      elements: [actionButton(549, "Unlock Account Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
+      elements: [actionButton(549, "Unlock Account Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 549 },
+      result: "Clicked element 549.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unlock confirmation from a generic unlock button", () => {
+    const genericUnlockButton: TaggedElement = {
+      tag: 549,
+      tagName: "button",
+      role: "button",
+      text: "Unlock",
+      attributes: {
+        id: "unlock",
+        "aria-label": "Unlock",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Locked accounts Account Alpha Unlock",
+      pageContent: "Locked accounts Account Alpha Unlock",
+      elements: [genericUnlockButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Locked accounts",
+      pageContent: "Locked accounts",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 549 },
+      result: "Clicked element 549.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
