@@ -5721,7 +5721,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
               ? "Revoked"
               : action === "unblock"
                 ? "Unblocked"
-              : "Uninstalled";
+                : action === "unsuspend"
+                  ? "Unsuspended"
+                  : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6061,10 +6063,12 @@ function inferTargetDisappearanceAction(
   | "unlink"
   | "revoke"
   | "unblock"
+  | "unsuspend"
   | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
+  if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
   if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
@@ -6570,6 +6574,7 @@ function extractDisappearingTargetFromControl(
     | "unlink"
     | "revoke"
     | "unblock"
+    | "unsuspend"
     | "uninstall"
   >,
 ): string | null {
@@ -6597,7 +6602,9 @@ function extractDisappearingTargetFromControl(
                 ? "(?:revoke|revocation)"
                 : action === "unblock"
                   ? "unblock"
-                  : "uninstall";
+                  : action === "unsuspend"
+                    ? "unsuspend"
+                    : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6605,7 +6612,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|unlink|revoke|revocation|unblock|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|unlink|revoke|revocation|unblock|unsuspend|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6662,6 +6669,8 @@ function extractDisappearingTargetFromControl(
           "unblocking",
           "unlink",
           "unlinking",
+          "unsuspend",
+          "unsuspension",
           "uninstall",
           "uninstallation",
           "workflow",
