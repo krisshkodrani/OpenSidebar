@@ -10105,7 +10105,23 @@ function extractSentenceScopedRelationAnswer(
   const activeRelationPattern = sentenceScopedActiveRelationPatternForLabel(
     normalizedLabel,
   );
-  if (!relationPattern && !activeRelationPattern) return null;
+  const relationNounPattern = sentenceScopedRelationNounPatternForLabel(
+    normalizedLabel,
+  );
+  if (!relationPattern && !activeRelationPattern && !relationNounPattern) {
+    return null;
+  }
+
+  if (relationNounPattern) {
+    const possessiveMatch = new RegExp(
+      `\\b${targetPattern}\\b\\s*(?:'|\\u2019)s\\s+${relationNounPattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      "i",
+    ).exec(sentence);
+    const possessiveAnswer = cleanSentenceScopedAnswerText(
+      possessiveMatch?.[1] ?? "",
+    );
+    if (possessiveAnswer) return possessiveAnswer;
+  }
 
   if (activeRelationPattern) {
     const activeMatch = new RegExp(
@@ -10135,6 +10151,17 @@ function sentenceScopedByRelationPatternForLabel(label: string): string | null {
       (relation) => relation.label === normalizeText(label),
     )?.sentenceRelationPattern ?? null
   );
+}
+
+function sentenceScopedRelationNounPatternForLabel(
+  label: string,
+): string | null {
+  const normalizedLabel = normalizeText(label);
+  return SENTENCE_SCOPED_BY_RELATIONS.some(
+    (relation) => relation.label === normalizedLabel,
+  )
+    ? escapeRegExp(normalizedLabel).replace(/\s+/g, "\\s+")
+    : null;
 }
 
 function sentenceScopedActiveRelationPatternForLabel(
