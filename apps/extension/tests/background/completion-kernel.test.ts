@@ -9895,6 +9895,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts mute confirmation from named unmuted target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unmuted channels Channel Alpha Mute Channel Alpha Channel Beta Mute Channel Beta",
+      pageContent:
+        "Unmuted channels Channel Alpha Mute Channel Alpha Channel Beta Mute Channel Beta",
+      elements: [
+        actionButton(545, "Mute Channel Alpha"),
+        actionButton(546, "Mute Channel Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unmuted channels Channel Beta Mute Channel Beta",
+      pageContent: "Unmuted channels Channel Beta Mute Channel Beta",
+      elements: [actionButton(546, "Mute Channel Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mute Channel Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 545 },
+      result: "Clicked element 545.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Muted Channel Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "mute",
+      targetLabel: "Channel Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:mute:channel-alpha",
+        detail: expect.objectContaining({
+          action: "mute",
+          source: "target_disappearance",
+          text: "Muted target no longer visible: Channel Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects mute target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unmuted channels Channel Alpha Mute Channel Alpha Channel Beta Mute Channel Beta",
+      pageContent:
+        "Unmuted channels Channel Alpha Mute Channel Alpha Channel Beta Mute Channel Beta",
+      elements: [
+        actionButton(545, "Mute Channel Alpha"),
+        actionButton(546, "Mute Channel Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      pageContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      elements: [actionButton(545, "Mute Channel Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Mute Channel Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 546 },
+      result: "Clicked element 546.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Muted Channel Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "mute",
+      targetLabel: "Channel Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:mute:channel-beta",
+        detail: expect.objectContaining({
+          action: "mute",
+          source: "target_disappearance",
+          text: "Muted target no longer visible: Channel Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer mute confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      pageContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      elements: [actionButton(545, "Mute Channel Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      pageContent: "Unmuted channels Channel Alpha Mute Channel Alpha",
+      elements: [actionButton(545, "Mute Channel Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 545 },
+      result: "Clicked element 545.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer mute confirmation from a generic mute button", () => {
+    const genericMuteButton: TaggedElement = {
+      tag: 545,
+      tagName: "button",
+      role: "button",
+      text: "Mute",
+      attributes: {
+        id: "mute",
+        "aria-label": "Mute",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Unmuted channels Channel Alpha Mute",
+      pageContent: "Unmuted channels Channel Alpha Mute",
+      elements: [genericMuteButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unmuted channels",
+      pageContent: "Unmuted channels",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 545 },
+      result: "Clicked element 545.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts unmute confirmation from named muted target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
