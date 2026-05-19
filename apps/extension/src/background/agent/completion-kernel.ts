@@ -9335,6 +9335,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "funded\\s+by",
   },
   {
+    label: "overseer",
+    directQuestionTail: "\\s+oversees",
+    passiveTargetSuffix: "overseen\\s+by",
+    sentenceRelationPattern: "overseen\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
