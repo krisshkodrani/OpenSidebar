@@ -94,6 +94,7 @@ export type CompletionEvidence =
           | "form_disappearance"
           | "created_row"
           | "draft_disappearance"
+          | "submitted_draft_row"
           | "status_change"
           | "control_label_change"
           | "control_state_change"
@@ -1382,6 +1383,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
+  evidence.push(...extractSubmittedDraftRowEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlStateChangeEvidenceFromToolOutcome(params));
@@ -3561,6 +3563,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "control_label_change" ||
       event.detail.source === "control_state_change" ||
       event.detail.source === "dirty_indicator_cleared" ||
+      event.detail.source === "submitted_draft_row" ||
       event.detail.source === "download_file_result" ||
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
@@ -5999,14 +6002,14 @@ function findCreatedRowText(
 ): string | null {
   const row = snapshot.elements.find((element) => {
     if (!element.isVisible || element.isDisabled) return false;
-    if (!isCreatedRowLikeElement(element)) return false;
-    const text = createdRowElementText(element);
+    if (!isWorkflowRowLikeElement(element)) return false;
+    const text = workflowRowElementText(element);
     return Boolean(text) && workflowTargetLabelCoveredByText(target, text);
   });
-  return row ? createdRowElementText(row) : null;
+  return row ? workflowRowElementText(row) : null;
 }
 
-function isCreatedRowLikeElement(element: TaggedElement): boolean {
+function isWorkflowRowLikeElement(element: TaggedElement): boolean {
   const tagName = element.tagName.toLowerCase();
   const role = normalizeText(element.role || "");
   return (
@@ -6019,7 +6022,7 @@ function isCreatedRowLikeElement(element: TaggedElement): boolean {
   );
 }
 
-function createdRowElementText(element: TaggedElement): string {
+function workflowRowElementText(element: TaggedElement): string {
   const attrs = element.attributes ?? {};
   return cleanLabel(
     [
@@ -6249,15 +6252,7 @@ function extractDraftSubmissionEvidenceFromToolOutcome(params: {
   const action = inferDraftSubmissionAction(element);
   if (!action) return [];
 
-  const draft = extractDraftEvidence(pre, params.turn)
-    .filter(
-      (event): event is Extract<CompletionEvidence, { type: "draft_state" }> =>
-        event.type === "draft_state" &&
-        !event.detail.submitted &&
-        tokenizeCompletionText(event.detail.text).length >= 3 &&
-        cleanLabel(event.detail.text).length >= 12,
-    )
-    .sort((a, b) => b.detail.text.length - a.detail.text.length)[0];
+  const draft = findSubmittedDraftCandidate(pre, params.turn);
   if (!draft) return [];
 
   const normalizedDraftText = normalizeText(draft.detail.text);
@@ -6282,6 +6277,111 @@ function extractDraftSubmissionEvidenceFromToolOutcome(params: {
       },
     },
   ];
+}
+
+function extractSubmittedDraftRowEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferDraftSubmissionAction(element);
+  if (!action) return [];
+
+  const draft = findSubmittedDraftCandidate(pre, params.turn);
+  if (!draft) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+  if (draftEditorStillContainsText(current, draft.detail.text, params.turn)) {
+    return [];
+  }
+  if (findSubmittedDraftRowText(pre, draft.detail.text)) return [];
+
+  const rowText = findSubmittedDraftRowText(current, draft.detail.text);
+  if (!rowText) return [];
+
+  const key =
+    compactKey(draft.detail.target) ||
+    compactKey(draft.detail.text) ||
+    `tag-${id}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:draft-row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `${action === "send" ? "Sent" : "Posted"} draft visible as row: ${draft.detail.target}`,
+        action,
+        targetText: cleanLabel(draft.detail.text),
+        source: "submitted_draft_row",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function findSubmittedDraftCandidate(
+  snapshot: DomSnapshot,
+  turn: number,
+): Extract<CompletionEvidence, { type: "draft_state" }> | null {
+  return (
+    extractDraftEvidence(snapshot, turn)
+      .filter(
+        (
+          event,
+        ): event is Extract<CompletionEvidence, { type: "draft_state" }> =>
+          event.type === "draft_state" &&
+          !event.detail.submitted &&
+          tokenizeCompletionText(event.detail.text).length >= 3 &&
+          cleanLabel(event.detail.text).length >= 12,
+      )
+      .sort((a, b) => b.detail.text.length - a.detail.text.length)[0] ?? null
+  );
+}
+
+function draftEditorStillContainsText(
+  snapshot: DomSnapshot,
+  draftText: string,
+  turn: number,
+): boolean {
+  const normalizedDraftText = normalizeText(draftText);
+  if (!normalizedDraftText) return false;
+  return extractDraftEvidence(snapshot, turn).some((event) => {
+    if (event.type !== "draft_state") return false;
+    const currentText = normalizeText(event.detail.text);
+    return (
+      currentText === normalizedDraftText ||
+      currentText.includes(normalizedDraftText)
+    );
+  });
+}
+
+function findSubmittedDraftRowText(
+  snapshot: DomSnapshot,
+  draftText: string,
+): string | null {
+  const normalizedDraftText = normalizeText(draftText);
+  if (!normalizedDraftText) return null;
+  const row = snapshot.elements.find((element) => {
+    if (!element.isVisible || element.isDisabled) return false;
+    if (!isWorkflowRowLikeElement(element)) return false;
+    const text = workflowRowElementText(element);
+    return Boolean(text) && normalizeText(text).includes(normalizedDraftText);
+  });
+  return row ? workflowRowElementText(row) : null;
 }
 
 function extractStatusChangeEvidenceFromToolOutcome(params: {
