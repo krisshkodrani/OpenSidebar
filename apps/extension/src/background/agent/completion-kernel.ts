@@ -10091,7 +10091,7 @@ function extractSentenceScopedRelationAnswer(
   if (normalizedLabel === "status") {
     const explicitStatusPatterns = [
       `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
-      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_STATUS_ANSWER_PATTERN})(?:\\b|$)`,
+      `^\\s*${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_STATUS_ANSWER_PATTERN})(?:\\b|$)`,
     ];
     for (const pattern of explicitStatusPatterns) {
       const match = new RegExp(pattern, "i").exec(sentence);
