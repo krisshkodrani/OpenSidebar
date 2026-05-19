@@ -4793,7 +4793,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible pause completion valid for a named target", () => {
+  test("rejects targetless visible pause completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Pause completed.",
       pageContent: "Pause completed.",
@@ -4817,7 +4817,11 @@ describe("completion kernel", () => {
       action: "pause",
       targetLabel: "Job Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible resume confirmation for the requested target", () => {
@@ -4908,7 +4912,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible resume completion valid for a named target", () => {
+  test("rejects targetless visible resume completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Resume completed.",
       pageContent: "Resume completed.",
@@ -4932,7 +4936,11 @@ describe("completion kernel", () => {
       action: "resume",
       targetLabel: "Job Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible start confirmation for the requested target", () => {
@@ -5023,7 +5031,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible start completion valid for a named target", () => {
+  test("rejects targetless visible start completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Start completed.",
       pageContent: "Start completed.",
@@ -5047,7 +5055,11 @@ describe("completion kernel", () => {
       action: "start",
       targetLabel: "Service Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible stop confirmation for the requested target", () => {
@@ -5138,7 +5150,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible stop completion valid for a named target", () => {
+  test("rejects targetless visible stop completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Stop completed.",
       pageContent: "Stop completed.",
@@ -5162,7 +5174,11 @@ describe("completion kernel", () => {
       action: "stop",
       targetLabel: "Service Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible submit confirmation for the requested target", () => {
@@ -5253,7 +5269,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible submission completion valid for a named target", () => {
+  test("rejects targetless visible submission completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Submission completed.",
       pageContent: "Submission completed.",
@@ -5277,7 +5293,11 @@ describe("completion kernel", () => {
       action: "submit",
       targetLabel: "Request Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible complete confirmation for the requested target", () => {
@@ -5368,7 +5388,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible complete completion valid for a named target", () => {
+  test("rejects targetless visible complete completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Completion successful.",
       pageContent: "Completion successful.",
@@ -5392,7 +5412,11 @@ describe("completion kernel", () => {
       action: "complete",
       targetLabel: "TASK001",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts dismiss-class workflow confirmation after visible dismiss completion", () => {

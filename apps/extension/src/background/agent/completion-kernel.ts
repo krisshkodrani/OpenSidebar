@@ -3786,7 +3786,13 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "assign" &&
       action !== "unassign" &&
       action !== "escalate" &&
-      action !== "deescalate"
+      action !== "deescalate" &&
+      action !== "pause" &&
+      action !== "resume" &&
+      action !== "start" &&
+      action !== "stop" &&
+      action !== "submit" &&
+      action !== "complete"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
