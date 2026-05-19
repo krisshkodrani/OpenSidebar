@@ -5747,17 +5747,19 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                         ? "Canceled"
                                         : action === "unlock"
                                           ? "Unlocked"
-                                          : action === "revoke"
-                                            ? "Revoked"
-                                            : action === "unblock"
-                                              ? "Unblocked"
-                                              : action === "block"
-                                                ? "Blocked"
-                                                : action === "unsuspend"
-                                                  ? "Unsuspended"
-                                                  : action === "suspend"
-                                                    ? "Suspended"
-                                                    : "Uninstalled";
+                                          : action === "lock"
+                                            ? "Locked"
+                                            : action === "revoke"
+                                              ? "Revoked"
+                                              : action === "unblock"
+                                                ? "Unblocked"
+                                                : action === "block"
+                                                  ? "Blocked"
+                                                  : action === "unsuspend"
+                                                    ? "Unsuspended"
+                                                    : action === "suspend"
+                                                      ? "Suspended"
+                                                      : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6110,6 +6112,7 @@ function inferTargetDisappearanceAction(
   | "unassign"
   | "cancel"
   | "unlock"
+  | "lock"
   | "revoke"
   | "unblock"
   | "block"
@@ -6142,6 +6145,7 @@ function inferTargetDisappearanceAction(
     return "cancel";
   }
   if (/\bunlock(?:ed|ing)?\b/i.test(text)) return "unlock";
+  if (/\block(?:ed|ing)?\b/i.test(text)) return "lock";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6659,6 +6663,7 @@ function extractDisappearingTargetFromControl(
     | "unassign"
     | "cancel"
     | "unlock"
+    | "lock"
     | "revoke"
     | "unblock"
     | "block"
@@ -6717,17 +6722,19 @@ function extractDisappearingTargetFromControl(
                                           ? "cancel"
                                           : action === "unlock"
                                             ? "unlock"
-                                            : action === "revoke"
-                                              ? "(?:revoke|revocation)"
-                                              : action === "unblock"
-                                                ? "unblock"
-                                                : action === "block"
-                                                  ? "block"
-                                                  : action === "unsuspend"
-                                                    ? "unsuspend"
-                                                    : action === "suspend"
-                                                      ? "suspend"
-                                                      : "uninstall";
+                                            : action === "lock"
+                                              ? "lock"
+                                              : action === "revoke"
+                                                ? "(?:revoke|revocation)"
+                                                : action === "unblock"
+                                                  ? "unblock"
+                                                  : action === "block"
+                                                    ? "block"
+                                                    : action === "unsuspend"
+                                                      ? "unsuspend"
+                                                      : action === "suspend"
+                                                        ? "suspend"
+                                                        : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6735,7 +6742,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|cancel|canceled|cancelled|cancellation|unlock|unlocked|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6855,6 +6862,8 @@ function extractDisappearingTargetFromControl(
           "unassigned",
           "unlock",
           "unlocked",
+          "lock",
+          "locked",
           "unfollow",
           "unfollowed",
           "unwatch",
