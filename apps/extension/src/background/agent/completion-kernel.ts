@@ -9470,6 +9470,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "priority" &&
     answerLabel !== "severity" &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
+    !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
     !sentenceScopedAttributePatternForLabel(answerLabel)
   ) {
     return null;
@@ -10101,14 +10102,31 @@ function extractSentenceScopedRelationAnswer(
   const relationPattern = sentenceScopedByRelationPatternForLabel(
     normalizedLabel,
   );
-  if (!relationPattern) return null;
+  const activeRelationPattern = sentenceScopedActiveRelationPatternForLabel(
+    normalizedLabel,
+  );
+  if (!relationPattern && !activeRelationPattern) return null;
 
-  const match = new RegExp(
-    `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|has\\s+been|have\\s+been)?\\s*${relationPattern}\\s+([^.;\\n]{2,120})`,
-    "i",
-  ).exec(sentence);
-  const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
-  return answer || null;
+  if (activeRelationPattern) {
+    const activeMatch = new RegExp(
+      `([^.;\\n]{2,120})\\s+${activeRelationPattern}\\s+(?:the\\s+)?${targetPattern}\\b`,
+      "i",
+    ).exec(sentence);
+    const activeAnswer = cleanSentenceScopedAnswerText(
+      activeMatch?.[1] ?? "",
+    );
+    if (activeAnswer) return activeAnswer;
+  }
+
+  if (relationPattern) {
+    const match = new RegExp(
+      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|has\\s+been|have\\s+been)?\\s*${relationPattern}\\s+([^.;\\n]{2,120})`,
+      "i",
+    ).exec(sentence);
+    const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+  return null;
 }
 
 function sentenceScopedByRelationPatternForLabel(label: string): string | null {
@@ -10117,6 +10135,12 @@ function sentenceScopedByRelationPatternForLabel(label: string): string | null {
       (relation) => relation.label === normalizeText(label),
     )?.sentenceRelationPattern ?? null
   );
+}
+
+function sentenceScopedActiveRelationPatternForLabel(
+  label: string,
+): string | null {
+  return normalizeText(label) === "manager" ? "manages" : null;
 }
 
 function canonicalSentenceScopedAttributeLabel(label: string): string | null {
