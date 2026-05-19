@@ -1536,6 +1536,7 @@ describe("completion kernel", () => {
   const targetlessVisibleWorkflowActionsRequiringTarget = new Set<string>([
     "copy",
     "send",
+    "save",
     "link",
     "unlink",
     "share",
@@ -1591,6 +1592,7 @@ describe("completion kernel", () => {
     "download",
     "upload",
     "import",
+    "update",
   ]);
 
   for (const scenario of [
