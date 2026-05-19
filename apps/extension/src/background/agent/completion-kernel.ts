@@ -5746,9 +5746,11 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                       : action === "cancel"
                                         ? "Canceled"
                                         : action === "unlock"
-                                          ? "Unlocked"
-                                          : action === "lock"
-                                            ? "Locked"
+                                        ? "Unlocked"
+                                        : action === "lock"
+                                          ? "Locked"
+                                          : action === "disable"
+                                            ? "Disabled"
                                             : action === "revoke"
                                               ? "Revoked"
                                               : action === "unblock"
@@ -6113,6 +6115,7 @@ function inferTargetDisappearanceAction(
   | "cancel"
   | "unlock"
   | "lock"
+  | "disable"
   | "revoke"
   | "unblock"
   | "block"
@@ -6146,6 +6149,9 @@ function inferTargetDisappearanceAction(
   }
   if (/\bunlock(?:ed|ing)?\b/i.test(text)) return "unlock";
   if (/\block(?:ed|ing)?\b/i.test(text)) return "lock";
+  if (/\b(?:disable|disabled|deactivate|deactivated)\b/i.test(text)) {
+    return "disable";
+  }
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6664,6 +6670,7 @@ function extractDisappearingTargetFromControl(
     | "cancel"
     | "unlock"
     | "lock"
+    | "disable"
     | "revoke"
     | "unblock"
     | "block"
@@ -6724,17 +6731,19 @@ function extractDisappearingTargetFromControl(
                                             ? "unlock"
                                             : action === "lock"
                                               ? "lock"
-                                              : action === "revoke"
-                                                ? "(?:revoke|revocation)"
-                                                : action === "unblock"
-                                                  ? "unblock"
-                                                  : action === "block"
-                                                    ? "block"
-                                                    : action === "unsuspend"
-                                                      ? "unsuspend"
-                                                      : action === "suspend"
-                                                        ? "suspend"
-                                                        : "uninstall";
+                                              : action === "disable"
+                                                ? "(?:disable|deactivate)"
+                                                : action === "revoke"
+                                                  ? "(?:revoke|revocation)"
+                                                  : action === "unblock"
+                                                    ? "unblock"
+                                                    : action === "block"
+                                                      ? "block"
+                                                      : action === "unsuspend"
+                                                        ? "unsuspend"
+                                                        : action === "suspend"
+                                                          ? "suspend"
+                                                          : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6742,7 +6751,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|disable|disabled|deactivate|deactivated|deactivation|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6779,8 +6788,13 @@ function extractDisappearingTargetFromControl(
           "channel",
           "connector",
           "delete",
+          "deactivate",
+          "deactivated",
+          "deactivation",
           "detach",
           "detachment",
+          "disable",
+          "disabled",
           "disconnect",
           "disconnection",
           "dependency",
