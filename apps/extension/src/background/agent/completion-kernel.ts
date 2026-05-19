@@ -10121,6 +10121,15 @@ function extractSentenceScopedRelationAnswer(
       possessiveMatch?.[1] ?? "",
     );
     if (possessiveAnswer) return possessiveAnswer;
+
+    const leadingNounMatch = new RegExp(
+      `\\b${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      "i",
+    ).exec(sentence);
+    const leadingNounAnswer = cleanSentenceScopedAnswerText(
+      leadingNounMatch?.[1] ?? "",
+    );
+    if (leadingNounAnswer) return leadingNounAnswer;
   }
 
   if (activeRelationPattern) {
