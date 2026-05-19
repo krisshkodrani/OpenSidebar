@@ -9879,6 +9879,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts start confirmation from named stopped target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Stopped jobs Job Alpha Start Job Alpha Job Beta Start Job Beta",
+      pageContent:
+        "Stopped jobs Job Alpha Start Job Alpha Job Beta Start Job Beta",
+      elements: [
+        actionButton(559, "Start Job Alpha"),
+        actionButton(560, "Start Job Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Stopped jobs Job Beta Start Job Beta",
+      pageContent: "Stopped jobs Job Beta Start Job Beta",
+      elements: [actionButton(560, "Start Job Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Start Job Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 559 },
+      result: "Clicked element 559.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Started Job Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "start",
+      targetLabel: "Job Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:start:job-alpha",
+        detail: expect.objectContaining({
+          action: "start",
+          source: "target_disappearance",
+          text: "Started target no longer visible: Job Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects start target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Stopped jobs Job Alpha Start Job Alpha Job Beta Start Job Beta",
+      pageContent:
+        "Stopped jobs Job Alpha Start Job Alpha Job Beta Start Job Beta",
+      elements: [
+        actionButton(559, "Start Job Alpha"),
+        actionButton(560, "Start Job Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Stopped jobs Job Alpha Start Job Alpha",
+      pageContent: "Stopped jobs Job Alpha Start Job Alpha",
+      elements: [actionButton(559, "Start Job Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Start Job Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 560 },
+      result: "Clicked element 560.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Started Job Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "start",
+      targetLabel: "Job Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:start:job-beta",
+        detail: expect.objectContaining({
+          action: "start",
+          source: "target_disappearance",
+          text: "Started target no longer visible: Job Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer start confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Stopped jobs Job Alpha Start Job Alpha",
+      pageContent: "Stopped jobs Job Alpha Start Job Alpha",
+      elements: [actionButton(559, "Start Job Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Stopped jobs Job Alpha Start Job Alpha",
+      pageContent: "Stopped jobs Job Alpha Start Job Alpha",
+      elements: [actionButton(559, "Start Job Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 559 },
+      result: "Clicked element 559.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer start confirmation from a generic start button", () => {
+    const genericStartButton: TaggedElement = {
+      tag: 559,
+      tagName: "button",
+      role: "button",
+      text: "Start",
+      attributes: {
+        id: "start",
+        "aria-label": "Start",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Stopped jobs Job Alpha Start",
+      pageContent: "Stopped jobs Job Alpha Start",
+      elements: [genericStartButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Stopped jobs",
+      pageContent: "Stopped jobs",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 559 },
+      result: "Clicked element 559.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
