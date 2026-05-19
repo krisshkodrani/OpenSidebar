@@ -9272,6 +9272,42 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "assignee", target } : null;
   }
 
+  const requestedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+requested\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (requestedByMatch) {
+    const target = cleanLabel(requestedByMatch[1] ?? "");
+    return target ? { label: "requester", target } : null;
+  }
+
+  const passiveRequestedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+requested\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveRequestedByMatch) {
+    const target = cleanLabel(passiveRequestedByMatch[1] ?? "");
+    return target ? { label: "requester", target } : null;
+  }
+
+  const reportedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+reported\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (reportedByMatch) {
+    const target = cleanLabel(reportedByMatch[1] ?? "");
+    return target ? { label: "reporter", target } : null;
+  }
+
+  const passiveReportedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+reported\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveReportedByMatch) {
+    const target = cleanLabel(passiveReportedByMatch[1] ?? "");
+    return target ? { label: "reporter", target } : null;
+  }
+
   return null;
 }
 
@@ -9289,7 +9325,9 @@ function findGroundedSentenceScopedAnswer(
     normalizedLabel !== "due date" &&
     normalizedLabel !== "status" &&
     normalizedLabel !== "priority" &&
-    normalizedLabel !== "severity"
+    normalizedLabel !== "severity" &&
+    normalizedLabel !== "requester" &&
+    normalizedLabel !== "reporter"
   ) {
     return null;
   }
@@ -9906,6 +9944,10 @@ function extractSentenceScopedRelationAnswer(
       ? "assigned\\s+to"
       : normalizedLabel === "owner"
         ? "owned\\s+by"
+        : normalizedLabel === "requester"
+          ? "requested\\s+by"
+          : normalizedLabel === "reporter"
+            ? "reported\\s+by"
         : null;
   if (!relationPattern) return null;
 
