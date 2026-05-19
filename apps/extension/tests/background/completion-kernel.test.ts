@@ -15406,6 +15406,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts rename confirmation from named page disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+      pageContent:
+        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+      elements: [
+        actionButton(527, "Rename Page Alpha"),
+        actionButton(528, "Rename Page Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending renames Page Beta Rename Page Beta",
+      pageContent: "Pending renames Page Beta Rename Page Beta",
+      elements: [actionButton(528, "Rename Page Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Rename Page Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 527 },
+      result: "Clicked element 527.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Renamed Page Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "rename",
+      targetLabel: "Page Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:rename:page-alpha",
+        detail: expect.objectContaining({
+          action: "rename",
+          source: "target_disappearance",
+          text: "Renamed target no longer visible: Page Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects rename target-disappearance evidence for the wrong requested page", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+      pageContent:
+        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+      elements: [
+        actionButton(527, "Rename Page Alpha"),
+        actionButton(528, "Rename Page Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
+      pageContent: "Pending renames Page Alpha Rename Page Alpha",
+      elements: [actionButton(527, "Rename Page Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Rename Page Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 528 },
+      result: "Clicked element 528.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Renamed Page Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "rename",
+      targetLabel: "Page Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:rename:page-beta",
+        detail: expect.objectContaining({
+          action: "rename",
+          source: "target_disappearance",
+          text: "Renamed target no longer visible: Page Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer rename confirmation while the named page remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
+      pageContent: "Pending renames Page Alpha Rename Page Alpha",
+      elements: [actionButton(527, "Rename Page Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
+      pageContent: "Pending renames Page Alpha Rename Page Alpha",
+      elements: [actionButton(527, "Rename Page Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 527 },
+      result: "Clicked element 527.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer rename confirmation from a generic rename button", () => {
+    const genericRenameButton: TaggedElement = {
+      tag: 527,
+      tagName: "button",
+      role: "button",
+      text: "Rename",
+      attributes: {
+        id: "rename",
+        "aria-label": "Rename",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Pending renames Page Alpha Rename",
+      pageContent: "Pending renames Page Alpha Rename",
+      elements: [genericRenameButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending renames",
+      pageContent: "Pending renames",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 527 },
+      result: "Clicked element 527.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
