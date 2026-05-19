@@ -5219,7 +5219,7 @@ function textConfirmsWorkflowAction(
           )
         );
       }
-      return /\b(?:dismissed|closed|canceled|cancelled|removed|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
+      return /\b(?:dismissed|closed|canceled|cancelled|removed|hid|hidden|cleared|dismiss complete|dismiss completed|dismiss successful|dismissal complete|dismissal completed|dismissal successful|hide complete|hide completed|hide successful|clear complete|clear completed|clear successful)\b/i.test(
         text,
       );
     case "update":
@@ -6431,6 +6431,12 @@ function isModalDismissalToolOutcome(params: {
 }): boolean {
   if (params.toolName === "dismiss_overlays") {
     return /\bdismissed\s+[1-9][0-9]*\s+overlay/i.test(params.result);
+  }
+
+  if (params.toolName === "hide_element") {
+    return /^Hidden\s+(?:element|overlay ancestor)\s+\[[^\]]+\]\s+<[^>]+>/i.test(
+      params.result.trim(),
+    );
   }
 
   if (params.toolName === "press_key") {
