@@ -3724,7 +3724,9 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "unlink" &&
       action !== "share" &&
       action !== "grant" &&
-      action !== "revoke"
+      action !== "revoke" &&
+      action !== "install" &&
+      action !== "uninstall"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
