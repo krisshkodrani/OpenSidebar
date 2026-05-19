@@ -362,91 +362,96 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
 ];
 
 type WorkflowConfirmationTextMode = "summary" | "visible";
-type TargetAwareVisibleWorkflowAction = Extract<
-  WorkflowConfirmationAction,
-  | "delete"
-  | "archive"
-  | "save"
-  | "send"
-  | "export"
-  | "download"
-  | "upload"
-  | "import"
-  | "attach"
-  | "detach"
-  | "copy"
-  | "transfer"
-  | "move"
-  | "rename"
-  | "merge"
-  | "schedule"
-  | "unschedule"
-  | "deploy"
-  | "rollback"
-  | "backup"
-  | "reset"
-  | "suspend"
-  | "unsuspend"
-  | "block"
-  | "unblock"
-  | "link"
-  | "unlink"
-  | "tag"
-  | "untag"
-  | "flag"
-  | "unflag"
-  | "duplicate"
-  | "restore"
-  | "create"
-  | "share"
-  | "grant"
-  | "revoke"
-  | "install"
-  | "uninstall"
-  | "connect"
-  | "disconnect"
-  | "sync"
-  | "invite"
-  | "subscribe"
-  | "unsubscribe"
-  | "pin"
-  | "unpin"
-  | "mute"
-  | "unmute"
-  | "follow"
-  | "unfollow"
-  | "bookmark"
-  | "unbookmark"
-  | "favorite"
-  | "unfavorite"
-  | "watch"
-  | "unwatch"
-  | "star"
-  | "unstar"
-  | "post"
-  | "approve"
-  | "reject"
-  | "close"
-  | "reopen"
-  | "cancel"
-  | "enable"
-  | "disable"
-  | "assign"
-  | "unassign"
-  | "escalate"
-  | "deescalate"
-  | "lock"
-  | "unlock"
-  | "pause"
-  | "resume"
-  | "start"
-  | "stop"
-  | "restart"
-  | "refresh"
-  | "update"
-  | "submit"
-  | "complete"
->;
+const TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS = [
+  "delete",
+  "archive",
+  "save",
+  "send",
+  "export",
+  "download",
+  "upload",
+  "import",
+  "attach",
+  "detach",
+  "copy",
+  "transfer",
+  "move",
+  "rename",
+  "merge",
+  "schedule",
+  "unschedule",
+  "deploy",
+  "rollback",
+  "backup",
+  "reset",
+  "suspend",
+  "unsuspend",
+  "block",
+  "unblock",
+  "link",
+  "unlink",
+  "tag",
+  "untag",
+  "flag",
+  "unflag",
+  "duplicate",
+  "restore",
+  "create",
+  "share",
+  "grant",
+  "revoke",
+  "install",
+  "uninstall",
+  "connect",
+  "disconnect",
+  "sync",
+  "invite",
+  "subscribe",
+  "unsubscribe",
+  "pin",
+  "unpin",
+  "mute",
+  "unmute",
+  "follow",
+  "unfollow",
+  "bookmark",
+  "unbookmark",
+  "favorite",
+  "unfavorite",
+  "watch",
+  "unwatch",
+  "star",
+  "unstar",
+  "post",
+  "approve",
+  "reject",
+  "close",
+  "reopen",
+  "cancel",
+  "enable",
+  "disable",
+  "assign",
+  "unassign",
+  "escalate",
+  "deescalate",
+  "lock",
+  "unlock",
+  "pause",
+  "resume",
+  "start",
+  "stop",
+  "restart",
+  "refresh",
+  "update",
+  "submit",
+  "complete",
+] as const satisfies readonly WorkflowConfirmationAction[];
+
+type TargetAwareVisibleWorkflowAction =
+  (typeof TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS)[number];
+
+const TARGET_AWARE_VISIBLE_WORKFLOW_ACTION_SET: ReadonlySet<WorkflowConfirmationAction> =
+  new Set(TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS);
 
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
@@ -3588,88 +3593,7 @@ function isTargetAwareVisibleWorkflowAction(
   action: WorkflowConfirmationAction | undefined,
 ): action is TargetAwareVisibleWorkflowAction {
   return (
-    action === "delete" ||
-    action === "archive" ||
-    action === "save" ||
-    action === "send" ||
-    action === "export" ||
-    action === "download" ||
-    action === "upload" ||
-    action === "import" ||
-    action === "attach" ||
-    action === "detach" ||
-    action === "copy" ||
-    action === "transfer" ||
-    action === "move" ||
-    action === "rename" ||
-    action === "merge" ||
-    action === "schedule" ||
-    action === "unschedule" ||
-    action === "deploy" ||
-    action === "rollback" ||
-    action === "backup" ||
-    action === "reset" ||
-    action === "suspend" ||
-    action === "unsuspend" ||
-    action === "block" ||
-    action === "unblock" ||
-    action === "link" ||
-    action === "unlink" ||
-    action === "tag" ||
-    action === "untag" ||
-    action === "flag" ||
-    action === "unflag" ||
-    action === "duplicate" ||
-    action === "restore" ||
-    action === "create" ||
-    action === "share" ||
-    action === "grant" ||
-    action === "revoke" ||
-    action === "install" ||
-    action === "uninstall" ||
-    action === "connect" ||
-    action === "disconnect" ||
-    action === "sync" ||
-    action === "invite" ||
-    action === "subscribe" ||
-    action === "unsubscribe" ||
-    action === "pin" ||
-    action === "unpin" ||
-    action === "mute" ||
-    action === "unmute" ||
-    action === "follow" ||
-    action === "unfollow" ||
-    action === "bookmark" ||
-    action === "unbookmark" ||
-    action === "favorite" ||
-    action === "unfavorite" ||
-    action === "watch" ||
-    action === "unwatch" ||
-    action === "star" ||
-    action === "unstar" ||
-    action === "post" ||
-    action === "approve" ||
-    action === "reject" ||
-    action === "close" ||
-    action === "reopen" ||
-    action === "cancel" ||
-    action === "enable" ||
-    action === "disable" ||
-    action === "assign" ||
-    action === "unassign" ||
-    action === "escalate" ||
-    action === "deescalate" ||
-    action === "lock" ||
-    action === "unlock" ||
-    action === "pause" ||
-    action === "resume" ||
-    action === "start" ||
-    action === "stop" ||
-    action === "restart" ||
-    action === "refresh" ||
-    action === "update" ||
-    action === "submit" ||
-    action === "complete"
+    action !== undefined && TARGET_AWARE_VISIBLE_WORKFLOW_ACTION_SET.has(action)
   );
 }
 
