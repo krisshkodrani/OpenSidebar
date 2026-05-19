@@ -9308,6 +9308,42 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "reporter", target } : null;
   }
 
+  const createdByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+created\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (createdByMatch) {
+    const target = cleanLabel(createdByMatch[1] ?? "");
+    return target ? { label: "creator", target } : null;
+  }
+
+  const passiveCreatedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+created\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveCreatedByMatch) {
+    const target = cleanLabel(passiveCreatedByMatch[1] ?? "");
+    return target ? { label: "creator", target } : null;
+  }
+
+  const openedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+opened\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (openedByMatch) {
+    const target = cleanLabel(openedByMatch[1] ?? "");
+    return target ? { label: "opener", target } : null;
+  }
+
+  const passiveOpenedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+opened\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveOpenedByMatch) {
+    const target = cleanLabel(passiveOpenedByMatch[1] ?? "");
+    return target ? { label: "opener", target } : null;
+  }
+
   return null;
 }
 
@@ -9327,7 +9363,9 @@ function findGroundedSentenceScopedAnswer(
     normalizedLabel !== "priority" &&
     normalizedLabel !== "severity" &&
     normalizedLabel !== "requester" &&
-    normalizedLabel !== "reporter"
+    normalizedLabel !== "reporter" &&
+    normalizedLabel !== "creator" &&
+    normalizedLabel !== "opener"
   ) {
     return null;
   }
@@ -9948,6 +9986,10 @@ function extractSentenceScopedRelationAnswer(
           ? "requested\\s+by"
           : normalizedLabel === "reporter"
             ? "reported\\s+by"
+            : normalizedLabel === "creator"
+              ? "created\\s+by"
+              : normalizedLabel === "opener"
+                ? "opened\\s+by"
         : null;
   if (!relationPattern) return null;
 
