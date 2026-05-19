@@ -18660,6 +18660,45 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts completed download_file result evidence", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Download center File Alpha",
+      pageContent: "Download center File Alpha",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Download File Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.DOWNLOAD_FILE,
+      args: { url: "https://files.example.test/downloads/file-alpha.pdf" },
+      result: "Download completed (ID: 45, filename: File Alpha.pdf)",
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Downloaded File Alpha.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        logicalKey: "workflow:confirmation:download:file-alpha-pdf",
+        detail: expect.objectContaining({
+          action: "download",
+          source: "download_file_completed",
+          targetText: "File Alpha.pdf",
+          text: "Download completed: File Alpha.pdf (ID: 45)",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
   test("rejects download_file result evidence for the wrong requested file", () => {
     const snap = workflowSnapshot({
       visibleContent: "Download center File Alpha File Beta",

@@ -102,6 +102,7 @@ export type CompletionEvidence =
           | "control_state_change"
           | "dirty_indicator_cleared"
           | "download_file_result"
+          | "download_file_completed"
           | "upload_file_result"
           | "trusted_workflow";
       };
@@ -3571,6 +3572,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "invite_row_state" ||
       event.detail.source === "attachment_row_state" ||
       event.detail.source === "download_file_result" ||
+      event.detail.source === "download_file_completed" ||
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
   ) {
@@ -6131,15 +6133,13 @@ function extractDownloadFileResultEvidenceFromToolOutcome(params: {
 }): CompletionEvidence[] {
   if (params.toolName !== "download_file") return [];
 
-  const match = /^Download started\s+\(ID:\s*(\d+)\)$/i.exec(
-    params.result.trim(),
-  );
-  if (!match?.[1]) return [];
+  const parsed = parseDownloadFileResult(params.result);
+  if (!parsed) return [];
 
-  const targetText = getDownloadTargetText(params.args);
+  const targetText = getDownloadTargetText(params.args, parsed.filename);
   if (!targetText) return [];
 
-  const key = compactKey(targetText) || `download-${match[1]}`;
+  const key = compactKey(targetText) || `download-${parsed.id}`;
   const url = typeof params.args.url === "string" ? params.args.url : "";
 
   return [
@@ -6149,17 +6149,53 @@ function extractDownloadFileResultEvidenceFromToolOutcome(params: {
       logicalKey: `workflow:confirmation:download:${key}`,
       observedAtTurn: params.turn,
       detail: {
-        text: `Download started: ${targetText} (ID: ${match[1]})`,
+        text: `Download ${parsed.state}: ${targetText} (ID: ${parsed.id})`,
         action: "download",
         targetText,
-        source: "download_file_result",
+        source:
+          parsed.state === "completed"
+            ? "download_file_completed"
+            : "download_file_result",
         ...(url ? { url } : {}),
       },
     },
   ];
 }
 
-function getDownloadTargetText(args: Record<string, unknown>): string {
+type DownloadFileResultDetails = {
+  id: string;
+  state: "started" | "completed";
+  filename?: string;
+};
+
+function parseDownloadFileResult(result: string): DownloadFileResultDetails | null {
+  const value = result.trim();
+  const started = /^Download started\s+\(ID:\s*(\d+)\)$/i.exec(value);
+  if (started?.[1]) {
+    return { id: started[1], state: "started" };
+  }
+
+  const completed =
+    /^Download completed\s+\(ID:\s*(\d+)(?:,\s*filename:\s*(.{1,240}))?\)$/i.exec(
+      value,
+    );
+  if (!completed?.[1]) return null;
+
+  const filename = cleanLabel(completed[2] ?? "");
+  return {
+    id: completed[1],
+    state: "completed",
+    ...(filename ? { filename } : {}),
+  };
+}
+
+function getDownloadTargetText(
+  args: Record<string, unknown>,
+  observedFilename = "",
+): string {
+  const observed = cleanLabel(observedFilename);
+  if (observed) return observed;
+
   const explicitFilename =
     typeof args.filename === "string" ? cleanLabel(args.filename) : "";
   if (explicitFilename) return explicitFilename;
