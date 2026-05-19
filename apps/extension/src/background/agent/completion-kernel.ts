@@ -5743,35 +5743,37 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                     ? "Unscheduled"
                                     : action === "unassign"
                                       ? "Unassigned"
-                                      : action === "cancel"
-                                        ? "Canceled"
-                                        : action === "unlock"
-                                        ? "Unlocked"
-                                        : action === "lock"
-                                          ? "Locked"
-                                          : action === "enable"
-                                            ? "Enabled"
-                                            : action === "disable"
-                                              ? "Disabled"
-                                              : action === "pause"
-                                                ? "Paused"
-                                                : action === "resume"
-                                                  ? "Resumed"
-                                                  : action === "start"
-                                                    ? "Started"
-                                                    : action === "stop"
-                                                      ? "Stopped"
-                                                      : action === "revoke"
-                                                        ? "Revoked"
-                                                        : action === "unblock"
-                                                          ? "Unblocked"
-                                                          : action === "block"
-                                                            ? "Blocked"
-                                                            : action === "unsuspend"
-                                                              ? "Unsuspended"
-                                                              : action === "suspend"
-                                                                ? "Suspended"
-                                                                : "Uninstalled";
+                                      : action === "assign"
+                                        ? "Assigned"
+                                        : action === "cancel"
+                                          ? "Canceled"
+                                          : action === "unlock"
+                                          ? "Unlocked"
+                                          : action === "lock"
+                                            ? "Locked"
+                                            : action === "enable"
+                                              ? "Enabled"
+                                              : action === "disable"
+                                                ? "Disabled"
+                                                : action === "pause"
+                                                  ? "Paused"
+                                                  : action === "resume"
+                                                    ? "Resumed"
+                                                    : action === "start"
+                                                      ? "Started"
+                                                      : action === "stop"
+                                                        ? "Stopped"
+                                                        : action === "revoke"
+                                                          ? "Revoked"
+                                                          : action === "unblock"
+                                                            ? "Unblocked"
+                                                            : action === "block"
+                                                              ? "Blocked"
+                                                              : action === "unsuspend"
+                                                                ? "Unsuspended"
+                                                                : action === "suspend"
+                                                                  ? "Suspended"
+                                                                  : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6122,6 +6124,7 @@ function inferTargetDisappearanceAction(
   | "unmute"
   | "unschedule"
   | "unassign"
+  | "assign"
   | "cancel"
   | "unlock"
   | "lock"
@@ -6159,6 +6162,7 @@ function inferTargetDisappearanceAction(
   if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
   if (/\bunschedule(?:d|ing)?\b/i.test(text)) return "unschedule";
   if (/\bunassign(?:ed|ing)?\b/i.test(text)) return "unassign";
+  if (/\bassign(?:ed|ing)?\b/i.test(text)) return "assign";
   if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
     return "cancel";
   }
@@ -6689,6 +6693,7 @@ function extractDisappearingTargetFromControl(
     | "unmute"
     | "unschedule"
     | "unassign"
+    | "assign"
     | "cancel"
     | "unlock"
     | "lock"
@@ -6749,9 +6754,11 @@ function extractDisappearingTargetFromControl(
                                   : action === "unmute"
                                     ? "unmute"
                                     : action === "unschedule"
-                                      ? "unschedule"
-                                      : action === "unassign"
-                                        ? "unassign"
+                                    ? "unschedule"
+                                    : action === "unassign"
+                                      ? "unassign"
+                                      : action === "assign"
+                                        ? "assign"
                                         : action === "cancel"
                                           ? "cancel"
                                           : action === "unlock"
@@ -6788,7 +6795,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")

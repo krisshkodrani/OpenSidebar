@@ -10233,6 +10233,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts assign confirmation from named unassigned target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+      pageContent:
+        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+      elements: [
+        actionButton(563, "Assign Ticket Alpha"),
+        actionButton(564, "Assign Ticket Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unassigned tickets Ticket Beta Assign Ticket Beta",
+      pageContent: "Unassigned tickets Ticket Beta Assign Ticket Beta",
+      elements: [actionButton(564, "Assign Ticket Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Assign Ticket Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 563 },
+      result: "Clicked element 563.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Assigned Ticket Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "assign",
+      targetLabel: "Ticket Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:assign:ticket-alpha",
+        detail: expect.objectContaining({
+          action: "assign",
+          source: "target_disappearance",
+          text: "Assigned target no longer visible: Ticket Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects assign target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+      pageContent:
+        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+      elements: [
+        actionButton(563, "Assign Ticket Alpha"),
+        actionButton(564, "Assign Ticket Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      elements: [actionButton(563, "Assign Ticket Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Assign Ticket Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 564 },
+      result: "Clicked element 564.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Assigned Ticket Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "assign",
+      targetLabel: "Ticket Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:assign:ticket-beta",
+        detail: expect.objectContaining({
+          action: "assign",
+          source: "target_disappearance",
+          text: "Assigned target no longer visible: Ticket Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer assign confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      elements: [actionButton(563, "Assign Ticket Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
+      elements: [actionButton(563, "Assign Ticket Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 563 },
+      result: "Clicked element 563.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer assign confirmation from a generic assign button", () => {
+    const genericAssignButton: TaggedElement = {
+      tag: 563,
+      tagName: "button",
+      role: "button",
+      text: "Assign",
+      attributes: {
+        id: "assign",
+        "aria-label": "Assign",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Unassigned tickets Ticket Alpha Assign",
+      pageContent: "Unassigned tickets Ticket Alpha Assign",
+      elements: [genericAssignButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unassigned tickets",
+      pageContent: "Unassigned tickets",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 563 },
+      result: "Clicked element 563.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
