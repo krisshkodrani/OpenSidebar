@@ -3830,6 +3830,7 @@ export class AgentLoop {
         return controllerResult ?? (await this.loop(tabId));
       },
       getTurnCount: () => this.turnCount,
+      getCompletedResult: () => this.completedResult,
       nodeId: this.nodeId,
       log: this.log,
       getMetrics: () => this.getMetrics(),

@@ -56,7 +56,11 @@ describe("runStartExecution", () => {
   });
 
   test("maps abort errors into stopped results", async () => {
+    const getCompletedResult = vi.fn(() => ({
+      summary: "Stale terminal completion",
+    }));
     const deps = makeDeps({
+      getCompletedResult,
       run: vi.fn(async () => {
         throw new DOMException("Stop requested", "AbortError");
       }),
@@ -69,6 +73,40 @@ describe("runStartExecution", () => {
     expect(deps.statuses).toEqual([
       { status: AgentStatus.IDLE, detail: "Stopped" },
     ]);
+    expect(getCompletedResult).not.toHaveBeenCalled();
+  });
+
+  test("preserves terminal completion when cleanup throws after done", async () => {
+    const completionEnvelope = {
+      status: "completed" as const,
+      resultId: "completion-after-done-error",
+      source: "model_done" as const,
+      contractKind: "workflow_confirmation",
+      decisionReason: "done accepted before cleanup error",
+      evidenceKeys: ["workflow:confirmation:done"],
+      evidenceEpoch: "turn:4",
+    };
+    const deps = makeDeps({
+      getCompletedResult: vi.fn(() => ({
+        summary: "Accepted before cleanup failed.",
+        completionEnvelope,
+      })),
+      run: vi.fn(async () => {
+        throw new Error("trace flush failed");
+      }),
+    });
+
+    const result = await runStartExecution(deps);
+
+    expect(result).toMatchObject({
+      outcome: "completed",
+      turnCount: 4,
+      summary: "Accepted before cleanup failed.",
+      failure: { category: "none", code: "none" },
+      completionEnvelope,
+    });
+    expect(deps.log.error).not.toHaveBeenCalled();
+    expect(deps.broadcasts).toEqual([]);
   });
 
   test("maps runtime errors into streamed error results", async () => {

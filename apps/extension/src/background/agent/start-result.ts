@@ -19,6 +19,10 @@ export class PendingInteractionYield extends Error {
 export type RunStartExecutionDeps = {
   run: () => Promise<LoopResult>;
   getTurnCount: () => number;
+  getCompletedResult?: () => Pick<
+    LoopResult,
+    "summary" | "completionEnvelope"
+  > | null;
   nodeId: string | null;
   log: StartResultLogger;
   getMetrics: () => LoopResult["metrics"];
@@ -74,6 +78,25 @@ export async function runStartExecution(
           detail: "Stopped by user",
         },
         metrics: deps.getMetrics(),
+      };
+    }
+
+    const completedResult = deps.getCompletedResult?.();
+    if (completedResult) {
+      deps.log.info("agent", "Preserving terminal completion after late error", {
+        nodeId: deps.nodeId,
+        turn: turnCount,
+        error: err.message ?? "Unknown error",
+        resultId: completedResult.completionEnvelope?.resultId,
+        contractKind: completedResult.completionEnvelope?.contractKind,
+      });
+      return {
+        outcome: "completed",
+        turnCount,
+        summary: completedResult.summary,
+        failure: { category: "none", code: "none" },
+        metrics: deps.getMetrics(),
+        completionEnvelope: completedResult.completionEnvelope,
       };
     }
 
