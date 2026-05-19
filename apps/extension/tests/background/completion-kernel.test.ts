@@ -1833,6 +1833,20 @@ describe("completion kernel", () => {
       genericSummary: "Disconnection completed.",
     },
     {
+      action: "sync",
+      request: "Sync Integration Alpha.",
+      summary: "Synced Integration Alpha.",
+      targetLabel: "Integration Alpha",
+      requestedVisible:
+        "Integration Beta remains stale. Integration Alpha synced successfully.",
+      requestedEvidenceText: "Integration Alpha synced successfully.",
+      otherVisible:
+        "Integration Alpha remains stale. Integration Beta synced successfully.",
+      otherEvidenceText: "Integration Beta synced successfully.",
+      genericVisible: "Sync completed.",
+      genericSummary: "Sync completed.",
+    },
+    {
       action: "attach",
       request: "Attach File Alpha.",
       summary: "Attached File Alpha.",
