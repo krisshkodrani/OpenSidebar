@@ -5835,6 +5835,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                                                         ? "Copied"
                                                                                         : action === "share"
                                                                                           ? "Shared"
+                                                                                          : action === "restore"
+                                                                                            ? "Restored"
                                                               : action === "unblock"
                                                                 ? "Unblocked"
                                                                 : action === "block"
@@ -6251,6 +6253,7 @@ function inferTargetDisappearanceAction(
   | "import"
   | "copy"
   | "share"
+  | "restore"
   | "grant"
   | "revoke"
   | "unblock"
@@ -6365,6 +6368,9 @@ function inferTargetDisappearanceAction(
   if (/\bimport(?:ed|ing)?\b/i.test(text)) return "import";
   if (/\b(?:copy|copied|copying)\b/i.test(text)) return "copy";
   if (/\bshare(?:d|ing)?\b/i.test(text)) return "share";
+  if (/\b(?:restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating)\b/i.test(text)) {
+    return "restore";
+  }
   if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
   if (/\battach(?:ed|ing|ment)?\b/i.test(text)) return "attach";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
@@ -6928,6 +6934,7 @@ function extractDisappearingTargetFromControl(
     | "import"
     | "copy"
     | "share"
+    | "restore"
     | "grant"
     | "revoke"
     | "unblock"
@@ -7078,6 +7085,8 @@ function extractDisappearingTargetFromControl(
                                                                                                 ? "copy"
                                                                                                 : action === "share"
                                                                                                   ? "share"
+                                                                                                  : action === "restore"
+                                                                                                    ? "(?:restore|recover|reinstate)"
                                                                   : action === "grant"
                                                                     ? "grant"
                                                                     : action === "revoke"
@@ -7109,7 +7118,7 @@ function extractDisappearingTargetFromControl(
     const rawTarget = cleanLabel(explicit[1]);
     let target = rawTarget
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|de[-\s]?escalate|de[-\s]?escalated|de[-\s]?escalating|de[-\s]?escalation|escalate|escalated|escalating|escalation|complete|completed|completing|completion|submit|submitted|submission|update|updated|updating|save|saved|saving|export|exported|exporting|download|downloaded|downloading|upload|uploaded|uploading|import|imported|importing|copy|copied|copying|share|shared|sharing|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|de[-\s]?escalate|de[-\s]?escalated|de[-\s]?escalating|de[-\s]?escalation|escalate|escalated|escalating|escalation|complete|completed|completing|completion|submit|submitted|submission|update|updated|updating|save|saved|saving|export|exported|exporting|download|downloaded|downloading|upload|uploaded|uploading|import|imported|importing|copy|copied|copying|share|shared|sharing|restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7219,6 +7228,15 @@ function extractDisappearingTargetFromControl(
           "share",
           "shared",
           "sharing",
+          "restore",
+          "restored",
+          "restoring",
+          "recover",
+          "recovered",
+          "recovering",
+          "reinstate",
+          "reinstated",
+          "reinstating",
           "dependency",
           "document",
           "draft",
