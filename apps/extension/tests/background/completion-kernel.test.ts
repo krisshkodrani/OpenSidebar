@@ -27939,6 +27939,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts active-voice sentence-scoped oversees answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Governance Board oversees Project Apollo. Regional Board oversees Project Borealis.",
+      pageContent:
+        "Governance Board oversees Project Apollo. Regional Board oversees Project Borealis. The page explains project ownership, oversight routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who oversees Project Apollo?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Governance Board",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Regional Board",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "overseer",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts active-voice sentence-scoped oversees answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Governance Board oversees Project Apollo. Regional Board oversees Project Borealis.",
+      pageContent:
+        "Governance Board oversees Project Apollo. Regional Board oversees Project Borealis. The page explains project ownership, oversight routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who oversees Project Apollo?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nGovernance Board oversees Project Apollo. Regional Board oversees Project Borealis. The page explains project ownership, oversight routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Governance Board",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Regional Board",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "overseer",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped overseen-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
