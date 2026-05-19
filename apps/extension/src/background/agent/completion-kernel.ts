@@ -3729,7 +3729,9 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "uninstall" &&
       action !== "connect" &&
       action !== "disconnect" &&
-      action !== "sync"
+      action !== "sync" &&
+      action !== "attach" &&
+      action !== "detach"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
