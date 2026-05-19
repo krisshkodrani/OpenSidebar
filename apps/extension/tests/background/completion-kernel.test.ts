@@ -18128,6 +18128,119 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts upload confirmation from upload_file result evidence", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Upload form File input",
+      pageContent: "Upload form File input",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upload File Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: 'Uploaded "File Alpha.pdf" (2048 bytes) to [557] file input',
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Uploaded File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upload",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:upload:file-alpha-pdf",
+        detail: expect.objectContaining({
+          action: "upload",
+          source: "upload_file_result",
+          targetText: "File Alpha.pdf",
+          text: "Uploaded file selected: File Alpha.pdf (2048 bytes)",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects upload_file result evidence for the wrong requested file", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Upload form File input",
+      pageContent: "Upload form File input",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upload File Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-beta.pdf" },
+      result: 'Uploaded "File Beta.pdf" (2048 bytes) to [557] file input',
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Uploaded File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upload",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:upload:file-beta-pdf",
+        detail: expect.objectContaining({
+          action: "upload",
+          source: "upload_file_result",
+          targetText: "File Beta.pdf",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer upload_file result evidence from non-upload result text", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Upload form File input",
+      pageContent: "Upload form File input",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: "Upload started for File Alpha.pdf.",
+      currentSnapshot: snap,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts import confirmation from named file disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
