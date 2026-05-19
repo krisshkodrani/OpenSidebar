@@ -10140,7 +10140,10 @@ function sentenceScopedByRelationPatternForLabel(label: string): string | null {
 function sentenceScopedActiveRelationPatternForLabel(
   label: string,
 ): string | null {
-  return normalizeText(label) === "manager" ? "manages" : null;
+  const normalizedLabel = normalizeText(label);
+  if (normalizedLabel === "owner") return "owns";
+  if (normalizedLabel === "manager") return "manages";
+  return null;
 }
 
 function canonicalSentenceScopedAttributeLabel(label: string): string | null {
