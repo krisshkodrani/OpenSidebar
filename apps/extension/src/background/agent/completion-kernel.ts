@@ -93,6 +93,7 @@ export type CompletionEvidence =
           | "target_disappearance"
           | "form_disappearance"
           | "created_row"
+          | "duplicate_row_state"
           | "draft_disappearance"
           | "submitted_draft_row"
           | "invite_row_state"
@@ -1389,6 +1390,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractCreateRowAppearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractDuplicateRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractImportRowStateEvidenceFromToolOutcome(params));
@@ -3579,6 +3581,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "invite_row_state" ||
       event.detail.source === "attachment_row_state" ||
       event.detail.source === "import_row_state" ||
+      event.detail.source === "duplicate_row_state" ||
       event.detail.source === "download_file_result" ||
       event.detail.source === "download_file_completed" ||
       event.detail.source === "upload_file_result") &&
@@ -5946,6 +5949,131 @@ function findCreatedRowText(
     return Boolean(text) && workflowTargetLabelCoveredByText(target, text);
   });
   return row ? workflowRowElementText(row) : null;
+}
+
+type DuplicateRowWorkflowAction = Extract<
+  WorkflowConfirmationAction,
+  "copy" | "duplicate"
+>;
+
+function extractDuplicateRowStateEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferTargetDisappearanceAction(element);
+  if (!isDuplicateRowWorkflowAction(action)) return [];
+
+  const target = inferWorkflowTargetTextFromControl(element, action);
+  if (!target) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+
+  const rowText = findNewDuplicateRowStateText(
+    pre,
+    current,
+    target,
+    action,
+    elementControlText(element),
+  );
+  if (!rowText) return [];
+
+  const key = compactKey(target) || compactKey(rowText) || `tag-${element.tag}`;
+  const actionLabel = action === "copy" ? "Copied" : "Duplicated";
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:${action}:row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `${actionLabel} row visible: ${target}`,
+        action,
+        targetText: target,
+        source: "duplicate_row_state",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function isDuplicateRowWorkflowAction(
+  action: WorkflowConfirmationAction | null,
+): action is DuplicateRowWorkflowAction {
+  return action === "copy" || action === "duplicate";
+}
+
+function findNewDuplicateRowStateText(
+  pre: DomSnapshot,
+  current: DomSnapshot,
+  target: string,
+  action: DuplicateRowWorkflowAction,
+  clickedControlText: string,
+): string | null {
+  const preRows = workflowRowsCoveringTarget(pre, target);
+  if (preRows.length === 0) return null;
+
+  const currentRows = workflowRowsCoveringTarget(current, target);
+  if (currentRows.length <= preRows.length) return null;
+
+  const preStateRows = new Set(
+    preRows
+      .filter((text) => duplicateRowTextHasDuplicatedState(text, action))
+      .map(rowStateKey),
+  );
+  const clickedControlKey = normalizeText(clickedControlText);
+  const rowText = currentRows.find(
+    (text) =>
+      duplicateRowTextHasDuplicatedState(text, action) &&
+      (!clickedControlKey || !normalizeText(text).includes(clickedControlKey)) &&
+      !preStateRows.has(rowStateKey(text)),
+  );
+  return rowText ?? null;
+}
+
+function workflowRowsCoveringTarget(
+  snapshot: DomSnapshot,
+  target: string,
+): string[] {
+  const rows: string[] = [];
+  for (const element of snapshot.elements) {
+    if (!element.isVisible || element.isDisabled) continue;
+    if (!isWorkflowRowLikeElement(element)) continue;
+    const text = workflowRowElementText(element);
+    if (!text || !workflowTargetLabelCoveredByText(target, text)) continue;
+    rows.push(text);
+  }
+  return rows;
+}
+
+function duplicateRowTextHasDuplicatedState(
+  value: string,
+  action: DuplicateRowWorkflowAction,
+): boolean {
+  const text = normalizeText(value);
+  if (action === "copy") {
+    return /\b(?:copied|copy)\b/i.test(text);
+  }
+  return /\b(?:duplicated|duplicate|duplication|cloned|clone|copied|copy)\b/i.test(
+    text,
+  );
+}
+
+function rowStateKey(value: string): string {
+  return normalizeText(value);
 }
 
 function isWorkflowRowLikeElement(element: TaggedElement): boolean {
