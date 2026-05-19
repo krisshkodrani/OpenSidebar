@@ -190,7 +190,7 @@ export interface ReadAnswerContract {
   taskContract?: TaskContract;
   expectedAnswerLabel?: string;
   expectedAnswerTarget?: string;
-  expectedAnswerScope?: "row";
+  expectedAnswerScope?: "row" | "sentence";
 }
 
 export type WorkflowConfirmationAction =
@@ -1245,7 +1245,13 @@ function generateReadAnswerContract(
   ]
     .filter(Boolean)
     .join("\n");
-  if (!hasPageReadAnswerIntent(requestText, _snapshot)) return null;
+  const sentenceScopedAnswer = getGroundedSentenceScopedAnswer(
+    requestText,
+    _snapshot,
+  );
+  if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
+    return null;
+  }
   const taskContract = buildTaskContract(requestText);
   const hasConcreteMultiReturn =
     (taskContract.multiReturnCount ?? 0) >= 2 &&
@@ -1256,6 +1262,7 @@ function generateReadAnswerContract(
   );
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
+    sentenceScopedAnswer?.label ??
     getGroundedLabelValueQuestionLabel(requestText, _snapshot);
 
   return {
@@ -1269,6 +1276,11 @@ function generateReadAnswerContract(
             expectedAnswerTarget: rowScopedAnswer.target,
             expectedAnswerScope: "row" as const,
           }
+        : sentenceScopedAnswer
+          ? {
+              expectedAnswerTarget: sentenceScopedAnswer.target,
+              expectedAnswerScope: "sentence" as const,
+            }
         : {}),
     },
     confidence: "medium",
@@ -2133,6 +2145,25 @@ function evaluateReadAnswer(params: {
           expectedAnswerTarget: contract.expectedAnswerTarget,
         })
       : null;
+  const sentenceScopedEvidence =
+    contract.expectedAnswerScope === "sentence" &&
+    contract.expectedAnswerLabel &&
+    contract.expectedAnswerTarget &&
+    (params.snapshot || pageEvidence.length > 0)
+      ? (params.snapshot
+          ? readAnswerSentenceScopedSnapshotEvidence({
+              snapshot: params.snapshot,
+              expectedAnswerLabel: contract.expectedAnswerLabel,
+              expectedAnswerTarget: contract.expectedAnswerTarget,
+              observedAtTurn: latestObservedTurn(params.evidence),
+            })
+          : null) ??
+        readAnswerSentenceScopedTextEvidence({
+          evidence: pageEvidence,
+          expectedAnswerLabel: contract.expectedAnswerLabel,
+          expectedAnswerTarget: contract.expectedAnswerTarget,
+        })
+      : null;
 
   if (
     contract.expectedAnswerScope === "row" &&
@@ -2150,8 +2181,28 @@ function evaluateReadAnswer(params: {
       evidence: params.evidence,
     };
   }
+  if (
+    contract.expectedAnswerScope === "sentence" &&
+    contract.expectedAnswerLabel &&
+    contract.expectedAnswerTarget &&
+    !sentenceScopedEvidence
+  ) {
+    return {
+      status: "needs_verification",
+      reason:
+        "Requested sentence-scoped page-answer task has no matching visible sentence evidence yet.",
+      hint:
+        "Read the visible sentence for the requested item, then call done with the value from that sentence.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
 
-  const sourceEvidence = rowScopedEvidence ?? groundedEvidence ?? snapshotEvidence;
+  const sourceEvidence =
+    rowScopedEvidence ??
+    sentenceScopedEvidence ??
+    groundedEvidence ??
+    snapshotEvidence;
   if (!sourceEvidence) {
     return {
       status: "needs_verification",
@@ -2166,11 +2217,16 @@ function evaluateReadAnswer(params: {
 
   if (
     params.summary &&
-    !readAnswerSummaryGroundedInEvidence(
-      params.summary,
-      sourceEvidence,
-      contract.expectedAnswerLabel,
-    )
+    !(contract.expectedAnswerScope === "sentence"
+      ? readAnswerSummaryMatchesSentenceScopedAnswer(
+          params.summary,
+          sourceEvidence.detail.answer,
+        )
+      : readAnswerSummaryGroundedInEvidence(
+          params.summary,
+          sourceEvidence,
+          contract.expectedAnswerLabel,
+        ))
   ) {
     return {
       status: "inconclusive",
@@ -2412,6 +2468,64 @@ function readAnswerRowScopedTextEvidence(params: {
         ...event.detail,
         answer: rowText.slice(0, 1000),
         evidenceText: rowText.slice(0, 4000),
+      },
+    };
+  }
+  return null;
+}
+
+function readAnswerSentenceScopedSnapshotEvidence(params: {
+  snapshot: DomSnapshot;
+  expectedAnswerLabel: string;
+  expectedAnswerTarget: string;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  const answer = findReadAnswerSentenceScopedAnswer(
+    snapshotPageText(params.snapshot),
+    params.expectedAnswerTarget,
+    params.expectedAnswerLabel,
+  );
+  if (!answer) return null;
+
+  const targetKey = compactKey(params.expectedAnswerTarget) || "target";
+  const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+  return {
+    type: "answer_state",
+    confidence: "high",
+    logicalKey: `read_answer:sentence:${targetKey}:${labelKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      answer: answer.answer.slice(0, 1000),
+      source: "page_read",
+      evidenceText: answer.sentence.slice(0, 4000),
+      ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
+    },
+  };
+}
+
+function readAnswerSentenceScopedTextEvidence(params: {
+  evidence: Extract<CompletionEvidence, { type: "answer_state" }>[];
+  expectedAnswerLabel: string;
+  expectedAnswerTarget: string;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  for (const event of params.evidence) {
+    const answer = findReadAnswerSentenceScopedAnswer(
+      event.detail.evidenceText,
+      params.expectedAnswerTarget,
+      params.expectedAnswerLabel,
+    );
+    if (!answer) continue;
+
+    const targetKey = compactKey(params.expectedAnswerTarget) || "target";
+    const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+    return {
+      ...event,
+      confidence: event.confidence === "high" ? "high" : "medium",
+      logicalKey: `read_answer:sentence-text:${targetKey}:${labelKey}`,
+      detail: {
+        ...event.detail,
+        answer: answer.answer.slice(0, 1000),
+        evidenceText: answer.sentence.slice(0, 4000),
       },
     };
   }
@@ -9043,6 +9157,14 @@ function getGroundedRowScopedLabelValueQuestion(
   return findGroundedRowScopedLabelValueQuestion(question, snapshot);
 }
 
+function getGroundedSentenceScopedAnswer(
+  question: string,
+  snapshot?: DomSnapshot | null,
+): { label: string; target: string } | null {
+  if (!snapshot) return null;
+  return findGroundedSentenceScopedAnswer(question, snapshotPageText(snapshot));
+}
+
 function findGroundedRowScopedLabelValueQuestion(
   question: string,
   snapshot: DomSnapshot,
@@ -9153,6 +9275,26 @@ function extractRowScopedLabelValueQuestionParts(
   return null;
 }
 
+function findGroundedSentenceScopedAnswer(
+  question: string,
+  evidenceText: string,
+): { label: string; target: string } | null {
+  const parts = extractRowScopedLabelValueQuestionParts(question);
+  if (!parts) return null;
+
+  const normalizedLabel = normalizeText(parts.label);
+  if (normalizedLabel !== "owner" && normalizedLabel !== "assignee") {
+    return null;
+  }
+
+  const target = normalizeWorkflowTargetLabel(parts.target);
+  if (!target) return null;
+
+  return findReadAnswerSentenceScopedAnswer(evidenceText, target, normalizedLabel)
+    ? { label: normalizedLabel, target }
+    : null;
+}
+
 function findReadAnswerRowScopedLabelValueText(
   snapshot: DomSnapshot,
   target: string,
@@ -9189,6 +9331,28 @@ function findReadAnswerRowScopedLabelValueLine(
     if (!workflowTargetLabelCoveredByText(target, line)) continue;
     if (!extractExpectedLabelValueAnswer(line, expectedAnswerLabel)) continue;
     return line;
+  }
+  return null;
+}
+
+function findReadAnswerSentenceScopedAnswer(
+  evidenceText: string,
+  target: string,
+  expectedAnswerLabel: string,
+): { sentence: string; answer: string } | null {
+  const sentences = evidenceText
+    .split(/(?:[.!?]+|[\r\n]+)+/g)
+    .map((sentence) => cleanLabel(sentence))
+    .filter(Boolean);
+  for (const sentence of sentences) {
+    if (sentence.length > 500) continue;
+    if (!workflowTargetLabelCoveredByText(target, sentence)) continue;
+    const answer = extractSentenceScopedRelationAnswer(
+      sentence,
+      target,
+      expectedAnswerLabel,
+    );
+    if (answer) return { sentence, answer };
   }
   return null;
 }
@@ -9356,6 +9520,20 @@ function readAnswerSummaryGroundedInEvidence(
     Math.max(3, Math.ceil(summaryTokens.length * 0.25)),
   );
   return overlap >= requiredOverlap;
+}
+
+function readAnswerSummaryMatchesSentenceScopedAnswer(
+  summary: string,
+  expectedAnswer: string,
+): boolean {
+  const valueWords = cleanLabel(expectedAnswer).split(/\s+/).filter(Boolean);
+  if (valueWords.length === 0) return false;
+
+  const normalizedSummary = normalizeText(summary);
+  if (valueWords.length >= 2) {
+    return labelValuePhraseCoveredBySummary(normalizedSummary, valueWords);
+  }
+  return valueTokenCoveredBySummary(normalizedSummary, normalizeText(valueWords[0]));
 }
 
 function readAnswerSummaryMatchesExpectedLabelValue(
@@ -9666,6 +9844,43 @@ function extractExpectedLabelValueAnswer(
     if (answer) return answer;
   }
   return null;
+}
+
+function extractSentenceScopedRelationAnswer(
+  sentence: string,
+  target: string,
+  expectedAnswerLabel: string,
+): string | null {
+  const targetPattern = workflowTargetTextPattern(target);
+  if (!targetPattern) return null;
+  const relationPattern =
+    normalizeText(expectedAnswerLabel) === "assignee"
+      ? "assigned\\s+to"
+      : normalizeText(expectedAnswerLabel) === "owner"
+        ? "owned\\s+by"
+        : null;
+  if (!relationPattern) return null;
+
+  const match = new RegExp(
+    `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|has\\s+been|have\\s+been)?\\s*${relationPattern}\\s+([^.;\\n]{2,120})`,
+    "i",
+  ).exec(sentence);
+  const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
+  return answer || null;
+}
+
+function workflowTargetTextPattern(target: string): string | null {
+  const tokens = tokenizeCompletionText(target);
+  if (tokens.length === 0) return null;
+  return tokens.map(escapeRegExp).join("\\s+");
+}
+
+function cleanSentenceScopedAnswerText(value: string): string {
+  return cleanLabel(
+    cleanLabel(value)
+      .replace(/\s+\b(?:and|but|while)\b.+$/i, "")
+      .replace(/[),.;!?]+$/g, ""),
+  );
 }
 
 function labelValuePatternsForExpectedLabel(
