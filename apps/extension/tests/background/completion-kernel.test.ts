@@ -17420,6 +17420,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts submit confirmation from named request disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Draft requests Request Alpha Submit Request Alpha Request Beta Submit Request Beta",
+      pageContent:
+        "Draft requests Request Alpha Submit Request Alpha Request Beta Submit Request Beta",
+      elements: [
+        actionButton(547, "Submit Request Alpha"),
+        actionButton(548, "Submit Request Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Draft requests Request Beta Submit Request Beta",
+      pageContent: "Draft requests Request Beta Submit Request Beta",
+      elements: [actionButton(548, "Submit Request Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Submit Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 547 },
+      result: "Clicked element 547.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Submitted Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "submit",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:submit:request-alpha",
+        detail: expect.objectContaining({
+          action: "submit",
+          source: "target_disappearance",
+          text: "Submitted target no longer visible: Request Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects submit target-disappearance evidence for the wrong requested request", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Draft requests Request Alpha Submit Request Alpha Request Beta Submit Request Beta",
+      pageContent:
+        "Draft requests Request Alpha Submit Request Alpha Request Beta Submit Request Beta",
+      elements: [
+        actionButton(547, "Submit Request Alpha"),
+        actionButton(548, "Submit Request Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Draft requests Request Alpha Submit Request Alpha",
+      pageContent: "Draft requests Request Alpha Submit Request Alpha",
+      elements: [actionButton(547, "Submit Request Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Submit Request Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 548 },
+      result: "Clicked element 548.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Submitted Request Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "submit",
+      targetLabel: "Request Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:submit:request-beta",
+        detail: expect.objectContaining({
+          action: "submit",
+          source: "target_disappearance",
+          text: "Submitted target no longer visible: Request Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer submit confirmation while the named request remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Draft requests Request Alpha Submit Request Alpha",
+      pageContent: "Draft requests Request Alpha Submit Request Alpha",
+      elements: [actionButton(547, "Submit Request Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Draft requests Request Alpha Submit Request Alpha",
+      pageContent: "Draft requests Request Alpha Submit Request Alpha",
+      elements: [actionButton(547, "Submit Request Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 547 },
+      result: "Clicked element 547.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer submit confirmation from a generic submit request control", () => {
+    const genericSubmitRequestButton: TaggedElement = {
+      tag: 547,
+      tagName: "button",
+      role: "button",
+      text: "Submit request",
+      attributes: {
+        id: "submit-request",
+        "aria-label": "Submit request",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Draft requests Request Alpha Submit request",
+      pageContent: "Draft requests Request Alpha Submit request",
+      elements: [genericSubmitRequestButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Draft requests",
+      pageContent: "Draft requests",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 547 },
+      result: "Clicked element 547.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
