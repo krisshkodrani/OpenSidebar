@@ -97,6 +97,7 @@ export type CompletionEvidence =
           | "control_label_change"
           | "control_state_change"
           | "dirty_indicator_cleared"
+          | "download_file_result"
           | "upload_file_result"
           | "trusted_workflow";
       };
@@ -1376,6 +1377,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
@@ -3556,6 +3558,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "control_label_change" ||
       event.detail.source === "control_state_change" ||
       event.detail.source === "dirty_indicator_cleared" ||
+      event.detail.source === "download_file_result" ||
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
   ) {
@@ -6017,6 +6020,68 @@ function didSubmittedFormDisappear(
   if (currentFields.length === 0) return true;
   const preStableKeys = new Set(preFields.map((field) => field.stableKey));
   return !currentFields.some((field) => preStableKeys.has(field.stableKey));
+}
+
+function extractDownloadFileResultEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  turn: number;
+}): CompletionEvidence[] {
+  if (params.toolName !== "download_file") return [];
+
+  const match = /^Download started\s+\(ID:\s*(\d+)\)$/i.exec(
+    params.result.trim(),
+  );
+  if (!match?.[1]) return [];
+
+  const targetText = getDownloadTargetText(params.args);
+  if (!targetText) return [];
+
+  const key = compactKey(targetText) || `download-${match[1]}`;
+  const url = typeof params.args.url === "string" ? params.args.url : "";
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:download:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Download started: ${targetText} (ID: ${match[1]})`,
+        action: "download",
+        targetText,
+        source: "download_file_result",
+        ...(url ? { url } : {}),
+      },
+    },
+  ];
+}
+
+function getDownloadTargetText(args: Record<string, unknown>): string {
+  const explicitFilename =
+    typeof args.filename === "string" ? cleanLabel(args.filename) : "";
+  if (explicitFilename) return explicitFilename;
+
+  const rawUrl = typeof args.url === "string" ? args.url : "";
+  if (!rawUrl) return "";
+
+  const fallbackSegment = rawUrl.split(/[/?#]/).filter(Boolean).pop() ?? "";
+  try {
+    const parsed = new URL(rawUrl);
+    const segment = parsed.pathname.split("/").filter(Boolean).pop() ?? "";
+    return cleanLabel(decodeUrlPathSegment(segment));
+  } catch {
+    return cleanLabel(decodeUrlPathSegment(fallbackSegment));
+  }
+}
+
+function decodeUrlPathSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function extractUploadFileResultEvidenceFromToolOutcome(params: {
