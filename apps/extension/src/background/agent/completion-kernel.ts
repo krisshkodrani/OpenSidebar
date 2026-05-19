@@ -10222,6 +10222,16 @@ function extractSentenceScopedRelationAnswer(
     );
     if (predicateListedNounAnswer) return predicateListedNounAnswer;
 
+    const predicateDesignatedNounMatch = new RegExp(
+      `([^.;\\n]{2,120})\\s+(?:is|are)\\s+designated\\s+as\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
+      "i",
+    ).exec(sentence);
+    const predicateDesignatedNounAnswer = cleanActiveSentenceScopedAnswerText(
+      predicateDesignatedNounMatch?.[1] ?? "",
+      target,
+    );
+    if (predicateDesignatedNounAnswer) return predicateDesignatedNounAnswer;
+
     const predicateNounMatch = new RegExp(
       `([^.;\\n]{2,120})\\s+(?:is|are|was|were)\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
       "i",
