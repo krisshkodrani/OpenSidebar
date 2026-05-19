@@ -19021,6 +19021,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts invite confirmation from named member disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending invitations Member Alpha Invite Member Alpha Member Beta Invite Member Beta",
+      pageContent:
+        "Pending invitations Member Alpha Invite Member Alpha Member Beta Invite Member Beta",
+      elements: [
+        actionButton(569, "Invite Member Alpha"),
+        actionButton(570, "Invite Member Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending invitations Member Beta Invite Member Beta",
+      pageContent: "Pending invitations Member Beta Invite Member Beta",
+      elements: [actionButton(570, "Invite Member Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Invite Member Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 569 },
+      result: "Clicked element 569.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Invited Member Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "invite",
+      targetLabel: "Member Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:invite:member-alpha",
+        detail: expect.objectContaining({
+          action: "invite",
+          source: "target_disappearance",
+          text: "Invited target no longer visible: Member Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects invite target-disappearance evidence for the wrong requested member", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending invitations Member Alpha Invite Member Alpha Member Beta Invite Member Beta",
+      pageContent:
+        "Pending invitations Member Alpha Invite Member Alpha Member Beta Invite Member Beta",
+      elements: [
+        actionButton(569, "Invite Member Alpha"),
+        actionButton(570, "Invite Member Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending invitations Member Alpha Invite Member Alpha",
+      pageContent: "Pending invitations Member Alpha Invite Member Alpha",
+      elements: [actionButton(569, "Invite Member Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Invite Member Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 570 },
+      result: "Clicked element 570.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Invited Member Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "invite",
+      targetLabel: "Member Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:invite:member-beta",
+        detail: expect.objectContaining({
+          action: "invite",
+          source: "target_disappearance",
+          text: "Invited target no longer visible: Member Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer invite confirmation while the named member remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending invitations Member Alpha Invite Member Alpha",
+      pageContent: "Pending invitations Member Alpha Invite Member Alpha",
+      elements: [actionButton(569, "Invite Member Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending invitations Member Alpha Invite Member Alpha",
+      pageContent: "Pending invitations Member Alpha Invite Member Alpha",
+      elements: [actionButton(569, "Invite Member Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 569 },
+      result: "Clicked element 569.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer invite confirmation from a generic invite member control", () => {
+    const genericInviteMemberButton: TaggedElement = {
+      tag: 569,
+      tagName: "button",
+      role: "button",
+      text: "Invite member",
+      attributes: {
+        id: "invite-member",
+        "aria-label": "Invite member",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Members Member Alpha Invite member",
+      pageContent: "Members Member Alpha Invite member",
+      elements: [genericInviteMemberButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Members",
+      pageContent: "Members",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 569 },
+      result: "Clicked element 569.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
