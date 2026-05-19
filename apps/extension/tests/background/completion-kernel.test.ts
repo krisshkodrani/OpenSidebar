@@ -1721,6 +1721,34 @@ describe("completion kernel", () => {
       genericSummary: "Reset completed.",
     },
     {
+      action: "suspend",
+      request: "Suspend Account Alpha.",
+      summary: "Suspended Account Alpha.",
+      targetLabel: "Account Alpha",
+      requestedVisible:
+        "Account Beta remains active. Account Alpha suspended successfully.",
+      requestedEvidenceText: "Account Alpha suspended successfully.",
+      otherVisible:
+        "Account Alpha remains active. Account Beta suspended successfully.",
+      otherEvidenceText: "Account Beta suspended successfully.",
+      genericVisible: "Suspension completed.",
+      genericSummary: "Suspension completed.",
+    },
+    {
+      action: "unsuspend",
+      request: "Unsuspend Account Alpha.",
+      summary: "Unsuspended Account Alpha.",
+      targetLabel: "Account Alpha",
+      requestedVisible:
+        "Account Beta remains suspended. Account Alpha unsuspended successfully.",
+      requestedEvidenceText: "Account Alpha unsuspended successfully.",
+      otherVisible:
+        "Account Alpha remains suspended. Account Beta unsuspended successfully.",
+      otherEvidenceText: "Account Beta unsuspended successfully.",
+      genericVisible: "Unsuspend completed.",
+      genericSummary: "Unsuspend completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
