@@ -10154,6 +10154,7 @@ function sentenceScopedActiveRelationPatternForLabel(
   if (normalizedLabel === "overseer") return "oversees";
   if (normalizedLabel === "governor") return "governs";
   if (normalizedLabel === "controller") return "controls";
+  if (normalizedLabel === "auditor") return "audits";
   return null;
 }
 
