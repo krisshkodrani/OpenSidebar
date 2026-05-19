@@ -6476,6 +6476,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts untag confirmation from named tagged target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+      pageContent:
+        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+      elements: [
+        actionButton(523, "Untag Issue Alpha"),
+        actionButton(524, "Untag Issue Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Tagged issues Issue Beta Untag Issue Beta",
+      pageContent: "Tagged issues Issue Beta Untag Issue Beta",
+      elements: [actionButton(524, "Untag Issue Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Untag Issue Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Untagged Issue Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "untag",
+      targetLabel: "Issue Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:untag:issue-alpha",
+        detail: expect.objectContaining({
+          action: "untag",
+          source: "target_disappearance",
+          text: "Untagged target no longer visible: Issue Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects untag target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+      pageContent:
+        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+      elements: [
+        actionButton(523, "Untag Issue Alpha"),
+        actionButton(524, "Untag Issue Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      elements: [actionButton(523, "Untag Issue Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Untag Issue Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 524 },
+      result: "Clicked element 524.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Untagged Issue Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "untag",
+      targetLabel: "Issue Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:untag:issue-beta",
+        detail: expect.objectContaining({
+          action: "untag",
+          source: "target_disappearance",
+          text: "Untagged target no longer visible: Issue Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer untag confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      elements: [actionButton(523, "Untag Issue Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
+      elements: [actionButton(523, "Untag Issue Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer untag confirmation from a generic untag button", () => {
+    const genericUntagButton: TaggedElement = {
+      tag: 523,
+      tagName: "button",
+      role: "button",
+      text: "Untag",
+      attributes: {
+        id: "untag",
+        "aria-label": "Untag",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Tagged issues Issue Alpha Untag",
+      pageContent: "Tagged issues Issue Alpha Untag",
+      elements: [genericUntagButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Tagged issues",
+      pageContent: "Tagged issues",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
