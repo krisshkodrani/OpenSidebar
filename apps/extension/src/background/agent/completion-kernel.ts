@@ -448,6 +448,84 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "complete"
 >;
 
+const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAwareVisibleWorkflowAction> =
+  new Set([
+    "copy",
+    "link",
+    "unlink",
+    "share",
+    "grant",
+    "revoke",
+    "install",
+    "uninstall",
+    "connect",
+    "disconnect",
+    "sync",
+    "attach",
+    "detach",
+    "transfer",
+    "move",
+    "rename",
+    "merge",
+    "invite",
+    "subscribe",
+    "unsubscribe",
+    "pin",
+    "unpin",
+    "mute",
+    "unmute",
+    "follow",
+    "unfollow",
+    "bookmark",
+    "unbookmark",
+    "favorite",
+    "unfavorite",
+    "watch",
+    "unwatch",
+    "star",
+    "unstar",
+    "schedule",
+    "unschedule",
+    "deploy",
+    "rollback",
+    "backup",
+    "reset",
+    "suspend",
+    "unsuspend",
+    "block",
+    "unblock",
+    "tag",
+    "untag",
+    "flag",
+    "unflag",
+    "duplicate",
+    "restore",
+    "create",
+    "export",
+    "download",
+    "upload",
+    "import",
+    "approve",
+    "reject",
+    "close",
+    "reopen",
+    "cancel",
+    "enable",
+    "disable",
+    "lock",
+    "unlock",
+    "assign",
+    "unassign",
+    "escalate",
+    "deescalate",
+    "pause",
+    "resume",
+    "start",
+    "stop",
+    "submit",
+    "complete",
+  ]);
+
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
   action: WorkflowConfirmationAction;
@@ -3718,82 +3796,7 @@ function visibleWorkflowConfirmationMatchesTarget(
   if (!candidate) {
     // These banners often omit the affected item, so named requests need
     // visible target grounding before acceptance.
-    return (
-      action !== "copy" &&
-      action !== "link" &&
-      action !== "unlink" &&
-      action !== "share" &&
-      action !== "grant" &&
-      action !== "revoke" &&
-      action !== "install" &&
-      action !== "uninstall" &&
-      action !== "connect" &&
-      action !== "disconnect" &&
-      action !== "sync" &&
-      action !== "attach" &&
-      action !== "detach" &&
-      action !== "transfer" &&
-      action !== "move" &&
-      action !== "rename" &&
-      action !== "merge" &&
-      action !== "invite" &&
-      action !== "subscribe" &&
-      action !== "unsubscribe" &&
-      action !== "pin" &&
-      action !== "unpin" &&
-      action !== "mute" &&
-      action !== "unmute" &&
-      action !== "follow" &&
-      action !== "unfollow" &&
-      action !== "bookmark" &&
-      action !== "unbookmark" &&
-      action !== "favorite" &&
-      action !== "unfavorite" &&
-      action !== "watch" &&
-      action !== "unwatch" &&
-      action !== "star" &&
-      action !== "unstar" &&
-      action !== "schedule" &&
-      action !== "unschedule" &&
-      action !== "deploy" &&
-      action !== "rollback" &&
-      action !== "backup" &&
-      action !== "reset" &&
-      action !== "suspend" &&
-      action !== "unsuspend" &&
-      action !== "block" &&
-      action !== "unblock" &&
-      action !== "tag" &&
-      action !== "untag" &&
-      action !== "flag" &&
-      action !== "unflag" &&
-      action !== "duplicate" &&
-      action !== "restore" &&
-      action !== "create" &&
-      action !== "export" &&
-      action !== "download" &&
-      action !== "upload" &&
-      action !== "import" &&
-      action !== "approve" &&
-      action !== "reject" &&
-      action !== "close" &&
-      action !== "reopen" &&
-      action !== "cancel" &&
-      action !== "enable" &&
-      action !== "disable" &&
-      action !== "lock" &&
-      action !== "unlock" &&
-      action !== "assign" &&
-      action !== "unassign" &&
-      action !== "escalate" &&
-      action !== "deescalate" &&
-      action !== "pause" &&
-      action !== "resume" &&
-      action !== "start" &&
-      action !== "stop" &&
-      action !== "submit" &&
-      action !== "complete"
-    );
+    return !TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET.has(action);
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
 }

@@ -1498,6 +1498,64 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  const targetlessVisibleWorkflowActionsRequiringTarget = new Set<string>([
+    "copy",
+    "link",
+    "unlink",
+    "share",
+    "grant",
+    "revoke",
+    "install",
+    "uninstall",
+    "connect",
+    "disconnect",
+    "sync",
+    "attach",
+    "detach",
+    "transfer",
+    "move",
+    "rename",
+    "merge",
+    "invite",
+    "subscribe",
+    "unsubscribe",
+    "pin",
+    "unpin",
+    "mute",
+    "unmute",
+    "follow",
+    "unfollow",
+    "bookmark",
+    "unbookmark",
+    "favorite",
+    "unfavorite",
+    "watch",
+    "unwatch",
+    "star",
+    "unstar",
+    "schedule",
+    "unschedule",
+    "deploy",
+    "rollback",
+    "backup",
+    "reset",
+    "suspend",
+    "unsuspend",
+    "block",
+    "unblock",
+    "tag",
+    "untag",
+    "flag",
+    "unflag",
+    "duplicate",
+    "restore",
+    "create",
+    "export",
+    "download",
+    "upload",
+    "import",
+  ]);
+
   for (const scenario of [
     {
       action: "save",
@@ -2410,61 +2468,7 @@ describe("completion kernel", () => {
     });
 
     const targetlessVisibleMustReject =
-      scenario.action === "copy" ||
-      scenario.action === "link" ||
-      scenario.action === "unlink" ||
-      scenario.action === "share" ||
-      scenario.action === "grant" ||
-      scenario.action === "revoke" ||
-      scenario.action === "install" ||
-      scenario.action === "uninstall" ||
-      scenario.action === "connect" ||
-      scenario.action === "disconnect" ||
-      scenario.action === "sync" ||
-      scenario.action === "attach" ||
-      scenario.action === "detach" ||
-      scenario.action === "transfer" ||
-      scenario.action === "move" ||
-      scenario.action === "rename" ||
-      scenario.action === "merge" ||
-      scenario.action === "invite" ||
-      scenario.action === "subscribe" ||
-      scenario.action === "unsubscribe" ||
-      scenario.action === "pin" ||
-      scenario.action === "unpin" ||
-      scenario.action === "mute" ||
-      scenario.action === "unmute" ||
-      scenario.action === "follow" ||
-      scenario.action === "unfollow" ||
-      scenario.action === "bookmark" ||
-      scenario.action === "unbookmark" ||
-      scenario.action === "favorite" ||
-      scenario.action === "unfavorite" ||
-      scenario.action === "watch" ||
-      scenario.action === "unwatch" ||
-      scenario.action === "star" ||
-      scenario.action === "unstar" ||
-      scenario.action === "schedule" ||
-      scenario.action === "unschedule" ||
-      scenario.action === "deploy" ||
-      scenario.action === "rollback" ||
-      scenario.action === "backup" ||
-      scenario.action === "reset" ||
-      scenario.action === "suspend" ||
-      scenario.action === "unsuspend" ||
-      scenario.action === "block" ||
-      scenario.action === "unblock" ||
-      scenario.action === "tag" ||
-      scenario.action === "untag" ||
-      scenario.action === "flag" ||
-      scenario.action === "unflag" ||
-      scenario.action === "duplicate" ||
-      scenario.action === "restore" ||
-      scenario.action === "create" ||
-      scenario.action === "export" ||
-      scenario.action === "download" ||
-      scenario.action === "upload" ||
-      scenario.action === "import";
+      targetlessVisibleWorkflowActionsRequiringTarget.has(scenario.action);
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`
