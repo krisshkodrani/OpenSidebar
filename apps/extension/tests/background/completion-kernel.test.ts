@@ -26133,6 +26133,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped handled-by answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Case Details",
+      url: "https://example.test/cases",
+      visibleContent:
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod.",
+      pageContent:
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who handles Case Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Support Pod",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Billing Pod",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts sentence-scoped handled-by answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Case Details",
+      url: "https://example.test/cases",
+      visibleContent:
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod.",
+      pageContent:
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is Case Alpha handled by?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nCase Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Support Pod",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Billing Pod",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped reported-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
