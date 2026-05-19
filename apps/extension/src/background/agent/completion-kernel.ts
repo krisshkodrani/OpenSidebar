@@ -5739,6 +5739,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                 ? "Unpinned"
                                 : action === "unmute"
                                   ? "Unmuted"
+                                  : action === "unschedule"
+                                    ? "Unscheduled"
                     : action === "revoke"
                       ? "Revoked"
                       : action === "unblock"
@@ -6098,6 +6100,7 @@ function inferTargetDisappearanceAction(
   | "unfavorite"
   | "unpin"
   | "unmute"
+  | "unschedule"
   | "revoke"
   | "unblock"
   | "block"
@@ -6124,6 +6127,7 @@ function inferTargetDisappearanceAction(
   if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
   if (/\bunpin(?:ned|ning)?\b/i.test(text)) return "unpin";
   if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
+  if (/\bunschedule(?:d|ing)?\b/i.test(text)) return "unschedule";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6637,6 +6641,7 @@ function extractDisappearingTargetFromControl(
     | "unfavorite"
     | "unpin"
     | "unmute"
+    | "unschedule"
     | "revoke"
     | "unblock"
     | "block"
@@ -6687,17 +6692,19 @@ function extractDisappearingTargetFromControl(
                                   ? "unpin"
                                   : action === "unmute"
                                     ? "unmute"
-                                    : action === "revoke"
-                                      ? "(?:revoke|revocation)"
-                                      : action === "unblock"
-                                        ? "unblock"
-                                        : action === "block"
-                                          ? "block"
-                                          : action === "unsuspend"
-                                            ? "unsuspend"
-                                            : action === "suspend"
-                                              ? "suspend"
-                                              : "uninstall";
+                                    : action === "unschedule"
+                                      ? "unschedule"
+                                      : action === "revoke"
+                                        ? "(?:revoke|revocation)"
+                                        : action === "unblock"
+                                          ? "unblock"
+                                          : action === "block"
+                                            ? "block"
+                                            : action === "unsuspend"
+                                              ? "unsuspend"
+                                              : action === "suspend"
+                                                ? "suspend"
+                                                : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6705,7 +6712,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6778,6 +6785,8 @@ function extractDisappearingTargetFromControl(
           "revocation",
           "role",
           "row",
+          "schedule",
+          "scheduled",
           "service",
           "source",
           "star",
@@ -6800,6 +6809,8 @@ function extractDisappearingTargetFromControl(
           "unpinned",
           "unmute",
           "unmuted",
+          "unschedule",
+          "unscheduled",
           "unlink",
           "unlinking",
           "unflag",
