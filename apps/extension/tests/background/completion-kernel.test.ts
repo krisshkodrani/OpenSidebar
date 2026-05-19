@@ -9525,6 +9525,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts pause confirmation from named running target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+      pageContent:
+        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+      elements: [
+        actionButton(555, "Pause Job Alpha"),
+        actionButton(556, "Pause Job Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Running jobs Job Beta Pause Job Beta",
+      pageContent: "Running jobs Job Beta Pause Job Beta",
+      elements: [actionButton(556, "Pause Job Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Pause Job Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 555 },
+      result: "Clicked element 555.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Paused Job Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "pause",
+      targetLabel: "Job Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:pause:job-alpha",
+        detail: expect.objectContaining({
+          action: "pause",
+          source: "target_disappearance",
+          text: "Paused target no longer visible: Job Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects pause target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+      pageContent:
+        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+      elements: [
+        actionButton(555, "Pause Job Alpha"),
+        actionButton(556, "Pause Job Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
+      pageContent: "Running jobs Job Alpha Pause Job Alpha",
+      elements: [actionButton(555, "Pause Job Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Pause Job Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 556 },
+      result: "Clicked element 556.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Paused Job Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "pause",
+      targetLabel: "Job Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:pause:job-beta",
+        detail: expect.objectContaining({
+          action: "pause",
+          source: "target_disappearance",
+          text: "Paused target no longer visible: Job Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer pause confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
+      pageContent: "Running jobs Job Alpha Pause Job Alpha",
+      elements: [actionButton(555, "Pause Job Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
+      pageContent: "Running jobs Job Alpha Pause Job Alpha",
+      elements: [actionButton(555, "Pause Job Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 555 },
+      result: "Clicked element 555.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer pause confirmation from a generic pause button", () => {
+    const genericPauseButton: TaggedElement = {
+      tag: 555,
+      tagName: "button",
+      role: "button",
+      text: "Pause",
+      attributes: {
+        id: "pause",
+        "aria-label": "Pause",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Running jobs Job Alpha Pause",
+      pageContent: "Running jobs Job Alpha Pause",
+      elements: [genericPauseButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Running jobs",
+      pageContent: "Running jobs",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 555 },
+      result: "Clicked element 555.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
