@@ -5709,7 +5709,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
 
   const key = compactKey(target) || `tag-${element.tag}`;
   const actionLabel =
-    action === "tag"
+    action === "flag"
+      ? "Flagged"
+      : action === "tag"
       ? "Tagged"
       : action === "link"
         ? "Linked"
@@ -6125,6 +6127,7 @@ function inferTargetDisappearanceAction(
   | "untag"
   | "tag"
   | "unflag"
+  | "flag"
   | "unsubscribe"
   | "unfollow"
   | "unwatch"
@@ -6164,6 +6167,7 @@ function inferTargetDisappearanceAction(
   if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
   if (/\btag(?:ged|ging)?\b/i.test(text)) return "tag";
   if (/\bunflag(?:ged|ging)?\b/i.test(text)) return "unflag";
+  if (/\bflag(?:ged|ging)?\b/i.test(text)) return "flag";
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
   }
@@ -6702,6 +6706,7 @@ function extractDisappearingTargetFromControl(
     | "untag"
     | "tag"
     | "unflag"
+    | "flag"
     | "unsubscribe"
     | "unfollow"
     | "unwatch"
@@ -6747,6 +6752,8 @@ function extractDisappearingTargetFromControl(
         ? "link"
         : action === "tag"
           ? "tag"
+          : action === "flag"
+            ? "flag"
           : action === "delete"
             ? "(?:delete|remove)"
             : action === "archive"
@@ -6823,7 +6830,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6887,6 +6894,7 @@ function extractDisappearingTargetFromControl(
           "extension",
           "file",
           "flag",
+          "flagged",
           "flagging",
           "feed",
           "favorite",
