@@ -5799,7 +5799,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                                     ? "Unsuspended"
                                                                     : action === "suspend"
                                                                       ? "Suspended"
-                                                                      : "Uninstalled";
+                                                                      : action === "install"
+                                                                        ? "Installed"
+                                                                        : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6178,10 +6180,12 @@ function inferTargetDisappearanceAction(
   | "block"
   | "unsuspend"
   | "suspend"
+  | "install"
   | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
+  if (/\binstall(?:ed|ing|ation)?\b/i.test(text)) return "install";
   if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
   if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
@@ -6775,6 +6779,7 @@ function extractDisappearingTargetFromControl(
     | "block"
     | "unsuspend"
     | "suspend"
+    | "install"
     | "uninstall"
   >,
 ): string | null {
@@ -6880,7 +6885,9 @@ function extractDisappearingTargetFromControl(
                                                                         ? "unsuspend"
                                                                         : action === "suspend"
                                                                           ? "suspend"
-                                                                          : "uninstall";
+                                                                          : action === "install"
+                                                                            ? "install"
+                                                                            : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6888,7 +6895,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6960,6 +6967,10 @@ function extractDisappearingTargetFromControl(
           "favorited",
           "favoriting",
           "integration",
+          "install",
+          "installation",
+          "installed",
+          "installing",
           "item",
           "license",
           "licence",
