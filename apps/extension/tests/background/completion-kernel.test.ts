@@ -8455,6 +8455,191 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts star confirmation from named unstarred target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+      pageContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+      elements: [
+        actionButton(537, "Star Repository Alpha"),
+        actionButton(538, "Star Repository Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Beta Star Repository Beta",
+      pageContent:
+        "Unstarred repositories Repository Beta Star Repository Beta",
+      elements: [actionButton(538, "Star Repository Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Star Repository Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Starred Repository Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "star",
+      targetLabel: "Repository Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:star:repository-alpha",
+        detail: expect.objectContaining({
+          action: "star",
+          source: "target_disappearance",
+          text: "Starred target no longer visible: Repository Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects star target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+      pageContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+      elements: [
+        actionButton(537, "Star Repository Alpha"),
+        actionButton(538, "Star Repository Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      pageContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      elements: [actionButton(537, "Star Repository Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Star Repository Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 538 },
+      result: "Clicked element 538.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Starred Repository Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "star",
+      targetLabel: "Repository Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:star:repository-beta",
+        detail: expect.objectContaining({
+          action: "star",
+          source: "target_disappearance",
+          text: "Starred target no longer visible: Repository Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer star confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      pageContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      elements: [actionButton(537, "Star Repository Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      pageContent:
+        "Unstarred repositories Repository Alpha Star Repository Alpha",
+      elements: [actionButton(537, "Star Repository Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer star confirmation from a generic star button", () => {
+    const genericStarButton: TaggedElement = {
+      tag: 537,
+      tagName: "button",
+      role: "button",
+      text: "Star",
+      attributes: {
+        id: "star",
+        "aria-label": "Star",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Unstarred repositories Repository Alpha Star",
+      pageContent: "Unstarred repositories Repository Alpha Star",
+      elements: [genericStarButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unstarred repositories",
+      pageContent: "Unstarred repositories",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts unstar confirmation from named starred target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:

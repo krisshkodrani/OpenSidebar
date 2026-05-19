@@ -5744,8 +5744,10 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                   : action === "watch"
                                     ? "Watched"
                                     : action === "unstar"
-                            ? "Unstarred"
-                            : action === "unbookmark"
+                                      ? "Unstarred"
+                                      : action === "star"
+                                        ? "Starred"
+                                        : action === "unbookmark"
                               ? "Unbookmarked"
                               : action === "unfavorite"
                                 ? "Unfavorited"
@@ -6141,6 +6143,7 @@ function inferTargetDisappearanceAction(
   | "unwatch"
   | "watch"
   | "unstar"
+  | "star"
   | "unbookmark"
   | "unfavorite"
   | "unpin"
@@ -6188,6 +6191,7 @@ function inferTargetDisappearanceAction(
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
   if (/\bwatch(?:ed|ing|es|er|ers)?\b/i.test(text)) return "watch";
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
+  if (/\bstar(?:red|ring|s)?\b/i.test(text)) return "star";
   if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
   if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
   if (/\bunpin(?:ned|ning)?\b/i.test(text)) return "unpin";
@@ -6728,6 +6732,7 @@ function extractDisappearingTargetFromControl(
     | "unwatch"
     | "watch"
     | "unstar"
+    | "star"
     | "unbookmark"
     | "unfavorite"
     | "unpin"
@@ -6801,6 +6806,8 @@ function extractDisappearingTargetFromControl(
                               ? "watch"
                             : action === "unstar"
                               ? "unstar"
+                              : action === "star"
+                                ? "star"
                               : action === "unbookmark"
                                 ? "unbookmark"
                                 : action === "unfavorite"
@@ -6853,7 +6860,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7022,6 +7029,7 @@ function extractDisappearingTargetFromControl(
           "unwatched",
           "unstar",
           "unstarred",
+          "starring",
           "unsuspend",
           "unsuspension",
           "uninstall",
