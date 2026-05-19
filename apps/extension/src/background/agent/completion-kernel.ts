@@ -211,6 +211,7 @@ export type WorkflowConfirmationAction =
   | "uninstall"
   | "connect"
   | "disconnect"
+  | "sync"
   | "invite"
   | "subscribe"
   | "unsubscribe"
@@ -283,6 +284,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "uninstall",
   "connect",
   "disconnect",
+  "sync",
   "invite",
   "subscribe",
   "unsubscribe",
@@ -358,6 +360,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "uninstall"
   | "connect"
   | "disconnect"
+  | "sync"
   | "invite"
   | "subscribe"
   | "unsubscribe"
@@ -2882,6 +2885,13 @@ function inferWorkflowConfirmationAction(
     return "connect";
   }
   if (
+    /\b(?:sync(?:ed)?|resync(?:ed)?|synchroni[sz](?:e|ed))\s+(?:the\s+)?(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection|calendar|contacts?|files?|folders?|documents?|settings|config|configuration|backup|workflow|rule|job|pipeline|queue)\b/i.test(
+      text,
+    )
+  ) {
+    return "sync";
+  }
+  if (
     /\binvit(?:e|ed)\s+(?:the\s+)?(?:user|member|person|contact|customer|client|guest|reviewer|approver|editor|viewer|admin|administrator|collaborator|teammate|team|group)\b/i.test(
       text,
     )
@@ -3211,6 +3221,8 @@ function workflowTargetActionPattern(
       return "(?:connect)";
     case "disconnect":
       return "(?:disconnect)";
+    case "sync":
+      return "(?:sync|resync|synchroni[sz]e)";
     case "invite":
       return "(?:invite)";
     case "subscribe":
@@ -3430,6 +3442,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "uninstall" ||
     action === "connect" ||
     action === "disconnect" ||
+    action === "sync" ||
     action === "invite" ||
     action === "subscribe" ||
     action === "unsubscribe" ||
@@ -3620,6 +3633,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:connected)";
     case "disconnect":
       return "(?:disconnected)";
+    case "sync":
+      return "(?:synced|resynced|synchroni[sz]ed)";
     case "invite":
       return "(?:invited)";
     case "subscribe":
@@ -3765,6 +3780,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:connect|connection)";
     case "disconnect":
       return "(?:disconnect|disconnection)";
+    case "sync":
+      return "(?:sync|resync|synchronization|synchronisation)";
     case "invite":
       return "(?:invite|invitation)";
     case "subscribe":
@@ -4339,6 +4356,23 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:disconnected|disconnect complete|disconnect completed|disconnect successful|disconnection complete|disconnection completed|disconnection successful)\b/i.test(
+        text,
+      );
+    case "sync":
+      if (mode === "visible") {
+        return (
+          /\b(?:synced|resynced|synchroni[sz]ed)\s+successfully\b/i.test(
+            text,
+          ) ||
+          /\b(?:account|app|application|integration|connector|service|provider|source|data\s+source|database|endpoint|api|server|device|repository|repo|workspace|project|channel|feed|webhook|connection|calendar|contacts?|files?|folders?|documents?|settings|config|configuration|backup|workflow|rule|job|pipeline|queue)\s+(?:synced|resynced|synchroni[sz]ed)\b/i.test(
+            text,
+          ) ||
+          /\b(?:sync|resync|synchronization|synchronisation)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:synced|resynced|synchroni[sz]ed|sync complete|sync completed|sync successful|resync complete|resync completed|resync successful|synchronization complete|synchronization completed|synchronization successful|synchronisation complete|synchronisation completed|synchronisation successful)\b/i.test(
         text,
       );
     case "invite":
@@ -4919,6 +4953,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:connected|connect|connection)";
     case "disconnect":
       return "(?:disconnected|disconnect|disconnection)";
+    case "sync":
+      return "(?:synced|resynced|synchroni[sz]ed|sync|resync|synchronization|synchronisation)";
     case "invite":
       return "(?:invited|invite|invitation)";
     case "subscribe":
@@ -5807,6 +5843,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\bconnected\b/i.test(text);
     case "disconnect":
       return /\bdisconnected\b/i.test(text);
+    case "sync":
+      return /\b(?:synced|resynced|synchroni[sz]ed)\b/i.test(text);
     case "invite":
       return /\binvited\b/i.test(text);
     case "subscribe":
