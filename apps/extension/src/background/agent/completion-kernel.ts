@@ -3775,7 +3775,10 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "upload" &&
       action !== "import" &&
       action !== "approve" &&
-      action !== "reject"
+      action !== "reject" &&
+      action !== "close" &&
+      action !== "reopen" &&
+      action !== "cancel"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
