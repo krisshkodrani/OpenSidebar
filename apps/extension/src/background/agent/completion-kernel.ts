@@ -96,6 +96,7 @@ export type CompletionEvidence =
           | "draft_disappearance"
           | "submitted_draft_row"
           | "invite_row_state"
+          | "attachment_row_state"
           | "status_change"
           | "control_label_change"
           | "control_state_change"
@@ -1383,6 +1384,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractCreateRowAppearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
+  evidence.push(...extractAttachmentRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractSubmittedDraftRowEvidenceFromToolOutcome(params));
   evidence.push(...extractInviteRowStateEvidenceFromToolOutcome(params));
@@ -3567,6 +3569,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "dirty_indicator_cleared" ||
       event.detail.source === "submitted_draft_row" ||
       event.detail.source === "invite_row_state" ||
+      event.detail.source === "attachment_row_state" ||
       event.detail.source === "download_file_result" ||
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
@@ -6191,18 +6194,12 @@ function extractUploadFileResultEvidenceFromToolOutcome(params: {
 }): CompletionEvidence[] {
   if (params.toolName !== "upload_file") return [];
 
-  const match = /^Uploaded\s+"([^"]{1,240})"\s+\((\d+)\s+bytes\)\s+to\b/i.exec(
-    params.result.trim(),
-  );
-  if (!match?.[1] || !match[2]) return [];
-
-  const filename = cleanLabel(match[1]);
-  const bytes = Number(match[2]);
-  if (!filename || !Number.isFinite(bytes) || bytes < 0) return [];
+  const parsed = parseUploadFileResult(params.result);
+  if (!parsed) return [];
 
   const id = Number(params.args.id);
   const key =
-    compactKey(filename) || (Number.isFinite(id) ? `tag-${id}` : "file");
+    compactKey(parsed.filename) || (Number.isFinite(id) ? `tag-${id}` : "file");
 
   return [
     {
@@ -6211,9 +6208,9 @@ function extractUploadFileResultEvidenceFromToolOutcome(params: {
       logicalKey: `workflow:confirmation:upload:${key}`,
       observedAtTurn: params.turn,
       detail: {
-        text: `Uploaded file selected: ${filename} (${bytes} bytes)`,
+        text: `Uploaded file selected: ${parsed.filename} (${parsed.bytes} bytes)`,
         action: "upload",
-        targetText: filename,
+        targetText: parsed.filename,
         source: "upload_file_result",
         ...(params.currentSnapshot?.url
           ? { url: params.currentSnapshot.url }
@@ -6221,6 +6218,87 @@ function extractUploadFileResultEvidenceFromToolOutcome(params: {
       },
     },
   ];
+}
+
+type UploadFileResultDetails = {
+  filename: string;
+  bytes: number;
+};
+
+function parseUploadFileResult(result: string): UploadFileResultDetails | null {
+  const match = /^Uploaded\s+"([^"]{1,240})"\s+\((\d+)\s+bytes\)\s+to\b/i.exec(
+    result.trim(),
+  );
+  if (!match?.[1] || !match[2]) return null;
+
+  const filename = cleanLabel(match[1]);
+  const bytes = Number(match[2]);
+  if (!filename || !Number.isFinite(bytes) || bytes < 0) return null;
+
+  return { filename, bytes };
+}
+
+function extractAttachmentRowStateEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "upload_file") return [];
+
+  const parsed = parseUploadFileResult(params.result);
+  if (!parsed) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+  if (findAttachmentRowStateText(pre, parsed.filename)) return [];
+
+  const rowText = findAttachmentRowStateText(current, parsed.filename);
+  if (!rowText) return [];
+
+  const key = compactKey(parsed.filename) || compactKey(rowText) || "file";
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:attach:row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Attachment row visible: ${parsed.filename}`,
+        action: "attach",
+        targetText: parsed.filename,
+        source: "attachment_row_state",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function findAttachmentRowStateText(
+  snapshot: DomSnapshot,
+  filename: string,
+): string | null {
+  const row = snapshot.elements.find((element) => {
+    if (!element.isVisible || element.isDisabled) return false;
+    if (!isWorkflowRowLikeElement(element)) return false;
+    const text = workflowRowElementText(element);
+    return (
+      Boolean(text) &&
+      workflowTargetLabelCoveredByText(filename, text) &&
+      attachmentRowTextHasAttachedState(text)
+    );
+  });
+  return row ? workflowRowElementText(row) : null;
+}
+
+function attachmentRowTextHasAttachedState(value: string): boolean {
+  return /\b(?:attached|attachment\s+(?:complete|completed|successful|uploaded)|file\s+attached|file\s+uploaded|uploaded)\b/i.test(
+    normalizeText(value),
+  );
 }
 
 function snapshotHasFormValidationText(snapshot: DomSnapshot): boolean {

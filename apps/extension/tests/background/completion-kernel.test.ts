@@ -18371,6 +18371,208 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts attach confirmation from visible attachment row after upload_file", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Attach files File input",
+      pageContent: "Attach files File input",
+      elements: [],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Attachments File Alpha.pdf Attached",
+      pageContent: "Attachments File Alpha.pdf Attached",
+      elements: [rowElement(642, "File Alpha.pdf Attached")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Attach File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: 'Uploaded "File Alpha.pdf" (2048 bytes) to [557] file input',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Attached File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "attach",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: "workflow:confirmation:attach:row:file-alpha-pdf",
+          detail: expect.objectContaining({
+            action: "attach",
+            source: "attachment_row_state",
+            targetText: "File Alpha.pdf",
+            text: "Attachment row visible: File Alpha.pdf",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects attachment row-state evidence for the wrong requested file", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Attach files File input",
+      pageContent: "Attach files File input",
+      elements: [],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Attachments File Beta.pdf Attached",
+      pageContent: "Attachments File Beta.pdf Attached",
+      elements: [rowElement(642, "File Beta.pdf Attached")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Attach File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-beta.pdf" },
+      result: 'Uploaded "File Beta.pdf" (2048 bytes) to [557] file input',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Attached File Alpha.",
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: "workflow:confirmation:attach:row:file-beta-pdf",
+          detail: expect.objectContaining({
+            action: "attach",
+            source: "attachment_row_state",
+            targetText: "File Beta.pdf",
+          }),
+        }),
+      ]),
+    );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer attachment row-state evidence from plain visible text", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Attach files File input",
+      pageContent: "Attach files File input",
+      elements: [],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Attachments File Alpha.pdf Attached",
+      pageContent: "Attachments File Alpha.pdf Attached",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: 'Uploaded "File Alpha.pdf" (2048 bytes) to [557] file input',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            source: "attachment_row_state",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  test("does not infer attachment row-state evidence from a row that already existed", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Attachments File Alpha.pdf Attached",
+      pageContent: "Attachments File Alpha.pdf Attached",
+      elements: [rowElement(642, "File Alpha.pdf Attached")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Attachments File Alpha.pdf Attached",
+      pageContent: "Attachments File Alpha.pdf Attached",
+      elements: [rowElement(642, "File Alpha.pdf Attached")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: 'Uploaded "File Alpha.pdf" (2048 bytes) to [557] file input',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            source: "attachment_row_state",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  test("does not infer attachment row-state evidence without attachment state text", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Attach files File input",
+      pageContent: "Attach files File input",
+      elements: [],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Files File Alpha.pdf Available",
+      pageContent: "Files File Alpha.pdf Available",
+      elements: [rowElement(642, "File Alpha.pdf Available")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.UPLOAD_FILE,
+      args: { id: 557, url: "https://files.example.test/file-alpha.pdf" },
+      result: 'Uploaded "File Alpha.pdf" (2048 bytes) to [557] file input',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            source: "attachment_row_state",
+          }),
+        }),
+      ]),
+    );
+  });
+
   test("accepts download confirmation from download_file result evidence", () => {
     const snap = workflowSnapshot({
       visibleContent: "Download center File Alpha File Beta",
