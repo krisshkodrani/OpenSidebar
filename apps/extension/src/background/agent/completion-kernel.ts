@@ -5809,6 +5809,10 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                           ? "Started"
                                                           : action === "stop"
                                                             ? "Stopped"
+                                                            : action === "restart"
+                                                              ? "Restarted"
+                                                              : action === "refresh"
+                                                                ? "Refreshed"
                                                             : action === "revoke"
                                                               ? "Revoked"
                                                               : action === "approve"
@@ -6385,6 +6389,8 @@ function inferTargetDisappearanceAction(
   | "resume"
   | "start"
   | "stop"
+  | "restart"
+  | "refresh"
   | "approve"
   | "reject"
   | "close"
@@ -6486,6 +6492,8 @@ function inferTargetDisappearanceAction(
   if (/\bresume(?:d|ing)?\b/i.test(text)) return "resume";
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
+  if (/\brestart(?:ed|ing)?\b/i.test(text)) return "restart";
+  if (/\brefresh(?:ed|ing)?\b/i.test(text)) return "refresh";
   if (/\b(?:approve|approved|approving|approval)\b/i.test(text)) {
     return "approve";
   }
@@ -7080,6 +7088,8 @@ function extractDisappearingTargetFromControl(
     | "resume"
     | "start"
     | "stop"
+    | "restart"
+    | "refresh"
     | "approve"
     | "reject"
     | "close"
@@ -7219,6 +7229,10 @@ function extractDisappearingTargetFromControl(
                                                                 ? "start"
                                                                 : action === "stop"
                                                                   ? "stop"
+                                                                  : action === "restart"
+                                                                    ? "restart"
+                                                                    : action === "refresh"
+                                                                      ? "refresh"
                                                                   : action === "approve"
                                                                     ? "approve"
                                                                     : action === "reject"
@@ -7292,7 +7306,7 @@ function extractDisappearingTargetFromControl(
     const rawTarget = cleanLabel(explicit[1]);
     let target = rawTarget
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|de[-\s]?escalate|de[-\s]?escalated|de[-\s]?escalating|de[-\s]?escalation|escalate|escalated|escalating|escalation|complete|completed|completing|completion|submit|submitted|submission|send|sent|sending|email|emailed|emailing|post|posted|posting|publish|published|publishing|update|updated|updating|save|saved|saving|export|exported|exporting|download|downloaded|downloading|upload|uploaded|uploading|import|imported|importing|copy|copied|copying|share|shared|sharing|restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating|duplicate|duplicated|duplicating|duplication|clone|cloned|cloning|invite|invited|inviting|invitation|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|restart|restarted|restarting|refresh|refreshed|refreshing|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|de[-\s]?escalate|de[-\s]?escalated|de[-\s]?escalating|de[-\s]?escalation|escalate|escalated|escalating|escalation|complete|completed|completing|completion|submit|submitted|submission|send|sent|sending|email|emailed|emailing|post|posted|posting|publish|published|publishing|update|updated|updating|save|saved|saving|export|exported|exporting|download|downloaded|downloading|upload|uploaded|uploading|import|imported|importing|copy|copied|copying|share|shared|sharing|restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating|duplicate|duplicated|duplicating|duplication|clone|cloned|cloning|invite|invited|inviting|invitation|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7349,6 +7363,7 @@ function extractDisappearingTargetFromControl(
           "bookmark",
           "bookmarked",
           "bookmarking",
+          "browser",
           "change",
           "changes",
           "channel",
@@ -7366,6 +7381,8 @@ function extractDisappearingTargetFromControl(
           "completing",
           "completion",
           "csv",
+          "dashboard",
+          "dashboards",
           "data",
           "dataset",
           "datasets",
@@ -7499,6 +7516,7 @@ function extractDisappearingTargetFromControl(
           "newsletter",
           "overlay",
           "package",
+          "page",
           "panel",
           "pause",
           "paused",
@@ -7535,6 +7553,12 @@ function extractDisappearingTargetFromControl(
           "reversion",
           "reset",
           "resetting",
+          "refresh",
+          "refreshed",
+          "refreshing",
+          "restart",
+          "restarted",
+          "restarting",
           "resume",
           "resumed",
           "resuming",
@@ -7545,6 +7569,8 @@ function extractDisappearingTargetFromControl(
           "save",
           "saved",
           "saving",
+          "screen",
+          "screens",
           "send",
           "sent",
           "sending",
@@ -7606,6 +7632,8 @@ function extractDisappearingTargetFromControl(
           "tagging",
           "table",
           "tables",
+          "tab",
+          "tabs",
           "task",
           "tasks",
           "template",
@@ -7659,6 +7687,8 @@ function extractDisappearingTargetFromControl(
           "uninstallation",
           "view",
           "views",
+          "window",
+          "windows",
           "workflow",
         ].includes(token),
     );
