@@ -16719,6 +16719,244 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts escalate confirmation from named incident disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Open incidents Incident Alpha Escalate Incident Alpha Incident Beta Escalate Incident Beta",
+      pageContent:
+        "Open incidents Incident Alpha Escalate Incident Alpha Incident Beta Escalate Incident Beta",
+      elements: [
+        actionButton(541, "Escalate Incident Alpha"),
+        actionButton(542, "Escalate Incident Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents Incident Beta Escalate Incident Beta",
+      pageContent: "Open incidents Incident Beta Escalate Incident Beta",
+      elements: [actionButton(542, "Escalate Incident Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Escalate Incident Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 541 },
+      result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Escalated Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "escalate",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:escalate:incident-alpha",
+        detail: expect.objectContaining({
+          action: "escalate",
+          source: "target_disappearance",
+          text: "Escalated target no longer visible: Incident Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects escalate target-disappearance evidence for the wrong requested incident", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Open incidents Incident Alpha Escalate Incident Alpha Incident Beta Escalate Incident Beta",
+      pageContent:
+        "Open incidents Incident Alpha Escalate Incident Alpha Incident Beta Escalate Incident Beta",
+      elements: [
+        actionButton(541, "Escalate Incident Alpha"),
+        actionButton(542, "Escalate Incident Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      pageContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      elements: [actionButton(541, "Escalate Incident Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Escalate Incident Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 542 },
+      result: "Clicked element 542.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Escalated Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "escalate",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:escalate:incident-beta",
+        detail: expect.objectContaining({
+          action: "escalate",
+          source: "target_disappearance",
+          text: "Escalated target no longer visible: Incident Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer escalate confirmation while the named incident remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      pageContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      elements: [actionButton(541, "Escalate Incident Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      pageContent: "Open incidents Incident Alpha Escalate Incident Alpha",
+      elements: [actionButton(541, "Escalate Incident Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 541 },
+      result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer escalate confirmation from a generic escalate button", () => {
+    const genericEscalateButton: TaggedElement = {
+      tag: 541,
+      tagName: "button",
+      role: "button",
+      text: "Escalate",
+      attributes: {
+        id: "escalate",
+        "aria-label": "Escalate",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha Escalate",
+      pageContent: "Open incidents Incident Alpha Escalate",
+      elements: [genericEscalateButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents",
+      pageContent: "Open incidents",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 541 },
+      result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer escalate confirmation from a generic escalate incident control", () => {
+    const genericEscalateIncidentButton: TaggedElement = {
+      tag: 541,
+      tagName: "button",
+      role: "button",
+      text: "Escalate incident",
+      attributes: {
+        id: "escalate-incident",
+        "aria-label": "Escalate incident",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha Escalate incident",
+      pageContent: "Open incidents Incident Alpha Escalate incident",
+      elements: [genericEscalateIncidentButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents",
+      pageContent: "Open incidents",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 541 },
+      result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer escalate confirmation from a de-escalate control", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Open incidents Incident Alpha De-escalate Incident Alpha",
+      pageContent: "Open incidents Incident Alpha De-escalate Incident Alpha",
+      elements: [actionButton(541, "De-escalate Incident Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Open incidents",
+      pageContent: "Open incidents",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 541 },
+      result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
