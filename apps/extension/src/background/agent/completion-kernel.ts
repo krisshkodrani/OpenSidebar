@@ -3735,7 +3735,24 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "transfer" &&
       action !== "move" &&
       action !== "rename" &&
-      action !== "merge"
+      action !== "merge" &&
+      action !== "invite" &&
+      action !== "subscribe" &&
+      action !== "unsubscribe" &&
+      action !== "pin" &&
+      action !== "unpin" &&
+      action !== "mute" &&
+      action !== "unmute" &&
+      action !== "follow" &&
+      action !== "unfollow" &&
+      action !== "bookmark" &&
+      action !== "unbookmark" &&
+      action !== "favorite" &&
+      action !== "unfavorite" &&
+      action !== "watch" &&
+      action !== "unwatch" &&
+      action !== "star" &&
+      action !== "unstar"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
