@@ -10410,6 +10410,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts schedule confirmation from named unscheduled target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
+      pageContent:
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
+      elements: [
+        actionButton(565, "Schedule Report Alpha"),
+        actionButton(566, "Schedule Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unscheduled reports Report Beta Schedule Report Beta",
+      pageContent: "Unscheduled reports Report Beta Schedule Report Beta",
+      elements: [actionButton(566, "Schedule Report Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Schedule Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 565 },
+      result: "Clicked element 565.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Scheduled Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "schedule",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:schedule:report-alpha",
+        detail: expect.objectContaining({
+          action: "schedule",
+          source: "target_disappearance",
+          text: "Scheduled target no longer visible: Report Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects schedule target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
+      pageContent:
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
+      elements: [
+        actionButton(565, "Schedule Report Alpha"),
+        actionButton(566, "Schedule Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Schedule Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 566 },
+      result: "Clicked element 566.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Scheduled Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "schedule",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:schedule:report-beta",
+        detail: expect.objectContaining({
+          action: "schedule",
+          source: "target_disappearance",
+          text: "Scheduled target no longer visible: Report Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer schedule confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 565 },
+      result: "Clicked element 565.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer schedule confirmation from a generic schedule button", () => {
+    const genericScheduleButton: TaggedElement = {
+      tag: 565,
+      tagName: "button",
+      role: "button",
+      text: "Schedule",
+      attributes: {
+        id: "schedule",
+        "aria-label": "Schedule",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Unscheduled reports Report Alpha Schedule",
+      pageContent: "Unscheduled reports Report Alpha Schedule",
+      elements: [genericScheduleButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unscheduled reports",
+      pageContent: "Unscheduled reports",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 565 },
+      result: "Clicked element 565.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
