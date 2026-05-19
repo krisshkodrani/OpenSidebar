@@ -9086,6 +9086,16 @@ function extractRowScopedLabelValueQuestionParts(
     return label && target ? { label, target } : null;
   }
 
+  const linkingVerbLabelMatch =
+    /^(?:please\s+)?(?:tell me\s+)?(?:what|which)\s+(.+?)\s+(?:is|are|was|were)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (linkingVerbLabelMatch) {
+    const label = cleanLabel(linkingVerbLabelMatch[1] ?? "");
+    const target = cleanLabel(linkingVerbLabelMatch[2] ?? "");
+    return label && target ? { label, target } : null;
+  }
+
   const ownerVerbMatch =
     /^(?:please\s+)?(?:tell me\s+)?who\s+owns\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
@@ -9093,6 +9103,15 @@ function extractRowScopedLabelValueQuestionParts(
   if (ownerVerbMatch) {
     const target = cleanLabel(ownerVerbMatch[1] ?? "");
     return target ? { label: "owner", target } : null;
+  }
+
+  const assignedToMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+assigned\s+to\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (assignedToMatch) {
+    const target = cleanLabel(assignedToMatch[1] ?? "");
+    return target ? { label: "assignee", target } : null;
   }
 
   return null;
