@@ -3731,7 +3731,11 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "disconnect" &&
       action !== "sync" &&
       action !== "attach" &&
-      action !== "detach"
+      action !== "detach" &&
+      action !== "transfer" &&
+      action !== "move" &&
+      action !== "rename" &&
+      action !== "merge"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
