@@ -31344,6 +31344,36 @@ describe("completion kernel", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
+  test("does not use contact-for sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Project Queue",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Queue Contact for Project Apollo: Maya Chen Contact for Project Borealis: Ravi Shah",
+      pageContent:
+        "Project Queue Contact for Project Apollo: Maya Chen. Contact for Project Borealis: Ravi Shah. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, support routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is the contact for Project Apollo?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts separator-style target-due-date sentence-scoped answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
