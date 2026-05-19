@@ -5731,6 +5731,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                       ? "Synced"
                       : action === "transfer"
                         ? "Transferred"
+                        : action === "move"
+                          ? "Moved"
                   : action === "unlink"
                     ? "Unlinked"
                     : action === "untag"
@@ -6157,6 +6159,7 @@ function inferTargetDisappearanceAction(
   | "connect"
   | "sync"
   | "transfer"
+  | "move"
   | "unlink"
   | "link"
   | "untag"
@@ -6220,6 +6223,7 @@ function inferTargetDisappearanceAction(
     return "sync";
   }
   if (/\btransfer(?:red|ring)?\b/i.test(text)) return "transfer";
+  if (/\bmove(?:d|ing)?\b/i.test(text)) return "move";
   if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bblock(?:ed|ing)?\b/i.test(text)) return "block";
   if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
@@ -6774,6 +6778,7 @@ function extractDisappearingTargetFromControl(
     | "connect"
     | "sync"
     | "transfer"
+    | "move"
     | "unlink"
     | "link"
     | "untag"
@@ -6856,6 +6861,8 @@ function extractDisappearingTargetFromControl(
                       ? "(?:sync|synchronize)"
                     : action === "transfer"
                       ? "transfer"
+                    : action === "move"
+                      ? "move"
                     : action === "unlink"
                       ? "unlink"
                       : action === "untag"
@@ -6948,7 +6955,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7045,6 +7052,9 @@ function extractDisappearingTargetFromControl(
           "list",
           "membership",
           "module",
+          "move",
+          "moved",
+          "moving",
           "mute",
           "muted",
           "muting",
