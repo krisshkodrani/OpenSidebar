@@ -3762,7 +3762,14 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "suspend" &&
       action !== "unsuspend" &&
       action !== "block" &&
-      action !== "unblock"
+      action !== "unblock" &&
+      action !== "tag" &&
+      action !== "untag" &&
+      action !== "flag" &&
+      action !== "unflag" &&
+      action !== "duplicate" &&
+      action !== "restore" &&
+      action !== "create"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);

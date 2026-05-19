@@ -2453,7 +2453,14 @@ describe("completion kernel", () => {
       scenario.action === "suspend" ||
       scenario.action === "unsuspend" ||
       scenario.action === "block" ||
-      scenario.action === "unblock";
+      scenario.action === "unblock" ||
+      scenario.action === "tag" ||
+      scenario.action === "untag" ||
+      scenario.action === "flag" ||
+      scenario.action === "unflag" ||
+      scenario.action === "duplicate" ||
+      scenario.action === "restore" ||
+      scenario.action === "create";
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`
