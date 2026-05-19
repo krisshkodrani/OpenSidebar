@@ -2740,7 +2740,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible restart completion valid for a named target", () => {
+  test("rejects targetless visible restart completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Restart completed.",
       pageContent: "Restart completed.",
@@ -2764,7 +2764,11 @@ describe("completion kernel", () => {
       action: "restart",
       targetLabel: "Service Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible refresh confirmation for the requested target", () => {
@@ -2855,7 +2859,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible refresh completion valid for a named target", () => {
+  test("rejects targetless visible refresh completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Refresh completed.",
       pageContent: "Refresh completed.",
@@ -2879,7 +2883,11 @@ describe("completion kernel", () => {
       action: "refresh",
       targetLabel: "Report Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts reject-class workflow confirmation after visible denial success", () => {
