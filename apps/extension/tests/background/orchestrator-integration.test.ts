@@ -1499,6 +1499,121 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
   });
 
+  test("ignores late verifier reroute after root navigation completion skips a sibling", async () => {
+    const first = makeNode(
+      "n1",
+      "Open the Performance Analytics Elements Filters module",
+    );
+    first.successCriteria =
+      "The Breakdowns > Elements Filters module is open in Performance Analytics.";
+    const second = makeNode(
+      "n2",
+      "Delete a temporary navigation shortcut only if the primary route fails",
+    );
+    second.successCriteria =
+      "A safe alternate route is prepared only when the primary route fails.";
+    plannerBuildNodesImpl = async () => [first, second];
+    orchestratorDeps.lanePolicies = {
+      executor: { maxConcurrent: 2 },
+      verifier: { maxConcurrent: 2 },
+    };
+    verifierDecisionImpl = async (...args: unknown[]) => {
+      const input = args[0] as { objective?: string };
+      if (String(input.objective || "").includes("temporary navigation")) {
+        await new Promise<void>((resolve) => {
+          const startedAt = Date.now();
+          const poll = () => {
+            if (
+              gracefulStopLoopNodeIds.includes("n2") ||
+              Date.now() - startedAt > 500
+            ) {
+              resolve();
+              return;
+            }
+            setTimeout(poll, 5);
+          };
+          poll();
+        });
+        return {
+          decision: "reroute",
+          reason: "Late verifier reroute that must not overwrite skipped.",
+          rerouteObjective: "Open an alternate Performance Analytics route.",
+        };
+      }
+      return { decision: "accept", reason: "ok" };
+    };
+    loopStartImpl = async (nodeId) => {
+      if (nodeId === "n1") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return {
+          outcome: "completed",
+          summary:
+            'Successfully navigated to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+        };
+      }
+      return {
+        outcome: "completed",
+        summary: "Primary route blocked; alternate route required.",
+      };
+    };
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Elements Filters | ServiceNow",
+          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          visibleContent:
+            "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
+          pageContent:
+            "Performance Analytics Breakdowns Elements Filters list with Title, Breakdown source, and Filter columns.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(expect.arrayContaining(["n1", "n2"]));
+    expect(gracefulStopLoopNodeIds).toContain("n2");
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]?.status).toBe("skipped");
+    expect(completion?.payload?.subtaskResults?.[1]?.result).toContain(
+      "Skipped: navigation goal already achieved",
+    );
+    expect(
+      completion?.payload?.subtaskResults?.some((item: any) =>
+        String(item.result || "").includes("Late verifier reroute"),
+      ),
+    ).toBe(false);
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_result_ignored" &&
+          entry.body.data?.nodeId === "n2" &&
+          entry.body.data?.currentStatus === "skipped" &&
+          entry.body.data?.executorOutcome === "completed" &&
+          entry.body.data?.verifierDecision === "reroute" &&
+          entry.body.data?.reason === "node_already_terminal",
+      ),
+    ).toBe(true);
+  });
+
   test("does not skip navigation steps when the target is only visible in a menu", async () => {
     const first = makeNode(
       "n1",
