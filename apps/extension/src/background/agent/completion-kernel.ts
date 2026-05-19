@@ -524,6 +524,8 @@ const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAw
     "resume",
     "start",
     "stop",
+    "restart",
+    "refresh",
     "submit",
     "complete",
   ]);
