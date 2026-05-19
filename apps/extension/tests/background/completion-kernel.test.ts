@@ -7924,6 +7924,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unpin confirmation from named pinned target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
+      pageContent:
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
+      elements: [
+        actionButton(539, "Unpin Report Alpha"),
+        actionButton(540, "Unpin Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pinned reports Report Beta Unpin Report Beta",
+      pageContent: "Pinned reports Report Beta Unpin Report Beta",
+      elements: [actionButton(540, "Unpin Report Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unpin Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 539 },
+      result: "Clicked element 539.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unpinned Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unpin",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unpin:report-alpha",
+        detail: expect.objectContaining({
+          action: "unpin",
+          source: "target_disappearance",
+          text: "Unpinned target no longer visible: Report Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unpin target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
+      pageContent:
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
+      elements: [
+        actionButton(539, "Unpin Report Alpha"),
+        actionButton(540, "Unpin Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unpin Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 540 },
+      result: "Clicked element 540.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unpinned Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unpin",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unpin:report-beta",
+        detail: expect.objectContaining({
+          action: "unpin",
+          source: "target_disappearance",
+          text: "Unpinned target no longer visible: Report Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unpin confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 539 },
+      result: "Clicked element 539.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unpin confirmation from a generic unpin button", () => {
+    const genericUnpinButton: TaggedElement = {
+      tag: 539,
+      tagName: "button",
+      role: "button",
+      text: "Unpin",
+      attributes: {
+        id: "unpin",
+        "aria-label": "Unpin",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Pinned reports Report Alpha Unpin",
+      pageContent: "Pinned reports Report Alpha Unpin",
+      elements: [genericUnpinButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pinned reports",
+      pageContent: "Pinned reports",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 539 },
+      result: "Clicked element 539.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
