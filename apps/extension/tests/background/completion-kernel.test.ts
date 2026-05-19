@@ -25934,6 +25934,36 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("does not use possessive sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha's assignee is Maya Chen Ticket Beta's assignee is Ravi Shah",
+      pageContent:
+        "Ticket Queue Ticket Alpha's assignee is Maya Chen. Ticket Beta's assignee is Ravi Shah. The page explains ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is Ticket Alpha's assignee?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts possessive sentence-scoped assignee answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",

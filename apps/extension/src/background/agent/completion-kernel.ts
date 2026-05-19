@@ -10154,7 +10154,7 @@ function extractSentenceScopedRelationAnswer(
     if (possessiveSeparatorAnswer) return possessiveSeparatorAnswer;
 
     const possessiveMatch = new RegExp(
-      `\\b${targetPattern}\\b\\s*(?:'|\\u2019)s\\s+${relationNounPattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `^\\s*${targetPattern}\\b\\s*(?:'|\\u2019)s\\s+${relationNounPattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
       "i",
     ).exec(sentence);
     const possessiveAnswer = cleanSentenceScopedAnswerText(
