@@ -2413,7 +2413,9 @@ describe("completion kernel", () => {
       scenario.action === "copy" ||
       scenario.action === "link" ||
       scenario.action === "unlink" ||
-      scenario.action === "share";
+      scenario.action === "share" ||
+      scenario.action === "grant" ||
+      scenario.action === "revoke";
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`

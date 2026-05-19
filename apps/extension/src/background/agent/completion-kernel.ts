@@ -3716,13 +3716,15 @@ function visibleWorkflowConfirmationMatchesTarget(
     targetLabel,
   );
   if (!candidate) {
-    // Clipboard, linking, and sharing banners often omit the affected item, so
-    // named requests need visible target grounding before acceptance.
+    // These banners often omit the affected item, so named requests need
+    // visible target grounding before acceptance.
     return (
       action !== "copy" &&
       action !== "link" &&
       action !== "unlink" &&
-      action !== "share"
+      action !== "share" &&
+      action !== "grant" &&
+      action !== "revoke"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
