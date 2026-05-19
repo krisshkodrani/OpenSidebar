@@ -1805,6 +1805,34 @@ describe("completion kernel", () => {
       genericSummary: "Unlink completed.",
     },
     {
+      action: "tag",
+      request: "Tag Issue Alpha.",
+      summary: "Tagged Issue Alpha.",
+      targetLabel: "Issue Alpha",
+      requestedVisible:
+        "Issue Beta remains untagged. Issue Alpha tagged successfully.",
+      requestedEvidenceText: "Issue Alpha tagged successfully.",
+      otherVisible:
+        "Issue Alpha remains untagged. Issue Beta tagged successfully.",
+      otherEvidenceText: "Issue Beta tagged successfully.",
+      genericVisible: "Tag completed.",
+      genericSummary: "Tag completed.",
+    },
+    {
+      action: "untag",
+      request: "Untag Issue Alpha.",
+      summary: "Untagged Issue Alpha.",
+      targetLabel: "Issue Alpha",
+      requestedVisible:
+        "Issue Beta remains tagged. Issue Alpha untagged successfully.",
+      requestedEvidenceText: "Issue Alpha untagged successfully.",
+      otherVisible:
+        "Issue Alpha remains tagged. Issue Beta untagged successfully.",
+      otherEvidenceText: "Issue Beta untagged successfully.",
+      genericVisible: "Untag completed.",
+      genericSummary: "Untag completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
