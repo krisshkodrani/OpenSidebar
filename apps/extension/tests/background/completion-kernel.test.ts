@@ -2426,7 +2426,24 @@ describe("completion kernel", () => {
       scenario.action === "transfer" ||
       scenario.action === "move" ||
       scenario.action === "rename" ||
-      scenario.action === "merge";
+      scenario.action === "merge" ||
+      scenario.action === "invite" ||
+      scenario.action === "subscribe" ||
+      scenario.action === "unsubscribe" ||
+      scenario.action === "pin" ||
+      scenario.action === "unpin" ||
+      scenario.action === "mute" ||
+      scenario.action === "unmute" ||
+      scenario.action === "follow" ||
+      scenario.action === "unfollow" ||
+      scenario.action === "bookmark" ||
+      scenario.action === "unbookmark" ||
+      scenario.action === "favorite" ||
+      scenario.action === "unfavorite" ||
+      scenario.action === "watch" ||
+      scenario.action === "unwatch" ||
+      scenario.action === "star" ||
+      scenario.action === "unstar";
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`
