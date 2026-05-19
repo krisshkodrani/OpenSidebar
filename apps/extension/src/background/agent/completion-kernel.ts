@@ -9096,6 +9096,15 @@ function extractRowScopedLabelValueQuestionParts(
     return label && target ? { label, target } : null;
   }
 
+  const dueDateTargetMatch =
+    /^(?:please\s+)?(?:tell me\s+)?when\s+(?:is|are|was|were)\s+(?:the\s+)?(.+?)\s+due(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (dueDateTargetMatch) {
+    const target = cleanLabel(dueDateTargetMatch[1] ?? "");
+    return target ? { label: "due date", target } : null;
+  }
+
   const ownerVerbMatch =
     /^(?:please\s+)?(?:tell me\s+)?who\s+owns\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
