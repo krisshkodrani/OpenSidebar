@@ -7562,6 +7562,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unbookmark confirmation from named bookmarked target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
+      pageContent:
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
+      elements: [
+        actionButton(535, "Unbookmark Page Alpha"),
+        actionButton(536, "Unbookmark Page Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Bookmarked pages Page Beta Unbookmark Page Beta",
+      pageContent: "Bookmarked pages Page Beta Unbookmark Page Beta",
+      elements: [actionButton(536, "Unbookmark Page Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unbookmark Page Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 535 },
+      result: "Clicked element 535.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unbookmarked Page Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unbookmark",
+      targetLabel: "Page Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unbookmark:page-alpha",
+        detail: expect.objectContaining({
+          action: "unbookmark",
+          source: "target_disappearance",
+          text: "Unbookmarked target no longer visible: Page Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unbookmark target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
+      pageContent:
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
+      elements: [
+        actionButton(535, "Unbookmark Page Alpha"),
+        actionButton(536, "Unbookmark Page Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unbookmark Page Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 536 },
+      result: "Clicked element 536.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unbookmarked Page Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unbookmark",
+      targetLabel: "Page Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unbookmark:page-beta",
+        detail: expect.objectContaining({
+          action: "unbookmark",
+          source: "target_disappearance",
+          text: "Unbookmarked target no longer visible: Page Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unbookmark confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 535 },
+      result: "Clicked element 535.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unbookmark confirmation from a generic unbookmark button", () => {
+    const genericUnbookmarkButton: TaggedElement = {
+      tag: 535,
+      tagName: "button",
+      role: "button",
+      text: "Unbookmark",
+      attributes: {
+        id: "unbookmark",
+        "aria-label": "Unbookmark",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark",
+      elements: [genericUnbookmarkButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Bookmarked pages",
+      pageContent: "Bookmarked pages",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 535 },
+      result: "Clicked element 535.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
