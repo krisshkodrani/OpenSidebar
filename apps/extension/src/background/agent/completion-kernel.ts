@@ -207,6 +207,8 @@ export type WorkflowConfirmationAction =
   | "unsuspend"
   | "block"
   | "unblock"
+  | "link"
+  | "unlink"
   | "duplicate"
   | "restore"
   | "create"
@@ -286,6 +288,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unsuspend",
   "block",
   "unblock",
+  "link",
+  "unlink",
   "duplicate",
   "restore",
   "create",
@@ -368,6 +372,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unsuspend"
   | "block"
   | "unblock"
+  | "link"
+  | "unlink"
   | "duplicate"
   | "restore"
   | "create"
@@ -2875,6 +2881,20 @@ function inferWorkflowConfirmationAction(
     return "block";
   }
   if (
+    /\bunlink(?:ed|ing)?\s+(?:the\s+)?(?:account|profile|user|member|person|customer|client|contact|record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|workflow|rule|integration|connector|service|app|application|device|domain|url)\b/i.test(
+      text,
+    )
+  ) {
+    return "unlink";
+  }
+  if (
+    /\blink(?:ed|ing)?\s+(?:the\s+)?(?:account|profile|user|member|person|customer|client|contact|record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|workflow|rule|integration|connector|service|app|application|device|domain|url)\b/i.test(
+      text,
+    )
+  ) {
+    return "link";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3273,6 +3293,10 @@ function workflowTargetActionPattern(
       return "(?:block)";
     case "unblock":
       return "(?:unblock)";
+    case "link":
+      return "(?:link)";
+    case "unlink":
+      return "(?:unlink)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3510,6 +3534,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unsuspend" ||
     action === "block" ||
     action === "unblock" ||
+    action === "link" ||
+    action === "unlink" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3703,6 +3729,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:blocked)";
     case "unblock":
       return "(?:unblocked)";
+    case "link":
+      return "(?:linked)";
+    case "unlink":
+      return "(?:unlinked)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3862,6 +3892,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:block|blocking)";
     case "unblock":
       return "(?:unblock|unblocking)";
+    case "link":
+      return "(?:link|linking)";
+    case "unlink":
+      return "(?:unlink|unlinking)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4402,6 +4436,36 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:unblocked|unblocking|unblock complete|unblock completed|unblock successful|unblocking complete|unblocking completed|unblocking successful)\b/i.test(
+        text,
+      );
+    case "link":
+      if (mode === "visible") {
+        return (
+          /\blinked\s+successfully\b/i.test(text) ||
+          /\b(?:account|profile|user|member|person|customer|client|contact|record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|workflow|rule|integration|connector|service|app|application|device|domain|url)(?:\s+[\w-]+){0,6}\s+linked\b/i.test(
+            text,
+          ) ||
+          /\b(?:link|linking)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:linked|linking|link complete|link completed|link successful|linking complete|linking completed|linking successful)\b/i.test(
+        text,
+      );
+    case "unlink":
+      if (mode === "visible") {
+        return (
+          /\bunlinked\s+successfully\b/i.test(text) ||
+          /\b(?:account|profile|user|member|person|customer|client|contact|record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|workflow|rule|integration|connector|service|app|application|device|domain|url)(?:\s+[\w-]+){0,6}\s+unlinked\b/i.test(
+            text,
+          ) ||
+          /\b(?:unlink|unlinking)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:unlinked|unlinking|unlink complete|unlink completed|unlink successful|unlinking complete|unlinking completed|unlinking successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -5133,6 +5197,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:blocked|blocking|block)";
     case "unblock":
       return "(?:unblocked|unblocking|unblock)";
+    case "link":
+      return "(?:linked|linking|link)";
+    case "unlink":
+      return "(?:unlinked|unlinking|unlink)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -6035,6 +6103,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bblocked\b/i.test(text);
     case "unblock":
       return /\bunblocked\b/i.test(text);
+    case "link":
+      return /\blinked\b/i.test(text);
+    case "unlink":
+      return /\bunlinked\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
