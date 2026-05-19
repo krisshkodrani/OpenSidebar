@@ -10113,6 +10113,15 @@ function extractSentenceScopedRelationAnswer(
   }
 
   if (relationNounPattern) {
+    const possessiveSeparatorMatch = new RegExp(
+      `^\\s*${targetPattern}\\b\\s*(?:'|\\u2019)s\\s+${relationNounPattern}\\s*(?::|=)\\s*([^.;\\n]{2,120})`,
+      "i",
+    ).exec(sentence);
+    const possessiveSeparatorAnswer = cleanSentenceScopedAnswerText(
+      possessiveSeparatorMatch?.[1] ?? "",
+    );
+    if (possessiveSeparatorAnswer) return possessiveSeparatorAnswer;
+
     const possessiveMatch = new RegExp(
       `\\b${targetPattern}\\b\\s*(?:'|\\u2019)s\\s+${relationNounPattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
       "i",
