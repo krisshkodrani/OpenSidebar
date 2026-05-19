@@ -5945,6 +5945,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts install confirmation from named package disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available packages Package Alpha Install Package Alpha Package Beta Install Package Beta",
+      pageContent:
+        "Available packages Package Alpha Install Package Alpha Package Beta Install Package Beta",
+      elements: [
+        actionButton(504, "Install Package Alpha"),
+        actionButton(505, "Install Package Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available packages Package Beta Install Package Beta",
+      pageContent: "Available packages Package Beta Install Package Beta",
+      elements: [actionButton(505, "Install Package Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Install Package Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Installed Package Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "install",
+      targetLabel: "Package Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:install:package-alpha",
+        detail: expect.objectContaining({
+          action: "install",
+          source: "target_disappearance",
+          text: "Installed target no longer visible: Package Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects install target-disappearance evidence for the wrong requested package", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available packages Package Alpha Install Package Alpha Package Beta Install Package Beta",
+      pageContent:
+        "Available packages Package Alpha Install Package Alpha Package Beta Install Package Beta",
+      elements: [
+        actionButton(504, "Install Package Alpha"),
+        actionButton(505, "Install Package Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available packages Package Alpha Install Package Alpha",
+      pageContent: "Available packages Package Alpha Install Package Alpha",
+      elements: [actionButton(504, "Install Package Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Install Package Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 505 },
+      result: "Clicked element 505.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Installed Package Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "install",
+      targetLabel: "Package Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:install:package-beta",
+        detail: expect.objectContaining({
+          action: "install",
+          source: "target_disappearance",
+          text: "Installed target no longer visible: Package Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer install confirmation while the named package remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Available packages Package Alpha Install Package Alpha",
+      pageContent: "Available packages Package Alpha Install Package Alpha",
+      elements: [actionButton(504, "Install Package Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available packages Package Alpha Install Package Alpha",
+      pageContent: "Available packages Package Alpha Install Package Alpha",
+      elements: [actionButton(504, "Install Package Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer install confirmation from a generic install button", () => {
+    const genericInstallButton: TaggedElement = {
+      tag: 504,
+      tagName: "button",
+      role: "button",
+      text: "Install",
+      attributes: {
+        id: "install",
+        "aria-label": "Install",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Available packages Package Alpha Install",
+      pageContent: "Available packages Package Alpha Install",
+      elements: [genericInstallButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available packages",
+      pageContent: "Available packages",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts uninstall confirmation from named package disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
