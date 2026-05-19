@@ -2409,7 +2409,12 @@ describe("completion kernel", () => {
       });
     });
 
-    test(`keeps generic visible ${scenario.action} completion valid for a named target`, () => {
+    const genericVisibleTestName =
+      scenario.action === "copy"
+        ? "rejects targetless visible copy completion for a named target"
+        : `keeps generic visible ${scenario.action} completion valid for a named target`;
+
+    test(genericVisibleTestName, () => {
       const snap = workflowSnapshot({
         visibleContent: scenario.genericVisible,
         pageContent: scenario.genericVisible,
@@ -2433,7 +2438,15 @@ describe("completion kernel", () => {
         action: scenario.action,
         targetLabel: scenario.targetLabel,
       });
-      expect(decision.status).toBe("accepted");
+      if (scenario.action === "copy") {
+        expect(decision).toMatchObject({
+          status: "rejected",
+          reason:
+            "Workflow confirmation evidence is for a different target than the requested action.",
+        });
+      } else {
+        expect(decision.status).toBe("accepted");
+      }
     });
   }
 
