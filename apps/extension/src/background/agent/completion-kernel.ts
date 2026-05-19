@@ -5813,6 +5813,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                                       ? "Reopened"
                                                                       : action === "escalate"
                                                                         ? "Escalated"
+                                                                        : action === "deescalate"
+                                                                          ? "De-escalated"
                                                               : action === "unblock"
                                                                 ? "Unblocked"
                                                                 : action === "block"
@@ -6218,6 +6220,7 @@ function inferTargetDisappearanceAction(
   | "close"
   | "reopen"
   | "escalate"
+  | "deescalate"
   | "grant"
   | "revoke"
   | "unblock"
@@ -6316,7 +6319,9 @@ function inferTargetDisappearanceAction(
     return "close";
   }
   if (/\bre[-\s]?open(?:ed|ing)?\b/i.test(text)) return "reopen";
-  if (/\bde[-\s]?escalat(?:e|ed|ing|ion)\b/i.test(text)) return null;
+  if (/\bde[-\s]?escalat(?:e|ed|ing|ion)\b/i.test(text)) {
+    return "deescalate";
+  }
   if (/\bescalat(?:e|ed|ing|ion)\b/i.test(text)) return "escalate";
   if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
   if (/\battach(?:ed|ing|ment)?\b/i.test(text)) return "attach";
@@ -6870,6 +6875,7 @@ function extractDisappearingTargetFromControl(
     | "close"
     | "reopen"
     | "escalate"
+    | "deescalate"
     | "grant"
     | "revoke"
     | "unblock"
@@ -6998,6 +7004,8 @@ function extractDisappearingTargetFromControl(
                                                                           ? "(?:re[-\\s]?open)"
                                                                           : action === "escalate"
                                                                             ? "escalate"
+                                                                            : action === "deescalate"
+                                                                              ? "(?:de[-\\s]?escalate)"
                                                                   : action === "grant"
                                                                     ? "grant"
                                                                     : action === "revoke"
@@ -7028,7 +7036,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|escalate|escalated|escalating|escalation|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|transfer|transferred|transferring|move|moved|moving|rename|renamed|renaming|merge|merged|merging|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|approve|approved|approving|approval|reject|rejected|rejecting|rejection|deny|denied|denial|close|closed|closing|closure|resolve|resolved|resolving|resolution|re[-\s]?open|re[-\s]?opened|re[-\s]?opening|de[-\s]?escalate|de[-\s]?escalated|de[-\s]?escalating|de[-\s]?escalation|escalate|escalated|escalating|escalation|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|rollback|rolled\s+back|rolling\s+back|revert|reverted|reverting|reversion|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7094,6 +7102,10 @@ function extractDisappearingTargetFromControl(
           "deactivate",
           "deactivated",
           "deactivation",
+          "deescalate",
+          "deescalated",
+          "deescalating",
+          "deescalation",
           "deploy",
           "deployed",
           "deploying",

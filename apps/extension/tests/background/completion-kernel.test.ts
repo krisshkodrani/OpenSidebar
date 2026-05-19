@@ -16933,7 +16933,7 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer escalate confirmation from a de-escalate control", () => {
+  test("does not accept deescalate disappearance as escalate confirmation", () => {
     const pre = workflowSnapshot({
       visibleContent: "Open incidents Incident Alpha De-escalate Incident Alpha",
       pageContent: "Open incidents Incident Alpha De-escalate Incident Alpha",
@@ -16944,11 +16944,260 @@ describe("completion kernel", () => {
       pageContent: "Open incidents",
       elements: [],
     });
+    const generated = generateCompletionContract({
+      userRequest: "Escalate Incident Alpha.",
+      snapshot: current,
+    });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
       args: { id: 541 },
       result: "Clicked element 541.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Escalated Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "escalate",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:deescalate:incident-alpha",
+        detail: expect.objectContaining({
+          action: "deescalate",
+          source: "target_disappearance",
+          text: "De-escalated target no longer visible: Incident Alpha",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "needs_verification",
+      reason: "Requested action has no matching visible confirmation evidence yet.",
+    });
+  });
+
+  test("accepts deescalate confirmation from named incident disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha Incident Beta De-escalate Incident Beta",
+      pageContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha Incident Beta De-escalate Incident Beta",
+      elements: [
+        actionButton(543, "De-escalate Incident Alpha"),
+        actionButton(544, "De-escalate Incident Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Escalated incidents Incident Beta De-escalate Incident Beta",
+      pageContent:
+        "Escalated incidents Incident Beta De-escalate Incident Beta",
+      elements: [actionButton(544, "De-escalate Incident Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "De-escalate Incident Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 543 },
+      result: "Clicked element 543.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "De-escalated Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "deescalate",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:deescalate:incident-alpha",
+        detail: expect.objectContaining({
+          action: "deescalate",
+          source: "target_disappearance",
+          text: "De-escalated target no longer visible: Incident Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects deescalate target-disappearance evidence for the wrong requested incident", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha Incident Beta De-escalate Incident Beta",
+      pageContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha Incident Beta De-escalate Incident Beta",
+      elements: [
+        actionButton(543, "De-escalate Incident Alpha"),
+        actionButton(544, "De-escalate Incident Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      pageContent:
+        "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      elements: [actionButton(543, "De-escalate Incident Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "De-escalate Incident Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 544 },
+      result: "Clicked element 544.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "De-escalated Incident Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "deescalate",
+      targetLabel: "Incident Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:deescalate:incident-beta",
+        detail: expect.objectContaining({
+          action: "deescalate",
+          source: "target_disappearance",
+          text: "De-escalated target no longer visible: Incident Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer deescalate confirmation while the named incident remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      pageContent: "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      elements: [actionButton(543, "De-escalate Incident Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      pageContent: "Escalated incidents Incident Alpha De-escalate Incident Alpha",
+      elements: [actionButton(543, "De-escalate Incident Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 543 },
+      result: "Clicked element 543.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer deescalate confirmation from a generic deescalate button", () => {
+    const genericDeescalateButton: TaggedElement = {
+      tag: 543,
+      tagName: "button",
+      role: "button",
+      text: "De-escalate",
+      attributes: {
+        id: "de-escalate",
+        "aria-label": "De-escalate",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Escalated incidents Incident Alpha De-escalate",
+      pageContent: "Escalated incidents Incident Alpha De-escalate",
+      elements: [genericDeescalateButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Escalated incidents",
+      pageContent: "Escalated incidents",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 543 },
+      result: "Clicked element 543.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer deescalate confirmation from a generic deescalate incident control", () => {
+    const genericDeescalateIncidentButton: TaggedElement = {
+      tag: 543,
+      tagName: "button",
+      role: "button",
+      text: "De-escalate incident",
+      attributes: {
+        id: "de-escalate-incident",
+        "aria-label": "De-escalate incident",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Escalated incidents Incident Alpha De-escalate incident",
+      pageContent: "Escalated incidents Incident Alpha De-escalate incident",
+      elements: [genericDeescalateIncidentButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Escalated incidents",
+      pageContent: "Escalated incidents",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 543 },
+      result: "Clicked element 543.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
