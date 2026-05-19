@@ -454,6 +454,7 @@ const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAw
     "delete",
     "archive",
     "send",
+    "save",
     "link",
     "unlink",
     "share",
@@ -528,6 +529,7 @@ const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAw
     "stop",
     "restart",
     "refresh",
+    "update",
     "submit",
     "complete",
   ]);
