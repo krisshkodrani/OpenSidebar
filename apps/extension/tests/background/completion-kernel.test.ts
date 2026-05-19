@@ -25989,6 +25989,44 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped severity answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Details",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Alpha severity is Critical. Ticket Beta severity is Minor.",
+      pageContent:
+        "Ticket Alpha severity is Critical. Ticket Beta severity is Minor. The page explains ticket severity, ticket priority, ticket status, ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the severity for Ticket Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Critical",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Minor",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "severity",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts row-scoped label-value answer for the requested target row", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
