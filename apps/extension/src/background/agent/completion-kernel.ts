@@ -9251,6 +9251,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "owned\\s+by",
   },
   {
+    label: "manager",
+    directQuestionTail: "\\s+manages",
+    passiveTargetSuffix: "managed\\s+by",
+    sentenceRelationPattern: "managed\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
