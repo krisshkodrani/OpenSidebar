@@ -9344,6 +9344,42 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "opener", target } : null;
   }
 
+  const approvedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+approved\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (approvedByMatch) {
+    const target = cleanLabel(approvedByMatch[1] ?? "");
+    return target ? { label: "approver", target } : null;
+  }
+
+  const passiveApprovedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+approved\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveApprovedByMatch) {
+    const target = cleanLabel(passiveApprovedByMatch[1] ?? "");
+    return target ? { label: "approver", target } : null;
+  }
+
+  const reviewedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+reviewed\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (reviewedByMatch) {
+    const target = cleanLabel(reviewedByMatch[1] ?? "");
+    return target ? { label: "reviewer", target } : null;
+  }
+
+  const passiveReviewedByMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| was)\s+(?:the\s+)?(.+?)\s+reviewed\s+by(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (passiveReviewedByMatch) {
+    const target = cleanLabel(passiveReviewedByMatch[1] ?? "");
+    return target ? { label: "reviewer", target } : null;
+  }
+
   return null;
 }
 
@@ -9365,7 +9401,9 @@ function findGroundedSentenceScopedAnswer(
     normalizedLabel !== "requester" &&
     normalizedLabel !== "reporter" &&
     normalizedLabel !== "creator" &&
-    normalizedLabel !== "opener"
+    normalizedLabel !== "opener" &&
+    normalizedLabel !== "approver" &&
+    normalizedLabel !== "reviewer"
   ) {
     return null;
   }
@@ -9990,6 +10028,10 @@ function extractSentenceScopedRelationAnswer(
               ? "created\\s+by"
               : normalizedLabel === "opener"
                 ? "opened\\s+by"
+                : normalizedLabel === "approver"
+                  ? "approved\\s+by"
+                  : normalizedLabel === "reviewer"
+                    ? "reviewed\\s+by"
         : null;
   if (!relationPattern) return null;
 
