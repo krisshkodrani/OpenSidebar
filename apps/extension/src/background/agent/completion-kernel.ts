@@ -5733,8 +5733,10 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                         ? "Unflagged"
                         : action === "unsubscribe"
                           ? "Unsubscribed"
-                      : action === "unfollow"
-                        ? "Unfollowed"
+                          : action === "subscribe"
+                            ? "Subscribed"
+                            : action === "unfollow"
+                              ? "Unfollowed"
                         : action === "unwatch"
                           ? "Unwatched"
                           : action === "unstar"
@@ -6129,6 +6131,7 @@ function inferTargetDisappearanceAction(
   | "unflag"
   | "flag"
   | "unsubscribe"
+  | "subscribe"
   | "unfollow"
   | "unwatch"
   | "unstar"
@@ -6170,6 +6173,9 @@ function inferTargetDisappearanceAction(
   if (/\bflag(?:ged|ging)?\b/i.test(text)) return "flag";
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
+  }
+  if (/\bsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
+    return "subscribe";
   }
   if (/\bunfollow(?:ed|ing)?\b/i.test(text)) return "unfollow";
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
@@ -6708,6 +6714,7 @@ function extractDisappearingTargetFromControl(
     | "unflag"
     | "flag"
     | "unsubscribe"
+    | "subscribe"
     | "unfollow"
     | "unwatch"
     | "unstar"
@@ -6772,6 +6779,8 @@ function extractDisappearingTargetFromControl(
                           ? "unflag"
                       : action === "unsubscribe"
                         ? "(?:unsubscribe(?:\\s+from)?)"
+                        : action === "subscribe"
+                          ? "(?:subscribe(?:\\s+to)?)"
                         : action === "unfollow"
                           ? "unfollow"
                           : action === "unwatch"
@@ -6830,7 +6839,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6945,6 +6954,10 @@ function extractDisappearingTargetFromControl(
           "stopped",
           "stopping",
           "subscription",
+          "subscribe",
+          "subscribed",
+          "subscriber",
+          "subscribers",
           "suspend",
           "suspension",
           "theme",
