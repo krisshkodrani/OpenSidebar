@@ -1693,6 +1693,20 @@ describe("completion kernel", () => {
       genericSummary: "Rollback completed.",
     },
     {
+      action: "backup",
+      request: "Back up Database Alpha.",
+      summary: "Backed up Database Alpha.",
+      targetLabel: "Database Alpha",
+      requestedVisible:
+        "Database Beta remains unbacked. Database Alpha backed up successfully.",
+      requestedEvidenceText: "Database Alpha backed up successfully.",
+      otherVisible:
+        "Database Alpha remains unbacked. Database Beta backed up successfully.",
+      otherEvidenceText: "Database Beta backed up successfully.",
+      genericVisible: "Backup completed.",
+      genericSummary: "Backup completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",

@@ -201,6 +201,7 @@ export type WorkflowConfirmationAction =
   | "unschedule"
   | "deploy"
   | "rollback"
+  | "backup"
   | "duplicate"
   | "restore"
   | "create"
@@ -274,6 +275,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unschedule",
   "deploy",
   "rollback",
+  "backup",
   "duplicate",
   "restore",
   "create",
@@ -350,6 +352,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unschedule"
   | "deploy"
   | "rollback"
+  | "backup"
   | "duplicate"
   | "restore"
   | "create"
@@ -2815,6 +2818,13 @@ function inferWorkflowConfirmationAction(
     return "deploy";
   }
   if (
+    /\b(?:back\s+up|backup|backed\s+up)\s+(?:the\s+)?(?:database|data|dataset|file|files|folder|folders|document|documents|record|records|settings|config|configuration|workspace|project|repository|repo|site|app|application|service|server|environment|system|account|profile|export|archive|backup)\b/i.test(
+      text,
+    )
+  ) {
+    return "backup";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3201,6 +3211,8 @@ function workflowTargetActionPattern(
       return "(?:deploy)";
     case "rollback":
       return "(?:roll\\s+back|rollback)";
+    case "backup":
+      return "(?:back\\s+up|backup)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3432,6 +3444,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unschedule" ||
     action === "deploy" ||
     action === "rollback" ||
+    action === "backup" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3613,6 +3626,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:deployed)";
     case "rollback":
       return "(?:rolled\\s+back|reverted)";
+    case "backup":
+      return "(?:backed\\s+up)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3760,6 +3775,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:deploy|deployment)";
     case "rollback":
       return "(?:rollback|roll\\s+back|reversion)";
+    case "backup":
+      return "(?:backup|back\\s+up)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4214,6 +4231,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:rolled\s+back|reverted|rollback complete|rollback completed|rollback successful|roll back complete|roll back completed|roll back successful|reversion complete|reversion completed|reversion successful)\b/i.test(
+        text,
+      );
+    case "backup":
+      if (mode === "visible") {
+        return (
+          /\bbacked\s+up\s+successfully\b/i.test(text) ||
+          /\b(?:database|data|dataset|file|files|folder|folders|document|documents|record|records|settings|config|configuration|workspace|project|repository|repo|site|app|application|service|server|environment|system|account|profile|export|archive|backup)\s+backed\s+up\b/i.test(
+            text,
+          ) ||
+          /\bbackup\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:backed\s+up|backup complete|backup completed|backup successful|back up complete|back up completed|back up successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4933,6 +4963,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:deployed|deploy|deployment)";
     case "rollback":
       return "(?:rolled\\s+back|reverted|rollback|roll\\s+back|reversion)";
+    case "backup":
+      return "(?:backed\\s+up|backup|back\\s+up)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5823,6 +5855,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\bdeployed\b/i.test(text);
     case "rollback":
       return /\b(?:rolled\s+back|reverted)\b/i.test(text);
+    case "backup":
+      return /\bbacked\s+up\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
