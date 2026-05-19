@@ -5733,6 +5733,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                           ? "Unstarred"
                           : action === "unbookmark"
                             ? "Unbookmarked"
+                            : action === "unfavorite"
+                              ? "Unfavorited"
                     : action === "revoke"
                       ? "Revoked"
                       : action === "unblock"
@@ -6089,6 +6091,7 @@ function inferTargetDisappearanceAction(
   | "unwatch"
   | "unstar"
   | "unbookmark"
+  | "unfavorite"
   | "revoke"
   | "unblock"
   | "block"
@@ -6112,6 +6115,7 @@ function inferTargetDisappearanceAction(
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
   if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
+  if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6622,6 +6626,7 @@ function extractDisappearingTargetFromControl(
     | "unwatch"
     | "unstar"
     | "unbookmark"
+    | "unfavorite"
     | "revoke"
     | "unblock"
     | "block"
@@ -6666,17 +6671,19 @@ function extractDisappearingTargetFromControl(
                             ? "unstar"
                             : action === "unbookmark"
                               ? "unbookmark"
-                              : action === "revoke"
-                                ? "(?:revoke|revocation)"
-                                : action === "unblock"
-                                  ? "unblock"
-                                  : action === "block"
-                                    ? "block"
-                                    : action === "unsuspend"
-                                      ? "unsuspend"
-                                      : action === "suspend"
-                                        ? "suspend"
-                                        : "uninstall";
+                              : action === "unfavorite"
+                                ? "unfavorite"
+                                : action === "revoke"
+                                  ? "(?:revoke|revocation)"
+                                  : action === "unblock"
+                                    ? "unblock"
+                                    : action === "block"
+                                      ? "block"
+                                      : action === "unsuspend"
+                                        ? "unsuspend"
+                                        : action === "suspend"
+                                          ? "suspend"
+                                          : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6684,7 +6691,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6728,6 +6735,8 @@ function extractDisappearingTargetFromControl(
           "flag",
           "flagging",
           "feed",
+          "favorite",
+          "favorited",
           "integration",
           "item",
           "license",
@@ -6767,6 +6776,8 @@ function extractDisappearingTargetFromControl(
           "unblocking",
           "unbookmark",
           "unbookmarked",
+          "unfavorite",
+          "unfavorited",
           "unlink",
           "unlinking",
           "unflag",

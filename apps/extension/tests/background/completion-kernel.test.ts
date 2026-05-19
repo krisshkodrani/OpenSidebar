@@ -7739,6 +7739,191 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts unfavorite confirmation from named favorited target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
+      elements: [
+        actionButton(537, "Unfavorite Report Alpha"),
+        actionButton(538, "Unfavorite Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Beta Unfavorite Report Beta",
+      pageContent:
+        "Favorited reports Report Beta Unfavorite Report Beta",
+      elements: [actionButton(538, "Unfavorite Report Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unfavorite Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unfavorited Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unfavorite",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unfavorite:report-alpha",
+        detail: expect.objectContaining({
+          action: "unfavorite",
+          source: "target_disappearance",
+          text: "Unfavorited target no longer visible: Report Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects unfavorite target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
+      elements: [
+        actionButton(537, "Unfavorite Report Alpha"),
+        actionButton(538, "Unfavorite Report Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unfavorite Report Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 538 },
+      result: "Clicked element 538.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unfavorited Report Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unfavorite",
+      targetLabel: "Report Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unfavorite:report-beta",
+        detail: expect.objectContaining({
+          action: "unfavorite",
+          source: "target_disappearance",
+          text: "Unfavorited target no longer visible: Report Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer unfavorite confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unfavorite confirmation from a generic unfavorite button", () => {
+    const genericUnfavoriteButton: TaggedElement = {
+      tag: 537,
+      tagName: "button",
+      role: "button",
+      text: "Unfavorite",
+      attributes: {
+        id: "unfavorite",
+        "aria-label": "Unfavorite",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Favorited reports Report Alpha Unfavorite",
+      pageContent: "Favorited reports Report Alpha Unfavorite",
+      elements: [genericUnfavoriteButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Favorited reports",
+      pageContent: "Favorited reports",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 537 },
+      result: "Clicked element 537.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
