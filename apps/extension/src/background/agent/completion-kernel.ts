@@ -9293,6 +9293,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "supported\\s+by",
   },
   {
+    label: "host",
+    directQuestionTail: "\\s+hosts",
+    passiveTargetSuffix: "hosted\\s+by",
+    sentenceRelationPattern: "hosted\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
