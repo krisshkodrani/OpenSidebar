@@ -10157,6 +10157,7 @@ function sentenceScopedActiveRelationPatternForLabel(
   if (normalizedLabel === "auditor") return "audits";
   if (normalizedLabel === "validator") return "validates";
   if (normalizedLabel === "verifier") return "verifies";
+  if (normalizedLabel === "certifier") return "certifies";
   return null;
 }
 
