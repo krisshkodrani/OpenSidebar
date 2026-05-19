@@ -15052,6 +15052,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts transfer confirmation from named case disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+      pageContent:
+        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+      elements: [
+        actionButton(523, "Transfer Case Alpha"),
+        actionButton(524, "Transfer Case Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending transfers Case Beta Transfer Case Beta",
+      pageContent: "Pending transfers Case Beta Transfer Case Beta",
+      elements: [actionButton(524, "Transfer Case Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Transfer Case Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Transferred Case Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "transfer",
+      targetLabel: "Case Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:transfer:case-alpha",
+        detail: expect.objectContaining({
+          action: "transfer",
+          source: "target_disappearance",
+          text: "Transferred target no longer visible: Case Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects transfer target-disappearance evidence for the wrong requested case", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+      pageContent:
+        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+      elements: [
+        actionButton(523, "Transfer Case Alpha"),
+        actionButton(524, "Transfer Case Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      elements: [actionButton(523, "Transfer Case Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Transfer Case Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 524 },
+      result: "Clicked element 524.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Transferred Case Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "transfer",
+      targetLabel: "Case Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:transfer:case-beta",
+        detail: expect.objectContaining({
+          action: "transfer",
+          source: "target_disappearance",
+          text: "Transferred target no longer visible: Case Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer transfer confirmation while the named case remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      elements: [actionButton(523, "Transfer Case Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
+      elements: [actionButton(523, "Transfer Case Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer transfer confirmation from a generic transfer button", () => {
+    const genericTransferButton: TaggedElement = {
+      tag: 523,
+      tagName: "button",
+      role: "button",
+      text: "Transfer",
+      attributes: {
+        id: "transfer",
+        "aria-label": "Transfer",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Pending transfers Case Alpha Transfer",
+      pageContent: "Pending transfers Case Alpha Transfer",
+      elements: [genericTransferButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending transfers",
+      pageContent: "Pending transfers",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 523 },
+      result: "Clicked element 523.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
