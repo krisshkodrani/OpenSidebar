@@ -26047,6 +26047,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped maintained-by answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Service Details",
+      url: "https://example.test/services",
+      visibleContent:
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops.",
+      pageContent:
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who maintains Service Atlas?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Core Ops",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Edge Ops",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts sentence-scoped maintained-by answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Service Details",
+      url: "https://example.test/services",
+      visibleContent:
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops.",
+      pageContent:
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is Service Atlas maintained by?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nService Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Core Ops",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Edge Ops",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped reported-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",

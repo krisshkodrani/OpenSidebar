@@ -9263,6 +9263,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "led\\s+by",
   },
   {
+    label: "maintainer",
+    directQuestionTail: "\\s+maintains",
+    passiveTargetSuffix: "maintained\\s+by",
+    sentenceRelationPattern: "maintained\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
