@@ -5725,6 +5725,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                   ? "Unflagged"
                   : action === "unsubscribe"
                     ? "Unsubscribed"
+                    : action === "unfollow"
+                      ? "Unfollowed"
                     : action === "revoke"
                       ? "Revoked"
                       : action === "unblock"
@@ -6077,6 +6079,7 @@ function inferTargetDisappearanceAction(
   | "untag"
   | "unflag"
   | "unsubscribe"
+  | "unfollow"
   | "revoke"
   | "unblock"
   | "block"
@@ -6096,6 +6099,7 @@ function inferTargetDisappearanceAction(
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
   }
+  if (/\bunfollow(?:ed|ing)?\b/i.test(text)) return "unfollow";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6602,6 +6606,7 @@ function extractDisappearingTargetFromControl(
     | "untag"
     | "unflag"
     | "unsubscribe"
+    | "unfollow"
     | "revoke"
     | "unblock"
     | "block"
@@ -6638,17 +6643,19 @@ function extractDisappearingTargetFromControl(
                     ? "unflag"
                     : action === "unsubscribe"
                       ? "(?:unsubscribe(?:\\s+from)?)"
-                      : action === "revoke"
-                        ? "(?:revoke|revocation)"
-                        : action === "unblock"
-                          ? "unblock"
-                          : action === "block"
-                            ? "block"
-                            : action === "unsuspend"
-                              ? "unsuspend"
-                              : action === "suspend"
-                                ? "suspend"
-                                : "uninstall";
+                      : action === "unfollow"
+                        ? "unfollow"
+                        : action === "revoke"
+                          ? "(?:revoke|revocation)"
+                          : action === "unblock"
+                            ? "unblock"
+                            : action === "block"
+                              ? "block"
+                              : action === "unsuspend"
+                                ? "unsuspend"
+                                : action === "suspend"
+                                  ? "suspend"
+                                  : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6656,7 +6663,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|untag|untagging|unflag|unflagging|unsubscribe|unsubscribed|unsubscription|unfollow|unfollowed|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6697,6 +6704,7 @@ function extractDisappearingTargetFromControl(
           "file",
           "flag",
           "flagging",
+          "feed",
           "integration",
           "item",
           "license",
@@ -6712,6 +6720,7 @@ function extractDisappearingTargetFromControl(
           "plugin",
           "provider",
           "privilege",
+          "profile",
           "record",
           "repository",
           "remove",
@@ -6726,6 +6735,7 @@ function extractDisappearingTargetFromControl(
           "suspension",
           "theme",
           "tool",
+          "topic",
           "tag",
           "tagging",
           "unblock",
@@ -6739,6 +6749,8 @@ function extractDisappearingTargetFromControl(
           "unsubscribe",
           "unsubscribed",
           "unsubscription",
+          "unfollow",
+          "unfollowed",
           "unsuspend",
           "unsuspension",
           "uninstall",
