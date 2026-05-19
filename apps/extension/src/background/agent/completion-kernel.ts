@@ -10144,6 +10144,7 @@ function sentenceScopedActiveRelationPatternForLabel(
   if (normalizedLabel === "owner") return "owns";
   if (normalizedLabel === "manager") return "manages";
   if (normalizedLabel === "supporter") return "supports";
+  if (normalizedLabel === "host") return "hosts";
   return null;
 }
 
