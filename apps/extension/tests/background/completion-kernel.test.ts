@@ -27337,6 +27337,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped audited-by answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit.",
+      pageContent:
+        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who audits Project Apollo?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Compliance Office",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Regional Audit",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "auditor",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts sentence-scoped audited-by answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit.",
+      pageContent:
+        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is Project Apollo audited by?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Compliance Office",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Regional Audit",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "auditor",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped reported-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
