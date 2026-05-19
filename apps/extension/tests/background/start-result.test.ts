@@ -4,7 +4,10 @@ import {
   PendingInteractionYield,
   runStartExecution,
 } from "../../src/background/agent/start-result";
-import type { PendingApprovalInteraction } from "../../src/background/agent/loop-types";
+import type {
+  PendingApprovalInteraction,
+  PendingUserInteraction,
+} from "../../src/background/agent/loop-types";
 
 function makeDeps(overrides = {}) {
   const broadcasts: unknown[] = [];
@@ -107,6 +110,49 @@ describe("runStartExecution", () => {
     });
     expect(deps.log.error).not.toHaveBeenCalled();
     expect(deps.broadcasts).toEqual([]);
+  });
+
+  test("preserves terminal completion when a late interaction yield follows done", async () => {
+    const completionEnvelope = {
+      status: "completed" as const,
+      resultId: "completion-before-late-interaction",
+      source: "model_done" as const,
+      contractKind: "workflow_confirmation",
+      decisionReason: "done accepted before late approval yield",
+      evidenceKeys: ["workflow:confirmation:done"],
+      evidenceEpoch: "turn:4",
+    };
+    const interaction: PendingUserInteraction = {
+      kind: "approval",
+      nodeId: "node-1",
+      requestedAt: 100,
+      approvalId: "approval-after-done",
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 1 },
+      context: "Click submit after completion",
+      timeoutMs: 1000,
+    };
+    const deps = makeDeps({
+      getCompletedResult: vi.fn(() => ({
+        summary: "Accepted before late approval.",
+        completionEnvelope,
+      })),
+      run: vi.fn(async () => {
+        throw new PendingInteractionYield(interaction);
+      }),
+    });
+
+    const result = await runStartExecution(deps);
+
+    expect(result).toMatchObject({
+      outcome: "completed",
+      turnCount: 4,
+      summary: "Accepted before late approval.",
+      failure: { category: "none", code: "none" },
+      completionEnvelope,
+    });
+    expect(result.pendingInteraction).toBeUndefined();
+    expect(deps.statuses).toEqual([]);
   });
 
   test("maps runtime errors into streamed error results", async () => {

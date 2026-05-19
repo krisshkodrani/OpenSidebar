@@ -38,6 +38,49 @@ export async function runStartExecution(
     return await deps.run();
   } catch (error: unknown) {
     const turnCount = deps.getTurnCount();
+    const err = error as { name?: string; message?: string };
+    if (err.name === "AbortError") {
+      deps.log.info("agent", "Agent stopped by user");
+      deps.statusHandler(AgentStatus.IDLE, "Stopped");
+      return {
+        outcome: "stopped",
+        turnCount,
+        summary: "Stopped by user",
+        failure: {
+          category: "user",
+          code: "user_stopped",
+          detail: "Stopped by user",
+        },
+        metrics: deps.getMetrics(),
+      };
+    }
+
+    const completedResult = deps.getCompletedResult?.();
+    if (completedResult) {
+      deps.log.info(
+        "agent",
+        "Preserving terminal completion after late boundary event",
+        {
+          nodeId: deps.nodeId,
+          turn: turnCount,
+          error:
+            error instanceof PendingInteractionYield
+              ? error.name
+              : (err.message ?? "Unknown error"),
+          resultId: completedResult.completionEnvelope?.resultId,
+          contractKind: completedResult.completionEnvelope?.contractKind,
+        },
+      );
+      return {
+        outcome: "completed",
+        turnCount,
+        summary: completedResult.summary,
+        failure: { category: "none", code: "none" },
+        metrics: deps.getMetrics(),
+        completionEnvelope: completedResult.completionEnvelope,
+      };
+    }
+
     if (error instanceof PendingInteractionYield) {
       const awaitingSummary =
         error.pendingInteraction.kind === "approval"
@@ -61,42 +104,6 @@ export async function runStartExecution(
         failure: { category: "none", code: "none" },
         metrics: deps.getMetrics(),
         pendingInteraction: error.pendingInteraction,
-      };
-    }
-
-    const err = error as { name?: string; message?: string };
-    if (err.name === "AbortError") {
-      deps.log.info("agent", "Agent stopped by user");
-      deps.statusHandler(AgentStatus.IDLE, "Stopped");
-      return {
-        outcome: "stopped",
-        turnCount,
-        summary: "Stopped by user",
-        failure: {
-          category: "user",
-          code: "user_stopped",
-          detail: "Stopped by user",
-        },
-        metrics: deps.getMetrics(),
-      };
-    }
-
-    const completedResult = deps.getCompletedResult?.();
-    if (completedResult) {
-      deps.log.info("agent", "Preserving terminal completion after late error", {
-        nodeId: deps.nodeId,
-        turn: turnCount,
-        error: err.message ?? "Unknown error",
-        resultId: completedResult.completionEnvelope?.resultId,
-        contractKind: completedResult.completionEnvelope?.contractKind,
-      });
-      return {
-        outcome: "completed",
-        turnCount,
-        summary: completedResult.summary,
-        failure: { category: "none", code: "none" },
-        metrics: deps.getMetrics(),
-        completionEnvelope: completedResult.completionEnvelope,
       };
     }
 
