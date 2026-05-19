@@ -1449,6 +1449,139 @@ describe("Orchestrator integration join tests", () => {
     ).toBe(true);
   });
 
+  test("skips dependent pending navigation descendants after root goal completion", async () => {
+    const first = makeNode(
+      "n1",
+      "Open the Performance Analytics Elements Filters module",
+    );
+    first.successCriteria =
+      "The Breakdowns > Elements Filters module is open in Performance Analytics.";
+    const second = makeNode(
+      "n2",
+      "Continue scanning Performance Analytics navigation shortcuts",
+    );
+    second.successCriteria = "Navigation shortcut scan is complete.";
+    const third = makeNode(
+      "n3",
+      "Open the fallback Performance Analytics module if shortcut scan fails",
+      ["n2"],
+    );
+    third.successCriteria = "Fallback module is open.";
+    const fourth = makeNode(
+      "n4",
+      "Confirm the fallback Performance Analytics page title",
+      ["n3"],
+    );
+    fourth.successCriteria = "Fallback title is confirmed.";
+    plannerBuildNodesImpl = async () => [first, second, third, fourth];
+    verifierDecisionImpl = async () => ({ decision: "accept", reason: "ok" });
+    orchestratorDeps.lanePolicies = {
+      executor: { maxConcurrent: 2 },
+    };
+    loopStartImpl = async (nodeId) => {
+      if (nodeId === "n1") {
+        return {
+          outcome: "completed",
+          summary:
+            'Successfully navigated to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+        };
+      }
+      return await new Promise((resolve) => {
+        const startedAt = Date.now();
+        const poll = () => {
+          if (nodeId && gracefulStopLoopNodeIds.includes(nodeId)) {
+            resolve({
+              outcome: "stopped",
+              summary: "Stopped after root navigation completion.",
+            });
+            return;
+          }
+          if (Date.now() - startedAt > 250) {
+            resolve({
+              outcome: "completed",
+              summary: "Unexpectedly completed sibling navigation scan.",
+            });
+            return;
+          }
+          setTimeout(poll, 5);
+        };
+        poll();
+      });
+    };
+    (chrome.tabs as any).sendMessage = vi.fn(async () => ({
+      payload: {
+        snapshot: {
+          title: "Elements Filters | ServiceNow",
+          url: "https://workarenapublic16.service-now.com/now/nav/ui/classic/params/target/pa_filters_list.do",
+          visibleContent:
+            "Performance Analytics Elements Filters list with Title, Breakdown source, and Filter columns.",
+          pageContent:
+            "Performance Analytics Breakdowns Elements Filters list with Title, Breakdown source, and Filter columns.",
+          elements: [],
+          viewport: { width: 1200, height: 800 },
+          scroll: { x: 0, y: 0, maxY: 0 },
+        },
+      },
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    await orchestrator.startTask(
+      makeInput(
+        'Navigate to the "Breakdowns > Elements Filters" module of the "Performance Analytics" application.',
+      ),
+    );
+
+    expect(createdLoopNodeIds).toEqual(expect.arrayContaining(["n1", "n2"]));
+    expect(createdLoopNodeIds).not.toContain("n3");
+    expect(createdLoopNodeIds).not.toContain("n4");
+    expect(gracefulStopLoopNodeIds).toContain("n2");
+    const messages = (globalThis as any).__runtimeMessages as Array<{
+      type?: string;
+      payload?: any;
+    }>;
+    const completion = messages.find((m) => m.type === "TASK_COMPLETION");
+    expect(completion?.payload?.status).toBe("completed");
+    expect(completion?.payload?.subtaskResults?.[1]?.status).toBe("skipped");
+    expect(completion?.payload?.subtaskResults?.[2]?.status).toBe("skipped");
+    expect(completion?.payload?.subtaskResults?.[3]?.status).toBe("skipped");
+    const runTraceEvents = (globalThis as any).__runTraceEvents as Array<{
+      url: string;
+      body: { type?: string; data?: Record<string, unknown> };
+    }>;
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_cancelled" &&
+          entry.body.data?.nodeId === "n2" &&
+          entry.body.data?.reason === "navigation_goal_already_achieved",
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "completion_scope_transition" &&
+          entry.body.data?.scope === "root" &&
+          entry.body.data?.status === "sibling_ignored" &&
+          entry.body.data?.reason === "navigation_goal_already_achieved" &&
+          Array.isArray(entry.body.data?.skippedNodeIds) &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n2") &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n3") &&
+          (entry.body.data.skippedNodeIds as string[]).includes("n4"),
+      ),
+    ).toBe(true);
+    expect(
+      runTraceEvents.some(
+        (entry) =>
+          entry.body.type === "worker_result_ignored" &&
+          entry.body.data?.nodeId === "n2" &&
+          entry.body.data?.currentStatus === "skipped" &&
+          entry.body.data?.executorOutcome === "stopped" &&
+          entry.body.data?.reason === "node_already_terminal",
+      ),
+    ).toBe(true);
+  });
+
   test("ignores late user-interaction sibling results after root navigation completion", async () => {
     const first = makeNode(
       "n1",
