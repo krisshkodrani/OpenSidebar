@@ -29525,6 +29525,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts active-voice sentence-scoped reviewed answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Details",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Maya Chen reviewed Ticket Alpha. Ravi Shah reviewed Ticket Beta.",
+      pageContent:
+        "Maya Chen reviewed Ticket Alpha. Ravi Shah reviewed Ticket Beta. The page explains ticket approval, case review, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who reviewed Ticket Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Ravi Shah",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "reviewer",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts active-voice sentence-scoped reviewed answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Details",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Maya Chen reviewed Ticket Alpha. Ravi Shah reviewed Ticket Beta.",
+      pageContent:
+        "Maya Chen reviewed Ticket Alpha. Ravi Shah reviewed Ticket Beta. The page explains ticket approval, case review, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who reviewed Ticket Alpha?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nMaya Chen reviewed Ticket Alpha. Ravi Shah reviewed Ticket Beta. The page explains ticket approval, case review, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Ravi Shah",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "reviewer",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped reviewed-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
