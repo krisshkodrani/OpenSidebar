@@ -1270,6 +1270,9 @@ function generateReadAnswerContract(
           targetSpecificLabelQuestion.label,
         )
       : false;
+  if (targetSpecificLabelRequiresScopedEvidence) {
+    return null;
+  }
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
     sentenceScopedAnswer?.label ??
@@ -10186,8 +10189,9 @@ function extractSentenceScopedRelationAnswer(
       `([^.;\\n]{2,120})\\s+${activeRelationPattern}\\s+(?:the\\s+)?${targetPattern}\\b`,
       "i",
     ).exec(sentence);
-    const activeAnswer = cleanSentenceScopedAnswerText(
+    const activeAnswer = cleanActiveSentenceScopedAnswerText(
       activeMatch?.[1] ?? "",
+      target,
     );
     if (activeAnswer) return activeAnswer;
   }
@@ -10285,6 +10289,50 @@ function cleanSentenceScopedAnswerText(value: string): string {
     cleanLabel(value)
       .replace(/\s+\b(?:and|but|while)\b.+$/i, "")
       .replace(/[),.;!?]+$/g, ""),
+  );
+}
+
+function cleanActiveSentenceScopedAnswerText(
+  value: string,
+  target: string,
+): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  return activeSentenceScopedAnswerLooksFlattenedPrefix(answer, target)
+    ? ""
+    : answer;
+}
+
+const FLATTENED_ACTIVE_SENTENCE_PREFIX_SECOND_TOKENS = new Set([
+  "board",
+  "dashboard",
+  "detail",
+  "details",
+  "inbox",
+  "list",
+  "overview",
+  "page",
+  "queue",
+  "record",
+  "records",
+  "report",
+  "reports",
+  "summary",
+  "table",
+]);
+
+function activeSentenceScopedAnswerLooksFlattenedPrefix(
+  answer: string,
+  target: string,
+): boolean {
+  const answerTokens = tokenizeCompletionText(answer);
+  if (answerTokens.length < 4) return false;
+  const targetTokens = tokenizeCompletionText(target);
+  const targetHead = targetTokens[0] ?? "";
+  if (!targetHead || targetHead.length < 3) return false;
+  return (
+    answerTokens[0] === targetHead &&
+    FLATTENED_ACTIVE_SENTENCE_PREFIX_SECOND_TOKENS.has(answerTokens[1] ?? "")
   );
 }
 
