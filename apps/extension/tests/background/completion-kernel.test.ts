@@ -7731,6 +7731,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts follow confirmation from named unfollowed target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+      pageContent:
+        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+      elements: [
+        actionButton(533, "Follow Topic Alpha"),
+        actionButton(534, "Follow Topic Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unfollowed topics Topic Beta Follow Topic Beta",
+      pageContent: "Unfollowed topics Topic Beta Follow Topic Beta",
+      elements: [actionButton(534, "Follow Topic Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Follow Topic Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 533 },
+      result: "Clicked element 533.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Followed Topic Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "follow",
+      targetLabel: "Topic Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:follow:topic-alpha",
+        detail: expect.objectContaining({
+          action: "follow",
+          source: "target_disappearance",
+          text: "Followed target no longer visible: Topic Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects follow target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+      pageContent:
+        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+      elements: [
+        actionButton(533, "Follow Topic Alpha"),
+        actionButton(534, "Follow Topic Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      elements: [actionButton(533, "Follow Topic Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Follow Topic Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 534 },
+      result: "Clicked element 534.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Followed Topic Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "follow",
+      targetLabel: "Topic Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:follow:topic-beta",
+        detail: expect.objectContaining({
+          action: "follow",
+          source: "target_disappearance",
+          text: "Followed target no longer visible: Topic Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer follow confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      elements: [actionButton(533, "Follow Topic Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
+      elements: [actionButton(533, "Follow Topic Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 533 },
+      result: "Clicked element 533.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer follow confirmation from a generic follow button", () => {
+    const genericFollowButton: TaggedElement = {
+      tag: 533,
+      tagName: "button",
+      role: "button",
+      text: "Follow",
+      attributes: {
+        id: "follow",
+        "aria-label": "Follow",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Unfollowed topics Topic Alpha Follow",
+      pageContent: "Unfollowed topics Topic Alpha Follow",
+      elements: [genericFollowButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Unfollowed topics",
+      pageContent: "Unfollowed topics",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 533 },
+      result: "Clicked element 533.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts unfollow confirmation from named followed target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
