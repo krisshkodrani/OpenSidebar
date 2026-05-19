@@ -5708,6 +5708,12 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
   }
 
   const key = compactKey(target) || `tag-${element.tag}`;
+  const actionLabel =
+    action === "delete"
+      ? "Deleted"
+      : action === "archive"
+        ? "Archived"
+        : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -5715,7 +5721,7 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
       logicalKey: `workflow:confirmation:${action}:${key}`,
       observedAtTurn: params.turn,
       detail: {
-        text: `${action === "delete" ? "Deleted" : "Archived"} target no longer visible: ${target}`,
+        text: `${actionLabel} target no longer visible: ${target}`,
         action,
         source: "target_disappearance",
         ...(current.url ? { url: current.url } : {}),
@@ -6039,8 +6045,12 @@ function isModalDismissalToolOutcome(params: {
 
 function inferTargetDisappearanceAction(
   element: TaggedElement,
-): Extract<WorkflowConfirmationAction, "delete" | "archive"> | null {
+): Extract<
+  WorkflowConfirmationAction,
+  "delete" | "archive" | "uninstall"
+> | null {
   const text = normalizeText(elementControlText(element));
+  if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
   if (/\b(?:delete|remove)\b/i.test(text)) return "delete";
   if (/\barchive\b/i.test(text)) return "archive";
   return null;
@@ -6534,7 +6544,10 @@ function snapshotCompletionText(snapshot: DomSnapshot): string {
 
 function extractDisappearingTargetFromControl(
   element: TaggedElement,
-  action: Extract<WorkflowConfirmationAction, "delete" | "archive">,
+  action: Extract<
+    WorkflowConfirmationAction,
+    "delete" | "archive" | "uninstall"
+  >,
 ): string | null {
   const candidates = [
     element.text,
@@ -6547,7 +6560,12 @@ function extractDisappearingTargetFromControl(
 
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const actionPattern = action === "delete" ? "(?:delete|remove)" : "archive";
+    const actionPattern =
+      action === "delete"
+        ? "(?:delete|remove)"
+        : action === "archive"
+          ? "archive"
+          : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6564,14 +6582,32 @@ function extractDisappearingTargetFromControl(
       (token) =>
         ![
           "account",
+          "add",
+          "add-on",
+          "addon",
+          "app",
+          "application",
           "archive",
           "button",
+          "connector",
           "delete",
+          "dependency",
+          "driver",
           "entry",
+          "extension",
+          "integration",
           "item",
+          "module",
+          "package",
+          "plugin",
           "record",
           "remove",
           "row",
+          "theme",
+          "tool",
+          "uninstall",
+          "uninstallation",
+          "workflow",
         ].includes(token),
     );
     if (tokens.length > 0) return target;
