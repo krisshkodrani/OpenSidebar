@@ -9275,6 +9275,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "handled\\s+by",
   },
   {
+    label: "operator",
+    directQuestionTail: "\\s+operates",
+    passiveTargetSuffix: "operated\\s+by",
+    sentenceRelationPattern: "operated\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
