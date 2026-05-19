@@ -1250,7 +1250,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible delete completion valid for a named target", () => {
+  test("rejects targetless visible delete completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Delete completed.",
       pageContent: "Delete completed.",
@@ -1274,7 +1274,11 @@ describe("completion kernel", () => {
       action: "delete",
       targetLabel: "Warehouse Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("rejects target-aware visible archive confirmation for a different target", () => {
@@ -1316,6 +1320,37 @@ describe("completion kernel", () => {
         }),
       ]),
     );
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("rejects targetless visible archive completion for a named target", () => {
+    const snap = workflowSnapshot({
+      visibleContent: "Archive completed.",
+      pageContent: "Archive completed.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Archive Report Alpha.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Archive completed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "archive",
+      targetLabel: "Report Alpha",
+    });
     expect(decision).toMatchObject({
       status: "rejected",
       reason:

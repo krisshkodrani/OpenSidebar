@@ -451,6 +451,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
 const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAwareVisibleWorkflowAction> =
   new Set([
     "copy",
+    "delete",
+    "archive",
     "send",
     "link",
     "unlink",
