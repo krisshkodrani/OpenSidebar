@@ -5801,11 +5801,13 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                                                       ? "Suspended"
                                                                       : action === "backup"
                                                                         ? "Backed up"
-                                                                        : action === "reset"
-                                                                          ? "Reset"
-                                                                          : action === "install"
-                                                                            ? "Installed"
-                                                                            : "Uninstalled";
+                                                                        : action === "deploy"
+                                                                          ? "Deployed"
+                                                                          : action === "reset"
+                                                                            ? "Reset"
+                                                                            : action === "install"
+                                                                              ? "Installed"
+                                                                              : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6185,6 +6187,7 @@ function inferTargetDisappearanceAction(
   | "unsuspend"
   | "suspend"
   | "backup"
+  | "deploy"
   | "reset"
   | "install"
   | "uninstall"
@@ -6195,6 +6198,7 @@ function inferTargetDisappearanceAction(
   if (/\b(?:back\s+up|backup|backed\s+up|backing\s+up)\b/i.test(text)) {
     return "backup";
   }
+  if (/\bdeploy(?:ed|ing|ment)?\b/i.test(text)) return "deploy";
   if (/\breset(?:ting)?\b/i.test(text)) return "reset";
   if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
   if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
@@ -6790,6 +6794,7 @@ function extractDisappearingTargetFromControl(
     | "unsuspend"
     | "suspend"
     | "backup"
+    | "deploy"
     | "reset"
     | "install"
     | "uninstall"
@@ -6899,11 +6904,13 @@ function extractDisappearingTargetFromControl(
                                                                           ? "suspend"
                                                                           : action === "backup"
                                                                             ? "(?:back\\s+up|backup)"
-                                                                            : action === "reset"
-                                                                              ? "reset"
-                                                                              : action === "install"
-                                                                                ? "install"
-                                                                                : "uninstall";
+                                                                            : action === "deploy"
+                                                                              ? "deploy"
+                                                                              : action === "reset"
+                                                                                ? "reset"
+                                                                                : action === "install"
+                                                                                  ? "install"
+                                                                                  : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6911,7 +6918,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6962,6 +6969,10 @@ function extractDisappearingTargetFromControl(
           "deactivate",
           "deactivated",
           "deactivation",
+          "deploy",
+          "deployed",
+          "deploying",
+          "deployment",
           "detach",
           "detachment",
           "disable",
