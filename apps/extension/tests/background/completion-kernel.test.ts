@@ -1749,6 +1749,34 @@ describe("completion kernel", () => {
       genericSummary: "Unsuspend completed.",
     },
     {
+      action: "block",
+      request: "Block User Alpha.",
+      summary: "Blocked User Alpha.",
+      targetLabel: "User Alpha",
+      requestedVisible:
+        "User Beta remains allowed. User Alpha blocked successfully.",
+      requestedEvidenceText: "User Alpha blocked successfully.",
+      otherVisible:
+        "User Alpha remains allowed. User Beta blocked successfully.",
+      otherEvidenceText: "User Beta blocked successfully.",
+      genericVisible: "Block completed.",
+      genericSummary: "Block completed.",
+    },
+    {
+      action: "unblock",
+      request: "Unblock User Alpha.",
+      summary: "Unblocked User Alpha.",
+      targetLabel: "User Alpha",
+      requestedVisible:
+        "User Beta remains blocked. User Alpha unblocked successfully.",
+      requestedEvidenceText: "User Alpha unblocked successfully.",
+      otherVisible:
+        "User Alpha remains blocked. User Beta unblocked successfully.",
+      otherEvidenceText: "User Beta unblocked successfully.",
+      genericVisible: "Unblock completed.",
+      genericSummary: "Unblock completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",

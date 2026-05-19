@@ -205,6 +205,8 @@ export type WorkflowConfirmationAction =
   | "reset"
   | "suspend"
   | "unsuspend"
+  | "block"
+  | "unblock"
   | "duplicate"
   | "restore"
   | "create"
@@ -282,6 +284,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "reset",
   "suspend",
   "unsuspend",
+  "block",
+  "unblock",
   "duplicate",
   "restore",
   "create",
@@ -362,6 +366,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "reset"
   | "suspend"
   | "unsuspend"
+  | "block"
+  | "unblock"
   | "duplicate"
   | "restore"
   | "create"
@@ -2855,6 +2861,20 @@ function inferWorkflowConfirmationAction(
     return "suspend";
   }
   if (
+    /\bunblock(?:ed|ing)?\s+(?:the\s+)?(?:account|profile|user|member|person|customer|client|contact|sender|email|domain|ip|address|device|app|application|service|site|url|workspace|project|task|ticket|request|record|item|case|issue|incident|access|license|licence)\b/i.test(
+      text,
+    )
+  ) {
+    return "unblock";
+  }
+  if (
+    /\bblock(?:ed|ing)?\s+(?:the\s+)?(?:account|profile|user|member|person|customer|client|contact|sender|email|domain|ip|address|device|app|application|service|site|url|workspace|project|task|ticket|request|record|item|case|issue|incident|access|license|licence)\b/i.test(
+      text,
+    )
+  ) {
+    return "block";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3249,6 +3269,10 @@ function workflowTargetActionPattern(
       return "(?:suspend)";
     case "unsuspend":
       return "(?:unsuspend)";
+    case "block":
+      return "(?:block)";
+    case "unblock":
+      return "(?:unblock)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3484,6 +3508,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "reset" ||
     action === "suspend" ||
     action === "unsuspend" ||
+    action === "block" ||
+    action === "unblock" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3673,6 +3699,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:suspended)";
     case "unsuspend":
       return "(?:unsuspended)";
+    case "block":
+      return "(?:blocked)";
+    case "unblock":
+      return "(?:unblocked)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3828,6 +3858,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:suspend|suspension)";
     case "unsuspend":
       return "(?:unsuspend|unsuspension)";
+    case "block":
+      return "(?:block|blocking)";
+    case "unblock":
+      return "(?:unblock|unblocking)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4338,6 +4372,36 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:unsuspended|unsuspension|unsuspend complete|unsuspend completed|unsuspend successful|unsuspension complete|unsuspension completed|unsuspension successful)\b/i.test(
+        text,
+      );
+    case "block":
+      if (mode === "visible") {
+        return (
+          /\bblocked\s+successfully\b/i.test(text) ||
+          /\b(?:account|profile|user|member|person|customer|client|contact|sender|email|domain|ip|address|device|app|application|service|site|url|workspace|project|task|ticket|request|record|item|case|issue|incident|access|license|licence)(?:\s+[\w-]+){0,6}\s+blocked\b/i.test(
+            text,
+          ) ||
+          /\b(?:block|blocking)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:blocked|blocking|block complete|block completed|block successful|blocking complete|blocking completed|blocking successful)\b/i.test(
+        text,
+      );
+    case "unblock":
+      if (mode === "visible") {
+        return (
+          /\bunblocked\s+successfully\b/i.test(text) ||
+          /\b(?:account|profile|user|member|person|customer|client|contact|sender|email|domain|ip|address|device|app|application|service|site|url|workspace|project|task|ticket|request|record|item|case|issue|incident|access|license|licence)(?:\s+[\w-]+){0,6}\s+unblocked\b/i.test(
+            text,
+          ) ||
+          /\b(?:unblock|unblocking)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:unblocked|unblocking|unblock complete|unblock completed|unblock successful|unblocking complete|unblocking completed|unblocking successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -5065,6 +5129,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:suspended|suspension|suspend)";
     case "unsuspend":
       return "(?:unsuspended|unsuspension|unsuspend)";
+    case "block":
+      return "(?:blocked|blocking|block)";
+    case "unblock":
+      return "(?:unblocked|unblocking|unblock)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5963,6 +6031,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bsuspended\b/i.test(text);
     case "unsuspend":
       return /\bunsuspended\b/i.test(text);
+    case "block":
+      return /\bblocked\b/i.test(text);
+    case "unblock":
+      return /\bunblocked\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
