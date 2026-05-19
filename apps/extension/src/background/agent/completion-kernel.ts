@@ -9522,6 +9522,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "priority" &&
     answerLabel !== "severity" &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
+    !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
     !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
     !sentenceScopedAttributePatternForLabel(answerLabel)
   ) {
@@ -10200,6 +10201,16 @@ function extractSentenceScopedRelationAnswer(
       targetRelationMatch?.[1] ?? "",
     );
     if (targetRelationAnswer) return targetRelationAnswer;
+
+    const predicateNounMatch = new RegExp(
+      `([^.;\\n]{2,120})\\s+(?:is|are|was|were)\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
+      "i",
+    ).exec(sentence);
+    const predicateNounAnswer = cleanActiveSentenceScopedAnswerText(
+      predicateNounMatch?.[1] ?? "",
+      target,
+    );
+    if (predicateNounAnswer) return predicateNounAnswer;
   }
 
   if (activeRelationPattern) {
