@@ -3752,7 +3752,17 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "watch" &&
       action !== "unwatch" &&
       action !== "star" &&
-      action !== "unstar"
+      action !== "unstar" &&
+      action !== "schedule" &&
+      action !== "unschedule" &&
+      action !== "deploy" &&
+      action !== "rollback" &&
+      action !== "backup" &&
+      action !== "reset" &&
+      action !== "suspend" &&
+      action !== "unsuspend" &&
+      action !== "block" &&
+      action !== "unblock"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
