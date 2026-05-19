@@ -25982,6 +25982,48 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts row-scoped when possessive due-date question for the requested target row", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha Status: Open Due date: 2026-05-20 Ticket Beta Status: Closed Due date: 2026-05-21",
+      pageContent:
+        "Ticket Queue Ticket Alpha Status: Open Due date: 2026-05-20. Ticket Beta Status: Closed Due date: 2026-05-21. The page explains ticket status, ticket due dates, queue priority, customer impact, support routing, escalation notes, audit timing, and follow-up ownership so operators can answer ticket questions from visible row evidence.",
+      elements: [
+        rowElement(701, "Ticket Alpha Status: Open Due date: 2026-05-20"),
+        rowElement(702, "Ticket Beta Status: Closed Due date: 2026-05-21"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When is Ticket Alpha's due date?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-20",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-21",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "due date",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "row",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts row-scoped passive assigned-to question for the requested target row", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
