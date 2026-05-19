@@ -9188,6 +9188,15 @@ function extractRowScopedLabelValueQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
   const text = cleanLabel(question);
+  const possessivePointOfContactMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s| is| are)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:'|\u2019)s\s+(?:point\s+of\s+contact|poc|contact)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (possessivePointOfContactMatch) {
+    const target = cleanLabel(possessivePointOfContactMatch[1] ?? "");
+    return target ? { label: "contact", target } : null;
+  }
+
   const labelBeforeTargetMatch =
     /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is)|when|where|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)\s+(?:for|of|on)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
@@ -9453,12 +9462,15 @@ function findGroundedSentenceScopedAnswer(
   if (!parts) return null;
 
   const normalizedLabel = normalizeText(parts.label);
+  const attributeLabel = canonicalSentenceScopedAttributeLabel(normalizedLabel);
+  const answerLabel = attributeLabel ?? normalizedLabel;
   if (
-    normalizedLabel !== "due date" &&
-    normalizedLabel !== "status" &&
-    normalizedLabel !== "priority" &&
-    normalizedLabel !== "severity" &&
-    !sentenceScopedByRelationPatternForLabel(normalizedLabel)
+    answerLabel !== "due date" &&
+    answerLabel !== "status" &&
+    answerLabel !== "priority" &&
+    answerLabel !== "severity" &&
+    !sentenceScopedByRelationPatternForLabel(answerLabel) &&
+    !sentenceScopedAttributePatternForLabel(answerLabel)
   ) {
     return null;
   }
@@ -9466,8 +9478,8 @@ function findGroundedSentenceScopedAnswer(
   const target = normalizeWorkflowTargetLabel(parts.target);
   if (!target) return null;
 
-  return findReadAnswerSentenceScopedAnswer(evidenceText, target, normalizedLabel)
-    ? { label: normalizedLabel, target }
+  return findReadAnswerSentenceScopedAnswer(evidenceText, target, answerLabel)
+    ? { label: answerLabel, target }
     : null;
 }
 
@@ -10070,6 +10082,22 @@ function extractSentenceScopedRelationAnswer(
     return null;
   }
 
+  const attributePattern = sentenceScopedAttributePatternForLabel(
+    normalizedLabel,
+  );
+  if (attributePattern) {
+    const attributePatterns = [
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${attributePattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${attributePattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+    ];
+    for (const pattern of attributePatterns) {
+      const match = new RegExp(pattern, "i").exec(sentence);
+      const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
+      if (answer) return answer;
+    }
+    return null;
+  }
+
   const relationPattern = sentenceScopedByRelationPatternForLabel(
     normalizedLabel,
   );
@@ -10089,6 +10117,22 @@ function sentenceScopedByRelationPatternForLabel(label: string): string | null {
       (relation) => relation.label === normalizeText(label),
     )?.sentenceRelationPattern ?? null
   );
+}
+
+function canonicalSentenceScopedAttributeLabel(label: string): string | null {
+  return sentenceScopedAttributePatternForLabel(label) ? "contact" : null;
+}
+
+function sentenceScopedAttributePatternForLabel(label: string): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (
+    normalizedLabel === "contact" ||
+    normalizedLabel === "point of contact" ||
+    normalizedLabel === "poc"
+  ) {
+    return "(?:point\\s+of\\s+contact|contact|poc)";
+  }
+  return null;
 }
 
 function workflowTargetTextPattern(target: string): string | null {
