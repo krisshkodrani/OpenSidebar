@@ -189,6 +189,8 @@ export interface ReadAnswerContract {
   requiresGroundedPageEvidence: true;
   taskContract?: TaskContract;
   expectedAnswerLabel?: string;
+  expectedAnswerTarget?: string;
+  expectedAnswerScope?: "row";
 }
 
 export type WorkflowConfirmationAction =
@@ -1248,10 +1250,13 @@ function generateReadAnswerContract(
   const hasConcreteMultiReturn =
     (taskContract.multiReturnCount ?? 0) >= 2 &&
     taskContract.requiredEntities.length >= (taskContract.multiReturnCount ?? 0);
-  const expectedAnswerLabel = getGroundedLabelValueQuestionLabel(
+  const rowScopedAnswer = getGroundedRowScopedLabelValueQuestion(
     requestText,
     _snapshot,
   );
+  const expectedAnswerLabel =
+    rowScopedAnswer?.label ??
+    getGroundedLabelValueQuestionLabel(requestText, _snapshot);
 
   return {
     contract: {
@@ -1259,6 +1264,12 @@ function generateReadAnswerContract(
       requiresGroundedPageEvidence: true,
       ...(hasConcreteMultiReturn ? { taskContract } : {}),
       ...(expectedAnswerLabel ? { expectedAnswerLabel } : {}),
+      ...(rowScopedAnswer
+        ? {
+            expectedAnswerTarget: rowScopedAnswer.target,
+            expectedAnswerScope: "row" as const,
+          }
+        : {}),
     },
     confidence: "medium",
     source: hasConcreteMultiReturn ? "task_contract" : "heuristic",
@@ -2103,7 +2114,37 @@ function evaluateReadAnswer(params: {
         })
       : null;
 
-  const sourceEvidence = groundedEvidence ?? snapshotEvidence;
+  const rowScopedEvidence =
+    contract.expectedAnswerScope === "row" &&
+    contract.expectedAnswerLabel &&
+    contract.expectedAnswerTarget &&
+    params.snapshot
+      ? readAnswerRowScopedSnapshotEvidence({
+          snapshot: params.snapshot,
+          expectedAnswerLabel: contract.expectedAnswerLabel,
+          expectedAnswerTarget: contract.expectedAnswerTarget,
+          observedAtTurn: latestObservedTurn(params.evidence),
+        })
+      : null;
+
+  if (
+    contract.expectedAnswerScope === "row" &&
+    contract.expectedAnswerLabel &&
+    contract.expectedAnswerTarget &&
+    !rowScopedEvidence
+  ) {
+    return {
+      status: "needs_verification",
+      reason:
+        "Requested row-scoped page-answer task has no matching visible row evidence yet.",
+      hint:
+        "Read the visible row for the requested item, then call done with the value from that row.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
+
+  const sourceEvidence = rowScopedEvidence ?? groundedEvidence ?? snapshotEvidence;
   if (!sourceEvidence) {
     return {
       status: "needs_verification",
@@ -2307,6 +2348,35 @@ function readAnswerSnapshotEvidence(params: {
       answer: evidenceText.slice(0, 1000),
       source: "page_read",
       evidenceText: evidenceText.slice(0, 4000),
+      ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
+    },
+  };
+}
+
+function readAnswerRowScopedSnapshotEvidence(params: {
+  snapshot: DomSnapshot;
+  expectedAnswerLabel: string;
+  expectedAnswerTarget: string;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  const rowText = findReadAnswerRowScopedLabelValueText(
+    params.snapshot,
+    params.expectedAnswerTarget,
+    params.expectedAnswerLabel,
+  );
+  if (!rowText) return null;
+
+  const targetKey = compactKey(params.expectedAnswerTarget) || "target";
+  const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+  return {
+    type: "answer_state",
+    confidence: "high",
+    logicalKey: `read_answer:row:${targetKey}:${labelKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      answer: rowText.slice(0, 1000),
+      source: "page_read",
+      evidenceText: rowText.slice(0, 4000),
       ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
     },
   };
@@ -8896,6 +8966,9 @@ function hasGroundedDirectPageQuestion(
   if (!hasBroadQuestionStarter && !hasBooleanLabelQuestionStarter) {
     return false;
   }
+  if (findGroundedRowScopedLabelValueQuestion(normalizedQuestion, snapshot)) {
+    return true;
+  }
 
   const pageText = snapshotPageText(snapshot);
   if (!hasSubstantiveReadAnswerEvidence(pageText)) return false;
@@ -8922,6 +8995,75 @@ function getGroundedLabelValueQuestionLabel(
   const pageText = snapshotPageText(snapshot);
   if (!hasSubstantiveReadAnswerEvidence(pageText)) return null;
   return findGroundedLabelValueQuestionLabel(normalizeText(question), pageText);
+}
+
+function getGroundedRowScopedLabelValueQuestion(
+  question: string,
+  snapshot?: DomSnapshot | null,
+): { label: string; target: string } | null {
+  if (!snapshot) return null;
+  return findGroundedRowScopedLabelValueQuestion(question, snapshot);
+}
+
+function findGroundedRowScopedLabelValueQuestion(
+  question: string,
+  snapshot: DomSnapshot,
+): { label: string; target: string } | null {
+  const parts = extractRowScopedLabelValueQuestionParts(question);
+  if (!parts) return null;
+
+  const labelTokens = tokenizeLabelValueQuestionLabel(parts.label);
+  if (labelTokens.length < 1 || labelTokens.length > 3) return null;
+
+  const target = normalizeWorkflowTargetLabel(parts.target);
+  if (!target) return null;
+
+  const label = cleanLabel(labelTokens.join(" "));
+  return findReadAnswerRowScopedLabelValueText(snapshot, target, label)
+    ? { label, target }
+    : null;
+}
+
+function extractRowScopedLabelValueQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const match =
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is)|when|where|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)\s+(?:for|of|on)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  const label = cleanLabel(match?.[1] ?? "");
+  const target = cleanLabel(match?.[2] ?? "");
+  return label && target ? { label, target } : null;
+}
+
+function findReadAnswerRowScopedLabelValueText(
+  snapshot: DomSnapshot,
+  target: string,
+  expectedAnswerLabel: string,
+): string | null {
+  for (const element of snapshot.elements) {
+    if (!element.isVisible || element.isDisabled) continue;
+    if (!isWorkflowRowLikeElement(element)) continue;
+
+    const rowText = readAnswerRowElementText(element);
+    if (!rowText) continue;
+    if (!workflowTargetLabelCoveredByText(target, rowText)) continue;
+    if (!extractExpectedLabelValueAnswer(rowText, expectedAnswerLabel)) {
+      continue;
+    }
+    return rowText;
+  }
+  return null;
+}
+
+function readAnswerRowElementText(element: TaggedElement): string {
+  const attrs = element.attributes ?? {};
+  return cleanLabel(
+    [element.text, attrs["aria-label"], attrs.title, attrs.label]
+      .filter(Boolean)
+      .join(" "),
+  );
 }
 
 function findGroundedLabelValueQuestionLabel(
@@ -9105,7 +9247,10 @@ function readAnswerSummaryMatchesExpectedLabelValue(
   ) {
     return false;
   }
-  const rawValue = cleanLabel(match?.[3] ?? "");
+  const rawValue = extractExpectedLabelValueAnswer(
+    evidenceText,
+    expectedAnswerLabel,
+  );
   if (!rawValue) return false;
   if (
     !labelCanHaveColorValue(expectedAnswerLabel) &&
@@ -9354,6 +9499,36 @@ function labelValuePhraseCoveredBySummary(
   return new RegExp(
     `(^|[^a-z0-9])${escapeRegExp(phrase)}(?=$|[.,;:!?)]|\\s+(?:and|are|as|for|from|in|is|on|was|were|with)\\b)`,
   ).test(normalizedSummary);
+}
+
+function extractExpectedLabelValueAnswer(
+  evidenceText: string,
+  expectedAnswerLabel: string,
+): string | null {
+  const labelTokens = tokenizeLabelValueQuestionLabel(expectedAnswerLabel);
+  if (labelTokens.length < 1 || labelTokens.length > 3) return null;
+
+  const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
+  const match = new RegExp(
+    `\\b${labelPattern}\\b\\s*(?:([:=-])|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
+    "i",
+  ).exec(evidenceText);
+  if (
+    match &&
+    labelValueSeparatorNeedsAnswerShape(match[1], match[2]) &&
+    !labelValueLooksAnswerLike(match[3] ?? "")
+  ) {
+    return null;
+  }
+  return cleanLabelValueAnswerText(match?.[3] ?? "") || null;
+}
+
+function cleanLabelValueAnswerText(value: string): string {
+  return cleanLabel(
+    cleanLabel(value)
+      .replace(/\s+[a-z][a-z0-9 /_-]{1,40}\s*(?::|=|\bis\b).*$/i, "")
+      .replace(/[),.;!?]+$/g, ""),
+  );
 }
 
 function labelValueStartsWithCoordinatePair(
