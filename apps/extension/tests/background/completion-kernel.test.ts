@@ -25856,6 +25856,48 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts row-scoped owner question when the row label uses owned by", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha Status: Open Owned by: Maya Chen Ticket Beta Status: Closed Owned by: Ravi Shah",
+      pageContent:
+        "Ticket Queue Ticket Alpha Status: Open Owned by: Maya Chen. Ticket Beta Status: Closed Owned by: Ravi Shah. The page explains ticket status, ticket ownership, queue priority, customer impact, support routing, escalation notes, audit timing, and follow-up ownership so operators can answer ticket questions from visible row evidence.",
+      elements: [
+        rowElement(701, "Ticket Alpha Status: Open Owned by: Maya Chen"),
+        rowElement(702, "Ticket Beta Status: Closed Owned by: Ravi Shah"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who owns Ticket Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Ravi Shah",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "owner",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "row",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts row-scoped linking-verb label question for the requested target row", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
