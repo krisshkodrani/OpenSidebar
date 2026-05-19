@@ -2422,7 +2422,11 @@ describe("completion kernel", () => {
       scenario.action === "disconnect" ||
       scenario.action === "sync" ||
       scenario.action === "attach" ||
-      scenario.action === "detach";
+      scenario.action === "detach" ||
+      scenario.action === "transfer" ||
+      scenario.action === "move" ||
+      scenario.action === "rename" ||
+      scenario.action === "merge";
     const genericVisibleTestName =
       targetlessVisibleMustReject
         ? `rejects targetless visible ${scenario.action} completion for a named target`
