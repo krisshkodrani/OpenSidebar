@@ -26821,6 +26821,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts sentence-scoped coordinated-by answer for the requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Apollo is coordinated by Program Office. Project Borealis is coordinated by Regional Office.",
+      pageContent:
+        "Project Apollo is coordinated by Program Office. Project Borealis is coordinated by Regional Office. The page explains project ownership, coordination routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who coordinates Project Apollo?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Program Office",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Regional Office",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "coordinator",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts sentence-scoped coordinated-by answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Details",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Apollo is coordinated by Program Office. Project Borealis is coordinated by Regional Office.",
+      pageContent:
+        "Project Apollo is coordinated by Program Office. Project Borealis is coordinated by Regional Office. The page explains project ownership, coordination routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who is Project Apollo coordinated by?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Apollo is coordinated by Program Office. Project Borealis is coordinated by Regional Office. The page explains project ownership, coordination routing, dependency notes, release timing, audit coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Program Office",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Regional Office",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "coordinator",
+      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts sentence-scoped reported-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",

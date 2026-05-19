@@ -9317,6 +9317,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "supervised\\s+by",
   },
   {
+    label: "coordinator",
+    directQuestionTail: "\\s+coordinates",
+    passiveTargetSuffix: "coordinated\\s+by",
+    sentenceRelationPattern: "coordinated\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
