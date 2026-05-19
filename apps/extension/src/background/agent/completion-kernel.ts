@@ -9077,7 +9077,7 @@ function extractRowScopedLabelValueQuestionParts(
   }
 
   const possessiveMatch =
-    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:'|\u2019)s\s+(.+?)(?:[?.!]|$)/i.exec(
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is| are)|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:'|\u2019)s\s+(.+?)(?:[?.!]|$)/i.exec(
       text,
     );
   if (possessiveMatch) {
