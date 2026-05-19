@@ -5719,6 +5719,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
             ? "Unlinked"
             : action === "revoke"
               ? "Revoked"
+              : action === "unblock"
+                ? "Unblocked"
               : "Uninstalled";
   return [
     {
@@ -6053,10 +6055,17 @@ function inferTargetDisappearanceAction(
   element: TaggedElement,
 ): Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "detach" | "unlink" | "revoke" | "uninstall"
+  | "delete"
+  | "archive"
+  | "detach"
+  | "unlink"
+  | "revoke"
+  | "unblock"
+  | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
+  if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
@@ -6555,7 +6564,13 @@ function extractDisappearingTargetFromControl(
   element: TaggedElement,
   action: Extract<
     WorkflowConfirmationAction,
-    "delete" | "archive" | "detach" | "unlink" | "revoke" | "uninstall"
+    | "delete"
+    | "archive"
+    | "detach"
+    | "unlink"
+    | "revoke"
+    | "unblock"
+    | "uninstall"
   >,
 ): string | null {
   const candidates = [
@@ -6580,7 +6595,9 @@ function extractDisappearingTargetFromControl(
               ? "unlink"
               : action === "revoke"
                 ? "(?:revoke|revocation)"
-                : "uninstall";
+                : action === "unblock"
+                  ? "unblock"
+                  : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6588,7 +6605,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|unlink|revoke|revocation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|unlink|revoke|revocation|unblock|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6641,6 +6658,8 @@ function extractDisappearingTargetFromControl(
           "row",
           "theme",
           "tool",
+          "unblock",
+          "unblocking",
           "unlink",
           "unlinking",
           "uninstall",
