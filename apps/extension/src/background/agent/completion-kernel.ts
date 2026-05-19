@@ -9612,22 +9612,45 @@ function extractExpectedLabelValueAnswer(
   evidenceText: string,
   expectedAnswerLabel: string,
 ): string | null {
-  const labelTokens = tokenizeLabelValueQuestionLabel(expectedAnswerLabel);
-  if (labelTokens.length < 1 || labelTokens.length > 3) return null;
-
-  const labelPattern = labelTokens.map(escapeRegExp).join("\\s+");
-  const match = new RegExp(
-    `\\b${labelPattern}\\b\\s*(?:([:=-])|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
-    "i",
-  ).exec(evidenceText);
-  if (
-    match &&
-    labelValueSeparatorNeedsAnswerShape(match[1], match[2]) &&
-    !labelValueLooksAnswerLike(match[3] ?? "")
-  ) {
-    return null;
+  for (const labelPattern of labelValuePatternsForExpectedLabel(
+    expectedAnswerLabel,
+  )) {
+    const match = new RegExp(
+      `\\b${labelPattern}\\b\\s*(?:([:=-])|\\b(is)\\b)\\s*([^.;\\n]{1,160})`,
+      "i",
+    ).exec(evidenceText);
+    if (!match) continue;
+    if (
+      labelValueSeparatorNeedsAnswerShape(match[1], match[2]) &&
+      !labelValueLooksAnswerLike(match[3] ?? "")
+    ) {
+      return null;
+    }
+    const answer = cleanLabelValueAnswerText(match[3] ?? "");
+    if (answer) return answer;
   }
-  return cleanLabelValueAnswerText(match?.[3] ?? "") || null;
+  return null;
+}
+
+function labelValuePatternsForExpectedLabel(
+  expectedAnswerLabel: string,
+): string[] {
+  const labels = [expectedAnswerLabel];
+  if (normalizeText(expectedAnswerLabel) === "assignee") {
+    labels.push("assigned\\s+to");
+  }
+
+  const patterns: string[] = [];
+  for (const label of labels) {
+    if (label.includes("\\s+")) {
+      patterns.push(label);
+      continue;
+    }
+    const tokens = tokenizeLabelValueQuestionLabel(label);
+    if (tokens.length < 1 || tokens.length > 3) continue;
+    patterns.push(tokens.map(escapeRegExp).join("\\s+"));
+  }
+  return [...new Set(patterns)];
 }
 
 function cleanLabelValueAnswerText(value: string): string {
