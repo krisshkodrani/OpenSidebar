@@ -7007,6 +7007,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts attach confirmation from named attachment disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available attachments File Alpha Attach File Alpha File Beta Attach File Beta",
+      pageContent:
+        "Available attachments File Alpha Attach File Alpha File Beta Attach File Beta",
+      elements: [
+        actionButton(506, "Attach File Alpha"),
+        actionButton(507, "Attach File Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available attachments File Beta Attach File Beta",
+      pageContent: "Available attachments File Beta Attach File Beta",
+      elements: [actionButton(507, "Attach File Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Attach File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 506 },
+      result: "Clicked element 506.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Attached File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "attach",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:attach:file-alpha",
+        detail: expect.objectContaining({
+          action: "attach",
+          source: "target_disappearance",
+          text: "Attached target no longer visible: File Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects attach target-disappearance evidence for the wrong requested attachment", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Available attachments File Alpha Attach File Alpha File Beta Attach File Beta",
+      pageContent:
+        "Available attachments File Alpha Attach File Alpha File Beta Attach File Beta",
+      elements: [
+        actionButton(506, "Attach File Alpha"),
+        actionButton(507, "Attach File Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available attachments File Alpha Attach File Alpha",
+      pageContent: "Available attachments File Alpha Attach File Alpha",
+      elements: [actionButton(506, "Attach File Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Attach File Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 507 },
+      result: "Clicked element 507.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Attached File Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "attach",
+      targetLabel: "File Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:attach:file-beta",
+        detail: expect.objectContaining({
+          action: "attach",
+          source: "target_disappearance",
+          text: "Attached target no longer visible: File Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer attach confirmation while the named attachment remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Available attachments File Alpha Attach File Alpha",
+      pageContent: "Available attachments File Alpha Attach File Alpha",
+      elements: [actionButton(506, "Attach File Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available attachments File Alpha Attach File Alpha",
+      pageContent: "Available attachments File Alpha Attach File Alpha",
+      elements: [actionButton(506, "Attach File Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 506 },
+      result: "Clicked element 506.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer attach confirmation from a generic attach button", () => {
+    const genericAttachButton: TaggedElement = {
+      tag: 506,
+      tagName: "button",
+      role: "button",
+      text: "Attach",
+      attributes: {
+        id: "attach",
+        "aria-label": "Attach",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Available attachments File Alpha Attach",
+      pageContent: "Available attachments File Alpha Attach",
+      elements: [genericAttachButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available attachments",
+      pageContent: "Available attachments",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 506 },
+      result: "Clicked element 506.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts detach confirmation from named attachment disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:

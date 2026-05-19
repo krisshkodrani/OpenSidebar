@@ -5719,8 +5719,10 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
           ? "Deleted"
           : action === "archive"
             ? "Archived"
-            : action === "detach"
-              ? "Detached"
+            : action === "attach"
+              ? "Attached"
+              : action === "detach"
+                ? "Detached"
               : action === "disconnect"
                 ? "Disconnected"
                 : action === "connect"
@@ -6145,6 +6147,7 @@ function inferTargetDisappearanceAction(
   WorkflowConfirmationAction,
   | "delete"
   | "archive"
+  | "attach"
   | "detach"
   | "disconnect"
   | "connect"
@@ -6253,6 +6256,7 @@ function inferTargetDisappearanceAction(
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
+  if (/\battach(?:ed|ing|ment)?\b/i.test(text)) return "attach";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\blink(?:ed|ing)?\b/i.test(text)) return "link";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
@@ -6754,6 +6758,7 @@ function extractDisappearingTargetFromControl(
     WorkflowConfirmationAction,
     | "delete"
     | "archive"
+    | "attach"
     | "detach"
     | "disconnect"
     | "connect"
@@ -6827,8 +6832,10 @@ function extractDisappearingTargetFromControl(
             ? "(?:delete|remove)"
             : action === "archive"
               ? "archive"
-              : action === "detach"
-                ? "detach"
+              : action === "attach"
+                ? "attach"
+                : action === "detach"
+                  ? "detach"
                 : action === "disconnect"
                   ? "disconnect"
                   : action === "connect"
@@ -6925,7 +6932,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6944,6 +6951,9 @@ function extractDisappearingTargetFromControl(
           "administrator",
           "app",
           "application",
+          "attach",
+          "attached",
+          "attaching",
           "activate",
           "activated",
           "activation",
