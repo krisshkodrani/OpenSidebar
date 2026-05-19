@@ -448,92 +448,6 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "complete"
 >;
 
-const TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET: ReadonlySet<TargetAwareVisibleWorkflowAction> =
-  new Set([
-    "copy",
-    "delete",
-    "archive",
-    "send",
-    "save",
-    "link",
-    "unlink",
-    "share",
-    "grant",
-    "revoke",
-    "install",
-    "uninstall",
-    "connect",
-    "disconnect",
-    "sync",
-    "attach",
-    "detach",
-    "transfer",
-    "move",
-    "rename",
-    "merge",
-    "invite",
-    "subscribe",
-    "unsubscribe",
-    "pin",
-    "unpin",
-    "mute",
-    "unmute",
-    "follow",
-    "unfollow",
-    "bookmark",
-    "unbookmark",
-    "favorite",
-    "unfavorite",
-    "watch",
-    "unwatch",
-    "star",
-    "unstar",
-    "post",
-    "schedule",
-    "unschedule",
-    "deploy",
-    "rollback",
-    "backup",
-    "reset",
-    "suspend",
-    "unsuspend",
-    "block",
-    "unblock",
-    "tag",
-    "untag",
-    "flag",
-    "unflag",
-    "duplicate",
-    "restore",
-    "create",
-    "export",
-    "download",
-    "upload",
-    "import",
-    "approve",
-    "reject",
-    "close",
-    "reopen",
-    "cancel",
-    "enable",
-    "disable",
-    "lock",
-    "unlock",
-    "assign",
-    "unassign",
-    "escalate",
-    "deescalate",
-    "pause",
-    "resume",
-    "start",
-    "stop",
-    "restart",
-    "refresh",
-    "update",
-    "submit",
-    "complete",
-  ]);
-
 export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
   action: WorkflowConfirmationAction;
@@ -3802,9 +3716,9 @@ function visibleWorkflowConfirmationMatchesTarget(
     targetLabel,
   );
   if (!candidate) {
-    // These banners often omit the affected item, so named requests need
-    // visible target grounding before acceptance.
-    return !TARGETLESS_VISIBLE_WORKFLOW_ACTIONS_REQUIRING_TARGET.has(action);
+    // Named requests need visible target grounding before target-aware
+    // visible-text confirmations can be accepted.
+    return false;
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
 }
