@@ -10072,7 +10072,7 @@ function extractSentenceScopedRelationAnswer(
 
   if (normalizedLabel === "due date") {
     const dueDatePatterns = [
-      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+due\\s+date\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+due\\s+date\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
       `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were)?\\s*due\\s+(?:on|by)\\s+([^.;\\n]{2,120})`,
     ];
     for (const pattern of dueDatePatterns) {
