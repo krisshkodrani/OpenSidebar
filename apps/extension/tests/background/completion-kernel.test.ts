@@ -6830,6 +6830,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts suspend confirmation from named active target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+      pageContent:
+        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+      elements: [
+        actionButton(519, "Suspend Account Alpha"),
+        actionButton(520, "Suspend Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Active accounts Account Beta Suspend Account Beta",
+      pageContent: "Active accounts Account Beta Suspend Account Beta",
+      elements: [actionButton(520, "Suspend Account Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Suspend Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 519 },
+      result: "Clicked element 519.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Suspended Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "suspend",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:suspend:account-alpha",
+        detail: expect.objectContaining({
+          action: "suspend",
+          source: "target_disappearance",
+          text: "Suspended target no longer visible: Account Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects suspend target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+      pageContent:
+        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+      elements: [
+        actionButton(519, "Suspend Account Alpha"),
+        actionButton(520, "Suspend Account Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
+      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
+      elements: [actionButton(519, "Suspend Account Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Suspend Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 520 },
+      result: "Clicked element 520.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Suspended Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "suspend",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:suspend:account-beta",
+        detail: expect.objectContaining({
+          action: "suspend",
+          source: "target_disappearance",
+          text: "Suspended target no longer visible: Account Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer suspend confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
+      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
+      elements: [actionButton(519, "Suspend Account Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
+      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
+      elements: [actionButton(519, "Suspend Account Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 519 },
+      result: "Clicked element 519.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer suspend confirmation from a generic suspend button", () => {
+    const genericSuspendButton: TaggedElement = {
+      tag: 519,
+      tagName: "button",
+      role: "button",
+      text: "Suspend",
+      attributes: {
+        id: "suspend",
+        "aria-label": "Suspend",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Active accounts Account Alpha Suspend",
+      pageContent: "Active accounts Account Alpha Suspend",
+      elements: [genericSuspendButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Active accounts",
+      pageContent: "Active accounts",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 519 },
+      result: "Clicked element 519.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts unsuspend confirmation from named suspended target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
