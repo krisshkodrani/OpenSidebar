@@ -10194,7 +10194,7 @@ function extractSentenceScopedRelationAnswer(
 
   if (relationPattern) {
     const match = new RegExp(
-      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|has\\s+been|have\\s+been)?\\s*${relationPattern}\\s+([^.;\\n]{2,120})`,
+      `^\\s*${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|has\\s+been|have\\s+been)?\\s*${relationPattern}\\s+([^.;\\n]{2,120})`,
       "i",
     ).exec(sentence);
     const answer = cleanSentenceScopedAnswerText(match?.[1] ?? "");
