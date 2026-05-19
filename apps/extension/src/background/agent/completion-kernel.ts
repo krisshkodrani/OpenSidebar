@@ -3778,7 +3778,11 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "reject" &&
       action !== "close" &&
       action !== "reopen" &&
-      action !== "cancel"
+      action !== "cancel" &&
+      action !== "enable" &&
+      action !== "disable" &&
+      action !== "lock" &&
+      action !== "unlock"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);

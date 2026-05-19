@@ -3841,7 +3841,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible enable completion valid for a named target", () => {
+  test("rejects targetless visible enable completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Enable completed.",
       pageContent: "Enable completed.",
@@ -3865,7 +3865,11 @@ describe("completion kernel", () => {
       action: "enable",
       targetLabel: "Feature Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible disable confirmation for the requested target", () => {
@@ -3956,7 +3960,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible disable completion valid for a named target", () => {
+  test("rejects targetless visible disable completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Disable completed.",
       pageContent: "Disable completed.",
@@ -3980,7 +3984,11 @@ describe("completion kernel", () => {
       action: "disable",
       targetLabel: "Feature Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible lock confirmation for the requested target", () => {
@@ -4071,7 +4079,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible lock completion valid for a named target", () => {
+  test("rejects targetless visible lock completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Lock completed.",
       pageContent: "Lock completed.",
@@ -4095,7 +4103,11 @@ describe("completion kernel", () => {
       action: "lock",
       targetLabel: "Account Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible unlock confirmation for the requested target", () => {
@@ -4186,7 +4198,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible unlock completion valid for a named target", () => {
+  test("rejects targetless visible unlock completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Unlock completed.",
       pageContent: "Unlock completed.",
@@ -4210,7 +4222,11 @@ describe("completion kernel", () => {
       action: "unlock",
       targetLabel: "Account Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible assign confirmation for the requested target", () => {
