@@ -10089,7 +10089,7 @@ function extractSentenceScopedRelationAnswer(
   if (attributePattern) {
     const attributePatterns = [
       `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${attributePattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
-      `\\b${attributePattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${attributePattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
     ];
     for (const pattern of attributePatterns) {
       const match = new RegExp(pattern, "i").exec(sentence);
