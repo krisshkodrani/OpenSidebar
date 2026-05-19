@@ -3782,7 +3782,11 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "enable" &&
       action !== "disable" &&
       action !== "lock" &&
-      action !== "unlock"
+      action !== "unlock" &&
+      action !== "assign" &&
+      action !== "unassign" &&
+      action !== "escalate" &&
+      action !== "deescalate"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);

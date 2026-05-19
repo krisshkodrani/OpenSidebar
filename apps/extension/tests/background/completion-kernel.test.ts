@@ -4317,7 +4317,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible assignment completion valid for a named target", () => {
+  test("rejects targetless visible assignment completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Assignment completed.",
       pageContent: "Assignment completed.",
@@ -4341,7 +4341,11 @@ describe("completion kernel", () => {
       action: "assign",
       targetLabel: "Ticket Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible unassign confirmation for the requested target", () => {
@@ -4432,7 +4436,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible unassign completion valid for a named target", () => {
+  test("rejects targetless visible unassign completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Unassign completed.",
       pageContent: "Unassign completed.",
@@ -4456,7 +4460,11 @@ describe("completion kernel", () => {
       action: "unassign",
       targetLabel: "Ticket Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible escalate confirmation for the requested target", () => {
@@ -4547,7 +4555,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible escalation completion valid for a named target", () => {
+  test("rejects targetless visible escalation completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "Escalation completed.",
       pageContent: "Escalation completed.",
@@ -4571,7 +4579,11 @@ describe("completion kernel", () => {
       action: "escalate",
       targetLabel: "Incident Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible deescalate confirmation for the requested target", () => {
@@ -4662,7 +4674,7 @@ describe("completion kernel", () => {
     });
   });
 
-  test("keeps generic visible deescalation completion valid for a named target", () => {
+  test("rejects targetless visible deescalation completion for a named target", () => {
     const snap = workflowSnapshot({
       visibleContent: "De-escalation completed.",
       pageContent: "De-escalation completed.",
@@ -4686,7 +4698,11 @@ describe("completion kernel", () => {
       action: "deescalate",
       targetLabel: "Incident Alpha",
     });
-    expect(decision.status).toBe("accepted");
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
   });
 
   test("accepts target-aware visible pause confirmation for the requested target", () => {
