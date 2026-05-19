@@ -10132,7 +10132,7 @@ function extractSentenceScopedRelationAnswer(
     if (leadingNounAnswer) return leadingNounAnswer;
 
     const targetRelationMatch = new RegExp(
-      `\\b${targetPattern}\\b\\s+${relationNounPattern}\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${targetPattern}\\b\\s+${relationNounPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
       "i",
     ).exec(sentence);
     const targetRelationAnswer = cleanSentenceScopedAnswerText(
