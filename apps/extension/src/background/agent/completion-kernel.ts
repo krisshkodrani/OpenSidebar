@@ -5713,19 +5713,21 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
       ? "Deleted"
       : action === "archive"
         ? "Archived"
-          : action === "detach"
-            ? "Detached"
-            : action === "disconnect"
-              ? "Disconnected"
+        : action === "detach"
+          ? "Detached"
+          : action === "disconnect"
+            ? "Disconnected"
             : action === "unlink"
               ? "Unlinked"
-            : action === "revoke"
-              ? "Revoked"
-              : action === "unblock"
-                ? "Unblocked"
-                : action === "unsuspend"
-                  ? "Unsuspended"
-                  : "Uninstalled";
+              : action === "revoke"
+                ? "Revoked"
+                : action === "unblock"
+                  ? "Unblocked"
+                  : action === "unsuspend"
+                    ? "Unsuspended"
+                    : action === "suspend"
+                      ? "Suspended"
+                      : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6067,11 +6069,13 @@ function inferTargetDisappearanceAction(
   | "revoke"
   | "unblock"
   | "unsuspend"
+  | "suspend"
   | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
   if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
+  if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
@@ -6580,6 +6584,7 @@ function extractDisappearingTargetFromControl(
     | "revoke"
     | "unblock"
     | "unsuspend"
+    | "suspend"
     | "uninstall"
   >,
 ): string | null {
@@ -6611,7 +6616,9 @@ function extractDisappearingTargetFromControl(
                     ? "unblock"
                     : action === "unsuspend"
                       ? "unsuspend"
-                      : "uninstall";
+                      : action === "suspend"
+                        ? "suspend"
+                        : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -6619,7 +6626,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|revoke|revocation|unblock|unsuspend|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|unlink|revoke|revocation|unblock|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6677,6 +6684,8 @@ function extractDisappearingTargetFromControl(
           "row",
           "service",
           "source",
+          "suspend",
+          "suspension",
           "theme",
           "tool",
           "unblock",
