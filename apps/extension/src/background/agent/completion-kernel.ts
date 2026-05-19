@@ -97,6 +97,7 @@ export type CompletionEvidence =
           | "control_label_change"
           | "control_state_change"
           | "dirty_indicator_cleared"
+          | "upload_file_result"
           | "trusted_workflow";
       };
     }
@@ -1375,6 +1376,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
@@ -3553,7 +3555,8 @@ function workflowConfirmationMatchesTarget(
     (event.detail.source === "status_change" ||
       event.detail.source === "control_label_change" ||
       event.detail.source === "control_state_change" ||
-      event.detail.source === "dirty_indicator_cleared") &&
+      event.detail.source === "dirty_indicator_cleared" ||
+      event.detail.source === "upload_file_result") &&
     event.detail.targetText
   ) {
     return workflowTargetLabelCoveredByText(targetLabel, event.detail.targetText);
@@ -6014,6 +6017,47 @@ function didSubmittedFormDisappear(
   if (currentFields.length === 0) return true;
   const preStableKeys = new Set(preFields.map((field) => field.stableKey));
   return !currentFields.some((field) => preStableKeys.has(field.stableKey));
+}
+
+function extractUploadFileResultEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  if (params.toolName !== "upload_file") return [];
+
+  const match = /^Uploaded\s+"([^"]{1,240})"\s+\((\d+)\s+bytes\)\s+to\b/i.exec(
+    params.result.trim(),
+  );
+  if (!match?.[1] || !match[2]) return [];
+
+  const filename = cleanLabel(match[1]);
+  const bytes = Number(match[2]);
+  if (!filename || !Number.isFinite(bytes) || bytes < 0) return [];
+
+  const id = Number(params.args.id);
+  const key =
+    compactKey(filename) || (Number.isFinite(id) ? `tag-${id}` : "file");
+
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:upload:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Uploaded file selected: ${filename} (${bytes} bytes)`,
+        action: "upload",
+        targetText: filename,
+        source: "upload_file_result",
+        ...(params.currentSnapshot?.url
+          ? { url: params.currentSnapshot.url }
+          : {}),
+      },
+    },
+  ];
 }
 
 function snapshotHasFormValidationText(snapshot: DomSnapshot): boolean {
