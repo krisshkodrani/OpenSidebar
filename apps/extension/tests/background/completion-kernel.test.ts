@@ -5945,6 +5945,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts deploy confirmation from named release disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Deploy queue Release Alpha Deploy Release Alpha Release Beta Deploy Release Beta",
+      pageContent:
+        "Deploy queue Release Alpha Deploy Release Alpha Release Beta Deploy Release Beta",
+      elements: [
+        actionButton(504, "Deploy Release Alpha"),
+        actionButton(505, "Deploy Release Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Deploy queue Release Beta Deploy Release Beta",
+      pageContent: "Deploy queue Release Beta Deploy Release Beta",
+      elements: [actionButton(505, "Deploy Release Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deploy Release Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Deployed Release Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "deploy",
+      targetLabel: "Release Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:deploy:release-alpha",
+        detail: expect.objectContaining({
+          action: "deploy",
+          source: "target_disappearance",
+          text: "Deployed target no longer visible: Release Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects deploy target-disappearance evidence for the wrong requested release", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Deploy queue Release Alpha Deploy Release Alpha Release Beta Deploy Release Beta",
+      pageContent:
+        "Deploy queue Release Alpha Deploy Release Alpha Release Beta Deploy Release Beta",
+      elements: [
+        actionButton(504, "Deploy Release Alpha"),
+        actionButton(505, "Deploy Release Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      pageContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      elements: [actionButton(504, "Deploy Release Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deploy Release Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 505 },
+      result: "Clicked element 505.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Deployed Release Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "deploy",
+      targetLabel: "Release Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:deploy:release-beta",
+        detail: expect.objectContaining({
+          action: "deploy",
+          source: "target_disappearance",
+          text: "Deployed target no longer visible: Release Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer deploy confirmation while the named release remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      pageContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      elements: [actionButton(504, "Deploy Release Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      pageContent: "Deploy queue Release Alpha Deploy Release Alpha",
+      elements: [actionButton(504, "Deploy Release Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer deploy confirmation from a generic deploy button", () => {
+    const genericDeployButton: TaggedElement = {
+      tag: 504,
+      tagName: "button",
+      role: "button",
+      text: "Deploy",
+      attributes: {
+        id: "deploy",
+        "aria-label": "Deploy",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Deploy queue Release Alpha Deploy",
+      pageContent: "Deploy queue Release Alpha Deploy",
+      elements: [genericDeployButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Deploy queue",
+      pageContent: "Deploy queue",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 504 },
+      result: "Clicked element 504.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts backup confirmation from named database disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
