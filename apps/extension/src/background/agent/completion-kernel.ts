@@ -9365,6 +9365,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "validated\\s+by",
   },
   {
+    label: "verifier",
+    directQuestionTail: "\\s+verifies",
+    passiveTargetSuffix: "verified\\s+by",
+    sentenceRelationPattern: "verified\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
