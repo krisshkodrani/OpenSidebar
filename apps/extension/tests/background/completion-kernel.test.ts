@@ -5510,6 +5510,120 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts modal dismissal from hide_element overlay disappearance evidence", () => {
+    const pre = modalSnapshot();
+    const current = workflowSnapshot({
+      title: "Newsletter",
+      visibleContent: "Account settings",
+      pageContent: "Account settings",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Hide the newsletter popup.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.HIDE_ELEMENT,
+      args: { id: 401 },
+      result: 'Hidden element [401] <div> "Newsletter popup Stay updated"',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 8,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Hid the newsletter popup.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: expect.stringContaining("workflow:confirmation:dismiss"),
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "modal_disappearance",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts modal dismissal from dismiss_overlays disappearance evidence", () => {
+    const pre = modalSnapshot();
+    const current = workflowSnapshot({
+      title: "Newsletter",
+      visibleContent: "Account settings",
+      pageContent: "Account settings",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Dismiss the newsletter overlay.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.DISMISS_OVERLAYS,
+      args: {},
+      result: "Dismissed 1 overlay(s).",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 8,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Dismissed the newsletter overlay.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "modal_disappearance",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer modal dismissal from rejected hide_element result", () => {
+    const pre = modalSnapshot();
+    const current = workflowSnapshot({
+      title: "Newsletter",
+      visibleContent: "Account settings",
+      pageContent: "Account settings",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.HIDE_ELEMENT,
+      args: { id: 401 },
+      result:
+        'Element [401] <div> is not an overlay and has no overlay ancestor. Try press_key("Escape") or click a close button.',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 8,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("does not treat modal disappearance during navigation as dismissal evidence", () => {
     const pre = modalSnapshot();
     const current = workflowSnapshot({
