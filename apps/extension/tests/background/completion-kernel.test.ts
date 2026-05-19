@@ -1500,6 +1500,7 @@ describe("completion kernel", () => {
 
   const targetlessVisibleWorkflowActionsRequiringTarget = new Set<string>([
     "copy",
+    "send",
     "link",
     "unlink",
     "share",
@@ -1533,6 +1534,7 @@ describe("completion kernel", () => {
     "unwatch",
     "star",
     "unstar",
+    "post",
     "schedule",
     "unschedule",
     "deploy",
