@@ -10123,7 +10123,7 @@ function extractSentenceScopedRelationAnswer(
     if (possessiveAnswer) return possessiveAnswer;
 
     const leadingNounMatch = new RegExp(
-      `\\b${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
       "i",
     ).exec(sentence);
     const leadingNounAnswer = cleanSentenceScopedAnswerText(
