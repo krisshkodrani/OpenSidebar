@@ -9231,6 +9231,15 @@ function extractRowScopedLabelValueQuestionParts(
     return target ? { label: "contact", target } : null;
   }
 
+  const responsibleForMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who(?:'s|\s+is|\s+was)?\s+responsible\s+for\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (responsibleForMatch) {
+    const target = cleanLabel(responsibleForMatch[1] ?? "");
+    return target ? { label: "responsible party", target } : null;
+  }
+
   const labelBeforeTargetMatch =
     /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is)|when|where|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)\s+(?:for|of|on)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
@@ -10253,6 +10262,9 @@ function sentenceScopedActiveRelationPatternForLabel(
   if (normalizedLabel === "verifier") return "verifies";
   if (normalizedLabel === "certifier") return "certifies";
   if (normalizedLabel === "assignee") return "(?:is|was)\\s+assigned\\s+to";
+  if (normalizedLabel === "responsible party") {
+    return "(?:is|was)\\s+responsible\\s+for";
+  }
   if (normalizedLabel === "requester") return "requested";
   if (normalizedLabel === "reporter") return "reported";
   if (normalizedLabel === "creator") return "created";
