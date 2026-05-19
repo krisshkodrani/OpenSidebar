@@ -5737,6 +5737,8 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                             ? "Subscribed"
                             : action === "unfollow"
                               ? "Unfollowed"
+                              : action === "follow"
+                                ? "Followed"
                         : action === "unwatch"
                           ? "Unwatched"
                           : action === "unstar"
@@ -6133,6 +6135,7 @@ function inferTargetDisappearanceAction(
   | "unsubscribe"
   | "subscribe"
   | "unfollow"
+  | "follow"
   | "unwatch"
   | "unstar"
   | "unbookmark"
@@ -6178,6 +6181,7 @@ function inferTargetDisappearanceAction(
     return "subscribe";
   }
   if (/\bunfollow(?:ed|ing)?\b/i.test(text)) return "unfollow";
+  if (/\bfollow(?:ed|ing|s|er|ers)?\b/i.test(text)) return "follow";
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
   if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
@@ -6716,6 +6720,7 @@ function extractDisappearingTargetFromControl(
     | "unsubscribe"
     | "subscribe"
     | "unfollow"
+    | "follow"
     | "unwatch"
     | "unstar"
     | "unbookmark"
@@ -6783,6 +6788,8 @@ function extractDisappearingTargetFromControl(
                           ? "(?:subscribe(?:\\s+to)?)"
                         : action === "unfollow"
                           ? "unfollow"
+                          : action === "follow"
+                            ? "follow"
                           : action === "unwatch"
                             ? "unwatch"
                             : action === "unstar"
@@ -6839,7 +6846,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|unstar|unstarred|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6993,6 +7000,10 @@ function extractDisappearingTargetFromControl(
           "unlocked",
           "lock",
           "locked",
+          "follow",
+          "followed",
+          "follower",
+          "followers",
           "unfollow",
           "unfollowed",
           "unwatch",
