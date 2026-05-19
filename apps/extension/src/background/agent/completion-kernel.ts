@@ -5709,7 +5709,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
 
   const key = compactKey(target) || `tag-${element.tag}`;
   const actionLabel =
-    action === "delete"
+    action === "link"
+      ? "Linked"
+      : action === "delete"
       ? "Deleted"
       : action === "archive"
         ? "Archived"
@@ -6117,6 +6119,7 @@ function inferTargetDisappearanceAction(
   | "disconnect"
   | "connect"
   | "unlink"
+  | "link"
   | "untag"
   | "unflag"
   | "unsubscribe"
@@ -6187,6 +6190,7 @@ function inferTargetDisappearanceAction(
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
+  if (/\blink(?:ed|ing)?\b/i.test(text)) return "link";
   if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\brevok(?:e|ed|ing|ation)\b/i.test(text)) return "revoke";
   if (/\b(?:delete|remove)\b/i.test(text)) return "delete";
@@ -6690,6 +6694,7 @@ function extractDisappearingTargetFromControl(
     | "disconnect"
     | "connect"
     | "unlink"
+    | "link"
     | "untag"
     | "unflag"
     | "unsubscribe"
@@ -6733,7 +6738,9 @@ function extractDisappearingTargetFromControl(
   for (const candidate of candidates) {
     if (!candidate) continue;
     const actionPattern =
-      action === "delete"
+      action === "link"
+        ? "link"
+        : action === "delete"
         ? "(?:delete|remove)"
         : action === "archive"
           ? "archive"
