@@ -9286,7 +9286,8 @@ function findGroundedSentenceScopedAnswer(
   if (
     normalizedLabel !== "owner" &&
     normalizedLabel !== "assignee" &&
-    normalizedLabel !== "due date"
+    normalizedLabel !== "due date" &&
+    normalizedLabel !== "status"
   ) {
     return null;
   }
@@ -9858,6 +9859,19 @@ function extractSentenceScopedRelationAnswer(
   const targetPattern = workflowTargetTextPattern(target);
   if (!targetPattern) return null;
   const normalizedLabel = normalizeText(expectedAnswerLabel);
+  if (normalizedLabel === "status") {
+    const explicitStatusPatterns = [
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
+      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_STATUS_ANSWER_PATTERN})(?:\\b|$)`,
+    ];
+    for (const pattern of explicitStatusPatterns) {
+      const match = new RegExp(pattern, "i").exec(sentence);
+      const answer = cleanSentenceScopedStatusAnswer(match?.[1] ?? "");
+      if (answer) return answer;
+    }
+    return null;
+  }
+
   if (normalizedLabel === "due date") {
     const dueDatePatterns = [
       `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+due\\s+date\\s+(?:is|are|was|were)\\s+([^.;\\n]{2,120})`,
@@ -9899,6 +9913,19 @@ function cleanSentenceScopedAnswerText(value: string): string {
       .replace(/\s+\b(?:and|but|while)\b.+$/i, "")
       .replace(/[),.;!?]+$/g, ""),
   );
+}
+
+const SENTENCE_SCOPED_STATUS_ANSWER_PATTERN =
+  "(?:in\\s+progress|on\\s+hold|open|closed|pending|resolved|active|inactive|enabled|disabled|blocked|unblocked|approved|rejected|complete|completed|done|failed|successful|success|draft|submitted|sent|archived|deleted|canceled|cancelled)";
+
+function cleanSentenceScopedStatusAnswer(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  const match = new RegExp(
+    `^${SENTENCE_SCOPED_STATUS_ANSWER_PATTERN}$`,
+    "i",
+  ).exec(answer);
+  return match ? answer : "";
 }
 
 function labelValuePatternsForExpectedLabel(
