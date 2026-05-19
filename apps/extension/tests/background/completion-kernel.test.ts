@@ -25772,6 +25772,90 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("inconclusive");
   });
 
+  test("accepts row-scoped possessive label-value question for the requested target row", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha Status: Open Owner: Maya Chen Ticket Beta Status: Closed Owner: Ravi Shah",
+      pageContent:
+        "Ticket Queue Ticket Alpha Status: Open Owner: Maya Chen. Ticket Beta Status: Closed Owner: Ravi Shah. The page explains ticket status, ticket ownership, queue priority, customer impact, support routing, escalation notes, audit timing, and follow-up ownership so operators can answer ticket questions from visible row evidence.",
+      elements: [
+        rowElement(701, "Ticket Alpha Status: Open Owner: Maya Chen"),
+        rowElement(702, "Ticket Beta Status: Closed Owner: Ravi Shah"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is Ticket Alpha's status?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Open",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Closed",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "status",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "row",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts row-scoped owner verb question for the requested target row", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha Status: Open Owner: Maya Chen Ticket Beta Status: Closed Owner: Ravi Shah",
+      pageContent:
+        "Ticket Queue Ticket Alpha Status: Open Owner: Maya Chen. Ticket Beta Status: Closed Owner: Ravi Shah. The page explains ticket status, ticket ownership, queue priority, customer impact, support routing, escalation notes, audit timing, and follow-up ownership so operators can answer ticket questions from visible row evidence.",
+      elements: [
+        rowElement(701, "Ticket Alpha Status: Open Owner: Maya Chen"),
+        rowElement(702, "Ticket Beta Status: Closed Owner: Ravi Shah"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Who owns Ticket Alpha?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Maya Chen",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Ravi Shah",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "owner",
+      expectedAnswerTarget: "Ticket Alpha",
+      expectedAnswerScope: "row",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("accepts row-scoped label-value answer from read_page row text without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",

@@ -9066,13 +9066,36 @@ function extractRowScopedLabelValueQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
   const text = cleanLabel(question);
-  const match =
+  const labelBeforeTargetMatch =
     /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|who(?:'s| is)|when|where|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)\s+(?:for|of|on)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
     );
-  const label = cleanLabel(match?.[1] ?? "");
-  const target = cleanLabel(match?.[2] ?? "");
-  return label && target ? { label, target } : null;
+  if (labelBeforeTargetMatch) {
+    const label = cleanLabel(labelBeforeTargetMatch[1] ?? "");
+    const target = cleanLabel(labelBeforeTargetMatch[2] ?? "");
+    return label && target ? { label, target } : null;
+  }
+
+  const possessiveMatch =
+    /^(?:please\s+)?(?:tell me\s+)?(?:what(?:'s| is| are)|which)\s+(?:is|are|was|were)?\s*(?:the\s+)?(.+?)(?:'|\u2019)s\s+(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (possessiveMatch) {
+    const target = cleanLabel(possessiveMatch[1] ?? "");
+    const label = cleanLabel(possessiveMatch[2] ?? "");
+    return label && target ? { label, target } : null;
+  }
+
+  const ownerVerbMatch =
+    /^(?:please\s+)?(?:tell me\s+)?who\s+owns\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (ownerVerbMatch) {
+    const target = cleanLabel(ownerVerbMatch[1] ?? "");
+    return target ? { label: "owner", target } : null;
+  }
+
+  return null;
 }
 
 function findReadAnswerRowScopedLabelValueText(
