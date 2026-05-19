@@ -9347,6 +9347,12 @@ const SENTENCE_SCOPED_BY_RELATIONS = [
     sentenceRelationPattern: "governed\\s+by",
   },
   {
+    label: "controller",
+    directQuestionTail: "\\s+controls",
+    passiveTargetSuffix: "controlled\\s+by",
+    sentenceRelationPattern: "controlled\\s+by",
+  },
+  {
     label: "assignee",
     directQuestionTail: "(?:'s|\\s+is|\\s+was)\\s+assigned\\s+to",
     passiveTargetSuffix: "assigned\\s+to",
