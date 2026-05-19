@@ -6653,6 +6653,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts block confirmation from named allowed target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+      pageContent:
+        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+      elements: [
+        actionButton(521, "Block User Alpha"),
+        actionButton(522, "Block User Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Allowed users User Beta Block User Beta",
+      pageContent: "Allowed users User Beta Block User Beta",
+      elements: [actionButton(522, "Block User Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Block User Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 521 },
+      result: "Clicked element 521.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Blocked User Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "block",
+      targetLabel: "User Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:block:user-alpha",
+        detail: expect.objectContaining({
+          action: "block",
+          source: "target_disappearance",
+          text: "Blocked target no longer visible: User Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects block target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+      pageContent:
+        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+      elements: [
+        actionButton(521, "Block User Alpha"),
+        actionButton(522, "Block User Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Allowed users User Alpha Block User Alpha",
+      pageContent: "Allowed users User Alpha Block User Alpha",
+      elements: [actionButton(521, "Block User Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Block User Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 522 },
+      result: "Clicked element 522.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Blocked User Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "block",
+      targetLabel: "User Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:block:user-beta",
+        detail: expect.objectContaining({
+          action: "block",
+          source: "target_disappearance",
+          text: "Blocked target no longer visible: User Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer block confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Allowed users User Alpha Block User Alpha",
+      pageContent: "Allowed users User Alpha Block User Alpha",
+      elements: [actionButton(521, "Block User Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Allowed users User Alpha Block User Alpha",
+      pageContent: "Allowed users User Alpha Block User Alpha",
+      elements: [actionButton(521, "Block User Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 521 },
+      result: "Clicked element 521.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer block confirmation from a generic block button", () => {
+    const genericBlockButton: TaggedElement = {
+      tag: 521,
+      tagName: "button",
+      role: "button",
+      text: "Block",
+      attributes: {
+        id: "block",
+        "aria-label": "Block",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Allowed users User Alpha Block",
+      pageContent: "Allowed users User Alpha Block",
+      elements: [genericBlockButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Allowed users",
+      pageContent: "Allowed users",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 521 },
+      result: "Clicked element 521.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts unblock confirmation from named blocklist target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
