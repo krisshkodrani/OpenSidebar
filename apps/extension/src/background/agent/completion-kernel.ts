@@ -95,6 +95,7 @@ export type CompletionEvidence =
           | "created_row"
           | "draft_disappearance"
           | "submitted_draft_row"
+          | "invite_row_state"
           | "status_change"
           | "control_label_change"
           | "control_state_change"
@@ -1384,6 +1385,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractSubmittedDraftRowEvidenceFromToolOutcome(params));
+  evidence.push(...extractInviteRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlStateChangeEvidenceFromToolOutcome(params));
@@ -3564,6 +3566,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "control_state_change" ||
       event.detail.source === "dirty_indicator_cleared" ||
       event.detail.source === "submitted_draft_row" ||
+      event.detail.source === "invite_row_state" ||
       event.detail.source === "download_file_result" ||
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
@@ -6382,6 +6385,77 @@ function findSubmittedDraftRowText(
     return Boolean(text) && normalizeText(text).includes(normalizedDraftText);
   });
   return row ? workflowRowElementText(row) : null;
+}
+
+function extractInviteRowStateEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element) return [];
+
+  const action = inferTargetDisappearanceAction(element);
+  if (action !== "invite") return [];
+
+  const target = inferWorkflowTargetTextFromControl(element, "invite");
+  if (!target) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+  if (findInviteRowStateText(pre, target)) return [];
+
+  const rowText = findInviteRowStateText(current, target);
+  if (!rowText) return [];
+
+  const key = compactKey(target) || compactKey(rowText) || `tag-${id}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:invite:row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Invitation row visible: ${target}`,
+        action: "invite",
+        targetText: target,
+        source: "invite_row_state",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function findInviteRowStateText(
+  snapshot: DomSnapshot,
+  target: string,
+): string | null {
+  const row = snapshot.elements.find((element) => {
+    if (!element.isVisible || element.isDisabled) return false;
+    if (!isWorkflowRowLikeElement(element)) return false;
+    const text = workflowRowElementText(element);
+    return (
+      Boolean(text) &&
+      workflowTargetLabelCoveredByText(target, text) &&
+      inviteRowTextHasInvitationState(text)
+    );
+  });
+  return row ? workflowRowElementText(row) : null;
+}
+
+function inviteRowTextHasInvitationState(value: string): boolean {
+  return /\b(?:pending\s+invitation|invitation\s+pending|invitation\s+sent|invite\s+sent|invited|awaiting\s+(?:acceptance|response)|pending\s+acceptance)\b/i.test(
+    normalizeText(value),
+  );
 }
 
 function extractStatusChangeEvidenceFromToolOutcome(params: {
