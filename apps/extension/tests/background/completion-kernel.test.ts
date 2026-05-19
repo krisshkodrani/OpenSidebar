@@ -19552,6 +19552,201 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts create confirmation from named form disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customers",
+      pageContent: "Customers",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Create Customer Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Created Customer Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+      targetLabel: "Customer Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:create:form:customer-alpha",
+        detail: expect.objectContaining({
+          action: "create",
+          source: "form_disappearance",
+          targetText: "Customer Alpha",
+          text: "Create form no longer visible: Customer Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects create form-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Beta Create customer",
+      pageContent: "New customer Name Customer Beta Create customer",
+      elements: [
+        textField(575, "Name", "Customer Beta"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customers",
+      pageContent: "Customers",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Create Customer Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Created Customer Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+      targetLabel: "Customer Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:create:form:customer-beta",
+        detail: expect.objectContaining({
+          action: "create",
+          source: "form_disappearance",
+          targetText: "Customer Beta",
+          text: "Create form no longer visible: Customer Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer create confirmation while the named form remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer create confirmation from a generic create control without a target field", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Customers Customer Alpha Create customer",
+      pageContent: "Customers Customer Alpha Create customer",
+      elements: [actionButton(576, "Create customer")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customers",
+      pageContent: "Customers",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer create confirmation when validation appears after form submission", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "New customer Name Customer Alpha Create customer",
+      pageContent: "New customer Name Customer Alpha Create customer",
+      elements: [
+        textField(575, "Name", "Customer Alpha"),
+        actionButton(576, "Create customer"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Name is required. Please fill the required field.",
+      pageContent: "Name is required. Please fill the required field.",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 576 },
+      result: "Clicked element 576.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
