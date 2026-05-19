@@ -202,6 +202,7 @@ export type WorkflowConfirmationAction =
   | "deploy"
   | "rollback"
   | "backup"
+  | "reset"
   | "duplicate"
   | "restore"
   | "create"
@@ -276,6 +277,7 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "deploy",
   "rollback",
   "backup",
+  "reset",
   "duplicate",
   "restore",
   "create",
@@ -353,6 +355,7 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "deploy"
   | "rollback"
   | "backup"
+  | "reset"
   | "duplicate"
   | "restore"
   | "create"
@@ -2825,6 +2828,13 @@ function inferWorkflowConfirmationAction(
     return "backup";
   }
   if (
+    /\breset(?:ting)?\s+(?:the\s+)?(?:password|passcode|pin|mfa|2fa|credential|credentials|token|key|secret|settings?|config|configuration|preferences?|cache|session|account|profile|device|app|application|service|workflow|rule|job|pipeline|database|data|dataset|form|filters?|view|dashboard|report)\b/i.test(
+      text,
+    )
+  ) {
+    return "reset";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3213,6 +3223,8 @@ function workflowTargetActionPattern(
       return "(?:roll\\s+back|rollback)";
     case "backup":
       return "(?:back\\s+up|backup)";
+    case "reset":
+      return "(?:reset)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3445,6 +3457,7 @@ function isTargetAwareVisibleWorkflowAction(
     action === "deploy" ||
     action === "rollback" ||
     action === "backup" ||
+    action === "reset" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3628,6 +3641,8 @@ function workflowTargetVisibleResultPattern(
       return "(?:rolled\\s+back|reverted)";
     case "backup":
       return "(?:backed\\s+up)";
+    case "reset":
+      return "(?:reset)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3777,6 +3792,8 @@ function workflowTargetVisibleNounPattern(
       return "(?:rollback|roll\\s+back|reversion)";
     case "backup":
       return "(?:backup|back\\s+up)";
+    case "reset":
+      return "(?:reset)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4244,6 +4261,19 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:backed\s+up|backup complete|backup completed|backup successful|back up complete|back up completed|back up successful)\b/i.test(
+        text,
+      );
+    case "reset":
+      if (mode === "visible") {
+        return (
+          /\breset\s+successfully\b/i.test(text) ||
+          /\b(?:password|passcode|pin|mfa|2fa|credential|credentials|token|key|secret|settings?|config|configuration|preferences?|cache|session|account|profile|device|app|application|service|workflow|rule|job|pipeline|database|data|dataset|form|filters?|view|dashboard|report)(?:\s+[\w-]+){0,6}\s+reset\b/i.test(
+            text,
+          ) ||
+          /\breset\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:reset|reset complete|reset completed|reset successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -4965,6 +4995,8 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:rolled\\s+back|reverted|rollback|roll\\s+back|reversion)";
     case "backup":
       return "(?:backed\\s+up|backup|back\\s+up)";
+    case "reset":
+      return "(?:reset)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -5857,6 +5889,8 @@ function controlLabelConfirmsWorkflowAction(
       return /\b(?:rolled\s+back|reverted)\b/i.test(text);
     case "backup":
       return /\bbacked\s+up\b/i.test(text);
+    case "reset":
+      return /\breset\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":

@@ -1707,6 +1707,20 @@ describe("completion kernel", () => {
       genericSummary: "Backup completed.",
     },
     {
+      action: "reset",
+      request: "Reset Password Alpha.",
+      summary: "Reset Password Alpha.",
+      targetLabel: "Password Alpha",
+      requestedVisible:
+        "Password Beta remains unchanged. Password Alpha reset successfully.",
+      requestedEvidenceText: "Password Alpha reset successfully.",
+      otherVisible:
+        "Password Alpha remains unchanged. Password Beta reset successfully.",
+      otherEvidenceText: "Password Beta reset successfully.",
+      genericVisible: "Reset completed.",
+      genericSummary: "Reset completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
