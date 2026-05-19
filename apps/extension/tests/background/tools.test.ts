@@ -10,12 +10,26 @@ import {
 import "../setup";
 import { toolRegistry } from "../../src/background/tools/registry";
 import { registerTools } from "../../src/background/tools";
-import { ToolName } from "../../src/types";
+import { ToolName, type ToolCall } from "../../src/types";
 import {
   PERSONAL_PROFILE_STORAGE_KEY,
   PROFILE_ANALYZER_VERSION,
   hashProfileNotes,
 } from "../../src/utils/personal-profile";
+
+function toolCall(
+  name: ToolName,
+  args: Record<string, unknown> = {},
+): ToolCall {
+  return {
+    id: `call-${name}`,
+    type: "function",
+    function: {
+      name,
+      arguments: JSON.stringify(args),
+    },
+  };
+}
 
 // Register all tools once
 beforeAll(() => {
@@ -54,6 +68,9 @@ beforeEach(() => {
     },
   );
   (chrome.storage.sync as any).get = vi.fn(async () => ({ userSettings: {} }));
+  (chrome.downloads as any).download = vi.fn(async () => 1);
+  delete (chrome.downloads as any).onChanged;
+  delete (chrome.downloads as any).search;
 });
 
 afterEach(() => {
@@ -6186,6 +6203,69 @@ describe("Tool Registration", () => {
     expect(def).toBeDefined();
     expect(def!.function.parameters.required).toContain("url");
     expect(def!.function.parameters.properties.filename).toBeDefined();
+  });
+
+  test("download_file returns completion when Chrome reports a completed download", async () => {
+    (chrome.downloads as any).download = vi.fn(async () => 42);
+    (chrome.downloads as any).search = vi.fn(async () => [
+      {
+        id: 42,
+        state: "complete",
+        exists: true,
+        filename: "C:\\Users\\tester\\Downloads\\File Alpha.pdf",
+      },
+    ]);
+    (chrome.downloads as any).onChanged = {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    };
+
+    const result = await toolRegistry.execute(
+      toolCall(ToolName.DOWNLOAD_FILE, {
+        url: "https://files.example.test/file-alpha.pdf",
+      }),
+      123,
+    );
+
+    expect(result).toBe(
+      "Download completed (ID: 42, filename: File Alpha.pdf)",
+    );
+  });
+
+  test("download_file keeps started result when completion is not observable", async () => {
+    (chrome.downloads as any).download = vi.fn(async () => 43);
+
+    const result = await toolRegistry.execute(
+      toolCall(ToolName.DOWNLOAD_FILE, {
+        url: "https://files.example.test/file-alpha.pdf",
+      }),
+      123,
+    );
+
+    expect(result).toBe("Download started (ID: 43)");
+  });
+
+  test("download_file reports an error when completed item is missing", async () => {
+    (chrome.downloads as any).download = vi.fn(async () => 44);
+    (chrome.downloads as any).search = vi.fn(async () => [
+      {
+        id: 44,
+        state: "complete",
+        exists: false,
+        filename: "C:\\Users\\tester\\Downloads\\File Alpha.pdf",
+      },
+    ]);
+
+    const result = await toolRegistry.execute(
+      toolCall(ToolName.DOWNLOAD_FILE, {
+        url: "https://files.example.test/file-alpha.pdf",
+      }),
+      123,
+    );
+
+    expect(result).toBe(
+      "Error: Download interrupted (ID: 44, reason: file missing after completion)",
+    );
   });
 
   test("get_cookies has no required parameters", () => {

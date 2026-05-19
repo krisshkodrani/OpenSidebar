@@ -742,7 +742,7 @@ export const DOWNLOAD_FILE_DEF: ToolDefinition = {
   function: {
     name: ToolName.DOWNLOAD_FILE,
     description:
-      "Start a download to the user's downloads folder. Returns immediately — download completes in the background.",
+      "Start a download to the user's downloads folder. When Chrome reports completion quickly, returns completed-download evidence; otherwise returns the started download ID.",
     parameters: {
       type: "object",
       properties: {
