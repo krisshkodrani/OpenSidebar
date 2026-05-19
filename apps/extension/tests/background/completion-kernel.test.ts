@@ -31326,6 +31326,36 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("does not use due-on sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Queue Ticket Alpha is due on 2026-05-20 Ticket Beta is due on 2026-05-21",
+      pageContent:
+        "Ticket Queue Ticket Alpha is due on 2026-05-20. Ticket Beta is due on 2026-05-21. The page explains ticket assignment, ticket ownership, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When is Ticket Alpha due?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2026-05-20",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts sentence-scoped possessive due-date answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
