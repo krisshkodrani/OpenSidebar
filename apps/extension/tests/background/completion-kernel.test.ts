@@ -1777,6 +1777,34 @@ describe("completion kernel", () => {
       genericSummary: "Unblock completed.",
     },
     {
+      action: "link",
+      request: "Link Account Alpha.",
+      summary: "Linked Account Alpha.",
+      targetLabel: "Account Alpha",
+      requestedVisible:
+        "Account Beta remains separate. Account Alpha linked successfully.",
+      requestedEvidenceText: "Account Alpha linked successfully.",
+      otherVisible:
+        "Account Alpha remains separate. Account Beta linked successfully.",
+      otherEvidenceText: "Account Beta linked successfully.",
+      genericVisible: "Link completed.",
+      genericSummary: "Link completed.",
+    },
+    {
+      action: "unlink",
+      request: "Unlink Account Alpha.",
+      summary: "Unlinked Account Alpha.",
+      targetLabel: "Account Alpha",
+      requestedVisible:
+        "Account Beta remains linked. Account Alpha unlinked successfully.",
+      requestedEvidenceText: "Account Alpha unlinked successfully.",
+      otherVisible:
+        "Account Alpha remains linked. Account Beta unlinked successfully.",
+      otherEvidenceText: "Account Beta unlinked successfully.",
+      genericVisible: "Unlink completed.",
+      genericSummary: "Unlink completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
