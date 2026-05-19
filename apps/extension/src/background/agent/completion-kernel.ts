@@ -3769,7 +3769,11 @@ function visibleWorkflowConfirmationMatchesTarget(
       action !== "unflag" &&
       action !== "duplicate" &&
       action !== "restore" &&
-      action !== "create"
+      action !== "create" &&
+      action !== "export" &&
+      action !== "download" &&
+      action !== "upload" &&
+      action !== "import"
     );
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
