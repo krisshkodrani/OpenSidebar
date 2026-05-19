@@ -211,6 +211,8 @@ export type WorkflowConfirmationAction =
   | "unlink"
   | "tag"
   | "untag"
+  | "flag"
+  | "unflag"
   | "duplicate"
   | "restore"
   | "create"
@@ -294,6 +296,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unlink",
   "tag",
   "untag",
+  "flag",
+  "unflag",
   "duplicate",
   "restore",
   "create",
@@ -380,6 +384,8 @@ type TargetAwareVisibleWorkflowAction = Extract<
   | "unlink"
   | "tag"
   | "untag"
+  | "flag"
+  | "unflag"
   | "duplicate"
   | "restore"
   | "create"
@@ -2915,6 +2921,20 @@ function inferWorkflowConfirmationAction(
     return "tag";
   }
   if (
+    /\bunflag(?:ged|ging)?\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|account|contact|customer|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|message|comment|thread|conversation|article|post|email|user|member|profile)\b/i.test(
+      text,
+    )
+  ) {
+    return "unflag";
+  }
+  if (
+    /\bflag(?:ged|ging)?\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|account|contact|customer|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|message|comment|thread|conversation|article|post|email|user|member|profile)\b/i.test(
+      text,
+    )
+  ) {
+    return "flag";
+  }
+  if (
     /\b(?:duplicate(?:d)?|clone(?:d)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile)\b/i.test(
       text,
     )
@@ -3321,6 +3341,10 @@ function workflowTargetActionPattern(
       return "(?:tag)";
     case "untag":
       return "(?:untag)";
+    case "flag":
+      return "(?:flag)";
+    case "unflag":
+      return "(?:unflag)";
     case "duplicate":
       return "(?:duplicate|clone)";
     case "restore":
@@ -3562,6 +3586,8 @@ function isTargetAwareVisibleWorkflowAction(
     action === "unlink" ||
     action === "tag" ||
     action === "untag" ||
+    action === "flag" ||
+    action === "unflag" ||
     action === "duplicate" ||
     action === "restore" ||
     action === "create" ||
@@ -3763,6 +3789,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:tagged)";
     case "untag":
       return "(?:untagged)";
+    case "flag":
+      return "(?:flagged)";
+    case "unflag":
+      return "(?:unflagged)";
     case "duplicate":
       return "(?:duplicated|cloned)";
     case "restore":
@@ -3930,6 +3960,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:tag|tagging)";
     case "untag":
       return "(?:untag|untagging)";
+    case "flag":
+      return "(?:flag|flagging)";
+    case "unflag":
+      return "(?:unflag|unflagging)";
     case "duplicate":
       return "(?:duplicate|duplication|clone)";
     case "restore":
@@ -4530,6 +4564,36 @@ function textConfirmsWorkflowAction(
         );
       }
       return /\b(?:untagged|untagging|untag complete|untag completed|untag successful|untagging complete|untagging completed|untagging successful)\b/i.test(
+        text,
+      );
+    case "flag":
+      if (mode === "visible") {
+        return (
+          /\bflagged\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|account|contact|customer|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|message|comment|thread|conversation|article|post|email|user|member|profile)(?:\s+[\w-]+){0,6}\s+flagged\b/i.test(
+            text,
+          ) ||
+          /\b(?:flag|flagging)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:flagged|flagging|flag complete|flag completed|flag successful|flagging complete|flagging completed|flagging successful)\b/i.test(
+        text,
+      );
+    case "unflag":
+      if (mode === "visible") {
+        return (
+          /\bunflagged\s+successfully\b/i.test(text) ||
+          /\b(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|account|contact|customer|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|message|comment|thread|conversation|article|post|email|user|member|profile)(?:\s+[\w-]+){0,6}\s+unflagged\b/i.test(
+            text,
+          ) ||
+          /\b(?:unflag|unflagging)\s+(?:complete|completed|successful)\b/i.test(
+            text,
+          )
+        );
+      }
+      return /\b(?:unflagged|unflagging|unflag complete|unflag completed|unflag successful|unflagging complete|unflagging completed|unflagging successful)\b/i.test(
         text,
       );
     case "duplicate":
@@ -5269,6 +5333,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:tagged|tagging|tag)";
     case "untag":
       return "(?:untagged|untagging|untag)";
+    case "flag":
+      return "(?:flagged|flagging|flag)";
+    case "unflag":
+      return "(?:unflagged|unflagging|unflag)";
     case "duplicate":
       return "(?:duplicated|cloned|duplicate|duplication|clone)";
     case "restore":
@@ -6179,6 +6247,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\btagged\b/i.test(text);
     case "untag":
       return /\buntagged\b/i.test(text);
+    case "flag":
+      return /\bflagged\b/i.test(text);
+    case "unflag":
+      return /\bunflagged\b/i.test(text);
     case "duplicate":
       return /\b(?:duplicated|cloned)\b/i.test(text);
     case "restore":
