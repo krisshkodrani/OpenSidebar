@@ -2409,9 +2409,13 @@ describe("completion kernel", () => {
       });
     });
 
+    const targetlessVisibleMustReject =
+      scenario.action === "copy" ||
+      scenario.action === "link" ||
+      scenario.action === "unlink";
     const genericVisibleTestName =
-      scenario.action === "copy"
-        ? "rejects targetless visible copy completion for a named target"
+      targetlessVisibleMustReject
+        ? `rejects targetless visible ${scenario.action} completion for a named target`
         : `keeps generic visible ${scenario.action} completion valid for a named target`;
 
     test(genericVisibleTestName, () => {
@@ -2438,7 +2442,7 @@ describe("completion kernel", () => {
         action: scenario.action,
         targetLabel: scenario.targetLabel,
       });
-      if (scenario.action === "copy") {
+      if (targetlessVisibleMustReject) {
         expect(decision).toMatchObject({
           status: "rejected",
           reason:
