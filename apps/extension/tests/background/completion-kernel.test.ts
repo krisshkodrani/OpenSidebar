@@ -1833,6 +1833,34 @@ describe("completion kernel", () => {
       genericSummary: "Untag completed.",
     },
     {
+      action: "flag",
+      request: "Flag Message Alpha.",
+      summary: "Flagged Message Alpha.",
+      targetLabel: "Message Alpha",
+      requestedVisible:
+        "Message Beta remains normal. Message Alpha flagged successfully.",
+      requestedEvidenceText: "Message Alpha flagged successfully.",
+      otherVisible:
+        "Message Alpha remains normal. Message Beta flagged successfully.",
+      otherEvidenceText: "Message Beta flagged successfully.",
+      genericVisible: "Flag completed.",
+      genericSummary: "Flag completed.",
+    },
+    {
+      action: "unflag",
+      request: "Unflag Message Alpha.",
+      summary: "Unflagged Message Alpha.",
+      targetLabel: "Message Alpha",
+      requestedVisible:
+        "Message Beta remains flagged. Message Alpha unflagged successfully.",
+      requestedEvidenceText: "Message Alpha unflagged successfully.",
+      otherVisible:
+        "Message Alpha remains flagged. Message Beta unflagged successfully.",
+      otherEvidenceText: "Message Beta unflagged successfully.",
+      genericVisible: "Unflag completed.",
+      genericSummary: "Unflag completed.",
+    },
+    {
       action: "duplicate",
       request: "Duplicate Record Alpha.",
       summary: "Duplicated Record Alpha.",
