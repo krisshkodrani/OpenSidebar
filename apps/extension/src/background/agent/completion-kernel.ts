@@ -5748,20 +5748,22 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
                                       : action === "star"
                                         ? "Starred"
                                         : action === "unbookmark"
-                              ? "Unbookmarked"
-                              : action === "unfavorite"
-                                ? "Unfavorited"
-                                : action === "unpin"
-                                  ? "Unpinned"
-                                  : action === "unmute"
-                                    ? "Unmuted"
-                                    : action === "unschedule"
-                                      ? "Unscheduled"
-                                      : action === "schedule"
-                                        ? "Scheduled"
-                                        : action === "unassign"
-                                          ? "Unassigned"
-                                          : action === "assign"
+                                          ? "Unbookmarked"
+                                          : action === "bookmark"
+                                            ? "Bookmarked"
+                                            : action === "unfavorite"
+                                              ? "Unfavorited"
+                                              : action === "unpin"
+                                                ? "Unpinned"
+                                                : action === "unmute"
+                                                  ? "Unmuted"
+                                                  : action === "unschedule"
+                                                    ? "Unscheduled"
+                                                    : action === "schedule"
+                                                      ? "Scheduled"
+                                                      : action === "unassign"
+                                                        ? "Unassigned"
+                                                        : action === "assign"
                                             ? "Assigned"
                                             : action === "cancel"
                                               ? "Canceled"
@@ -6145,6 +6147,7 @@ function inferTargetDisappearanceAction(
   | "unstar"
   | "star"
   | "unbookmark"
+  | "bookmark"
   | "unfavorite"
   | "unpin"
   | "unmute"
@@ -6193,6 +6196,7 @@ function inferTargetDisappearanceAction(
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
   if (/\bstar(?:red|ring|s)?\b/i.test(text)) return "star";
   if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
+  if (/\bbookmark(?:ed|ing|s)?\b/i.test(text)) return "bookmark";
   if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
   if (/\bunpin(?:ned|ning)?\b/i.test(text)) return "unpin";
   if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
@@ -6734,6 +6738,7 @@ function extractDisappearingTargetFromControl(
     | "unstar"
     | "star"
     | "unbookmark"
+    | "bookmark"
     | "unfavorite"
     | "unpin"
     | "unmute"
@@ -6808,21 +6813,23 @@ function extractDisappearingTargetFromControl(
                               ? "unstar"
                               : action === "star"
                                 ? "star"
-                              : action === "unbookmark"
-                                ? "unbookmark"
-                                : action === "unfavorite"
-                                  ? "unfavorite"
-                                  : action === "unpin"
-                                    ? "unpin"
-                                    : action === "unmute"
-                                      ? "unmute"
-                                      : action === "unschedule"
-                                        ? "unschedule"
-                                        : action === "schedule"
-                                          ? "schedule"
-                                          : action === "unassign"
-                                            ? "unassign"
-                                            : action === "assign"
+                                : action === "unbookmark"
+                                  ? "unbookmark"
+                                  : action === "bookmark"
+                                    ? "bookmark"
+                                    : action === "unfavorite"
+                                      ? "unfavorite"
+                                      : action === "unpin"
+                                        ? "unpin"
+                                        : action === "unmute"
+                                          ? "unmute"
+                                          : action === "unschedule"
+                                            ? "unschedule"
+                                            : action === "schedule"
+                                              ? "schedule"
+                                              : action === "unassign"
+                                                ? "unassign"
+                                                : action === "assign"
                                               ? "assign"
                                               : action === "cancel"
                                                 ? "cancel"
@@ -6860,7 +6867,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|unpin|unpinned|unmute|unmuted|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -6897,6 +6904,7 @@ function extractDisappearingTargetFromControl(
           "blocking",
           "bookmark",
           "bookmarked",
+          "bookmarking",
           "channel",
           "connector",
           "connect",
