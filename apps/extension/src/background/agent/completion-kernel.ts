@@ -1260,10 +1260,22 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
+  const targetSpecificLabelQuestion =
+    !rowScopedAnswer && !sentenceScopedAnswer
+      ? extractRowScopedLabelValueQuestionParts(requestText)
+      : null;
+  const targetSpecificLabelRequiresScopedEvidence =
+    targetSpecificLabelQuestion
+      ? readAnswerLabelRequiresScopedTargetEvidence(
+          targetSpecificLabelQuestion.label,
+        )
+      : false;
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
     sentenceScopedAnswer?.label ??
-    getGroundedLabelValueQuestionLabel(requestText, _snapshot);
+    (targetSpecificLabelRequiresScopedEvidence
+      ? null
+      : getGroundedLabelValueQuestionLabel(requestText, _snapshot));
 
   return {
     contract: {
@@ -1292,6 +1304,25 @@ function generateReadAnswerContract(
         ]
       : [],
   };
+}
+
+function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
+  const normalizedLabel = normalizeText(label);
+  if (!normalizedLabel) return false;
+  if (
+    normalizedLabel === "status" ||
+    normalizedLabel === "priority" ||
+    normalizedLabel === "severity" ||
+    normalizedLabel === "due date"
+  ) {
+    return true;
+  }
+  return Boolean(
+    sentenceScopedAttributePatternForLabel(normalizedLabel) ||
+      sentenceScopedRelationNounPatternForLabel(normalizedLabel) ||
+      sentenceScopedByRelationPatternForLabel(normalizedLabel) ||
+      sentenceScopedActiveRelationPatternForLabel(normalizedLabel),
+  );
 }
 
 function generateWorkflowConfirmationContract(
@@ -10141,7 +10172,7 @@ function extractSentenceScopedRelationAnswer(
     if (leadingNounAnswer) return leadingNounAnswer;
 
     const targetRelationMatch = new RegExp(
-      `\\b${targetPattern}\\b\\s+${relationNounPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
+      `^\\s*${targetPattern}\\b\\s+${relationNounPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
       "i",
     ).exec(sentence);
     const targetRelationAnswer = cleanSentenceScopedAnswerText(
