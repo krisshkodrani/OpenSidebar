@@ -9171,6 +9171,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts disable confirmation from named enabled target disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Enabled features Feature Alpha Disable Feature Alpha Feature Beta Disable Feature Beta",
+      pageContent:
+        "Enabled features Feature Alpha Disable Feature Alpha Feature Beta Disable Feature Beta",
+      elements: [
+        actionButton(553, "Disable Feature Alpha"),
+        actionButton(554, "Disable Feature Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Enabled features Feature Beta Disable Feature Beta",
+      pageContent: "Enabled features Feature Beta Disable Feature Beta",
+      elements: [actionButton(554, "Disable Feature Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable Feature Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disable:feature-alpha",
+        detail: expect.objectContaining({
+          action: "disable",
+          source: "target_disappearance",
+          text: "Disabled target no longer visible: Feature Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects disable target-disappearance evidence for the wrong requested target", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Enabled features Feature Alpha Disable Feature Alpha Feature Beta Disable Feature Beta",
+      pageContent:
+        "Enabled features Feature Alpha Disable Feature Alpha Feature Beta Disable Feature Beta",
+      elements: [
+        actionButton(553, "Disable Feature Alpha"),
+        actionButton(554, "Disable Feature Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      pageContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      elements: [actionButton(553, "Disable Feature Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disable Feature Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 554 },
+      result: "Clicked element 554.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disabled Feature Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disable",
+      targetLabel: "Feature Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disable:feature-beta",
+        detail: expect.objectContaining({
+          action: "disable",
+          source: "target_disappearance",
+          text: "Disabled target no longer visible: Feature Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer disable confirmation while the named target remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      pageContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      elements: [actionButton(553, "Disable Feature Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      pageContent: "Enabled features Feature Alpha Disable Feature Alpha",
+      elements: [actionButton(553, "Disable Feature Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer disable confirmation from a generic disable button", () => {
+    const genericDisableButton: TaggedElement = {
+      tag: 553,
+      tagName: "button",
+      role: "button",
+      text: "Disable",
+      attributes: {
+        id: "disable",
+        "aria-label": "Disable",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Enabled features Feature Alpha Disable",
+      pageContent: "Enabled features Feature Alpha Disable",
+      elements: [genericDisableButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Enabled features",
+      pageContent: "Enabled features",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 553 },
+      result: "Clicked element 553.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts revoke confirmation from named role disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
