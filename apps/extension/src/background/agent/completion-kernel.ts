@@ -5713,7 +5713,9 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
       ? "Deleted"
       : action === "archive"
         ? "Archived"
-        : "Uninstalled";
+        : action === "detach"
+          ? "Detached"
+          : "Uninstalled";
   return [
     {
       type: "confirmation_state",
@@ -6047,10 +6049,11 @@ function inferTargetDisappearanceAction(
   element: TaggedElement,
 ): Extract<
   WorkflowConfirmationAction,
-  "delete" | "archive" | "uninstall"
+  "delete" | "archive" | "detach" | "uninstall"
 > | null {
   const text = normalizeText(elementControlText(element));
   if (/\buninstall(?:ed|ation)?\b/i.test(text)) return "uninstall";
+  if (/\bdetach(?:ed|ment)?\b/i.test(text)) return "detach";
   if (/\b(?:delete|remove)\b/i.test(text)) return "delete";
   if (/\barchive\b/i.test(text)) return "archive";
   return null;
@@ -6546,7 +6549,7 @@ function extractDisappearingTargetFromControl(
   element: TaggedElement,
   action: Extract<
     WorkflowConfirmationAction,
-    "delete" | "archive" | "uninstall"
+    "delete" | "archive" | "detach" | "uninstall"
   >,
 ): string | null {
   const candidates = [
@@ -6565,14 +6568,19 @@ function extractDisappearingTargetFromControl(
         ? "(?:delete|remove)"
         : action === "archive"
           ? "archive"
-          : "uninstall";
+          : action === "detach"
+            ? "detach"
+            : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
     ).exec(candidate);
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
-      .replace(/\b(?:button|link|action|delete|remove|archive)\b/gi, " ")
+      .replace(
+        /\b(?:button|link|action|delete|remove|archive|detach|uninstall)\b/gi,
+        " ",
+      )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
       .replace(/^["'`]+|["'`]+$/g, "");
     target = cleanLabel(target);
@@ -6588,13 +6596,18 @@ function extractDisappearingTargetFromControl(
           "app",
           "application",
           "archive",
+          "attachment",
           "button",
           "connector",
           "delete",
+          "detach",
+          "detachment",
           "dependency",
+          "document",
           "driver",
           "entry",
           "extension",
+          "file",
           "integration",
           "item",
           "module",
