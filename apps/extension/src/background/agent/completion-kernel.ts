@@ -97,6 +97,7 @@ export type CompletionEvidence =
           | "submitted_draft_row"
           | "invite_row_state"
           | "attachment_row_state"
+          | "import_row_state"
           | "status_change"
           | "control_label_change"
           | "control_state_change"
@@ -1385,6 +1386,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
   evidence.push(...extractCreateRowAppearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
   evidence.push(...extractUploadFileResultEvidenceFromToolOutcome(params));
+  evidence.push(...extractImportRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractAttachmentRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractSubmittedDraftRowEvidenceFromToolOutcome(params));
@@ -3571,6 +3573,7 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "submitted_draft_row" ||
       event.detail.source === "invite_row_state" ||
       event.detail.source === "attachment_row_state" ||
+      event.detail.source === "import_row_state" ||
       event.detail.source === "download_file_result" ||
       event.detail.source === "download_file_completed" ||
       event.detail.source === "upload_file_result") &&
@@ -6272,6 +6275,69 @@ function parseUploadFileResult(result: string): UploadFileResultDetails | null {
   if (!filename || !Number.isFinite(bytes) || bytes < 0) return null;
 
   return { filename, bytes };
+}
+
+function extractImportRowStateEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "upload_file") return [];
+
+  const parsed = parseUploadFileResult(params.result);
+  if (!parsed) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+  if (findImportRowStateText(pre, parsed.filename)) return [];
+
+  const rowText = findImportRowStateText(current, parsed.filename);
+  if (!rowText) return [];
+
+  const key = compactKey(parsed.filename) || compactKey(rowText) || "file";
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:import:row:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Import row visible: ${parsed.filename}`,
+        action: "import",
+        targetText: parsed.filename,
+        source: "import_row_state",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function findImportRowStateText(
+  snapshot: DomSnapshot,
+  filename: string,
+): string | null {
+  const row = snapshot.elements.find((element) => {
+    if (!element.isVisible || element.isDisabled) return false;
+    if (!isWorkflowRowLikeElement(element)) return false;
+    const text = workflowRowElementText(element);
+    return (
+      Boolean(text) &&
+      workflowTargetLabelCoveredByText(filename, text) &&
+      importRowTextHasImportedState(text)
+    );
+  });
+  return row ? workflowRowElementText(row) : null;
+}
+
+function importRowTextHasImportedState(value: string): boolean {
+  return /\b(?:imported|import\s+(?:complete|completed|successful)|processing\s+complete|processed\s+successfully|records?\s+imported|rows?\s+imported)\b/i.test(
+    normalizeText(value),
+  );
 }
 
 function extractAttachmentRowStateEvidenceFromToolOutcome(params: {
