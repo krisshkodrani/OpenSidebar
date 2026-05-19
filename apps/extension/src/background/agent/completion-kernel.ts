@@ -10202,6 +10202,16 @@ function extractSentenceScopedRelationAnswer(
     );
     if (targetRelationAnswer) return targetRelationAnswer;
 
+    const predicateRoleNounMatch = new RegExp(
+      `([^.;\\n]{2,120})\\s+serves?\\s+as\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
+      "i",
+    ).exec(sentence);
+    const predicateRoleNounAnswer = cleanActiveSentenceScopedAnswerText(
+      predicateRoleNounMatch?.[1] ?? "",
+      target,
+    );
+    if (predicateRoleNounAnswer) return predicateRoleNounAnswer;
+
     const predicateNounMatch = new RegExp(
       `([^.;\\n]{2,120})\\s+(?:is|are|was|were)\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
       "i",
