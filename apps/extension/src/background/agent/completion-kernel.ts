@@ -9288,7 +9288,8 @@ function findGroundedSentenceScopedAnswer(
     normalizedLabel !== "assignee" &&
     normalizedLabel !== "due date" &&
     normalizedLabel !== "status" &&
-    normalizedLabel !== "priority"
+    normalizedLabel !== "priority" &&
+    normalizedLabel !== "severity"
   ) {
     return null;
   }
@@ -9860,10 +9861,11 @@ function extractSentenceScopedRelationAnswer(
   const targetPattern = workflowTargetTextPattern(target);
   if (!targetPattern) return null;
   const normalizedLabel = normalizeText(expectedAnswerLabel);
-  if (normalizedLabel === "priority") {
+  if (normalizedLabel === "priority" || normalizedLabel === "severity") {
+    const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
-      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+priority\\s+(?:is|are|was|were)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})(?:\\b|$)`,
-      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+priority(?:\\b|$)`,
+      `\\b${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${labelPattern}\\s+(?:is|are|was|were)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})(?:\\b|$)`,
+      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+${labelPattern}(?:\\b|$)`,
     ];
     for (const pattern of priorityPatterns) {
       const match = new RegExp(pattern, "i").exec(sentence);
