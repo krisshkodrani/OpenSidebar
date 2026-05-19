@@ -5723,10 +5723,12 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
               ? "Attached"
               : action === "detach"
                 ? "Detached"
-              : action === "disconnect"
-                ? "Disconnected"
-                : action === "connect"
-                  ? "Connected"
+                : action === "disconnect"
+                  ? "Disconnected"
+                  : action === "connect"
+                    ? "Connected"
+                    : action === "sync"
+                      ? "Synced"
                   : action === "unlink"
                     ? "Unlinked"
                     : action === "untag"
@@ -6151,6 +6153,7 @@ function inferTargetDisappearanceAction(
   | "detach"
   | "disconnect"
   | "connect"
+  | "sync"
   | "unlink"
   | "link"
   | "untag"
@@ -6210,6 +6213,9 @@ function inferTargetDisappearanceAction(
   if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
+  if (/\bsync(?:ed|ing|hroniz(?:e|ed|ing|ation))?\b/i.test(text)) {
+    return "sync";
+  }
   if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
   if (/\bblock(?:ed|ing)?\b/i.test(text)) return "block";
   if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
@@ -6762,6 +6768,7 @@ function extractDisappearingTargetFromControl(
     | "detach"
     | "disconnect"
     | "connect"
+    | "sync"
     | "unlink"
     | "link"
     | "untag"
@@ -6840,6 +6847,8 @@ function extractDisappearingTargetFromControl(
                   ? "disconnect"
                   : action === "connect"
                     ? "connect"
+                    : action === "sync"
+                      ? "(?:sync|synchronize)"
                     : action === "unlink"
                       ? "unlink"
                       : action === "untag"
@@ -6932,7 +6941,7 @@ function extractDisappearingTargetFromControl(
     if (!explicit?.[1]) continue;
     let target = cleanLabel(explicit[1])
       .replace(
-        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
+        /\b(?:button|link|action|delete|remove|archive|attach|attached|attaching|detach|disconnect|disconnection|connect|connected|connecting|connection|sync|synced|syncing|synchronize|synchronized|synchronizing|synchronization|unlink|untag|untagging|tag|tagged|tagging|unflag|unflagging|flag|flagged|flagging|unsubscribe|unsubscribed|unsubscription|subscribe|subscribed|subscription|unfollow|unfollowed|follow|followed|unwatch|unwatched|watch|watched|watching|unstar|unstarred|star|starred|starring|unbookmark|unbookmarked|bookmark|bookmarked|bookmarking|unfavorite|unfavorited|favorite|favorited|favoriting|unpin|unpinned|pin|pinned|pinning|unmute|unmuted|mute|muted|muting|unschedule|unscheduled|schedule|scheduled|scheduling|unassign|unassigned|assign|assigned|assignment|assignee|cancel|canceled|cancelled|cancellation|unlock|unlocked|lock|locked|enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|pause|paused|pausing|resume|resumed|resuming|start|started|starting|stop|stopped|stopping|grant|granted|granting|revoke|revocation|unblock|block|blocking|unsuspend|suspend|suspension|back\s+up|backup|backed\s+up|backing\s+up|deploy|deployed|deploying|deployment|reset|resetting|install|installed|installing|installation|uninstall)\b/gi,
         " ",
       )
       .replace(/\b(?:item|entry|row|record)\b/gi, " ")
@@ -7076,6 +7085,13 @@ function extractDisappearingTargetFromControl(
           "subscribers",
           "suspend",
           "suspension",
+          "sync",
+          "synced",
+          "syncing",
+          "synchronization",
+          "synchronize",
+          "synchronized",
+          "synchronizing",
           "theme",
           "tool",
           "topic",
