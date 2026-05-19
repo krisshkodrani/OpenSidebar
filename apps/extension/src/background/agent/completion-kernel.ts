@@ -10078,7 +10078,7 @@ function extractSentenceScopedRelationAnswer(
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
       `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${labelPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})(?:\\b|$)`,
-      `\\b${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+${labelPattern}(?:\\b|$)`,
+      `^\\s*${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+${labelPattern}(?:\\b|$)`,
     ];
     for (const pattern of priorityPatterns) {
       const match = new RegExp(pattern, "i").exec(sentence);
