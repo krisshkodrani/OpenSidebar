@@ -91,6 +91,7 @@ export type CompletionEvidence =
           | "visible_text"
           | "modal_disappearance"
           | "target_disappearance"
+          | "form_disappearance"
           | "draft_disappearance"
           | "status_change"
           | "control_label_change"
@@ -1373,6 +1374,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
 
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDraftSubmissionEvidenceFromToolOutcome(params));
   evidence.push(...extractStatusChangeEvidenceFromToolOutcome(params));
   evidence.push(...extractControlLabelChangeEvidenceFromToolOutcome(params));
@@ -3528,8 +3530,14 @@ function workflowConfirmationMatchesTarget(
   targetLabel: string | undefined,
 ): boolean {
   if (!targetLabel) return true;
-  if (event.detail.source === "target_disappearance") {
-    return workflowTargetLabelCoveredByText(targetLabel, event.detail.text);
+  if (
+    event.detail.source === "target_disappearance" ||
+    event.detail.source === "form_disappearance"
+  ) {
+    return workflowTargetLabelCoveredByText(
+      targetLabel,
+      event.detail.targetText || event.detail.text,
+    );
   }
   if (
     event.detail.source === "visible_text" &&
@@ -5880,6 +5888,138 @@ function extractTargetDisappearanceEvidenceFromToolOutcome(params: {
       },
     },
   ];
+}
+
+function extractCreateFormDisappearanceEvidenceFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  result: string;
+  preActionSnapshot?: DomSnapshot | null;
+  currentSnapshot?: DomSnapshot | null;
+  turn: number;
+}): CompletionEvidence[] {
+  const pre = params.preActionSnapshot;
+  const current = params.currentSnapshot;
+  if (!pre || !current) return [];
+  if (!samePageUrl(pre.url, current.url)) return [];
+  if (params.toolName !== "click_element") return [];
+
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return [];
+  const element = pre.elements.find((candidate) => candidate.tag === id);
+  if (!element || !isCreateFormSubmissionControl(element)) return [];
+
+  const preFields = extractFormFieldObservations(pre);
+  const target = inferCreatedFormTarget(preFields);
+  if (!target) return [];
+  if (!didSubmittedFormDisappear(preFields, current)) return [];
+  if (snapshotHasFormValidationText(current)) return [];
+
+  const key = compactKey(target) || `tag-${element.tag}`;
+  return [
+    {
+      type: "confirmation_state",
+      confidence: "high",
+      logicalKey: `workflow:confirmation:create:form:${key}`,
+      observedAtTurn: params.turn,
+      detail: {
+        text: `Create form no longer visible: ${target}`,
+        action: "create",
+        targetText: target,
+        source: "form_disappearance",
+        ...(current.url ? { url: current.url } : {}),
+      },
+    },
+  ];
+}
+
+function isCreateFormSubmissionControl(element: TaggedElement): boolean {
+  const text = normalizeText(elementControlText(element));
+  if (!text) return false;
+  if (
+    /\b(?:cancel|close|dismiss|delete|remove|archive|invite|duplicate|restore|update|save|send|post|publish|refresh|restart|reset)\b/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return /\b(?:create|add|register)\b\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
+    text,
+  );
+}
+
+function inferCreatedFormTarget(fields: FormFieldObservation[]): string | null {
+  const candidates = fields
+    .filter((field) => field.kind === "text")
+    .map((field) => ({
+      field,
+      value: normalizeWorkflowTargetLabel(cleanLabel(field.value), {
+        quoted: true,
+      }),
+    }))
+    .filter(
+      (candidate): candidate is {
+        field: FormFieldObservation;
+        value: string;
+      } =>
+        Boolean(candidate.value) &&
+        isCreateFormTargetValue(candidate.value ?? "") &&
+        !isNonTargetCreateFormField(candidate.field),
+    );
+  if (candidates.length === 0) return null;
+
+  const targetLike = candidates.filter((candidate) =>
+    isLikelyCreateTargetField(candidate.field),
+  );
+  if (targetLike.length > 0) return targetLike[0].value;
+  if (candidates.length === 1) return candidates[0].value;
+  return null;
+}
+
+function isCreateFormTargetValue(value: string): boolean {
+  const clean = cleanLabel(value);
+  if (clean.length < 3 || clean.length > 120) return false;
+  if (/[.!?]\s/.test(clean)) return false;
+  const tokens = tokenizeCompletionText(clean);
+  if (tokens.length === 0 || tokens.length > 8) return false;
+  return !/^(?:yes|no|true|false|on|off|n\/a|none|null|new|draft|active|inactive)$/i.test(
+    normalizeText(clean),
+  );
+}
+
+function isLikelyCreateTargetField(field: FormFieldObservation): boolean {
+  const label = normalizeText([field.label, field.stableKey].join(" "));
+  return /\b(?:name|title|subject|summary|label|customer|account|user|username|project|ticket|case|contact|company|organization|organisation|email|identifier|id|number)\b/i.test(
+    label,
+  );
+}
+
+function isNonTargetCreateFormField(field: FormFieldObservation): boolean {
+  const label = normalizeText([field.label, field.stableKey].join(" "));
+  return /\b(?:description|notes?|comments?|message|body|password|passcode|secret|token|key|address|phone|amount|quantity|count|date|time)\b/i.test(
+    label,
+  );
+}
+
+function didSubmittedFormDisappear(
+  preFields: FormFieldObservation[],
+  current: DomSnapshot,
+): boolean {
+  if (preFields.length === 0) return false;
+  const currentFields = extractFormFieldObservations(current);
+  if (currentFields.length === 0) return true;
+  const preStableKeys = new Set(preFields.map((field) => field.stableKey));
+  return !currentFields.some((field) => preStableKeys.has(field.stableKey));
+}
+
+function snapshotHasFormValidationText(snapshot: DomSnapshot): boolean {
+  const text = [snapshot.title, snapshot.visibleContent, snapshot.pageContent]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 20_000);
+  return /\b(?:error|invalid|missing|please fill|please enter|is required|are required|required field|cannot be blank|can't be blank|must be filled)\b/i.test(
+    text,
+  );
 }
 
 function extractDraftSubmissionEvidenceFromToolOutcome(params: {
