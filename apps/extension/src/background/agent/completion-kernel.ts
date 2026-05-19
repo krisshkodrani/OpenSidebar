@@ -9636,6 +9636,9 @@ function labelValuePatternsForExpectedLabel(
   expectedAnswerLabel: string,
 ): string[] {
   const labels = [expectedAnswerLabel];
+  if (normalizeText(expectedAnswerLabel) === "owner") {
+    labels.push("owned\\s+by");
+  }
   if (normalizeText(expectedAnswerLabel) === "assignee") {
     labels.push("assigned\\s+to");
   }
