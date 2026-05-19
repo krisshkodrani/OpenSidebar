@@ -1533,68 +1533,6 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
-  const targetlessVisibleWorkflowActionsRequiringTarget = new Set<string>([
-    "copy",
-    "send",
-    "save",
-    "link",
-    "unlink",
-    "share",
-    "grant",
-    "revoke",
-    "install",
-    "uninstall",
-    "connect",
-    "disconnect",
-    "sync",
-    "attach",
-    "detach",
-    "transfer",
-    "move",
-    "rename",
-    "merge",
-    "invite",
-    "subscribe",
-    "unsubscribe",
-    "pin",
-    "unpin",
-    "mute",
-    "unmute",
-    "follow",
-    "unfollow",
-    "bookmark",
-    "unbookmark",
-    "favorite",
-    "unfavorite",
-    "watch",
-    "unwatch",
-    "star",
-    "unstar",
-    "post",
-    "schedule",
-    "unschedule",
-    "deploy",
-    "rollback",
-    "backup",
-    "reset",
-    "suspend",
-    "unsuspend",
-    "block",
-    "unblock",
-    "tag",
-    "untag",
-    "flag",
-    "unflag",
-    "duplicate",
-    "restore",
-    "create",
-    "export",
-    "download",
-    "upload",
-    "import",
-    "update",
-  ]);
-
   for (const scenario of [
     {
       action: "save",
@@ -2506,14 +2444,7 @@ describe("completion kernel", () => {
       });
     });
 
-    const targetlessVisibleMustReject =
-      targetlessVisibleWorkflowActionsRequiringTarget.has(scenario.action);
-    const genericVisibleTestName =
-      targetlessVisibleMustReject
-        ? `rejects targetless visible ${scenario.action} completion for a named target`
-        : `keeps generic visible ${scenario.action} completion valid for a named target`;
-
-    test(genericVisibleTestName, () => {
+    test(`rejects targetless visible ${scenario.action} completion for a named target`, () => {
       const snap = workflowSnapshot({
         visibleContent: scenario.genericVisible,
         pageContent: scenario.genericVisible,
@@ -2537,15 +2468,11 @@ describe("completion kernel", () => {
         action: scenario.action,
         targetLabel: scenario.targetLabel,
       });
-      if (targetlessVisibleMustReject) {
-        expect(decision).toMatchObject({
-          status: "rejected",
-          reason:
-            "Workflow confirmation evidence is for a different target than the requested action.",
-        });
-      } else {
-        expect(decision.status).toBe("accepted");
-      }
+      expect(decision).toMatchObject({
+        status: "rejected",
+        reason:
+          "Workflow confirmation evidence is for a different target than the requested action.",
+      });
     });
   }
 
