@@ -18305,6 +18305,183 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts copy confirmation from named link disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+      pageContent:
+        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+      elements: [
+        actionButton(561, "Copy Link Alpha"),
+        actionButton(562, "Copy Link Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending copies Link Beta Copy Link Beta",
+      pageContent: "Pending copies Link Beta Copy Link Beta",
+      elements: [actionButton(562, "Copy Link Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Copy Link Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 561 },
+      result: "Clicked element 561.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Copied Link Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "copy",
+      targetLabel: "Link Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:copy:link-alpha",
+        detail: expect.objectContaining({
+          action: "copy",
+          source: "target_disappearance",
+          text: "Copied target no longer visible: Link Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects copy target-disappearance evidence for the wrong requested link", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+      pageContent:
+        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+      elements: [
+        actionButton(561, "Copy Link Alpha"),
+        actionButton(562, "Copy Link Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
+      pageContent: "Pending copies Link Alpha Copy Link Alpha",
+      elements: [actionButton(561, "Copy Link Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Copy Link Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 562 },
+      result: "Clicked element 562.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Copied Link Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "copy",
+      targetLabel: "Link Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:copy:link-beta",
+        detail: expect.objectContaining({
+          action: "copy",
+          source: "target_disappearance",
+          text: "Copied target no longer visible: Link Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer copy confirmation while the named link remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
+      pageContent: "Pending copies Link Alpha Copy Link Alpha",
+      elements: [actionButton(561, "Copy Link Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
+      pageContent: "Pending copies Link Alpha Copy Link Alpha",
+      elements: [actionButton(561, "Copy Link Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 561 },
+      result: "Clicked element 561.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer copy confirmation from a generic copy link control", () => {
+    const genericCopyLinkButton: TaggedElement = {
+      tag: 561,
+      tagName: "button",
+      role: "button",
+      text: "Copy link",
+      attributes: {
+        id: "copy-link",
+        "aria-label": "Copy link",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Available links Link Alpha Copy link",
+      pageContent: "Available links Link Alpha Copy link",
+      elements: [genericCopyLinkButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Available links",
+      pageContent: "Available links",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 561 },
+      result: "Clicked element 561.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts save confirmation from named draft disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
