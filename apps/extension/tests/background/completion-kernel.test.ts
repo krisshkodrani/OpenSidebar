@@ -7007,6 +7007,191 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts disconnect confirmation from named connection disappearance", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha Integration Beta Disconnect Integration Beta",
+      pageContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha Integration Beta Disconnect Integration Beta",
+      elements: [
+        actionButton(517, "Disconnect Integration Alpha"),
+        actionButton(518, "Disconnect Integration Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Beta Disconnect Integration Beta",
+      pageContent:
+        "Connected integrations Integration Beta Disconnect Integration Beta",
+      elements: [actionButton(518, "Disconnect Integration Beta")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disconnect Integration Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 517 },
+      result: "Clicked element 517.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disconnected Integration Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disconnect",
+      targetLabel: "Integration Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disconnect:integration-alpha",
+        detail: expect.objectContaining({
+          action: "disconnect",
+          source: "target_disappearance",
+          text: "Disconnected target no longer visible: Integration Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects disconnect target-disappearance evidence for the wrong requested connection", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha Integration Beta Disconnect Integration Beta",
+      pageContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha Integration Beta Disconnect Integration Beta",
+      elements: [
+        actionButton(517, "Disconnect Integration Alpha"),
+        actionButton(518, "Disconnect Integration Beta"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      pageContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      elements: [actionButton(517, "Disconnect Integration Alpha")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disconnect Integration Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 518 },
+      result: "Clicked element 518.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disconnected Integration Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disconnect",
+      targetLabel: "Integration Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:disconnect:integration-beta",
+        detail: expect.objectContaining({
+          action: "disconnect",
+          source: "target_disappearance",
+          text: "Disconnected target no longer visible: Integration Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer disconnect confirmation while the named connection remains visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      pageContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      elements: [actionButton(517, "Disconnect Integration Alpha")],
+    });
+    const current = workflowSnapshot({
+      visibleContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      pageContent:
+        "Connected integrations Integration Alpha Disconnect Integration Alpha",
+      elements: [actionButton(517, "Disconnect Integration Alpha")],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 517 },
+      result: "Clicked element 517.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer disconnect confirmation from a generic disconnect button", () => {
+    const genericDisconnectButton: TaggedElement = {
+      tag: 517,
+      tagName: "button",
+      role: "button",
+      text: "Disconnect",
+      attributes: {
+        id: "disconnect",
+        "aria-label": "Disconnect",
+      },
+      rect: { x: 500, y: 80, width: 120, height: 32 },
+      isVisible: true,
+      isDisabled: false,
+    };
+    const pre = workflowSnapshot({
+      visibleContent: "Connected integrations Integration Alpha Disconnect",
+      pageContent: "Connected integrations Integration Alpha Disconnect",
+      elements: [genericDisconnectButton],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Connected integrations",
+      pageContent: "Connected integrations",
+      elements: [],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 517 },
+      result: "Clicked element 517.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 9,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts send confirmation from draft disappearance", () => {
     const pre = draftSnapshot({
       visibleContent: "Email thread Reply message Send reply",
