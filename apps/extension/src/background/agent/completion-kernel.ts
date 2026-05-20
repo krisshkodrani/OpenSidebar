@@ -11143,6 +11143,7 @@ type ReadAnswerMetricAggregateOperation =
   | "range"
   | "highest"
   | "lowest"
+  | "categorical_count"
   | "conditional_count"
   | "count";
 
@@ -11161,10 +11162,17 @@ interface ReadAnswerMetricComparison {
   entity: string;
 }
 
+interface ReadAnswerRowCategoricalCondition {
+  entity: string;
+  label: string;
+  value: string;
+}
+
 interface ReadAnswerMetricAggregateParts {
   metric: string;
   operation: ReadAnswerMetricAggregateOperation;
   comparison?: ReadAnswerMetricComparison;
+  categoricalCondition?: ReadAnswerRowCategoricalCondition;
 }
 
 type ReadAnswerMetricAggregate = {
@@ -11258,6 +11266,9 @@ function extractRowScopedMetricAggregateQuestionParts(
   const conditionalCountQuestion =
     extractRowScopedConditionalCountQuestionParts(text);
   if (conditionalCountQuestion) return conditionalCountQuestion;
+  const categoricalCountQuestion =
+    extractRowScopedCategoricalCountQuestionParts(text);
+  if (categoricalCountQuestion) return categoricalCountQuestion;
 
   const patterns: Array<{
     operation: ReadAnswerMetricAggregateOperation;
@@ -11416,6 +11427,56 @@ function extractRowScopedConditionalCountQuestionParts(
   return null;
 }
 
+function extractRowScopedCategoricalCountQuestionParts(
+  question: string,
+): {
+  label: string;
+  metric: string;
+  operation: Extract<ReadAnswerMetricAggregateOperation, "categorical_count">;
+} | null {
+  const text = cleanLabel(question);
+  const explicitLabelMatch =
+    /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains|where)\s+(.+?)\s+(?:is|are|=|as)?\s*(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (explicitLabelMatch) {
+    const entity = cleanRowScopedCountEntity(explicitLabelMatch[1] ?? "");
+    const label = cleanRowScopedCategoricalCountLabel(
+      explicitLabelMatch[2] ?? "",
+    );
+    const value = cleanRowScopedCategoricalCountValue(
+      explicitLabelMatch[3] ?? "",
+    );
+    if (entity && label && value) {
+      return {
+        label: rowScopedCategoricalCountLabel(entity, label, value),
+        metric: label,
+        operation: "categorical_count",
+      };
+    }
+  }
+
+  const implicitStatusMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:are|were)\\s+(${rowScopedCategoricalStatusValuePattern()})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (implicitStatusMatch) {
+    const entity = cleanRowScopedCountEntity(implicitStatusMatch[1] ?? "");
+    const value = cleanRowScopedCategoricalCountValue(
+      implicitStatusMatch[2] ?? "",
+    );
+    if (entity && value) {
+      return {
+        label: rowScopedCategoricalCountLabel(entity, "status", value),
+        metric: "status",
+        operation: "categorical_count",
+      };
+    }
+  }
+
+  return null;
+}
+
 function extractRowScopedRangedCountQuestionParts(
   question: string,
 ): {
@@ -11525,6 +11586,59 @@ function rowScopedMetricRangedComparison(
   };
 }
 
+function cleanRowScopedCategoricalCountLabel(value: string): string | null {
+  const normalized = normalizeText(value).replace(/^(?:the\s+)?/i, "");
+  const canonical =
+    normalized === "state"
+      ? "status"
+      : normalized === "stage"
+        ? "status"
+        : normalized;
+  if (
+    ![
+      "status",
+      "priority",
+      "severity",
+      "type",
+      "category",
+      "region",
+      "environment",
+      "tier",
+      "plan",
+    ].includes(canonical)
+  ) {
+    return null;
+  }
+  return canonical;
+}
+
+function cleanRowScopedCategoricalCountValue(value: string): string | null {
+  const normalized = normalizeText(
+    cleanLabel(value)
+      .replace(/^(?:the\s+)?/i, "")
+      .replace(/^["']|["']$/g, ""),
+  );
+  if (!normalized) return null;
+  const tokens = tokenizeCompletionText(normalized);
+  if (tokens.length < 1 || tokens.length > 4) return null;
+  if (tokens.some((token) => DIRECT_PAGE_QUESTION_STOPWORDS.has(token))) {
+    return null;
+  }
+  return tokens.join(" ");
+}
+
+function rowScopedCategoricalStatusValuePattern(): string {
+  return "(?:active|inactive|blocked|unblocked|open|closed|pending|resolved|enabled|disabled|approved|rejected|complete|completed|done|failed|successful|success|draft|submitted|sent|archived|deleted|canceled|cancelled|delayed|paused|stopped|escalated|on\\s+hold)";
+}
+
+function rowScopedCategoricalCountLabel(
+  entity: string,
+  label: string,
+  value: string,
+): string {
+  return `${entity} rows where ${label} equals ${value}`;
+}
+
 function rowScopedMetricComparisonQuestionPattern(): string {
   return "(?:greater\\s+than\\s+or\\s+equal\\s+to|less\\s+than\\s+or\\s+equal\\s+to|at\\s+least|at\\s+most|no\\s+less\\s+than|no\\s+more\\s+than|greater\\s+than|more\\s+than|above|over|less\\s+than|fewer\\s+than|below|under|equal\\s+to|equals|exactly)";
 }
@@ -11626,6 +11740,31 @@ function rowScopedMetricAggregatePartsForLabel(
   label: string,
 ): ReadAnswerMetricAggregateParts | null {
   const normalizedLabel = normalizeText(label);
+  const categoricalMatch =
+    /^(.+?)\s+rows\s+where\s+(.+?)\s+equals\s+(.+?)$/.exec(
+      normalizedLabel,
+    );
+  if (categoricalMatch) {
+    const entity = cleanRowScopedCountEntity(categoricalMatch[1] ?? "");
+    const categoricalLabel = cleanRowScopedCategoricalCountLabel(
+      categoricalMatch[2] ?? "",
+    );
+    const value = cleanRowScopedCategoricalCountValue(
+      categoricalMatch[3] ?? "",
+    );
+    if (entity && categoricalLabel && value) {
+      return {
+        metric: categoricalLabel,
+        operation: "categorical_count",
+        categoricalCondition: {
+          entity,
+          label: categoricalLabel,
+          value,
+        },
+      };
+    }
+  }
+
   const rangedMatch =
     /^(.+?)\s+rows\s+where\s+(.+?)\s+between\s+(\d[\d.]*)\s+and\s+(\d[\d.]*)$/.exec(
       normalizedLabel,
@@ -12151,6 +12290,9 @@ function findReadAnswerMetricAggregateFromSnapshotRows(
     .map((rowText) => cleanLabel(rowText))
     .filter(Boolean)
     .filter((rowText) => rowText.length <= 500);
+  if (aggregate.operation === "categorical_count") {
+    return calculateReadAnswerCategoricalRowCountAggregate(rowTexts, aggregate);
+  }
   if (aggregate.operation === "conditional_count") {
     return calculateReadAnswerConditionalRowCountAggregate(rowTexts, aggregate);
   }
@@ -12185,6 +12327,9 @@ function findReadAnswerMetricAggregateFromTextLines(
   if (lines.length < 2) return null;
 
   const rowTexts = lines.filter((line) => line.length <= 500);
+  if (aggregate.operation === "categorical_count") {
+    return calculateReadAnswerCategoricalRowCountAggregate(rowTexts, aggregate);
+  }
   if (aggregate.operation === "conditional_count") {
     return calculateReadAnswerConditionalRowCountAggregate(rowTexts, aggregate);
   }
@@ -12216,6 +12361,39 @@ function calculateReadAnswerRowCountAggregate(
   return {
     answer: String(matches.length),
     evidenceText: matches.join("\n"),
+  };
+}
+
+function calculateReadAnswerCategoricalRowCountAggregate(
+  rowTexts: string[],
+  aggregate: ReadAnswerMetricAggregateParts,
+): ReadAnswerMetricAggregate | null {
+  const condition = aggregate.categoricalCondition;
+  if (!condition) return null;
+
+  const candidates = rowTexts.filter((rowText) =>
+    readAnswerRowCountTextMatchesEntity(rowText, condition.entity),
+  );
+  if (candidates.length < 1) return null;
+
+  const evidenceRows: string[] = [];
+  let matchingCount = 0;
+  for (const rowText of candidates) {
+    const answer = extractExpectedLabelValueAnswer(rowText, condition.label);
+    if (!answer) continue;
+    evidenceRows.push(rowText);
+    if (
+      normalizeText(answer) === condition.value ||
+      valueTokenCoveredBySummary(normalizeText(answer), condition.value)
+    ) {
+      matchingCount += 1;
+    }
+  }
+  if (evidenceRows.length < 1) return null;
+
+  return {
+    answer: String(matchingCount),
+    evidenceText: evidenceRows.join("\n"),
   };
 }
 
