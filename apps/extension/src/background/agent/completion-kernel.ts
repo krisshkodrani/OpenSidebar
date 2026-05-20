@@ -7751,6 +7751,7 @@ type ControlStateWorkflowAction = Extract<
   | "move"
   | "rename"
   | "merge"
+  | "create"
   | "attach"
   | "detach"
   | "send"
@@ -7826,6 +7827,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "move",
     "rename",
     "merge",
+    "create",
     "attach",
     "send",
     "export",
@@ -7951,6 +7953,16 @@ function inferControlStateChangeAction(
   if (/\bmove(?:d|s|ing)?\b/i.test(text)) return "move";
   if (/\brename(?:d|s|ing)?\b/i.test(text)) return "rename";
   if (/\bmerge(?:d|s|ing)?\b/i.test(text)) return "merge";
+  if (
+    /\b(?:create|created|creating|creation|register|registered|registering|registration)\b/i.test(
+      text,
+    ) ||
+    /\badd(?:ed|ing)?\b\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
+      text,
+    )
+  ) {
+    return "create";
+  }
   if (/\bdetach(?:ed|es|ing|ment)?\b/i.test(text)) return "detach";
   if (/\battach(?:ed|es|ing|ment)?\b/i.test(text)) return "attach";
   if (
@@ -8149,6 +8161,8 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "renamed";
     case "merge":
       return "merged";
+    case "create":
+      return "created";
     case "attach":
       return "attached";
     case "detach":
@@ -9608,6 +9622,13 @@ function readControlState(
       state,
       /^merged$/i,
       /^(?:unmerged|not[-\s]?merged|separate|pending|open)$/i,
+    );
+  }
+  if (action === "create") {
+    return readSemanticControlState(
+      state,
+      /^(?:created|added|registered)$/i,
+      /^(?:ready|draft|new|pending|uncreated|not[-\s]?created|empty)$/i,
     );
   }
   if (action === "attach" || action === "detach") {

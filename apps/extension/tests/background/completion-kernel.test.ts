@@ -27581,6 +27581,148 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts create confirmation from semantic create data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          840,
+          "Create Customer Alpha",
+          "ready",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          841,
+          "Create Customer Alpha",
+          "created",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Create Customer Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 840 },
+      result: "Clicked element 840.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Created Customer Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "create",
+      targetLabel: "Customer Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:create:control-state:customer-alpha-create",
+        detail: expect.objectContaining({
+          action: "create",
+          source: "control_state_change",
+          targetText: "Customer Alpha",
+          text: "Control state changed to created: Create Customer Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer create confirmation when semantic data-state was already created", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          842,
+          "Create Customer Alpha",
+          "created",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          843,
+          "Create Customer Alpha",
+          "created",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 842 },
+      result: "Clicked element 842.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer create confirmation when semantic data-state flips ready", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          844,
+          "Create Customer Alpha",
+          "created",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Customer Alpha Create Customer Alpha",
+      pageContent: "Customer Alpha Create Customer Alpha",
+      elements: [
+        dataStateActionButton(
+          845,
+          "Create Customer Alpha",
+          "ready",
+          "customer-alpha-create",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 844 },
+      result: "Clicked element 844.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   for (const scenario of [
     {
       action: "share",
