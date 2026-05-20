@@ -7753,6 +7753,7 @@ type ControlStateWorkflowAction = Extract<
   | "merge"
   | "attach"
   | "detach"
+  | "send"
   | "install"
   | "uninstall"
   | "sync"
@@ -7822,6 +7823,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "rename",
     "merge",
     "attach",
+    "send",
     "install",
     "sync",
     "subscribe",
@@ -8035,6 +8037,9 @@ function inferControlStateChangeAction(
   }
   if (/\bshare(?:d|s|ing)?\b/i.test(text)) return "share";
   if (/\binvit(?:e|ed|es|ing|ation)\b/i.test(text)) return "invite";
+  if (/\b(?:send|sent|sending|email|emailed|emailing)\b/i.test(text)) {
+    return "send";
+  }
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
@@ -8136,6 +8141,8 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "attached";
     case "detach":
       return "detached";
+    case "send":
+      return "sent";
     case "install":
       return "installed";
     case "uninstall":
@@ -9588,6 +9595,13 @@ function readControlState(
       state,
       /^attached$/i,
       /^(?:detached|unattached|not[-\s]?attached|pending|none)$/i,
+    );
+  }
+  if (action === "send") {
+    return readSemanticControlState(
+      state,
+      /^sent$/i,
+      /^(?:draft|unsent|not[-\s]?sent|pending|queued|outbox)$/i,
     );
   }
   if (action === "install" || action === "uninstall") {

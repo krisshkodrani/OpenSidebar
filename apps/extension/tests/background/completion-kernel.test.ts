@@ -27250,6 +27250,148 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts send confirmation from semantic send data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          828,
+          "Send Message Alpha",
+          "draft",
+          "message-alpha-send",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          829,
+          "Send Message Alpha",
+          "sent",
+          "message-alpha-send",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Send Message Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 828 },
+      result: "Clicked element 828.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Sent Message Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "send",
+      targetLabel: "Message Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:send:control-state:message-alpha-send",
+        detail: expect.objectContaining({
+          action: "send",
+          source: "control_state_change",
+          targetText: "Message Alpha",
+          text: "Control state changed to sent: Send Message Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer send confirmation when semantic data-state was already sent", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          830,
+          "Send Message Alpha",
+          "sent",
+          "message-alpha-send",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          831,
+          "Send Message Alpha",
+          "sent",
+          "message-alpha-send",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 830 },
+      result: "Clicked element 830.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer send confirmation when semantic data-state flips draft", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          832,
+          "Send Message Alpha",
+          "sent",
+          "message-alpha-send",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Message Alpha Send Message Alpha",
+      pageContent: "Message Alpha Send Message Alpha",
+      elements: [
+        dataStateActionButton(
+          833,
+          "Send Message Alpha",
+          "draft",
+          "message-alpha-send",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 832 },
+      result: "Clicked element 832.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   for (const scenario of [
     {
       action: "share",
