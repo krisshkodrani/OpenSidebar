@@ -7754,6 +7754,10 @@ type ControlStateWorkflowAction = Extract<
   | "attach"
   | "detach"
   | "send"
+  | "export"
+  | "download"
+  | "upload"
+  | "import"
   | "install"
   | "uninstall"
   | "sync"
@@ -7824,6 +7828,10 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "merge",
     "attach",
     "send",
+    "export",
+    "download",
+    "upload",
+    "import",
     "install",
     "sync",
     "subscribe",
@@ -7981,6 +7989,10 @@ function inferControlStateChangeAction(
   if (/\btag(?:ged|ging)?\b/i.test(text)) return "tag";
   if (/\bunflag(?:ged|ging)?\b/i.test(text)) return "unflag";
   if (/\bflag(?:ged|ging)?\b/i.test(text)) return "flag";
+  if (/\bexport(?:ed|ing|s)?\b/i.test(text)) return "export";
+  if (/\bdownload(?:ed|ing|s)?\b/i.test(text)) return "download";
+  if (/\bupload(?:ed|ing|s)?\b/i.test(text)) return "upload";
+  if (/\bimport(?:ed|ing|s)?\b/i.test(text)) return "import";
   if (/\buninstall(?:ed|ing|ation)?\b/i.test(text)) return "uninstall";
   if (/\binstall(?:ed|ing|ation)?\b/i.test(text)) return "install";
   if (/\b(?:sync|resync|synchroni[sz]e)(?:ed|ing|ation)?\b/i.test(text)) {
@@ -8143,6 +8155,14 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "detached";
     case "send":
       return "sent";
+    case "export":
+      return "exported";
+    case "download":
+      return "downloaded";
+    case "upload":
+      return "uploaded";
+    case "import":
+      return "imported";
     case "install":
       return "installed";
     case "uninstall":
@@ -9602,6 +9622,34 @@ function readControlState(
       state,
       /^sent$/i,
       /^(?:draft|unsent|not[-\s]?sent|pending|queued|outbox)$/i,
+    );
+  }
+  if (action === "export") {
+    return readSemanticControlState(
+      state,
+      /^exported$/i,
+      /^(?:ready|queued|pending|unexported|not[-\s]?exported)$/i,
+    );
+  }
+  if (action === "download") {
+    return readSemanticControlState(
+      state,
+      /^downloaded$/i,
+      /^(?:ready|queued|pending|available|undownloaded|not[-\s]?downloaded)$/i,
+    );
+  }
+  if (action === "upload") {
+    return readSemanticControlState(
+      state,
+      /^uploaded$/i,
+      /^(?:ready|selected|queued|pending|unuploaded|not[-\s]?uploaded)$/i,
+    );
+  }
+  if (action === "import") {
+    return readSemanticControlState(
+      state,
+      /^imported$/i,
+      /^(?:ready|staged|queued|pending|unimported|not[-\s]?imported)$/i,
     );
   }
   if (action === "install" || action === "uninstall") {
