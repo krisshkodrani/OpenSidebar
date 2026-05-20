@@ -24331,6 +24331,173 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  for (const scenario of [
+    {
+      action: "assign",
+      completion: "assigned",
+      label: "Assign Ticket Alpha",
+      request: "Assign Ticket Alpha.",
+      summary: "Assigned Ticket Alpha.",
+      target: "Ticket Alpha",
+      id: "ticket-alpha-assign",
+      beforeState: "unassigned",
+      afterState: "assigned",
+    },
+    {
+      action: "unassign",
+      completion: "unassigned",
+      label: "Unassign Ticket Alpha",
+      request: "Unassign Ticket Alpha.",
+      summary: "Unassigned Ticket Alpha.",
+      target: "Ticket Alpha",
+      id: "ticket-alpha-assign",
+      beforeState: "assigned",
+      afterState: "unassigned",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic assignment data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            710,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            711,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 710 },
+        result: "Clicked element 710.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer assign confirmation when semantic data-state was already assigned", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Ticket Alpha Assign Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          712,
+          "Assign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Ticket Alpha Assign Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          713,
+          "Assign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 712 },
+      result: "Clicked element 712.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unassign confirmation when semantic data-state flips assigned", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket Alpha Unassign Ticket Alpha",
+      pageContent: "Ticket Alpha Unassign Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          714,
+          "Unassign Ticket Alpha",
+          "unassigned",
+          "ticket-alpha-assign",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket Alpha Unassign Ticket Alpha",
+      pageContent: "Ticket Alpha Unassign Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          715,
+          "Unassign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 714 },
+      result: "Clicked element 714.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
