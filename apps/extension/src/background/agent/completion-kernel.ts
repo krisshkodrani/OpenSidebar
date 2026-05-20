@@ -8857,7 +8857,9 @@ function readControlState(element: TaggedElement): boolean | null {
   const state =
     element.attributes.checked ??
     element.attributes["aria-checked"] ??
-    element.attributes["aria-pressed"];
+    element.attributes["aria-pressed"] ??
+    element.attributes["aria-selected"] ??
+    element.attributes.selected;
   if (state == null) return null;
   if (/^(?:true|checked|pressed|selected|1)$/i.test(state)) return true;
   if (/^(?:false|0)$/i.test(state)) return false;
