@@ -7721,6 +7721,7 @@ type ControlStateWorkflowAction = Extract<
   | "disconnect"
   | "install"
   | "uninstall"
+  | "sync"
   | "subscribe"
   | "unsubscribe"
   | "follow"
@@ -7749,6 +7750,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "lock",
     "connect",
     "install",
+    "sync",
     "subscribe",
     "follow",
     "bookmark",
@@ -7792,6 +7794,9 @@ function inferControlStateChangeAction(
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\buninstall(?:ed|ing|ation)?\b/i.test(text)) return "uninstall";
   if (/\binstall(?:ed|ing|ation)?\b/i.test(text)) return "install";
+  if (/\b(?:sync|resync|synchroni[sz]e)(?:ed|ing|ation)?\b/i.test(text)) {
+    return "sync";
+  }
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
   }
@@ -7851,6 +7856,8 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "installed";
     case "uninstall":
       return "uninstalled";
+    case "sync":
+      return "synced";
     case "subscribe":
       return "subscribed";
     case "unsubscribe":
@@ -9123,6 +9130,12 @@ function readControlState(
   if (action === "install" || action === "uninstall") {
     if (/^installed$/i.test(state)) return true;
     if (/^uninstalled$/i.test(state)) return false;
+  }
+  if (action === "sync") {
+    if (/^(?:synced|resynced|synchroni[sz]ed)$/i.test(state)) return true;
+    if (/^(?:unsynced|stale|out[-\s]of[-\s]sync)$/i.test(state)) {
+      return false;
+    }
   }
   return null;
 }
