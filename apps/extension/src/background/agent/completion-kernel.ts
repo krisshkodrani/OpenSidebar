@@ -1261,14 +1261,14 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
-  const rowMetricTotalQuestion =
-    extractRowScopedMetricTotalQuestionParts(requestText);
+  const rowMetricAggregateQuestion =
+    extractRowScopedMetricAggregateQuestionParts(requestText);
   const rowScopedSuperlativeAnswer = !sentenceScopedAnswer
     ? getGroundedRowScopedSuperlativeMetricAnswer(requestText, _snapshot)
     : null;
-  const rowScopedMetricTotalAnswer =
-    rowMetricTotalQuestion && !rowScopedSuperlativeAnswer
-      ? getGroundedRowScopedMetricTotalAnswer(requestText, _snapshot)
+  const rowScopedMetricAggregateAnswer =
+    rowMetricAggregateQuestion && !rowScopedSuperlativeAnswer
+      ? getGroundedRowScopedMetricAggregateAnswer(requestText, _snapshot)
       : null;
   const definitionQuestion =
     extractSentenceScopedDefinitionQuestionParts(requestText);
@@ -1304,7 +1304,7 @@ function generateReadAnswerContract(
   if (targetStateQuestion && !sentenceScopedAnswer) {
     return null;
   }
-  if (rowMetricTotalQuestion && !rowScopedMetricTotalAnswer) {
+  if (rowMetricAggregateQuestion && !rowScopedMetricAggregateAnswer) {
     return null;
   }
   const targetMetricValueQuestion =
@@ -1312,7 +1312,7 @@ function generateReadAnswerContract(
   if (
     targetMetricValueQuestion &&
     !sentenceScopedAnswer &&
-    !rowScopedMetricTotalAnswer
+    !rowScopedMetricAggregateAnswer
   ) {
     return null;
   }
@@ -1328,7 +1328,7 @@ function generateReadAnswerContract(
   if (
     !sentenceScopedAnswer &&
     !rowScopedSuperlativeAnswer &&
-    !rowScopedMetricTotalAnswer &&
+    !rowScopedMetricAggregateAnswer &&
     !hasPageReadAnswerIntent(requestText, _snapshot)
   ) {
     return null;
@@ -1368,7 +1368,7 @@ function generateReadAnswerContract(
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
     rowScopedSuperlativeAnswer?.label ??
-    rowScopedMetricTotalAnswer?.label ??
+    rowScopedMetricAggregateAnswer?.label ??
     sentenceScopedAnswer?.label ??
     (targetSpecificLabelRequiresScopedEvidence
       ? null
@@ -1390,7 +1390,7 @@ function generateReadAnswerContract(
               expectedAnswerTarget: rowScopedSuperlativeAnswer.target,
               expectedAnswerScope: "sentence" as const,
             }
-        : rowScopedMetricTotalAnswer
+        : rowScopedMetricAggregateAnswer
           ? {
               expectedAnswerScope: "aggregate" as const,
             }
@@ -1422,7 +1422,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedMetricValuePatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedSuperlativeMetricPartsForLabel(normalizedLabel)) return true;
-  if (rowScopedMetricTotalPartsForLabel(normalizedLabel)) return true;
+  if (rowScopedMetricAggregatePartsForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -2382,7 +2382,7 @@ function evaluateReadAnswer(params: {
       reason:
         "Requested aggregate page-answer task has no matching visible row evidence yet.",
       hint:
-        "Read the visible rows for the requested metric, then call done with the computed total.",
+        "Read the visible rows for the requested metric, then call done with the computed aggregate.",
       contract,
       evidence: params.evidence,
     };
@@ -2670,11 +2670,11 @@ function readAnswerAggregateScopedSnapshotEvidence(params: {
   expectedAnswerLabel: string;
   observedAtTurn: number;
 }): Extract<CompletionEvidence, { type: "answer_state" }> | null {
-  const total = findReadAnswerMetricTotalFromSnapshotRows(
+  const aggregate = findReadAnswerMetricAggregateFromSnapshotRows(
     params.snapshot,
     params.expectedAnswerLabel,
   );
-  if (!total) return null;
+  if (!aggregate) return null;
 
   const labelKey = compactKey(params.expectedAnswerLabel) || "label";
   return {
@@ -2683,9 +2683,9 @@ function readAnswerAggregateScopedSnapshotEvidence(params: {
     logicalKey: `read_answer:aggregate:${labelKey}`,
     observedAtTurn: params.observedAtTurn,
     detail: {
-      answer: total.answer.slice(0, 1000),
+      answer: aggregate.answer.slice(0, 1000),
       source: "page_read",
-      evidenceText: total.evidenceText.slice(0, 4000),
+      evidenceText: aggregate.evidenceText.slice(0, 4000),
       ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
     },
   };
@@ -2696,11 +2696,11 @@ function readAnswerAggregateScopedTextEvidence(params: {
   expectedAnswerLabel: string;
 }): Extract<CompletionEvidence, { type: "answer_state" }> | null {
   for (const event of params.evidence) {
-    const total = findReadAnswerMetricTotalFromTextLines(
+    const aggregate = findReadAnswerMetricAggregateFromTextLines(
       event.detail.evidenceText,
       params.expectedAnswerLabel,
     );
-    if (!total) continue;
+    if (!aggregate) continue;
 
     const labelKey = compactKey(params.expectedAnswerLabel) || "label";
     return {
@@ -2709,8 +2709,8 @@ function readAnswerAggregateScopedTextEvidence(params: {
       logicalKey: `read_answer:aggregate-text:${labelKey}`,
       detail: {
         ...event.detail,
-        answer: total.answer.slice(0, 1000),
-        evidenceText: total.evidenceText.slice(0, 4000),
+        answer: aggregate.answer.slice(0, 1000),
+        evidenceText: aggregate.evidenceText.slice(0, 4000),
       },
     };
   }
@@ -10467,19 +10467,20 @@ function getGroundedRowScopedSuperlativeMetricAnswer(
   };
 }
 
-function getGroundedRowScopedMetricTotalAnswer(
+function getGroundedRowScopedMetricAggregateAnswer(
   question: string,
   snapshot?: DomSnapshot | null,
 ): { label: string } | null {
   if (!snapshot) return null;
-  const metricTotalQuestion = extractRowScopedMetricTotalQuestionParts(question);
-  if (!metricTotalQuestion) return null;
+  const metricAggregateQuestion =
+    extractRowScopedMetricAggregateQuestionParts(question);
+  if (!metricAggregateQuestion) return null;
 
-  const total = findReadAnswerMetricTotalFromSnapshotRows(
+  const aggregate = findReadAnswerMetricAggregateFromSnapshotRows(
     snapshot,
-    metricTotalQuestion.label,
+    metricAggregateQuestion.label,
   );
-  return total ? { label: metricTotalQuestion.label } : null;
+  return aggregate ? { label: metricAggregateQuestion.label } : null;
 }
 
 function findGroundedRowScopedLabelValueQuestion(
@@ -11135,7 +11136,9 @@ type ReadAnswerSuperlativeMetricCandidate = {
   sentence: string;
 };
 
-type ReadAnswerMetricTotal = {
+type ReadAnswerMetricAggregateOperation = "total" | "average";
+
+type ReadAnswerMetricAggregate = {
   answer: string;
   evidenceText: string;
 };
@@ -11215,52 +11218,89 @@ function sentenceScopedSuperlativeMetricPartsForLabel(
   return null;
 }
 
-function extractRowScopedMetricTotalQuestionParts(
+function extractRowScopedMetricAggregateQuestionParts(
   question: string,
-): { label: string; metric: string } | null {
+): {
+  label: string;
+  metric: string;
+  operation: ReadAnswerMetricAggregateOperation;
+} | null {
   const text = cleanLabel(question);
-  const patterns = [
-    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?sum\s+of\s+(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
-    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:total|combined|overall)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+  const patterns: Array<{
+    operation: ReadAnswerMetricAggregateOperation;
+    pattern: RegExp;
+  }> = [
+    {
+      operation: "total",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?sum\s+of\s+(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
+      operation: "total",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:total|combined|overall)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
+      operation: "average",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:average|mean)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
   ];
-  const totalMatch = patterns
-    .map((pattern) => pattern.exec(text))
-    .find((match): match is RegExpExecArray => match !== null);
-  if (!totalMatch) return null;
+  const aggregateMatch = patterns
+    .map(({ operation, pattern }) => ({ operation, match: pattern.exec(text) }))
+    .find(
+      (
+        result,
+      ): result is {
+        operation: ReadAnswerMetricAggregateOperation;
+        match: RegExpExecArray;
+      } => result.match !== null,
+    );
+  if (!aggregateMatch) return null;
 
-  const metric = cleanRowScopedMetricTotalMetric(totalMatch[1] ?? "");
-  const entityTokens = tokenizeCompletionText(totalMatch[2] ?? "");
+  const metric = cleanRowScopedMetricAggregateMetric(
+    aggregateMatch.match[1] ?? "",
+  );
+  const entityTokens = tokenizeCompletionText(aggregateMatch.match[2] ?? "");
   if (!metric || entityTokens.length < 1 || entityTokens.length > 6) {
     return null;
   }
 
   return {
-    label: rowScopedMetricTotalLabel(metric),
+    label: rowScopedMetricAggregateLabel(metric, aggregateMatch.operation),
     metric,
+    operation: aggregateMatch.operation,
   };
 }
 
-function cleanRowScopedMetricTotalMetric(value: string): string | null {
+function cleanRowScopedMetricAggregateMetric(value: string): string | null {
   const metric = cleanLabel(value)
-    .replace(/^(?:the\s+)?(?:current|latest|reported|combined|overall)\s+/i, "")
+    .replace(
+      /^(?:the\s+)?(?:current|latest|reported|combined|overall|average|mean)\s+/i,
+      "",
+    )
     .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
   const tokens = tokenizeCompletionText(metric);
   if (tokens.length < 1 || tokens.length > 6) return null;
   return tokens.join(" ");
 }
 
-function rowScopedMetricTotalLabel(metric: string): string {
-  return `${metric} total`;
+function rowScopedMetricAggregateLabel(
+  metric: string,
+  operation: ReadAnswerMetricAggregateOperation,
+): string {
+  return `${metric} ${operation}`;
 }
 
-function rowScopedMetricTotalPartsForLabel(
+function rowScopedMetricAggregatePartsForLabel(
   label: string,
-): { metric: string } | null {
+): { metric: string; operation: ReadAnswerMetricAggregateOperation } | null {
   const normalizedLabel = normalizeText(label);
-  const match = /^(.+?)\s+total$/.exec(normalizedLabel);
+  const match = /^(.+?)\s+(total|average)$/.exec(normalizedLabel);
   if (!match) return null;
-  const metric = cleanRowScopedMetricTotalMetric(match[1] ?? "");
-  return metric ? { metric } : null;
+  const operation = match[2] as ReadAnswerMetricAggregateOperation;
+  const metric = cleanRowScopedMetricAggregateMetric(match[1] ?? "");
+  return metric ? { metric, operation } : null;
 }
 
 function cleanSentenceScopedTargetMetricValueMetric(
@@ -11710,12 +11750,12 @@ function findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
   return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
 }
 
-function findReadAnswerMetricTotalFromSnapshotRows(
+function findReadAnswerMetricAggregateFromSnapshotRows(
   snapshot: DomSnapshot,
   expectedAnswerLabel: string,
-): ReadAnswerMetricTotal | null {
-  const total = rowScopedMetricTotalPartsForLabel(expectedAnswerLabel);
-  if (!total) return null;
+): ReadAnswerMetricAggregate | null {
+  const aggregate = rowScopedMetricAggregatePartsForLabel(expectedAnswerLabel);
+  if (!aggregate) return null;
 
   const candidates = snapshot.elements
     .filter((element) => element.isVisible && !element.isDisabled)
@@ -11725,7 +11765,7 @@ function findReadAnswerMetricTotalFromSnapshotRows(
     .filter(Boolean)
     .filter((rowText) => rowText.length <= 500)
     .map((rowText) =>
-      extractReadAnswerSuperlativeMetricCandidate(rowText, total.metric),
+      extractReadAnswerSuperlativeMetricCandidate(rowText, aggregate.metric),
     )
     .filter(
       (
@@ -11733,15 +11773,15 @@ function findReadAnswerMetricTotalFromSnapshotRows(
       ): candidate is ReadAnswerSuperlativeMetricCandidate =>
         candidate !== null,
     );
-  return calculateReadAnswerMetricTotal(candidates);
+  return calculateReadAnswerMetricAggregate(candidates, aggregate.operation);
 }
 
-function findReadAnswerMetricTotalFromTextLines(
+function findReadAnswerMetricAggregateFromTextLines(
   evidenceText: string,
   expectedAnswerLabel: string,
-): ReadAnswerMetricTotal | null {
-  const total = rowScopedMetricTotalPartsForLabel(expectedAnswerLabel);
-  if (!total) return null;
+): ReadAnswerMetricAggregate | null {
+  const aggregate = rowScopedMetricAggregatePartsForLabel(expectedAnswerLabel);
+  if (!aggregate) return null;
 
   const lines = evidenceText
     .split(/[\r\n]+/g)
@@ -11752,7 +11792,7 @@ function findReadAnswerMetricTotalFromTextLines(
   const candidates = lines
     .filter((line) => line.length <= 500)
     .map((line) =>
-      extractReadAnswerSuperlativeMetricCandidate(line, total.metric),
+      extractReadAnswerSuperlativeMetricCandidate(line, aggregate.metric),
     )
     .filter(
       (
@@ -11760,12 +11800,13 @@ function findReadAnswerMetricTotalFromTextLines(
       ): candidate is ReadAnswerSuperlativeMetricCandidate =>
         candidate !== null,
     );
-  return calculateReadAnswerMetricTotal(candidates);
+  return calculateReadAnswerMetricAggregate(candidates, aggregate.operation);
 }
 
-function calculateReadAnswerMetricTotal(
+function calculateReadAnswerMetricAggregate(
   candidates: ReadAnswerSuperlativeMetricCandidate[],
-): ReadAnswerMetricTotal | null {
+  operation: ReadAnswerMetricAggregateOperation,
+): ReadAnswerMetricAggregate | null {
   const uniqueCandidates = new Map<
     string,
     ReadAnswerSuperlativeMetricCandidate
@@ -11780,13 +11821,14 @@ function calculateReadAnswerMetricTotal(
 
   const values = [...uniqueCandidates.values()];
   const sum = values.reduce((total, candidate) => total + candidate.value, 0);
+  const answer = operation === "average" ? sum / values.length : sum;
   return {
-    answer: formatReadAnswerMetricTotalValue(sum),
+    answer: formatReadAnswerMetricAggregateValue(answer),
     evidenceText: values.map((candidate) => candidate.sentence).join("\n"),
   };
 }
 
-function formatReadAnswerMetricTotalValue(value: number): string {
+function formatReadAnswerMetricAggregateValue(value: number): string {
   const rounded = Math.round(value * 1_000_000) / 1_000_000;
   if (Number.isInteger(rounded)) return String(rounded);
   return String(rounded).replace(/(\.\d*?)0+$/g, "$1").replace(/\.$/g, "");
