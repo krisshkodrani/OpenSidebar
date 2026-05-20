@@ -27842,6 +27842,92 @@ describe("completion kernel", () => {
     expect(wrongAnswer.status).toBe("inconclusive");
   });
 
+  test("accepts target-presence sentence-scoped answer with current-presence adverbs", () => {
+    const snap = workflowSnapshot({
+      title: "Project Metrics",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas currently has 17 open incidents. Project Borealis currently has no open incidents.",
+      pageContent:
+        "Project Atlas currently has 17 open incidents. Project Borealis currently has no open incidents. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Does Project Atlas currently have any open incidents?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Yes, Project Atlas currently has open incidents.",
+    });
+    const wrongAnswer = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "No.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "open incidents presence",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(wrongAnswer.status).toBe("inconclusive");
+  });
+
+  test("accepts target-presence no answer with still evidence from read_page", () => {
+    const snap = workflowSnapshot({
+      title: "Project Metrics",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas still has no open incidents. Project Borealis still has 4 open incidents.",
+      pageContent:
+        "Project Atlas still has no open incidents. Project Borealis still has 4 open incidents. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Does Project Atlas still have any open incidents?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Atlas still has no open incidents. Project Borealis still has 4 open incidents. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "No, Project Atlas still has no open incidents.",
+    });
+    const wrongAnswer = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Yes.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "open incidents presence",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(wrongAnswer.status).toBe("inconclusive");
+  });
+
   test("does not accept target-presence evidence for the wrong requested metric", () => {
     const snap = workflowSnapshot({
       title: "Project Metrics",

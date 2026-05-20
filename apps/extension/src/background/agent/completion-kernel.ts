@@ -10023,12 +10023,13 @@ function extractSentenceScopedTargetPresenceQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
   const text = cleanLabel(question);
-  const targetVerbMatch =
-    /^(?:please\s+)?(?:tell me\s+)?(?:does|do|did)\s+(?:the\s+)?(.+?)\s+(?:have|contain|include|show|list|track|report)\s+(?:any\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
+  const adverbPattern = sentenceScopedTargetPresenceAdverbPattern();
+  const targetVerbMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:does|do|did)\\s+(?:the\\s+)?(.+?)\\s+${adverbPattern}(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?(.+?)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
   if (targetVerbMatch) {
-    const target = cleanSentenceScopedTargetCountTarget(
+    const target = cleanSentenceScopedTargetPresenceTarget(
       targetVerbMatch[1] ?? "",
     );
     const metric = cleanSentenceScopedTargetCountMetric(
@@ -10052,6 +10053,15 @@ function extractSentenceScopedTargetPresenceQuestionParts(
   }
 
   return null;
+}
+
+function cleanSentenceScopedTargetPresenceTarget(value: string): string | null {
+  return cleanSentenceScopedTargetCountTarget(
+    cleanLabel(value).replace(
+      /\s+(?:currently|still|now|presently|actively)$/i,
+      "",
+    ),
+  );
 }
 
 function cleanSentenceScopedTargetCountMetric(value: string): string | null {
@@ -11373,9 +11383,10 @@ function extractSentenceScopedTargetPresenceAnswer(
   metricPattern: string,
 ): string | null {
   const countPattern = sentenceScopedTargetCountAnswerPattern();
+  const adverbPattern = sentenceScopedTargetPresenceAdverbPattern();
   const noPatterns = [
-    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
-    `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+${adverbPattern}not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
@@ -11384,7 +11395,7 @@ function extractSentenceScopedTargetPresenceAnswer(
   }
 
   const countPatterns = [
-    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
   for (const pattern of countPatterns) {
@@ -11394,6 +11405,10 @@ function extractSentenceScopedTargetPresenceAnswer(
   }
 
   return null;
+}
+
+function sentenceScopedTargetPresenceAdverbPattern(): string {
+  return "(?:(?:currently|still|now|presently|actively)\\s+)?";
 }
 
 function sentenceScopedTargetCountAnswerIsZero(value: string): boolean {
