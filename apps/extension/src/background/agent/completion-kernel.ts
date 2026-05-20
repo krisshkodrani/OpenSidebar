@@ -9190,6 +9190,9 @@ function readControlState(
       /^(?:disabled|deactivated|inactive)$/i,
     );
   }
+  if (action === "lock" || action === "unlock") {
+    return readSemanticControlState(state, /^locked$/i, /^unlocked$/i);
+  }
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
     if (/^disconnected$/i.test(state)) return false;

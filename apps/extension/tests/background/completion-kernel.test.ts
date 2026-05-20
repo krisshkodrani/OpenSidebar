@@ -23997,6 +23997,173 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  for (const scenario of [
+    {
+      action: "lock",
+      completion: "locked",
+      label: "Lock Account Alpha",
+      request: "Lock Account Alpha.",
+      summary: "Locked Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-lock",
+      beforeState: "unlocked",
+      afterState: "locked",
+    },
+    {
+      action: "unlock",
+      completion: "unlocked",
+      label: "Unlock Account Alpha",
+      request: "Unlock Account Alpha.",
+      summary: "Unlocked Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-lock",
+      beforeState: "locked",
+      afterState: "unlocked",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic lock data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            698,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            699,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 698 },
+        result: "Clicked element 698.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer lock confirmation when semantic data-state was already locked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Lock Account Alpha",
+      pageContent: "Account Alpha Lock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          700,
+          "Lock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Lock Account Alpha",
+      pageContent: "Account Alpha Lock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          701,
+          "Lock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 700 },
+      result: "Clicked element 700.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unlock confirmation when semantic data-state flips locked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Unlock Account Alpha",
+      pageContent: "Account Alpha Unlock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          702,
+          "Unlock Account Alpha",
+          "unlocked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Unlock Account Alpha",
+      pageContent: "Account Alpha Unlock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          703,
+          "Unlock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 702 },
+      result: "Clicked element 702.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
