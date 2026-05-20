@@ -11140,6 +11140,7 @@ type ReadAnswerMetricAggregateOperation =
   | "total"
   | "average"
   | "median"
+  | "range"
   | "highest"
   | "lowest"
   | "count";
@@ -11257,6 +11258,16 @@ function extractRowScopedMetricAggregateQuestionParts(
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?median\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
     },
     {
+      operation: "range",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?range\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
+      operation: "range",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?difference\s+between\s+(?:the\s+)?(?:highest|largest|maximum|max)\s+and\s+(?:the\s+)?(?:lowest|smallest|minimum|min)\s+(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
       operation: "highest",
       pattern:
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:highest|largest|maximum|max)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
@@ -11315,7 +11326,7 @@ function cleanRowScopedMetricAggregateMetric(value: string): string | null {
       "",
     )
     .replace(
-      /^(?:median|highest|largest|maximum|max|lowest|smallest|minimum|min)\s+/i,
+      /^(?:range|median|highest|largest|maximum|max|lowest|smallest|minimum|min)\s+/i,
       "",
     )
     .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
@@ -11356,7 +11367,7 @@ function rowScopedMetricAggregatePartsForLabel(
     return metric ? { metric, operation: "count" } : null;
   }
 
-  const match = /^(.+?)\s+(total|average|median|highest|lowest)$/.exec(
+  const match = /^(.+?)\s+(total|average|median|range|highest|lowest)$/.exec(
     normalizedLabel,
   );
   if (!match) return null;
@@ -11912,6 +11923,8 @@ function calculateReadAnswerMetricAggregate(
       ? sum / values.length
       : operation === "median"
         ? medianReadAnswerMetricAggregateValue(numericValues)
+      : operation === "range"
+        ? Math.max(...numericValues) - Math.min(...numericValues)
       : operation === "highest"
         ? Math.max(...numericValues)
         : operation === "lowest"
