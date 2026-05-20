@@ -7717,6 +7717,7 @@ type ControlStateWorkflowAction = Extract<
   | "reject"
   | "close"
   | "reopen"
+  | "cancel"
   | "escalate"
   | "deescalate"
   | "enable"
@@ -7775,6 +7776,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "approve",
     "reject",
     "close",
+    "cancel",
     "escalate",
     "enable",
     "lock",
@@ -7868,6 +7870,9 @@ function inferControlStateChangeAction(
   ) {
     return "close";
   }
+  if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
+    return "cancel";
+  }
   if (/\bde[-\s]?escalat(?:e|ed|ing|ion)\b/i.test(text)) {
     return "deescalate";
   }
@@ -7956,6 +7961,8 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "closed";
     case "reopen":
       return "reopened";
+    case "cancel":
+      return "canceled";
     case "escalate":
       return "escalated";
     case "deescalate":
@@ -9312,6 +9319,13 @@ function readControlState(
       state,
       /^(?:closed|resolved)$/i,
       /^(?:open|reopened|re-opened)$/i,
+    );
+  }
+  if (action === "cancel") {
+    return readSemanticControlState(
+      state,
+      /^cancell?ed$/i,
+      /^(?:active|pending|open|scheduled)$/i,
     );
   }
   if (action === "escalate" || action === "deescalate") {

@@ -25500,6 +25500,148 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts cancel confirmation from semantic cancel data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          752,
+          "Cancel Order Alpha",
+          "active",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          753,
+          "Cancel Order Alpha",
+          "canceled",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Cancel Order Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 752 },
+      result: "Clicked element 752.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Canceled Order Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "cancel",
+      targetLabel: "Order Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:cancel:control-state:order-alpha-cancel",
+        detail: expect.objectContaining({
+          action: "cancel",
+          source: "control_state_change",
+          targetText: "Order Alpha",
+          text: "Control state changed to canceled: Cancel Order Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer cancel confirmation when semantic data-state was already canceled", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          754,
+          "Cancel Order Alpha",
+          "canceled",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          755,
+          "Cancel Order Alpha",
+          "canceled",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 754 },
+      result: "Clicked element 754.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer cancel confirmation when semantic data-state flips active", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          756,
+          "Cancel Order Alpha",
+          "canceled",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Order Alpha Cancel Order Alpha",
+      pageContent: "Order Alpha Cancel Order Alpha",
+      elements: [
+        dataStateActionButton(
+          757,
+          "Cancel Order Alpha",
+          "active",
+          "order-alpha-cancel",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 756 },
+      result: "Clicked element 756.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
