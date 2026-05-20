@@ -1295,6 +1295,11 @@ function generateReadAnswerContract(
   if (targetStateQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const targetMetricValueQuestion =
+    extractSentenceScopedTargetMetricValueQuestionParts(requestText);
+  if (targetMetricValueQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1306,8 +1311,19 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
+  const groundedLabelValueQuestionLabel = getGroundedLabelValueQuestionLabel(
+    requestText,
+    _snapshot,
+  );
+  const groundedLabelValueBypassesScopedTargetGate =
+    groundedLabelValueQuestionCanBypassScopedTargetGate(
+      requestText,
+      groundedLabelValueQuestionLabel,
+    );
   const targetSpecificLabelQuestion =
-    !rowScopedAnswer && !sentenceScopedAnswer
+    !rowScopedAnswer &&
+    !sentenceScopedAnswer &&
+    !groundedLabelValueBypassesScopedTargetGate
       ? extractRowScopedLabelValueQuestionParts(requestText)
       : null;
   const targetSpecificLabelRequiresScopedEvidence =
@@ -1324,7 +1340,7 @@ function generateReadAnswerContract(
     sentenceScopedAnswer?.label ??
     (targetSpecificLabelRequiresScopedEvidence
       ? null
-      : getGroundedLabelValueQuestionLabel(requestText, _snapshot));
+      : groundedLabelValueQuestionLabel);
 
   return {
     contract: {
@@ -1363,11 +1379,16 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (normalizedLabel === "location") return true;
   if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedMetricValuePatternForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
     normalizedLabel === "severity" ||
-    normalizedLabel === "due date"
+    normalizedLabel === "due date" ||
+    normalizedLabel === "number" ||
+    normalizedLabel === "count" ||
+    normalizedLabel === "quantity" ||
+    normalizedLabel === "value"
   ) {
     return true;
   }
@@ -1376,6 +1397,16 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
       sentenceScopedRelationNounPatternForLabel(normalizedLabel) ||
       sentenceScopedByRelationPatternForLabel(normalizedLabel) ||
       sentenceScopedActiveRelationPatternForLabel(normalizedLabel),
+  );
+}
+
+function groundedLabelValueQuestionCanBypassScopedTargetGate(
+  question: string,
+  label: string | null,
+): boolean {
+  if (!label) return false;
+  return /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(?:the\s+)?(?:total\s+)?(?:number|count|quantity)\s+of\s+/i.test(
+    cleanLabel(question),
   );
 }
 
@@ -10099,6 +10130,93 @@ function cleanSentenceScopedTargetCountTarget(value: string): string | null {
   );
 }
 
+function extractSentenceScopedTargetMetricValueQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  if (
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(?:the\s+)?(?:number|count|quantity)\s+of\s+/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
+  const possessiveMatch =
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(?:the\s+)?(.+?)(?:'|\u2019)s\s+(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (possessiveMatch) {
+    const target = cleanSentenceScopedTargetMetricValueTarget(
+      possessiveMatch[1] ?? "",
+    );
+    const metric = cleanSentenceScopedTargetMetricValueMetric(
+      possessiveMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} value`, target };
+  }
+
+  const metricForTargetMatch =
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are|\s+was|\s+were)\s+(?:the\s+)?(.+?)\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (metricForTargetMatch) {
+    const metric = cleanSentenceScopedTargetMetricValueMetric(
+      metricForTargetMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetMetricValueTarget(
+      metricForTargetMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} value`, target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedTargetMetricValueMetric(
+  value: string,
+): string | null {
+  const metric = cleanLabel(value)
+    .replace(/^(?:the\s+)?(?:current|latest|present|reported)\s+/i, "")
+    .replace(/\s+(?:value|metric)$/i, "");
+  const normalized = normalizeText(metric);
+  if (!normalized || sentenceScopedMetricValueReservedLabel(normalized)) {
+    return null;
+  }
+  const tokens = tokenizeCompletionText(normalized);
+  if (tokens.length < 1 || tokens.length > 5) return null;
+  return tokens.join(" ");
+}
+
+function cleanSentenceScopedTargetMetricValueTarget(
+  value: string,
+): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
+function sentenceScopedMetricValueReservedLabel(label: string): boolean {
+  const normalizedLabel = normalizeText(label);
+  if (
+    normalizedLabel === "definition" ||
+    normalizedLabel === "location" ||
+    normalizedLabel === "status" ||
+    normalizedLabel === "priority" ||
+    normalizedLabel === "severity" ||
+    normalizedLabel === "due date"
+  ) {
+    return true;
+  }
+  if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedCountMetricPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedTargetStatePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedByRelationPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedRelationNounPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedActiveRelationPatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedAttributePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
+  return false;
+}
+
 function extractSentenceScopedTargetStateQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
@@ -10332,6 +10450,22 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const targetMetricValueQuestion =
+    extractSentenceScopedTargetMetricValueQuestionParts(question);
+  if (targetMetricValueQuestion) {
+    const target = normalizeWorkflowTargetLabel(targetMetricValueQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        targetMetricValueQuestion.label,
+      )
+    ) {
+      return { label: targetMetricValueQuestion.label, target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -10347,6 +10481,7 @@ function findGroundedSentenceScopedAnswer(
     !sentenceScopedEventDatePatternForLabel(answerLabel) &&
     !sentenceScopedCountMetricPatternForLabel(answerLabel) &&
     !sentenceScopedPresenceMetricPatternForLabel(answerLabel) &&
+    !sentenceScopedMetricValuePatternForLabel(answerLabel) &&
     !sentenceScopedTargetStatePatternForLabel(answerLabel) &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
@@ -10990,6 +11125,16 @@ function extractSentenceScopedRelationAnswer(
     );
   }
 
+  const metricValuePattern =
+    sentenceScopedMetricValuePatternForLabel(normalizedLabel);
+  if (metricValuePattern) {
+    return extractSentenceScopedTargetMetricValueAnswer(
+      sentence,
+      targetPattern,
+      metricValuePattern,
+    );
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -11368,6 +11513,16 @@ function sentenceScopedPresenceMetricPatternForLabel(
   return tokens.map(escapeRegExp).join("\\s+");
 }
 
+function sentenceScopedMetricValuePatternForLabel(label: string): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (!normalizedLabel.endsWith(" value")) return null;
+  const metric = normalizedLabel.replace(/\s+value$/, "");
+  if (sentenceScopedMetricValueReservedLabel(metric)) return null;
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 1 || tokens.length > 5) return null;
+  return tokens.map(escapeRegExp).join("\\s+");
+}
+
 function extractSentenceScopedTargetCountAnswer(
   sentence: string,
   targetPattern: string,
@@ -11465,6 +11620,44 @@ function sentenceScopedTargetCountAnswerIsZero(value: string): boolean {
   if (normalized === "zero") return true;
   const numeric = Number(normalized);
   return Number.isFinite(numeric) && numeric === 0;
+}
+
+function extractSentenceScopedTargetMetricValueAnswer(
+  sentence: string,
+  targetPattern: string,
+  metricPattern: string,
+): string | null {
+  const answerPattern = sentenceScopedMetricValueAnswerPattern();
+  const patterns = [
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+(?:current\\s+|latest\\s+|reported\\s+)?${metricPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${answerPattern})\\s*$`,
+    `^\\s*(?:current\\s+|latest\\s+|reported\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${answerPattern})\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:has|have|had|shows?|lists?|tracks?|reports?)\\s+(?:a\\s+|an\\s+|the\\s+)?(?:current\\s+|latest\\s+|reported\\s+)?${metricPattern}\\s+(?:of|at|as)\\s+(${answerPattern})\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:shows?|lists?|tracks?|reports?)\\s+(?:a\\s+|an\\s+|the\\s+)?(?:current\\s+|latest\\s+|reported\\s+)?${metricPattern}\\s*(${answerPattern})\\s*$`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedMetricValueAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+  return null;
+}
+
+function sentenceScopedMetricValueAnswerPattern(): string {
+  const numeric = "\\d[\\d,]*(?:\\.\\d+)?";
+  const unit =
+    "(?:%|percentage|percent|points?|pts?|ms|msec|milliseconds?|sec|secs|seconds?|s|mins?|minutes?|m|hrs?|hours?|h|kbps|mbps|gbps|bps|kb|mb|gb|tb|bytes?|kg|mg|g|cm|mm|km|c|f|hz|khz|mhz|ghz|thousand|million|billion|k|b)";
+  return `(?:\\$\\s*)?${numeric}(?:\\s*${unit})?`;
+}
+
+function cleanSentenceScopedMetricValueAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  return new RegExp(`^${sentenceScopedMetricValueAnswerPattern()}$`, "i").test(
+    answer,
+  )
+    ? answer
+    : "";
 }
 
 function sentenceScopedTargetStatePatternForLabel(
