@@ -249,6 +249,8 @@ export type WorkflowConfirmationAction =
   | "unbookmark"
   | "favorite"
   | "unfavorite"
+  | "like"
+  | "unlike"
   | "watch"
   | "unwatch"
   | "star"
@@ -334,6 +336,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unbookmark",
   "favorite",
   "unfavorite",
+  "like",
+  "unlike",
   "watch",
   "unwatch",
   "star",
@@ -421,6 +425,8 @@ const TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS = [
   "unbookmark",
   "favorite",
   "unfavorite",
+  "like",
+  "unlike",
   "watch",
   "unwatch",
   "star",
@@ -3383,6 +3389,20 @@ function inferWorkflowConfirmationAction(
     return "favorite";
   }
   if (
+    /\bunlike(?:d)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "unlike";
+  }
+  if (
+    /\blike(?:d)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "like";
+  }
+  if (
     /\bunwatch(?:ed)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\b/i.test(
       text,
     )
@@ -3673,6 +3693,10 @@ function workflowTargetActionPattern(
       return "(?:favorite)";
     case "unfavorite":
       return "(?:unfavorite)";
+    case "like":
+      return "(?:like)";
+    case "unlike":
+      return "(?:unlike)";
     case "watch":
       return "(?:watch)";
     case "unwatch":
@@ -4059,6 +4083,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:favorited)";
     case "unfavorite":
       return "(?:unfavorited)";
+    case "like":
+      return "(?:liked)";
+    case "unlike":
+      return "(?:unliked)";
     case "watch":
       return "(?:watched)";
     case "unwatch":
@@ -4230,6 +4258,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:favorite)";
     case "unfavorite":
       return "(?:unfavorite)";
+    case "like":
+      return "(?:like)";
+    case "unlike":
+      return "(?:unlike)";
     case "watch":
       return "(?:watch)";
     case "unwatch":
@@ -5144,6 +5176,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unfavorited|unfavorite complete|unfavorite completed|unfavorite successful)\b/i.test(
         text,
       );
+    case "like":
+      if (mode === "visible") {
+        return (
+          /\bliked\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\s+liked\b/i.test(
+            text,
+          ) ||
+          /\blike\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:liked|like complete|like completed|like successful)\b/i.test(
+        text,
+      );
+    case "unlike":
+      if (mode === "visible") {
+        return (
+          /\bunliked\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\s+unliked\b/i.test(
+            text,
+          ) ||
+          /\bunlike\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:unliked|unlike complete|unlike completed|unlike successful)\b/i.test(
+        text,
+      );
     case "watch":
       if (mode === "visible") {
         return (
@@ -5603,6 +5661,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:favorited|favorite)";
     case "unfavorite":
       return "(?:unfavorited|unfavorite)";
+    case "like":
+      return "(?:liked|like)";
+    case "unlike":
+      return "(?:unliked|unlike)";
     case "watch":
       return "(?:watched|watch)";
     case "unwatch":
@@ -7531,6 +7593,8 @@ type ControlStateWorkflowAction = Extract<
   | "unbookmark"
   | "favorite"
   | "unfavorite"
+  | "like"
+  | "unlike"
   | "watch"
   | "unwatch"
   | "star"
@@ -7549,6 +7613,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "follow",
     "bookmark",
     "favorite",
+    "like",
     "watch",
     "star",
     "pin",
@@ -7563,6 +7628,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "unfollow",
     "unbookmark",
     "unfavorite",
+    "unlike",
     "unwatch",
     "unstar",
     "unpin",
@@ -7590,6 +7656,8 @@ function inferControlStateChangeAction(
   if (/\bbookmark(?:ed|ing|s)?\b/i.test(text)) return "bookmark";
   if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
   if (/\bfavou?rite(?:d|ing|s)?\b/i.test(text)) return "favorite";
+  if (/\bunlike(?:d|ing)?\b/i.test(text)) return "unlike";
+  if (/\blike(?:d|ing|s)?\b/i.test(text)) return "like";
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
   if (/\bwatch(?:ed|ing|es)?\b/i.test(text)) return "watch";
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
@@ -7641,6 +7709,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "favorited";
     case "unfavorite":
       return "unfavorited";
+    case "like":
+      return "liked";
+    case "unlike":
+      return "unliked";
     case "watch":
       return "watched";
     case "unwatch":
@@ -7776,6 +7848,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bfavorited\b/i.test(text);
     case "unfavorite":
       return /\bunfavorited\b/i.test(text);
+    case "like":
+      return /\bliked\b/i.test(text);
+    case "unlike":
+      return /\bunliked\b/i.test(text);
     case "watch":
       return /\bwatched\b/i.test(text);
     case "unwatch":
