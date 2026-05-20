@@ -24498,6 +24498,173 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  for (const scenario of [
+    {
+      action: "grant",
+      completion: "granted",
+      label: "Grant Role Alpha",
+      request: "Grant Role Alpha.",
+      summary: "Granted Role Alpha.",
+      target: "Role Alpha",
+      id: "role-alpha-grant",
+      beforeState: "revoked",
+      afterState: "granted",
+    },
+    {
+      action: "revoke",
+      completion: "revoked",
+      label: "Revoke Role Alpha",
+      request: "Revoke Role Alpha.",
+      summary: "Revoked Role Alpha.",
+      target: "Role Alpha",
+      id: "role-alpha-grant",
+      beforeState: "granted",
+      afterState: "revoked",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic grant data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            716,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            717,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 716 },
+        result: "Clicked element 716.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer grant confirmation when semantic data-state was already granted", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Role Alpha Grant Role Alpha",
+      pageContent: "Role Alpha Grant Role Alpha",
+      elements: [
+        dataStateActionButton(
+          718,
+          "Grant Role Alpha",
+          "granted",
+          "role-alpha-grant",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Role Alpha Grant Role Alpha",
+      pageContent: "Role Alpha Grant Role Alpha",
+      elements: [
+        dataStateActionButton(
+          719,
+          "Grant Role Alpha",
+          "granted",
+          "role-alpha-grant",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 718 },
+      result: "Clicked element 718.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer revoke confirmation when semantic data-state flips granted", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Role Alpha Revoke Role Alpha",
+      pageContent: "Role Alpha Revoke Role Alpha",
+      elements: [
+        dataStateActionButton(
+          720,
+          "Revoke Role Alpha",
+          "revoked",
+          "role-alpha-grant",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Role Alpha Revoke Role Alpha",
+      pageContent: "Role Alpha Revoke Role Alpha",
+      elements: [
+        dataStateActionButton(
+          721,
+          "Revoke Role Alpha",
+          "granted",
+          "role-alpha-grant",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 720 },
+      result: "Clicked element 720.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
