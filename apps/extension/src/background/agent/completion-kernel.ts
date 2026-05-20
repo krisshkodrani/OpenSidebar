@@ -7725,6 +7725,8 @@ type ControlStateWorkflowAction = Extract<
   | "revoke"
   | "suspend"
   | "unsuspend"
+  | "schedule"
+  | "unschedule"
   | "connect"
   | "disconnect"
   | "link"
@@ -7770,6 +7772,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "assign",
     "grant",
     "suspend",
+    "schedule",
     "connect",
     "link",
     "tag",
@@ -7801,6 +7804,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "unassign",
     "revoke",
     "unsuspend",
+    "unschedule",
     "disconnect",
     "unlink",
     "untag",
@@ -7836,6 +7840,8 @@ function inferControlStateChangeAction(
   if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
   if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
   if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
+  if (/\bunschedule(?:d|ing)?\b/i.test(text)) return "unschedule";
+  if (/\bschedule(?:d|ing)?\b/i.test(text)) return "schedule";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
@@ -7920,6 +7926,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "suspended";
     case "unsuspend":
       return "unsuspended";
+    case "schedule":
+      return "scheduled";
+    case "unschedule":
+      return "unscheduled";
     case "connect":
       return "connected";
     case "disconnect":
@@ -9246,6 +9256,9 @@ function readControlState(
   }
   if (action === "suspend" || action === "unsuspend") {
     return readSemanticControlState(state, /^suspended$/i, /^unsuspended$/i);
+  }
+  if (action === "schedule" || action === "unschedule") {
+    return readSemanticControlState(state, /^scheduled$/i, /^unscheduled$/i);
   }
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
