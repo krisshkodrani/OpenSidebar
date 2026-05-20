@@ -7713,6 +7713,8 @@ function inferControlLabelChangeAction(
 
 type ControlStateWorkflowAction = Extract<
   WorkflowConfirmationAction,
+  | "approve"
+  | "reject"
   | "enable"
   | "disable"
   | "lock"
@@ -7766,6 +7768,8 @@ type ControlStateWorkflowAction = Extract<
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
+    "approve",
+    "reject",
     "enable",
     "lock",
     "block",
@@ -7824,8 +7828,30 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
 function inferControlStateChangeAction(
   element: TaggedElement,
 ): ControlStateWorkflowAction | null {
-  const text = normalizeText(elementControlText(element));
+  const primaryText = normalizeText(
+    [
+      element.text,
+      element.attributes.label,
+      element.attributes["aria-label"],
+      element.attributes.title,
+      element.attributes.name,
+      element.attributes.value,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  const text = primaryText || normalizeText(elementControlText(element));
   if (!text) return null;
+  if (
+    /\b(?:reject|rejected|rejecting|rejection|deny|denied|denial)\b/i.test(
+      text,
+    )
+  ) {
+    return "reject";
+  }
+  if (/\b(?:approve|approved|approving|approval)\b/i.test(text)) {
+    return "approve";
+  }
   if (/\b(?:enable|activate|turn\s+on)\b/i.test(text)) return "enable";
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
   if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
@@ -7902,6 +7928,10 @@ function controlStateChangeMatchesAction(
 
 function controlStateCompletionWord(action: ControlStateWorkflowAction): string {
   switch (action) {
+    case "approve":
+      return "approved";
+    case "reject":
+      return "rejected";
     case "enable":
       return "enabled";
     case "disable":
@@ -9234,6 +9264,20 @@ function readControlState(
   }
   if (/^(?:false|unchecked|unpressed|unselected|off|0)$/i.test(state)) {
     return false;
+  }
+  if (action === "approve") {
+    return readSemanticControlState(
+      state,
+      /^approved$/i,
+      /^(?:pending|rejected|denied)$/i,
+    );
+  }
+  if (action === "reject") {
+    return readSemanticControlState(
+      state,
+      /^(?:rejected|denied)$/i,
+      /^(?:pending|approved)$/i,
+    );
   }
   if (action === "enable" || action === "disable") {
     return readSemanticControlState(
