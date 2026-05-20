@@ -7747,6 +7747,10 @@ type ControlStateWorkflowAction = Extract<
   | "unflag"
   | "copy"
   | "duplicate"
+  | "transfer"
+  | "move"
+  | "rename"
+  | "merge"
   | "install"
   | "uninstall"
   | "sync"
@@ -7811,6 +7815,10 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "flag",
     "copy",
     "duplicate",
+    "transfer",
+    "move",
+    "rename",
+    "merge",
     "install",
     "sync",
     "subscribe",
@@ -7925,6 +7933,10 @@ function inferControlStateChangeAction(
     return "duplicate";
   }
   if (/\b(?:copy|copies|copied|copying)\b/i.test(text)) return "copy";
+  if (/\btransfer(?:red|ring)?\b/i.test(text)) return "transfer";
+  if (/\bmove(?:d|s|ing)?\b/i.test(text)) return "move";
+  if (/\brename(?:d|s|ing)?\b/i.test(text)) return "rename";
+  if (/\bmerge(?:d|s|ing)?\b/i.test(text)) return "merge";
   if (
     /\b(?:restore|restored|recover|recovered|reinstate|reinstated|unarchive|unarchived)\b/i.test(
       text,
@@ -8106,6 +8118,14 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "copied";
     case "duplicate":
       return "duplicated";
+    case "transfer":
+      return "transferred";
+    case "move":
+      return "moved";
+    case "rename":
+      return "renamed";
+    case "merge":
+      return "merged";
     case "install":
       return "installed";
     case "uninstall":
@@ -9523,6 +9543,34 @@ function readControlState(
       state,
       /^(?:duplicated|cloned)$/i,
       /^(?:ready|idle|original|not[-\s]?duplicated|pending)$/i,
+    );
+  }
+  if (action === "transfer") {
+    return readSemanticControlState(
+      state,
+      /^transferred$/i,
+      /^(?:untransferred|not[-\s]?transferred|pending|ready|source)$/i,
+    );
+  }
+  if (action === "move") {
+    return readSemanticControlState(
+      state,
+      /^moved$/i,
+      /^(?:unmoved|not[-\s]?moved|pending|ready|source)$/i,
+    );
+  }
+  if (action === "rename") {
+    return readSemanticControlState(
+      state,
+      /^renamed$/i,
+      /^(?:unnamed|not[-\s]?renamed|old[-\s]?name|old|pending)$/i,
+    );
+  }
+  if (action === "merge") {
+    return readSemanticControlState(
+      state,
+      /^merged$/i,
+      /^(?:unmerged|not[-\s]?merged|separate|pending|open)$/i,
     );
   }
   if (action === "install" || action === "uninstall") {
