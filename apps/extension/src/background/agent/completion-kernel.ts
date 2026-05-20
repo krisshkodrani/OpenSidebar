@@ -1270,6 +1270,11 @@ function generateReadAnswerContract(
   if (reasonQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const locationQuestion =
+    extractSentenceScopedLocationQuestionParts(requestText);
+  if (locationQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1335,6 +1340,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (!normalizedLabel) return false;
   if (normalizedLabel === "definition") return true;
   if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
+  if (normalizedLabel === "location") return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -9851,6 +9857,44 @@ function extractSentenceScopedReasonQuestionParts(
   return null;
 }
 
+function extractSentenceScopedLocationQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const beMatch =
+    /^(?:please\s+)?(?:tell me\s+)?where\s+(?:is|are|was|were)\s+(?:the\s+)?(.+?)\s+(?:located|based|hosted|deployed|stored|running)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (beMatch) {
+    const target = cleanSentenceScopedLocationTarget(beMatch[1] ?? "");
+    if (target) return { label: "location", target };
+  }
+
+  const hasBeenMatch =
+    /^(?:please\s+)?(?:tell me\s+)?where\s+(?:has|have)\s+(?:the\s+)?(.+?)\s+been\s+(?:located|based|hosted|deployed|stored|running)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (hasBeenMatch) {
+    const target = cleanSentenceScopedLocationTarget(hasBeenMatch[1] ?? "");
+    if (target) return { label: "location", target };
+  }
+
+  const activeMatch =
+    /^(?:please\s+)?(?:tell me\s+)?where\s+(?:does|do|did)\s+(?:the\s+)?(.+?)\s+(?:run|reside|live)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (activeMatch) {
+    const target = cleanSentenceScopedLocationTarget(activeMatch[1] ?? "");
+    if (target) return { label: "location", target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedLocationTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
 function cleanSentenceScopedReasonTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
@@ -9901,6 +9945,21 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const locationQuestion = extractSentenceScopedLocationQuestionParts(question);
+  if (locationQuestion) {
+    const target = normalizeWorkflowTargetLabel(locationQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        locationQuestion.label,
+      )
+    ) {
+      return { label: locationQuestion.label, target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -9912,6 +9971,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "status" &&
     answerLabel !== "priority" &&
     answerLabel !== "severity" &&
+    answerLabel !== "location" &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
     !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
@@ -10501,6 +10561,10 @@ function extractSentenceScopedRelationAnswer(
     );
   }
 
+  if (normalizedLabel === "location") {
+    return extractSentenceScopedLocationAnswer(sentence, targetPattern);
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -10718,6 +10782,47 @@ function extractSentenceScopedReasonAnswer(
 function cleanSentenceScopedReasonAnswerText(value: string): string {
   const answer = cleanSentenceScopedAnswerText(value);
   if (tokenizeCompletionText(answer).length < 2) return "";
+  return answer;
+}
+
+function extractSentenceScopedLocationAnswer(
+  sentence: string,
+  targetPattern: string,
+): string | null {
+  const bePattern =
+    "(?:is|are|was|were|has\\s+been|have\\s+been|got|became|becomes|remains|remain)";
+  const locationVerbPattern =
+    "(?:located|based|hosted|deployed|stored|running)";
+  const prepositionPattern = "(?:in|at|on|inside|within|near)";
+  const patterns = [
+    `^\\s*${targetPattern}\\b\\s+(?:${bePattern}\\s+)?${locationVerbPattern}\\s+${prepositionPattern}\\s+([^.;\\n]{2,160})`,
+    `^\\s*${targetPattern}\\b\\s+(?:runs?|ran|resides?|lives?)\\s+${prepositionPattern}\\s+([^.;\\n]{2,160})`,
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+location\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,160})`,
+    `^\\s*location\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,160})`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedLocationAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedLocationAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  if (
+    /\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:located|based|hosted|deployed|stored|running)\b/i.test(
+      answer,
+    ) ||
+    /\b(?:runs?|ran|resides?|lives?)\s+(?:in|at|on|inside|within|near)\b/i.test(
+      answer,
+    )
+  ) {
+    return "";
+  }
   return answer;
 }
 

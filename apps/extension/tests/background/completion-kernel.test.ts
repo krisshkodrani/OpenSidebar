@@ -27321,6 +27321,151 @@ describe("completion kernel", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
+  test("accepts location sentence-scoped answer for a where question", () => {
+    const snap = workflowSnapshot({
+      title: "Project Locations",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas is located in Building C. Project Borealis is located in Building D.",
+      pageContent:
+        "Project Atlas is located in Building C. Project Borealis is located in Building D. The page explains project locations, office routing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project location questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Where is Project Atlas located?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas is located in Building C.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas is located in Building D.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "location",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts location sentence-scoped answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Locations",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas is located in Building C. Project Borealis is located in Building D.",
+      pageContent:
+        "Project Atlas is located in Building C. Project Borealis is located in Building D. The page explains project locations, office routing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project location questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Where is Project Atlas located?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Atlas is located in Building C. Project Borealis is located in Building D. The page explains project locations, office routing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project location questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Building C",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Building D",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "location",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("does not accept a location sentence with the wrong requested target", () => {
+    const snap = workflowSnapshot({
+      title: "Project Locations",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas is owned by Maya Chen. Project Borealis is located in Building D.",
+      pageContent:
+        "Project Atlas is owned by Maya Chen. Project Borealis is located in Building D. The page explains project locations, office routing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project location questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Where is Project Atlas located?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas is located in Building D.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("does not use location sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Project Locations",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Locations Project Atlas is located in Building C Project Borealis is located in Building D",
+      pageContent:
+        "Project Locations Project Atlas is located in Building C Project Borealis is located in Building D. The page explains project locations, office routing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project location questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Where is Project Atlas located?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas is located in Building C.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts sentence-scoped assigned-to answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
