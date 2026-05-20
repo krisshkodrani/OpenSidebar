@@ -7780,6 +7780,8 @@ type ControlStateWorkflowAction = Extract<
   | "post"
   | "submit"
   | "complete"
+  | "save"
+  | "update"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7827,6 +7829,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "post",
     "submit",
     "complete",
+    "save",
+    "update",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7980,6 +7984,10 @@ function inferControlStateChangeAction(
   if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
   if (/\b(?:post|posted|posting|publish|published|publishing)\b/i.test(text)) {
     return "post";
+  }
+  if (/\b(?:save|saved|saving)\b/i.test(text)) return "save";
+  if (/\b(?:update|updated|updating|apply|applied|applying)\b/i.test(text)) {
+    return "update";
   }
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
@@ -8136,6 +8144,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "submitted";
     case "complete":
       return "completed";
+    case "save":
+      return "saved";
+    case "update":
+      return "updated";
   }
 }
 
@@ -9575,6 +9587,20 @@ function readControlState(
       state,
       /^(?:complete|completed|done)$/i,
       /^(?:in[-\s]?progress|incomplete|open|pending|todo|to[-\s]?do|not[-\s]?complete|not[-\s]?completed)$/i,
+    );
+  }
+  if (action === "save") {
+    return readSemanticControlState(
+      state,
+      /^(?:saved|stored|persisted)$/i,
+      /^(?:unsaved|not[-\s]?saved|dirty|modified|pending)$/i,
+    );
+  }
+  if (action === "update") {
+    return readSemanticControlState(
+      state,
+      /^(?:updated|applied|up[-\s]?to[-\s]?date)$/i,
+      /^(?:stale|outdated|dirty|modified|pending)$/i,
     );
   }
   if (action === "sync") {
