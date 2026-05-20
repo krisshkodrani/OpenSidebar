@@ -7717,6 +7717,8 @@ type ControlStateWorkflowAction = Extract<
   | "disable"
   | "lock"
   | "unlock"
+  | "block"
+  | "unblock"
   | "connect"
   | "disconnect"
   | "link"
@@ -7758,6 +7760,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "enable",
     "lock",
+    "block",
     "connect",
     "link",
     "tag",
@@ -7785,6 +7788,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "disable",
     "unlock",
+    "unblock",
     "disconnect",
     "unlink",
     "untag",
@@ -7810,6 +7814,8 @@ function inferControlStateChangeAction(
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
   if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
   if (/\block(?:ed)?\b/i.test(text)) return "lock";
+  if (/\bunblock(?:ed|ing)?\b/i.test(text)) return "unblock";
+  if (/\bblock(?:ed|ing)?\b/i.test(text)) return "block";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
@@ -7878,6 +7884,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "locked";
     case "unlock":
       return "unlocked";
+    case "block":
+      return "blocked";
+    case "unblock":
+      return "unblocked";
     case "connect":
       return "connected";
     case "disconnect":
@@ -9192,6 +9202,9 @@ function readControlState(
   }
   if (action === "lock" || action === "unlock") {
     return readSemanticControlState(state, /^locked$/i, /^unlocked$/i);
+  }
+  if (action === "block" || action === "unblock") {
+    return readSemanticControlState(state, /^blocked$/i, /^unblocked$/i);
   }
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
