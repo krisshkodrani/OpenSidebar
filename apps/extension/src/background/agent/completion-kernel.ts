@@ -1275,6 +1275,11 @@ function generateReadAnswerContract(
   if (locationQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const eventDateQuestion =
+    extractSentenceScopedEventDateQuestionParts(requestText);
+  if (eventDateQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1341,6 +1346,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (normalizedLabel === "definition") return true;
   if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
   if (normalizedLabel === "location") return true;
+  if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -9895,8 +9901,90 @@ function cleanSentenceScopedLocationTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
 
+function extractSentenceScopedEventDateQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const passiveMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?when\\s+(?:is|are|was|were)\\s+(?:the\\s+)?(.+?)\\s+(${SENTENCE_SCOPED_EVENT_DATE_PASSIVE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (passiveMatch) {
+    const label = canonicalSentenceScopedEventDateLabel(
+      passiveMatch[2] ?? "",
+    );
+    const target = cleanSentenceScopedEventDateTarget(
+      passiveMatch[1] ?? "",
+    );
+    if (label && target) return { label, target };
+  }
+
+  const hasBeenMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?when\\s+(?:has|have)\\s+(?:the\\s+)?(.+?)\\s+been\\s+(${SENTENCE_SCOPED_EVENT_DATE_PASSIVE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (hasBeenMatch) {
+    const label = canonicalSentenceScopedEventDateLabel(
+      hasBeenMatch[2] ?? "",
+    );
+    const target = cleanSentenceScopedEventDateTarget(
+      hasBeenMatch[1] ?? "",
+    );
+    if (label && target) return { label, target };
+  }
+
+  const activeMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?when\\s+(?:did|does|do)\\s+(?:the\\s+)?(.+?)\\s+(${SENTENCE_SCOPED_EVENT_DATE_ACTIVE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (activeMatch) {
+    const label = canonicalSentenceScopedEventDateLabel(
+      activeMatch[2] ?? "",
+    );
+    const target = cleanSentenceScopedEventDateTarget(
+      activeMatch[1] ?? "",
+    );
+    if (label && target) return { label, target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedEventDateTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
 function cleanSentenceScopedReasonTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
+const SENTENCE_SCOPED_EVENT_DATE_PASSIVE_QUESTION_PATTERN =
+  "(?:launched|released|deployed|created|opened|closed|resolved|updated|changed|approved|reviewed|completed|submitted|published|started|stopped|scheduled|canceled|cancelled)";
+
+const SENTENCE_SCOPED_EVENT_DATE_ACTIVE_QUESTION_PATTERN =
+  "(?:launch|release|deploy|create|open|close|resolve|update|change|approve|review|complete|submit|publish|start|stop|schedule|cancel)";
+
+function canonicalSentenceScopedEventDateLabel(value: string): string | null {
+  const normalized = normalizeText(value).replace(/-/g, " ");
+  if (/^launch(?:ed)?$/.test(normalized)) return "launched date";
+  if (/^release(?:d)?$/.test(normalized)) return "released date";
+  if (/^deploy(?:ed)?$/.test(normalized)) return "deployed date";
+  if (/^creat(?:e|ed)$/.test(normalized)) return "created date";
+  if (/^open(?:ed)?$/.test(normalized)) return "opened date";
+  if (/^clos(?:e|ed)$/.test(normalized)) return "closed date";
+  if (/^resolv(?:e|ed)$/.test(normalized)) return "resolved date";
+  if (/^updat(?:e|ed)$/.test(normalized)) return "updated date";
+  if (/^chang(?:e|ed)$/.test(normalized)) return "updated date";
+  if (/^approv(?:e|ed)$/.test(normalized)) return "approved date";
+  if (/^review(?:ed)?$/.test(normalized)) return "reviewed date";
+  if (/^complet(?:e|ed)$/.test(normalized)) return "completed date";
+  if (/^submit(?:ted)?$/.test(normalized)) return "submitted date";
+  if (/^publish(?:ed)?$/.test(normalized)) return "published date";
+  if (/^start(?:ed)?$/.test(normalized)) return "started date";
+  if (/^stop(?:ped)?$/.test(normalized)) return "stopped date";
+  if (/^schedul(?:e|ed)$/.test(normalized)) return "scheduled date";
+  if (/^cancel(?:ed|led)?$/.test(normalized)) return "canceled date";
+  return null;
 }
 
 function canonicalSentenceScopedReasonLabel(value: string): string | null {
@@ -9960,6 +10048,21 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const eventDateQuestion = extractSentenceScopedEventDateQuestionParts(question);
+  if (eventDateQuestion) {
+    const target = normalizeWorkflowTargetLabel(eventDateQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        eventDateQuestion.label,
+      )
+    ) {
+      return { label: eventDateQuestion.label, target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -9972,6 +10075,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "priority" &&
     answerLabel !== "severity" &&
     answerLabel !== "location" &&
+    !sentenceScopedEventDatePatternForLabel(answerLabel) &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
     !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
@@ -10565,6 +10669,18 @@ function extractSentenceScopedRelationAnswer(
     return extractSentenceScopedLocationAnswer(sentence, targetPattern);
   }
 
+  const eventDatePattern = sentenceScopedEventDatePatternForLabel(
+    normalizedLabel,
+  );
+  if (eventDatePattern) {
+    return extractSentenceScopedEventDateAnswer(
+      sentence,
+      targetPattern,
+      eventDatePattern,
+      normalizedLabel,
+    );
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -10824,6 +10940,103 @@ function cleanSentenceScopedLocationAnswerText(value: string): string {
     return "";
   }
   return answer;
+}
+
+function sentenceScopedEventDatePatternForLabel(label: string): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (normalizedLabel === "launched date") return "launch(?:ed)?";
+  if (normalizedLabel === "released date") return "release(?:d)?";
+  if (normalizedLabel === "deployed date") return "deploy(?:ed)?";
+  if (normalizedLabel === "created date") return "creat(?:e|ed)";
+  if (normalizedLabel === "opened date") return "open(?:ed)?";
+  if (normalizedLabel === "closed date") return "clos(?:e|ed)";
+  if (normalizedLabel === "resolved date") return "resolv(?:e|ed)";
+  if (normalizedLabel === "updated date") return "(?:updat(?:e|ed)|chang(?:e|ed))";
+  if (normalizedLabel === "approved date") return "approv(?:e|ed)";
+  if (normalizedLabel === "reviewed date") return "review(?:ed)?";
+  if (normalizedLabel === "completed date") return "complet(?:e|ed)";
+  if (normalizedLabel === "submitted date") return "submit(?:ted)?";
+  if (normalizedLabel === "published date") return "publish(?:ed)?";
+  if (normalizedLabel === "started date") return "start(?:ed)?";
+  if (normalizedLabel === "stopped date") return "stop(?:ped)?";
+  if (normalizedLabel === "scheduled date") return "schedul(?:e|ed)";
+  if (normalizedLabel === "canceled date") return "cancel(?:ed|led)?";
+  return null;
+}
+
+function extractSentenceScopedEventDateAnswer(
+  sentence: string,
+  targetPattern: string,
+  eventPattern: string,
+  normalizedLabel: string,
+): string | null {
+  const bePattern =
+    "(?:is|are|was|were|has\\s+been|have\\s+been|got|became|becomes)";
+  const datePattern = sentenceScopedEventDateAnswerPattern();
+  const eventNounPattern = sentenceScopedEventDateNounPatternForLabel(
+    normalizedLabel,
+  );
+  const patterns = [
+    `^\\s*${targetPattern}\\b\\s+(?:${bePattern}\\s+)?${eventPattern}\\s+(?:on|at)\\s+(${datePattern})\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:${bePattern}\\s+)?${eventPattern}\\s+(?:in|during)\\s+(${datePattern})\\s*$`,
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${eventNounPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${datePattern})\\s*$`,
+    `^\\s*${eventNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${datePattern})\\s*$`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedEventDateAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+
+  return null;
+}
+
+function sentenceScopedEventDateNounPatternForLabel(label: string): string {
+  const normalizedLabel = normalizeText(label).replace(/\s+date$/, "");
+  if (normalizedLabel === "launched") return "(?:launch|launched)\\s+date";
+  if (normalizedLabel === "released") return "(?:release|released)\\s+date";
+  if (normalizedLabel === "deployed") return "(?:deploy|deployment|deployed)\\s+date";
+  if (normalizedLabel === "created") return "(?:create|creation|created)\\s+date";
+  if (normalizedLabel === "opened") return "(?:open|opened)\\s+date";
+  if (normalizedLabel === "closed") return "(?:close|closure|closed)\\s+date";
+  if (normalizedLabel === "resolved") return "(?:resolve|resolution|resolved)\\s+date";
+  if (normalizedLabel === "updated") return "(?:update|change|updated|changed)\\s+date";
+  if (normalizedLabel === "approved") return "(?:approve|approval|approved)\\s+date";
+  if (normalizedLabel === "reviewed") return "(?:review|reviewed)\\s+date";
+  if (normalizedLabel === "completed") return "(?:complete|completion|completed)\\s+date";
+  if (normalizedLabel === "submitted") return "(?:submit|submission|submitted)\\s+date";
+  if (normalizedLabel === "published") return "(?:publish|publication|published)\\s+date";
+  if (normalizedLabel === "started") return "(?:start|started)\\s+date";
+  if (normalizedLabel === "stopped") return "(?:stop|stopped)\\s+date";
+  if (normalizedLabel === "scheduled") return "(?:schedule|scheduled)\\s+date";
+  if (normalizedLabel === "canceled") return "(?:cancel|cancellation|canceled|cancelled)\\s+date";
+  return `${escapeRegExp(normalizedLabel)}\\s+date`;
+}
+
+function sentenceScopedEventDateAnswerPattern(): string {
+  const month =
+    "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const clock =
+    "(?:[01]?\\d|2[0-3]):[0-5]\\d(?:\\s*(?:am|pm|utc|gmt|[a-z]{2,4}))?";
+  const namedDate = `${month}\\.?\\s+\\d{1,2}(?:,\\s*\\d{4})?`;
+  const dayFirstDate = `\\d{1,2}\\s+${month}\\.?\\s+\\d{4}`;
+  const isoDate = "\\d{4}-\\d{2}-\\d{2}";
+  const slashDate = "\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}";
+  const monthYear = `${month}\\.?\\s+\\d{4}`;
+  const quarter = "q[1-4]\\s+\\d{4}";
+  const year = "\\d{4}";
+  return `(?:(?:${namedDate}|${dayFirstDate}|${isoDate}|${slashDate})(?:\\s+(?:at\\s+)?${clock})?|${monthYear}|${quarter}|${year}|${clock})`;
+}
+
+function cleanSentenceScopedEventDateAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  return new RegExp(`^${sentenceScopedEventDateAnswerPattern()}$`, "i").test(
+    answer,
+  )
+    ? answer
+    : "";
 }
 
 function extractCurrentRoleRelationNounAnswer(

@@ -27466,6 +27466,151 @@ describe("completion kernel", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
+  test("accepts event-date sentence-scoped answer for a when question", () => {
+    const snap = workflowSnapshot({
+      title: "Project Timeline",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas launched on March 12, 2026. Project Borealis launched on April 9, 2026.",
+      pageContent:
+        "Project Atlas launched on March 12, 2026. Project Borealis launched on April 9, 2026. The page explains project launch timing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project timeline questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When was Project Atlas launched?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas launched on March 12, 2026.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas launched on April 9, 2026.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "launched date",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts event-date sentence-scoped answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Timeline",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas launched on March 12, 2026. Project Borealis launched on April 9, 2026.",
+      pageContent:
+        "Project Atlas launched on March 12, 2026. Project Borealis launched on April 9, 2026. The page explains project launch timing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project timeline questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When was Project Atlas launched?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Atlas launched on March 12, 2026. Project Borealis launched on April 9, 2026. The page explains project launch timing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project timeline questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "March 12, 2026",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "April 9, 2026",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "launched date",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("does not accept an event-date sentence with the wrong requested predicate", () => {
+    const snap = workflowSnapshot({
+      title: "Project Timeline",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas closed on March 12, 2026. Project Borealis launched on April 9, 2026.",
+      pageContent:
+        "Project Atlas closed on March 12, 2026. Project Borealis launched on April 9, 2026. The page explains project launch timing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project timeline questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When was Project Atlas launched?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas launched on March 12, 2026.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("does not use event-date sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Project Timeline",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Timeline Project Atlas launched on March 12, 2026 Project Borealis launched on April 9, 2026",
+      pageContent:
+        "Project Timeline Project Atlas launched on March 12, 2026 Project Borealis launched on April 9, 2026. The page explains project launch timing, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project timeline questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "When was Project Atlas launched?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Project Atlas launched on March 12, 2026.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts sentence-scoped assigned-to answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
