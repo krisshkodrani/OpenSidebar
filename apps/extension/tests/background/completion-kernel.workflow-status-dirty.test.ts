@@ -2680,4 +2680,51 @@ describe("completion kernel workflow status and dirty-state confirmation", () =>
     expect(evidence).toEqual([]);
   });
 
+
+  test("accepts reject-class status change with denial successful wording", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Request REQ003 Status: Pending Deny request",
+      pageContent: "Request REQ003 Status: Pending Deny request",
+      elements: [actionButton(604, "Deny request")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Request REQ003 Status: Denial successful",
+      pageContent: "Request REQ003 Status: Denial successful",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Deny the request.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 604 },
+      result: "Clicked element 604.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 12,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Denial successful.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:reject:status:status-denial-successful",
+        detail: expect.objectContaining({
+          action: "reject",
+          source: "status_change",
+          text: "Status: Denial successful",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
 });
