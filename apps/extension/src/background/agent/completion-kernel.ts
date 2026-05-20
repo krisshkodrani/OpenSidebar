@@ -7771,6 +7771,8 @@ type ControlStateWorkflowAction = Extract<
   | "resume"
   | "start"
   | "stop"
+  | "restart"
+  | "refresh"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7809,6 +7811,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "resume",
     "start",
     "stop",
+    "restart",
+    "refresh",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7944,6 +7948,8 @@ function inferControlStateChangeAction(
   if (/\bmute(?:d|ing|s)?\b/i.test(text)) return "mute";
   if (/\bpause(?:d|ing)?\b/i.test(text)) return "pause";
   if (/\bresume(?:d|ing)?\b/i.test(text)) return "resume";
+  if (/\brestart(?:ed|ing)?\b/i.test(text)) return "restart";
+  if (/\brefresh(?:ed|ing)?\b/i.test(text)) return "refresh";
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
@@ -8081,6 +8087,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "started";
     case "stop":
       return "stopped";
+    case "restart":
+      return "restarted";
+    case "refresh":
+      return "refreshed";
   }
 }
 
@@ -9457,6 +9467,20 @@ function readControlState(
       state,
       /^(?:stopped|inactive)$/i,
       /^(?:running|active)$/i,
+    );
+  }
+  if (action === "restart") {
+    return readSemanticControlState(
+      state,
+      /^restarted$/i,
+      /^(?:running|active|stopped|ready)$/i,
+    );
+  }
+  if (action === "refresh") {
+    return readSemanticControlState(
+      state,
+      /^(?:refreshed|fresh|current)$/i,
+      /^(?:stale|outdated|dirty)$/i,
     );
   }
   if (action === "sync") {
