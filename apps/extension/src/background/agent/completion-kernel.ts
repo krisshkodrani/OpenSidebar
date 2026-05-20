@@ -7721,6 +7721,10 @@ type ControlStateWorkflowAction = Extract<
   | "disconnect"
   | "link"
   | "unlink"
+  | "tag"
+  | "untag"
+  | "flag"
+  | "unflag"
   | "install"
   | "uninstall"
   | "sync"
@@ -7752,6 +7756,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "lock",
     "connect",
     "link",
+    "tag",
+    "flag",
     "install",
     "sync",
     "subscribe",
@@ -7773,6 +7779,8 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "unlock",
     "disconnect",
     "unlink",
+    "untag",
+    "unflag",
     "uninstall",
     "unsubscribe",
     "unfollow",
@@ -7798,6 +7806,10 @@ function inferControlStateChangeAction(
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
   if (/\blink(?:ed|ing)?\b/i.test(text)) return "link";
+  if (/\buntag(?:ged|ging)?\b/i.test(text)) return "untag";
+  if (/\btag(?:ged|ging)?\b/i.test(text)) return "tag";
+  if (/\bunflag(?:ged|ging)?\b/i.test(text)) return "unflag";
+  if (/\bflag(?:ged|ging)?\b/i.test(text)) return "flag";
   if (/\buninstall(?:ed|ing|ation)?\b/i.test(text)) return "uninstall";
   if (/\binstall(?:ed|ing|ation)?\b/i.test(text)) return "install";
   if (/\b(?:sync|resync|synchroni[sz]e)(?:ed|ing|ation)?\b/i.test(text)) {
@@ -7862,6 +7874,14 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "linked";
     case "unlink":
       return "unlinked";
+    case "tag":
+      return "tagged";
+    case "untag":
+      return "untagged";
+    case "flag":
+      return "flagged";
+    case "unflag":
+      return "unflagged";
     case "install":
       return "installed";
     case "uninstall":
@@ -9140,6 +9160,14 @@ function readControlState(
   if (action === "link" || action === "unlink") {
     if (/^linked$/i.test(state)) return true;
     if (/^unlinked$/i.test(state)) return false;
+  }
+  if (action === "tag" || action === "untag") {
+    if (/^tagged$/i.test(state)) return true;
+    if (/^untagged$/i.test(state)) return false;
+  }
+  if (action === "flag" || action === "unflag") {
+    if (/^flagged$/i.test(state)) return true;
+    if (/^unflagged$/i.test(state)) return false;
   }
   if (action === "install" || action === "uninstall") {
     if (/^installed$/i.test(state)) return true;
