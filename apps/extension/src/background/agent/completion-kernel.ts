@@ -7281,8 +7281,8 @@ function extractControlStateChangeEvidenceFromToolOutcome(params: {
   );
   if (!currentElement) return [];
 
-  const beforeState = readControlState(element);
-  const afterState = readControlState(currentElement);
+  const beforeState = readControlState(element, action);
+  const afterState = readControlState(currentElement, action);
   if (beforeState == null || afterState == null) return [];
   if (beforeState === afterState) return [];
   if (!controlStateChangeMatchesAction(action, beforeState, afterState)) {
@@ -7717,6 +7717,8 @@ type ControlStateWorkflowAction = Extract<
   | "disable"
   | "lock"
   | "unlock"
+  | "connect"
+  | "disconnect"
   | "subscribe"
   | "unsubscribe"
   | "follow"
@@ -7743,6 +7745,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "enable",
     "lock",
+    "connect",
     "subscribe",
     "follow",
     "bookmark",
@@ -7760,6 +7763,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "disable",
     "unlock",
+    "disconnect",
     "unsubscribe",
     "unfollow",
     "unbookmark",
@@ -7780,6 +7784,8 @@ function inferControlStateChangeAction(
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
   if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
   if (/\block(?:ed)?\b/i.test(text)) return "lock";
+  if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
+  if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
   }
@@ -7831,6 +7837,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "locked";
     case "unlock":
       return "unlocked";
+    case "connect":
+      return "connected";
+    case "disconnect":
+      return "disconnected";
     case "subscribe":
       return "subscribed";
     case "unsubscribe":
@@ -9075,7 +9085,10 @@ function readChecked(element: TaggedElement): boolean | null {
   return null;
 }
 
-function readControlState(element: TaggedElement): boolean | null {
+function readControlState(
+  element: TaggedElement,
+  action?: ControlStateWorkflowAction,
+): boolean | null {
   const state =
     element.attributes.checked ??
     element.attributes["aria-checked"] ??
@@ -9087,9 +9100,15 @@ function readControlState(element: TaggedElement): boolean | null {
     element.attributes["data-pressed"] ??
     element.attributes["data-selected"];
   if (state == null) return null;
-  if (/^(?:true|checked|pressed|selected|on|1)$/i.test(state)) return true;
+  if (/^(?:true|checked|pressed|selected|on|1)$/i.test(state)) {
+    return true;
+  }
   if (/^(?:false|unchecked|unpressed|unselected|off|0)$/i.test(state)) {
     return false;
+  }
+  if (action === "connect" || action === "disconnect") {
+    if (/^connected$/i.test(state)) return true;
+    if (/^disconnected$/i.test(state)) return false;
   }
   return null;
 }
