@@ -7719,6 +7719,8 @@ type ControlStateWorkflowAction = Extract<
   | "unlock"
   | "connect"
   | "disconnect"
+  | "install"
+  | "uninstall"
   | "subscribe"
   | "unsubscribe"
   | "follow"
@@ -7746,6 +7748,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "enable",
     "lock",
     "connect",
+    "install",
     "subscribe",
     "follow",
     "bookmark",
@@ -7764,6 +7767,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "disable",
     "unlock",
     "disconnect",
+    "uninstall",
     "unsubscribe",
     "unfollow",
     "unbookmark",
@@ -7786,6 +7790,8 @@ function inferControlStateChangeAction(
   if (/\block(?:ed)?\b/i.test(text)) return "lock";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
+  if (/\buninstall(?:ed|ing|ation)?\b/i.test(text)) return "uninstall";
+  if (/\binstall(?:ed|ing|ation)?\b/i.test(text)) return "install";
   if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
     return "unsubscribe";
   }
@@ -7841,6 +7847,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "connected";
     case "disconnect":
       return "disconnected";
+    case "install":
+      return "installed";
+    case "uninstall":
+      return "uninstalled";
     case "subscribe":
       return "subscribed";
     case "unsubscribe":
@@ -9109,6 +9119,10 @@ function readControlState(
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
     if (/^disconnected$/i.test(state)) return false;
+  }
+  if (action === "install" || action === "uninstall") {
+    if (/^installed$/i.test(state)) return true;
+    if (/^uninstalled$/i.test(state)) return false;
   }
   return null;
 }
