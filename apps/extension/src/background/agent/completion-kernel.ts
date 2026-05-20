@@ -9974,10 +9974,11 @@ function extractSentenceScopedTargetCountQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
   const text = cleanLabel(question);
-  const targetVerbMatch =
-    /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:does|do|did)\s+(?:the\s+)?(.+?)\s+(?:have|contain|include|show|list|track|report)(?:[?.!]|$)/i.exec(
-      text,
-    );
+  const adverbPattern = sentenceScopedTargetCountAdverbPattern();
+  const targetVerbMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:does|do|did)\\s+(?:the\\s+)?(.+?)\\s+${adverbPattern}(?:have|contain|include|show|list|track|report)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
   if (targetVerbMatch) {
     const metric = cleanSentenceScopedTargetCountMetric(
       targetVerbMatch[1] ?? "",
@@ -9988,10 +9989,10 @@ function extractSentenceScopedTargetCountQuestionParts(
     if (metric && target) return { label: `${metric} count`, target };
   }
 
-  const thereAreMatch =
-    /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:is|are|was|were)\s+there\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
+  const thereAreMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:is|are|was|were)\\s+there\\s+${adverbPattern}(?:for|of|on|in)\\s+(?:the\\s+)?(.+?)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
   if (thereAreMatch) {
     const metric = cleanSentenceScopedTargetCountMetric(
       thereAreMatch[1] ?? "",
@@ -10076,7 +10077,12 @@ function cleanSentenceScopedTargetCountMetric(value: string): string | null {
 }
 
 function cleanSentenceScopedTargetCountTarget(value: string): string | null {
-  return normalizeWorkflowTargetLabel(cleanLabel(value));
+  return normalizeWorkflowTargetLabel(
+    cleanLabel(value).replace(
+      /\s+(?:currently|still|now|presently|actively)$/i,
+      "",
+    ),
+  );
 }
 
 function extractSentenceScopedTargetStateQuestionParts(
@@ -11347,11 +11353,12 @@ function extractSentenceScopedTargetCountAnswer(
   metricPattern: string,
 ): string | null {
   const countPattern = sentenceScopedTargetCountAnswerPattern();
+  const adverbPattern = sentenceScopedTargetCountAdverbPattern();
   const patterns = [
-    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
     `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${metricPattern}\\s+(?:count|number|quantity)\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
     `^\\s*${metricPattern}\\s+(?:count|number|quantity)\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
-    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
 
   for (const pattern of patterns) {
@@ -11375,6 +11382,10 @@ function cleanSentenceScopedTargetCountAnswerText(value: string): string {
   ).test(answer)
     ? answer
     : "";
+}
+
+function sentenceScopedTargetCountAdverbPattern(): string {
+  return "(?:(?:currently|still|now|presently|actively)\\s+)?";
 }
 
 function extractSentenceScopedTargetPresenceAnswer(
