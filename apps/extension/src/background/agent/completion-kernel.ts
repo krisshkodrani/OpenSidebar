@@ -9132,6 +9132,16 @@ function readChecked(element: TaggedElement): boolean | null {
   return null;
 }
 
+function readSemanticControlState(
+  state: string,
+  onPattern: RegExp,
+  offPattern: RegExp,
+): boolean | null {
+  if (onPattern.test(state)) return true;
+  if (offPattern.test(state)) return false;
+  return null;
+}
+
 function readControlState(
   element: TaggedElement,
   action?: ControlStateWorkflowAction,
@@ -9172,6 +9182,34 @@ function readControlState(
   if (action === "install" || action === "uninstall") {
     if (/^installed$/i.test(state)) return true;
     if (/^uninstalled$/i.test(state)) return false;
+  }
+  if (action === "subscribe" || action === "unsubscribe") {
+    return readSemanticControlState(state, /^subscribed$/i, /^unsubscribed$/i);
+  }
+  if (action === "follow" || action === "unfollow") {
+    return readSemanticControlState(state, /^followed$/i, /^unfollowed$/i);
+  }
+  if (action === "bookmark" || action === "unbookmark") {
+    return readSemanticControlState(state, /^bookmarked$/i, /^unbookmarked$/i);
+  }
+  if (action === "favorite" || action === "unfavorite") {
+    return readSemanticControlState(
+      state,
+      /^favou?rited$/i,
+      /^unfavou?rited$/i,
+    );
+  }
+  if (action === "watch" || action === "unwatch") {
+    return readSemanticControlState(state, /^watched$/i, /^unwatched$/i);
+  }
+  if (action === "star" || action === "unstar") {
+    return readSemanticControlState(state, /^starred$/i, /^unstarred$/i);
+  }
+  if (action === "pin" || action === "unpin") {
+    return readSemanticControlState(state, /^pinned$/i, /^unpinned$/i);
+  }
+  if (action === "mute" || action === "unmute") {
+    return readSemanticControlState(state, /^muted$/i, /^unmuted$/i);
   }
   if (action === "sync") {
     if (/^(?:synced|resynced|synchroni[sz]ed)$/i.test(state)) return true;
