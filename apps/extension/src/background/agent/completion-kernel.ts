@@ -11143,7 +11143,22 @@ type ReadAnswerMetricAggregateOperation =
   | "range"
   | "highest"
   | "lowest"
+  | "conditional_count"
   | "count";
+
+type ReadAnswerMetricComparisonOperator = "gt" | "gte" | "lt" | "lte" | "eq";
+
+interface ReadAnswerMetricComparison {
+  operator: ReadAnswerMetricComparisonOperator;
+  value: number;
+  entity: string;
+}
+
+interface ReadAnswerMetricAggregateParts {
+  metric: string;
+  operation: ReadAnswerMetricAggregateOperation;
+  comparison?: ReadAnswerMetricComparison;
+}
 
 type ReadAnswerMetricAggregate = {
   answer: string;
@@ -11233,6 +11248,10 @@ function extractRowScopedMetricAggregateQuestionParts(
   operation: ReadAnswerMetricAggregateOperation;
 } | null {
   const text = cleanLabel(question);
+  const conditionalCountQuestion =
+    extractRowScopedConditionalCountQuestionParts(text);
+  if (conditionalCountQuestion) return conditionalCountQuestion;
+
   const patterns: Array<{
     operation: ReadAnswerMetricAggregateOperation;
     pattern: RegExp;
@@ -11319,6 +11338,123 @@ function extractRowScopedMetricAggregateQuestionParts(
   };
 }
 
+function extractRowScopedConditionalCountQuestionParts(
+  question: string,
+): {
+  label: string;
+  metric: string;
+  operation: Extract<ReadAnswerMetricAggregateOperation, "conditional_count">;
+} | null {
+  const comparisonPattern = rowScopedMetricComparisonQuestionPattern();
+  const valuePattern = sentenceScopedSuperlativeMetricValuePattern();
+  const patterns: Array<{
+    pattern: RegExp;
+    entityIndex: number;
+    metricIndex: number;
+    operatorIndex: number;
+    valueIndex: number;
+  }> = [
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+(.+?)\\s+(${comparisonPattern})\\s+(${valuePattern})(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      metricIndex: 2,
+      operatorIndex: 3,
+      valueIndex: 4,
+    },
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+(${comparisonPattern})\\s+(${valuePattern})\\s+(.+?)(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      operatorIndex: 2,
+      valueIndex: 3,
+      metricIndex: 4,
+    },
+  ];
+
+  for (const { pattern, entityIndex, metricIndex, operatorIndex, valueIndex } of patterns) {
+    const match = pattern.exec(question);
+    if (!match) continue;
+
+    const entity = cleanRowScopedCountEntity(match[entityIndex] ?? "");
+    const metric = cleanRowScopedMetricAggregateMetric(
+      match[metricIndex] ?? "",
+    );
+    const operator = canonicalRowScopedMetricComparisonOperator(
+      match[operatorIndex] ?? "",
+    );
+    const value = parseSentenceScopedSuperlativeMetricValue(
+      match[valueIndex] ?? "",
+    );
+    if (!entity || !metric || !operator || value === null) continue;
+
+    return {
+      label: rowScopedConditionalCountLabel(entity, metric, {
+        operator,
+        value,
+        entity,
+      }),
+      metric,
+      operation: "conditional_count",
+    };
+  }
+
+  return null;
+}
+
+function rowScopedMetricComparisonQuestionPattern(): string {
+  return "(?:greater\\s+than\\s+or\\s+equal\\s+to|less\\s+than\\s+or\\s+equal\\s+to|at\\s+least|at\\s+most|no\\s+less\\s+than|no\\s+more\\s+than|greater\\s+than|more\\s+than|above|over|less\\s+than|fewer\\s+than|below|under|equal\\s+to|equals|exactly)";
+}
+
+function canonicalRowScopedMetricComparisonOperator(
+  value: string,
+): ReadAnswerMetricComparisonOperator | null {
+  const normalized = normalizeText(value);
+  if (
+    /^(?:greater than or equal to|at least|no less than)$/.test(normalized)
+  ) {
+    return "gte";
+  }
+  if (/^(?:less than or equal to|at most|no more than)$/.test(normalized)) {
+    return "lte";
+  }
+  if (/^(?:greater than|more than|above|over)$/.test(normalized)) return "gt";
+  if (/^(?:less than|fewer than|below|under)$/.test(normalized)) return "lt";
+  if (/^(?:equal to|equals|exactly)$/.test(normalized)) return "eq";
+  return null;
+}
+
+function rowScopedConditionalCountLabel(
+  entity: string,
+  metric: string,
+  comparison: ReadAnswerMetricComparison,
+): string {
+  return `${entity} rows where ${metric} ${rowScopedMetricComparisonLabel(
+    comparison.operator,
+  )} ${formatReadAnswerMetricAggregateValue(comparison.value)}`;
+}
+
+function rowScopedMetricComparisonLabel(
+  operator: ReadAnswerMetricComparisonOperator,
+): string {
+  switch (operator) {
+    case "gt":
+      return "greater than";
+    case "gte":
+      return "at least";
+    case "lt":
+      return "less than";
+    case "lte":
+      return "at most";
+    case "eq":
+      return "equal to";
+  }
+}
+
 function cleanRowScopedMetricAggregateMetric(value: string): string | null {
   const metric = cleanLabel(value)
     .replace(
@@ -11359,8 +11495,30 @@ function rowScopedMetricAggregateLabel(
 
 function rowScopedMetricAggregatePartsForLabel(
   label: string,
-): { metric: string; operation: ReadAnswerMetricAggregateOperation } | null {
+): ReadAnswerMetricAggregateParts | null {
   const normalizedLabel = normalizeText(label);
+  const conditionalMatch =
+    /^(.+?)\s+rows\s+where\s+(.+?)\s+(greater\s+than|at\s+least|less\s+than|at\s+most|equal\s+to)\s+(\d[\d.]*)$/.exec(
+      normalizedLabel,
+    );
+  if (conditionalMatch) {
+    const entity = cleanRowScopedCountEntity(conditionalMatch[1] ?? "");
+    const metric = cleanRowScopedMetricAggregateMetric(
+      conditionalMatch[2] ?? "",
+    );
+    const operator = canonicalRowScopedMetricComparisonOperator(
+      conditionalMatch[3] ?? "",
+    );
+    const value = Number(conditionalMatch[4] ?? "");
+    if (entity && metric && operator && Number.isFinite(value)) {
+      return {
+        metric,
+        operation: "conditional_count",
+        comparison: { operator, value, entity },
+      };
+    }
+  }
+
   const countMatch = /^(.+?)\s+row\s+count$/.exec(normalizedLabel);
   if (countMatch) {
     const metric = cleanRowScopedCountEntity(countMatch[1] ?? "");
@@ -11837,6 +11995,9 @@ function findReadAnswerMetricAggregateFromSnapshotRows(
     .map((rowText) => cleanLabel(rowText))
     .filter(Boolean)
     .filter((rowText) => rowText.length <= 500);
+  if (aggregate.operation === "conditional_count") {
+    return calculateReadAnswerConditionalRowCountAggregate(rowTexts, aggregate);
+  }
   if (aggregate.operation === "count") {
     return calculateReadAnswerRowCountAggregate(rowTexts, aggregate.metric);
   }
@@ -11868,6 +12029,9 @@ function findReadAnswerMetricAggregateFromTextLines(
   if (lines.length < 2) return null;
 
   const rowTexts = lines.filter((line) => line.length <= 500);
+  if (aggregate.operation === "conditional_count") {
+    return calculateReadAnswerConditionalRowCountAggregate(rowTexts, aggregate);
+  }
   if (aggregate.operation === "count") {
     return calculateReadAnswerRowCountAggregate(rowTexts, aggregate.metric);
   }
@@ -11897,6 +12061,55 @@ function calculateReadAnswerRowCountAggregate(
     answer: String(matches.length),
     evidenceText: matches.join("\n"),
   };
+}
+
+function calculateReadAnswerConditionalRowCountAggregate(
+  rowTexts: string[],
+  aggregate: ReadAnswerMetricAggregateParts,
+): ReadAnswerMetricAggregate | null {
+  const comparison = aggregate.comparison;
+  if (!comparison) return null;
+
+  const candidates = rowTexts
+    .filter((rowText) =>
+      readAnswerRowCountTextMatchesEntity(rowText, comparison.entity),
+    )
+    .map((rowText) =>
+      extractReadAnswerSuperlativeMetricCandidate(rowText, aggregate.metric),
+    )
+    .filter(
+      (
+        candidate,
+      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+        candidate !== null,
+    );
+  if (candidates.length < 2) return null;
+
+  const matchingCount = candidates.filter((candidate) =>
+    readAnswerMetricComparisonMatches(candidate.value, comparison),
+  ).length;
+  return {
+    answer: String(matchingCount),
+    evidenceText: candidates.map((candidate) => candidate.sentence).join("\n"),
+  };
+}
+
+function readAnswerMetricComparisonMatches(
+  value: number,
+  comparison: ReadAnswerMetricComparison,
+): boolean {
+  switch (comparison.operator) {
+    case "gt":
+      return value > comparison.value;
+    case "gte":
+      return value >= comparison.value;
+    case "lt":
+      return value < comparison.value;
+    case "lte":
+      return value <= comparison.value;
+    case "eq":
+      return value === comparison.value;
+  }
 }
 
 function calculateReadAnswerMetricAggregate(
