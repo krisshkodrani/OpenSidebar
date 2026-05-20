@@ -7723,6 +7723,8 @@ type ControlStateWorkflowAction = Extract<
   | "unassign"
   | "grant"
   | "revoke"
+  | "suspend"
+  | "unsuspend"
   | "connect"
   | "disconnect"
   | "link"
@@ -7767,6 +7769,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "block",
     "assign",
     "grant",
+    "suspend",
     "connect",
     "link",
     "tag",
@@ -7797,6 +7800,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "unblock",
     "unassign",
     "revoke",
+    "unsuspend",
     "disconnect",
     "unlink",
     "untag",
@@ -7830,6 +7834,8 @@ function inferControlStateChangeAction(
     return "revoke";
   }
   if (/\bgrant(?:ed|ing)?\b/i.test(text)) return "grant";
+  if (/\bunsuspend(?:ed|ing|sion)?\b/i.test(text)) return "unsuspend";
+  if (/\bsuspend(?:ed|ing|sion)?\b/i.test(text)) return "suspend";
   if (/\bdisconnect(?:ed|ing|ion)?\b/i.test(text)) return "disconnect";
   if (/\bconnect(?:ed|ing|ion)?\b/i.test(text)) return "connect";
   if (/\bunlink(?:ed|ing)?\b/i.test(text)) return "unlink";
@@ -7910,6 +7916,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "granted";
     case "revoke":
       return "revoked";
+    case "suspend":
+      return "suspended";
+    case "unsuspend":
+      return "unsuspended";
     case "connect":
       return "connected";
     case "disconnect":
@@ -9233,6 +9243,9 @@ function readControlState(
   }
   if (action === "grant" || action === "revoke") {
     return readSemanticControlState(state, /^granted$/i, /^revoked$/i);
+  }
+  if (action === "suspend" || action === "unsuspend") {
+    return readSemanticControlState(state, /^suspended$/i, /^unsuspended$/i);
   }
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
