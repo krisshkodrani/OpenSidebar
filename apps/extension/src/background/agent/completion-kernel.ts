@@ -1261,6 +1261,11 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
+  const definitionQuestion =
+    extractSentenceScopedDefinitionQuestionParts(requestText);
+  if (definitionQuestion?.strongDefinitionIntent && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1324,6 +1329,7 @@ function generateReadAnswerContract(
 function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   const normalizedLabel = normalizeText(label);
   if (!normalizedLabel) return false;
+  if (normalizedLabel === "definition") return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -9764,10 +9770,61 @@ function extractSentenceScopedByRelationQuestionParts(
   return null;
 }
 
+function extractSentenceScopedDefinitionQuestionParts(
+  question: string,
+): { target: string; strongDefinitionIntent: boolean } | null {
+  const text = cleanLabel(question);
+  const strongPatterns = [
+    /^(?:please\s+)?(?:tell me\s+)?what\s+does\s+(?:the\s+)?(?:term\s+)?(.+?)\s+mean(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?what\s+does\s+(?:the\s+)?(?:term\s+)?(.+?)\s+stand\s+for(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?what\s+is\s+meant\s+by\s+(?:the\s+)?(?:term\s+)?(.+?)(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?define\s+(?:the\s+)?(?:term\s+)?(.+?)(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?what\s+is\s+the\s+definition\s+of\s+(?:the\s+)?(?:term\s+)?(.+?)(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?what\s+is\s+(?:the\s+)?(?:term\s+)?(.+?)\s+defined\s+as(?:[?.!]|$)/i,
+  ];
+  for (const pattern of strongPatterns) {
+    const target = cleanSentenceScopedDefinitionTarget(
+      pattern.exec(text)?.[1] ?? "",
+    );
+    if (target) return { target, strongDefinitionIntent: true };
+  }
+
+  const weakWhatIsMatch =
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is)\s+(?:the\s+)?(?:term\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  const weakTarget = cleanSentenceScopedDefinitionTarget(
+    weakWhatIsMatch?.[1] ?? "",
+  );
+  return weakTarget
+    ? { target: weakTarget, strongDefinitionIntent: false }
+    : null;
+}
+
+function cleanSentenceScopedDefinitionTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(
+    cleanLabel(value)
+      .replace(/^(?:the\s+)?term\s+/i, "")
+      .replace(/\s+(?:on|in|from|according to)\s+(?:this|the)\s+(?:page|article|document|post|readme)$/i, ""),
+  );
+}
+
 function findGroundedSentenceScopedAnswer(
   question: string,
   evidenceText: string,
 ): { label: string; target: string } | null {
+  const definitionQuestion =
+    extractSentenceScopedDefinitionQuestionParts(question);
+  if (definitionQuestion) {
+    const target = normalizeWorkflowTargetLabel(definitionQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(evidenceText, target, "definition")
+    ) {
+      return { label: "definition", target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -10354,6 +10411,10 @@ function extractSentenceScopedRelationAnswer(
   const targetPattern = workflowTargetTextPattern(target);
   if (!targetPattern) return null;
   const normalizedLabel = normalizeText(expectedAnswerLabel);
+  if (normalizedLabel === "definition") {
+    return extractSentenceScopedDefinitionAnswer(sentence, targetPattern);
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -10500,6 +10561,32 @@ function extractSentenceScopedRelationAnswer(
     if (answer) return answer;
   }
   return null;
+}
+
+function extractSentenceScopedDefinitionAnswer(
+  sentence: string,
+  targetPattern: string,
+): string | null {
+  const subjectPattern = `(?:the\\s+)?(?:term\\s+)?${targetPattern}\\b`;
+  const patterns = [
+    `^\\s*${subjectPattern}\\s+(?:means|refers\\s+to|stands\\s+for)\\s+([^.;\\n]{2,180})`,
+    `^\\s*${subjectPattern}\\s+(?:is|are|was|were)\\s+defined\\s+as\\s+([^.;\\n]{2,180})`,
+    `^\\s*${subjectPattern}\\s+(?:is|are|was|were)\\s+((?:a|an|the)\\s+[^.;\\n]{2,180})`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedDefinitionAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedDefinitionAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (tokenizeCompletionText(answer).length < 2) return "";
+  return answer;
 }
 
 function extractCurrentRoleRelationNounAnswer(
