@@ -27723,6 +27723,149 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts dismiss confirmation from semantic dismiss data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          846,
+          "Dismiss Newsletter Popup",
+          "visible",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          847,
+          "Dismiss Newsletter Popup",
+          "dismissed",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Dismiss Newsletter Popup.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 846 },
+      result: "Clicked element 846.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Dismissed Newsletter Popup.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+      targetLabel: "Newsletter Popup",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:dismiss:control-state:newsletter-popup-dismiss",
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "control_state_change",
+          targetText: "Newsletter Popup",
+          text: "Control state changed to dismissed: Dismiss Newsletter Popup",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer dismiss confirmation when semantic data-state was already dismissed", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          848,
+          "Dismiss Newsletter Popup",
+          "dismissed",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          849,
+          "Dismiss Newsletter Popup",
+          "dismissed",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 848 },
+      result: "Clicked element 848.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer dismiss confirmation when semantic data-state flips visible", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          850,
+          "Dismiss Newsletter Popup",
+          "dismissed",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Newsletter Popup Dismiss Newsletter Popup",
+      pageContent: "Newsletter Popup Dismiss Newsletter Popup",
+      elements: [
+        dataStateActionButton(
+          851,
+          "Dismiss Newsletter Popup",
+          "visible",
+          "newsletter-popup-dismiss",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 850 },
+      result: "Clicked element 850.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   for (const scenario of [
     {
       action: "share",
