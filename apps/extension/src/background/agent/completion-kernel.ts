@@ -251,6 +251,8 @@ export type WorkflowConfirmationAction =
   | "unfavorite"
   | "like"
   | "unlike"
+  | "upvote"
+  | "downvote"
   | "watch"
   | "unwatch"
   | "star"
@@ -338,6 +340,8 @@ const WORKFLOW_CONFIRMATION_ACTIONS: WorkflowConfirmationAction[] = [
   "unfavorite",
   "like",
   "unlike",
+  "upvote",
+  "downvote",
   "watch",
   "unwatch",
   "star",
@@ -427,6 +431,8 @@ const TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS = [
   "unfavorite",
   "like",
   "unlike",
+  "upvote",
+  "downvote",
   "watch",
   "unwatch",
   "star",
@@ -3403,6 +3409,20 @@ function inferWorkflowConfirmationAction(
     return "like";
   }
   if (
+    /\bdownvote(?:d)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "downvote";
+  }
+  if (
+    /\bupvote(?:d)?\s+(?:the\s+)?(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\b/i.test(
+      text,
+    )
+  ) {
+    return "upvote";
+  }
+  if (
     /\bunwatch(?:ed)?\s+(?:the\s+)?(?:repository|repo|project|board|list|report|dashboard|page|feed|newsletter|tag|channel|topic|thread|conversation|issue|ticket|request|queue|service|job|pipeline|workflow|record|item)\b/i.test(
       text,
     )
@@ -3697,6 +3717,10 @@ function workflowTargetActionPattern(
       return "(?:like)";
     case "unlike":
       return "(?:unlike)";
+    case "upvote":
+      return "(?:upvote)";
+    case "downvote":
+      return "(?:downvote)";
     case "watch":
       return "(?:watch)";
     case "unwatch":
@@ -4087,6 +4111,10 @@ function workflowTargetVisibleResultPattern(
       return "(?:liked)";
     case "unlike":
       return "(?:unliked)";
+    case "upvote":
+      return "(?:upvoted)";
+    case "downvote":
+      return "(?:downvoted)";
     case "watch":
       return "(?:watched)";
     case "unwatch":
@@ -4262,6 +4290,10 @@ function workflowTargetVisibleNounPattern(
       return "(?:like)";
     case "unlike":
       return "(?:unlike)";
+    case "upvote":
+      return "(?:upvote)";
+    case "downvote":
+      return "(?:downvote)";
     case "watch":
       return "(?:watch)";
     case "unwatch":
@@ -5202,6 +5234,32 @@ function textConfirmsWorkflowAction(
       return /\b(?:unliked|unlike complete|unlike completed|unlike successful)\b/i.test(
         text,
       );
+    case "upvote":
+      if (mode === "visible") {
+        return (
+          /\bupvoted\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\s+upvoted\b/i.test(
+            text,
+          ) ||
+          /\bupvote\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:upvoted|upvote complete|upvote completed|upvote successful)\b/i.test(
+        text,
+      );
+    case "downvote":
+      if (mode === "visible") {
+        return (
+          /\bdownvoted\s+successfully\b/i.test(text) ||
+          /\b(?:item|record|task|ticket|request|entry|row|message|comment|reply|post|thread|conversation|article|page|link|url|site|user|member|contact|account|profile|repository|repo|issue)\s+downvoted\b/i.test(
+            text,
+          ) ||
+          /\bdownvote\s+(?:complete|completed|successful)\b/i.test(text)
+        );
+      }
+      return /\b(?:downvoted|downvote complete|downvote completed|downvote successful)\b/i.test(
+        text,
+      );
     case "watch":
       if (mode === "visible") {
         return (
@@ -5665,6 +5723,10 @@ function workflowActionTermPattern(action: WorkflowConfirmationAction): string {
       return "(?:liked|like)";
     case "unlike":
       return "(?:unliked|unlike)";
+    case "upvote":
+      return "(?:upvoted|upvote)";
+    case "downvote":
+      return "(?:downvoted|downvote)";
     case "watch":
       return "(?:watched|watch)";
     case "unwatch":
@@ -7595,6 +7657,8 @@ type ControlStateWorkflowAction = Extract<
   | "unfavorite"
   | "like"
   | "unlike"
+  | "upvote"
+  | "downvote"
   | "watch"
   | "unwatch"
   | "star"
@@ -7614,6 +7678,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "bookmark",
     "favorite",
     "like",
+    "upvote",
+    "downvote",
     "watch",
     "star",
     "pin",
@@ -7658,6 +7724,8 @@ function inferControlStateChangeAction(
   if (/\bfavou?rite(?:d|ing|s)?\b/i.test(text)) return "favorite";
   if (/\bunlike(?:d|ing)?\b/i.test(text)) return "unlike";
   if (/\blike(?:d|ing|s)?\b/i.test(text)) return "like";
+  if (/\bdownvote(?:d|ing|s)?\b/i.test(text)) return "downvote";
+  if (/\bupvote(?:d|ing|s)?\b/i.test(text)) return "upvote";
   if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
   if (/\bwatch(?:ed|ing|es)?\b/i.test(text)) return "watch";
   if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
@@ -7713,6 +7781,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "liked";
     case "unlike":
       return "unliked";
+    case "upvote":
+      return "upvoted";
+    case "downvote":
+      return "downvoted";
     case "watch":
       return "watched";
     case "unwatch":
@@ -7852,6 +7924,10 @@ function controlLabelConfirmsWorkflowAction(
       return /\bliked\b/i.test(text);
     case "unlike":
       return /\bunliked\b/i.test(text);
+    case "upvote":
+      return /\bupvoted\b/i.test(text);
+    case "downvote":
+      return /\bdownvoted\b/i.test(text);
     case "watch":
       return /\bwatched\b/i.test(text);
     case "unwatch":

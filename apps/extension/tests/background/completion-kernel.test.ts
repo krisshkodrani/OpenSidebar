@@ -24245,6 +24245,247 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts upvote confirmation from pressed control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Comment Alpha Upvote Comment Alpha",
+      pageContent: "Comment Alpha Upvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          650,
+          "Upvote Comment Alpha",
+          false,
+          "comment-alpha-upvote",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Comment Alpha Upvote Comment Alpha",
+      pageContent: "Comment Alpha Upvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          651,
+          "Upvote Comment Alpha",
+          true,
+          "comment-alpha-upvote",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upvote Comment Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 650 },
+      result: "Clicked element 650.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Upvoted Comment Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upvote",
+      targetLabel: "Comment Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:upvote:control-state:comment-alpha-upvote",
+        detail: expect.objectContaining({
+          action: "upvote",
+          source: "control_state_change",
+          targetText: "Comment Alpha",
+          text: "Control state changed to upvoted: Upvote Comment Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts downvote confirmation from pressed control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Comment Alpha Downvote Comment Alpha",
+      pageContent: "Comment Alpha Downvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          652,
+          "Downvote Comment Alpha",
+          false,
+          "comment-alpha-downvote",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Comment Alpha Downvote Comment Alpha",
+      pageContent: "Comment Alpha Downvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          653,
+          "Downvote Comment Alpha",
+          true,
+          "comment-alpha-downvote",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Downvote Comment Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 652 },
+      result: "Clicked element 652.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Downvoted Comment Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "downvote",
+      targetLabel: "Comment Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:downvote:control-state:comment-alpha-downvote",
+        detail: expect.objectContaining({
+          action: "downvote",
+          source: "control_state_change",
+          targetText: "Comment Alpha",
+          text: "Control state changed to downvoted: Downvote Comment Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware upvote confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Comment Alpha Comment Beta Upvote Comment Beta",
+      pageContent: "Comment Alpha Comment Beta Upvote Comment Beta",
+      elements: [
+        statefulActionButton(
+          654,
+          "Upvote Comment Beta",
+          false,
+          "comment-beta-upvote",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Comment Alpha Comment Beta Upvote Comment Beta",
+      pageContent: "Comment Alpha Comment Beta Upvote Comment Beta",
+      elements: [
+        statefulActionButton(
+          655,
+          "Upvote Comment Beta",
+          true,
+          "comment-beta-upvote",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Upvote Comment Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 654 },
+      result: "Clicked element 654.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Upvoted Comment Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "upvote",
+      targetLabel: "Comment Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey:
+          "workflow:confirmation:upvote:control-state:comment-beta-upvote",
+        detail: expect.objectContaining({
+          action: "upvote",
+          source: "control_state_change",
+          targetText: "Comment Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer upvote confirmation when pressed state was already on", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Comment Alpha Upvote Comment Alpha",
+      pageContent: "Comment Alpha Upvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          650,
+          "Upvote Comment Alpha",
+          true,
+          "comment-alpha-upvote",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Comment Alpha Upvote Comment Alpha",
+      pageContent: "Comment Alpha Upvote Comment Alpha",
+      elements: [
+        statefulActionButton(
+          651,
+          "Upvote Comment Alpha",
+          true,
+          "comment-alpha-upvote",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 650 },
+      result: "Clicked element 650.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   for (const scenario of [
     {
       action: "bookmark",
