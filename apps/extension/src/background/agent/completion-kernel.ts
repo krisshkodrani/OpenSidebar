@@ -1280,6 +1280,11 @@ function generateReadAnswerContract(
   if (eventDateQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const targetCountQuestion =
+    extractSentenceScopedTargetCountQuestionParts(requestText);
+  if (targetCountQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -9954,6 +9959,69 @@ function cleanSentenceScopedEventDateTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
 
+function extractSentenceScopedTargetCountQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const targetVerbMatch =
+    /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:does|do|did)\s+(?:the\s+)?(.+?)\s+(?:have|contain|include|show|list|track|report)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (targetVerbMatch) {
+    const metric = cleanSentenceScopedTargetCountMetric(
+      targetVerbMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetCountTarget(
+      targetVerbMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} count`, target };
+  }
+
+  const thereAreMatch =
+    /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:is|are|was|were)\s+there\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (thereAreMatch) {
+    const metric = cleanSentenceScopedTargetCountMetric(
+      thereAreMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetCountTarget(
+      thereAreMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} count`, target };
+  }
+
+  const countOfMatch =
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is)\s+(?:the\s+)?(?:number|count|quantity)\s+of\s+(.+?)\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (countOfMatch) {
+    const metric = cleanSentenceScopedTargetCountMetric(
+      countOfMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetCountTarget(
+      countOfMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} count`, target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedTargetCountMetric(value: string): string | null {
+  const metric = cleanLabel(value)
+    .replace(/^(?:the\s+)?(?:current|total|overall)\s+/i, "")
+    .replace(/\s+(?:count|number|quantity)$/i, "");
+  const normalized = normalizeText(metric);
+  const tokens = tokenizeCompletionText(normalized);
+  if (tokens.length < 2 || tokens.length > 6) return null;
+  return tokens.join(" ");
+}
+
+function cleanSentenceScopedTargetCountTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
 function cleanSentenceScopedReasonTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
@@ -10063,6 +10131,22 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const targetCountQuestion =
+    extractSentenceScopedTargetCountQuestionParts(question);
+  if (targetCountQuestion) {
+    const target = normalizeWorkflowTargetLabel(targetCountQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        targetCountQuestion.label,
+      )
+    ) {
+      return { label: targetCountQuestion.label, target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -10076,6 +10160,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "severity" &&
     answerLabel !== "location" &&
     !sentenceScopedEventDatePatternForLabel(answerLabel) &&
+    !sentenceScopedCountMetricPatternForLabel(answerLabel) &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
     !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
@@ -10681,6 +10766,16 @@ function extractSentenceScopedRelationAnswer(
     );
   }
 
+  const countMetricPattern =
+    sentenceScopedCountMetricPatternForLabel(normalizedLabel);
+  if (countMetricPattern) {
+    return extractSentenceScopedTargetCountAnswer(
+      sentence,
+      targetPattern,
+      countMetricPattern,
+    );
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -11035,6 +11130,51 @@ function cleanSentenceScopedEventDateAnswerText(value: string): string {
   return new RegExp(`^${sentenceScopedEventDateAnswerPattern()}$`, "i").test(
     answer,
   )
+    ? answer
+    : "";
+}
+
+function sentenceScopedCountMetricPatternForLabel(label: string): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (!normalizedLabel.endsWith(" count")) return null;
+  const metric = normalizedLabel.replace(/\s+count$/, "");
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 2 || tokens.length > 6) return null;
+  return tokens.map(escapeRegExp).join("\\s+");
+}
+
+function extractSentenceScopedTargetCountAnswer(
+  sentence: string,
+  targetPattern: string,
+  metricPattern: string,
+): string | null {
+  const countPattern = sentenceScopedTargetCountAnswerPattern();
+  const patterns = [
+    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${metricPattern}\\s+(?:count|number|quantity)\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
+    `^\\s*${metricPattern}\\s+(?:count|number|quantity)\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedTargetCountAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+  return null;
+}
+
+function sentenceScopedTargetCountAnswerPattern(): string {
+  return "(?:\\d[\\d,]*(?:\\.\\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)";
+}
+
+function cleanSentenceScopedTargetCountAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (!answer) return "";
+  return new RegExp(
+    `^${sentenceScopedTargetCountAnswerPattern()}$`,
+    "i",
+  ).test(answer)
     ? answer
     : "";
 }
