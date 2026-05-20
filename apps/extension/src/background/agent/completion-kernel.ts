@@ -11136,7 +11136,11 @@ type ReadAnswerSuperlativeMetricCandidate = {
   sentence: string;
 };
 
-type ReadAnswerMetricAggregateOperation = "total" | "average";
+type ReadAnswerMetricAggregateOperation =
+  | "total"
+  | "average"
+  | "highest"
+  | "lowest";
 
 type ReadAnswerMetricAggregate = {
   answer: string;
@@ -11245,6 +11249,16 @@ function extractRowScopedMetricAggregateQuestionParts(
       pattern:
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:average|mean)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
     },
+    {
+      operation: "highest",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:highest|largest|maximum|max)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
+      operation: "lowest",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:lowest|smallest|minimum|min)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
   ];
   const aggregateMatch = patterns
     .map(({ operation, pattern }) => ({ operation, match: pattern.exec(text) }))
@@ -11279,6 +11293,10 @@ function cleanRowScopedMetricAggregateMetric(value: string): string | null {
       /^(?:the\s+)?(?:current|latest|reported|combined|overall|average|mean)\s+/i,
       "",
     )
+    .replace(
+      /^(?:highest|largest|maximum|max|lowest|smallest|minimum|min)\s+/i,
+      "",
+    )
     .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
   const tokens = tokenizeCompletionText(metric);
   if (tokens.length < 1 || tokens.length > 6) return null;
@@ -11296,7 +11314,9 @@ function rowScopedMetricAggregatePartsForLabel(
   label: string,
 ): { metric: string; operation: ReadAnswerMetricAggregateOperation } | null {
   const normalizedLabel = normalizeText(label);
-  const match = /^(.+?)\s+(total|average)$/.exec(normalizedLabel);
+  const match = /^(.+?)\s+(total|average|highest|lowest)$/.exec(
+    normalizedLabel,
+  );
   if (!match) return null;
   const operation = match[2] as ReadAnswerMetricAggregateOperation;
   const metric = cleanRowScopedMetricAggregateMetric(match[1] ?? "");
@@ -11821,7 +11841,15 @@ function calculateReadAnswerMetricAggregate(
 
   const values = [...uniqueCandidates.values()];
   const sum = values.reduce((total, candidate) => total + candidate.value, 0);
-  const answer = operation === "average" ? sum / values.length : sum;
+  const numericValues = values.map((candidate) => candidate.value);
+  const answer =
+    operation === "average"
+      ? sum / values.length
+      : operation === "highest"
+        ? Math.max(...numericValues)
+        : operation === "lowest"
+          ? Math.min(...numericValues)
+          : sum;
   return {
     answer: formatReadAnswerMetricAggregateValue(answer),
     evidenceText: values.map((candidate) => candidate.sentence).join("\n"),
