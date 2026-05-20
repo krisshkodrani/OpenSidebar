@@ -26528,6 +26528,207 @@ describe("completion kernel", () => {
 
   for (const scenario of [
     {
+      label: "Delete Ticket Alpha",
+      request: "Delete Ticket Alpha.",
+      summary: "Deleted Ticket Alpha.",
+      target: "Ticket Alpha",
+      id: "ticket-alpha-delete",
+      beforeState: "active",
+      afterState: "deleted",
+    },
+    {
+      label: "Remove File Alpha",
+      request: "Remove File Alpha.",
+      summary: "Removed File Alpha.",
+      target: "File Alpha",
+      id: "file-alpha-remove",
+      beforeState: "present",
+      afterState: "removed",
+    },
+  ] as const) {
+    test(`accepts delete confirmation from semantic deletion data-state control state change for ${scenario.label.toLowerCase()}`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            802,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            803,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 802 },
+        result: "Clicked element 802.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: "delete",
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:delete:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: "delete",
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to deleted: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer delete confirmation when semantic data-state was already deleted", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket Alpha Delete Ticket Alpha",
+      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          804,
+          "Delete Ticket Alpha",
+          "deleted",
+          "ticket-alpha-delete",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket Alpha Delete Ticket Alpha",
+      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          805,
+          "Delete Ticket Alpha",
+          "deleted",
+          "ticket-alpha-delete",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 804 },
+      result: "Clicked element 804.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer delete confirmation when semantic data-state flips active", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket Alpha Delete Ticket Alpha",
+      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          806,
+          "Delete Ticket Alpha",
+          "deleted",
+          "ticket-alpha-delete",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket Alpha Delete Ticket Alpha",
+      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          807,
+          "Delete Ticket Alpha",
+          "active",
+          "ticket-alpha-delete",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 806 },
+      result: "Clicked element 806.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer delete confirmation from remove-assignment wording", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Ticket Alpha Remove assignment from Ticket Alpha",
+      pageContent: "Ticket Alpha Remove assignment from Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          808,
+          "Remove assignment from Ticket Alpha",
+          "active",
+          "ticket-alpha-assignment",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Ticket Alpha Remove assignment from Ticket Alpha",
+      pageContent: "Ticket Alpha Remove assignment from Ticket Alpha",
+      elements: [
+        dataStateActionButton(
+          809,
+          "Remove assignment from Ticket Alpha",
+          "removed",
+          "ticket-alpha-assignment",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 808 },
+      result: "Clicked element 808.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  for (const scenario of [
+    {
       action: "share",
       completion: "shared",
       label: "Share Report Alpha",

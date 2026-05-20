@@ -7713,6 +7713,7 @@ function inferControlLabelChangeAction(
 
 type ControlStateWorkflowAction = Extract<
   WorkflowConfirmationAction,
+  | "delete"
   | "archive"
   | "restore"
   | "approve"
@@ -7788,6 +7789,7 @@ type ControlStateWorkflowAction = Extract<
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
+    "delete",
     "archive",
     "approve",
     "reject",
@@ -7904,6 +7906,14 @@ function inferControlStateChangeAction(
     return "cancel";
   }
   if (
+    /\bdelete(?:d|s|ing|ion)?\b/i.test(text) ||
+    /\bremov(?:e|ed|es|ing|al)\b\s+(?:the\s+)?(?:record|item|row|entry|task|ticket|request|file|document|report|account|user|project|case|issue|incident|comment|message|page|profile|contact|customer)\b/i.test(
+      text,
+    )
+  ) {
+    return "delete";
+  }
+  if (
     /\b(?:restore|restored|recover|recovered|reinstate|reinstated|unarchive|unarchived)\b/i.test(
       text,
     )
@@ -8016,6 +8026,8 @@ function controlStateChangeMatchesAction(
 
 function controlStateCompletionWord(action: ControlStateWorkflowAction): string {
   switch (action) {
+    case "delete":
+      return "deleted";
     case "archive":
       return "archived";
     case "restore":
@@ -9405,6 +9417,13 @@ function readControlState(
       state,
       /^(?:rejected|denied)$/i,
       /^(?:pending|approved)$/i,
+    );
+  }
+  if (action === "delete") {
+    return readSemanticControlState(
+      state,
+      /^(?:deleted|removed)$/i,
+      /^(?:active|present|available|existing|exists|created|saved|open)$/i,
     );
   }
   if (action === "close" || action === "reopen") {
