@@ -10251,7 +10251,7 @@ function extractCurrentRoleRelationNounAnswer(
   relationNounPattern: string,
 ): string | null {
   const currentRolePhrasePattern =
-    "(?:serves?\\s+as|(?:is|are)\\s+(?:listed|designated|identified|shown)\\s+as)";
+    "(?:serves?\\s+as|(?:is|are)\\s+(?:listed|designated|identified|shown|named|recorded|displayed)\\s+as)";
   const match = new RegExp(
     `([^.;\\n]{2,120})\\s+${currentRolePhrasePattern}\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
     "i",
