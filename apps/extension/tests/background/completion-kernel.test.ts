@@ -24164,6 +24164,173 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  for (const scenario of [
+    {
+      action: "block",
+      completion: "blocked",
+      label: "Block User Alpha",
+      request: "Block User Alpha.",
+      summary: "Blocked User Alpha.",
+      target: "User Alpha",
+      id: "user-alpha-block",
+      beforeState: "unblocked",
+      afterState: "blocked",
+    },
+    {
+      action: "unblock",
+      completion: "unblocked",
+      label: "Unblock User Alpha",
+      request: "Unblock User Alpha.",
+      summary: "Unblocked User Alpha.",
+      target: "User Alpha",
+      id: "user-alpha-block",
+      beforeState: "blocked",
+      afterState: "unblocked",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic block data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            704,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            705,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 704 },
+        result: "Clicked element 704.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer block confirmation when semantic data-state was already blocked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "User Alpha Block User Alpha",
+      pageContent: "User Alpha Block User Alpha",
+      elements: [
+        dataStateActionButton(
+          706,
+          "Block User Alpha",
+          "blocked",
+          "user-alpha-block",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "User Alpha Block User Alpha",
+      pageContent: "User Alpha Block User Alpha",
+      elements: [
+        dataStateActionButton(
+          707,
+          "Block User Alpha",
+          "blocked",
+          "user-alpha-block",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 706 },
+      result: "Clicked element 706.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unblock confirmation when semantic data-state flips blocked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "User Alpha Unblock User Alpha",
+      pageContent: "User Alpha Unblock User Alpha",
+      elements: [
+        dataStateActionButton(
+          708,
+          "Unblock User Alpha",
+          "unblocked",
+          "user-alpha-block",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "User Alpha Unblock User Alpha",
+      pageContent: "User Alpha Unblock User Alpha",
+      elements: [
+        dataStateActionButton(
+          709,
+          "Unblock User Alpha",
+          "blocked",
+          "user-alpha-block",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 708 },
+      result: "Clicked element 708.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
