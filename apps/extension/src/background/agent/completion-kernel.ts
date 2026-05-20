@@ -190,7 +190,7 @@ export interface ReadAnswerContract {
   taskContract?: TaskContract;
   expectedAnswerLabel?: string;
   expectedAnswerTarget?: string;
-  expectedAnswerScope?: "row" | "sentence";
+  expectedAnswerScope?: "row" | "sentence" | "aggregate";
 }
 
 export type WorkflowConfirmationAction =
@@ -1261,9 +1261,15 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
+  const rowMetricTotalQuestion =
+    extractRowScopedMetricTotalQuestionParts(requestText);
   const rowScopedSuperlativeAnswer = !sentenceScopedAnswer
     ? getGroundedRowScopedSuperlativeMetricAnswer(requestText, _snapshot)
     : null;
+  const rowScopedMetricTotalAnswer =
+    rowMetricTotalQuestion && !rowScopedSuperlativeAnswer
+      ? getGroundedRowScopedMetricTotalAnswer(requestText, _snapshot)
+      : null;
   const definitionQuestion =
     extractSentenceScopedDefinitionQuestionParts(requestText);
   if (definitionQuestion?.strongDefinitionIntent && !sentenceScopedAnswer) {
@@ -1298,9 +1304,16 @@ function generateReadAnswerContract(
   if (targetStateQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  if (rowMetricTotalQuestion && !rowScopedMetricTotalAnswer) {
+    return null;
+  }
   const targetMetricValueQuestion =
     extractSentenceScopedTargetMetricValueQuestionParts(requestText);
-  if (targetMetricValueQuestion && !sentenceScopedAnswer) {
+  if (
+    targetMetricValueQuestion &&
+    !sentenceScopedAnswer &&
+    !rowScopedMetricTotalAnswer
+  ) {
     return null;
   }
   const superlativeMetricQuestion =
@@ -1315,6 +1328,7 @@ function generateReadAnswerContract(
   if (
     !sentenceScopedAnswer &&
     !rowScopedSuperlativeAnswer &&
+    !rowScopedMetricTotalAnswer &&
     !hasPageReadAnswerIntent(requestText, _snapshot)
   ) {
     return null;
@@ -1353,8 +1367,9 @@ function generateReadAnswerContract(
   }
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
-    sentenceScopedAnswer?.label ??
     rowScopedSuperlativeAnswer?.label ??
+    rowScopedMetricTotalAnswer?.label ??
+    sentenceScopedAnswer?.label ??
     (targetSpecificLabelRequiresScopedEvidence
       ? null
       : groundedLabelValueQuestionLabel);
@@ -1370,14 +1385,18 @@ function generateReadAnswerContract(
             expectedAnswerTarget: rowScopedAnswer.target,
             expectedAnswerScope: "row" as const,
           }
-        : sentenceScopedAnswer
-          ? {
-              expectedAnswerTarget: sentenceScopedAnswer.target,
-              expectedAnswerScope: "sentence" as const,
-            }
         : rowScopedSuperlativeAnswer
           ? {
               expectedAnswerTarget: rowScopedSuperlativeAnswer.target,
+              expectedAnswerScope: "sentence" as const,
+            }
+        : rowScopedMetricTotalAnswer
+          ? {
+              expectedAnswerScope: "aggregate" as const,
+            }
+        : sentenceScopedAnswer
+          ? {
+              expectedAnswerTarget: sentenceScopedAnswer.target,
               expectedAnswerScope: "sentence" as const,
             }
         : {}),
@@ -1403,6 +1422,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedMetricValuePatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedSuperlativeMetricPartsForLabel(normalizedLabel)) return true;
+  if (rowScopedMetricTotalPartsForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -2303,6 +2323,22 @@ function evaluateReadAnswer(params: {
           expectedAnswerTarget: contract.expectedAnswerTarget,
         })
       : null;
+  const aggregateScopedEvidence =
+    contract.expectedAnswerScope === "aggregate" &&
+    contract.expectedAnswerLabel &&
+    (params.snapshot || pageEvidence.length > 0)
+      ? (params.snapshot
+          ? readAnswerAggregateScopedSnapshotEvidence({
+              snapshot: params.snapshot,
+              expectedAnswerLabel: contract.expectedAnswerLabel,
+              observedAtTurn: latestObservedTurn(params.evidence),
+            })
+          : null) ??
+        readAnswerAggregateScopedTextEvidence({
+          evidence: pageEvidence,
+          expectedAnswerLabel: contract.expectedAnswerLabel,
+        })
+      : null;
 
   if (
     contract.expectedAnswerScope === "row" &&
@@ -2336,10 +2372,26 @@ function evaluateReadAnswer(params: {
       evidence: params.evidence,
     };
   }
+  if (
+    contract.expectedAnswerScope === "aggregate" &&
+    contract.expectedAnswerLabel &&
+    !aggregateScopedEvidence
+  ) {
+    return {
+      status: "needs_verification",
+      reason:
+        "Requested aggregate page-answer task has no matching visible row evidence yet.",
+      hint:
+        "Read the visible rows for the requested metric, then call done with the computed total.",
+      contract,
+      evidence: params.evidence,
+    };
+  }
 
   const sourceEvidence =
     rowScopedEvidence ??
     sentenceScopedEvidence ??
+    aggregateScopedEvidence ??
     groundedEvidence ??
     snapshotEvidence;
   if (!sourceEvidence) {
@@ -2356,7 +2408,7 @@ function evaluateReadAnswer(params: {
 
   if (
     params.summary &&
-    !(contract.expectedAnswerScope === "sentence"
+    !(["sentence", "aggregate"].includes(contract.expectedAnswerScope ?? "")
       ? readAnswerSummaryMatchesSentenceScopedAnswer(
           params.summary,
           sourceEvidence.detail.answer,
@@ -2607,6 +2659,58 @@ function readAnswerRowScopedTextEvidence(params: {
         ...event.detail,
         answer: rowText.slice(0, 1000),
         evidenceText: rowText.slice(0, 4000),
+      },
+    };
+  }
+  return null;
+}
+
+function readAnswerAggregateScopedSnapshotEvidence(params: {
+  snapshot: DomSnapshot;
+  expectedAnswerLabel: string;
+  observedAtTurn: number;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  const total = findReadAnswerMetricTotalFromSnapshotRows(
+    params.snapshot,
+    params.expectedAnswerLabel,
+  );
+  if (!total) return null;
+
+  const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+  return {
+    type: "answer_state",
+    confidence: "high",
+    logicalKey: `read_answer:aggregate:${labelKey}`,
+    observedAtTurn: params.observedAtTurn,
+    detail: {
+      answer: total.answer.slice(0, 1000),
+      source: "page_read",
+      evidenceText: total.evidenceText.slice(0, 4000),
+      ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
+    },
+  };
+}
+
+function readAnswerAggregateScopedTextEvidence(params: {
+  evidence: Extract<CompletionEvidence, { type: "answer_state" }>[];
+  expectedAnswerLabel: string;
+}): Extract<CompletionEvidence, { type: "answer_state" }> | null {
+  for (const event of params.evidence) {
+    const total = findReadAnswerMetricTotalFromTextLines(
+      event.detail.evidenceText,
+      params.expectedAnswerLabel,
+    );
+    if (!total) continue;
+
+    const labelKey = compactKey(params.expectedAnswerLabel) || "label";
+    return {
+      ...event,
+      confidence: event.confidence === "high" ? "high" : "medium",
+      logicalKey: `read_answer:aggregate-text:${labelKey}`,
+      detail: {
+        ...event.detail,
+        answer: total.answer.slice(0, 1000),
+        evidenceText: total.evidenceText.slice(0, 4000),
       },
     };
   }
@@ -10363,6 +10467,21 @@ function getGroundedRowScopedSuperlativeMetricAnswer(
   };
 }
 
+function getGroundedRowScopedMetricTotalAnswer(
+  question: string,
+  snapshot?: DomSnapshot | null,
+): { label: string } | null {
+  if (!snapshot) return null;
+  const metricTotalQuestion = extractRowScopedMetricTotalQuestionParts(question);
+  if (!metricTotalQuestion) return null;
+
+  const total = findReadAnswerMetricTotalFromSnapshotRows(
+    snapshot,
+    metricTotalQuestion.label,
+  );
+  return total ? { label: metricTotalQuestion.label } : null;
+}
+
 function findGroundedRowScopedLabelValueQuestion(
   question: string,
   snapshot: DomSnapshot,
@@ -11016,6 +11135,11 @@ type ReadAnswerSuperlativeMetricCandidate = {
   sentence: string;
 };
 
+type ReadAnswerMetricTotal = {
+  answer: string;
+  evidenceText: string;
+};
+
 function extractSentenceScopedSuperlativeMetricQuestionParts(
   question: string,
 ): {
@@ -11089,6 +11213,54 @@ function sentenceScopedSuperlativeMetricPartsForLabel(
     return metric ? { metric, direction: "lowest" } : null;
   }
   return null;
+}
+
+function extractRowScopedMetricTotalQuestionParts(
+  question: string,
+): { label: string; metric: string } | null {
+  const text = cleanLabel(question);
+  const patterns = [
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?sum\s+of\s+(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:total|combined|overall)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+  ];
+  const totalMatch = patterns
+    .map((pattern) => pattern.exec(text))
+    .find((match): match is RegExpExecArray => match !== null);
+  if (!totalMatch) return null;
+
+  const metric = cleanRowScopedMetricTotalMetric(totalMatch[1] ?? "");
+  const entityTokens = tokenizeCompletionText(totalMatch[2] ?? "");
+  if (!metric || entityTokens.length < 1 || entityTokens.length > 6) {
+    return null;
+  }
+
+  return {
+    label: rowScopedMetricTotalLabel(metric),
+    metric,
+  };
+}
+
+function cleanRowScopedMetricTotalMetric(value: string): string | null {
+  const metric = cleanLabel(value)
+    .replace(/^(?:the\s+)?(?:current|latest|reported|combined|overall)\s+/i, "")
+    .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 1 || tokens.length > 6) return null;
+  return tokens.join(" ");
+}
+
+function rowScopedMetricTotalLabel(metric: string): string {
+  return `${metric} total`;
+}
+
+function rowScopedMetricTotalPartsForLabel(
+  label: string,
+): { metric: string } | null {
+  const normalizedLabel = normalizeText(label);
+  const match = /^(.+?)\s+total$/.exec(normalizedLabel);
+  if (!match) return null;
+  const metric = cleanRowScopedMetricTotalMetric(match[1] ?? "");
+  return metric ? { metric } : null;
 }
 
 function cleanSentenceScopedTargetMetricValueMetric(
@@ -11536,6 +11708,88 @@ function findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
         candidate !== null,
     );
   return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
+}
+
+function findReadAnswerMetricTotalFromSnapshotRows(
+  snapshot: DomSnapshot,
+  expectedAnswerLabel: string,
+): ReadAnswerMetricTotal | null {
+  const total = rowScopedMetricTotalPartsForLabel(expectedAnswerLabel);
+  if (!total) return null;
+
+  const candidates = snapshot.elements
+    .filter((element) => element.isVisible && !element.isDisabled)
+    .filter(isWorkflowRowLikeElement)
+    .map(readAnswerRowElementText)
+    .map((rowText) => cleanLabel(rowText))
+    .filter(Boolean)
+    .filter((rowText) => rowText.length <= 500)
+    .map((rowText) =>
+      extractReadAnswerSuperlativeMetricCandidate(rowText, total.metric),
+    )
+    .filter(
+      (
+        candidate,
+      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+        candidate !== null,
+    );
+  return calculateReadAnswerMetricTotal(candidates);
+}
+
+function findReadAnswerMetricTotalFromTextLines(
+  evidenceText: string,
+  expectedAnswerLabel: string,
+): ReadAnswerMetricTotal | null {
+  const total = rowScopedMetricTotalPartsForLabel(expectedAnswerLabel);
+  if (!total) return null;
+
+  const lines = evidenceText
+    .split(/[\r\n]+/g)
+    .map((line) => cleanLabel(line))
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+
+  const candidates = lines
+    .filter((line) => line.length <= 500)
+    .map((line) =>
+      extractReadAnswerSuperlativeMetricCandidate(line, total.metric),
+    )
+    .filter(
+      (
+        candidate,
+      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+        candidate !== null,
+    );
+  return calculateReadAnswerMetricTotal(candidates);
+}
+
+function calculateReadAnswerMetricTotal(
+  candidates: ReadAnswerSuperlativeMetricCandidate[],
+): ReadAnswerMetricTotal | null {
+  const uniqueCandidates = new Map<
+    string,
+    ReadAnswerSuperlativeMetricCandidate
+  >();
+  for (const candidate of candidates) {
+    const key = normalizeText(candidate.target);
+    const existing = uniqueCandidates.get(key);
+    if (existing && existing.value !== candidate.value) return null;
+    if (!existing) uniqueCandidates.set(key, candidate);
+  }
+  if (uniqueCandidates.size < 2) return null;
+
+  const values = [...uniqueCandidates.values()];
+  const sum = values.reduce((total, candidate) => total + candidate.value, 0);
+  return {
+    answer: formatReadAnswerMetricTotalValue(sum),
+    evidenceText: values.map((candidate) => candidate.sentence).join("\n"),
+  };
+}
+
+function formatReadAnswerMetricTotalValue(value: number): string {
+  const rounded = Math.round(value * 1_000_000) / 1_000_000;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(rounded).replace(/(\.\d*?)0+$/g, "$1").replace(/\.$/g, "");
 }
 
 function selectReadAnswerSuperlativeMetricWinner(
