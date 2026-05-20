@@ -11146,11 +11146,18 @@ type ReadAnswerMetricAggregateOperation =
   | "conditional_count"
   | "count";
 
-type ReadAnswerMetricComparisonOperator = "gt" | "gte" | "lt" | "lte" | "eq";
+type ReadAnswerMetricComparisonOperator =
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "eq"
+  | "between";
 
 interface ReadAnswerMetricComparison {
   operator: ReadAnswerMetricComparisonOperator;
   value: number;
+  upperValue?: number;
   entity: string;
 }
 
@@ -11345,6 +11352,9 @@ function extractRowScopedConditionalCountQuestionParts(
   metric: string;
   operation: Extract<ReadAnswerMetricAggregateOperation, "conditional_count">;
 } | null {
+  const rangedQuestion = extractRowScopedRangedCountQuestionParts(question);
+  if (rangedQuestion) return rangedQuestion;
+
   const comparisonPattern = rowScopedMetricComparisonQuestionPattern();
   const valuePattern = sentenceScopedSuperlativeMetricValuePattern();
   const patterns: Array<{
@@ -11406,6 +11416,115 @@ function extractRowScopedConditionalCountQuestionParts(
   return null;
 }
 
+function extractRowScopedRangedCountQuestionParts(
+  question: string,
+): {
+  label: string;
+  metric: string;
+  operation: Extract<ReadAnswerMetricAggregateOperation, "conditional_count">;
+} | null {
+  const valuePattern = sentenceScopedSuperlativeMetricValuePattern();
+  const patterns: Array<{
+    pattern: RegExp;
+    entityIndex: number;
+    metricIndex: number;
+    lowerValueIndex: number;
+    upperValueIndex: number;
+  }> = [
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+(.+?)\\s+between\\s+(${valuePattern})\\s+and\\s+(${valuePattern})(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      metricIndex: 2,
+      lowerValueIndex: 3,
+      upperValueIndex: 4,
+    },
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+between\\s+(${valuePattern})\\s+and\\s+(${valuePattern})\\s+(.+?)(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      lowerValueIndex: 2,
+      upperValueIndex: 3,
+      metricIndex: 4,
+    },
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+(.+?)\\s+from\\s+(${valuePattern})\\s+to\\s+(${valuePattern})(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      metricIndex: 2,
+      lowerValueIndex: 3,
+      upperValueIndex: 4,
+    },
+    {
+      pattern: new RegExp(
+        `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains)\\s+from\\s+(${valuePattern})\\s+to\\s+(${valuePattern})\\s+(.+?)(?:[?.!]|$)`,
+        "i",
+      ),
+      entityIndex: 1,
+      lowerValueIndex: 2,
+      upperValueIndex: 3,
+      metricIndex: 4,
+    },
+  ];
+
+  for (const {
+    pattern,
+    entityIndex,
+    metricIndex,
+    lowerValueIndex,
+    upperValueIndex,
+  } of patterns) {
+    const match = pattern.exec(question);
+    if (!match) continue;
+
+    const entity = cleanRowScopedCountEntity(match[entityIndex] ?? "");
+    const metric = cleanRowScopedMetricAggregateMetric(
+      match[metricIndex] ?? "",
+    );
+    const lowerValue = parseSentenceScopedSuperlativeMetricValue(
+      match[lowerValueIndex] ?? "",
+    );
+    const upperValue = parseSentenceScopedSuperlativeMetricValue(
+      match[upperValueIndex] ?? "",
+    );
+    if (!entity || !metric || lowerValue === null || upperValue === null) {
+      continue;
+    }
+
+    const comparison = rowScopedMetricRangedComparison(
+      entity,
+      lowerValue,
+      upperValue,
+    );
+    return {
+      label: rowScopedConditionalCountLabel(entity, metric, comparison),
+      metric,
+      operation: "conditional_count",
+    };
+  }
+
+  return null;
+}
+
+function rowScopedMetricRangedComparison(
+  entity: string,
+  firstValue: number,
+  secondValue: number,
+): ReadAnswerMetricComparison {
+  return {
+    operator: "between",
+    value: Math.min(firstValue, secondValue),
+    upperValue: Math.max(firstValue, secondValue),
+    entity,
+  };
+}
+
 function rowScopedMetricComparisonQuestionPattern(): string {
   return "(?:greater\\s+than\\s+or\\s+equal\\s+to|less\\s+than\\s+or\\s+equal\\s+to|at\\s+least|at\\s+most|no\\s+less\\s+than|no\\s+more\\s+than|greater\\s+than|more\\s+than|above|over|less\\s+than|fewer\\s+than|below|under|equal\\s+to|equals|exactly)";
 }
@@ -11433,6 +11552,14 @@ function rowScopedConditionalCountLabel(
   metric: string,
   comparison: ReadAnswerMetricComparison,
 ): string {
+  if (
+    comparison.operator === "between" &&
+    comparison.upperValue !== undefined
+  ) {
+    return `${entity} rows where ${metric} between ${formatReadAnswerMetricAggregateValue(
+      comparison.value,
+    )} and ${formatReadAnswerMetricAggregateValue(comparison.upperValue)}`;
+  }
   return `${entity} rows where ${metric} ${rowScopedMetricComparisonLabel(
     comparison.operator,
   )} ${formatReadAnswerMetricAggregateValue(comparison.value)}`;
@@ -11452,6 +11579,8 @@ function rowScopedMetricComparisonLabel(
       return "at most";
     case "eq":
       return "equal to";
+    case "between":
+      return "between";
   }
 }
 
@@ -11497,6 +11626,33 @@ function rowScopedMetricAggregatePartsForLabel(
   label: string,
 ): ReadAnswerMetricAggregateParts | null {
   const normalizedLabel = normalizeText(label);
+  const rangedMatch =
+    /^(.+?)\s+rows\s+where\s+(.+?)\s+between\s+(\d[\d.]*)\s+and\s+(\d[\d.]*)$/.exec(
+      normalizedLabel,
+    );
+  if (rangedMatch) {
+    const entity = cleanRowScopedCountEntity(rangedMatch[1] ?? "");
+    const metric = cleanRowScopedMetricAggregateMetric(rangedMatch[2] ?? "");
+    const lowerValue = Number(rangedMatch[3] ?? "");
+    const upperValue = Number(rangedMatch[4] ?? "");
+    if (
+      entity &&
+      metric &&
+      Number.isFinite(lowerValue) &&
+      Number.isFinite(upperValue)
+    ) {
+      return {
+        metric,
+        operation: "conditional_count",
+        comparison: rowScopedMetricRangedComparison(
+          entity,
+          lowerValue,
+          upperValue,
+        ),
+      };
+    }
+  }
+
   const conditionalMatch =
     /^(.+?)\s+rows\s+where\s+(.+?)\s+(greater\s+than|at\s+least|less\s+than|at\s+most|equal\s+to)\s+(\d[\d.]*)$/.exec(
       normalizedLabel,
@@ -12109,6 +12265,12 @@ function readAnswerMetricComparisonMatches(
       return value <= comparison.value;
     case "eq":
       return value === comparison.value;
+    case "between":
+      return (
+        comparison.upperValue !== undefined &&
+        value >= comparison.value &&
+        value <= comparison.upperValue
+      );
   }
 }
 
