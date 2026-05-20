@@ -10202,35 +10202,13 @@ function extractSentenceScopedRelationAnswer(
     );
     if (targetRelationAnswer) return targetRelationAnswer;
 
-    const predicateRoleNounMatch = new RegExp(
-      `([^.;\\n]{2,120})\\s+serves?\\s+as\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
-      "i",
-    ).exec(sentence);
-    const predicateRoleNounAnswer = cleanActiveSentenceScopedAnswerText(
-      predicateRoleNounMatch?.[1] ?? "",
+    const currentRoleNounAnswer = extractCurrentRoleRelationNounAnswer(
+      sentence,
       target,
+      targetPattern,
+      relationNounPattern,
     );
-    if (predicateRoleNounAnswer) return predicateRoleNounAnswer;
-
-    const predicateListedNounMatch = new RegExp(
-      `([^.;\\n]{2,120})\\s+(?:is|are)\\s+listed\\s+as\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
-      "i",
-    ).exec(sentence);
-    const predicateListedNounAnswer = cleanActiveSentenceScopedAnswerText(
-      predicateListedNounMatch?.[1] ?? "",
-      target,
-    );
-    if (predicateListedNounAnswer) return predicateListedNounAnswer;
-
-    const predicateDesignatedNounMatch = new RegExp(
-      `([^.;\\n]{2,120})\\s+(?:is|are)\\s+designated\\s+as\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
-      "i",
-    ).exec(sentence);
-    const predicateDesignatedNounAnswer = cleanActiveSentenceScopedAnswerText(
-      predicateDesignatedNounMatch?.[1] ?? "",
-      target,
-    );
-    if (predicateDesignatedNounAnswer) return predicateDesignatedNounAnswer;
+    if (currentRoleNounAnswer) return currentRoleNounAnswer;
 
     const predicateNounMatch = new RegExp(
       `([^.;\\n]{2,120})\\s+(?:is|are|was|were)\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
@@ -10264,6 +10242,22 @@ function extractSentenceScopedRelationAnswer(
     if (answer) return answer;
   }
   return null;
+}
+
+function extractCurrentRoleRelationNounAnswer(
+  sentence: string,
+  target: string,
+  targetPattern: string,
+  relationNounPattern: string,
+): string | null {
+  const currentRolePhrasePattern =
+    "(?:serves?\\s+as|(?:is|are)\\s+(?:listed|designated|identified|shown)\\s+as)";
+  const match = new RegExp(
+    `([^.;\\n]{2,120})\\s+${currentRolePhrasePattern}\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
+    "i",
+  ).exec(sentence);
+
+  return cleanActiveSentenceScopedAnswerText(match?.[1] ?? "", target);
 }
 
 function sentenceScopedByRelationPatternForLabel(label: string): string | null {
