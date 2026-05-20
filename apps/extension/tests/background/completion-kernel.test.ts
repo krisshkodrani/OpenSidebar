@@ -35225,6 +35225,142 @@ describe("completion kernel", () => {
     expect(generated).toBeNull();
   });
 
+  test("accepts superlative metric read-answer from visible row elements", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Counts Warehouse Beta Inventory count: 7,318 units Warehouse Delta Inventory count: 2,184 units",
+      pageContent:
+        "Warehouse Counts. The page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric questions from visible row evidence.",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7,318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 2,184 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Which warehouse has the highest inventory count?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Warehouse Beta has the highest inventory count.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Warehouse Delta has the highest inventory count.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "inventory count highest target",
+      expectedAnswerTarget: "Warehouse Beta",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts row-superlative metric read-answer without explanatory page text", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Beta Inventory count: 7,318 units Warehouse Delta Inventory count: 2,184 units",
+      pageContent: "Warehouse Counts",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7,318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 2,184 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Which warehouse has the highest inventory count?",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "inventory count highest target",
+      expectedAnswerTarget: "Warehouse Beta",
+      expectedAnswerScope: "sentence",
+    });
+  });
+
+  test("accepts row-superlative metric read-answer from read_page line evidence", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Counts Warehouse Beta Inventory count: 7,318 units Warehouse Delta Inventory count: 2,184 units",
+      pageContent:
+        "Warehouse Counts. The page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric questions from visible row evidence.",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7,318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 2,184 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Which warehouse has the highest inventory count?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nWarehouse Beta Inventory count: 7,318 units\nWarehouse Delta Inventory count: 2,184 units\nThe page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric questions from visible row evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Warehouse Beta",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "inventory count highest target",
+      expectedAnswerTarget: "Warehouse Beta",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+  });
+
+  test("does not generate row-superlative metric read-answer when visible rows are tied", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Counts Warehouse Beta Inventory count: 7,318 units Warehouse Delta Inventory count: 7,318 units",
+      pageContent:
+        "Warehouse Counts. The page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric questions from visible row evidence.",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7,318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 7,318 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Which warehouse has the highest inventory count?",
+      snapshot: snap,
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("accepts target-state sentence-scoped yes answer for a state question", () => {
     const snap = workflowSnapshot({
       title: "Project Status",

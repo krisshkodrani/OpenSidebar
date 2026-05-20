@@ -1261,6 +1261,9 @@ function generateReadAnswerContract(
     requestText,
     _snapshot,
   );
+  const rowScopedSuperlativeAnswer = !sentenceScopedAnswer
+    ? getGroundedRowScopedSuperlativeMetricAnswer(requestText, _snapshot)
+    : null;
   const definitionQuestion =
     extractSentenceScopedDefinitionQuestionParts(requestText);
   if (definitionQuestion?.strongDefinitionIntent && !sentenceScopedAnswer) {
@@ -1302,10 +1305,18 @@ function generateReadAnswerContract(
   }
   const superlativeMetricQuestion =
     extractSentenceScopedSuperlativeMetricQuestionParts(requestText);
-  if (superlativeMetricQuestion && !sentenceScopedAnswer) {
+  if (
+    superlativeMetricQuestion &&
+    !sentenceScopedAnswer &&
+    !rowScopedSuperlativeAnswer
+  ) {
     return null;
   }
-  if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
+  if (
+    !sentenceScopedAnswer &&
+    !rowScopedSuperlativeAnswer &&
+    !hasPageReadAnswerIntent(requestText, _snapshot)
+  ) {
     return null;
   }
   const taskContract = buildTaskContract(requestText);
@@ -1343,6 +1354,7 @@ function generateReadAnswerContract(
   const expectedAnswerLabel =
     rowScopedAnswer?.label ??
     sentenceScopedAnswer?.label ??
+    rowScopedSuperlativeAnswer?.label ??
     (targetSpecificLabelRequiresScopedEvidence
       ? null
       : groundedLabelValueQuestionLabel);
@@ -1361,6 +1373,11 @@ function generateReadAnswerContract(
         : sentenceScopedAnswer
           ? {
               expectedAnswerTarget: sentenceScopedAnswer.target,
+              expectedAnswerScope: "sentence" as const,
+            }
+        : rowScopedSuperlativeAnswer
+          ? {
+              expectedAnswerTarget: rowScopedSuperlativeAnswer.target,
               expectedAnswerScope: "sentence" as const,
             }
         : {}),
@@ -2602,11 +2619,17 @@ function readAnswerSentenceScopedSnapshotEvidence(params: {
   expectedAnswerTarget: string;
   observedAtTurn: number;
 }): Extract<CompletionEvidence, { type: "answer_state" }> | null {
-  const answer = findReadAnswerSentenceScopedAnswer(
-    snapshotPageText(params.snapshot),
-    params.expectedAnswerTarget,
-    params.expectedAnswerLabel,
-  );
+  const answer =
+    findReadAnswerRowScopedSuperlativeMetricAnswer(
+      params.snapshot,
+      params.expectedAnswerTarget,
+      params.expectedAnswerLabel,
+    ) ??
+    findReadAnswerSentenceScopedAnswer(
+      snapshotPageText(params.snapshot),
+      params.expectedAnswerTarget,
+      params.expectedAnswerLabel,
+    );
   if (!answer) return null;
 
   const targetKey = compactKey(params.expectedAnswerTarget) || "target";
@@ -2623,6 +2646,28 @@ function readAnswerSentenceScopedSnapshotEvidence(params: {
       ...(params.snapshot.url ? { url: params.snapshot.url } : {}),
     },
   };
+}
+
+function findReadAnswerRowScopedSuperlativeMetricAnswer(
+  snapshot: DomSnapshot,
+  expectedTarget: string,
+  expectedAnswerLabel: string,
+): { sentence: string; answer: string } | null {
+  const superlative = sentenceScopedSuperlativeMetricPartsForLabel(
+    expectedAnswerLabel,
+  );
+  if (!superlative) return null;
+
+  const winner = findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
+    snapshot,
+    superlative.metric,
+    superlative.direction,
+  );
+  if (!winner) return null;
+  if (!workflowTargetLabelCoveredByText(expectedTarget, winner.target)) {
+    return null;
+  }
+  return { sentence: winner.sentence, answer: winner.target };
 }
 
 function readAnswerSentenceScopedTextEvidence(params: {
@@ -10296,6 +10341,28 @@ function getGroundedSentenceScopedAnswer(
   return findGroundedSentenceScopedAnswer(question, snapshotPageText(snapshot));
 }
 
+function getGroundedRowScopedSuperlativeMetricAnswer(
+  question: string,
+  snapshot?: DomSnapshot | null,
+): { label: string; target: string } | null {
+  if (!snapshot) return null;
+  const superlativeMetricQuestion =
+    extractSentenceScopedSuperlativeMetricQuestionParts(question);
+  if (!superlativeMetricQuestion) return null;
+
+  const winner = findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
+    snapshot,
+    superlativeMetricQuestion.metric,
+    superlativeMetricQuestion.direction,
+  );
+  if (!winner) return null;
+
+  return {
+    label: superlativeMetricQuestion.label,
+    target: winner.target,
+  };
+}
+
 function findGroundedRowScopedLabelValueQuestion(
   question: string,
   snapshot: DomSnapshot,
@@ -10943,6 +11010,12 @@ function extractSentenceScopedTargetMetricValueQuestionParts(
 
 type SentenceScopedSuperlativeDirection = "highest" | "lowest";
 
+type ReadAnswerSuperlativeMetricCandidate = {
+  target: string;
+  value: number;
+  sentence: string;
+};
+
 function extractSentenceScopedSuperlativeMetricQuestionParts(
   question: string,
 ): {
@@ -11423,7 +11496,7 @@ function findReadAnswerSuperlativeMetricWinner(
   evidenceText: string,
   metric: string,
   direction: SentenceScopedSuperlativeDirection,
-): { target: string; value: number; sentence: string } | null {
+): ReadAnswerSuperlativeMetricCandidate | null {
   const candidates = evidenceText
     .split(/(?:[.!?]+|[\r\n]+)+/g)
     .map((sentence) => cleanLabel(sentence))
@@ -11435,12 +11508,43 @@ function findReadAnswerSuperlativeMetricWinner(
     .filter(
       (
         candidate,
-      ): candidate is { target: string; value: number; sentence: string } =>
+      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
         candidate !== null,
     );
+  return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
+}
+
+function findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
+  snapshot: DomSnapshot,
+  metric: string,
+  direction: SentenceScopedSuperlativeDirection,
+): ReadAnswerSuperlativeMetricCandidate | null {
+  const candidates = snapshot.elements
+    .filter((element) => element.isVisible && !element.isDisabled)
+    .filter(isWorkflowRowLikeElement)
+    .map(readAnswerRowElementText)
+    .map((rowText) => cleanLabel(rowText))
+    .filter(Boolean)
+    .filter((rowText) => rowText.length <= 500)
+    .map((rowText) =>
+      extractReadAnswerSuperlativeMetricCandidate(rowText, metric),
+    )
+    .filter(
+      (
+        candidate,
+      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+        candidate !== null,
+    );
+  return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
+}
+
+function selectReadAnswerSuperlativeMetricWinner(
+  candidates: ReadAnswerSuperlativeMetricCandidate[],
+  direction: SentenceScopedSuperlativeDirection,
+): ReadAnswerSuperlativeMetricCandidate | null {
   const uniqueCandidates = new Map<
     string,
-    { target: string; value: number; sentence: string }
+    ReadAnswerSuperlativeMetricCandidate
   >();
   for (const candidate of candidates) {
     const key = normalizeText(candidate.target);
@@ -11462,7 +11566,7 @@ function findReadAnswerSuperlativeMetricWinner(
 function extractReadAnswerSuperlativeMetricCandidate(
   sentence: string,
   metric: string,
-): { target: string; value: number; sentence: string } | null {
+): ReadAnswerSuperlativeMetricCandidate | null {
   const metricPattern = sentenceScopedSuperlativeMetricPattern(metric);
   if (!metricPattern) return null;
   const valuePattern = sentenceScopedSuperlativeMetricValuePattern();
