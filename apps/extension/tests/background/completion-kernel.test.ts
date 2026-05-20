@@ -27085,6 +27085,173 @@ describe("completion kernel", () => {
 
   for (const scenario of [
     {
+      action: "attach",
+      completion: "attached",
+      label: "Attach File Alpha",
+      request: "Attach File Alpha.",
+      summary: "Attached File Alpha.",
+      target: "File Alpha",
+      id: "file-alpha-attach",
+      beforeState: "detached",
+      afterState: "attached",
+    },
+    {
+      action: "detach",
+      completion: "detached",
+      label: "Detach File Alpha",
+      request: "Detach File Alpha.",
+      summary: "Detached File Alpha.",
+      target: "File Alpha",
+      id: "file-alpha-detach",
+      beforeState: "attached",
+      afterState: "detached",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic attachment data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            822,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            823,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 822 },
+        result: "Clicked element 822.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer attach confirmation when semantic data-state was already attached", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "File Alpha Attach File Alpha",
+      pageContent: "File Alpha Attach File Alpha",
+      elements: [
+        dataStateActionButton(
+          824,
+          "Attach File Alpha",
+          "attached",
+          "file-alpha-attach",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "File Alpha Attach File Alpha",
+      pageContent: "File Alpha Attach File Alpha",
+      elements: [
+        dataStateActionButton(
+          825,
+          "Attach File Alpha",
+          "attached",
+          "file-alpha-attach",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 824 },
+      result: "Clicked element 824.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer detach confirmation when semantic data-state flips attached", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "File Alpha Detach File Alpha",
+      pageContent: "File Alpha Detach File Alpha",
+      elements: [
+        dataStateActionButton(
+          826,
+          "Detach File Alpha",
+          "detached",
+          "file-alpha-detach",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "File Alpha Detach File Alpha",
+      pageContent: "File Alpha Detach File Alpha",
+      elements: [
+        dataStateActionButton(
+          827,
+          "Detach File Alpha",
+          "attached",
+          "file-alpha-detach",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 826 },
+      result: "Clicked element 826.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  for (const scenario of [
+    {
       action: "share",
       completion: "shared",
       label: "Share Report Alpha",
