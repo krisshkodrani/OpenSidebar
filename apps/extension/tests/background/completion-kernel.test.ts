@@ -24972,6 +24972,216 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts connect confirmation from data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Integration Alpha Connect Integration Alpha",
+      pageContent: "Integration Alpha Connect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          650,
+          "Connect Integration Alpha",
+          "disconnected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Integration Alpha Connect Integration Alpha",
+      pageContent: "Integration Alpha Connect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          651,
+          "Connect Integration Alpha",
+          "connected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Connect Integration Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 650 },
+      result: "Clicked element 650.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Connected Integration Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "connect",
+      targetLabel: "Integration Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:connect:control-state:integration-alpha-connect",
+        detail: expect.objectContaining({
+          action: "connect",
+          source: "control_state_change",
+          targetText: "Integration Alpha",
+          text: "Control state changed to connected: Connect Integration Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts disconnect confirmation from data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Integration Alpha Disconnect Integration Alpha",
+      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          652,
+          "Disconnect Integration Alpha",
+          "connected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Integration Alpha Disconnect Integration Alpha",
+      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          653,
+          "Disconnect Integration Alpha",
+          "disconnected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Disconnect Integration Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 652 },
+      result: "Clicked element 652.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Disconnected Integration Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "disconnect",
+      targetLabel: "Integration Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:disconnect:control-state:integration-alpha-connect",
+        detail: expect.objectContaining({
+          action: "disconnect",
+          source: "control_state_change",
+          targetText: "Integration Alpha",
+          text: "Control state changed to disconnected: Disconnect Integration Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer connect confirmation when data-state was already connected", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Integration Alpha Connect Integration Alpha",
+      pageContent: "Integration Alpha Connect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          650,
+          "Connect Integration Alpha",
+          "connected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Integration Alpha Connect Integration Alpha",
+      pageContent: "Integration Alpha Connect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          651,
+          "Connect Integration Alpha",
+          "connected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 650 },
+      result: "Clicked element 650.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer disconnect confirmation when data-state flips on", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Integration Alpha Disconnect Integration Alpha",
+      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          652,
+          "Disconnect Integration Alpha",
+          "disconnected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Integration Alpha Disconnect Integration Alpha",
+      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      elements: [
+        dataStateActionButton(
+          653,
+          "Disconnect Integration Alpha",
+          "connected",
+          "integration-alpha-connect",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 652 },
+      result: "Clicked element 652.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("does not infer bookmark confirmation when data-state was already checked", () => {
     const pre = workflowSnapshot({
       visibleContent: "Article Beta Bookmark Article Beta",
