@@ -25642,6 +25642,173 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  for (const scenario of [
+    {
+      action: "archive",
+      completion: "archived",
+      label: "Archive Report Alpha",
+      request: "Archive Report Alpha.",
+      summary: "Archived Report Alpha.",
+      target: "Report Alpha",
+      id: "report-alpha-archive",
+      beforeState: "active",
+      afterState: "archived",
+    },
+    {
+      action: "restore",
+      completion: "restored",
+      label: "Restore Version Alpha",
+      request: "Restore Version Alpha.",
+      summary: "Restored Version Alpha.",
+      target: "Version Alpha",
+      id: "version-alpha-archive",
+      beforeState: "archived",
+      afterState: "active",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic archive data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            758,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            759,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 758 },
+        result: "Clicked element 758.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer archive confirmation when semantic data-state was already archived", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Report Alpha Archive Report Alpha",
+      pageContent: "Report Alpha Archive Report Alpha",
+      elements: [
+        dataStateActionButton(
+          760,
+          "Archive Report Alpha",
+          "archived",
+          "report-alpha-archive",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Report Alpha Archive Report Alpha",
+      pageContent: "Report Alpha Archive Report Alpha",
+      elements: [
+        dataStateActionButton(
+          761,
+          "Archive Report Alpha",
+          "archived",
+          "report-alpha-archive",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 760 },
+      result: "Clicked element 760.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer restore confirmation when semantic data-state flips archived", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Version Alpha Restore Version Alpha",
+      pageContent: "Version Alpha Restore Version Alpha",
+      elements: [
+        dataStateActionButton(
+          762,
+          "Restore Version Alpha",
+          "active",
+          "version-alpha-archive",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Version Alpha Restore Version Alpha",
+      pageContent: "Version Alpha Restore Version Alpha",
+      elements: [
+        dataStateActionButton(
+          763,
+          "Restore Version Alpha",
+          "archived",
+          "version-alpha-archive",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 762 },
+      result: "Clicked element 762.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
