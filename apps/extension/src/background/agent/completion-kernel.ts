@@ -1300,6 +1300,11 @@ function generateReadAnswerContract(
   if (targetMetricValueQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const superlativeMetricQuestion =
+    extractSentenceScopedSuperlativeMetricQuestionParts(requestText);
+  if (superlativeMetricQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1380,6 +1385,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedMetricValuePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedSuperlativeMetricPartsForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -10935,6 +10941,83 @@ function extractSentenceScopedTargetMetricValueQuestionParts(
   return null;
 }
 
+type SentenceScopedSuperlativeDirection = "highest" | "lowest";
+
+function extractSentenceScopedSuperlativeMetricQuestionParts(
+  question: string,
+): {
+  label: string;
+  metric: string;
+  direction: SentenceScopedSuperlativeDirection;
+} | null {
+  const text = cleanLabel(question);
+  const match =
+    /^(?:please\s+)?(?:tell me\s+)?(?:which|what)\s+(.+?)\s+(?:currently\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\s+(?:the\s+)?(highest|lowest|largest|smallest|most|least|fewest)\s+(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (!match) return null;
+
+  const entityTokens = tokenizeCompletionText(match[1] ?? "");
+  if (entityTokens.length < 1 || entityTokens.length > 4) return null;
+
+  const direction = canonicalSentenceScopedSuperlativeDirection(
+    match[2] ?? "",
+  );
+  const metric = cleanSentenceScopedSuperlativeMetric(match[3] ?? "");
+  if (!direction || !metric) return null;
+
+  return {
+    label: sentenceScopedSuperlativeMetricLabel(metric, direction),
+    metric,
+    direction,
+  };
+}
+
+function canonicalSentenceScopedSuperlativeDirection(
+  value: string,
+): SentenceScopedSuperlativeDirection | null {
+  const normalized = normalizeText(value);
+  if (/^(?:highest|largest|most)$/.test(normalized)) return "highest";
+  if (/^(?:lowest|smallest|least|fewest)$/.test(normalized)) return "lowest";
+  return null;
+}
+
+function cleanSentenceScopedSuperlativeMetric(value: string): string | null {
+  const metric = cleanLabel(value)
+    .replace(/^(?:the\s+)?(?:current|latest|reported)\s+/i, "")
+    .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 1 || tokens.length > 6) return null;
+  return tokens.join(" ");
+}
+
+function sentenceScopedSuperlativeMetricLabel(
+  metric: string,
+  direction: SentenceScopedSuperlativeDirection,
+): string {
+  return `${metric} ${direction} target`;
+}
+
+function sentenceScopedSuperlativeMetricPartsForLabel(
+  label: string,
+): {
+  metric: string;
+  direction: SentenceScopedSuperlativeDirection;
+} | null {
+  const normalizedLabel = normalizeText(label);
+  const highMatch = /^(.+?)\s+highest\s+target$/.exec(normalizedLabel);
+  if (highMatch) {
+    const metric = cleanSentenceScopedSuperlativeMetric(highMatch[1] ?? "");
+    return metric ? { metric, direction: "highest" } : null;
+  }
+  const lowMatch = /^(.+?)\s+lowest\s+target$/.exec(normalizedLabel);
+  if (lowMatch) {
+    const metric = cleanSentenceScopedSuperlativeMetric(lowMatch[1] ?? "");
+    return metric ? { metric, direction: "lowest" } : null;
+  }
+  return null;
+}
+
 function cleanSentenceScopedTargetMetricValueMetric(
   value: string,
 ): string | null {
@@ -11229,6 +11312,22 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const superlativeMetricQuestion =
+    extractSentenceScopedSuperlativeMetricQuestionParts(question);
+  if (superlativeMetricQuestion) {
+    const winner = findReadAnswerSuperlativeMetricWinner(
+      evidenceText,
+      superlativeMetricQuestion.metric,
+      superlativeMetricQuestion.direction,
+    );
+    if (winner) {
+      return {
+        label: superlativeMetricQuestion.label,
+        target: winner.target,
+      };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -11302,11 +11401,171 @@ function findReadAnswerRowScopedLabelValueLine(
   return null;
 }
 
+function findReadAnswerSuperlativeMetricAnswer(
+  evidenceText: string,
+  expectedTarget: string,
+  metric: string,
+  direction: SentenceScopedSuperlativeDirection,
+): { sentence: string; answer: string } | null {
+  const winner = findReadAnswerSuperlativeMetricWinner(
+    evidenceText,
+    metric,
+    direction,
+  );
+  if (!winner) return null;
+  if (!workflowTargetLabelCoveredByText(expectedTarget, winner.target)) {
+    return null;
+  }
+  return { sentence: winner.sentence, answer: winner.target };
+}
+
+function findReadAnswerSuperlativeMetricWinner(
+  evidenceText: string,
+  metric: string,
+  direction: SentenceScopedSuperlativeDirection,
+): { target: string; value: number; sentence: string } | null {
+  const candidates = evidenceText
+    .split(/(?:[.!?]+|[\r\n]+)+/g)
+    .map((sentence) => cleanLabel(sentence))
+    .filter(Boolean)
+    .filter((sentence) => sentence.length <= 500)
+    .map((sentence) =>
+      extractReadAnswerSuperlativeMetricCandidate(sentence, metric),
+    )
+    .filter(
+      (
+        candidate,
+      ): candidate is { target: string; value: number; sentence: string } =>
+        candidate !== null,
+    );
+  const uniqueCandidates = new Map<
+    string,
+    { target: string; value: number; sentence: string }
+  >();
+  for (const candidate of candidates) {
+    const key = normalizeText(candidate.target);
+    const existing = uniqueCandidates.get(key);
+    if (existing && existing.value !== candidate.value) return null;
+    if (!existing) uniqueCandidates.set(key, candidate);
+  }
+  if (uniqueCandidates.size < 2) return null;
+
+  const sorted = [...uniqueCandidates.values()].sort((a, b) =>
+    direction === "highest" ? b.value - a.value : a.value - b.value,
+  );
+  const [winner, runnerUp] = sorted;
+  if (!winner || !runnerUp) return null;
+  if (winner.value === runnerUp.value) return null;
+  return winner;
+}
+
+function extractReadAnswerSuperlativeMetricCandidate(
+  sentence: string,
+  metric: string,
+): { target: string; value: number; sentence: string } | null {
+  const metricPattern = sentenceScopedSuperlativeMetricPattern(metric);
+  if (!metricPattern) return null;
+  const valuePattern = sentenceScopedSuperlativeMetricValuePattern();
+  const patterns: Array<{
+    pattern: RegExp;
+    targetIndex: number;
+    valueIndex: number;
+  }> = [
+    {
+      pattern: new RegExp(
+        `^\\s*(?:the\\s+)?(.{2,120}?)\\b(?:\\s*(?:'|\\u2019)s)?\\s+(?:current\\s+|latest\\s+|reported\\s+)?${metricPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${valuePattern})\\s*$`,
+        "i",
+      ),
+      targetIndex: 1,
+      valueIndex: 2,
+    },
+    {
+      pattern: new RegExp(
+        `^\\s*(?:the\\s+)?(.{2,120}?)\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${valuePattern})\\s+${metricPattern}\\s*$`,
+        "i",
+      ),
+      targetIndex: 1,
+      valueIndex: 2,
+    },
+    {
+      pattern: new RegExp(
+        `^\\s*(${valuePattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?(.{2,120}?)\\s*$`,
+        "i",
+      ),
+      targetIndex: 2,
+      valueIndex: 1,
+    },
+  ];
+
+  for (const { pattern, targetIndex, valueIndex } of patterns) {
+    const match = pattern.exec(sentence);
+    if (!match) continue;
+
+    const target = cleanSentenceScopedSuperlativeCandidateTarget(
+      match[targetIndex] ?? "",
+    );
+    const value = parseSentenceScopedSuperlativeMetricValue(
+      match[valueIndex] ?? "",
+    );
+    if (target && value !== null) {
+      return { target, value, sentence };
+    }
+  }
+
+  return null;
+}
+
+function sentenceScopedSuperlativeMetricPattern(metric: string): string | null {
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 1 || tokens.length > 6) return null;
+  return tokens.map(escapeRegExp).join("\\s+");
+}
+
+function sentenceScopedSuperlativeMetricValuePattern(): string {
+  const numeric = "(?:\\$\\s*)?\\d[\\d,]*(?:\\.\\d+)?";
+  const unit =
+    "(?:%|percentage|percent|points?|pts?|ms|msec|milliseconds?|sec|secs|seconds?|s|mins?|minutes?|m|hrs?|hours?|h|kbps|mbps|gbps|bps|kb|mb|gb|tb|bytes?|kg|mg|g|cm|mm|km|c|f|hz|khz|mhz|ghz|units?|items?|tickets?|incidents?|thousand|million|billion|k|b)";
+  return `${numeric}(?:\\s*${unit})?`;
+}
+
+function cleanSentenceScopedSuperlativeCandidateTarget(
+  value: string,
+): string | null {
+  const target = normalizeWorkflowTargetLabel(
+    cleanLabel(value)
+      .replace(/^(?:the\s+)?/i, "")
+      .replace(/\s+(?:currently|still|now|presently|actively)$/i, ""),
+  );
+  if (!target) return null;
+  const tokens = tokenizeCompletionText(target);
+  if (tokens.length < 1 || tokens.length > 8) return null;
+  return target;
+}
+
+function parseSentenceScopedSuperlativeMetricValue(value: string): number | null {
+  const match = /(?:\$\s*)?(\d[\d,]*(?:\.\d+)?)/.exec(value);
+  if (!match) return null;
+  const numeric = Number((match[1] ?? "").replace(/,/g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function findReadAnswerSentenceScopedAnswer(
   evidenceText: string,
   target: string,
   expectedAnswerLabel: string,
 ): { sentence: string; answer: string } | null {
+  const superlative = sentenceScopedSuperlativeMetricPartsForLabel(
+    expectedAnswerLabel,
+  );
+  if (superlative) {
+    return findReadAnswerSuperlativeMetricAnswer(
+      evidenceText,
+      target,
+      superlative.metric,
+      superlative.direction,
+    );
+  }
+
   const sentences = evidenceText
     .split(/(?:[.!?]+|[\r\n]+)+/g)
     .map((sentence) => cleanLabel(sentence))
@@ -11792,7 +12051,7 @@ function labelValuePhraseCoveredBySummary(
   if (!phrase) return false;
   if (valueWords.length > 4) return normalizedSummary.includes(phrase);
   return new RegExp(
-    `(^|[^a-z0-9])${escapeRegExp(phrase)}(?=$|[.,;:!?)]|\\s+(?:and|are|as|for|from|in|is|on|was|were|with)\\b)`,
+    `(^|[^a-z0-9])${escapeRegExp(phrase)}(?=$|[.,;:!?)]|\\s+(?:and|are|as|for|from|has|have|had|in|is|on|was|were|with)\\b)`,
   ).test(normalizedSummary);
 }
 
