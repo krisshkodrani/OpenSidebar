@@ -3741,6 +3741,8 @@ function workflowTargetActionPattern(
       return "(?:restore|recover|reinstate)";
     case "create":
       return "(?:create|add|register)";
+    case "dismiss":
+      return "(?:dismiss|hide|clear|close|cancel|remove)";
     case "share":
       return "(?:share)";
     case "grant":
@@ -7721,6 +7723,7 @@ type ControlStateWorkflowAction = Extract<
   | "close"
   | "reopen"
   | "cancel"
+  | "dismiss"
   | "escalate"
   | "deescalate"
   | "enable"
@@ -7809,6 +7812,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "reject",
     "close",
     "cancel",
+    "dismiss",
     "escalate",
     "enable",
     "lock",
@@ -7923,6 +7927,17 @@ function inferControlStateChangeAction(
     return "approve";
   }
   if (/\bre[-\s]?open(?:ed|ing)?\b/i.test(text)) return "reopen";
+  if (
+    /\bdismiss(?:ed|es|ing|al)?\b/i.test(text) ||
+    /\b(?:hide|hid|hidden|hiding|clear|cleared|clearing|close|closed|closing|cancel|canceled|cancelled|remove|removed|removing)\b.{0,50}\b(?:popup|pop[-\s]?up|modal|dialog|overlay|banner|toast|notification|notice)\b/i.test(
+      text,
+    ) ||
+    /\b(?:popup|pop[-\s]?up|modal|dialog|overlay|banner|toast|notification|notice)\b.{0,50}\b(?:hide|hid|hidden|hiding|clear|cleared|clearing|close|closed|closing|cancel|canceled|cancelled|remove|removed|removing)\b/i.test(
+      text,
+    )
+  ) {
+    return "dismiss";
+  }
   if (
     /\b(?:close|closed|closing|closure|resolve|resolved|resolving|resolution)\b/i.test(
       text,
@@ -8101,6 +8116,8 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "reopened";
     case "cancel":
       return "canceled";
+    case "dismiss":
+      return "dismissed";
     case "escalate":
       return "escalated";
     case "deescalate":
@@ -9525,6 +9542,13 @@ function readControlState(
       state,
       /^cancell?ed$/i,
       /^(?:active|pending|open|scheduled)$/i,
+    );
+  }
+  if (action === "dismiss") {
+    return readSemanticControlState(
+      state,
+      /^(?:dismissed|hidden|cleared|closed|removed)$/i,
+      /^(?:visible|shown|open|active|present|displayed)$/i,
     );
   }
   if (action === "archive" || action === "restore") {
