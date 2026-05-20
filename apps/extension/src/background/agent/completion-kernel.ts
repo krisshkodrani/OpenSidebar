@@ -10038,10 +10038,10 @@ function extractSentenceScopedTargetPresenceQuestionParts(
     if (metric && target) return { label: `${metric} presence`, target };
   }
 
-  const thereAreMatch =
-    /^(?:please\s+)?(?:tell me\s+)?(?:is|are|was|were)\s+there\s+(?:any\s+)?(.+?)\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
-      text,
-    );
+  const thereAreMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:is|are|was|were)\\s+there\\s+${adverbPattern}(?:any\\s+)?(.+?)\\s+(?:for|of|on|in)\\s+(?:the\\s+)?(.+?)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
   if (thereAreMatch) {
     const metric = cleanSentenceScopedTargetCountMetric(
       thereAreMatch[1] ?? "",
@@ -11387,8 +11387,8 @@ function extractSentenceScopedTargetPresenceAnswer(
   const noPatterns = [
     `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
     `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+${adverbPattern}not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
-    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
-    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern}not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
   for (const pattern of noPatterns) {
     if (new RegExp(pattern, "i").test(sentence)) return "no";
@@ -11396,7 +11396,7 @@ function extractSentenceScopedTargetPresenceAnswer(
 
   const countPatterns = [
     `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
-    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
   for (const pattern of countPatterns) {
     const match = new RegExp(pattern, "i").exec(sentence);
