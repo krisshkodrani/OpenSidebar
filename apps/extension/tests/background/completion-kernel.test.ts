@@ -25602,6 +25602,216 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  test("accepts link confirmation from data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Link Account Alpha",
+      pageContent: "Account Alpha Link Account Alpha",
+      elements: [
+        dataStateActionButton(
+          662,
+          "Link Account Alpha",
+          "unlinked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Link Account Alpha",
+      pageContent: "Account Alpha Link Account Alpha",
+      elements: [
+        dataStateActionButton(
+          663,
+          "Link Account Alpha",
+          "linked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Link Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 662 },
+      result: "Clicked element 662.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Linked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "link",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:link:control-state:account-alpha-link",
+        detail: expect.objectContaining({
+          action: "link",
+          source: "control_state_change",
+          targetText: "Account Alpha",
+          text: "Control state changed to linked: Link Account Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts unlink confirmation from data-state control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Unlink Account Alpha",
+      pageContent: "Account Alpha Unlink Account Alpha",
+      elements: [
+        dataStateActionButton(
+          664,
+          "Unlink Account Alpha",
+          "linked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Unlink Account Alpha",
+      pageContent: "Account Alpha Unlink Account Alpha",
+      elements: [
+        dataStateActionButton(
+          665,
+          "Unlink Account Alpha",
+          "unlinked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlink Account Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 664 },
+      result: "Clicked element 664.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlinked Account Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlink",
+      targetLabel: "Account Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:unlink:control-state:account-alpha-link",
+        detail: expect.objectContaining({
+          action: "unlink",
+          source: "control_state_change",
+          targetText: "Account Alpha",
+          text: "Control state changed to unlinked: Unlink Account Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer link confirmation when data-state was already linked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Link Account Alpha",
+      pageContent: "Account Alpha Link Account Alpha",
+      elements: [
+        dataStateActionButton(
+          662,
+          "Link Account Alpha",
+          "linked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Link Account Alpha",
+      pageContent: "Account Alpha Link Account Alpha",
+      elements: [
+        dataStateActionButton(
+          663,
+          "Link Account Alpha",
+          "linked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 662 },
+      result: "Clicked element 662.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unlink confirmation when data-state flips on", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Unlink Account Alpha",
+      pageContent: "Account Alpha Unlink Account Alpha",
+      elements: [
+        dataStateActionButton(
+          664,
+          "Unlink Account Alpha",
+          "unlinked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Unlink Account Alpha",
+      pageContent: "Account Alpha Unlink Account Alpha",
+      elements: [
+        dataStateActionButton(
+          665,
+          "Unlink Account Alpha",
+          "linked",
+          "account-alpha-link",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 664 },
+      result: "Clicked element 664.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("does not infer bookmark confirmation when data-state was already checked", () => {
     const pre = workflowSnapshot({
       visibleContent: "Article Beta Bookmark Article Beta",
