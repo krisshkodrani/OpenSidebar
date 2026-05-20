@@ -10250,10 +10250,11 @@ function extractCurrentRoleRelationNounAnswer(
   targetPattern: string,
   relationNounPattern: string,
 ): string | null {
+  const currentRoleAdverbPattern = "(?:currently|presently|now|still|actively)";
   const currentRolePhrasePattern =
-    "(?:(?:serves?|acts|functions)\\s+as|(?:is|are)\\s+(?:acting|listed|designated|identified|shown|named|recorded|displayed)\\s+as)";
+    `(?:(?:${currentRoleAdverbPattern}\\s+)?(?:serves?|acts|functions)\\s+as|(?:is|are)\\s+(?:${currentRoleAdverbPattern}\\s+)?(?:acting|listed|designated|identified|shown|named|recorded|displayed)\\s+as)`;
   const match = new RegExp(
-    `([^.;\\n]{2,120})\\s+${currentRolePhrasePattern}\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
+    `([^.;\\n]{2,120}?)\\s+${currentRolePhrasePattern}\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
     "i",
   ).exec(sentence);
 
