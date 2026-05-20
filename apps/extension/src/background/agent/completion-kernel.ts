@@ -7715,6 +7715,8 @@ type ControlStateWorkflowAction = Extract<
   WorkflowConfirmationAction,
   | "approve"
   | "reject"
+  | "close"
+  | "reopen"
   | "enable"
   | "disable"
   | "lock"
@@ -7770,6 +7772,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "approve",
     "reject",
+    "close",
     "enable",
     "lock",
     "block",
@@ -7803,6 +7806,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
     "disable",
+    "reopen",
     "unlock",
     "unblock",
     "unassign",
@@ -7851,6 +7855,14 @@ function inferControlStateChangeAction(
   }
   if (/\b(?:approve|approved|approving|approval)\b/i.test(text)) {
     return "approve";
+  }
+  if (/\bre[-\s]?open(?:ed|ing)?\b/i.test(text)) return "reopen";
+  if (
+    /\b(?:close|closed|closing|closure|resolve|resolved|resolving|resolution)\b/i.test(
+      text,
+    )
+  ) {
+    return "close";
   }
   if (/\b(?:enable|activate|turn\s+on)\b/i.test(text)) return "enable";
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
@@ -7932,6 +7944,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "approved";
     case "reject":
       return "rejected";
+    case "close":
+      return "closed";
+    case "reopen":
+      return "reopened";
     case "enable":
       return "enabled";
     case "disable":
@@ -9277,6 +9293,13 @@ function readControlState(
       state,
       /^(?:rejected|denied)$/i,
       /^(?:pending|approved)$/i,
+    );
+  }
+  if (action === "close" || action === "reopen") {
+    return readSemanticControlState(
+      state,
+      /^(?:closed|resolved)$/i,
+      /^(?:open|reopened|re-opened)$/i,
     );
   }
   if (action === "enable" || action === "disable") {
