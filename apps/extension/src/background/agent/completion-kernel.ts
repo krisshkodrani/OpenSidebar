@@ -7748,6 +7748,10 @@ type ControlStateWorkflowAction = Extract<
   | "unpin"
   | "mute"
   | "unmute"
+  | "pause"
+  | "resume"
+  | "start"
+  | "stop"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7771,6 +7775,10 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "star",
     "pin",
     "mute",
+    "pause",
+    "resume",
+    "start",
+    "stop",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7839,6 +7847,10 @@ function inferControlStateChangeAction(
   if (/\bpin(?:ned|ning|s)?\b/i.test(text)) return "pin";
   if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
   if (/\bmute(?:d|ing|s)?\b/i.test(text)) return "mute";
+  if (/\bpause(?:d|ing)?\b/i.test(text)) return "pause";
+  if (/\bresume(?:d|ing)?\b/i.test(text)) return "resume";
+  if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
+  if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
 }
 
@@ -7928,6 +7940,14 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "muted";
     case "unmute":
       return "unmuted";
+    case "pause":
+      return "paused";
+    case "resume":
+      return "resumed";
+    case "start":
+      return "started";
+    case "stop":
+      return "stopped";
   }
 }
 
@@ -9210,6 +9230,34 @@ function readControlState(
   }
   if (action === "mute" || action === "unmute") {
     return readSemanticControlState(state, /^muted$/i, /^unmuted$/i);
+  }
+  if (action === "pause") {
+    return readSemanticControlState(
+      state,
+      /^paused$/i,
+      /^(?:running|active)$/i,
+    );
+  }
+  if (action === "resume") {
+    return readSemanticControlState(
+      state,
+      /^(?:running|active|resumed)$/i,
+      /^paused$/i,
+    );
+  }
+  if (action === "start") {
+    return readSemanticControlState(
+      state,
+      /^(?:running|active|started)$/i,
+      /^(?:stopped|inactive)$/i,
+    );
+  }
+  if (action === "stop") {
+    return readSemanticControlState(
+      state,
+      /^(?:stopped|inactive)$/i,
+      /^(?:running|active)$/i,
+    );
   }
   if (action === "sync") {
     if (/^(?:synced|resynced|synchroni[sz]ed)$/i.test(state)) return true;
