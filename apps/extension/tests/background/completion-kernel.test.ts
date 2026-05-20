@@ -27756,6 +27756,151 @@ describe("completion kernel", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
+  test("accepts target-state sentence-scoped yes answer for a state question", () => {
+    const snap = workflowSnapshot({
+      title: "Project Status",
+      url: "https://example.test/projects/status",
+      visibleContent:
+        "Project Atlas is blocked. Project Borealis is active.",
+      pageContent:
+        "Project Atlas is blocked. Project Borealis is active. The page explains project status, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project state questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is Project Atlas blocked?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Yes.",
+    });
+    const wrongAnswer = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "No.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "blocked state",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(wrongAnswer.status).toBe("inconclusive");
+  });
+
+  test("accepts target-state sentence-scoped no answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Status",
+      url: "https://example.test/projects/status",
+      visibleContent:
+        "Project Atlas is not blocked. Project Borealis is blocked.",
+      pageContent:
+        "Project Atlas is not blocked. Project Borealis is blocked. The page explains project status, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project state questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is Project Atlas blocked?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Atlas is not blocked. Project Borealis is blocked. The page explains project status, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project state questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "No, Project Atlas is not blocked.",
+    });
+    const wrongAnswer = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "Yes.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "blocked state",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(wrongAnswer.status).toBe("inconclusive");
+  });
+
+  test("does not accept a target-state sentence from a sibling target", () => {
+    const snap = workflowSnapshot({
+      title: "Project Status",
+      url: "https://example.test/projects/status",
+      visibleContent:
+        "Project Atlas is active. Project Borealis is blocked.",
+      pageContent:
+        "Project Atlas is active. Project Borealis is blocked. The page explains project status, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project state questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is Project Atlas blocked?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Yes, Project Atlas is blocked.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("does not use target-state sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Project Status",
+      url: "https://example.test/projects/status",
+      visibleContent:
+        "Project Status Project Atlas is blocked Project Borealis is active",
+      pageContent:
+        "Project Status Project Atlas is blocked Project Borealis is active. The page explains project status, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project state questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Is Project Atlas blocked?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Yes, Project Atlas is blocked.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts sentence-scoped assigned-to answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",

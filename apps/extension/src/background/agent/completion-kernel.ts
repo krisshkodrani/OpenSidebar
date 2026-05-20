@@ -1285,6 +1285,11 @@ function generateReadAnswerContract(
   if (targetCountQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const targetStateQuestion =
+    extractSentenceScopedTargetStateQuestionParts(requestText);
+  if (targetStateQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -10022,6 +10027,41 @@ function cleanSentenceScopedTargetCountTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
 
+function extractSentenceScopedTargetStateQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const beMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:is|are|was|were)\\s+(?:the\\s+)?(.+?)\\s+(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (beMatch) {
+    const label = canonicalSentenceScopedTargetStateLabel(beMatch[2] ?? "");
+    const target = cleanSentenceScopedTargetStateTarget(beMatch[1] ?? "");
+    if (label && target) return { label, target };
+  }
+
+  const hasBeenMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:has|have|had)\\s+(?:the\\s+)?(.+?)\\s+been\\s+(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (hasBeenMatch) {
+    const label = canonicalSentenceScopedTargetStateLabel(
+      hasBeenMatch[2] ?? "",
+    );
+    const target = cleanSentenceScopedTargetStateTarget(
+      hasBeenMatch[1] ?? "",
+    );
+    if (label && target) return { label, target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedTargetStateTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
 function cleanSentenceScopedReasonTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(cleanLabel(value));
 }
@@ -10031,6 +10071,46 @@ const SENTENCE_SCOPED_EVENT_DATE_PASSIVE_QUESTION_PATTERN =
 
 const SENTENCE_SCOPED_EVENT_DATE_ACTIVE_QUESTION_PATTERN =
   "(?:launch|release|deploy|create|open|close|resolve|update|change|approve|review|complete|submit|publish|start|stop|schedule|cancel)";
+
+const SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN =
+  "(?:active|inactive|blocked|unblocked|open|closed|pending|resolved|enabled|disabled|approved|rejected|complete|completed|done|failed|successful|success|draft|submitted|sent|archived|deleted|canceled|cancelled|delayed|paused|stopped|escalated|on\\s+hold)";
+
+function canonicalSentenceScopedTargetStateLabel(value: string): string | null {
+  const normalized = normalizeText(value).replace(/-/g, " ");
+  if (normalized === "active") return "active state";
+  if (normalized === "inactive") return "inactive state";
+  if (normalized === "blocked") return "blocked state";
+  if (normalized === "unblocked") return "unblocked state";
+  if (normalized === "open") return "open state";
+  if (normalized === "closed") return "closed state";
+  if (normalized === "pending") return "pending state";
+  if (normalized === "resolved") return "resolved state";
+  if (normalized === "enabled") return "enabled state";
+  if (normalized === "disabled") return "disabled state";
+  if (normalized === "approved") return "approved state";
+  if (normalized === "rejected") return "rejected state";
+  if (normalized === "complete" || normalized === "completed" || normalized === "done") {
+    return "completed state";
+  }
+  if (normalized === "failed") return "failed state";
+  if (normalized === "successful" || normalized === "success") {
+    return "successful state";
+  }
+  if (normalized === "draft") return "draft state";
+  if (normalized === "submitted") return "submitted state";
+  if (normalized === "sent") return "sent state";
+  if (normalized === "archived") return "archived state";
+  if (normalized === "deleted") return "deleted state";
+  if (normalized === "canceled" || normalized === "cancelled") {
+    return "canceled state";
+  }
+  if (normalized === "delayed") return "delayed state";
+  if (normalized === "paused") return "paused state";
+  if (normalized === "stopped") return "stopped state";
+  if (normalized === "escalated") return "escalated state";
+  if (normalized === "on hold") return "on hold state";
+  return null;
+}
 
 function canonicalSentenceScopedEventDateLabel(value: string): string | null {
   const normalized = normalizeText(value).replace(/-/g, " ");
@@ -10147,6 +10227,22 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const targetStateQuestion =
+    extractSentenceScopedTargetStateQuestionParts(question);
+  if (targetStateQuestion) {
+    const target = normalizeWorkflowTargetLabel(targetStateQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        targetStateQuestion.label,
+      )
+    ) {
+      return { label: targetStateQuestion.label, target };
+    }
+  }
+
   const parts = extractRowScopedLabelValueQuestionParts(question);
   if (!parts) return null;
 
@@ -10161,6 +10257,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "location" &&
     !sentenceScopedEventDatePatternForLabel(answerLabel) &&
     !sentenceScopedCountMetricPatternForLabel(answerLabel) &&
+    !sentenceScopedTargetStatePatternForLabel(answerLabel) &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
     !sentenceScopedActiveRelationPatternForLabel(answerLabel) &&
@@ -10776,6 +10873,16 @@ function extractSentenceScopedRelationAnswer(
     );
   }
 
+  const targetStatePattern =
+    sentenceScopedTargetStatePatternForLabel(normalizedLabel);
+  if (targetStatePattern) {
+    return extractSentenceScopedTargetStateAnswer(
+      sentence,
+      targetPattern,
+      targetStatePattern,
+    );
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -11177,6 +11284,63 @@ function cleanSentenceScopedTargetCountAnswerText(value: string): string {
   ).test(answer)
     ? answer
     : "";
+}
+
+function sentenceScopedTargetStatePatternForLabel(
+  label: string,
+): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (normalizedLabel === "active state") return "active";
+  if (normalizedLabel === "inactive state") return "inactive";
+  if (normalizedLabel === "blocked state") return "blocked";
+  if (normalizedLabel === "unblocked state") return "unblocked";
+  if (normalizedLabel === "open state") return "open";
+  if (normalizedLabel === "closed state") return "closed";
+  if (normalizedLabel === "pending state") return "pending";
+  if (normalizedLabel === "resolved state") return "resolved";
+  if (normalizedLabel === "enabled state") return "enabled";
+  if (normalizedLabel === "disabled state") return "disabled";
+  if (normalizedLabel === "approved state") return "approved";
+  if (normalizedLabel === "rejected state") return "rejected";
+  if (normalizedLabel === "completed state") return "(?:complete|completed|done)";
+  if (normalizedLabel === "failed state") return "failed";
+  if (normalizedLabel === "successful state") return "(?:successful|success)";
+  if (normalizedLabel === "draft state") return "draft";
+  if (normalizedLabel === "submitted state") return "submitted";
+  if (normalizedLabel === "sent state") return "sent";
+  if (normalizedLabel === "archived state") return "archived";
+  if (normalizedLabel === "deleted state") return "deleted";
+  if (normalizedLabel === "canceled state") return "cancel(?:ed|led)";
+  if (normalizedLabel === "delayed state") return "delayed";
+  if (normalizedLabel === "paused state") return "paused";
+  if (normalizedLabel === "stopped state") return "stopped";
+  if (normalizedLabel === "escalated state") return "escalated";
+  if (normalizedLabel === "on hold state") return "on\\s+hold";
+  return null;
+}
+
+function extractSentenceScopedTargetStateAnswer(
+  sentence: string,
+  targetPattern: string,
+  statePattern: string,
+): string | null {
+  const bePattern =
+    "(?:is|are|was|were|has\\s+been|have\\s+been|had\\s+been|became|becomes|remains|remain)";
+  const negationPattern = "(not\\s+|no\\s+longer\\s+)?";
+  const tailPattern =
+    "(?:\\s+(?:because|since|due\\s+to|by)\\b[^.;\\n]{2,180})?";
+  const patterns = [
+    `^\\s*${targetPattern}\\b\\s+${bePattern}\\s+${negationPattern}${statePattern}\\b${tailPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${negationPattern}${statePattern}\\b\\s*$`,
+    `^\\s*status\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${negationPattern}${statePattern}\\b\\s*$`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    if (!match) continue;
+    return normalizeText(match[1] ?? "") ? "no" : "yes";
+  }
+  return null;
 }
 
 function extractCurrentRoleRelationNounAnswer(
