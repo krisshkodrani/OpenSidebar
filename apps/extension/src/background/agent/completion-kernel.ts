@@ -9183,6 +9183,13 @@ function readControlState(
   if (/^(?:false|unchecked|unpressed|unselected|off|0)$/i.test(state)) {
     return false;
   }
+  if (action === "enable" || action === "disable") {
+    return readSemanticControlState(
+      state,
+      /^(?:enabled|activated|active)$/i,
+      /^(?:disabled|deactivated|inactive)$/i,
+    );
+  }
   if (action === "connect" || action === "disconnect") {
     if (/^connected$/i.test(state)) return true;
     if (/^disconnected$/i.test(state)) return false;
