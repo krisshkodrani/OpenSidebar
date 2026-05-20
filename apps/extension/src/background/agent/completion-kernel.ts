@@ -11435,6 +11435,24 @@ function extractRowScopedCategoricalCountQuestionParts(
   operation: Extract<ReadAnswerMetricAggregateOperation, "categorical_count">;
 } | null {
   const text = cleanLabel(question);
+  const adjectiveStatusMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(${rowScopedCategoricalStatusValuePattern()})\\s+(.+?)\\s+(?:are|were)\\s+(?:listed|shown|displayed|visible|present|on\\s+(?:this|the)\\s+page)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (adjectiveStatusMatch) {
+    const value = cleanRowScopedCategoricalCountValue(
+      adjectiveStatusMatch[1] ?? "",
+    );
+    const entity = cleanRowScopedCountEntity(adjectiveStatusMatch[2] ?? "");
+    if (entity && value) {
+      return {
+        label: rowScopedCategoricalCountLabel(entity, "status", value),
+        metric: "status",
+        operation: "categorical_count",
+      };
+    }
+  }
+
   const explicitLabelMatch =
     /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:have|has|with|show|shows|list|lists|report|reports|contain|contains|where)\s+(.+?)\s+(?:is|are|=|as)?\s*(.+?)(?:[?.!]|$)/i.exec(
       text,

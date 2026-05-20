@@ -36338,6 +36338,47 @@ describe("completion kernel", () => {
     expect(accepted.status).toBe("accepted");
   });
 
+  test("accepts adjective-status categorical row-count read-answer from visible row elements", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Ticket Alpha Status: Open Priority: High Ticket Beta Status: Closed Priority: Low Ticket Gamma Status: Open Priority: Medium",
+      pageContent: "Ticket Queue",
+      elements: [
+        rowElement(811, "Ticket Alpha Status: Open Priority: High"),
+        rowElement(812, "Ticket Beta Status: Closed Priority: Low"),
+        rowElement(813, "Ticket Gamma Status: Open Priority: Medium"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "How many open tickets are listed?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "2 open tickets are listed.",
+    });
+    const wrongCount = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "3 open tickets are listed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "tickets rows where status equals open",
+      expectedAnswerScope: "aggregate",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(wrongCount.status).toBe("inconclusive");
+  });
+
   test("accepts categorical row-count read-answer from read_page line evidence", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
@@ -36447,6 +36488,27 @@ describe("completion kernel", () => {
     });
     const generated = generateCompletionContract({
       userRequest: "How many tickets have status Open?",
+      snapshot: snap,
+    });
+
+    expect(generated).toBeNull();
+  });
+
+  test("does not generate adjective-status row-count read-answer without matching row entities", () => {
+    const snap = workflowSnapshot({
+      title: "Ticket Queue",
+      url: "https://example.test/tickets",
+      visibleContent:
+        "Case Alpha Status: Open Case Beta Status: Closed Case Gamma Status: Open",
+      pageContent: "Ticket Queue",
+      elements: [
+        rowElement(811, "Case Alpha Status: Open"),
+        rowElement(812, "Case Beta Status: Closed"),
+        rowElement(813, "Case Gamma Status: Open"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "How many open tickets are listed?",
       snapshot: snap,
     });
 
