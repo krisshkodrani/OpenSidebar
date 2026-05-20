@@ -7782,6 +7782,8 @@ type ControlStateWorkflowAction = Extract<
   | "complete"
   | "save"
   | "update"
+  | "share"
+  | "invite"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7831,6 +7833,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "complete",
     "save",
     "update",
+    "share",
+    "invite",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7989,6 +7993,8 @@ function inferControlStateChangeAction(
   if (/\b(?:update|updated|updating|apply|applied|applying)\b/i.test(text)) {
     return "update";
   }
+  if (/\bshare(?:d|s|ing)?\b/i.test(text)) return "share";
+  if (/\binvit(?:e|ed|es|ing|ation)\b/i.test(text)) return "invite";
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
@@ -8148,6 +8154,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "saved";
     case "update":
       return "updated";
+    case "share":
+      return "shared";
+    case "invite":
+      return "invited";
   }
 }
 
@@ -9601,6 +9611,20 @@ function readControlState(
       state,
       /^(?:updated|applied|up[-\s]?to[-\s]?date)$/i,
       /^(?:stale|outdated|dirty|modified|pending)$/i,
+    );
+  }
+  if (action === "share") {
+    return readSemanticControlState(
+      state,
+      /^shared$/i,
+      /^(?:unshared|not[-\s]?shared|private|restricted|pending)$/i,
+    );
+  }
+  if (action === "invite") {
+    return readSemanticControlState(
+      state,
+      /^invited$/i,
+      /^(?:uninvited|not[-\s]?invited|pending|none)$/i,
     );
   }
   if (action === "sync") {
