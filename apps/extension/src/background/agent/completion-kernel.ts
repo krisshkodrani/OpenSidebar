@@ -10031,8 +10031,9 @@ function extractSentenceScopedTargetStateQuestionParts(
   question: string,
 ): { label: string; target: string } | null {
   const text = cleanLabel(question);
+  const stateAdverbPattern = sentenceScopedTargetStateAdverbPattern();
   const beMatch = new RegExp(
-    `^(?:please\\s+)?(?:tell me\\s+)?(?:is|are|was|were)\\s+(?:the\\s+)?(.+?)\\s+(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:is|are|was|were)\\s+(?:the\\s+)?(.+?)\\s+${stateAdverbPattern}(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
     "i",
   ).exec(text);
   if (beMatch) {
@@ -10042,7 +10043,7 @@ function extractSentenceScopedTargetStateQuestionParts(
   }
 
   const hasBeenMatch = new RegExp(
-    `^(?:please\\s+)?(?:tell me\\s+)?(?:has|have|had)\\s+(?:the\\s+)?(.+?)\\s+been\\s+(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
+    `^(?:please\\s+)?(?:tell me\\s+)?(?:has|have|had)\\s+(?:the\\s+)?(.+?)\\s+been\\s+${stateAdverbPattern}(${SENTENCE_SCOPED_TARGET_STATE_QUESTION_PATTERN})(?:[?.!]|$)`,
     "i",
   ).exec(text);
   if (hasBeenMatch) {
@@ -11326,13 +11327,14 @@ function extractSentenceScopedTargetStateAnswer(
 ): string | null {
   const bePattern =
     "(?:is|are|was|were|has\\s+been|have\\s+been|had\\s+been|became|becomes|remains|remain)";
-  const negationPattern = "(not\\s+|no\\s+longer\\s+)?";
+  const adverbPattern = sentenceScopedTargetStateAdverbPattern();
+  const negationPattern = "((?:not|no\\s+longer)\\s+)?";
   const tailPattern =
     "(?:\\s+(?:because|since|due\\s+to|by)\\b[^.;\\n]{2,180})?";
   const patterns = [
-    `^\\s*${targetPattern}\\b\\s+${bePattern}\\s+${negationPattern}${statePattern}\\b${tailPattern}\\s*$`,
-    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${negationPattern}${statePattern}\\b\\s*$`,
-    `^\\s*status\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${negationPattern}${statePattern}\\b\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${bePattern}\\s+${adverbPattern}${negationPattern}${adverbPattern}${statePattern}\\b${tailPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+status\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${adverbPattern}${negationPattern}${adverbPattern}${statePattern}\\b\\s*$`,
+    `^\\s*status\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*${adverbPattern}${negationPattern}${adverbPattern}${statePattern}\\b\\s*$`,
   ];
 
   for (const pattern of patterns) {
@@ -11341,6 +11343,10 @@ function extractSentenceScopedTargetStateAnswer(
     return normalizeText(match[1] ?? "") ? "no" : "yes";
   }
   return null;
+}
+
+function sentenceScopedTargetStateAdverbPattern(): string {
+  return "(?:(?:currently|still|now|presently|actively)\\s+)?";
 }
 
 function extractCurrentRoleRelationNounAnswer(
