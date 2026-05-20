@@ -7745,6 +7745,8 @@ type ControlStateWorkflowAction = Extract<
   | "untag"
   | "flag"
   | "unflag"
+  | "copy"
+  | "duplicate"
   | "install"
   | "uninstall"
   | "sync"
@@ -7807,6 +7809,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "link",
     "tag",
     "flag",
+    "copy",
+    "duplicate",
     "install",
     "sync",
     "subscribe",
@@ -7913,6 +7917,14 @@ function inferControlStateChangeAction(
   ) {
     return "delete";
   }
+  if (
+    /\b(?:duplicate|duplicated|duplicating|duplication|clone|cloned|cloning)\b/i.test(
+      text,
+    )
+  ) {
+    return "duplicate";
+  }
+  if (/\b(?:copy|copies|copied|copying)\b/i.test(text)) return "copy";
   if (
     /\b(?:restore|restored|recover|recovered|reinstate|reinstated|unarchive|unarchived)\b/i.test(
       text,
@@ -8090,6 +8102,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "flagged";
     case "unflag":
       return "unflagged";
+    case "copy":
+      return "copied";
+    case "duplicate":
+      return "duplicated";
     case "install":
       return "installed";
     case "uninstall":
@@ -9494,6 +9510,20 @@ function readControlState(
   if (action === "flag" || action === "unflag") {
     if (/^flagged$/i.test(state)) return true;
     if (/^unflagged$/i.test(state)) return false;
+  }
+  if (action === "copy") {
+    return readSemanticControlState(
+      state,
+      /^copied$/i,
+      /^(?:ready|idle|uncopied|not[-\s]?copied|pending)$/i,
+    );
+  }
+  if (action === "duplicate") {
+    return readSemanticControlState(
+      state,
+      /^(?:duplicated|cloned)$/i,
+      /^(?:ready|idle|original|not[-\s]?duplicated|pending)$/i,
+    );
   }
   if (action === "install" || action === "uninstall") {
     if (/^installed$/i.test(state)) return true;

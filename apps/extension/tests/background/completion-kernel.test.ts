@@ -26729,6 +26729,173 @@ describe("completion kernel", () => {
 
   for (const scenario of [
     {
+      action: "copy",
+      completion: "copied",
+      label: "Copy Link Alpha",
+      request: "Copy Link Alpha.",
+      summary: "Copied Link Alpha.",
+      target: "Link Alpha",
+      id: "link-alpha-copy",
+      beforeState: "ready",
+      afterState: "copied",
+    },
+    {
+      action: "duplicate",
+      completion: "duplicated",
+      label: "Duplicate Template Alpha",
+      request: "Duplicate Template Alpha.",
+      summary: "Duplicated Template Alpha.",
+      target: "Template Alpha",
+      id: "template-alpha-duplicate",
+      beforeState: "ready",
+      afterState: "duplicated",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic copy data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            810,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            811,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 810 },
+        result: "Clicked element 810.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer copy confirmation when semantic data-state was already copied", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Link Alpha Copy Link Alpha",
+      pageContent: "Link Alpha Copy Link Alpha",
+      elements: [
+        dataStateActionButton(
+          812,
+          "Copy Link Alpha",
+          "copied",
+          "link-alpha-copy",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Link Alpha Copy Link Alpha",
+      pageContent: "Link Alpha Copy Link Alpha",
+      elements: [
+        dataStateActionButton(
+          813,
+          "Copy Link Alpha",
+          "copied",
+          "link-alpha-copy",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 812 },
+      result: "Clicked element 812.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer duplicate confirmation when semantic data-state flips ready", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Template Alpha Duplicate Template Alpha",
+      pageContent: "Template Alpha Duplicate Template Alpha",
+      elements: [
+        dataStateActionButton(
+          814,
+          "Duplicate Template Alpha",
+          "duplicated",
+          "template-alpha-duplicate",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Template Alpha Duplicate Template Alpha",
+      pageContent: "Template Alpha Duplicate Template Alpha",
+      elements: [
+        dataStateActionButton(
+          815,
+          "Duplicate Template Alpha",
+          "ready",
+          "template-alpha-duplicate",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 814 },
+      result: "Clicked element 814.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  for (const scenario of [
+    {
       action: "share",
       completion: "shared",
       label: "Share Report Alpha",
