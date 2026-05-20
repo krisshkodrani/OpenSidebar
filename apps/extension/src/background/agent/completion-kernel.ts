@@ -11140,7 +11140,8 @@ type ReadAnswerMetricAggregateOperation =
   | "total"
   | "average"
   | "highest"
-  | "lowest";
+  | "lowest"
+  | "count";
 
 type ReadAnswerMetricAggregate = {
   answer: string;
@@ -11259,6 +11260,16 @@ function extractRowScopedMetricAggregateQuestionParts(
       pattern:
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:lowest|smallest|minimum|min)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
     },
+    {
+      operation: "count",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?how\s+many\s+(.+?)\s+(?:are|were)\s+(?:listed|shown|displayed|visible|present|on\s+(?:this|the)\s+page)(?:[?.!]|$)/i,
+    },
+    {
+      operation: "count",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:number|count|quantity)\s+of\s+(.+?)\s+(?:listed|shown|displayed|visible|present|on\s+(?:this|the)\s+page)(?:[?.!]|$)/i,
+    },
   ];
   const aggregateMatch = patterns
     .map(({ operation, pattern }) => ({ operation, match: pattern.exec(text) }))
@@ -11272,10 +11283,14 @@ function extractRowScopedMetricAggregateQuestionParts(
     );
   if (!aggregateMatch) return null;
 
-  const metric = cleanRowScopedMetricAggregateMetric(
-    aggregateMatch.match[1] ?? "",
-  );
-  const entityTokens = tokenizeCompletionText(aggregateMatch.match[2] ?? "");
+  const metric =
+    aggregateMatch.operation === "count"
+      ? cleanRowScopedCountEntity(aggregateMatch.match[1] ?? "")
+      : cleanRowScopedMetricAggregateMetric(aggregateMatch.match[1] ?? "");
+  const entityTokens =
+    aggregateMatch.operation === "count"
+      ? tokenizeCompletionText(metric ?? "")
+      : tokenizeCompletionText(aggregateMatch.match[2] ?? "");
   if (!metric || entityTokens.length < 1 || entityTokens.length > 6) {
     return null;
   }
@@ -11303,10 +11318,25 @@ function cleanRowScopedMetricAggregateMetric(value: string): string | null {
   return tokens.join(" ");
 }
 
+function cleanRowScopedCountEntity(value: string): string | null {
+  const entity = cleanLabel(value)
+    .replace(/^(?:the\s+)?(?:visible|listed|shown|displayed|current)\s+/i, "")
+    .replace(/\s+(?:rows?|records?|entries|items?|results?)$/i, "");
+  const tokens = tokenizeCompletionText(entity).filter(
+    (token) =>
+      !/^(?:rows?|records?|entries|items?|results?|listed|shown|displayed|visible|present)$/.test(
+        token,
+      ),
+  );
+  if (tokens.length < 1 || tokens.length > 5) return null;
+  return tokens.join(" ");
+}
+
 function rowScopedMetricAggregateLabel(
   metric: string,
   operation: ReadAnswerMetricAggregateOperation,
 ): string {
+  if (operation === "count") return `${metric} row count`;
   return `${metric} ${operation}`;
 }
 
@@ -11314,6 +11344,12 @@ function rowScopedMetricAggregatePartsForLabel(
   label: string,
 ): { metric: string; operation: ReadAnswerMetricAggregateOperation } | null {
   const normalizedLabel = normalizeText(label);
+  const countMatch = /^(.+?)\s+row\s+count$/.exec(normalizedLabel);
+  if (countMatch) {
+    const metric = cleanRowScopedCountEntity(countMatch[1] ?? "");
+    return metric ? { metric, operation: "count" } : null;
+  }
+
   const match = /^(.+?)\s+(total|average|highest|lowest)$/.exec(
     normalizedLabel,
   );
@@ -11777,13 +11813,18 @@ function findReadAnswerMetricAggregateFromSnapshotRows(
   const aggregate = rowScopedMetricAggregatePartsForLabel(expectedAnswerLabel);
   if (!aggregate) return null;
 
-  const candidates = snapshot.elements
+  const rowTexts = snapshot.elements
     .filter((element) => element.isVisible && !element.isDisabled)
     .filter(isWorkflowRowLikeElement)
     .map(readAnswerRowElementText)
     .map((rowText) => cleanLabel(rowText))
     .filter(Boolean)
-    .filter((rowText) => rowText.length <= 500)
+    .filter((rowText) => rowText.length <= 500);
+  if (aggregate.operation === "count") {
+    return calculateReadAnswerRowCountAggregate(rowTexts, aggregate.metric);
+  }
+
+  const candidates = rowTexts
     .map((rowText) =>
       extractReadAnswerSuperlativeMetricCandidate(rowText, aggregate.metric),
     )
@@ -11809,8 +11850,12 @@ function findReadAnswerMetricAggregateFromTextLines(
     .filter(Boolean);
   if (lines.length < 2) return null;
 
-  const candidates = lines
-    .filter((line) => line.length <= 500)
+  const rowTexts = lines.filter((line) => line.length <= 500);
+  if (aggregate.operation === "count") {
+    return calculateReadAnswerRowCountAggregate(rowTexts, aggregate.metric);
+  }
+
+  const candidates = rowTexts
     .map((line) =>
       extractReadAnswerSuperlativeMetricCandidate(line, aggregate.metric),
     )
@@ -11821,6 +11866,20 @@ function findReadAnswerMetricAggregateFromTextLines(
         candidate !== null,
     );
   return calculateReadAnswerMetricAggregate(candidates, aggregate.operation);
+}
+
+function calculateReadAnswerRowCountAggregate(
+  rowTexts: string[],
+  entity: string,
+): ReadAnswerMetricAggregate | null {
+  const matches = rowTexts.filter((rowText) =>
+    readAnswerRowCountTextMatchesEntity(rowText, entity),
+  );
+  if (matches.length < 1) return null;
+  return {
+    answer: String(matches.length),
+    evidenceText: matches.join("\n"),
+  };
 }
 
 function calculateReadAnswerMetricAggregate(
@@ -11854,6 +11913,36 @@ function calculateReadAnswerMetricAggregate(
     answer: formatReadAnswerMetricAggregateValue(answer),
     evidenceText: values.map((candidate) => candidate.sentence).join("\n"),
   };
+}
+
+function readAnswerRowCountTextMatchesEntity(
+  rowText: string,
+  entity: string,
+): boolean {
+  const rowTokens = tokenizeCompletionText(rowText);
+  const [firstToken] = rowTokens;
+  if (!firstToken) return false;
+
+  const entityTokens = tokenizeCompletionText(entity);
+  if (entityTokens.length < 1 || entityTokens.length > 5) return false;
+
+  return entityTokens.some((token) =>
+    rowCountTokenVariants(token).includes(firstToken),
+  );
+}
+
+function rowCountTokenVariants(token: string): string[] {
+  const variants = new Set([token]);
+  if (token.endsWith("ies") && token.length > 4) {
+    variants.add(`${token.slice(0, -3)}y`);
+  }
+  if (token.endsWith("es") && token.length > 3) {
+    variants.add(token.slice(0, -2));
+  }
+  if (token.endsWith("s") && token.length > 3) {
+    variants.add(token.slice(0, -1));
+  }
+  return [...variants];
 }
 
 function formatReadAnswerMetricAggregateValue(value: number): string {
