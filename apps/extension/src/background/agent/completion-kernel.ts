@@ -1266,6 +1266,10 @@ function generateReadAnswerContract(
   if (definitionQuestion?.strongDefinitionIntent && !sentenceScopedAnswer) {
     return null;
   }
+  const reasonQuestion = extractSentenceScopedReasonQuestionParts(requestText);
+  if (reasonQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   if (!sentenceScopedAnswer && !hasPageReadAnswerIntent(requestText, _snapshot)) {
     return null;
   }
@@ -1330,6 +1334,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   const normalizedLabel = normalizeText(label);
   if (!normalizedLabel) return false;
   if (normalizedLabel === "definition") return true;
+  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -9809,6 +9814,62 @@ function cleanSentenceScopedDefinitionTarget(value: string): string | null {
   );
 }
 
+function extractSentenceScopedReasonQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const beMatch =
+    /^(?:please\s+)?(?:tell me\s+)?why\s+(?:is|are|was|were)\s+(?:the\s+)?(.+?)\s+(delayed|blocked|failed|canceled|cancelled|rejected|paused|stopped|closed|escalated|on\s+hold)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (beMatch) {
+    const label = canonicalSentenceScopedReasonLabel(beMatch[2] ?? "");
+    const target = cleanSentenceScopedReasonTarget(beMatch[1] ?? "");
+    if (label && target) return { label, target };
+  }
+
+  const hasBeenMatch =
+    /^(?:please\s+)?(?:tell me\s+)?why\s+(?:has|have)\s+(?:the\s+)?(.+?)\s+been\s+(delayed|blocked|canceled|cancelled|rejected|paused|stopped|closed|escalated|on\s+hold)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (hasBeenMatch) {
+    const label = canonicalSentenceScopedReasonLabel(hasBeenMatch[2] ?? "");
+    const target = cleanSentenceScopedReasonTarget(hasBeenMatch[1] ?? "");
+    if (label && target) return { label, target };
+  }
+
+  const didMatch =
+    /^(?:please\s+)?(?:tell me\s+)?why\s+did\s+(?:the\s+)?(.+?)\s+(delay|delayed|block|blocked|fail|failed|cancel|canceled|cancelled|reject|rejected|pause|paused|stop|stopped|close|closed|escalate|escalated)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (didMatch) {
+    const label = canonicalSentenceScopedReasonLabel(didMatch[2] ?? "");
+    const target = cleanSentenceScopedReasonTarget(didMatch[1] ?? "");
+    if (label && target) return { label, target };
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedReasonTarget(value: string): string | null {
+  return normalizeWorkflowTargetLabel(cleanLabel(value));
+}
+
+function canonicalSentenceScopedReasonLabel(value: string): string | null {
+  const normalized = normalizeText(value).replace(/-/g, " ");
+  if (/^delay(?:ed)?$/.test(normalized)) return "delayed reason";
+  if (/^block(?:ed)?$/.test(normalized)) return "blocked reason";
+  if (/^fail(?:ed)?$/.test(normalized)) return "failed reason";
+  if (/^cancel(?:ed|led)?$/.test(normalized)) return "canceled reason";
+  if (/^reject(?:ed)?$/.test(normalized)) return "rejected reason";
+  if (/^paus(?:e|ed)$/.test(normalized)) return "paused reason";
+  if (/^stop(?:ped)?$/.test(normalized)) return "stopped reason";
+  if (/^clos(?:e|ed)$/.test(normalized)) return "closed reason";
+  if (/^escalat(?:e|ed)$/.test(normalized)) return "escalated reason";
+  if (normalized === "on hold") return "on hold reason";
+  return null;
+}
+
 function findGroundedSentenceScopedAnswer(
   question: string,
   evidenceText: string,
@@ -9822,6 +9883,21 @@ function findGroundedSentenceScopedAnswer(
       findReadAnswerSentenceScopedAnswer(evidenceText, target, "definition")
     ) {
       return { label: "definition", target };
+    }
+  }
+
+  const reasonQuestion = extractSentenceScopedReasonQuestionParts(question);
+  if (reasonQuestion) {
+    const target = normalizeWorkflowTargetLabel(reasonQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        reasonQuestion.label,
+      )
+    ) {
+      return { label: reasonQuestion.label, target };
     }
   }
 
@@ -10415,6 +10491,16 @@ function extractSentenceScopedRelationAnswer(
     return extractSentenceScopedDefinitionAnswer(sentence, targetPattern);
   }
 
+  const reasonPredicatePattern =
+    sentenceScopedReasonPredicatePatternForLabel(normalizedLabel);
+  if (reasonPredicatePattern) {
+    return extractSentenceScopedReasonAnswer(
+      sentence,
+      targetPattern,
+      reasonPredicatePattern,
+    );
+  }
+
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
     const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
@@ -10584,6 +10670,52 @@ function extractSentenceScopedDefinitionAnswer(
 }
 
 function cleanSentenceScopedDefinitionAnswerText(value: string): string {
+  const answer = cleanSentenceScopedAnswerText(value);
+  if (tokenizeCompletionText(answer).length < 2) return "";
+  return answer;
+}
+
+function sentenceScopedReasonPredicatePatternForLabel(
+  label: string,
+): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (normalizedLabel === "delayed reason") return "delayed";
+  if (normalizedLabel === "blocked reason") return "blocked";
+  if (normalizedLabel === "failed reason") return "failed";
+  if (normalizedLabel === "canceled reason") return "cancel(?:ed|led)";
+  if (normalizedLabel === "rejected reason") return "rejected";
+  if (normalizedLabel === "paused reason") return "paused";
+  if (normalizedLabel === "stopped reason") return "stopped";
+  if (normalizedLabel === "closed reason") return "closed";
+  if (normalizedLabel === "escalated reason") return "escalated";
+  if (normalizedLabel === "on hold reason") return "on\\s+hold";
+  return null;
+}
+
+function extractSentenceScopedReasonAnswer(
+  sentence: string,
+  targetPattern: string,
+  predicatePattern: string,
+): string | null {
+  const verbPattern =
+    "(?:is|are|was|were|has\\s+been|have\\s+been|got|became|becomes|remains|remain)";
+  const targetPredicatePattern = `^\\s*${targetPattern}\\b\\s+(?:${verbPattern}\\s+)?${predicatePattern}\\b`;
+  const patterns = [
+    `${targetPredicatePattern}\\s+because\\s+of\\s+([^.;\\n]{2,180})`,
+    `${targetPredicatePattern}\\s+(?:because|since)\\s+([^.;\\n]{2,180})`,
+    `${targetPredicatePattern}\\s+due\\s+to\\s+([^.;\\n]{2,180})`,
+  ];
+
+  for (const pattern of patterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const answer = cleanSentenceScopedReasonAnswerText(match?.[1] ?? "");
+    if (answer) return answer;
+  }
+
+  return null;
+}
+
+function cleanSentenceScopedReasonAnswerText(value: string): string {
   const answer = cleanSentenceScopedAnswerText(value);
   if (tokenizeCompletionText(answer).length < 2) return "";
   return answer;

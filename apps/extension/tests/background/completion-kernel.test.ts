@@ -27067,6 +27067,189 @@ describe("completion kernel", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
+  test("accepts reason sentence-scoped answer for a why question", () => {
+    const snap = workflowSnapshot({
+      title: "Project Updates",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas was delayed because vendor approval arrived late. Project Borealis was delayed because budget approval changed.",
+      pageContent:
+        "Project Atlas was delayed because vendor approval arrived late. Project Borealis was delayed because budget approval changed. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Why was Project Atlas delayed?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It was delayed because vendor approval arrived late.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It was delayed because budget approval changed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "delayed reason",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts due-to reason sentence-scoped answer for a why question", () => {
+    const snap = workflowSnapshot({
+      title: "Project Updates",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Database Migration is blocked due to pending firewall approval. Report Export is blocked due to missing credentials.",
+      pageContent:
+        "Database Migration is blocked due to pending firewall approval. Report Export is blocked due to missing credentials. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Why is Database Migration blocked?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It is blocked due to pending firewall approval.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It is blocked due to missing credentials.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "blocked reason",
+      expectedAnswerTarget: "Database Migration",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts reason sentence-scoped answer from read_page evidence without live snapshot", () => {
+    const snap = workflowSnapshot({
+      title: "Project Updates",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas was delayed because vendor approval arrived late. Project Borealis was delayed because budget approval changed.",
+      pageContent:
+        "Project Atlas was delayed because vendor approval arrived late. Project Borealis was delayed because budget approval changed. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Why was Project Atlas delayed?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nProject Atlas was delayed because vendor approval arrived late. Project Borealis was delayed because budget approval changed. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "It was delayed because vendor approval arrived late.",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "It was delayed because budget approval changed.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "delayed reason",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("does not accept a reason sentence with the wrong requested predicate", () => {
+    const snap = workflowSnapshot({
+      title: "Project Updates",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas was canceled because the sponsor withdrew. Project Borealis was delayed because vendor approval arrived late.",
+      pageContent:
+        "Project Atlas was canceled because the sponsor withdrew. Project Borealis was delayed because vendor approval arrived late. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Why was Project Atlas delayed?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It was delayed because the sponsor withdrew.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
+  test("does not use reason sentence-scoped acceptance from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Project Updates",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Updates Project Atlas was delayed because vendor approval arrived late Project Borealis was delayed because budget approval changed",
+      pageContent:
+        "Project Updates Project Atlas was delayed because vendor approval arrived late Project Borealis was delayed because budget approval changed. The page explains project timeline risk, release ownership, support process, deployment requirements, budget review, customer communications, dependency status, and audit notes so readers can answer project questions from visible prose evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Why was Project Atlas delayed?",
+      snapshot: snap,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "It was delayed because vendor approval arrived late.",
+    });
+
+    expect(
+      generated?.contract.kind === "read_answer"
+        ? generated.contract.expectedAnswerScope
+        : undefined,
+    ).toBeUndefined();
+    expect(decision.status).not.toBe("accepted");
+  });
+
   test("accepts sentence-scoped assigned-to answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
