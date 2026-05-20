@@ -7713,6 +7713,8 @@ function inferControlLabelChangeAction(
 
 type ControlStateWorkflowAction = Extract<
   WorkflowConfirmationAction,
+  | "archive"
+  | "restore"
   | "approve"
   | "reject"
   | "close"
@@ -7773,6 +7775,7 @@ type ControlStateWorkflowAction = Extract<
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
+    "archive",
     "approve",
     "reject",
     "close",
@@ -7810,6 +7813,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
   new Set([
+    "restore",
     "disable",
     "reopen",
     "deescalate",
@@ -7873,6 +7877,14 @@ function inferControlStateChangeAction(
   if (/\b(?:cancel|canceled|cancelled|cancellation)\b/i.test(text)) {
     return "cancel";
   }
+  if (
+    /\b(?:restore|restored|recover|recovered|reinstate|reinstated|unarchive|unarchived)\b/i.test(
+      text,
+    )
+  ) {
+    return "restore";
+  }
+  if (/\b(?:archive|archived|archival)\b/i.test(text)) return "archive";
   if (/\bde[-\s]?escalat(?:e|ed|ing|ion)\b/i.test(text)) {
     return "deescalate";
   }
@@ -7953,6 +7965,10 @@ function controlStateChangeMatchesAction(
 
 function controlStateCompletionWord(action: ControlStateWorkflowAction): string {
   switch (action) {
+    case "archive":
+      return "archived";
+    case "restore":
+      return "restored";
     case "approve":
       return "approved";
     case "reject":
@@ -9326,6 +9342,13 @@ function readControlState(
       state,
       /^cancell?ed$/i,
       /^(?:active|pending|open|scheduled)$/i,
+    );
+  }
+  if (action === "archive" || action === "restore") {
+    return readSemanticControlState(
+      state,
+      /^archived$/i,
+      /^(?:active|restored|unarchived|available)$/i,
     );
   }
   if (action === "escalate" || action === "deescalate") {
