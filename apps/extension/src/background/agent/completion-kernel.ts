@@ -7775,6 +7775,8 @@ type ControlStateWorkflowAction = Extract<
   | "refresh"
   | "deploy"
   | "rollback"
+  | "backup"
+  | "reset"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7817,6 +7819,8 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "refresh",
     "deploy",
     "rollback",
+    "backup",
+    "reset",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7962,6 +7966,10 @@ function inferControlStateChangeAction(
     return "rollback";
   }
   if (/\bdeploy(?:ed|ing|ment)?\b/i.test(text)) return "deploy";
+  if (/\b(?:back\s+up|backup|backed\s+up|backing\s+up)\b/i.test(text)) {
+    return "backup";
+  }
+  if (/\breset(?:ting)?\b/i.test(text)) return "reset";
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
@@ -8107,6 +8115,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "deployed";
     case "rollback":
       return "rolled back";
+    case "backup":
+      return "backed up";
+    case "reset":
+      return "reset";
   }
 }
 
@@ -9511,6 +9523,20 @@ function readControlState(
       state,
       /^(?:rolled[-\s]?back|reverted)$/i,
       /^(?:deployed|current|active|ready)$/i,
+    );
+  }
+  if (action === "backup") {
+    return readSemanticControlState(
+      state,
+      /^backed[-\s]?up$/i,
+      /^(?:unbacked[-\s]?up|stale|dirty|modified|pending)$/i,
+    );
+  }
+  if (action === "reset") {
+    return readSemanticControlState(
+      state,
+      /^(?:reset|default|cleared)$/i,
+      /^(?:changed|modified|dirty|custom|active)$/i,
     );
   }
   if (action === "sync") {
