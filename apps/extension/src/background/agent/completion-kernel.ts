@@ -10588,7 +10588,14 @@ function readAnswerSummaryMatchesSentenceScopedAnswer(
   if (valueWords.length >= 2) {
     return labelValuePhraseCoveredBySummary(normalizedSummary, valueWords);
   }
-  return valueTokenCoveredBySummary(normalizedSummary, normalizeText(valueWords[0]));
+  const normalizedValue = normalizeText(valueWords[0]);
+  if (normalizedValue === "zero" || normalizedValue === "0") {
+    return (
+      valueTokenCoveredBySummary(normalizedSummary, "zero") ||
+      valueTokenCoveredBySummary(normalizedSummary, "0")
+    );
+  }
+  return valueTokenCoveredBySummary(normalizedSummary, normalizedValue);
 }
 
 function readAnswerSummaryMatchesExpectedLabelValue(
@@ -11354,6 +11361,18 @@ function extractSentenceScopedTargetCountAnswer(
 ): string | null {
   const countPattern = sentenceScopedTargetCountAnswerPattern();
   const adverbPattern = sentenceScopedTargetCountAdverbPattern();
+  const zeroPatterns = [
+    `^\\s*${targetPattern}\\b\\s+no\\s+longer\\s+(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+${adverbPattern}not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+no\\s+longer\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern}not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+  ];
+  for (const pattern of zeroPatterns) {
+    if (new RegExp(pattern, "i").test(sentence)) return "zero";
+  }
+
   const patterns = [
     `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
     `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${metricPattern}\\s+(?:count|number|quantity)\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
