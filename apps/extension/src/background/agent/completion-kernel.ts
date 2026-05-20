@@ -11801,18 +11801,40 @@ function sentenceScopedActiveRelationPatternForLabel(
 }
 
 function canonicalSentenceScopedAttributeLabel(label: string): string | null {
-  return sentenceScopedAttributePatternForLabel(label) ? "contact" : null;
-}
-
-function sentenceScopedAttributePatternForLabel(label: string): string | null {
   const normalizedLabel = normalizeText(label);
   if (
     normalizedLabel === "contact" ||
     normalizedLabel === "point of contact" ||
     normalizedLabel === "poc"
   ) {
+    return "contact";
+  }
+  if (normalizedLabel === "category" || normalizedLabel === "classification") {
+    return "category";
+  }
+  if (normalizedLabel === "type" || normalizedLabel === "kind") return "type";
+  if (normalizedLabel === "tier") return "tier";
+  if (normalizedLabel === "plan" || normalizedLabel === "package") {
+    return "plan";
+  }
+  if (normalizedLabel === "region") return "region";
+  if (normalizedLabel === "environment" || normalizedLabel === "env") {
+    return "environment";
+  }
+  return null;
+}
+
+function sentenceScopedAttributePatternForLabel(label: string): string | null {
+  const attributeLabel = canonicalSentenceScopedAttributeLabel(label);
+  if (attributeLabel === "contact") {
     return "(?:point\\s+of\\s+contact|contact|poc)";
   }
+  if (attributeLabel === "category") return "(?:category|classification)";
+  if (attributeLabel === "type") return "(?:type|kind)";
+  if (attributeLabel === "tier") return "tier";
+  if (attributeLabel === "plan") return "(?:plan|package)";
+  if (attributeLabel === "region") return "region";
+  if (attributeLabel === "environment") return "(?:environment|env)";
   return null;
 }
 
