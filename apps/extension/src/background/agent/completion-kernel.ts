@@ -8859,10 +8859,16 @@ function readControlState(element: TaggedElement): boolean | null {
     element.attributes["aria-checked"] ??
     element.attributes["aria-pressed"] ??
     element.attributes["aria-selected"] ??
-    element.attributes.selected;
+    element.attributes.selected ??
+    element.attributes["data-state"] ??
+    element.attributes["data-checked"] ??
+    element.attributes["data-pressed"] ??
+    element.attributes["data-selected"];
   if (state == null) return null;
-  if (/^(?:true|checked|pressed|selected|1)$/i.test(state)) return true;
-  if (/^(?:false|0)$/i.test(state)) return false;
+  if (/^(?:true|checked|pressed|selected|on|1)$/i.test(state)) return true;
+  if (/^(?:false|unchecked|unpressed|unselected|off|0)$/i.test(state)) {
+    return false;
+  }
   return null;
 }
 
