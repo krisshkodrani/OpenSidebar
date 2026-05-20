@@ -10003,6 +10003,20 @@ function extractSentenceScopedTargetCountQuestionParts(
     if (metric && target) return { label: `${metric} count`, target };
   }
 
+  const remainingMatch = new RegExp(
+    `^(?:please\\s+)?(?:tell me\\s+)?how\\s+many\\s+(.+?)\\s+(?:(?:${adverbPattern}(?:remain|remains))|(?:(?:is|are|was|were)\\s+${adverbPattern}(?:left|remaining)))\\s+(?:for|of|on|in)\\s+(?:the\\s+)?(.+?)(?:[?.!]|$)`,
+    "i",
+  ).exec(text);
+  if (remainingMatch) {
+    const metric = cleanSentenceScopedTargetCountMetric(
+      remainingMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetCountTarget(
+      remainingMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} count`, target };
+  }
+
   const countOfMatch =
     /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is)\s+(?:the\s+)?(?:number|count|quantity)\s+of\s+(.+?)\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
       text,
@@ -11375,9 +11389,12 @@ function extractSentenceScopedTargetCountAnswer(
 
   const patterns = [
     `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s+(?:left|remaining)\\s*$`,
     `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${metricPattern}\\s+(?:count|number|quantity)\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
     `^\\s*${metricPattern}\\s+(?:count|number|quantity)\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${countPattern})\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})?(${countPattern})\\s+${metricPattern}\\s+(?:left|remaining)\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(${countPattern})\\s+${metricPattern}\\s+(?:(?:${adverbPattern}(?:remain|remains))|(?:(?:is|are|was|were)\\s+${adverbPattern}(?:left|remaining)))\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
 
   for (const pattern of patterns) {
