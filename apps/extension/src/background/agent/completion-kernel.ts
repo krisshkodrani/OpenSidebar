@@ -11139,6 +11139,7 @@ type ReadAnswerSuperlativeMetricCandidate = {
 type ReadAnswerMetricAggregateOperation =
   | "total"
   | "average"
+  | "median"
   | "highest"
   | "lowest"
   | "count";
@@ -11251,6 +11252,11 @@ function extractRowScopedMetricAggregateQuestionParts(
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:average|mean)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
     },
     {
+      operation: "median",
+      pattern:
+        /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?median\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
+    },
+    {
       operation: "highest",
       pattern:
         /^(?:please\s+)?(?:tell me\s+)?what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:highest|largest|maximum|max)\s+(?:of\s+)?(.+?)\s+(?:across|for|of|in|on)\s+(?:all\s+|the\s+)?(.+?)(?:[?.!]|$)/i,
@@ -11309,7 +11315,7 @@ function cleanRowScopedMetricAggregateMetric(value: string): string | null {
       "",
     )
     .replace(
-      /^(?:highest|largest|maximum|max|lowest|smallest|minimum|min)\s+/i,
+      /^(?:median|highest|largest|maximum|max|lowest|smallest|minimum|min)\s+/i,
       "",
     )
     .replace(/^(?:number|count|quantity|amount)\s+of\s+/i, "");
@@ -11350,7 +11356,7 @@ function rowScopedMetricAggregatePartsForLabel(
     return metric ? { metric, operation: "count" } : null;
   }
 
-  const match = /^(.+?)\s+(total|average|highest|lowest)$/.exec(
+  const match = /^(.+?)\s+(total|average|median|highest|lowest)$/.exec(
     normalizedLabel,
   );
   if (!match) return null;
@@ -11904,6 +11910,8 @@ function calculateReadAnswerMetricAggregate(
   const answer =
     operation === "average"
       ? sum / values.length
+      : operation === "median"
+        ? medianReadAnswerMetricAggregateValue(numericValues)
       : operation === "highest"
         ? Math.max(...numericValues)
         : operation === "lowest"
@@ -11913,6 +11921,13 @@ function calculateReadAnswerMetricAggregate(
     answer: formatReadAnswerMetricAggregateValue(answer),
     evidenceText: values.map((candidate) => candidate.sentence).join("\n"),
   };
+}
+
+function medianReadAnswerMetricAggregateValue(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[middle] ?? 0;
+  return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
 }
 
 function readAnswerRowCountTextMatchesEntity(
