@@ -35361,6 +35361,126 @@ describe("completion kernel", () => {
     expect(generated).toBeNull();
   });
 
+  test("accepts row metric-total read-answer from visible row elements", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Beta Inventory count: 7318 units Warehouse Delta Inventory count: 2184 units",
+      pageContent: "Warehouse Counts",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 2184 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the total inventory count across warehouses?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The total inventory count is 9502.",
+    });
+    const wrongTotal = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The total inventory count is 7318.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "inventory count total",
+      expectedAnswerScope: "aggregate",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:aggregate:",
+    );
+    expect(wrongTotal.status).toBe("inconclusive");
+  });
+
+  test("accepts row metric-total read-answer from read_page line evidence", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Beta Inventory count: 7318 units Warehouse Delta Inventory count: 2184 units",
+      pageContent: "Warehouse Counts",
+      elements: [
+        rowElement(811, "Warehouse Beta Inventory count: 7318 units"),
+        rowElement(812, "Warehouse Delta Inventory count: 2184 units"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the sum of inventory count across warehouses?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nWarehouse Beta Inventory count: 7318 units\nWarehouse Delta Inventory count: 2184 units\nThe page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric total questions from visible row evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "9502",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "inventory count total",
+      expectedAnswerScope: "aggregate",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:aggregate-text:",
+    );
+  });
+
+  test("does not generate row metric-total read-answer from flattened page text", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent:
+        "Warehouse Counts Warehouse Beta Inventory count is 7318 units Warehouse Delta Inventory count is 2184 units",
+      pageContent:
+        "Warehouse Counts Warehouse Beta Inventory count is 7318 units Warehouse Delta Inventory count is 2184 units. The page compares warehouse inventory counts, receiving backlog, audit timing, and replenishment notes so operators can answer warehouse metric total questions from visible row evidence.",
+      elements: [],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the total inventory count across warehouses?",
+      snapshot: snap,
+    });
+
+    expect(generated).toBeNull();
+  });
+
+  test("does not generate row metric-total read-answer with only one row candidate", () => {
+    const snap = workflowSnapshot({
+      title: "Warehouse Counts",
+      url: "https://example.test/warehouses",
+      visibleContent: "Warehouse Beta Inventory count: 7318 units",
+      pageContent: "Warehouse Counts",
+      elements: [rowElement(811, "Warehouse Beta Inventory count: 7318 units")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "What is the total inventory count across warehouses?",
+      snapshot: snap,
+    });
+
+    expect(generated).toBeNull();
+  });
+
   test("accepts target-state sentence-scoped yes answer for a state question", () => {
     const snap = workflowSnapshot({
       title: "Project Status",
