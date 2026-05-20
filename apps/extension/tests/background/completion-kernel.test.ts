@@ -23770,6 +23770,331 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("accepted");
   });
 
+  test("accepts star confirmation from pressed control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(628, "Star Issue Alpha", false, "issue-alpha-star"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(629, "Star Issue Alpha", true, "issue-alpha-star"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Star Issue Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 628 },
+      result: "Clicked element 628.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Starred Issue Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "star",
+      targetLabel: "Issue Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:star:control-state:issue-alpha-star",
+        detail: expect.objectContaining({
+          action: "star",
+          source: "control_state_change",
+          targetText: "Issue Alpha",
+          text: "Control state changed to starred: Star Issue Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts unstar confirmation from pressed control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Issue Alpha Unstar Issue Alpha",
+      pageContent: "Issue Alpha Unstar Issue Alpha",
+      elements: [
+        statefulActionButton(630, "Unstar Issue Alpha", true, "issue-alpha-star"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Issue Alpha Unstar Issue Alpha",
+      pageContent: "Issue Alpha Unstar Issue Alpha",
+      elements: [
+        statefulActionButton(631, "Unstar Issue Alpha", false, "issue-alpha-star"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unstar Issue Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 630 },
+      result: "Clicked element 630.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unstarred Issue Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unstar",
+      targetLabel: "Issue Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:unstar:control-state:issue-alpha-star",
+        detail: expect.objectContaining({
+          action: "unstar",
+          source: "control_state_change",
+          targetText: "Issue Alpha",
+          text: "Control state changed to unstarred: Unstar Issue Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware pressed-toggle confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Issue Alpha Issue Beta Star Issue Beta",
+      pageContent: "Issue Alpha Issue Beta Star Issue Beta",
+      elements: [
+        statefulActionButton(632, "Star Issue Beta", false, "issue-beta-star"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Issue Alpha Issue Beta Star Issue Beta",
+      pageContent: "Issue Alpha Issue Beta Star Issue Beta",
+      elements: [
+        statefulActionButton(633, "Star Issue Beta", true, "issue-beta-star"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Star Issue Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 632 },
+      result: "Clicked element 632.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Starred Issue Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "star",
+      targetLabel: "Issue Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:star:control-state:issue-beta-star",
+        detail: expect.objectContaining({
+          action: "star",
+          source: "control_state_change",
+          targetText: "Issue Beta",
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("does not infer star confirmation when pressed state was already on", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(628, "Star Issue Alpha", true, "issue-alpha-star"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(629, "Star Issue Alpha", true, "issue-alpha-star"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 628 },
+      result: "Clicked element 628.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer star confirmation when pressed state flips off", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(628, "Star Issue Alpha", true, "issue-alpha-star"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Issue Alpha Star Issue Alpha",
+      pageContent: "Issue Alpha Star Issue Alpha",
+      elements: [
+        statefulActionButton(629, "Star Issue Alpha", false, "issue-alpha-star"),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 628 },
+      result: "Clicked element 628.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  for (const scenario of [
+    {
+      action: "bookmark",
+      completion: "bookmarked",
+      label: "Bookmark Article Alpha",
+      request: "Bookmark Article Alpha.",
+      summary: "Bookmarked Article Alpha.",
+      target: "Article Alpha",
+      id: "article-alpha-bookmark",
+    },
+    {
+      action: "unbookmark",
+      completion: "unbookmarked",
+      label: "Unbookmark Article Alpha",
+      request: "Unbookmark Article Alpha.",
+      summary: "Unbookmarked Article Alpha.",
+      target: "Article Alpha",
+      id: "article-alpha-bookmark",
+      initiallyPressed: true,
+      finallyPressed: false,
+    },
+    {
+      action: "follow",
+      completion: "followed",
+      label: "Follow Project Alpha",
+      request: "Follow Project Alpha.",
+      summary: "Followed Project Alpha.",
+      target: "Project Alpha",
+      id: "project-alpha-follow",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from pressed control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          statefulActionButton(
+            634,
+            scenario.label,
+            scenario.initiallyPressed ?? false,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          statefulActionButton(
+            635,
+            scenario.label,
+            scenario.finallyPressed ?? true,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 634 },
+        result: "Clicked element 634.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
   test("does not infer lock confirmation when control state flips the wrong direction", () => {
     const pre = workflowSnapshot({
       visibleContent: "Security settings Lock account",

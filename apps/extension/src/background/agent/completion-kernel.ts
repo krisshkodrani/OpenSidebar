@@ -7517,6 +7517,58 @@ function inferControlLabelChangeAction(
   );
 }
 
+type ControlStateWorkflowAction = Extract<
+  WorkflowConfirmationAction,
+  | "enable"
+  | "disable"
+  | "lock"
+  | "unlock"
+  | "subscribe"
+  | "unsubscribe"
+  | "follow"
+  | "unfollow"
+  | "bookmark"
+  | "unbookmark"
+  | "favorite"
+  | "unfavorite"
+  | "watch"
+  | "unwatch"
+  | "star"
+  | "unstar"
+  | "pin"
+  | "unpin"
+  | "mute"
+  | "unmute"
+>;
+
+const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
+  new Set([
+    "enable",
+    "lock",
+    "subscribe",
+    "follow",
+    "bookmark",
+    "favorite",
+    "watch",
+    "star",
+    "pin",
+    "mute",
+  ]);
+
+const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
+  new Set([
+    "disable",
+    "unlock",
+    "unsubscribe",
+    "unfollow",
+    "unbookmark",
+    "unfavorite",
+    "unwatch",
+    "unstar",
+    "unpin",
+    "unmute",
+  ]);
+
 function inferControlStateChangeAction(
   element: TaggedElement,
 ): ControlStateWorkflowAction | null {
@@ -7526,27 +7578,41 @@ function inferControlStateChangeAction(
   if (/\b(?:disable|deactivate|turn\s+off)\b/i.test(text)) return "disable";
   if (/\bunlock(?:ed)?\b/i.test(text)) return "unlock";
   if (/\block(?:ed)?\b/i.test(text)) return "lock";
+  if (/\bunsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
+    return "unsubscribe";
+  }
+  if (/\bsubscribe(?:d|s|r|rs|ing|tion)?\b/i.test(text)) {
+    return "subscribe";
+  }
+  if (/\bunfollow(?:ed|ing)?\b/i.test(text)) return "unfollow";
+  if (/\bfollow(?:ed|ing|s)?\b/i.test(text)) return "follow";
+  if (/\bunbookmark(?:ed|ing)?\b/i.test(text)) return "unbookmark";
+  if (/\bbookmark(?:ed|ing|s)?\b/i.test(text)) return "bookmark";
+  if (/\bunfavorite(?:d|ing)?\b/i.test(text)) return "unfavorite";
+  if (/\bfavou?rite(?:d|ing|s)?\b/i.test(text)) return "favorite";
+  if (/\bunwatch(?:ed|ing)?\b/i.test(text)) return "unwatch";
+  if (/\bwatch(?:ed|ing|es)?\b/i.test(text)) return "watch";
+  if (/\bunstar(?:red|ring)?\b/i.test(text)) return "unstar";
+  if (/\bstar(?:red|ring|s)?\b/i.test(text)) return "star";
+  if (/\bunpin(?:ned|ning)?\b/i.test(text)) return "unpin";
+  if (/\bpin(?:ned|ning|s)?\b/i.test(text)) return "pin";
+  if (/\bunmute(?:d|ing)?\b/i.test(text)) return "unmute";
+  if (/\bmute(?:d|ing|s)?\b/i.test(text)) return "mute";
   return null;
 }
-
-type ControlStateWorkflowAction = Extract<
-  WorkflowConfirmationAction,
-  "enable" | "disable" | "lock" | "unlock"
->;
 
 function controlStateChangeMatchesAction(
   action: ControlStateWorkflowAction,
   beforeState: boolean,
   afterState: boolean,
 ): boolean {
-  switch (action) {
-    case "enable":
-    case "lock":
-      return beforeState === false && afterState === true;
-    case "disable":
-    case "unlock":
-      return beforeState === true && afterState === false;
+  if (CONTROL_STATE_ON_ACTIONS.has(action)) {
+    return beforeState === false && afterState === true;
   }
+  if (CONTROL_STATE_OFF_ACTIONS.has(action)) {
+    return beforeState === true && afterState === false;
+  }
+  return false;
 }
 
 function controlStateCompletionWord(action: ControlStateWorkflowAction): string {
@@ -7559,6 +7625,38 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "locked";
     case "unlock":
       return "unlocked";
+    case "subscribe":
+      return "subscribed";
+    case "unsubscribe":
+      return "unsubscribed";
+    case "follow":
+      return "followed";
+    case "unfollow":
+      return "unfollowed";
+    case "bookmark":
+      return "bookmarked";
+    case "unbookmark":
+      return "unbookmarked";
+    case "favorite":
+      return "favorited";
+    case "unfavorite":
+      return "unfavorited";
+    case "watch":
+      return "watched";
+    case "unwatch":
+      return "unwatched";
+    case "star":
+      return "starred";
+    case "unstar":
+      return "unstarred";
+    case "pin":
+      return "pinned";
+    case "unpin":
+      return "unpinned";
+    case "mute":
+      return "muted";
+    case "unmute":
+      return "unmuted";
   }
 }
 
