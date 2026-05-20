@@ -1285,6 +1285,11 @@ function generateReadAnswerContract(
   if (targetCountQuestion && !sentenceScopedAnswer) {
     return null;
   }
+  const targetPresenceQuestion =
+    extractSentenceScopedTargetPresenceQuestionParts(requestText);
+  if (targetPresenceQuestion && !sentenceScopedAnswer) {
+    return null;
+  }
   const targetStateQuestion =
     extractSentenceScopedTargetStateQuestionParts(requestText);
   if (targetStateQuestion && !sentenceScopedAnswer) {
@@ -1357,6 +1362,7 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
   if (normalizedLabel === "location") return true;
   if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
     normalizedLabel === "priority" ||
@@ -10013,9 +10019,45 @@ function extractSentenceScopedTargetCountQuestionParts(
   return null;
 }
 
+function extractSentenceScopedTargetPresenceQuestionParts(
+  question: string,
+): { label: string; target: string } | null {
+  const text = cleanLabel(question);
+  const targetVerbMatch =
+    /^(?:please\s+)?(?:tell me\s+)?(?:does|do|did)\s+(?:the\s+)?(.+?)\s+(?:have|contain|include|show|list|track|report)\s+(?:any\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (targetVerbMatch) {
+    const target = cleanSentenceScopedTargetCountTarget(
+      targetVerbMatch[1] ?? "",
+    );
+    const metric = cleanSentenceScopedTargetCountMetric(
+      targetVerbMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} presence`, target };
+  }
+
+  const thereAreMatch =
+    /^(?:please\s+)?(?:tell me\s+)?(?:is|are|was|were)\s+there\s+(?:any\s+)?(.+?)\s+(?:for|of|on|in)\s+(?:the\s+)?(.+?)(?:[?.!]|$)/i.exec(
+      text,
+    );
+  if (thereAreMatch) {
+    const metric = cleanSentenceScopedTargetCountMetric(
+      thereAreMatch[1] ?? "",
+    );
+    const target = cleanSentenceScopedTargetCountTarget(
+      thereAreMatch[2] ?? "",
+    );
+    if (metric && target) return { label: `${metric} presence`, target };
+  }
+
+  return null;
+}
+
 function cleanSentenceScopedTargetCountMetric(value: string): string | null {
   const metric = cleanLabel(value)
     .replace(/^(?:the\s+)?(?:current|total|overall)\s+/i, "")
+    .replace(/^(?:any)\s+/i, "")
     .replace(/\s+(?:count|number|quantity)$/i, "");
   const normalized = normalizeText(metric);
   const tokens = tokenizeCompletionText(normalized);
@@ -10228,6 +10270,22 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
+  const targetPresenceQuestion =
+    extractSentenceScopedTargetPresenceQuestionParts(question);
+  if (targetPresenceQuestion) {
+    const target = normalizeWorkflowTargetLabel(targetPresenceQuestion.target);
+    if (
+      target &&
+      findReadAnswerSentenceScopedAnswer(
+        evidenceText,
+        target,
+        targetPresenceQuestion.label,
+      )
+    ) {
+      return { label: targetPresenceQuestion.label, target };
+    }
+  }
+
   const targetStateQuestion =
     extractSentenceScopedTargetStateQuestionParts(question);
   if (targetStateQuestion) {
@@ -10258,6 +10316,7 @@ function findGroundedSentenceScopedAnswer(
     answerLabel !== "location" &&
     !sentenceScopedEventDatePatternForLabel(answerLabel) &&
     !sentenceScopedCountMetricPatternForLabel(answerLabel) &&
+    !sentenceScopedPresenceMetricPatternForLabel(answerLabel) &&
     !sentenceScopedTargetStatePatternForLabel(answerLabel) &&
     !sentenceScopedByRelationPatternForLabel(answerLabel) &&
     !sentenceScopedRelationNounPatternForLabel(answerLabel) &&
@@ -10874,6 +10933,16 @@ function extractSentenceScopedRelationAnswer(
     );
   }
 
+  const presenceMetricPattern =
+    sentenceScopedPresenceMetricPatternForLabel(normalizedLabel);
+  if (presenceMetricPattern) {
+    return extractSentenceScopedTargetPresenceAnswer(
+      sentence,
+      targetPattern,
+      presenceMetricPattern,
+    );
+  }
+
   const targetStatePattern =
     sentenceScopedTargetStatePatternForLabel(normalizedLabel);
   if (targetStatePattern) {
@@ -11251,6 +11320,17 @@ function sentenceScopedCountMetricPatternForLabel(label: string): string | null 
   return tokens.map(escapeRegExp).join("\\s+");
 }
 
+function sentenceScopedPresenceMetricPatternForLabel(
+  label: string,
+): string | null {
+  const normalizedLabel = normalizeText(label);
+  if (!normalizedLabel.endsWith(" presence")) return null;
+  const metric = normalizedLabel.replace(/\s+presence$/, "");
+  const tokens = tokenizeCompletionText(metric);
+  if (tokens.length < 2 || tokens.length > 6) return null;
+  return tokens.map(escapeRegExp).join("\\s+");
+}
+
 function extractSentenceScopedTargetCountAnswer(
   sentence: string,
   targetPattern: string,
@@ -11285,6 +11365,42 @@ function cleanSentenceScopedTargetCountAnswerText(value: string): string {
   ).test(answer)
     ? answer
     : "";
+}
+
+function extractSentenceScopedTargetPresenceAnswer(
+  sentence: string,
+  targetPattern: string,
+  metricPattern: string,
+): string | null {
+  const countPattern = sentenceScopedTargetCountAnswerPattern();
+  const noPatterns = [
+    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
+    `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+  ];
+  for (const pattern of noPatterns) {
+    if (new RegExp(pattern, "i").test(sentence)) return "no";
+  }
+
+  const countPatterns = [
+    `^\\s*${targetPattern}\\b\\s+(?:currently\\s+)?(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(${countPattern})\\s+${metricPattern}\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+)?(${countPattern})\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
+  ];
+  for (const pattern of countPatterns) {
+    const match = new RegExp(pattern, "i").exec(sentence);
+    const count = cleanSentenceScopedTargetCountAnswerText(match?.[1] ?? "");
+    if (count) return sentenceScopedTargetCountAnswerIsZero(count) ? "no" : "yes";
+  }
+
+  return null;
+}
+
+function sentenceScopedTargetCountAnswerIsZero(value: string): boolean {
+  const normalized = normalizeText(value).replace(/,/g, "");
+  if (normalized === "zero") return true;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) && numeric === 0;
 }
 
 function sentenceScopedTargetStatePatternForLabel(
