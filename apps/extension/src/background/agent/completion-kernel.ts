@@ -11385,8 +11385,10 @@ function extractSentenceScopedTargetPresenceAnswer(
   const countPattern = sentenceScopedTargetCountAnswerPattern();
   const adverbPattern = sentenceScopedTargetPresenceAdverbPattern();
   const noPatterns = [
+    `^\\s*${targetPattern}\\b\\s+no\\s+longer\\s+(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
     `^\\s*${targetPattern}\\b\\s+${adverbPattern}(?:has|have|had|contains?|includes?|shows?|lists?|tracks?|reports?)\\s+(?:no|zero)\\s+${metricPattern}\\s*$`,
     `^\\s*${targetPattern}\\b\\s+(?:does|do|did)\\s+${adverbPattern}not\\s+(?:have|contain|include|show|list|track|report)\\s+(?:any\\s+)?${metricPattern}\\s*$`,
+    `^\\s*(?:there\\s+(?:is|are|was|were)\\s+no\\s+longer\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern})(?:no|zero)\\s+${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
     `^\\s*(?:there\\s+(?:is|are|was|were)\\s+${adverbPattern}not\\s+)(?:any\\s+)?${metricPattern}\\s+(?:for|of|on|in)\\s+(?:the\\s+)?${targetPattern}\\b\\s*$`,
   ];
