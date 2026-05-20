@@ -25809,6 +25809,173 @@ describe("completion kernel", () => {
     expect(evidence).toEqual([]);
   });
 
+  for (const scenario of [
+    {
+      action: "deploy",
+      completion: "deployed",
+      label: "Deploy Release Alpha",
+      request: "Deploy Release Alpha.",
+      summary: "Deployed Release Alpha.",
+      target: "Release Alpha",
+      id: "release-alpha-deploy",
+      beforeState: "staged",
+      afterState: "deployed",
+    },
+    {
+      action: "rollback",
+      completion: "rolled back",
+      label: "Rollback Release Alpha",
+      request: "Rollback Release Alpha.",
+      summary: "Rolled back Release Alpha.",
+      target: "Release Alpha",
+      id: "release-alpha-rollback",
+      beforeState: "deployed",
+      afterState: "rolled-back",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic deployment data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            770,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            771,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 770 },
+        result: "Clicked element 770.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer deploy confirmation when semantic data-state was already deployed", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Release Alpha Deploy Release Alpha",
+      pageContent: "Release Alpha Deploy Release Alpha",
+      elements: [
+        dataStateActionButton(
+          772,
+          "Deploy Release Alpha",
+          "deployed",
+          "release-alpha-deploy",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Release Alpha Deploy Release Alpha",
+      pageContent: "Release Alpha Deploy Release Alpha",
+      elements: [
+        dataStateActionButton(
+          773,
+          "Deploy Release Alpha",
+          "deployed",
+          "release-alpha-deploy",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 772 },
+      result: "Clicked element 772.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer rollback confirmation when semantic data-state flips deployed", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Release Alpha Rollback Release Alpha",
+      pageContent: "Release Alpha Rollback Release Alpha",
+      elements: [
+        dataStateActionButton(
+          774,
+          "Rollback Release Alpha",
+          "rolled-back",
+          "release-alpha-rollback",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Release Alpha Rollback Release Alpha",
+      pageContent: "Release Alpha Rollback Release Alpha",
+      elements: [
+        dataStateActionButton(
+          775,
+          "Rollback Release Alpha",
+          "deployed",
+          "release-alpha-rollback",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 774 },
+      result: "Clicked element 774.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
   test("accepts star confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Issue Alpha Star Issue Alpha",
