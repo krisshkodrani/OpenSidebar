@@ -27869,6 +27869,92 @@ describe("completion kernel", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
+  test("accepts target-count answer with remaining phrasing", () => {
+    const snap = workflowSnapshot({
+      title: "Project Metrics",
+      url: "https://example.test/projects",
+      visibleContent:
+        "Project Atlas has 3 open incidents remaining. Project Borealis has 4 open incidents remaining.",
+      pageContent:
+        "Project Atlas has 3 open incidents remaining. Project Borealis has 4 open incidents remaining. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "How many open incidents remain for Project Atlas?",
+      snapshot: snap,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "3",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "4",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "open incidents count",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
+  test("accepts existential target-count answer with left read_page evidence", () => {
+    const snap = workflowSnapshot({
+      title: "Project Metrics",
+      url: "https://example.test/projects",
+      visibleContent:
+        "There are 3 open incidents left for Project Atlas. There are 4 open incidents left for Project Borealis.",
+      pageContent:
+        "There are 3 open incidents left for Project Atlas. There are 4 open incidents left for Project Borealis. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+    });
+    const generated = generateCompletionContract({
+      userRequest: "How many open incidents are left for Project Atlas?",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result:
+        "Page content:\nThere are 3 open incidents left for Project Atlas. There are 4 open incidents left for Project Borealis. The page explains project metrics, incident ownership, support process, release timing, budget review, customer communications, dependency status, and audit notes so readers can answer project metric questions from visible prose evidence.",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+    const accepted = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "3",
+    });
+    const siblingValue = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      candidateSource: "model_done",
+      summary: "4",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "read_answer",
+      expectedAnswerLabel: "open incidents count",
+      expectedAnswerTarget: "Project Atlas",
+      expectedAnswerScope: "sentence",
+    });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.evidence[0]?.logicalKey).toContain(
+      "read_answer:sentence-text:",
+    );
+    expect(siblingValue.status).toBe("inconclusive");
+  });
+
   test("does not accept a target-count sentence with the wrong requested metric", () => {
     const snap = workflowSnapshot({
       title: "Project Metrics",
