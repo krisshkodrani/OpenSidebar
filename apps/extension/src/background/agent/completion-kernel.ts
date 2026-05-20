@@ -7751,6 +7751,8 @@ type ControlStateWorkflowAction = Extract<
   | "move"
   | "rename"
   | "merge"
+  | "attach"
+  | "detach"
   | "install"
   | "uninstall"
   | "sync"
@@ -7819,6 +7821,7 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "move",
     "rename",
     "merge",
+    "attach",
     "install",
     "sync",
     "subscribe",
@@ -7877,6 +7880,7 @@ const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "unstar",
     "unpin",
     "unmute",
+    "detach",
   ]);
 
 function inferControlStateChangeAction(
@@ -7937,6 +7941,8 @@ function inferControlStateChangeAction(
   if (/\bmove(?:d|s|ing)?\b/i.test(text)) return "move";
   if (/\brename(?:d|s|ing)?\b/i.test(text)) return "rename";
   if (/\bmerge(?:d|s|ing)?\b/i.test(text)) return "merge";
+  if (/\bdetach(?:ed|es|ing|ment)?\b/i.test(text)) return "detach";
+  if (/\battach(?:ed|es|ing|ment)?\b/i.test(text)) return "attach";
   if (
     /\b(?:restore|restored|recover|recovered|reinstate|reinstated|unarchive|unarchived)\b/i.test(
       text,
@@ -8126,6 +8132,10 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "renamed";
     case "merge":
       return "merged";
+    case "attach":
+      return "attached";
+    case "detach":
+      return "detached";
     case "install":
       return "installed";
     case "uninstall":
@@ -9571,6 +9581,13 @@ function readControlState(
       state,
       /^merged$/i,
       /^(?:unmerged|not[-\s]?merged|separate|pending|open)$/i,
+    );
+  }
+  if (action === "attach" || action === "detach") {
+    return readSemanticControlState(
+      state,
+      /^attached$/i,
+      /^(?:detached|unattached|not[-\s]?attached|pending|none)$/i,
     );
   }
   if (action === "install" || action === "uninstall") {
