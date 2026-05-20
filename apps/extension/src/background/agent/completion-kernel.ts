@@ -7777,6 +7777,9 @@ type ControlStateWorkflowAction = Extract<
   | "rollback"
   | "backup"
   | "reset"
+  | "post"
+  | "submit"
+  | "complete"
 >;
 
 const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7821,6 +7824,9 @@ const CONTROL_STATE_ON_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
     "rollback",
     "backup",
     "reset",
+    "post",
+    "submit",
+    "complete",
   ]);
 
 const CONTROL_STATE_OFF_ACTIONS: ReadonlySet<ControlStateWorkflowAction> =
@@ -7970,6 +7976,11 @@ function inferControlStateChangeAction(
     return "backup";
   }
   if (/\breset(?:ting)?\b/i.test(text)) return "reset";
+  if (isCompleteWorkflowRequest(text)) return "complete";
+  if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  if (/\b(?:post|posted|posting|publish|published|publishing)\b/i.test(text)) {
+    return "post";
+  }
   if (/\bstart(?:ed|ing)?\b/i.test(text)) return "start";
   if (/\bstop(?:ped|ping)?\b/i.test(text)) return "stop";
   return null;
@@ -8119,6 +8130,12 @@ function controlStateCompletionWord(action: ControlStateWorkflowAction): string 
       return "backed up";
     case "reset":
       return "reset";
+    case "post":
+      return "published";
+    case "submit":
+      return "submitted";
+    case "complete":
+      return "completed";
   }
 }
 
@@ -9537,6 +9554,27 @@ function readControlState(
       state,
       /^(?:reset|default|cleared)$/i,
       /^(?:changed|modified|dirty|custom|active)$/i,
+    );
+  }
+  if (action === "post") {
+    return readSemanticControlState(
+      state,
+      /^(?:posted|published)$/i,
+      /^(?:draft|unposted|unpublished|pending)$/i,
+    );
+  }
+  if (action === "submit") {
+    return readSemanticControlState(
+      state,
+      /^submitted$/i,
+      /^(?:draft|unsubmitted|not[-\s]?submitted|pending)$/i,
+    );
+  }
+  if (action === "complete") {
+    return readSemanticControlState(
+      state,
+      /^(?:complete|completed|done)$/i,
+      /^(?:in[-\s]?progress|incomplete|open|pending|todo|to[-\s]?do|not[-\s]?complete|not[-\s]?completed)$/i,
     );
   }
   if (action === "sync") {
