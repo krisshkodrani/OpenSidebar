@@ -21,15 +21,15 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel predicate-variant owner-role read-answer", () => {
-  test("accepts listed-as predicate-noun sentence-scoped owner answer for the requested target", () => {
+describe("completion kernel display predicate-variant owner-role read-answer", () => {
+  test("accepts identified-as predicate-noun sentence-scoped owner answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
       url: "https://example.test/tickets",
       visibleContent:
-        "Maya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta.",
+        "Maya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta.",
       pageContent:
-        "Maya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Maya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
       userRequest: "Who is the owner of Ticket Alpha?",
@@ -60,14 +60,14 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("does not use listed-as owner sentence-scoped acceptance from flattened page text", () => {
+  test("does not use identified-as owner sentence-scoped acceptance from flattened page text", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
       url: "https://example.test/tickets",
       visibleContent:
-        "Ticket Queue Maya Chen is listed as the owner of Ticket Alpha Ravi Shah is listed as the owner of Ticket Beta",
+        "Ticket Queue Maya Chen is identified as the owner of Ticket Alpha Ravi Shah is identified as the owner of Ticket Beta",
       pageContent:
-        "Ticket Queue Maya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Ticket Queue Maya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
       elements: [],
     });
     const generated = generateCompletionContract({
@@ -90,14 +90,14 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
-  test("accepts listed-as predicate-noun owner answer from read_page evidence without live snapshot", () => {
+  test("accepts identified-as predicate-noun owner answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
       url: "https://example.test/tickets",
       visibleContent:
-        "Maya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta.",
+        "Maya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta.",
       pageContent:
-        "Maya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Maya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
       userRequest: "Who is the owner of Ticket Alpha?",
@@ -107,7 +107,7 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nMaya Chen is listed as the owner of Ticket Alpha. Ravi Shah is listed as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Page content:\nMaya Chen is identified as the owner of Ticket Alpha. Ravi Shah is identified as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -138,14 +138,14 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts designated-as predicate-noun sentence-scoped owner answer for the requested target", () => {
+  test("accepts shown-as predicate-noun sentence-scoped owner answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
       url: "https://example.test/tickets",
       visibleContent:
-        "Maya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta.",
+        "Maya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta.",
       pageContent:
-        "Maya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Maya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
       userRequest: "Who is the owner of Ticket Alpha?",
@@ -176,14 +176,14 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("does not use designated-as owner sentence-scoped acceptance from flattened page text", () => {
+  test("does not use shown-as owner sentence-scoped acceptance from flattened page text", () => {
     const snap = workflowSnapshot({
       title: "Ticket Queue",
       url: "https://example.test/tickets",
       visibleContent:
-        "Ticket Queue Maya Chen is designated as the owner of Ticket Alpha Ravi Shah is designated as the owner of Ticket Beta",
+        "Ticket Queue Maya Chen is shown as the owner of Ticket Alpha Ravi Shah is shown as the owner of Ticket Beta",
       pageContent:
-        "Ticket Queue Maya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Ticket Queue Maya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
       elements: [],
     });
     const generated = generateCompletionContract({
@@ -206,14 +206,14 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     expect(decision.status).not.toBe("accepted");
   });
 
-  test("accepts designated-as predicate-noun owner answer from read_page evidence without live snapshot", () => {
+  test("accepts shown-as predicate-noun owner answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Ticket Details",
       url: "https://example.test/tickets",
       visibleContent:
-        "Maya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta.",
+        "Maya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta.",
       pageContent:
-        "Maya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Maya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
       userRequest: "Who is the owner of Ticket Alpha?",
@@ -223,7 +223,7 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nMaya Chen is designated as the owner of Ticket Alpha. Ravi Shah is designated as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
+        "Page content:\nMaya Chen is shown as the owner of Ticket Alpha. Ravi Shah is shown as the owner of Ticket Beta. The page explains ticket ownership, ticket assignment, customer impact, support routing, escalation notes, audit timing, queue priority, and follow-up responsibilities so operators can answer ticket questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -253,5 +253,4 @@ describe("completion kernel predicate-variant owner-role read-answer", () => {
     );
     expect(siblingValue.status).toBe("inconclusive");
   });
-
 });
