@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel rename target-disappearance object-change workflow confirmation", () => {
-  test("accepts rename confirmation from named page disappearance", () => {
+describe("completion kernel merge target-disappearance object-change workflow confirmation", () => {
+  test("accepts merge confirmation from named ticket disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+        "Pending merges Ticket Alpha Merge Ticket Alpha Ticket Beta Merge Ticket Beta",
       pageContent:
-        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+        "Pending merges Ticket Alpha Merge Ticket Alpha Ticket Beta Merge Ticket Beta",
       elements: [
-        actionButton(527, "Rename Page Alpha"),
-        actionButton(528, "Rename Page Beta"),
+        actionButton(529, "Merge Ticket Alpha"),
+        actionButton(530, "Merge Ticket Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending renames Page Beta Rename Page Beta",
-      pageContent: "Pending renames Page Beta Rename Page Beta",
-      elements: [actionButton(528, "Rename Page Beta")],
+      visibleContent: "Pending merges Ticket Beta Merge Ticket Beta",
+      pageContent: "Pending merges Ticket Beta Merge Ticket Beta",
+      elements: [actionButton(530, "Merge Ticket Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Rename Page Alpha.",
+      userRequest: "Merge Ticket Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel rename target-disappearance object-change workflow c
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Renamed Page Alpha.",
+      summary: "Merged Ticket Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "rename",
-      targetLabel: "Page Alpha",
+      action: "merge",
+      targetLabel: "Ticket Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:rename:page-alpha",
+        logicalKey: "workflow:confirmation:merge:ticket-alpha",
         detail: expect.objectContaining({
-          action: "rename",
+          action: "merge",
           source: "target_disappearance",
-          text: "Renamed target no longer visible: Page Alpha",
+          text: "Merged target no longer visible: Ticket Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects rename target-disappearance evidence for the wrong requested page", () => {
+  test("rejects merge target-disappearance evidence for the wrong requested ticket", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+        "Pending merges Ticket Alpha Merge Ticket Alpha Ticket Beta Merge Ticket Beta",
       pageContent:
-        "Pending renames Page Alpha Rename Page Alpha Page Beta Rename Page Beta",
+        "Pending merges Ticket Alpha Merge Ticket Alpha Ticket Beta Merge Ticket Beta",
       elements: [
-        actionButton(527, "Rename Page Alpha"),
-        actionButton(528, "Rename Page Beta"),
+        actionButton(529, "Merge Ticket Alpha"),
+        actionButton(530, "Merge Ticket Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
-      pageContent: "Pending renames Page Alpha Rename Page Alpha",
-      elements: [actionButton(527, "Rename Page Alpha")],
+      visibleContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      pageContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      elements: [actionButton(529, "Merge Ticket Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Rename Page Alpha.",
+      userRequest: "Merge Ticket Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 528 },
-      result: "Clicked element 528.",
+      args: { id: 530 },
+      result: "Clicked element 530.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel rename target-disappearance object-change workflow c
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Renamed Page Alpha.",
+      summary: "Merged Ticket Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "rename",
-      targetLabel: "Page Alpha",
+      action: "merge",
+      targetLabel: "Ticket Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:rename:page-beta",
+        logicalKey: "workflow:confirmation:merge:ticket-beta",
         detail: expect.objectContaining({
-          action: "rename",
+          action: "merge",
           source: "target_disappearance",
-          text: "Renamed target no longer visible: Page Beta",
+          text: "Merged target no longer visible: Ticket Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel rename target-disappearance object-change workflow c
     });
   });
 
-  test("does not infer rename confirmation while the named page remains visible", () => {
+  test("does not infer merge confirmation while the named ticket remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
-      pageContent: "Pending renames Page Alpha Rename Page Alpha",
-      elements: [actionButton(527, "Rename Page Alpha")],
+      visibleContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      pageContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      elements: [actionButton(529, "Merge Ticket Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending renames Page Alpha Rename Page Alpha",
-      pageContent: "Pending renames Page Alpha Rename Page Alpha",
-      elements: [actionButton(527, "Rename Page Alpha")],
+      visibleContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      pageContent: "Pending merges Ticket Alpha Merge Ticket Alpha",
+      elements: [actionButton(529, "Merge Ticket Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel rename target-disappearance object-change workflow c
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer rename confirmation from a generic rename button", () => {
-    const genericRenameButton: TaggedElement = {
-      tag: 527,
+  test("does not infer merge confirmation from a generic merge button", () => {
+    const genericMergeButton: TaggedElement = {
+      tag: 529,
       tagName: "button",
       role: "button",
-      text: "Rename",
+      text: "Merge",
       attributes: {
-        id: "rename",
-        "aria-label": "Rename",
+        id: "merge",
+        "aria-label": "Merge",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Pending renames Page Alpha Rename",
-      pageContent: "Pending renames Page Alpha Rename",
-      elements: [genericRenameButton],
+      visibleContent: "Pending merges Ticket Alpha Merge",
+      pageContent: "Pending merges Ticket Alpha Merge",
+      elements: [genericMergeButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending renames",
-      pageContent: "Pending renames",
+      visibleContent: "Pending merges",
+      pageContent: "Pending merges",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel rename target-disappearance object-change workflow c
 
     expect(evidence).toEqual([]);
   });
-
 });
