@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel pause target-disappearance job-control workflow confirmation", () => {
-  test("accepts pause confirmation from named running target disappearance", () => {
+describe("completion kernel resume target-disappearance job-control workflow confirmation", () => {
+  test("accepts resume confirmation from named paused target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+        "Paused jobs Job Alpha Resume Job Alpha Job Beta Resume Job Beta",
       pageContent:
-        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+        "Paused jobs Job Alpha Resume Job Alpha Job Beta Resume Job Beta",
       elements: [
-        actionButton(555, "Pause Job Alpha"),
-        actionButton(556, "Pause Job Beta"),
+        actionButton(557, "Resume Job Alpha"),
+        actionButton(558, "Resume Job Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Running jobs Job Beta Pause Job Beta",
-      pageContent: "Running jobs Job Beta Pause Job Beta",
-      elements: [actionButton(556, "Pause Job Beta")],
+      visibleContent: "Paused jobs Job Beta Resume Job Beta",
+      pageContent: "Paused jobs Job Beta Resume Job Beta",
+      elements: [actionButton(558, "Resume Job Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Pause Job Alpha.",
+      userRequest: "Resume Job Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 555 },
-      result: "Clicked element 555.",
+      args: { id: 557 },
+      result: "Clicked element 557.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel pause target-disappearance job-control workflow conf
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Paused Job Alpha.",
+      summary: "Resumed Job Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pause",
+      action: "resume",
       targetLabel: "Job Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:pause:job-alpha",
+        logicalKey: "workflow:confirmation:resume:job-alpha",
         detail: expect.objectContaining({
-          action: "pause",
+          action: "resume",
           source: "target_disappearance",
-          text: "Paused target no longer visible: Job Alpha",
+          text: "Resumed target no longer visible: Job Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects pause target-disappearance evidence for the wrong requested target", () => {
+  test("rejects resume target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+        "Paused jobs Job Alpha Resume Job Alpha Job Beta Resume Job Beta",
       pageContent:
-        "Running jobs Job Alpha Pause Job Alpha Job Beta Pause Job Beta",
+        "Paused jobs Job Alpha Resume Job Alpha Job Beta Resume Job Beta",
       elements: [
-        actionButton(555, "Pause Job Alpha"),
-        actionButton(556, "Pause Job Beta"),
+        actionButton(557, "Resume Job Alpha"),
+        actionButton(558, "Resume Job Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
-      pageContent: "Running jobs Job Alpha Pause Job Alpha",
-      elements: [actionButton(555, "Pause Job Alpha")],
+      visibleContent: "Paused jobs Job Alpha Resume Job Alpha",
+      pageContent: "Paused jobs Job Alpha Resume Job Alpha",
+      elements: [actionButton(557, "Resume Job Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Pause Job Alpha.",
+      userRequest: "Resume Job Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 556 },
-      result: "Clicked element 556.",
+      args: { id: 558 },
+      result: "Clicked element 558.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel pause target-disappearance job-control workflow conf
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Paused Job Alpha.",
+      summary: "Resumed Job Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pause",
+      action: "resume",
       targetLabel: "Job Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:pause:job-beta",
+        logicalKey: "workflow:confirmation:resume:job-beta",
         detail: expect.objectContaining({
-          action: "pause",
+          action: "resume",
           source: "target_disappearance",
-          text: "Paused target no longer visible: Job Beta",
+          text: "Resumed target no longer visible: Job Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel pause target-disappearance job-control workflow conf
     });
   });
 
-  test("does not infer pause confirmation while the named target remains visible", () => {
+  test("does not infer resume confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
-      pageContent: "Running jobs Job Alpha Pause Job Alpha",
-      elements: [actionButton(555, "Pause Job Alpha")],
+      visibleContent: "Paused jobs Job Alpha Resume Job Alpha",
+      pageContent: "Paused jobs Job Alpha Resume Job Alpha",
+      elements: [actionButton(557, "Resume Job Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Running jobs Job Alpha Pause Job Alpha",
-      pageContent: "Running jobs Job Alpha Pause Job Alpha",
-      elements: [actionButton(555, "Pause Job Alpha")],
+      visibleContent: "Paused jobs Job Alpha Resume Job Alpha",
+      pageContent: "Paused jobs Job Alpha Resume Job Alpha",
+      elements: [actionButton(557, "Resume Job Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 555 },
-      result: "Clicked element 555.",
+      args: { id: 557 },
+      result: "Clicked element 557.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel pause target-disappearance job-control workflow conf
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer pause confirmation from a generic pause button", () => {
-    const genericPauseButton: TaggedElement = {
-      tag: 555,
+  test("does not infer resume confirmation from a generic resume button", () => {
+    const genericResumeButton: TaggedElement = {
+      tag: 557,
       tagName: "button",
       role: "button",
-      text: "Pause",
+      text: "Resume",
       attributes: {
-        id: "pause",
-        "aria-label": "Pause",
+        id: "resume",
+        "aria-label": "Resume",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Running jobs Job Alpha Pause",
-      pageContent: "Running jobs Job Alpha Pause",
-      elements: [genericPauseButton],
+      visibleContent: "Paused jobs Job Alpha Resume",
+      pageContent: "Paused jobs Job Alpha Resume",
+      elements: [genericResumeButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Running jobs",
-      pageContent: "Running jobs",
+      visibleContent: "Paused jobs",
+      pageContent: "Paused jobs",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 555 },
-      result: "Clicked element 555.",
+      args: { id: 557 },
+      result: "Clicked element 557.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel pause target-disappearance job-control workflow conf
 
     expect(evidence).toEqual([]);
   });
-
 });
