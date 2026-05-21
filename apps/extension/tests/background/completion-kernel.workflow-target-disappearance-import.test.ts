@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel upload file-transfer workflow confirmation", () => {
-  test("accepts upload confirmation from named file disappearance", () => {
+describe("completion kernel import file-transfer workflow confirmation", () => {
+  test("accepts import confirmation from named file disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+        "Pending imports File Alpha Import File Alpha File Beta Import File Beta",
       pageContent:
-        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+        "Pending imports File Alpha Import File Alpha File Beta Import File Beta",
       elements: [
-        actionButton(557, "Upload File Alpha"),
-        actionButton(558, "Upload File Beta"),
+        actionButton(559, "Import File Alpha"),
+        actionButton(560, "Import File Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending uploads File Beta Upload File Beta",
-      pageContent: "Pending uploads File Beta Upload File Beta",
-      elements: [actionButton(558, "Upload File Beta")],
+      visibleContent: "Pending imports File Beta Import File Beta",
+      pageContent: "Pending imports File Beta Import File Beta",
+      elements: [actionButton(560, "Import File Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Upload File Alpha.",
+      userRequest: "Import File Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 557 },
-      result: "Clicked element 557.",
+      args: { id: 559 },
+      result: "Clicked element 559.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel upload file-transfer workflow confirmation", () => {
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Uploaded File Alpha.",
+      summary: "Imported File Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "upload",
+      action: "import",
       targetLabel: "File Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:upload:file-alpha",
+        logicalKey: "workflow:confirmation:import:file-alpha",
         detail: expect.objectContaining({
-          action: "upload",
+          action: "import",
           source: "target_disappearance",
-          text: "Uploaded target no longer visible: File Alpha",
+          text: "Imported target no longer visible: File Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects upload target-disappearance evidence for the wrong requested file", () => {
+  test("rejects import target-disappearance evidence for the wrong requested file", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+        "Pending imports File Alpha Import File Alpha File Beta Import File Beta",
       pageContent:
-        "Pending uploads File Alpha Upload File Alpha File Beta Upload File Beta",
+        "Pending imports File Alpha Import File Alpha File Beta Import File Beta",
       elements: [
-        actionButton(557, "Upload File Alpha"),
-        actionButton(558, "Upload File Beta"),
+        actionButton(559, "Import File Alpha"),
+        actionButton(560, "Import File Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending uploads File Alpha Upload File Alpha",
-      pageContent: "Pending uploads File Alpha Upload File Alpha",
-      elements: [actionButton(557, "Upload File Alpha")],
+      visibleContent: "Pending imports File Alpha Import File Alpha",
+      pageContent: "Pending imports File Alpha Import File Alpha",
+      elements: [actionButton(559, "Import File Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Upload File Alpha.",
+      userRequest: "Import File Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 558 },
-      result: "Clicked element 558.",
+      args: { id: 560 },
+      result: "Clicked element 560.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel upload file-transfer workflow confirmation", () => {
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Uploaded File Alpha.",
+      summary: "Imported File Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "upload",
+      action: "import",
       targetLabel: "File Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:upload:file-beta",
+        logicalKey: "workflow:confirmation:import:file-beta",
         detail: expect.objectContaining({
-          action: "upload",
+          action: "import",
           source: "target_disappearance",
-          text: "Uploaded target no longer visible: File Beta",
+          text: "Imported target no longer visible: File Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel upload file-transfer workflow confirmation", () => {
     });
   });
 
-  test("does not infer upload confirmation while the named file remains visible", () => {
+  test("does not infer import confirmation while the named file remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Pending uploads File Alpha Upload File Alpha",
-      pageContent: "Pending uploads File Alpha Upload File Alpha",
-      elements: [actionButton(557, "Upload File Alpha")],
+      visibleContent: "Pending imports File Alpha Import File Alpha",
+      pageContent: "Pending imports File Alpha Import File Alpha",
+      elements: [actionButton(559, "Import File Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending uploads File Alpha Upload File Alpha",
-      pageContent: "Pending uploads File Alpha Upload File Alpha",
-      elements: [actionButton(557, "Upload File Alpha")],
+      visibleContent: "Pending imports File Alpha Import File Alpha",
+      pageContent: "Pending imports File Alpha Import File Alpha",
+      elements: [actionButton(559, "Import File Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 557 },
-      result: "Clicked element 557.",
+      args: { id: 559 },
+      result: "Clicked element 559.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel upload file-transfer workflow confirmation", () => {
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer upload confirmation from a generic upload file control", () => {
-    const genericUploadFileButton: TaggedElement = {
-      tag: 557,
+  test("does not infer import confirmation from a generic import file control", () => {
+    const genericImportFileButton: TaggedElement = {
+      tag: 559,
       tagName: "button",
       role: "button",
-      text: "Upload file",
+      text: "Import file",
       attributes: {
-        id: "upload-file",
-        "aria-label": "Upload file",
+        id: "import-file",
+        "aria-label": "Import file",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Pending uploads File Alpha Upload file",
-      pageContent: "Pending uploads File Alpha Upload file",
-      elements: [genericUploadFileButton],
+      visibleContent: "Pending imports File Alpha Import file",
+      pageContent: "Pending imports File Alpha Import file",
+      elements: [genericImportFileButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending uploads",
-      pageContent: "Pending uploads",
+      visibleContent: "Pending imports",
+      pageContent: "Pending imports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 557 },
-      result: "Clicked element 557.",
+      args: { id: 559 },
+      result: "Clicked element 559.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel upload file-transfer workflow confirmation", () => {
 
     expect(evidence).toEqual([]);
   });
-
 });
