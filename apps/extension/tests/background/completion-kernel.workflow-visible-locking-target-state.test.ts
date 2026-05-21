@@ -20,16 +20,16 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel target-aware visible enable/disable workflow confirmation", () => {
-  test("accepts target-aware visible enable confirmation for the requested target", () => {
+describe("completion kernel target-aware visible lock/unlock workflow confirmation", () => {
+  test("accepts target-aware visible lock confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Feature Beta remains disabled. Feature Alpha enabled successfully.",
+        "Account Beta remains unlocked. Account Alpha locked successfully.",
       pageContent:
-        "Feature Beta remains disabled. Feature Alpha enabled successfully.",
+        "Account Beta remains unlocked. Account Alpha locked successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Enable Feature Alpha.",
+      userRequest: "Lock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -39,23 +39,23 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Enabled Feature Alpha.",
+      summary: "Locked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "enable",
-      targetLabel: "Feature Alpha",
+      action: "lock",
+      targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:enable",
+          logicalKey: "workflow:confirmation:lock",
           detail: expect.objectContaining({
-            action: "enable",
+            action: "lock",
             source: "visible_text",
-            text: "Feature Alpha enabled successfully.",
+            text: "Account Alpha locked successfully.",
           }),
         }),
       ]),
@@ -63,15 +63,15 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects target-aware visible enable confirmation for a different target", () => {
+  test("rejects target-aware visible lock confirmation for a different target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Feature Alpha remains disabled. Feature Beta enabled successfully.",
+        "Account Alpha remains unlocked. Account Beta locked successfully.",
       pageContent:
-        "Feature Alpha remains disabled. Feature Beta enabled successfully.",
+        "Account Alpha remains unlocked. Account Beta locked successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Enable Feature Alpha.",
+      userRequest: "Lock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -81,23 +81,23 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Enabled Feature Alpha.",
+      summary: "Locked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "enable",
-      targetLabel: "Feature Alpha",
+      action: "lock",
+      targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:enable",
+          logicalKey: "workflow:confirmation:lock",
           detail: expect.objectContaining({
-            action: "enable",
+            action: "lock",
             source: "visible_text",
-            text: "Feature Beta enabled successfully.",
+            text: "Account Beta locked successfully.",
           }),
         }),
       ]),
@@ -109,13 +109,13 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     });
   });
 
-  test("rejects targetless visible enable completion for a named target", () => {
+  test("rejects targetless visible lock completion for a named target", () => {
     const snap = workflowSnapshot({
-      visibleContent: "Enable completed.",
-      pageContent: "Enable completed.",
+      visibleContent: "Lock completed.",
+      pageContent: "Lock completed.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Enable Feature Alpha.",
+      userRequest: "Lock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -125,13 +125,13 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Enable completed.",
+      summary: "Lock completed.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "enable",
-      targetLabel: "Feature Alpha",
+      action: "lock",
+      targetLabel: "Account Alpha",
     });
     expect(decision).toMatchObject({
       status: "rejected",
@@ -140,15 +140,15 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     });
   });
 
-  test("accepts target-aware visible disable confirmation for the requested target", () => {
+  test("accepts target-aware visible unlock confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Feature Beta remains enabled. Feature Alpha disabled successfully.",
+        "Account Beta remains locked. Account Alpha unlocked successfully.",
       pageContent:
-        "Feature Beta remains enabled. Feature Alpha disabled successfully.",
+        "Account Beta remains locked. Account Alpha unlocked successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Disable Feature Alpha.",
+      userRequest: "Unlock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -158,23 +158,23 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Disabled Feature Alpha.",
+      summary: "Unlocked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "disable",
-      targetLabel: "Feature Alpha",
+      action: "unlock",
+      targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:disable",
+          logicalKey: "workflow:confirmation:unlock",
           detail: expect.objectContaining({
-            action: "disable",
+            action: "unlock",
             source: "visible_text",
-            text: "Feature Alpha disabled successfully.",
+            text: "Account Alpha unlocked successfully.",
           }),
         }),
       ]),
@@ -182,15 +182,15 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects target-aware visible disable confirmation for a different target", () => {
+  test("rejects target-aware visible unlock confirmation for a different target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Feature Alpha remains enabled. Feature Beta disabled successfully.",
+        "Account Alpha remains locked. Account Beta unlocked successfully.",
       pageContent:
-        "Feature Alpha remains enabled. Feature Beta disabled successfully.",
+        "Account Alpha remains locked. Account Beta unlocked successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Disable Feature Alpha.",
+      userRequest: "Unlock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -200,23 +200,23 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Disabled Feature Alpha.",
+      summary: "Unlocked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "disable",
-      targetLabel: "Feature Alpha",
+      action: "unlock",
+      targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:disable",
+          logicalKey: "workflow:confirmation:unlock",
           detail: expect.objectContaining({
-            action: "disable",
+            action: "unlock",
             source: "visible_text",
-            text: "Feature Beta disabled successfully.",
+            text: "Account Beta unlocked successfully.",
           }),
         }),
       ]),
@@ -228,13 +228,13 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
     });
   });
 
-  test("rejects targetless visible disable completion for a named target", () => {
+  test("rejects targetless visible unlock completion for a named target", () => {
     const snap = workflowSnapshot({
-      visibleContent: "Disable completed.",
-      pageContent: "Disable completed.",
+      visibleContent: "Unlock completed.",
+      pageContent: "Unlock completed.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Disable Feature Alpha.",
+      userRequest: "Unlock Account Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -244,13 +244,13 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Disable completed.",
+      summary: "Unlock completed.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "disable",
-      targetLabel: "Feature Alpha",
+      action: "unlock",
+      targetLabel: "Account Alpha",
     });
     expect(decision).toMatchObject({
       status: "rejected",
@@ -258,5 +258,4 @@ describe("completion kernel target-aware visible enable/disable workflow confirm
         "Workflow confirmation evidence is for a different target than the requested action.",
     });
   });
-
 });
