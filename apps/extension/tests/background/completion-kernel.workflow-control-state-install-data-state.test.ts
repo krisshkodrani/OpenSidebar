@@ -72,40 +72,40 @@ function dataStateActionButton(
   };
 }
 
-describe("completion kernel workflow control-state connect data-state confirmation", () => {
-  test("accepts connect confirmation from data-state control state change", () => {
+describe("completion kernel workflow control-state install data-state confirmation", () => {
+  test("accepts install confirmation from data-state control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Integration Alpha Connect Integration Alpha",
-      pageContent: "Integration Alpha Connect Integration Alpha",
+      visibleContent: "Package Alpha Install Package Alpha",
+      pageContent: "Package Alpha Install Package Alpha",
       elements: [
         dataStateActionButton(
-          650,
-          "Connect Integration Alpha",
-          "disconnected",
-          "integration-alpha-connect",
+          654,
+          "Install Package Alpha",
+          "uninstalled",
+          "package-alpha-install",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Integration Alpha Connect Integration Alpha",
-      pageContent: "Integration Alpha Connect Integration Alpha",
+      visibleContent: "Package Alpha Install Package Alpha",
+      pageContent: "Package Alpha Install Package Alpha",
       elements: [
         dataStateActionButton(
-          651,
-          "Connect Integration Alpha",
-          "connected",
-          "integration-alpha-connect",
+          655,
+          "Install Package Alpha",
+          "installed",
+          "package-alpha-install",
         ),
       ],
     });
     const generated = generateCompletionContract({
-      userRequest: "Connect Integration Alpha.",
+      userRequest: "Install Package Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 650 },
-      result: "Clicked element 650.",
+      args: { id: 654 },
+      result: "Clicked element 654.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -115,64 +115,64 @@ describe("completion kernel workflow control-state connect data-state confirmati
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Connected Integration Alpha.",
+      summary: "Installed Package Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "connect",
-      targetLabel: "Integration Alpha",
+      action: "install",
+      targetLabel: "Package Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
         logicalKey:
-          "workflow:confirmation:connect:control-state:integration-alpha-connect",
+          "workflow:confirmation:install:control-state:package-alpha-install",
         detail: expect.objectContaining({
-          action: "connect",
+          action: "install",
           source: "control_state_change",
-          targetText: "Integration Alpha",
-          text: "Control state changed to connected: Connect Integration Alpha",
+          targetText: "Package Alpha",
+          text: "Control state changed to installed: Install Package Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("accepts disconnect confirmation from data-state control state change", () => {
+  test("accepts uninstall confirmation from data-state control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Integration Alpha Disconnect Integration Alpha",
-      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      visibleContent: "Package Alpha Uninstall Package Alpha",
+      pageContent: "Package Alpha Uninstall Package Alpha",
       elements: [
         dataStateActionButton(
-          652,
-          "Disconnect Integration Alpha",
-          "connected",
-          "integration-alpha-connect",
+          656,
+          "Uninstall Package Alpha",
+          "installed",
+          "package-alpha-install",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Integration Alpha Disconnect Integration Alpha",
-      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      visibleContent: "Package Alpha Uninstall Package Alpha",
+      pageContent: "Package Alpha Uninstall Package Alpha",
       elements: [
         dataStateActionButton(
-          653,
-          "Disconnect Integration Alpha",
-          "disconnected",
-          "integration-alpha-connect",
+          657,
+          "Uninstall Package Alpha",
+          "uninstalled",
+          "package-alpha-install",
         ),
       ],
     });
     const generated = generateCompletionContract({
-      userRequest: "Disconnect Integration Alpha.",
+      userRequest: "Uninstall Package Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 652 },
-      result: "Clicked element 652.",
+      args: { id: 656 },
+      result: "Clicked element 656.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -182,61 +182,61 @@ describe("completion kernel workflow control-state connect data-state confirmati
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Disconnected Integration Alpha.",
+      summary: "Uninstalled Package Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "disconnect",
-      targetLabel: "Integration Alpha",
+      action: "uninstall",
+      targetLabel: "Package Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
         logicalKey:
-          "workflow:confirmation:disconnect:control-state:integration-alpha-connect",
+          "workflow:confirmation:uninstall:control-state:package-alpha-install",
         detail: expect.objectContaining({
-          action: "disconnect",
+          action: "uninstall",
           source: "control_state_change",
-          targetText: "Integration Alpha",
-          text: "Control state changed to disconnected: Disconnect Integration Alpha",
+          targetText: "Package Alpha",
+          text: "Control state changed to uninstalled: Uninstall Package Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("does not infer connect confirmation when data-state was already connected", () => {
+  test("does not infer install confirmation when data-state was already installed", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Integration Alpha Connect Integration Alpha",
-      pageContent: "Integration Alpha Connect Integration Alpha",
+      visibleContent: "Package Alpha Install Package Alpha",
+      pageContent: "Package Alpha Install Package Alpha",
       elements: [
         dataStateActionButton(
-          650,
-          "Connect Integration Alpha",
-          "connected",
-          "integration-alpha-connect",
+          654,
+          "Install Package Alpha",
+          "installed",
+          "package-alpha-install",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Integration Alpha Connect Integration Alpha",
-      pageContent: "Integration Alpha Connect Integration Alpha",
+      visibleContent: "Package Alpha Install Package Alpha",
+      pageContent: "Package Alpha Install Package Alpha",
       elements: [
         dataStateActionButton(
-          651,
-          "Connect Integration Alpha",
-          "connected",
-          "integration-alpha-connect",
+          655,
+          "Install Package Alpha",
+          "installed",
+          "package-alpha-install",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 650 },
-      result: "Clicked element 650.",
+      args: { id: 654 },
+      result: "Clicked element 654.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -245,36 +245,36 @@ describe("completion kernel workflow control-state connect data-state confirmati
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer disconnect confirmation when data-state flips on", () => {
+  test("does not infer uninstall confirmation when data-state flips on", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Integration Alpha Disconnect Integration Alpha",
-      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      visibleContent: "Package Alpha Uninstall Package Alpha",
+      pageContent: "Package Alpha Uninstall Package Alpha",
       elements: [
         dataStateActionButton(
-          652,
-          "Disconnect Integration Alpha",
-          "disconnected",
-          "integration-alpha-connect",
+          656,
+          "Uninstall Package Alpha",
+          "uninstalled",
+          "package-alpha-install",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Integration Alpha Disconnect Integration Alpha",
-      pageContent: "Integration Alpha Disconnect Integration Alpha",
+      visibleContent: "Package Alpha Uninstall Package Alpha",
+      pageContent: "Package Alpha Uninstall Package Alpha",
       elements: [
         dataStateActionButton(
-          653,
-          "Disconnect Integration Alpha",
-          "connected",
-          "integration-alpha-connect",
+          657,
+          "Uninstall Package Alpha",
+          "installed",
+          "package-alpha-install",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 652 },
-      result: "Clicked element 652.",
+      args: { id: 656 },
+      result: "Clicked element 656.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -282,5 +282,4 @@ describe("completion kernel workflow control-state connect data-state confirmati
 
     expect(evidence).toEqual([]);
   });
-
 });
