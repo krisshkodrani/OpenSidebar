@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance bookmark workflow confirmation", () => {
-  test("accepts bookmark confirmation from named unbookmarked target disappearance", () => {
+describe("completion kernel target-disappearance unbookmark workflow confirmation", () => {
+  test("accepts unbookmark confirmation from named bookmarked target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unbookmarked pages Page Alpha Bookmark Page Alpha Page Beta Bookmark Page Beta",
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
       pageContent:
-        "Unbookmarked pages Page Alpha Bookmark Page Alpha Page Beta Bookmark Page Beta",
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
       elements: [
-        actionButton(539, "Bookmark Page Alpha"),
-        actionButton(540, "Bookmark Page Beta"),
+        actionButton(535, "Unbookmark Page Alpha"),
+        actionButton(536, "Unbookmark Page Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unbookmarked pages Page Beta Bookmark Page Beta",
-      pageContent: "Unbookmarked pages Page Beta Bookmark Page Beta",
-      elements: [actionButton(540, "Bookmark Page Beta")],
+      visibleContent: "Bookmarked pages Page Beta Unbookmark Page Beta",
+      pageContent: "Bookmarked pages Page Beta Unbookmark Page Beta",
+      elements: [actionButton(536, "Unbookmark Page Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Bookmark Page Alpha.",
+      userRequest: "Unbookmark Page Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 539 },
-      result: "Clicked element 539.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel target-disappearance bookmark workflow confirmation"
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Bookmarked Page Alpha.",
+      summary: "Unbookmarked Page Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "bookmark",
+      action: "unbookmark",
       targetLabel: "Page Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:bookmark:page-alpha",
+        logicalKey: "workflow:confirmation:unbookmark:page-alpha",
         detail: expect.objectContaining({
-          action: "bookmark",
+          action: "unbookmark",
           source: "target_disappearance",
-          text: "Bookmarked target no longer visible: Page Alpha",
+          text: "Unbookmarked target no longer visible: Page Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects bookmark target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unbookmark target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unbookmarked pages Page Alpha Bookmark Page Alpha Page Beta Bookmark Page Beta",
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
       pageContent:
-        "Unbookmarked pages Page Alpha Bookmark Page Alpha Page Beta Bookmark Page Beta",
+        "Bookmarked pages Page Alpha Unbookmark Page Alpha Page Beta Unbookmark Page Beta",
       elements: [
-        actionButton(539, "Bookmark Page Alpha"),
-        actionButton(540, "Bookmark Page Beta"),
+        actionButton(535, "Unbookmark Page Alpha"),
+        actionButton(536, "Unbookmark Page Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      pageContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      elements: [actionButton(539, "Bookmark Page Alpha")],
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Bookmark Page Alpha.",
+      userRequest: "Unbookmark Page Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 540 },
-      result: "Clicked element 540.",
+      args: { id: 536 },
+      result: "Clicked element 536.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel target-disappearance bookmark workflow confirmation"
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Bookmarked Page Alpha.",
+      summary: "Unbookmarked Page Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "bookmark",
+      action: "unbookmark",
       targetLabel: "Page Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:bookmark:page-beta",
+        logicalKey: "workflow:confirmation:unbookmark:page-beta",
         detail: expect.objectContaining({
-          action: "bookmark",
+          action: "unbookmark",
           source: "target_disappearance",
-          text: "Bookmarked target no longer visible: Page Beta",
+          text: "Unbookmarked target no longer visible: Page Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel target-disappearance bookmark workflow confirmation"
     });
   });
 
-  test("does not infer bookmark confirmation while the named target remains visible", () => {
+  test("does not infer unbookmark confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      pageContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      elements: [actionButton(539, "Bookmark Page Alpha")],
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      pageContent: "Unbookmarked pages Page Alpha Bookmark Page Alpha",
-      elements: [actionButton(539, "Bookmark Page Alpha")],
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark Page Alpha",
+      elements: [actionButton(535, "Unbookmark Page Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 539 },
-      result: "Clicked element 539.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel target-disappearance bookmark workflow confirmation"
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer bookmark confirmation from a generic bookmark button", () => {
-    const genericBookmarkButton: TaggedElement = {
-      tag: 539,
+  test("does not infer unbookmark confirmation from a generic unbookmark button", () => {
+    const genericUnbookmarkButton: TaggedElement = {
+      tag: 535,
       tagName: "button",
       role: "button",
-      text: "Bookmark",
+      text: "Unbookmark",
       attributes: {
-        id: "bookmark",
-        "aria-label": "Bookmark",
+        id: "unbookmark",
+        "aria-label": "Unbookmark",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unbookmarked pages Page Alpha Bookmark",
-      pageContent: "Unbookmarked pages Page Alpha Bookmark",
-      elements: [genericBookmarkButton],
+      visibleContent: "Bookmarked pages Page Alpha Unbookmark",
+      pageContent: "Bookmarked pages Page Alpha Unbookmark",
+      elements: [genericUnbookmarkButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unbookmarked pages",
-      pageContent: "Unbookmarked pages",
+      visibleContent: "Bookmarked pages",
+      pageContent: "Bookmarked pages",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 539 },
-      result: "Clicked element 539.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
