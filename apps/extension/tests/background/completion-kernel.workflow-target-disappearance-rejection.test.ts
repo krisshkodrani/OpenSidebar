@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel approve target-disappearance workflow confirmation", () => {
-  test("accepts approve confirmation from named request disappearance", () => {
+describe("completion kernel reject target-disappearance workflow confirmation", () => {
+  test("accepts reject confirmation from named request disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending approvals Request Alpha Approve Request Alpha Request Beta Approve Request Beta",
+        "Pending rejections Request Alpha Reject Request Alpha Request Beta Reject Request Beta",
       pageContent:
-        "Pending approvals Request Alpha Approve Request Alpha Request Beta Approve Request Beta",
+        "Pending rejections Request Alpha Reject Request Alpha Request Beta Reject Request Beta",
       elements: [
-        actionButton(533, "Approve Request Alpha"),
-        actionButton(534, "Approve Request Beta"),
+        actionButton(535, "Reject Request Alpha"),
+        actionButton(536, "Reject Request Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending approvals Request Beta Approve Request Beta",
-      pageContent: "Pending approvals Request Beta Approve Request Beta",
-      elements: [actionButton(534, "Approve Request Beta")],
+      visibleContent: "Pending rejections Request Beta Reject Request Beta",
+      pageContent: "Pending rejections Request Beta Reject Request Beta",
+      elements: [actionButton(536, "Reject Request Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Approve Request Alpha.",
+      userRequest: "Reject Request Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel approve target-disappearance workflow confirmation",
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Approved Request Alpha.",
+      summary: "Rejected Request Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "approve",
+      action: "reject",
       targetLabel: "Request Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:approve:request-alpha",
+        logicalKey: "workflow:confirmation:reject:request-alpha",
         detail: expect.objectContaining({
-          action: "approve",
+          action: "reject",
           source: "target_disappearance",
-          text: "Approved target no longer visible: Request Alpha",
+          text: "Rejected target no longer visible: Request Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects approve target-disappearance evidence for the wrong requested request", () => {
+  test("rejects reject target-disappearance evidence for the wrong requested request", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending approvals Request Alpha Approve Request Alpha Request Beta Approve Request Beta",
+        "Pending rejections Request Alpha Reject Request Alpha Request Beta Reject Request Beta",
       pageContent:
-        "Pending approvals Request Alpha Approve Request Alpha Request Beta Approve Request Beta",
+        "Pending rejections Request Alpha Reject Request Alpha Request Beta Reject Request Beta",
       elements: [
-        actionButton(533, "Approve Request Alpha"),
-        actionButton(534, "Approve Request Beta"),
+        actionButton(535, "Reject Request Alpha"),
+        actionButton(536, "Reject Request Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending approvals Request Alpha Approve Request Alpha",
-      pageContent: "Pending approvals Request Alpha Approve Request Alpha",
-      elements: [actionButton(533, "Approve Request Alpha")],
+      visibleContent: "Pending rejections Request Alpha Reject Request Alpha",
+      pageContent: "Pending rejections Request Alpha Reject Request Alpha",
+      elements: [actionButton(535, "Reject Request Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Approve Request Alpha.",
+      userRequest: "Reject Request Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 534 },
-      result: "Clicked element 534.",
+      args: { id: 536 },
+      result: "Clicked element 536.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel approve target-disappearance workflow confirmation",
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Approved Request Alpha.",
+      summary: "Rejected Request Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "approve",
+      action: "reject",
       targetLabel: "Request Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:approve:request-beta",
+        logicalKey: "workflow:confirmation:reject:request-beta",
         detail: expect.objectContaining({
-          action: "approve",
+          action: "reject",
           source: "target_disappearance",
-          text: "Approved target no longer visible: Request Beta",
+          text: "Rejected target no longer visible: Request Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel approve target-disappearance workflow confirmation",
     });
   });
 
-  test("does not infer approve confirmation while the named request remains visible", () => {
+  test("does not infer reject confirmation while the named request remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Pending approvals Request Alpha Approve Request Alpha",
-      pageContent: "Pending approvals Request Alpha Approve Request Alpha",
-      elements: [actionButton(533, "Approve Request Alpha")],
+      visibleContent: "Pending rejections Request Alpha Reject Request Alpha",
+      pageContent: "Pending rejections Request Alpha Reject Request Alpha",
+      elements: [actionButton(535, "Reject Request Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending approvals Request Alpha Approve Request Alpha",
-      pageContent: "Pending approvals Request Alpha Approve Request Alpha",
-      elements: [actionButton(533, "Approve Request Alpha")],
+      visibleContent: "Pending rejections Request Alpha Reject Request Alpha",
+      pageContent: "Pending rejections Request Alpha Reject Request Alpha",
+      elements: [actionButton(535, "Reject Request Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel approve target-disappearance workflow confirmation",
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer approve confirmation from a generic approve button", () => {
-    const genericApproveButton: TaggedElement = {
-      tag: 533,
+  test("does not infer reject confirmation from a generic reject button", () => {
+    const genericRejectButton: TaggedElement = {
+      tag: 535,
       tagName: "button",
       role: "button",
-      text: "Approve",
+      text: "Reject",
       attributes: {
-        id: "approve",
-        "aria-label": "Approve",
+        id: "reject",
+        "aria-label": "Reject",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Pending approvals Request Alpha Approve",
-      pageContent: "Pending approvals Request Alpha Approve",
-      elements: [genericApproveButton],
+      visibleContent: "Pending rejections Request Alpha Reject",
+      pageContent: "Pending rejections Request Alpha Reject",
+      elements: [genericRejectButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending approvals",
-      pageContent: "Pending approvals",
+      visibleContent: "Pending rejections",
+      pageContent: "Pending rejections",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 535 },
+      result: "Clicked element 535.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel approve target-disappearance workflow confirmation",
 
     expect(evidence).toEqual([]);
   });
-
 });
