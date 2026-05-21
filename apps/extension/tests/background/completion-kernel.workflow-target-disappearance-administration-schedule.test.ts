@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel assign target-disappearance administration workflow confirmation", () => {
-  test("accepts assign confirmation from named unassigned target disappearance", () => {
+describe("completion kernel schedule target-disappearance administration workflow confirmation", () => {
+  test("accepts schedule confirmation from named unscheduled target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
       pageContent:
-        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
       elements: [
-        actionButton(563, "Assign Ticket Alpha"),
-        actionButton(564, "Assign Ticket Beta"),
+        actionButton(565, "Schedule Report Alpha"),
+        actionButton(566, "Schedule Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unassigned tickets Ticket Beta Assign Ticket Beta",
-      pageContent: "Unassigned tickets Ticket Beta Assign Ticket Beta",
-      elements: [actionButton(564, "Assign Ticket Beta")],
+      visibleContent: "Unscheduled reports Report Beta Schedule Report Beta",
+      pageContent: "Unscheduled reports Report Beta Schedule Report Beta",
+      elements: [actionButton(566, "Schedule Report Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Assign Ticket Alpha.",
+      userRequest: "Schedule Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 563 },
-      result: "Clicked element 563.",
+      args: { id: 565 },
+      result: "Clicked element 565.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel assign target-disappearance administration workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Assigned Ticket Alpha.",
+      summary: "Scheduled Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "assign",
-      targetLabel: "Ticket Alpha",
+      action: "schedule",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:assign:ticket-alpha",
+        logicalKey: "workflow:confirmation:schedule:report-alpha",
         detail: expect.objectContaining({
-          action: "assign",
+          action: "schedule",
           source: "target_disappearance",
-          text: "Assigned target no longer visible: Ticket Alpha",
+          text: "Scheduled target no longer visible: Report Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects assign target-disappearance evidence for the wrong requested target", () => {
+  test("rejects schedule target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
       pageContent:
-        "Unassigned tickets Ticket Alpha Assign Ticket Alpha Ticket Beta Assign Ticket Beta",
+        "Unscheduled reports Report Alpha Schedule Report Alpha Report Beta Schedule Report Beta",
       elements: [
-        actionButton(563, "Assign Ticket Alpha"),
-        actionButton(564, "Assign Ticket Beta"),
+        actionButton(565, "Schedule Report Alpha"),
+        actionButton(566, "Schedule Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      elements: [actionButton(563, "Assign Ticket Alpha")],
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Assign Ticket Alpha.",
+      userRequest: "Schedule Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 564 },
-      result: "Clicked element 564.",
+      args: { id: 566 },
+      result: "Clicked element 566.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel assign target-disappearance administration workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Assigned Ticket Alpha.",
+      summary: "Scheduled Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "assign",
-      targetLabel: "Ticket Alpha",
+      action: "schedule",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:assign:ticket-beta",
+        logicalKey: "workflow:confirmation:schedule:report-beta",
         detail: expect.objectContaining({
-          action: "assign",
+          action: "schedule",
           source: "target_disappearance",
-          text: "Assigned target no longer visible: Ticket Beta",
+          text: "Scheduled target no longer visible: Report Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel assign target-disappearance administration workflow 
     });
   });
 
-  test("does not infer assign confirmation while the named target remains visible", () => {
+  test("does not infer schedule confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      elements: [actionButton(563, "Assign Ticket Alpha")],
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      pageContent: "Unassigned tickets Ticket Alpha Assign Ticket Alpha",
-      elements: [actionButton(563, "Assign Ticket Alpha")],
+      visibleContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      pageContent: "Unscheduled reports Report Alpha Schedule Report Alpha",
+      elements: [actionButton(565, "Schedule Report Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 563 },
-      result: "Clicked element 563.",
+      args: { id: 565 },
+      result: "Clicked element 565.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel assign target-disappearance administration workflow 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer assign confirmation from a generic assign button", () => {
-    const genericAssignButton: TaggedElement = {
-      tag: 563,
+  test("does not infer schedule confirmation from a generic schedule button", () => {
+    const genericScheduleButton: TaggedElement = {
+      tag: 565,
       tagName: "button",
       role: "button",
-      text: "Assign",
+      text: "Schedule",
       attributes: {
-        id: "assign",
-        "aria-label": "Assign",
+        id: "schedule",
+        "aria-label": "Schedule",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unassigned tickets Ticket Alpha Assign",
-      pageContent: "Unassigned tickets Ticket Alpha Assign",
-      elements: [genericAssignButton],
+      visibleContent: "Unscheduled reports Report Alpha Schedule",
+      pageContent: "Unscheduled reports Report Alpha Schedule",
+      elements: [genericScheduleButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unassigned tickets",
-      pageContent: "Unassigned tickets",
+      visibleContent: "Unscheduled reports",
+      pageContent: "Unscheduled reports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 563 },
-      result: "Clicked element 563.",
+      args: { id: 565 },
+      result: "Clicked element 565.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel assign target-disappearance administration workflow 
 
     expect(evidence).toEqual([]);
   });
-
 });
