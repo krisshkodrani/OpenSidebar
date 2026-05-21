@@ -67,30 +67,30 @@ function statefulActionButton(
   };
 }
 
-describe("completion kernel workflow control-state toggle confirmation", () => {
-  test("accepts star confirmation from pressed control state change", () => {
+describe("completion kernel workflow control-state like toggle confirmation", () => {
+  test("accepts like confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Comment Alpha Like Comment Alpha",
+      pageContent: "Comment Alpha Like Comment Alpha",
       elements: [
-        statefulActionButton(628, "Star Issue Alpha", false, "issue-alpha-star"),
+        statefulActionButton(644, "Like Comment Alpha", false, "comment-alpha-like"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Comment Alpha Like Comment Alpha",
+      pageContent: "Comment Alpha Like Comment Alpha",
       elements: [
-        statefulActionButton(629, "Star Issue Alpha", true, "issue-alpha-star"),
+        statefulActionButton(645, "Like Comment Alpha", true, "comment-alpha-like"),
       ],
     });
     const generated = generateCompletionContract({
-      userRequest: "Star Issue Alpha.",
+      userRequest: "Like Comment Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 628 },
-      result: "Clicked element 628.",
+      args: { id: 644 },
+      result: "Clicked element 644.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -100,110 +100,64 @@ describe("completion kernel workflow control-state toggle confirmation", () => {
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Starred Issue Alpha.",
+      summary: "Liked Comment Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "star",
-      targetLabel: "Issue Alpha",
-    });
-    expect(evidence).toEqual([
-      expect.objectContaining({
-        type: "confirmation_state",
-        confidence: "high",
-        logicalKey: "workflow:confirmation:star:control-state:issue-alpha-star",
-        detail: expect.objectContaining({
-          action: "star",
-          source: "control_state_change",
-          targetText: "Issue Alpha",
-          text: "Control state changed to starred: Star Issue Alpha",
-        }),
-      }),
-    ]);
-    expect(decision.status).toBe("accepted");
-  });
-
-  test("accepts unstar confirmation from pressed control state change", () => {
-    const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Unstar Issue Alpha",
-      pageContent: "Issue Alpha Unstar Issue Alpha",
-      elements: [
-        statefulActionButton(630, "Unstar Issue Alpha", true, "issue-alpha-star"),
-      ],
-    });
-    const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Unstar Issue Alpha",
-      pageContent: "Issue Alpha Unstar Issue Alpha",
-      elements: [
-        statefulActionButton(631, "Unstar Issue Alpha", false, "issue-alpha-star"),
-      ],
-    });
-    const generated = generateCompletionContract({
-      userRequest: "Unstar Issue Alpha.",
-      snapshot: current,
-    });
-    const evidence = deriveCompletionEvidenceFromToolOutcome({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 630 },
-      result: "Clicked element 630.",
-      preActionSnapshot: pre,
-      currentSnapshot: current,
-      turn: 11,
-    });
-    const decision = evaluateCompletionContract({
-      contract: generated?.contract,
-      evidence,
-      snapshot: current,
-      candidateSource: "model_done",
-      summary: "Unstarred Issue Alpha.",
-    });
-
-    expect(generated?.contract).toMatchObject({
-      kind: "workflow_confirmation",
-      action: "unstar",
-      targetLabel: "Issue Alpha",
+      action: "like",
+      targetLabel: "Comment Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
         logicalKey:
-          "workflow:confirmation:unstar:control-state:issue-alpha-star",
+          "workflow:confirmation:like:control-state:comment-alpha-like",
         detail: expect.objectContaining({
-          action: "unstar",
+          action: "like",
           source: "control_state_change",
-          targetText: "Issue Alpha",
-          text: "Control state changed to unstarred: Unstar Issue Alpha",
+          targetText: "Comment Alpha",
+          text: "Control state changed to liked: Like Comment Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects target-aware pressed-toggle confirmation for a different target", () => {
+  test("accepts unlike confirmation from pressed control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Issue Beta Star Issue Beta",
-      pageContent: "Issue Alpha Issue Beta Star Issue Beta",
+      visibleContent: "Comment Alpha Unlike Comment Alpha",
+      pageContent: "Comment Alpha Unlike Comment Alpha",
       elements: [
-        statefulActionButton(632, "Star Issue Beta", false, "issue-beta-star"),
+        statefulActionButton(
+          646,
+          "Unlike Comment Alpha",
+          true,
+          "comment-alpha-like",
+        ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Issue Beta Star Issue Beta",
-      pageContent: "Issue Alpha Issue Beta Star Issue Beta",
+      visibleContent: "Comment Alpha Unlike Comment Alpha",
+      pageContent: "Comment Alpha Unlike Comment Alpha",
       elements: [
-        statefulActionButton(633, "Star Issue Beta", true, "issue-beta-star"),
+        statefulActionButton(
+          647,
+          "Unlike Comment Alpha",
+          false,
+          "comment-alpha-like",
+        ),
       ],
     });
     const generated = generateCompletionContract({
-      userRequest: "Star Issue Alpha.",
+      userRequest: "Unlike Comment Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 632 },
-      result: "Clicked element 632.",
+      args: { id: 646 },
+      result: "Clicked element 646.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -213,22 +167,79 @@ describe("completion kernel workflow control-state toggle confirmation", () => {
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Starred Issue Alpha.",
+      summary: "Unliked Comment Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "star",
-      targetLabel: "Issue Alpha",
+      action: "unlike",
+      targetLabel: "Comment Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
-        logicalKey: "workflow:confirmation:star:control-state:issue-beta-star",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:unlike:control-state:comment-alpha-like",
         detail: expect.objectContaining({
-          action: "star",
+          action: "unlike",
           source: "control_state_change",
-          targetText: "Issue Beta",
+          targetText: "Comment Alpha",
+          text: "Control state changed to unliked: Unlike Comment Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects target-aware like confirmation for a different target", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Comment Alpha Comment Beta Like Comment Beta",
+      pageContent: "Comment Alpha Comment Beta Like Comment Beta",
+      elements: [
+        statefulActionButton(648, "Like Comment Beta", false, "comment-beta-like"),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Comment Alpha Comment Beta Like Comment Beta",
+      pageContent: "Comment Alpha Comment Beta Like Comment Beta",
+      elements: [
+        statefulActionButton(649, "Like Comment Beta", true, "comment-beta-like"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Like Comment Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 648 },
+      result: "Clicked element 648.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Liked Comment Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "like",
+      targetLabel: "Comment Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:like:control-state:comment-beta-like",
+        detail: expect.objectContaining({
+          action: "like",
+          source: "control_state_change",
+          targetText: "Comment Beta",
         }),
       }),
     ]);
@@ -239,26 +250,26 @@ describe("completion kernel workflow control-state toggle confirmation", () => {
     });
   });
 
-  test("does not infer star confirmation when pressed state was already on", () => {
+  test("does not infer like confirmation when pressed state was already on", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Comment Alpha Like Comment Alpha",
+      pageContent: "Comment Alpha Like Comment Alpha",
       elements: [
-        statefulActionButton(628, "Star Issue Alpha", true, "issue-alpha-star"),
+        statefulActionButton(644, "Like Comment Alpha", true, "comment-alpha-like"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Comment Alpha Like Comment Alpha",
+      pageContent: "Comment Alpha Like Comment Alpha",
       elements: [
-        statefulActionButton(629, "Star Issue Alpha", true, "issue-alpha-star"),
+        statefulActionButton(645, "Like Comment Alpha", true, "comment-alpha-like"),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 628 },
-      result: "Clicked element 628.",
+      args: { id: 644 },
+      result: "Clicked element 644.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -266,33 +277,4 @@ describe("completion kernel workflow control-state toggle confirmation", () => {
 
     expect(evidence).toEqual([]);
   });
-
-  test("does not infer star confirmation when pressed state flips off", () => {
-    const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
-      elements: [
-        statefulActionButton(628, "Star Issue Alpha", true, "issue-alpha-star"),
-      ],
-    });
-    const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
-      elements: [
-        statefulActionButton(629, "Star Issue Alpha", false, "issue-alpha-star"),
-      ],
-    });
-
-    const evidence = deriveCompletionEvidenceFromToolOutcome({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 628 },
-      result: "Clicked element 628.",
-      preActionSnapshot: pre,
-      currentSnapshot: current,
-      turn: 11,
-    });
-
-    expect(evidence).toEqual([]);
-  });
-
 });
