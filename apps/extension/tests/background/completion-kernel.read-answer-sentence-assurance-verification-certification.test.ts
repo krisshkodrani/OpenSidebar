@@ -21,18 +21,18 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel sentence-scoped assurance audit and validation relation read-answer", () => {
-  test("accepts active-voice sentence-scoped audits answer for the requested target", () => {
+describe("completion kernel sentence-scoped assurance verification and certification relation read-answer", () => {
+  test("accepts active-voice sentence-scoped verifies answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Compliance Office audits Project Apollo. Regional Audit audits Project Borealis.",
+        "Release Assurance verifies Project Apollo. Regional QA verifies Project Borealis.",
       pageContent:
-        "Compliance Office audits Project Apollo. Regional Audit audits Project Borealis. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Release Assurance verifies Project Apollo. Regional QA verifies Project Borealis. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who audits Project Apollo?",
+      userRequest: "Who verifies Project Apollo?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -40,19 +40,19 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Compliance Office",
+      summary: "Release Assurance",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Regional Audit",
+      summary: "Regional QA",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "auditor",
+      expectedAnswerLabel: "verifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -60,24 +60,24 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped audits answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped verifies answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Compliance Office audits Project Apollo. Regional Audit audits Project Borealis.",
+        "Release Assurance verifies Project Apollo. Regional QA verifies Project Borealis.",
       pageContent:
-        "Compliance Office audits Project Apollo. Regional Audit audits Project Borealis. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Release Assurance verifies Project Apollo. Regional QA verifies Project Borealis. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who audits Project Apollo?",
+      userRequest: "Who verifies Project Apollo?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nCompliance Office audits Project Apollo. Regional Audit audits Project Borealis. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nRelease Assurance verifies Project Apollo. Regional QA verifies Project Borealis. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -86,18 +86,18 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Compliance Office",
+      summary: "Release Assurance",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Regional Audit",
+      summary: "Regional QA",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "auditor",
+      expectedAnswerLabel: "verifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -108,17 +108,17 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped audited-by answer for the requested target", () => {
+  test("accepts sentence-scoped verified-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit.",
+        "Project Apollo is verified by Release Assurance. Project Borealis is verified by Regional QA.",
       pageContent:
-        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Project Apollo is verified by Release Assurance. Project Borealis is verified by Regional QA. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who audits Project Apollo?",
+      userRequest: "Who verifies Project Apollo?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -126,19 +126,19 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Compliance Office",
+      summary: "Release Assurance",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Regional Audit",
+      summary: "Regional QA",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "auditor",
+      expectedAnswerLabel: "verifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -146,24 +146,24 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped audited-by answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped verified-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit.",
+        "Project Apollo is verified by Release Assurance. Project Borealis is verified by Regional QA.",
       pageContent:
-        "Project Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Project Apollo is verified by Release Assurance. Project Borealis is verified by Regional QA. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Project Apollo audited by?",
+      userRequest: "Who is Project Apollo verified by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nProject Apollo is audited by Compliance Office. Project Borealis is audited by Regional Audit. The page explains project ownership, audit routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nProject Apollo is verified by Release Assurance. Project Borealis is verified by Regional QA. The page explains project ownership, verification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -172,18 +172,18 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Compliance Office",
+      summary: "Release Assurance",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Regional Audit",
+      summary: "Regional QA",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "auditor",
+      expectedAnswerLabel: "verifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -194,17 +194,17 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped validates answer for the requested target", () => {
+  test("accepts active-voice sentence-scoped certifies answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "QA Council validates Project Apollo. Regional QA validates Project Borealis.",
+        "Security Council certifies Project Apollo. Regional QA certifies Project Borealis.",
       pageContent:
-        "QA Council validates Project Apollo. Regional QA validates Project Borealis. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Security Council certifies Project Apollo. Regional QA certifies Project Borealis. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who validates Project Apollo?",
+      userRequest: "Who certifies Project Apollo?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -212,7 +212,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "QA Council",
+      summary: "Security Council",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
@@ -224,7 +224,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "validator",
+      expectedAnswerLabel: "certifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -232,24 +232,24 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped validates answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped certifies answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "QA Council validates Project Apollo. Regional QA validates Project Borealis.",
+        "Security Council certifies Project Apollo. Regional QA certifies Project Borealis.",
       pageContent:
-        "QA Council validates Project Apollo. Regional QA validates Project Borealis. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Security Council certifies Project Apollo. Regional QA certifies Project Borealis. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who validates Project Apollo?",
+      userRequest: "Who certifies Project Apollo?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nQA Council validates Project Apollo. Regional QA validates Project Borealis. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nSecurity Council certifies Project Apollo. Regional QA certifies Project Borealis. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -258,7 +258,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "QA Council",
+      summary: "Security Council",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
@@ -269,7 +269,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "validator",
+      expectedAnswerLabel: "certifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -280,17 +280,17 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped validated-by answer for the requested target", () => {
+  test("accepts sentence-scoped certified-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Project Apollo is validated by QA Council. Project Borealis is validated by Regional QA.",
+        "Project Apollo is certified by Security Council. Project Borealis is certified by Regional QA.",
       pageContent:
-        "Project Apollo is validated by QA Council. Project Borealis is validated by Regional QA. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Project Apollo is certified by Security Council. Project Borealis is certified by Regional QA. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who validates Project Apollo?",
+      userRequest: "Who certifies Project Apollo?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -298,7 +298,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "QA Council",
+      summary: "Security Council",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
@@ -310,7 +310,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "validator",
+      expectedAnswerLabel: "certifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
@@ -318,24 +318,24 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped validated-by answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped certified-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Project Details",
       url: "https://example.test/projects",
       visibleContent:
-        "Project Apollo is validated by QA Council. Project Borealis is validated by Regional QA.",
+        "Project Apollo is certified by Security Council. Project Borealis is certified by Regional QA.",
       pageContent:
-        "Project Apollo is validated by QA Council. Project Borealis is validated by Regional QA. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Project Apollo is certified by Security Council. Project Borealis is certified by Regional QA. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Project Apollo validated by?",
+      userRequest: "Who is Project Apollo certified by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nProject Apollo is validated by QA Council. Project Borealis is validated by Regional QA. The page explains project ownership, validation routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nProject Apollo is certified by Security Council. Project Borealis is certified by Regional QA. The page explains project ownership, certification routing, dependency notes, release timing, control coverage, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -344,7 +344,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "QA Council",
+      summary: "Security Council",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
@@ -355,7 +355,7 @@ describe("completion kernel sentence-scoped assurance audit and validation relat
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "validator",
+      expectedAnswerLabel: "certifier",
       expectedAnswerTarget: "Project Apollo",
       expectedAnswerScope: "sentence",
     });
