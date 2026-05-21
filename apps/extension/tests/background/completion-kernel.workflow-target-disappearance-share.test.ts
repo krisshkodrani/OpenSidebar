@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel copy target-disappearance collaboration workflow confirmation", () => {
-  test("accepts copy confirmation from named link disappearance", () => {
+describe("completion kernel share target-disappearance collaboration workflow confirmation", () => {
+  test("accepts share confirmation from named report disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+        "Pending shares Report Alpha Share Report Alpha Report Beta Share Report Beta",
       pageContent:
-        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+        "Pending shares Report Alpha Share Report Alpha Report Beta Share Report Beta",
       elements: [
-        actionButton(561, "Copy Link Alpha"),
-        actionButton(562, "Copy Link Beta"),
+        actionButton(563, "Share Report Alpha"),
+        actionButton(564, "Share Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending copies Link Beta Copy Link Beta",
-      pageContent: "Pending copies Link Beta Copy Link Beta",
-      elements: [actionButton(562, "Copy Link Beta")],
+      visibleContent: "Pending shares Report Beta Share Report Beta",
+      pageContent: "Pending shares Report Beta Share Report Beta",
+      elements: [actionButton(564, "Share Report Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Copy Link Alpha.",
+      userRequest: "Share Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 561 },
-      result: "Clicked element 561.",
+      args: { id: 563 },
+      result: "Clicked element 563.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel copy target-disappearance collaboration workflow con
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Copied Link Alpha.",
+      summary: "Shared Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "copy",
-      targetLabel: "Link Alpha",
+      action: "share",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:copy:link-alpha",
+        logicalKey: "workflow:confirmation:share:report-alpha",
         detail: expect.objectContaining({
-          action: "copy",
+          action: "share",
           source: "target_disappearance",
-          text: "Copied target no longer visible: Link Alpha",
+          text: "Shared target no longer visible: Report Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects copy target-disappearance evidence for the wrong requested link", () => {
+  test("rejects share target-disappearance evidence for the wrong requested report", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+        "Pending shares Report Alpha Share Report Alpha Report Beta Share Report Beta",
       pageContent:
-        "Pending copies Link Alpha Copy Link Alpha Link Beta Copy Link Beta",
+        "Pending shares Report Alpha Share Report Alpha Report Beta Share Report Beta",
       elements: [
-        actionButton(561, "Copy Link Alpha"),
-        actionButton(562, "Copy Link Beta"),
+        actionButton(563, "Share Report Alpha"),
+        actionButton(564, "Share Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
-      pageContent: "Pending copies Link Alpha Copy Link Alpha",
-      elements: [actionButton(561, "Copy Link Alpha")],
+      visibleContent: "Pending shares Report Alpha Share Report Alpha",
+      pageContent: "Pending shares Report Alpha Share Report Alpha",
+      elements: [actionButton(563, "Share Report Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Copy Link Alpha.",
+      userRequest: "Share Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 562 },
-      result: "Clicked element 562.",
+      args: { id: 564 },
+      result: "Clicked element 564.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel copy target-disappearance collaboration workflow con
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Copied Link Alpha.",
+      summary: "Shared Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "copy",
-      targetLabel: "Link Alpha",
+      action: "share",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:copy:link-beta",
+        logicalKey: "workflow:confirmation:share:report-beta",
         detail: expect.objectContaining({
-          action: "copy",
+          action: "share",
           source: "target_disappearance",
-          text: "Copied target no longer visible: Link Beta",
+          text: "Shared target no longer visible: Report Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel copy target-disappearance collaboration workflow con
     });
   });
 
-  test("does not infer copy confirmation while the named link remains visible", () => {
+  test("does not infer share confirmation while the named report remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
-      pageContent: "Pending copies Link Alpha Copy Link Alpha",
-      elements: [actionButton(561, "Copy Link Alpha")],
+      visibleContent: "Pending shares Report Alpha Share Report Alpha",
+      pageContent: "Pending shares Report Alpha Share Report Alpha",
+      elements: [actionButton(563, "Share Report Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending copies Link Alpha Copy Link Alpha",
-      pageContent: "Pending copies Link Alpha Copy Link Alpha",
-      elements: [actionButton(561, "Copy Link Alpha")],
+      visibleContent: "Pending shares Report Alpha Share Report Alpha",
+      pageContent: "Pending shares Report Alpha Share Report Alpha",
+      elements: [actionButton(563, "Share Report Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 561 },
-      result: "Clicked element 561.",
+      args: { id: 563 },
+      result: "Clicked element 563.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel copy target-disappearance collaboration workflow con
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer copy confirmation from a generic copy link control", () => {
-    const genericCopyLinkButton: TaggedElement = {
-      tag: 561,
+  test("does not infer share confirmation from a generic share report control", () => {
+    const genericShareReportButton: TaggedElement = {
+      tag: 563,
       tagName: "button",
       role: "button",
-      text: "Copy link",
+      text: "Share report",
       attributes: {
-        id: "copy-link",
-        "aria-label": "Copy link",
+        id: "share-report",
+        "aria-label": "Share report",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Available links Link Alpha Copy link",
-      pageContent: "Available links Link Alpha Copy link",
-      elements: [genericCopyLinkButton],
+      visibleContent: "Available reports Report Alpha Share report",
+      pageContent: "Available reports Report Alpha Share report",
+      elements: [genericShareReportButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Available links",
-      pageContent: "Available links",
+      visibleContent: "Available reports",
+      pageContent: "Available reports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 561 },
-      result: "Clicked element 561.",
+      args: { id: 563 },
+      result: "Clicked element 563.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
