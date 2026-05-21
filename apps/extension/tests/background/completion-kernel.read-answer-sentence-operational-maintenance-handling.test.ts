@@ -21,18 +21,18 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel sentence-scoped operational management and leadership relation read-answer", () => {
-  test("accepts sentence-scoped managed-by answer for the requested target", () => {
+describe("completion kernel sentence-scoped operational maintenance and handling relation read-answer", () => {
+  test("accepts active-voice sentence-scoped maintains answer for the requested target", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Service Details",
+      url: "https://example.test/services",
       visibleContent:
-        "Project Apollo is managed by Lina Park. Project Beacon is managed by Omar Diaz.",
+        "Core Ops maintains Service Atlas. Edge Ops maintains Service Beacon.",
       pageContent:
-        "Project Apollo is managed by Lina Park. Project Beacon is managed by Omar Diaz. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Core Ops maintains Service Atlas. Edge Ops maintains Service Beacon. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who manages Project Apollo?",
+      userRequest: "Who maintains Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -40,44 +40,44 @@ describe("completion kernel sentence-scoped operational management and leadershi
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Lina Park",
+      summary: "Core Ops",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Omar Diaz",
+      summary: "Edge Ops",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "manager",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped managed-by answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped maintains answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Service Details",
+      url: "https://example.test/services",
       visibleContent:
-        "Project Apollo is managed by Lina Park. Project Beacon is managed by Omar Diaz.",
+        "Core Ops maintains Service Atlas. Edge Ops maintains Service Beacon.",
       pageContent:
-        "Project Apollo is managed by Lina Park. Project Beacon is managed by Omar Diaz. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Core Ops maintains Service Atlas. Edge Ops maintains Service Beacon. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Project Apollo managed by?",
+      userRequest: "Who maintains Service Atlas?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nProject Apollo is managed by Lina Park. Project Beacon is managed by Omar Diaz. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nCore Ops maintains Service Atlas. Edge Ops maintains Service Beacon. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -86,19 +86,19 @@ describe("completion kernel sentence-scoped operational management and leadershi
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Lina Park",
+      summary: "Core Ops",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Omar Diaz",
+      summary: "Edge Ops",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "manager",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
@@ -108,17 +108,17 @@ describe("completion kernel sentence-scoped operational management and leadershi
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped manages answer for the requested target", () => {
+  test("accepts sentence-scoped maintained-by answer for the requested target", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Service Details",
+      url: "https://example.test/services",
       visibleContent:
-        "Lina Park manages Project Apollo. Omar Diaz manages Project Beacon.",
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops.",
       pageContent:
-        "Lina Park manages Project Apollo. Omar Diaz manages Project Beacon. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who manages Project Apollo?",
+      userRequest: "Who maintains Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -126,44 +126,44 @@ describe("completion kernel sentence-scoped operational management and leadershi
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Lina Park",
+      summary: "Core Ops",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Omar Diaz",
+      summary: "Edge Ops",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "manager",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped manages answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped maintained-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Service Details",
+      url: "https://example.test/services",
       visibleContent:
-        "Lina Park manages Project Apollo. Omar Diaz manages Project Beacon.",
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops.",
       pageContent:
-        "Lina Park manages Project Apollo. Omar Diaz manages Project Beacon. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Service Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who manages Project Apollo?",
+      userRequest: "Who is Service Atlas maintained by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nLina Park manages Project Apollo. Omar Diaz manages Project Beacon. The page explains project staffing, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nService Atlas is maintained by Core Ops. Service Beacon is maintained by Edge Ops. The page explains service ownership, maintenance routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -172,19 +172,19 @@ describe("completion kernel sentence-scoped operational management and leadershi
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Lina Park",
+      summary: "Core Ops",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Omar Diaz",
+      summary: "Edge Ops",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "manager",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "maintainer",
+      expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
@@ -194,17 +194,17 @@ describe("completion kernel sentence-scoped operational management and leadershi
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped leads answer for the requested target", () => {
+  test("accepts active-voice sentence-scoped handles answer for the requested target", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Case Details",
+      url: "https://example.test/cases",
       visibleContent:
-        "Nina Patel leads Project Apollo. Theo Grant leads Project Beacon.",
+        "Support Pod handles Case Alpha. Billing Pod handles Case Beta.",
       pageContent:
-        "Nina Patel leads Project Apollo. Theo Grant leads Project Beacon. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Support Pod handles Case Alpha. Billing Pod handles Case Beta. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who leads Project Apollo?",
+      userRequest: "Who handles Case Alpha?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -212,44 +212,44 @@ describe("completion kernel sentence-scoped operational management and leadershi
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Nina Patel",
+      summary: "Support Pod",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Theo Grant",
+      summary: "Billing Pod",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "lead",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped leads answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped handles answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Case Details",
+      url: "https://example.test/cases",
       visibleContent:
-        "Nina Patel leads Project Apollo. Theo Grant leads Project Beacon.",
+        "Support Pod handles Case Alpha. Billing Pod handles Case Beta.",
       pageContent:
-        "Nina Patel leads Project Apollo. Theo Grant leads Project Beacon. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Support Pod handles Case Alpha. Billing Pod handles Case Beta. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who leads Project Apollo?",
+      userRequest: "Who handles Case Alpha?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nNina Patel leads Project Apollo. Theo Grant leads Project Beacon. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nSupport Pod handles Case Alpha. Billing Pod handles Case Beta. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -258,19 +258,19 @@ describe("completion kernel sentence-scoped operational management and leadershi
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Nina Patel",
+      summary: "Support Pod",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Theo Grant",
+      summary: "Billing Pod",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "lead",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
@@ -280,17 +280,17 @@ describe("completion kernel sentence-scoped operational management and leadershi
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped led-by answer for the requested target", () => {
+  test("accepts sentence-scoped handled-by answer for the requested target", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Case Details",
+      url: "https://example.test/cases",
       visibleContent:
-        "Project Apollo is led by Nina Patel. Project Beacon is led by Theo Grant.",
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod.",
       pageContent:
-        "Project Apollo is led by Nina Patel. Project Beacon is led by Theo Grant. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who leads Project Apollo?",
+      userRequest: "Who handles Case Alpha?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -298,44 +298,44 @@ describe("completion kernel sentence-scoped operational management and leadershi
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Nina Patel",
+      summary: "Support Pod",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Theo Grant",
+      summary: "Billing Pod",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "lead",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped led-by answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped handled-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
-      title: "Project Details",
-      url: "https://example.test/projects",
+      title: "Case Details",
+      url: "https://example.test/cases",
       visibleContent:
-        "Project Apollo is led by Nina Patel. Project Beacon is led by Theo Grant.",
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod.",
       pageContent:
-        "Project Apollo is led by Nina Patel. Project Beacon is led by Theo Grant. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Case Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Project Apollo led by?",
+      userRequest: "Who is Case Alpha handled by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nProject Apollo is led by Nina Patel. Project Beacon is led by Theo Grant. The page explains project leadership, ownership, review cadence, risk notes, launch timing, audit coverage, delivery routing, and follow-up responsibilities so operators can answer project questions from visible prose evidence.",
+        "Page content:\nCase Alpha is handled by Support Pod. Case Beta is handled by Billing Pod. The page explains case ownership, routing policy, escalation notes, customer priority, audit coverage, response timing, and follow-up responsibilities so operators can answer case questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -344,19 +344,19 @@ describe("completion kernel sentence-scoped operational management and leadershi
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Nina Patel",
+      summary: "Support Pod",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Theo Grant",
+      summary: "Billing Pod",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "lead",
-      expectedAnswerTarget: "Project Apollo",
+      expectedAnswerLabel: "handler",
+      expectedAnswerTarget: "Case Alpha",
       expectedAnswerScope: "sentence",
     });
     expect(accepted.status).toBe("accepted");
