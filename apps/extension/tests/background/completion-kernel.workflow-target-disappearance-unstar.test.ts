@@ -37,33 +37,33 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance saved-item preference workflow confirmation", () => {
-  test("accepts star confirmation from named unstarred target disappearance", () => {
+describe("completion kernel target-disappearance unstar workflow confirmation", () => {
+  test("accepts unstar confirmation from named starred target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+        "Starred repositories Repository Alpha Unstar Repository Alpha Repository Beta Unstar Repository Beta",
       pageContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+        "Starred repositories Repository Alpha Unstar Repository Alpha Repository Beta Unstar Repository Beta",
       elements: [
-        actionButton(537, "Star Repository Alpha"),
-        actionButton(538, "Star Repository Beta"),
+        actionButton(533, "Unstar Repository Alpha"),
+        actionButton(534, "Unstar Repository Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Beta Star Repository Beta",
+        "Starred repositories Repository Beta Unstar Repository Beta",
       pageContent:
-        "Unstarred repositories Repository Beta Star Repository Beta",
-      elements: [actionButton(538, "Star Repository Beta")],
+        "Starred repositories Repository Beta Unstar Repository Beta",
+      elements: [actionButton(534, "Unstar Repository Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Star Repository Alpha.",
+      userRequest: "Unstar Repository Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 537 },
-      result: "Clicked element 537.",
+      args: { id: 533 },
+      result: "Clicked element 533.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -73,55 +73,55 @@ describe("completion kernel target-disappearance saved-item preference workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Starred Repository Alpha.",
+      summary: "Unstarred Repository Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "star",
+      action: "unstar",
       targetLabel: "Repository Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:star:repository-alpha",
+        logicalKey: "workflow:confirmation:unstar:repository-alpha",
         detail: expect.objectContaining({
-          action: "star",
+          action: "unstar",
           source: "target_disappearance",
-          text: "Starred target no longer visible: Repository Alpha",
+          text: "Unstarred target no longer visible: Repository Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects star target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unstar target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+        "Starred repositories Repository Alpha Unstar Repository Alpha Repository Beta Unstar Repository Beta",
       pageContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha Repository Beta Star Repository Beta",
+        "Starred repositories Repository Alpha Unstar Repository Alpha Repository Beta Unstar Repository Beta",
       elements: [
-        actionButton(537, "Star Repository Alpha"),
-        actionButton(538, "Star Repository Beta"),
+        actionButton(533, "Unstar Repository Alpha"),
+        actionButton(534, "Unstar Repository Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
       pageContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
-      elements: [actionButton(537, "Star Repository Alpha")],
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
+      elements: [actionButton(533, "Unstar Repository Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Star Repository Alpha.",
+      userRequest: "Unstar Repository Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 538 },
-      result: "Clicked element 538.",
+      args: { id: 534 },
+      result: "Clicked element 534.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -131,23 +131,23 @@ describe("completion kernel target-disappearance saved-item preference workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Starred Repository Alpha.",
+      summary: "Unstarred Repository Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "star",
+      action: "unstar",
       targetLabel: "Repository Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:star:repository-beta",
+        logicalKey: "workflow:confirmation:unstar:repository-beta",
         detail: expect.objectContaining({
-          action: "star",
+          action: "unstar",
           source: "target_disappearance",
-          text: "Starred target no longer visible: Repository Beta",
+          text: "Unstarred target no longer visible: Repository Beta",
         }),
       }),
     ]);
@@ -158,26 +158,26 @@ describe("completion kernel target-disappearance saved-item preference workflow 
     });
   });
 
-  test("does not infer star confirmation while the named target remains visible", () => {
+  test("does not infer unstar confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
       pageContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
-      elements: [actionButton(537, "Star Repository Alpha")],
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
+      elements: [actionButton(533, "Unstar Repository Alpha")],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
       pageContent:
-        "Unstarred repositories Repository Alpha Star Repository Alpha",
-      elements: [actionButton(537, "Star Repository Alpha")],
+        "Starred repositories Repository Alpha Unstar Repository Alpha",
+      elements: [actionButton(533, "Unstar Repository Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 537 },
-      result: "Clicked element 537.",
+      args: { id: 533 },
+      result: "Clicked element 533.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -186,35 +186,35 @@ describe("completion kernel target-disappearance saved-item preference workflow 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer star confirmation from a generic star button", () => {
-    const genericStarButton: TaggedElement = {
-      tag: 537,
+  test("does not infer unstar confirmation from a generic unstar button", () => {
+    const genericUnstarButton: TaggedElement = {
+      tag: 533,
       tagName: "button",
       role: "button",
-      text: "Star",
+      text: "Unstar",
       attributes: {
-        id: "star",
-        "aria-label": "Star",
+        id: "unstar",
+        "aria-label": "Unstar",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unstarred repositories Repository Alpha Star",
-      pageContent: "Unstarred repositories Repository Alpha Star",
-      elements: [genericStarButton],
+      visibleContent: "Starred repositories Repository Alpha Unstar",
+      pageContent: "Starred repositories Repository Alpha Unstar",
+      elements: [genericUnstarButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unstarred repositories",
-      pageContent: "Unstarred repositories",
+      visibleContent: "Starred repositories",
+      pageContent: "Starred repositories",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 537 },
-      result: "Clicked element 537.",
+      args: { id: 533 },
+      result: "Clicked element 533.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -222,5 +222,4 @@ describe("completion kernel target-disappearance saved-item preference workflow 
 
     expect(evidence).toEqual([]);
   });
-
 });
