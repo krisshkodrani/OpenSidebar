@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel transfer target-disappearance object-change workflow confirmation", () => {
-  test("accepts transfer confirmation from named case disappearance", () => {
+describe("completion kernel move target-disappearance object-change workflow confirmation", () => {
+  test("accepts move confirmation from named card disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+        "Pending moves Card Alpha Move Card Alpha Card Beta Move Card Beta",
       pageContent:
-        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+        "Pending moves Card Alpha Move Card Alpha Card Beta Move Card Beta",
       elements: [
-        actionButton(523, "Transfer Case Alpha"),
-        actionButton(524, "Transfer Case Beta"),
+        actionButton(525, "Move Card Alpha"),
+        actionButton(526, "Move Card Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending transfers Case Beta Transfer Case Beta",
-      pageContent: "Pending transfers Case Beta Transfer Case Beta",
-      elements: [actionButton(524, "Transfer Case Beta")],
+      visibleContent: "Pending moves Card Beta Move Card Beta",
+      pageContent: "Pending moves Card Beta Move Card Beta",
+      elements: [actionButton(526, "Move Card Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Transfer Case Alpha.",
+      userRequest: "Move Card Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 525 },
+      result: "Clicked element 525.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel transfer target-disappearance object-change workflow
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Transferred Case Alpha.",
+      summary: "Moved Card Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "transfer",
-      targetLabel: "Case Alpha",
+      action: "move",
+      targetLabel: "Card Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:transfer:case-alpha",
+        logicalKey: "workflow:confirmation:move:card-alpha",
         detail: expect.objectContaining({
-          action: "transfer",
+          action: "move",
           source: "target_disappearance",
-          text: "Transferred target no longer visible: Case Alpha",
+          text: "Moved target no longer visible: Card Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects transfer target-disappearance evidence for the wrong requested case", () => {
+  test("rejects move target-disappearance evidence for the wrong requested card", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+        "Pending moves Card Alpha Move Card Alpha Card Beta Move Card Beta",
       pageContent:
-        "Pending transfers Case Alpha Transfer Case Alpha Case Beta Transfer Case Beta",
+        "Pending moves Card Alpha Move Card Alpha Card Beta Move Card Beta",
       elements: [
-        actionButton(523, "Transfer Case Alpha"),
-        actionButton(524, "Transfer Case Beta"),
+        actionButton(525, "Move Card Alpha"),
+        actionButton(526, "Move Card Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      elements: [actionButton(523, "Transfer Case Alpha")],
+      visibleContent: "Pending moves Card Alpha Move Card Alpha",
+      pageContent: "Pending moves Card Alpha Move Card Alpha",
+      elements: [actionButton(525, "Move Card Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Transfer Case Alpha.",
+      userRequest: "Move Card Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 524 },
-      result: "Clicked element 524.",
+      args: { id: 526 },
+      result: "Clicked element 526.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel transfer target-disappearance object-change workflow
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Transferred Case Alpha.",
+      summary: "Moved Card Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "transfer",
-      targetLabel: "Case Alpha",
+      action: "move",
+      targetLabel: "Card Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:transfer:case-beta",
+        logicalKey: "workflow:confirmation:move:card-beta",
         detail: expect.objectContaining({
-          action: "transfer",
+          action: "move",
           source: "target_disappearance",
-          text: "Transferred target no longer visible: Case Beta",
+          text: "Moved target no longer visible: Card Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel transfer target-disappearance object-change workflow
     });
   });
 
-  test("does not infer transfer confirmation while the named case remains visible", () => {
+  test("does not infer move confirmation while the named card remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      elements: [actionButton(523, "Transfer Case Alpha")],
+      visibleContent: "Pending moves Card Alpha Move Card Alpha",
+      pageContent: "Pending moves Card Alpha Move Card Alpha",
+      elements: [actionButton(525, "Move Card Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      pageContent: "Pending transfers Case Alpha Transfer Case Alpha",
-      elements: [actionButton(523, "Transfer Case Alpha")],
+      visibleContent: "Pending moves Card Alpha Move Card Alpha",
+      pageContent: "Pending moves Card Alpha Move Card Alpha",
+      elements: [actionButton(525, "Move Card Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 525 },
+      result: "Clicked element 525.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel transfer target-disappearance object-change workflow
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer transfer confirmation from a generic transfer button", () => {
-    const genericTransferButton: TaggedElement = {
-      tag: 523,
+  test("does not infer move confirmation from a generic move button", () => {
+    const genericMoveButton: TaggedElement = {
+      tag: 525,
       tagName: "button",
       role: "button",
-      text: "Transfer",
+      text: "Move",
       attributes: {
-        id: "transfer",
-        "aria-label": "Transfer",
+        id: "move",
+        "aria-label": "Move",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Pending transfers Case Alpha Transfer",
-      pageContent: "Pending transfers Case Alpha Transfer",
-      elements: [genericTransferButton],
+      visibleContent: "Pending moves Card Alpha Move",
+      pageContent: "Pending moves Card Alpha Move",
+      elements: [genericMoveButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Pending transfers",
-      pageContent: "Pending transfers",
+      visibleContent: "Pending moves",
+      pageContent: "Pending moves",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 525 },
+      result: "Clicked element 525.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel transfer target-disappearance object-change workflow
 
     expect(evidence).toEqual([]);
   });
-
 });
