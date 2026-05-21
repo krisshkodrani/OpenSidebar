@@ -37,33 +37,33 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance subscription workflow confirmation", () => {
-  test("accepts unsubscribe confirmation from named subscription disappearance", () => {
+describe("completion kernel target-disappearance subscribe workflow confirmation", () => {
+  test("accepts subscribe confirmation from named unsubscribed target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha Channel Beta Unsubscribe from Channel Beta",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha Channel Beta Subscribe to Channel Beta",
       pageContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha Channel Beta Unsubscribe from Channel Beta",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha Channel Beta Subscribe to Channel Beta",
       elements: [
-        actionButton(527, "Unsubscribe from Channel Alpha"),
-        actionButton(528, "Unsubscribe from Channel Beta"),
+        actionButton(531, "Subscribe to Channel Alpha"),
+        actionButton(532, "Subscribe to Channel Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Beta Unsubscribe from Channel Beta",
+        "Unsubscribed channels Channel Beta Subscribe to Channel Beta",
       pageContent:
-        "Subscribed channels Channel Beta Unsubscribe from Channel Beta",
-      elements: [actionButton(528, "Unsubscribe from Channel Beta")],
+        "Unsubscribed channels Channel Beta Subscribe to Channel Beta",
+      elements: [actionButton(532, "Subscribe to Channel Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unsubscribe from Channel Alpha.",
+      userRequest: "Subscribe to Channel Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -73,55 +73,55 @@ describe("completion kernel target-disappearance subscription workflow confirmat
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unsubscribed from Channel Alpha.",
+      summary: "Subscribed to Channel Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unsubscribe",
+      action: "subscribe",
       targetLabel: "Channel Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unsubscribe:channel-alpha",
+        logicalKey: "workflow:confirmation:subscribe:channel-alpha",
         detail: expect.objectContaining({
-          action: "unsubscribe",
+          action: "subscribe",
           source: "target_disappearance",
-          text: "Unsubscribed target no longer visible: Channel Alpha",
+          text: "Subscribed target no longer visible: Channel Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects unsubscribe target-disappearance evidence for the wrong requested subscription", () => {
+  test("rejects subscribe target-disappearance evidence for the wrong requested subscription", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha Channel Beta Unsubscribe from Channel Beta",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha Channel Beta Subscribe to Channel Beta",
       pageContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha Channel Beta Unsubscribe from Channel Beta",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha Channel Beta Subscribe to Channel Beta",
       elements: [
-        actionButton(527, "Unsubscribe from Channel Alpha"),
-        actionButton(528, "Unsubscribe from Channel Beta"),
+        actionButton(531, "Subscribe to Channel Alpha"),
+        actionButton(532, "Subscribe to Channel Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
       pageContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
-      elements: [actionButton(527, "Unsubscribe from Channel Alpha")],
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
+      elements: [actionButton(531, "Subscribe to Channel Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unsubscribe from Channel Alpha.",
+      userRequest: "Subscribe to Channel Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 528 },
-      result: "Clicked element 528.",
+      args: { id: 532 },
+      result: "Clicked element 532.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -131,23 +131,23 @@ describe("completion kernel target-disappearance subscription workflow confirmat
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unsubscribed from Channel Alpha.",
+      summary: "Subscribed to Channel Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unsubscribe",
+      action: "subscribe",
       targetLabel: "Channel Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unsubscribe:channel-beta",
+        logicalKey: "workflow:confirmation:subscribe:channel-beta",
         detail: expect.objectContaining({
-          action: "unsubscribe",
+          action: "subscribe",
           source: "target_disappearance",
-          text: "Unsubscribed target no longer visible: Channel Beta",
+          text: "Subscribed target no longer visible: Channel Beta",
         }),
       }),
     ]);
@@ -158,26 +158,26 @@ describe("completion kernel target-disappearance subscription workflow confirmat
     });
   });
 
-  test("does not infer unsubscribe confirmation while the named subscription remains visible", () => {
+  test("does not infer subscribe confirmation while the named subscription remains visible", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
       pageContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
-      elements: [actionButton(527, "Unsubscribe from Channel Alpha")],
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
+      elements: [actionButton(531, "Subscribe to Channel Alpha")],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
       pageContent:
-        "Subscribed channels Channel Alpha Unsubscribe from Channel Alpha",
-      elements: [actionButton(527, "Unsubscribe from Channel Alpha")],
+        "Unsubscribed channels Channel Alpha Subscribe to Channel Alpha",
+      elements: [actionButton(531, "Subscribe to Channel Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -186,35 +186,35 @@ describe("completion kernel target-disappearance subscription workflow confirmat
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unsubscribe confirmation from a generic unsubscribe button", () => {
-    const genericUnsubscribeButton: TaggedElement = {
-      tag: 527,
+  test("does not infer subscribe confirmation from a generic subscribe button", () => {
+    const genericSubscribeButton: TaggedElement = {
+      tag: 531,
       tagName: "button",
       role: "button",
-      text: "Unsubscribe",
+      text: "Subscribe",
       attributes: {
-        id: "unsubscribe",
-        "aria-label": "Unsubscribe",
+        id: "subscribe",
+        "aria-label": "Subscribe",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Subscribed channels Channel Alpha Unsubscribe",
-      pageContent: "Subscribed channels Channel Alpha Unsubscribe",
-      elements: [genericUnsubscribeButton],
+      visibleContent: "Unsubscribed channels Channel Alpha Subscribe",
+      pageContent: "Unsubscribed channels Channel Alpha Subscribe",
+      elements: [genericSubscribeButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Subscribed channels",
-      pageContent: "Subscribed channels",
+      visibleContent: "Unsubscribed channels",
+      pageContent: "Unsubscribed channels",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 527 },
-      result: "Clicked element 527.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -222,5 +222,4 @@ describe("completion kernel target-disappearance subscription workflow confirmat
 
     expect(evidence).toEqual([]);
   });
-
 });
