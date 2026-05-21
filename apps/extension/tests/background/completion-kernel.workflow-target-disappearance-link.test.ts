@@ -38,30 +38,30 @@ function actionButton(tag: number, label: string): TaggedElement {
 }
 
 describe("completion kernel target-disappearance link workflow confirmation", () => {
-  test("accepts unlink confirmation from named relationship disappearance", () => {
+  test("accepts link confirmation from named relationship disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+        "Unlinked accounts Account Alpha Link Account Alpha Account Beta Link Account Beta",
       pageContent:
-        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+        "Unlinked accounts Account Alpha Link Account Alpha Account Beta Link Account Beta",
       elements: [
-        actionButton(509, "Unlink Account Alpha"),
-        actionButton(510, "Unlink Account Beta"),
+        actionButton(511, "Link Account Alpha"),
+        actionButton(512, "Link Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Linked accounts Account Beta Unlink Account Beta",
-      pageContent: "Linked accounts Account Beta Unlink Account Beta",
-      elements: [actionButton(510, "Unlink Account Beta")],
+      visibleContent: "Unlinked accounts Account Beta Link Account Beta",
+      pageContent: "Unlinked accounts Account Beta Link Account Beta",
+      elements: [actionButton(512, "Link Account Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unlink Account Alpha.",
+      userRequest: "Link Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 509 },
-      result: "Clicked element 509.",
+      args: { id: 511 },
+      result: "Clicked element 511.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel target-disappearance link workflow confirmation", ()
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unlinked Account Alpha.",
+      summary: "Linked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unlink",
+      action: "link",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unlink:account-alpha",
+        logicalKey: "workflow:confirmation:link:account-alpha",
         detail: expect.objectContaining({
-          action: "unlink",
+          action: "link",
           source: "target_disappearance",
-          text: "Unlinked target no longer visible: Account Alpha",
+          text: "Linked target no longer visible: Account Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects unlink target-disappearance evidence for the wrong requested relationship", () => {
+  test("rejects link target-disappearance evidence for the wrong requested relationship", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+        "Unlinked accounts Account Alpha Link Account Alpha Account Beta Link Account Beta",
       pageContent:
-        "Linked accounts Account Alpha Unlink Account Alpha Account Beta Unlink Account Beta",
+        "Unlinked accounts Account Alpha Link Account Alpha Account Beta Link Account Beta",
       elements: [
-        actionButton(509, "Unlink Account Alpha"),
-        actionButton(510, "Unlink Account Beta"),
+        actionButton(511, "Link Account Alpha"),
+        actionButton(512, "Link Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      elements: [actionButton(509, "Unlink Account Alpha")],
+      visibleContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      pageContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      elements: [actionButton(511, "Link Account Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unlink Account Alpha.",
+      userRequest: "Link Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 510 },
-      result: "Clicked element 510.",
+      args: { id: 512 },
+      result: "Clicked element 512.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel target-disappearance link workflow confirmation", ()
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unlinked Account Alpha.",
+      summary: "Linked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unlink",
+      action: "link",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unlink:account-beta",
+        logicalKey: "workflow:confirmation:link:account-beta",
         detail: expect.objectContaining({
-          action: "unlink",
+          action: "link",
           source: "target_disappearance",
-          text: "Unlinked target no longer visible: Account Beta",
+          text: "Linked target no longer visible: Account Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel target-disappearance link workflow confirmation", ()
     });
   });
 
-  test("does not infer unlink confirmation while the named relationship remains visible", () => {
+  test("does not infer link confirmation while the named relationship remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      elements: [actionButton(509, "Unlink Account Alpha")],
+      visibleContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      pageContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      elements: [actionButton(511, "Link Account Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      pageContent: "Linked accounts Account Alpha Unlink Account Alpha",
-      elements: [actionButton(509, "Unlink Account Alpha")],
+      visibleContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      pageContent: "Unlinked accounts Account Alpha Link Account Alpha",
+      elements: [actionButton(511, "Link Account Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 509 },
-      result: "Clicked element 509.",
+      args: { id: 511 },
+      result: "Clicked element 511.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel target-disappearance link workflow confirmation", ()
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unlink confirmation from a generic unlink button", () => {
-    const genericUnlinkButton: TaggedElement = {
-      tag: 509,
+  test("does not infer link confirmation from a generic link button", () => {
+    const genericLinkButton: TaggedElement = {
+      tag: 511,
       tagName: "button",
       role: "button",
-      text: "Unlink",
+      text: "Link",
       attributes: {
-        id: "unlink",
-        "aria-label": "Unlink",
+        id: "link",
+        "aria-label": "Link",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Linked accounts Account Alpha Unlink",
-      pageContent: "Linked accounts Account Alpha Unlink",
-      elements: [genericUnlinkButton],
+      visibleContent: "Unlinked accounts Account Alpha Link",
+      pageContent: "Unlinked accounts Account Alpha Link",
+      elements: [genericLinkButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Linked accounts",
-      pageContent: "Linked accounts",
+      visibleContent: "Unlinked accounts",
+      pageContent: "Unlinked accounts",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 509 },
-      result: "Clicked element 509.",
+      args: { id: 511 },
+      result: "Clicked element 511.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel target-disappearance link workflow confirmation", ()
 
     expect(evidence).toEqual([]);
   });
-
 });
