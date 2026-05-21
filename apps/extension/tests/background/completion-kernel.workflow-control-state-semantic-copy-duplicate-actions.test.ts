@@ -72,34 +72,38 @@ function dataStateActionButton(
   };
 }
 
-describe("completion kernel workflow control-state semantic object action confirmation", () => {
+describe("completion kernel workflow control-state semantic copy and duplicate action confirmation", () => {
   for (const scenario of [
     {
-      label: "Delete Ticket Alpha",
-      request: "Delete Ticket Alpha.",
-      summary: "Deleted Ticket Alpha.",
-      target: "Ticket Alpha",
-      id: "ticket-alpha-delete",
-      beforeState: "active",
-      afterState: "deleted",
+      action: "copy",
+      completion: "copied",
+      label: "Copy Link Alpha",
+      request: "Copy Link Alpha.",
+      summary: "Copied Link Alpha.",
+      target: "Link Alpha",
+      id: "link-alpha-copy",
+      beforeState: "ready",
+      afterState: "copied",
     },
     {
-      label: "Remove File Alpha",
-      request: "Remove File Alpha.",
-      summary: "Removed File Alpha.",
-      target: "File Alpha",
-      id: "file-alpha-remove",
-      beforeState: "present",
-      afterState: "removed",
+      action: "duplicate",
+      completion: "duplicated",
+      label: "Duplicate Template Alpha",
+      request: "Duplicate Template Alpha.",
+      summary: "Duplicated Template Alpha.",
+      target: "Template Alpha",
+      id: "template-alpha-duplicate",
+      beforeState: "ready",
+      afterState: "duplicated",
     },
   ] as const) {
-    test(`accepts delete confirmation from semantic deletion data-state control state change for ${scenario.label.toLowerCase()}`, () => {
+    test(`accepts ${scenario.action} confirmation from semantic copy data-state control state change`, () => {
       const pre = workflowSnapshot({
         visibleContent: `${scenario.target} ${scenario.label}`,
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            802,
+            810,
             scenario.label,
             scenario.beforeState,
             scenario.id,
@@ -111,7 +115,7 @@ describe("completion kernel workflow control-state semantic object action confir
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            803,
+            811,
             scenario.label,
             scenario.afterState,
             scenario.id,
@@ -124,8 +128,8 @@ describe("completion kernel workflow control-state semantic object action confir
       });
       const evidence = deriveCompletionEvidenceFromToolOutcome({
         toolName: ToolName.CLICK_ELEMENT,
-        args: { id: 802 },
-        result: "Clicked element 802.",
+        args: { id: 810 },
+        result: "Clicked element 810.",
         preActionSnapshot: pre,
         currentSnapshot: current,
         turn: 11,
@@ -140,19 +144,19 @@ describe("completion kernel workflow control-state semantic object action confir
 
       expect(generated?.contract).toMatchObject({
         kind: "workflow_confirmation",
-        action: "delete",
+        action: scenario.action,
         targetLabel: scenario.target,
       });
       expect(evidence).toEqual([
         expect.objectContaining({
           type: "confirmation_state",
           confidence: "high",
-          logicalKey: `workflow:confirmation:delete:control-state:${scenario.id}`,
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
           detail: expect.objectContaining({
-            action: "delete",
+            action: scenario.action,
             source: "control_state_change",
             targetText: scenario.target,
-            text: `Control state changed to deleted: ${scenario.label}`,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
           }),
         }),
       ]);
@@ -160,36 +164,36 @@ describe("completion kernel workflow control-state semantic object action confir
     });
   }
 
-  test("does not infer delete confirmation when semantic data-state was already deleted", () => {
+  test("does not infer copy confirmation when semantic data-state was already copied", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Ticket Alpha Delete Ticket Alpha",
-      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      visibleContent: "Link Alpha Copy Link Alpha",
+      pageContent: "Link Alpha Copy Link Alpha",
       elements: [
         dataStateActionButton(
-          804,
-          "Delete Ticket Alpha",
-          "deleted",
-          "ticket-alpha-delete",
+          812,
+          "Copy Link Alpha",
+          "copied",
+          "link-alpha-copy",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Ticket Alpha Delete Ticket Alpha",
-      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      visibleContent: "Link Alpha Copy Link Alpha",
+      pageContent: "Link Alpha Copy Link Alpha",
       elements: [
         dataStateActionButton(
-          805,
-          "Delete Ticket Alpha",
-          "deleted",
-          "ticket-alpha-delete",
+          813,
+          "Copy Link Alpha",
+          "copied",
+          "link-alpha-copy",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 804 },
-      result: "Clicked element 804.",
+      args: { id: 812 },
+      result: "Clicked element 812.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -198,36 +202,36 @@ describe("completion kernel workflow control-state semantic object action confir
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer delete confirmation when semantic data-state flips active", () => {
+  test("does not infer duplicate confirmation when semantic data-state flips ready", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Ticket Alpha Delete Ticket Alpha",
-      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      visibleContent: "Template Alpha Duplicate Template Alpha",
+      pageContent: "Template Alpha Duplicate Template Alpha",
       elements: [
         dataStateActionButton(
-          806,
-          "Delete Ticket Alpha",
-          "deleted",
-          "ticket-alpha-delete",
+          814,
+          "Duplicate Template Alpha",
+          "duplicated",
+          "template-alpha-duplicate",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Ticket Alpha Delete Ticket Alpha",
-      pageContent: "Ticket Alpha Delete Ticket Alpha",
+      visibleContent: "Template Alpha Duplicate Template Alpha",
+      pageContent: "Template Alpha Duplicate Template Alpha",
       elements: [
         dataStateActionButton(
-          807,
-          "Delete Ticket Alpha",
-          "active",
-          "ticket-alpha-delete",
+          815,
+          "Duplicate Template Alpha",
+          "ready",
+          "template-alpha-duplicate",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 806 },
-      result: "Clicked element 806.",
+      args: { id: 814 },
+      result: "Clicked element 814.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -235,43 +239,4 @@ describe("completion kernel workflow control-state semantic object action confir
 
     expect(evidence).toEqual([]);
   });
-
-  test("does not infer delete confirmation from remove-assignment wording", () => {
-    const pre = workflowSnapshot({
-      visibleContent: "Ticket Alpha Remove assignment from Ticket Alpha",
-      pageContent: "Ticket Alpha Remove assignment from Ticket Alpha",
-      elements: [
-        dataStateActionButton(
-          808,
-          "Remove assignment from Ticket Alpha",
-          "active",
-          "ticket-alpha-assignment",
-        ),
-      ],
-    });
-    const current = workflowSnapshot({
-      visibleContent: "Ticket Alpha Remove assignment from Ticket Alpha",
-      pageContent: "Ticket Alpha Remove assignment from Ticket Alpha",
-      elements: [
-        dataStateActionButton(
-          809,
-          "Remove assignment from Ticket Alpha",
-          "removed",
-          "ticket-alpha-assignment",
-        ),
-      ],
-    });
-
-    const evidence = deriveCompletionEvidenceFromToolOutcome({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 808 },
-      result: "Clicked element 808.",
-      preActionSnapshot: pre,
-      currentSnapshot: current,
-      turn: 11,
-    });
-
-    expect(evidence).toEqual([]);
-  });
-
 });
