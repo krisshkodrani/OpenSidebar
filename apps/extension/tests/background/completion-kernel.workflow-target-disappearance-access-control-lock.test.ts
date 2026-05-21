@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel unlock target-disappearance access-control workflow confirmation", () => {
-  test("accepts unlock confirmation from named locked target disappearance", () => {
+describe("completion kernel lock target-disappearance access-control workflow confirmation", () => {
+  test("accepts lock confirmation from named unlocked target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+        "Unlocked accounts Account Alpha Lock Account Alpha Account Beta Lock Account Beta",
       pageContent:
-        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+        "Unlocked accounts Account Alpha Lock Account Alpha Account Beta Lock Account Beta",
       elements: [
-        actionButton(549, "Unlock Account Alpha"),
-        actionButton(550, "Unlock Account Beta"),
+        actionButton(551, "Lock Account Alpha"),
+        actionButton(552, "Lock Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Locked accounts Account Beta Unlock Account Beta",
-      pageContent: "Locked accounts Account Beta Unlock Account Beta",
-      elements: [actionButton(550, "Unlock Account Beta")],
+      visibleContent: "Unlocked accounts Account Beta Lock Account Beta",
+      pageContent: "Unlocked accounts Account Beta Lock Account Beta",
+      elements: [actionButton(552, "Lock Account Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unlock Account Alpha.",
+      userRequest: "Lock Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 549 },
-      result: "Clicked element 549.",
+      args: { id: 551 },
+      result: "Clicked element 551.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel unlock target-disappearance access-control workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unlocked Account Alpha.",
+      summary: "Locked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unlock",
+      action: "lock",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unlock:account-alpha",
+        logicalKey: "workflow:confirmation:lock:account-alpha",
         detail: expect.objectContaining({
-          action: "unlock",
+          action: "lock",
           source: "target_disappearance",
-          text: "Unlocked target no longer visible: Account Alpha",
+          text: "Locked target no longer visible: Account Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects unlock target-disappearance evidence for the wrong requested target", () => {
+  test("rejects lock target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+        "Unlocked accounts Account Alpha Lock Account Alpha Account Beta Lock Account Beta",
       pageContent:
-        "Locked accounts Account Alpha Unlock Account Alpha Account Beta Unlock Account Beta",
+        "Unlocked accounts Account Alpha Lock Account Alpha Account Beta Lock Account Beta",
       elements: [
-        actionButton(549, "Unlock Account Alpha"),
-        actionButton(550, "Unlock Account Beta"),
+        actionButton(551, "Lock Account Alpha"),
+        actionButton(552, "Lock Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      elements: [actionButton(549, "Unlock Account Alpha")],
+      visibleContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      pageContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      elements: [actionButton(551, "Lock Account Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unlock Account Alpha.",
+      userRequest: "Lock Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 550 },
-      result: "Clicked element 550.",
+      args: { id: 552 },
+      result: "Clicked element 552.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel unlock target-disappearance access-control workflow 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unlocked Account Alpha.",
+      summary: "Locked Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unlock",
+      action: "lock",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unlock:account-beta",
+        logicalKey: "workflow:confirmation:lock:account-beta",
         detail: expect.objectContaining({
-          action: "unlock",
+          action: "lock",
           source: "target_disappearance",
-          text: "Unlocked target no longer visible: Account Beta",
+          text: "Locked target no longer visible: Account Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel unlock target-disappearance access-control workflow 
     });
   });
 
-  test("does not infer unlock confirmation while the named target remains visible", () => {
+  test("does not infer lock confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      elements: [actionButton(549, "Unlock Account Alpha")],
+      visibleContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      pageContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      elements: [actionButton(551, "Lock Account Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      pageContent: "Locked accounts Account Alpha Unlock Account Alpha",
-      elements: [actionButton(549, "Unlock Account Alpha")],
+      visibleContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      pageContent: "Unlocked accounts Account Alpha Lock Account Alpha",
+      elements: [actionButton(551, "Lock Account Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 549 },
-      result: "Clicked element 549.",
+      args: { id: 551 },
+      result: "Clicked element 551.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel unlock target-disappearance access-control workflow 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unlock confirmation from a generic unlock button", () => {
-    const genericUnlockButton: TaggedElement = {
-      tag: 549,
+  test("does not infer lock confirmation from a generic lock button", () => {
+    const genericLockButton: TaggedElement = {
+      tag: 551,
       tagName: "button",
       role: "button",
-      text: "Unlock",
+      text: "Lock",
       attributes: {
-        id: "unlock",
-        "aria-label": "Unlock",
+        id: "lock",
+        "aria-label": "Lock",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Locked accounts Account Alpha Unlock",
-      pageContent: "Locked accounts Account Alpha Unlock",
-      elements: [genericUnlockButton],
+      visibleContent: "Unlocked accounts Account Alpha Lock",
+      pageContent: "Unlocked accounts Account Alpha Lock",
+      elements: [genericLockButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Locked accounts",
-      pageContent: "Locked accounts",
+      visibleContent: "Unlocked accounts",
+      pageContent: "Unlocked accounts",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 549 },
-      result: "Clicked element 549.",
+      args: { id: 551 },
+      result: "Clicked element 551.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel unlock target-disappearance access-control workflow 
 
     expect(evidence).toEqual([]);
   });
-
 });
