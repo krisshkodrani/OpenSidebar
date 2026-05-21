@@ -21,18 +21,18 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel sentence-scoped service relation read-answer", () => {
-  test("accepts sentence-scoped supported-by answer for the requested target", () => {
+describe("completion kernel sentence-scoped service administration and monitoring relation read-answer", () => {
+  test("accepts active-voice sentence-scoped administers answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Service Atlas is supported by Core Support. Service Beacon is supported by Edge Support.",
+        "Core Admin administers Service Atlas. Edge Admin administers Service Beacon.",
       pageContent:
-        "Service Atlas is supported by Core Support. Service Beacon is supported by Edge Support. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Core Admin administers Service Atlas. Edge Admin administers Service Beacon. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who supports Service Atlas?",
+      userRequest: "Who administers Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -40,19 +40,19 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Core Support",
+      summary: "Core Admin",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Edge Support",
+      summary: "Edge Admin",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "supporter",
+      expectedAnswerLabel: "administrator",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -60,24 +60,24 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped supported-by answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped administers answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Service Atlas is supported by Core Support. Service Beacon is supported by Edge Support.",
+        "Core Admin administers Service Atlas. Edge Admin administers Service Beacon.",
       pageContent:
-        "Service Atlas is supported by Core Support. Service Beacon is supported by Edge Support. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Core Admin administers Service Atlas. Edge Admin administers Service Beacon. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Service Atlas supported by?",
+      userRequest: "Who administers Service Atlas?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nService Atlas is supported by Core Support. Service Beacon is supported by Edge Support. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Page content:\nCore Admin administers Service Atlas. Edge Admin administers Service Beacon. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -86,18 +86,18 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Core Support",
+      summary: "Core Admin",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Edge Support",
+      summary: "Edge Admin",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "supporter",
+      expectedAnswerLabel: "administrator",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -108,17 +108,17 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped supports answer for the requested target", () => {
+  test("accepts sentence-scoped administered-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Core Support supports Service Atlas. Edge Support supports Service Beacon.",
+        "Service Atlas is administered by Core Admin. Service Beacon is administered by Edge Admin.",
       pageContent:
-        "Core Support supports Service Atlas. Edge Support supports Service Beacon. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Service Atlas is administered by Core Admin. Service Beacon is administered by Edge Admin. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who supports Service Atlas?",
+      userRequest: "Who administers Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -126,19 +126,19 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Core Support",
+      summary: "Core Admin",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Edge Support",
+      summary: "Edge Admin",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "supporter",
+      expectedAnswerLabel: "administrator",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -146,24 +146,24 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped supports answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped administered-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Core Support supports Service Atlas. Edge Support supports Service Beacon.",
+        "Service Atlas is administered by Core Admin. Service Beacon is administered by Edge Admin.",
       pageContent:
-        "Core Support supports Service Atlas. Edge Support supports Service Beacon. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Service Atlas is administered by Core Admin. Service Beacon is administered by Edge Admin. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who supports Service Atlas?",
+      userRequest: "Who is Service Atlas administered by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nCore Support supports Service Atlas. Edge Support supports Service Beacon. The page explains service ownership, support routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Page content:\nService Atlas is administered by Core Admin. Service Beacon is administered by Edge Admin. The page explains service ownership, administration routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -172,18 +172,18 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Core Support",
+      summary: "Core Admin",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Edge Support",
+      summary: "Edge Admin",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "supporter",
+      expectedAnswerLabel: "administrator",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -194,17 +194,17 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped hosts answer for the requested target", () => {
+  test("accepts active-voice sentence-scoped monitors answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Core Hosting hosts Service Atlas. Edge Hosting hosts Service Beacon.",
+        "Core Observability monitors Service Atlas. Edge Observability monitors Service Beacon.",
       pageContent:
-        "Core Hosting hosts Service Atlas. Edge Hosting hosts Service Beacon. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Core Observability monitors Service Atlas. Edge Observability monitors Service Beacon. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who hosts Service Atlas?",
+      userRequest: "Who monitors Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -212,19 +212,19 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Core Hosting",
+      summary: "Core Observability",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Edge Hosting",
+      summary: "Edge Observability",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "host",
+      expectedAnswerLabel: "monitor",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -232,24 +232,24 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts active-voice sentence-scoped hosts answer from read_page evidence without live snapshot", () => {
+  test("accepts active-voice sentence-scoped monitors answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Core Hosting hosts Service Atlas. Edge Hosting hosts Service Beacon.",
+        "Core Observability monitors Service Atlas. Edge Observability monitors Service Beacon.",
       pageContent:
-        "Core Hosting hosts Service Atlas. Edge Hosting hosts Service Beacon. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Core Observability monitors Service Atlas. Edge Observability monitors Service Beacon. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who hosts Service Atlas?",
+      userRequest: "Who monitors Service Atlas?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nCore Hosting hosts Service Atlas. Edge Hosting hosts Service Beacon. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Page content:\nCore Observability monitors Service Atlas. Edge Observability monitors Service Beacon. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -258,18 +258,18 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Core Hosting",
+      summary: "Core Observability",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Edge Hosting",
+      summary: "Edge Observability",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "host",
+      expectedAnswerLabel: "monitor",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -280,17 +280,17 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped hosted-by answer for the requested target", () => {
+  test("accepts sentence-scoped monitored-by answer for the requested target", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Service Atlas is hosted by Core Hosting. Service Beacon is hosted by Edge Hosting.",
+        "Service Atlas is monitored by Core Observability. Service Beacon is monitored by Edge Observability.",
       pageContent:
-        "Service Atlas is hosted by Core Hosting. Service Beacon is hosted by Edge Hosting. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Service Atlas is monitored by Core Observability. Service Beacon is monitored by Edge Observability. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who hosts Service Atlas?",
+      userRequest: "Who monitors Service Atlas?",
       snapshot: snap,
     });
     const accepted = evaluateCompletionContract({
@@ -298,19 +298,19 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Core Hosting",
+      summary: "Core Observability",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence: deriveCompletionEvidenceFromSnapshot(snap, 8),
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Edge Hosting",
+      summary: "Edge Observability",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "host",
+      expectedAnswerLabel: "monitor",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
@@ -318,24 +318,24 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
     expect(siblingValue.status).toBe("inconclusive");
   });
 
-  test("accepts sentence-scoped hosted-by answer from read_page evidence without live snapshot", () => {
+  test("accepts sentence-scoped monitored-by answer from read_page evidence without live snapshot", () => {
     const snap = workflowSnapshot({
       title: "Service Details",
       url: "https://example.test/services",
       visibleContent:
-        "Service Atlas is hosted by Core Hosting. Service Beacon is hosted by Edge Hosting.",
+        "Service Atlas is monitored by Core Observability. Service Beacon is monitored by Edge Observability.",
       pageContent:
-        "Service Atlas is hosted by Core Hosting. Service Beacon is hosted by Edge Hosting. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Service Atlas is monitored by Core Observability. Service Beacon is monitored by Edge Observability. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Who is Service Atlas hosted by?",
+      userRequest: "Who is Service Atlas monitored by?",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.READ_PAGE,
       args: {},
       result:
-        "Page content:\nService Atlas is hosted by Core Hosting. Service Beacon is hosted by Edge Hosting. The page explains service ownership, hosting routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
+        "Page content:\nService Atlas is monitored by Core Observability. Service Beacon is monitored by Edge Observability. The page explains service ownership, monitoring routing, escalation notes, reliability policy, deployment timing, audit coverage, and follow-up responsibilities so operators can answer service questions from visible prose evidence.",
       preActionSnapshot: snap,
       currentSnapshot: snap,
       turn: 9,
@@ -344,18 +344,18 @@ describe("completion kernel sentence-scoped service relation read-answer", () =>
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Core Hosting",
+      summary: "Core Observability",
     });
     const siblingValue = evaluateCompletionContract({
       contract: generated?.contract,
       evidence,
       candidateSource: "model_done",
-      summary: "Edge Hosting",
+      summary: "Edge Observability",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "read_answer",
-      expectedAnswerLabel: "host",
+      expectedAnswerLabel: "monitor",
       expectedAnswerTarget: "Service Atlas",
       expectedAnswerScope: "sentence",
     });
