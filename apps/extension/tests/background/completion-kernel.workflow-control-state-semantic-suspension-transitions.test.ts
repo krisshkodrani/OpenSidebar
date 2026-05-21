@@ -72,38 +72,38 @@ function dataStateActionButton(
   };
 }
 
-describe("completion kernel workflow control-state semantic administrative transition confirmation", () => {
+describe("completion kernel workflow control-state semantic suspension transition confirmation", () => {
   for (const scenario of [
     {
-      action: "grant",
-      completion: "granted",
-      label: "Grant Role Alpha",
-      request: "Grant Role Alpha.",
-      summary: "Granted Role Alpha.",
-      target: "Role Alpha",
-      id: "role-alpha-grant",
-      beforeState: "revoked",
-      afterState: "granted",
+      action: "suspend",
+      completion: "suspended",
+      label: "Suspend Account Alpha",
+      request: "Suspend Account Alpha.",
+      summary: "Suspended Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-suspend",
+      beforeState: "unsuspended",
+      afterState: "suspended",
     },
     {
-      action: "revoke",
-      completion: "revoked",
-      label: "Revoke Role Alpha",
-      request: "Revoke Role Alpha.",
-      summary: "Revoked Role Alpha.",
-      target: "Role Alpha",
-      id: "role-alpha-grant",
-      beforeState: "granted",
-      afterState: "revoked",
+      action: "unsuspend",
+      completion: "unsuspended",
+      label: "Unsuspend Account Alpha",
+      request: "Unsuspend Account Alpha.",
+      summary: "Unsuspended Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-suspend",
+      beforeState: "suspended",
+      afterState: "unsuspended",
     },
   ] as const) {
-    test(`accepts ${scenario.action} confirmation from semantic grant data-state control state change`, () => {
+    test(`accepts ${scenario.action} confirmation from semantic suspend data-state control state change`, () => {
       const pre = workflowSnapshot({
         visibleContent: `${scenario.target} ${scenario.label}`,
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            716,
+            722,
             scenario.label,
             scenario.beforeState,
             scenario.id,
@@ -115,7 +115,7 @@ describe("completion kernel workflow control-state semantic administrative trans
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            717,
+            723,
             scenario.label,
             scenario.afterState,
             scenario.id,
@@ -128,8 +128,8 @@ describe("completion kernel workflow control-state semantic administrative trans
       });
       const evidence = deriveCompletionEvidenceFromToolOutcome({
         toolName: ToolName.CLICK_ELEMENT,
-        args: { id: 716 },
-        result: "Clicked element 716.",
+        args: { id: 722 },
+        result: "Clicked element 722.",
         preActionSnapshot: pre,
         currentSnapshot: current,
         turn: 11,
@@ -164,36 +164,36 @@ describe("completion kernel workflow control-state semantic administrative trans
     });
   }
 
-  test("does not infer grant confirmation when semantic data-state was already granted", () => {
+  test("does not infer suspend confirmation when semantic data-state was already suspended", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Role Alpha Grant Role Alpha",
-      pageContent: "Role Alpha Grant Role Alpha",
+      visibleContent: "Account Alpha Suspend Account Alpha",
+      pageContent: "Account Alpha Suspend Account Alpha",
       elements: [
         dataStateActionButton(
-          718,
-          "Grant Role Alpha",
-          "granted",
-          "role-alpha-grant",
+          724,
+          "Suspend Account Alpha",
+          "suspended",
+          "account-alpha-suspend",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Role Alpha Grant Role Alpha",
-      pageContent: "Role Alpha Grant Role Alpha",
+      visibleContent: "Account Alpha Suspend Account Alpha",
+      pageContent: "Account Alpha Suspend Account Alpha",
       elements: [
         dataStateActionButton(
-          719,
-          "Grant Role Alpha",
-          "granted",
-          "role-alpha-grant",
+          725,
+          "Suspend Account Alpha",
+          "suspended",
+          "account-alpha-suspend",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 718 },
-      result: "Clicked element 718.",
+      args: { id: 724 },
+      result: "Clicked element 724.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -202,36 +202,36 @@ describe("completion kernel workflow control-state semantic administrative trans
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer revoke confirmation when semantic data-state flips granted", () => {
+  test("does not infer unsuspend confirmation when semantic data-state flips suspended", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Role Alpha Revoke Role Alpha",
-      pageContent: "Role Alpha Revoke Role Alpha",
+      visibleContent: "Account Alpha Unsuspend Account Alpha",
+      pageContent: "Account Alpha Unsuspend Account Alpha",
       elements: [
         dataStateActionButton(
-          720,
-          "Revoke Role Alpha",
-          "revoked",
-          "role-alpha-grant",
+          726,
+          "Unsuspend Account Alpha",
+          "unsuspended",
+          "account-alpha-suspend",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Role Alpha Revoke Role Alpha",
-      pageContent: "Role Alpha Revoke Role Alpha",
+      visibleContent: "Account Alpha Unsuspend Account Alpha",
+      pageContent: "Account Alpha Unsuspend Account Alpha",
       elements: [
         dataStateActionButton(
-          721,
-          "Revoke Role Alpha",
-          "granted",
-          "role-alpha-grant",
+          727,
+          "Unsuspend Account Alpha",
+          "suspended",
+          "account-alpha-suspend",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 720 },
-      result: "Clicked element 720.",
+      args: { id: 726 },
+      result: "Clicked element 726.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -239,5 +239,4 @@ describe("completion kernel workflow control-state semantic administrative trans
 
     expect(evidence).toEqual([]);
   });
-
 });
