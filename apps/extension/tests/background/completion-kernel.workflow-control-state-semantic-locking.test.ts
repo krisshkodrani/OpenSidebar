@@ -1,0 +1,359 @@
+import { describe, expect, test } from "vitest";
+import "../setup";
+import {
+  deriveCompletionEvidenceFromToolOutcome,
+  evaluateCompletionContract,
+  generateCompletionContract,
+} from "../../src/background/agent/completion-kernel";
+import { ToolName, type DomSnapshot, type TaggedElement } from "../../src/types";
+
+function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
+  return {
+    title: "Account Settings",
+    url: "https://example.test/account",
+    visibleContent: "Account settings",
+    pageContent: "Account settings",
+    elements: [],
+    viewport: { width: 1280, height: 720 },
+    scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    ...overrides,
+  };
+}
+
+function actionButton(tag: number, label: string): TaggedElement {
+  const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    tag,
+    tagName: "button",
+    role: "button",
+    text: label,
+    attributes: {
+      id: key,
+      "aria-label": label,
+    },
+    rect: { x: 500, y: tag * 20, width: 120, height: 32 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
+function stableActionButton(
+  tag: number,
+  label: string,
+  id: string,
+): TaggedElement {
+  return {
+    ...actionButton(tag, label),
+    attributes: {
+      id,
+      "aria-label": label,
+    },
+  };
+}
+
+function statefulActionButton(
+  tag: number,
+  label: string,
+  pressed: boolean,
+  id: string,
+): TaggedElement {
+  return {
+    ...stableActionButton(tag, label, id),
+    attributes: {
+      id,
+      "aria-label": label,
+      "aria-pressed": String(pressed),
+    },
+  };
+}
+
+function dataStateActionButton(
+  tag: number,
+  label: string,
+  state: string,
+  id: string,
+  attribute:
+    | "data-state"
+    | "data-selected"
+    | "data-checked"
+    | "data-pressed" = "data-state",
+): TaggedElement {
+  return {
+    ...stableActionButton(tag, label, id),
+    attributes: {
+      id,
+      "aria-label": label,
+      [attribute]: state,
+    },
+  };
+}
+
+describe("completion kernel workflow control-state semantic locking confirmation", () => {
+  test("accepts lock confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(624, "Lock account", false, "account-lock")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Lock account",
+      pageContent: "Security settings Lock account",
+      elements: [statefulActionButton(625, "Lock account", true, "account-lock")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Lock the account.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 624 },
+      result: "Clicked element 624.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Locked the account.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "lock",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:lock:control-state:account-lock",
+        detail: expect.objectContaining({
+          action: "lock",
+          source: "control_state_change",
+          text: "Control state changed to locked: Lock account",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts unlock confirmation from control state change", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Security settings Unlock account",
+      pageContent: "Security settings Unlock account",
+      elements: [statefulActionButton(626, "Unlock account", true, "account-lock")],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Security settings Unlock account",
+      pageContent: "Security settings Unlock account",
+      elements: [statefulActionButton(627, "Unlock account", false, "account-lock")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unlock the account.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 626 },
+      result: "Clicked element 626.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unlocked the account.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unlock",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey: "workflow:confirmation:unlock:control-state:account-lock",
+        detail: expect.objectContaining({
+          action: "unlock",
+          source: "control_state_change",
+          text: "Control state changed to unlocked: Unlock account",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  for (const scenario of [
+    {
+      action: "lock",
+      completion: "locked",
+      label: "Lock Account Alpha",
+      request: "Lock Account Alpha.",
+      summary: "Locked Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-lock",
+      beforeState: "unlocked",
+      afterState: "locked",
+    },
+    {
+      action: "unlock",
+      completion: "unlocked",
+      label: "Unlock Account Alpha",
+      request: "Unlock Account Alpha.",
+      summary: "Unlocked Account Alpha.",
+      target: "Account Alpha",
+      id: "account-alpha-lock",
+      beforeState: "locked",
+      afterState: "unlocked",
+    },
+  ] as const) {
+    test(`accepts ${scenario.action} confirmation from semantic lock data-state control state change`, () => {
+      const pre = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            698,
+            scenario.label,
+            scenario.beforeState,
+            scenario.id,
+          ),
+        ],
+      });
+      const current = workflowSnapshot({
+        visibleContent: `${scenario.target} ${scenario.label}`,
+        pageContent: `${scenario.target} ${scenario.label}`,
+        elements: [
+          dataStateActionButton(
+            699,
+            scenario.label,
+            scenario.afterState,
+            scenario.id,
+          ),
+        ],
+      });
+      const generated = generateCompletionContract({
+        userRequest: scenario.request,
+        snapshot: current,
+      });
+      const evidence = deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.CLICK_ELEMENT,
+        args: { id: 698 },
+        result: "Clicked element 698.",
+        preActionSnapshot: pre,
+        currentSnapshot: current,
+        turn: 11,
+      });
+      const decision = evaluateCompletionContract({
+        contract: generated?.contract,
+        evidence,
+        snapshot: current,
+        candidateSource: "model_done",
+        summary: scenario.summary,
+      });
+
+      expect(generated?.contract).toMatchObject({
+        kind: "workflow_confirmation",
+        action: scenario.action,
+        targetLabel: scenario.target,
+      });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          type: "confirmation_state",
+          confidence: "high",
+          logicalKey: `workflow:confirmation:${scenario.action}:control-state:${scenario.id}`,
+          detail: expect.objectContaining({
+            action: scenario.action,
+            source: "control_state_change",
+            targetText: scenario.target,
+            text: `Control state changed to ${scenario.completion}: ${scenario.label}`,
+          }),
+        }),
+      ]);
+      expect(decision.status).toBe("accepted");
+    });
+  }
+
+  test("does not infer lock confirmation when semantic data-state was already locked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Lock Account Alpha",
+      pageContent: "Account Alpha Lock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          700,
+          "Lock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Lock Account Alpha",
+      pageContent: "Account Alpha Lock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          701,
+          "Lock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 700 },
+      result: "Clicked element 700.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+  test("does not infer unlock confirmation when semantic data-state flips locked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Account Alpha Unlock Account Alpha",
+      pageContent: "Account Alpha Unlock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          702,
+          "Unlock Account Alpha",
+          "unlocked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Account Alpha Unlock Account Alpha",
+      pageContent: "Account Alpha Unlock Account Alpha",
+      elements: [
+        dataStateActionButton(
+          703,
+          "Unlock Account Alpha",
+          "locked",
+          "account-alpha-lock",
+        ),
+      ],
+    });
+
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 702 },
+      result: "Clicked element 702.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+
+    expect(evidence).toEqual([]);
+  });
+
+});
