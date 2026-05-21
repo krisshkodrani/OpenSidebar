@@ -37,25 +37,25 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance backup workflow confirmation", () => {
-  test("accepts backup confirmation from named database disappearance", () => {
+describe("completion kernel target-disappearance reset workflow confirmation", () => {
+  test("accepts reset confirmation from named credential disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Backup queue Database Alpha Back up Database Alpha Database Beta Back up Database Beta",
+        "Reset queue Password Alpha Reset Password Alpha Password Beta Reset Password Beta",
       pageContent:
-        "Backup queue Database Alpha Back up Database Alpha Database Beta Back up Database Beta",
+        "Reset queue Password Alpha Reset Password Alpha Password Beta Reset Password Beta",
       elements: [
-        actionButton(504, "Back up Database Alpha"),
-        actionButton(505, "Back up Database Beta"),
+        actionButton(504, "Reset Password Alpha"),
+        actionButton(505, "Reset Password Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Backup queue Database Beta Back up Database Beta",
-      pageContent: "Backup queue Database Beta Back up Database Beta",
-      elements: [actionButton(505, "Back up Database Beta")],
+      visibleContent: "Reset queue Password Beta Reset Password Beta",
+      pageContent: "Reset queue Password Beta Reset Password Beta",
+      elements: [actionButton(505, "Reset Password Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Back up Database Alpha.",
+      userRequest: "Reset Password Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
@@ -71,47 +71,47 @@ describe("completion kernel target-disappearance backup workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Backed up Database Alpha.",
+      summary: "Reset Password Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "backup",
-      targetLabel: "Database Alpha",
+      action: "reset",
+      targetLabel: "Password Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:backup:database-alpha",
+        logicalKey: "workflow:confirmation:reset:password-alpha",
         detail: expect.objectContaining({
-          action: "backup",
+          action: "reset",
           source: "target_disappearance",
-          text: "Backed up target no longer visible: Database Alpha",
+          text: "Reset target no longer visible: Password Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects backup target-disappearance evidence for the wrong requested database", () => {
+  test("rejects reset target-disappearance evidence for the wrong requested credential", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Backup queue Database Alpha Back up Database Alpha Database Beta Back up Database Beta",
+        "Reset queue Password Alpha Reset Password Alpha Password Beta Reset Password Beta",
       pageContent:
-        "Backup queue Database Alpha Back up Database Alpha Database Beta Back up Database Beta",
+        "Reset queue Password Alpha Reset Password Alpha Password Beta Reset Password Beta",
       elements: [
-        actionButton(504, "Back up Database Alpha"),
-        actionButton(505, "Back up Database Beta"),
+        actionButton(504, "Reset Password Alpha"),
+        actionButton(505, "Reset Password Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Backup queue Database Alpha Back up Database Alpha",
-      pageContent: "Backup queue Database Alpha Back up Database Alpha",
-      elements: [actionButton(504, "Back up Database Alpha")],
+      visibleContent: "Reset queue Password Alpha Reset Password Alpha",
+      pageContent: "Reset queue Password Alpha Reset Password Alpha",
+      elements: [actionButton(504, "Reset Password Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Back up Database Alpha.",
+      userRequest: "Reset Password Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
@@ -127,23 +127,23 @@ describe("completion kernel target-disappearance backup workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Backed up Database Alpha.",
+      summary: "Reset Password Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "backup",
-      targetLabel: "Database Alpha",
+      action: "reset",
+      targetLabel: "Password Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:backup:database-beta",
+        logicalKey: "workflow:confirmation:reset:password-beta",
         detail: expect.objectContaining({
-          action: "backup",
+          action: "reset",
           source: "target_disappearance",
-          text: "Backed up target no longer visible: Database Beta",
+          text: "Reset target no longer visible: Password Beta",
         }),
       }),
     ]);
@@ -154,16 +154,16 @@ describe("completion kernel target-disappearance backup workflow confirmation", 
     });
   });
 
-  test("does not infer backup confirmation while the named database remains visible", () => {
+  test("does not infer reset confirmation while the named credential remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Backup queue Database Alpha Back up Database Alpha",
-      pageContent: "Backup queue Database Alpha Back up Database Alpha",
-      elements: [actionButton(504, "Back up Database Alpha")],
+      visibleContent: "Reset queue Password Alpha Reset Password Alpha",
+      pageContent: "Reset queue Password Alpha Reset Password Alpha",
+      elements: [actionButton(504, "Reset Password Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Backup queue Database Alpha Back up Database Alpha",
-      pageContent: "Backup queue Database Alpha Back up Database Alpha",
-      elements: [actionButton(504, "Back up Database Alpha")],
+      visibleContent: "Reset queue Password Alpha Reset Password Alpha",
+      pageContent: "Reset queue Password Alpha Reset Password Alpha",
+      elements: [actionButton(504, "Reset Password Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
@@ -178,28 +178,28 @@ describe("completion kernel target-disappearance backup workflow confirmation", 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer backup confirmation from a generic backup button", () => {
-    const genericBackupButton: TaggedElement = {
+  test("does not infer reset confirmation from a generic reset button", () => {
+    const genericResetButton: TaggedElement = {
       tag: 504,
       tagName: "button",
       role: "button",
-      text: "Back up",
+      text: "Reset",
       attributes: {
-        id: "backup",
-        "aria-label": "Back up",
+        id: "reset",
+        "aria-label": "Reset",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Backup queue Database Alpha Back up",
-      pageContent: "Backup queue Database Alpha Back up",
-      elements: [genericBackupButton],
+      visibleContent: "Reset queue Password Alpha Reset",
+      pageContent: "Reset queue Password Alpha Reset",
+      elements: [genericResetButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Backup queue",
-      pageContent: "Backup queue",
+      visibleContent: "Reset queue",
+      pageContent: "Reset queue",
       elements: [],
     });
 
