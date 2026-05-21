@@ -37,31 +37,33 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance favorite preference workflow confirmation", () => {
-  test("accepts favorite confirmation from named unfavorited target disappearance", () => {
+describe("completion kernel target-disappearance unfavorite workflow confirmation", () => {
+  test("accepts unfavorite confirmation from named favorited target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unfavorited reports Report Alpha Favorite Report Alpha Report Beta Favorite Report Beta",
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
       pageContent:
-        "Unfavorited reports Report Alpha Favorite Report Alpha Report Beta Favorite Report Beta",
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
       elements: [
-        actionButton(541, "Favorite Report Alpha"),
-        actionButton(542, "Favorite Report Beta"),
+        actionButton(537, "Unfavorite Report Alpha"),
+        actionButton(538, "Unfavorite Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfavorited reports Report Beta Favorite Report Beta",
-      pageContent: "Unfavorited reports Report Beta Favorite Report Beta",
-      elements: [actionButton(542, "Favorite Report Beta")],
+      visibleContent:
+        "Favorited reports Report Beta Unfavorite Report Beta",
+      pageContent:
+        "Favorited reports Report Beta Unfavorite Report Beta",
+      elements: [actionButton(538, "Unfavorite Report Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Favorite Report Alpha.",
+      userRequest: "Unfavorite Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 541 },
-      result: "Clicked element 541.",
+      args: { id: 537 },
+      result: "Clicked element 537.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +73,55 @@ describe("completion kernel target-disappearance favorite preference workflow co
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Favorited Report Alpha.",
+      summary: "Unfavorited Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "favorite",
+      action: "unfavorite",
       targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:favorite:report-alpha",
+        logicalKey: "workflow:confirmation:unfavorite:report-alpha",
         detail: expect.objectContaining({
-          action: "favorite",
+          action: "unfavorite",
           source: "target_disappearance",
-          text: "Favorited target no longer visible: Report Alpha",
+          text: "Unfavorited target no longer visible: Report Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects favorite target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unfavorite target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unfavorited reports Report Alpha Favorite Report Alpha Report Beta Favorite Report Beta",
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
       pageContent:
-        "Unfavorited reports Report Alpha Favorite Report Alpha Report Beta Favorite Report Beta",
+        "Favorited reports Report Alpha Unfavorite Report Alpha Report Beta Unfavorite Report Beta",
       elements: [
-        actionButton(541, "Favorite Report Alpha"),
-        actionButton(542, "Favorite Report Beta"),
+        actionButton(537, "Unfavorite Report Alpha"),
+        actionButton(538, "Unfavorite Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      pageContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      elements: [actionButton(541, "Favorite Report Alpha")],
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Favorite Report Alpha.",
+      userRequest: "Unfavorite Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 542 },
-      result: "Clicked element 542.",
+      args: { id: 538 },
+      result: "Clicked element 538.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +131,23 @@ describe("completion kernel target-disappearance favorite preference workflow co
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Favorited Report Alpha.",
+      summary: "Unfavorited Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "favorite",
+      action: "unfavorite",
       targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:favorite:report-beta",
+        logicalKey: "workflow:confirmation:unfavorite:report-beta",
         detail: expect.objectContaining({
-          action: "favorite",
+          action: "unfavorite",
           source: "target_disappearance",
-          text: "Favorited target no longer visible: Report Beta",
+          text: "Unfavorited target no longer visible: Report Beta",
         }),
       }),
     ]);
@@ -154,22 +158,26 @@ describe("completion kernel target-disappearance favorite preference workflow co
     });
   });
 
-  test("does not infer favorite confirmation while the named target remains visible", () => {
+  test("does not infer unfavorite confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      pageContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      elements: [actionButton(541, "Favorite Report Alpha")],
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      pageContent: "Unfavorited reports Report Alpha Favorite Report Alpha",
-      elements: [actionButton(541, "Favorite Report Alpha")],
+      visibleContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      pageContent:
+        "Favorited reports Report Alpha Unfavorite Report Alpha",
+      elements: [actionButton(537, "Unfavorite Report Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 541 },
-      result: "Clicked element 541.",
+      args: { id: 537 },
+      result: "Clicked element 537.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +186,35 @@ describe("completion kernel target-disappearance favorite preference workflow co
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer favorite confirmation from a generic favorite button", () => {
-    const genericFavoriteButton: TaggedElement = {
-      tag: 541,
+  test("does not infer unfavorite confirmation from a generic unfavorite button", () => {
+    const genericUnfavoriteButton: TaggedElement = {
+      tag: 537,
       tagName: "button",
       role: "button",
-      text: "Favorite",
+      text: "Unfavorite",
       attributes: {
-        id: "favorite",
-        "aria-label": "Favorite",
+        id: "unfavorite",
+        "aria-label": "Unfavorite",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unfavorited reports Report Alpha Favorite",
-      pageContent: "Unfavorited reports Report Alpha Favorite",
-      elements: [genericFavoriteButton],
+      visibleContent: "Favorited reports Report Alpha Unfavorite",
+      pageContent: "Favorited reports Report Alpha Unfavorite",
+      elements: [genericUnfavoriteButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfavorited reports",
-      pageContent: "Unfavorited reports",
+      visibleContent: "Favorited reports",
+      pageContent: "Favorited reports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 541 },
-      result: "Clicked element 541.",
+      args: { id: 537 },
+      result: "Clicked element 537.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +222,4 @@ describe("completion kernel target-disappearance favorite preference workflow co
 
     expect(evidence).toEqual([]);
   });
-
 });
