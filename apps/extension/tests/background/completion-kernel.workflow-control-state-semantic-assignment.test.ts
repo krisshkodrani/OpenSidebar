@@ -72,38 +72,38 @@ function dataStateActionButton(
   };
 }
 
-describe("completion kernel workflow control-state semantic access-management confirmation", () => {
+describe("completion kernel workflow control-state semantic assignment confirmation", () => {
   for (const scenario of [
     {
-      action: "block",
-      completion: "blocked",
-      label: "Block User Alpha",
-      request: "Block User Alpha.",
-      summary: "Blocked User Alpha.",
-      target: "User Alpha",
-      id: "user-alpha-block",
-      beforeState: "unblocked",
-      afterState: "blocked",
+      action: "assign",
+      completion: "assigned",
+      label: "Assign Ticket Alpha",
+      request: "Assign Ticket Alpha.",
+      summary: "Assigned Ticket Alpha.",
+      target: "Ticket Alpha",
+      id: "ticket-alpha-assign",
+      beforeState: "unassigned",
+      afterState: "assigned",
     },
     {
-      action: "unblock",
-      completion: "unblocked",
-      label: "Unblock User Alpha",
-      request: "Unblock User Alpha.",
-      summary: "Unblocked User Alpha.",
-      target: "User Alpha",
-      id: "user-alpha-block",
-      beforeState: "blocked",
-      afterState: "unblocked",
+      action: "unassign",
+      completion: "unassigned",
+      label: "Unassign Ticket Alpha",
+      request: "Unassign Ticket Alpha.",
+      summary: "Unassigned Ticket Alpha.",
+      target: "Ticket Alpha",
+      id: "ticket-alpha-assign",
+      beforeState: "assigned",
+      afterState: "unassigned",
     },
   ] as const) {
-    test(`accepts ${scenario.action} confirmation from semantic block data-state control state change`, () => {
+    test(`accepts ${scenario.action} confirmation from semantic assignment data-state control state change`, () => {
       const pre = workflowSnapshot({
         visibleContent: `${scenario.target} ${scenario.label}`,
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            704,
+            710,
             scenario.label,
             scenario.beforeState,
             scenario.id,
@@ -115,7 +115,7 @@ describe("completion kernel workflow control-state semantic access-management co
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            705,
+            711,
             scenario.label,
             scenario.afterState,
             scenario.id,
@@ -128,8 +128,8 @@ describe("completion kernel workflow control-state semantic access-management co
       });
       const evidence = deriveCompletionEvidenceFromToolOutcome({
         toolName: ToolName.CLICK_ELEMENT,
-        args: { id: 704 },
-        result: "Clicked element 704.",
+        args: { id: 710 },
+        result: "Clicked element 710.",
         preActionSnapshot: pre,
         currentSnapshot: current,
         turn: 11,
@@ -164,36 +164,36 @@ describe("completion kernel workflow control-state semantic access-management co
     });
   }
 
-  test("does not infer block confirmation when semantic data-state was already blocked", () => {
+  test("does not infer assign confirmation when semantic data-state was already assigned", () => {
     const pre = workflowSnapshot({
-      visibleContent: "User Alpha Block User Alpha",
-      pageContent: "User Alpha Block User Alpha",
+      visibleContent: "Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Ticket Alpha Assign Ticket Alpha",
       elements: [
         dataStateActionButton(
-          706,
-          "Block User Alpha",
-          "blocked",
-          "user-alpha-block",
+          712,
+          "Assign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "User Alpha Block User Alpha",
-      pageContent: "User Alpha Block User Alpha",
+      visibleContent: "Ticket Alpha Assign Ticket Alpha",
+      pageContent: "Ticket Alpha Assign Ticket Alpha",
       elements: [
         dataStateActionButton(
-          707,
-          "Block User Alpha",
-          "blocked",
-          "user-alpha-block",
+          713,
+          "Assign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 706 },
-      result: "Clicked element 706.",
+      args: { id: 712 },
+      result: "Clicked element 712.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -202,36 +202,36 @@ describe("completion kernel workflow control-state semantic access-management co
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unblock confirmation when semantic data-state flips blocked", () => {
+  test("does not infer unassign confirmation when semantic data-state flips assigned", () => {
     const pre = workflowSnapshot({
-      visibleContent: "User Alpha Unblock User Alpha",
-      pageContent: "User Alpha Unblock User Alpha",
+      visibleContent: "Ticket Alpha Unassign Ticket Alpha",
+      pageContent: "Ticket Alpha Unassign Ticket Alpha",
       elements: [
         dataStateActionButton(
-          708,
-          "Unblock User Alpha",
-          "unblocked",
-          "user-alpha-block",
+          714,
+          "Unassign Ticket Alpha",
+          "unassigned",
+          "ticket-alpha-assign",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "User Alpha Unblock User Alpha",
-      pageContent: "User Alpha Unblock User Alpha",
+      visibleContent: "Ticket Alpha Unassign Ticket Alpha",
+      pageContent: "Ticket Alpha Unassign Ticket Alpha",
       elements: [
         dataStateActionButton(
-          709,
-          "Unblock User Alpha",
-          "blocked",
-          "user-alpha-block",
+          715,
+          "Unassign Ticket Alpha",
+          "assigned",
+          "ticket-alpha-assign",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 708 },
-      result: "Clicked element 708.",
+      args: { id: 714 },
+      result: "Clicked element 714.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -239,5 +239,4 @@ describe("completion kernel workflow control-state semantic access-management co
 
     expect(evidence).toEqual([]);
   });
-
 });
