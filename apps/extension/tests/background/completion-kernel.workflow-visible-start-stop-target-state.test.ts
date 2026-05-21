@@ -20,16 +20,16 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
-describe("completion kernel target-aware visible pause/resume workflow confirmation", () => {
-  test("accepts target-aware visible pause confirmation for the requested target", () => {
+describe("completion kernel target-aware visible start/stop workflow confirmation", () => {
+  test("accepts target-aware visible start confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Job Beta remains running. Job Alpha paused successfully.",
+        "Service Beta remains stopped. Service Alpha started successfully.",
       pageContent:
-        "Job Beta remains running. Job Alpha paused successfully.",
+        "Service Beta remains stopped. Service Alpha started successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Pause Job Alpha.",
+      userRequest: "Start Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -39,23 +39,23 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Paused Job Alpha.",
+      summary: "Started Service Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pause",
-      targetLabel: "Job Alpha",
+      action: "start",
+      targetLabel: "Service Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:pause",
+          logicalKey: "workflow:confirmation:start",
           detail: expect.objectContaining({
-            action: "pause",
+            action: "start",
             source: "visible_text",
-            text: "Job Alpha paused successfully.",
+            text: "Service Alpha started successfully.",
           }),
         }),
       ]),
@@ -63,15 +63,15 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects target-aware visible pause confirmation for a different target", () => {
+  test("rejects target-aware visible start confirmation for a different target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Job Alpha remains running. Job Beta paused successfully.",
+        "Service Alpha remains stopped. Service Beta started successfully.",
       pageContent:
-        "Job Alpha remains running. Job Beta paused successfully.",
+        "Service Alpha remains stopped. Service Beta started successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Pause Job Alpha.",
+      userRequest: "Start Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -81,23 +81,23 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Paused Job Alpha.",
+      summary: "Started Service Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pause",
-      targetLabel: "Job Alpha",
+      action: "start",
+      targetLabel: "Service Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:pause",
+          logicalKey: "workflow:confirmation:start",
           detail: expect.objectContaining({
-            action: "pause",
+            action: "start",
             source: "visible_text",
-            text: "Job Beta paused successfully.",
+            text: "Service Beta started successfully.",
           }),
         }),
       ]),
@@ -109,13 +109,13 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
     });
   });
 
-  test("rejects targetless visible pause completion for a named target", () => {
+  test("rejects targetless visible start completion for a named target", () => {
     const snap = workflowSnapshot({
-      visibleContent: "Pause completed.",
-      pageContent: "Pause completed.",
+      visibleContent: "Start completed.",
+      pageContent: "Start completed.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Pause Job Alpha.",
+      userRequest: "Start Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -125,13 +125,13 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Pause completed.",
+      summary: "Start completed.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pause",
-      targetLabel: "Job Alpha",
+      action: "start",
+      targetLabel: "Service Alpha",
     });
     expect(decision).toMatchObject({
       status: "rejected",
@@ -140,15 +140,15 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
     });
   });
 
-  test("accepts target-aware visible resume confirmation for the requested target", () => {
+  test("accepts target-aware visible stop confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Job Beta remains paused. Job Alpha resumed successfully.",
+        "Service Beta remains running. Service Alpha stopped successfully.",
       pageContent:
-        "Job Beta remains paused. Job Alpha resumed successfully.",
+        "Service Beta remains running. Service Alpha stopped successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Resume Job Alpha.",
+      userRequest: "Stop Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -158,23 +158,23 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Resumed Job Alpha.",
+      summary: "Stopped Service Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "resume",
-      targetLabel: "Job Alpha",
+      action: "stop",
+      targetLabel: "Service Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:resume",
+          logicalKey: "workflow:confirmation:stop",
           detail: expect.objectContaining({
-            action: "resume",
+            action: "stop",
             source: "visible_text",
-            text: "Job Alpha resumed successfully.",
+            text: "Service Alpha stopped successfully.",
           }),
         }),
       ]),
@@ -182,15 +182,15 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects target-aware visible resume confirmation for a different target", () => {
+  test("rejects target-aware visible stop confirmation for a different target", () => {
     const snap = workflowSnapshot({
       visibleContent:
-        "Job Alpha remains paused. Job Beta resumed successfully.",
+        "Service Alpha remains running. Service Beta stopped successfully.",
       pageContent:
-        "Job Alpha remains paused. Job Beta resumed successfully.",
+        "Service Alpha remains running. Service Beta stopped successfully.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Resume Job Alpha.",
+      userRequest: "Stop Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -200,23 +200,23 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Resumed Job Alpha.",
+      summary: "Stopped Service Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "resume",
-      targetLabel: "Job Alpha",
+      action: "stop",
+      targetLabel: "Service Alpha",
     });
     expect(evidence).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "confirmation_state",
-          logicalKey: "workflow:confirmation:resume",
+          logicalKey: "workflow:confirmation:stop",
           detail: expect.objectContaining({
-            action: "resume",
+            action: "stop",
             source: "visible_text",
-            text: "Job Beta resumed successfully.",
+            text: "Service Beta stopped successfully.",
           }),
         }),
       ]),
@@ -228,13 +228,13 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
     });
   });
 
-  test("rejects targetless visible resume completion for a named target", () => {
+  test("rejects targetless visible stop completion for a named target", () => {
     const snap = workflowSnapshot({
-      visibleContent: "Resume completed.",
-      pageContent: "Resume completed.",
+      visibleContent: "Stop completed.",
+      pageContent: "Stop completed.",
     });
     const generated = generateCompletionContract({
-      userRequest: "Resume Job Alpha.",
+      userRequest: "Stop Service Alpha.",
       snapshot: snap,
     });
     const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
@@ -244,13 +244,13 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
       evidence,
       snapshot: snap,
       candidateSource: "model_done",
-      summary: "Resume completed.",
+      summary: "Stop completed.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "resume",
-      targetLabel: "Job Alpha",
+      action: "stop",
+      targetLabel: "Service Alpha",
     });
     expect(decision).toMatchObject({
       status: "rejected",
@@ -258,5 +258,4 @@ describe("completion kernel target-aware visible pause/resume workflow confirmat
         "Workflow confirmation evidence is for a different target than the requested action.",
     });
   });
-
 });
