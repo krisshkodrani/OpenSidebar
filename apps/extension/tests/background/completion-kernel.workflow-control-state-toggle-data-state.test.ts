@@ -51,47 +51,61 @@ function stableActionButton(
   };
 }
 
-function selectedActionButton(
+function dataStateActionButton(
   tag: number,
   label: string,
-  selected: boolean,
+  state: string,
   id: string,
-  attribute: "aria-selected" | "selected" = "aria-selected",
+  attribute:
+    | "data-state"
+    | "data-selected"
+    | "data-checked"
+    | "data-pressed" = "data-state",
 ): TaggedElement {
   return {
     ...stableActionButton(tag, label, id),
     attributes: {
       id,
       "aria-label": label,
-      [attribute]: String(selected),
+      [attribute]: state,
     },
   };
 }
 
-describe("completion kernel workflow control-state selected toggle confirmation", () => {
-  test("accepts star confirmation from aria-selected control state change", () => {
+describe("completion kernel workflow control-state data-state toggle confirmation", () => {
+  test("accepts bookmark confirmation from data-state control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
       elements: [
-        selectedActionButton(636, "Star Issue Alpha", false, "issue-alpha-star"),
+        dataStateActionButton(
+          640,
+          "Bookmark Article Beta",
+          "unchecked",
+          "article-beta-bookmark",
+        ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
       elements: [
-        selectedActionButton(637, "Star Issue Alpha", true, "issue-alpha-star"),
+        dataStateActionButton(
+          641,
+          "Bookmark Article Beta",
+          "checked",
+          "article-beta-bookmark",
+        ),
       ],
     });
     const generated = generateCompletionContract({
-      userRequest: "Star Issue Alpha.",
+      userRequest: "Bookmark Article Beta.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 636 },
-      result: "Clicked element 636.",
+      args: { id: 640 },
+      result: "Clicked element 640.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -101,119 +115,130 @@ describe("completion kernel workflow control-state selected toggle confirmation"
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Starred Issue Alpha.",
+      summary: "Bookmarked Article Beta.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "star",
-      targetLabel: "Issue Alpha",
-    });
-    expect(evidence).toEqual([
-      expect.objectContaining({
-        type: "confirmation_state",
-        confidence: "high",
-        logicalKey: "workflow:confirmation:star:control-state:issue-alpha-star",
-        detail: expect.objectContaining({
-          action: "star",
-          source: "control_state_change",
-          targetText: "Issue Alpha",
-          text: "Control state changed to starred: Star Issue Alpha",
-        }),
-      }),
-    ]);
-    expect(decision.status).toBe("accepted");
-  });
-
-  test("accepts unbookmark confirmation from selected control state change", () => {
-    const pre = workflowSnapshot({
-      visibleContent: "Article Alpha Unbookmark Article Alpha",
-      pageContent: "Article Alpha Unbookmark Article Alpha",
-      elements: [
-        selectedActionButton(
-          638,
-          "Unbookmark Article Alpha",
-          true,
-          "article-alpha-bookmark",
-          "selected",
-        ),
-      ],
-    });
-    const current = workflowSnapshot({
-      visibleContent: "Article Alpha Unbookmark Article Alpha",
-      pageContent: "Article Alpha Unbookmark Article Alpha",
-      elements: [
-        selectedActionButton(
-          639,
-          "Unbookmark Article Alpha",
-          false,
-          "article-alpha-bookmark",
-          "selected",
-        ),
-      ],
-    });
-    const generated = generateCompletionContract({
-      userRequest: "Unbookmark Article Alpha.",
-      snapshot: current,
-    });
-    const evidence = deriveCompletionEvidenceFromToolOutcome({
-      toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 638 },
-      result: "Clicked element 638.",
-      preActionSnapshot: pre,
-      currentSnapshot: current,
-      turn: 11,
-    });
-    const decision = evaluateCompletionContract({
-      contract: generated?.contract,
-      evidence,
-      snapshot: current,
-      candidateSource: "model_done",
-      summary: "Unbookmarked Article Alpha.",
-    });
-
-    expect(generated?.contract).toMatchObject({
-      kind: "workflow_confirmation",
-      action: "unbookmark",
-      targetLabel: "Article Alpha",
+      action: "bookmark",
+      targetLabel: "Article Beta",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
         logicalKey:
-          "workflow:confirmation:unbookmark:control-state:article-alpha-bookmark",
+          "workflow:confirmation:bookmark:control-state:article-beta-bookmark",
         detail: expect.objectContaining({
-          action: "unbookmark",
+          action: "bookmark",
           source: "control_state_change",
-          targetText: "Article Alpha",
-          text: "Control state changed to unbookmarked: Unbookmark Article Alpha",
+          targetText: "Article Beta",
+          text: "Control state changed to bookmarked: Bookmark Article Beta",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("does not infer star confirmation when aria-selected was already true", () => {
+  test("accepts unwatch confirmation from data-selected control state change", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Repository Alpha Unwatch Repository Alpha",
+      pageContent: "Repository Alpha Unwatch Repository Alpha",
       elements: [
-        selectedActionButton(636, "Star Issue Alpha", true, "issue-alpha-star"),
+        dataStateActionButton(
+          642,
+          "Unwatch Repository Alpha",
+          "true",
+          "repository-alpha-watch",
+          "data-selected",
+        ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Repository Alpha Unwatch Repository Alpha",
+      pageContent: "Repository Alpha Unwatch Repository Alpha",
       elements: [
-        selectedActionButton(637, "Star Issue Alpha", true, "issue-alpha-star"),
+        dataStateActionButton(
+          643,
+          "Unwatch Repository Alpha",
+          "false",
+          "repository-alpha-watch",
+          "data-selected",
+        ),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Unwatch Repository Alpha.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 642 },
+      result: "Clicked element 642.",
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 11,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Unwatched Repository Alpha.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "unwatch",
+      targetLabel: "Repository Alpha",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        confidence: "high",
+        logicalKey:
+          "workflow:confirmation:unwatch:control-state:repository-alpha-watch",
+        detail: expect.objectContaining({
+          action: "unwatch",
+          source: "control_state_change",
+          targetText: "Repository Alpha",
+          text: "Control state changed to unwatched: Unwatch Repository Alpha",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("does not infer bookmark confirmation when data-state was already checked", () => {
+    const pre = workflowSnapshot({
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
+      elements: [
+        dataStateActionButton(
+          640,
+          "Bookmark Article Beta",
+          "checked",
+          "article-beta-bookmark",
+        ),
+      ],
+    });
+    const current = workflowSnapshot({
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
+      elements: [
+        dataStateActionButton(
+          641,
+          "Bookmark Article Beta",
+          "checked",
+          "article-beta-bookmark",
+        ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 636 },
-      result: "Clicked element 636.",
+      args: { id: 640 },
+      result: "Clicked element 640.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -222,26 +247,36 @@ describe("completion kernel workflow control-state selected toggle confirmation"
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer star confirmation when aria-selected flips off", () => {
+  test("does not infer bookmark confirmation when data-state flips off", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
       elements: [
-        selectedActionButton(636, "Star Issue Alpha", true, "issue-alpha-star"),
+        dataStateActionButton(
+          640,
+          "Bookmark Article Beta",
+          "checked",
+          "article-beta-bookmark",
+        ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Issue Alpha Star Issue Alpha",
-      pageContent: "Issue Alpha Star Issue Alpha",
+      visibleContent: "Article Beta Bookmark Article Beta",
+      pageContent: "Article Beta Bookmark Article Beta",
       elements: [
-        selectedActionButton(637, "Star Issue Alpha", false, "issue-alpha-star"),
+        dataStateActionButton(
+          641,
+          "Bookmark Article Beta",
+          "unchecked",
+          "article-beta-bookmark",
+        ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 636 },
-      result: "Clicked element 636.",
+      args: { id: 640 },
+      result: "Clicked element 640.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -249,6 +284,4 @@ describe("completion kernel workflow control-state selected toggle confirmation"
 
     expect(evidence).toEqual([]);
   });
-
 });
-
