@@ -37,33 +37,33 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance watch workflow confirmation", () => {
-  test("accepts watch confirmation from named unwatched target disappearance", () => {
+describe("completion kernel target-disappearance unwatch workflow confirmation", () => {
+  test("accepts unwatch confirmation from named watched target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha Repository Beta Watch Repository Beta",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha Repository Beta Unwatch Repository Beta",
       pageContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha Repository Beta Watch Repository Beta",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha Repository Beta Unwatch Repository Beta",
       elements: [
-        actionButton(535, "Watch Repository Alpha"),
-        actionButton(536, "Watch Repository Beta"),
+        actionButton(531, "Unwatch Repository Alpha"),
+        actionButton(532, "Unwatch Repository Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Beta Watch Repository Beta",
+        "Watched repositories Repository Beta Unwatch Repository Beta",
       pageContent:
-        "Unwatched repositories Repository Beta Watch Repository Beta",
-      elements: [actionButton(536, "Watch Repository Beta")],
+        "Watched repositories Repository Beta Unwatch Repository Beta",
+      elements: [actionButton(532, "Unwatch Repository Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Watch Repository Alpha.",
+      userRequest: "Unwatch Repository Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 535 },
-      result: "Clicked element 535.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -73,55 +73,55 @@ describe("completion kernel target-disappearance watch workflow confirmation", (
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Watched Repository Alpha.",
+      summary: "Unwatched Repository Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "watch",
+      action: "unwatch",
       targetLabel: "Repository Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:watch:repository-alpha",
+        logicalKey: "workflow:confirmation:unwatch:repository-alpha",
         detail: expect.objectContaining({
-          action: "watch",
+          action: "unwatch",
           source: "target_disappearance",
-          text: "Watched target no longer visible: Repository Alpha",
+          text: "Unwatched target no longer visible: Repository Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects watch target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unwatch target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha Repository Beta Watch Repository Beta",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha Repository Beta Unwatch Repository Beta",
       pageContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha Repository Beta Watch Repository Beta",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha Repository Beta Unwatch Repository Beta",
       elements: [
-        actionButton(535, "Watch Repository Alpha"),
-        actionButton(536, "Watch Repository Beta"),
+        actionButton(531, "Unwatch Repository Alpha"),
+        actionButton(532, "Unwatch Repository Beta"),
       ],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
       pageContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
-      elements: [actionButton(535, "Watch Repository Alpha")],
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
+      elements: [actionButton(531, "Unwatch Repository Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Watch Repository Alpha.",
+      userRequest: "Unwatch Repository Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 536 },
-      result: "Clicked element 536.",
+      args: { id: 532 },
+      result: "Clicked element 532.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -131,23 +131,23 @@ describe("completion kernel target-disappearance watch workflow confirmation", (
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Watched Repository Alpha.",
+      summary: "Unwatched Repository Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "watch",
+      action: "unwatch",
       targetLabel: "Repository Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:watch:repository-beta",
+        logicalKey: "workflow:confirmation:unwatch:repository-beta",
         detail: expect.objectContaining({
-          action: "watch",
+          action: "unwatch",
           source: "target_disappearance",
-          text: "Watched target no longer visible: Repository Beta",
+          text: "Unwatched target no longer visible: Repository Beta",
         }),
       }),
     ]);
@@ -158,26 +158,26 @@ describe("completion kernel target-disappearance watch workflow confirmation", (
     });
   });
 
-  test("does not infer watch confirmation while the named target remains visible", () => {
+  test("does not infer unwatch confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
       pageContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
-      elements: [actionButton(535, "Watch Repository Alpha")],
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
+      elements: [actionButton(531, "Unwatch Repository Alpha")],
     });
     const current = workflowSnapshot({
       visibleContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
       pageContent:
-        "Unwatched repositories Repository Alpha Watch Repository Alpha",
-      elements: [actionButton(535, "Watch Repository Alpha")],
+        "Watched repositories Repository Alpha Unwatch Repository Alpha",
+      elements: [actionButton(531, "Unwatch Repository Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 535 },
-      result: "Clicked element 535.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -186,35 +186,35 @@ describe("completion kernel target-disappearance watch workflow confirmation", (
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer watch confirmation from a generic watch button", () => {
-    const genericWatchButton: TaggedElement = {
-      tag: 535,
+  test("does not infer unwatch confirmation from a generic unwatch button", () => {
+    const genericUnwatchButton: TaggedElement = {
+      tag: 531,
       tagName: "button",
       role: "button",
-      text: "Watch",
+      text: "Unwatch",
       attributes: {
-        id: "watch",
-        "aria-label": "Watch",
+        id: "unwatch",
+        "aria-label": "Unwatch",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unwatched repositories Repository Alpha Watch",
-      pageContent: "Unwatched repositories Repository Alpha Watch",
-      elements: [genericWatchButton],
+      visibleContent: "Watched repositories Repository Alpha Unwatch",
+      pageContent: "Watched repositories Repository Alpha Unwatch",
+      elements: [genericUnwatchButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unwatched repositories",
-      pageContent: "Unwatched repositories",
+      visibleContent: "Watched repositories",
+      pageContent: "Watched repositories",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 535 },
-      result: "Clicked element 535.",
+      args: { id: 531 },
+      result: "Clicked element 531.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -222,5 +222,4 @@ describe("completion kernel target-disappearance watch workflow confirmation", (
 
     expect(evidence).toEqual([]);
   });
-
 });
