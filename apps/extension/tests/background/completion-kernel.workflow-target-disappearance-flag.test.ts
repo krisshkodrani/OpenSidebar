@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel unflag target-disappearance flagging workflow confirmation", () => {
-  test("accepts unflag confirmation from named flagged target disappearance", () => {
+describe("completion kernel flag target-disappearance flagging workflow confirmation", () => {
+  test("accepts flag confirmation from named unflagged target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+        "Unflagged messages Message Alpha Flag Message Alpha Message Beta Flag Message Beta",
       pageContent:
-        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+        "Unflagged messages Message Alpha Flag Message Alpha Message Beta Flag Message Beta",
       elements: [
-        actionButton(525, "Unflag Message Alpha"),
-        actionButton(526, "Unflag Message Beta"),
+        actionButton(529, "Flag Message Alpha"),
+        actionButton(530, "Flag Message Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Flagged messages Message Beta Unflag Message Beta",
-      pageContent: "Flagged messages Message Beta Unflag Message Beta",
-      elements: [actionButton(526, "Unflag Message Beta")],
+      visibleContent: "Unflagged messages Message Beta Flag Message Beta",
+      pageContent: "Unflagged messages Message Beta Flag Message Beta",
+      elements: [actionButton(530, "Flag Message Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unflag Message Alpha.",
+      userRequest: "Flag Message Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 525 },
-      result: "Clicked element 525.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel unflag target-disappearance flagging workflow confir
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unflagged Message Alpha.",
+      summary: "Flagged Message Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unflag",
+      action: "flag",
       targetLabel: "Message Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unflag:message-alpha",
+        logicalKey: "workflow:confirmation:flag:message-alpha",
         detail: expect.objectContaining({
-          action: "unflag",
+          action: "flag",
           source: "target_disappearance",
-          text: "Unflagged target no longer visible: Message Alpha",
+          text: "Flagged target no longer visible: Message Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects unflag target-disappearance evidence for the wrong requested target", () => {
+  test("rejects flag target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+        "Unflagged messages Message Alpha Flag Message Alpha Message Beta Flag Message Beta",
       pageContent:
-        "Flagged messages Message Alpha Unflag Message Alpha Message Beta Unflag Message Beta",
+        "Unflagged messages Message Alpha Flag Message Alpha Message Beta Flag Message Beta",
       elements: [
-        actionButton(525, "Unflag Message Alpha"),
-        actionButton(526, "Unflag Message Beta"),
+        actionButton(529, "Flag Message Alpha"),
+        actionButton(530, "Flag Message Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      elements: [actionButton(525, "Unflag Message Alpha")],
+      visibleContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      pageContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      elements: [actionButton(529, "Flag Message Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unflag Message Alpha.",
+      userRequest: "Flag Message Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 526 },
-      result: "Clicked element 526.",
+      args: { id: 530 },
+      result: "Clicked element 530.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel unflag target-disappearance flagging workflow confir
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unflagged Message Alpha.",
+      summary: "Flagged Message Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unflag",
+      action: "flag",
       targetLabel: "Message Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unflag:message-beta",
+        logicalKey: "workflow:confirmation:flag:message-beta",
         detail: expect.objectContaining({
-          action: "unflag",
+          action: "flag",
           source: "target_disappearance",
-          text: "Unflagged target no longer visible: Message Beta",
+          text: "Flagged target no longer visible: Message Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel unflag target-disappearance flagging workflow confir
     });
   });
 
-  test("does not infer unflag confirmation while the named target remains visible", () => {
+  test("does not infer flag confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      elements: [actionButton(525, "Unflag Message Alpha")],
+      visibleContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      pageContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      elements: [actionButton(529, "Flag Message Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      pageContent: "Flagged messages Message Alpha Unflag Message Alpha",
-      elements: [actionButton(525, "Unflag Message Alpha")],
+      visibleContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      pageContent: "Unflagged messages Message Alpha Flag Message Alpha",
+      elements: [actionButton(529, "Flag Message Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 525 },
-      result: "Clicked element 525.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel unflag target-disappearance flagging workflow confir
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unflag confirmation from a generic unflag button", () => {
-    const genericUnflagButton: TaggedElement = {
-      tag: 525,
+  test("does not infer flag confirmation from a generic flag button", () => {
+    const genericFlagButton: TaggedElement = {
+      tag: 529,
       tagName: "button",
       role: "button",
-      text: "Unflag",
+      text: "Flag",
       attributes: {
-        id: "unflag",
-        "aria-label": "Unflag",
+        id: "flag",
+        "aria-label": "Flag",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Flagged messages Message Alpha Unflag",
-      pageContent: "Flagged messages Message Alpha Unflag",
-      elements: [genericUnflagButton],
+      visibleContent: "Unflagged messages Message Alpha Flag",
+      pageContent: "Unflagged messages Message Alpha Flag",
+      elements: [genericFlagButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Flagged messages",
-      pageContent: "Flagged messages",
+      visibleContent: "Unflagged messages",
+      pageContent: "Unflagged messages",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 525 },
-      result: "Clicked element 525.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel unflag target-disappearance flagging workflow confir
 
     expect(evidence).toEqual([]);
   });
-
 });
