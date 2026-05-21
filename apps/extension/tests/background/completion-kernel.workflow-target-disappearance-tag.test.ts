@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel untag target-disappearance tagging workflow confirmation", () => {
-  test("accepts untag confirmation from named tagged target disappearance", () => {
+describe("completion kernel tag target-disappearance tagging workflow confirmation", () => {
+  test("accepts tag confirmation from named untagged target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+        "Untagged issues Issue Alpha Tag Issue Alpha Issue Beta Tag Issue Beta",
       pageContent:
-        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+        "Untagged issues Issue Alpha Tag Issue Alpha Issue Beta Tag Issue Beta",
       elements: [
-        actionButton(523, "Untag Issue Alpha"),
-        actionButton(524, "Untag Issue Beta"),
+        actionButton(527, "Tag Issue Alpha"),
+        actionButton(528, "Tag Issue Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Tagged issues Issue Beta Untag Issue Beta",
-      pageContent: "Tagged issues Issue Beta Untag Issue Beta",
-      elements: [actionButton(524, "Untag Issue Beta")],
+      visibleContent: "Untagged issues Issue Beta Tag Issue Beta",
+      pageContent: "Untagged issues Issue Beta Tag Issue Beta",
+      elements: [actionButton(528, "Tag Issue Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Untag Issue Alpha.",
+      userRequest: "Tag Issue Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 527 },
+      result: "Clicked element 527.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel untag target-disappearance tagging workflow confirma
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Untagged Issue Alpha.",
+      summary: "Tagged Issue Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "untag",
+      action: "tag",
       targetLabel: "Issue Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:untag:issue-alpha",
+        logicalKey: "workflow:confirmation:tag:issue-alpha",
         detail: expect.objectContaining({
-          action: "untag",
+          action: "tag",
           source: "target_disappearance",
-          text: "Untagged target no longer visible: Issue Alpha",
+          text: "Tagged target no longer visible: Issue Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects untag target-disappearance evidence for the wrong requested target", () => {
+  test("rejects tag target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+        "Untagged issues Issue Alpha Tag Issue Alpha Issue Beta Tag Issue Beta",
       pageContent:
-        "Tagged issues Issue Alpha Untag Issue Alpha Issue Beta Untag Issue Beta",
+        "Untagged issues Issue Alpha Tag Issue Alpha Issue Beta Tag Issue Beta",
       elements: [
-        actionButton(523, "Untag Issue Alpha"),
-        actionButton(524, "Untag Issue Beta"),
+        actionButton(527, "Tag Issue Alpha"),
+        actionButton(528, "Tag Issue Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      elements: [actionButton(523, "Untag Issue Alpha")],
+      visibleContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      pageContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      elements: [actionButton(527, "Tag Issue Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Untag Issue Alpha.",
+      userRequest: "Tag Issue Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 524 },
-      result: "Clicked element 524.",
+      args: { id: 528 },
+      result: "Clicked element 528.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel untag target-disappearance tagging workflow confirma
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Untagged Issue Alpha.",
+      summary: "Tagged Issue Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "untag",
+      action: "tag",
       targetLabel: "Issue Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:untag:issue-beta",
+        logicalKey: "workflow:confirmation:tag:issue-beta",
         detail: expect.objectContaining({
-          action: "untag",
+          action: "tag",
           source: "target_disappearance",
-          text: "Untagged target no longer visible: Issue Beta",
+          text: "Tagged target no longer visible: Issue Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel untag target-disappearance tagging workflow confirma
     });
   });
 
-  test("does not infer untag confirmation while the named target remains visible", () => {
+  test("does not infer tag confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      elements: [actionButton(523, "Untag Issue Alpha")],
+      visibleContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      pageContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      elements: [actionButton(527, "Tag Issue Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      pageContent: "Tagged issues Issue Alpha Untag Issue Alpha",
-      elements: [actionButton(523, "Untag Issue Alpha")],
+      visibleContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      pageContent: "Untagged issues Issue Alpha Tag Issue Alpha",
+      elements: [actionButton(527, "Tag Issue Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 527 },
+      result: "Clicked element 527.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel untag target-disappearance tagging workflow confirma
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer untag confirmation from a generic untag button", () => {
-    const genericUntagButton: TaggedElement = {
-      tag: 523,
+  test("does not infer tag confirmation from a generic tag button", () => {
+    const genericTagButton: TaggedElement = {
+      tag: 527,
       tagName: "button",
       role: "button",
-      text: "Untag",
+      text: "Tag",
       attributes: {
-        id: "untag",
-        "aria-label": "Untag",
+        id: "tag",
+        "aria-label": "Tag",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Tagged issues Issue Alpha Untag",
-      pageContent: "Tagged issues Issue Alpha Untag",
-      elements: [genericUntagButton],
+      visibleContent: "Untagged issues Issue Alpha Tag",
+      pageContent: "Untagged issues Issue Alpha Tag",
+      elements: [genericTagButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Tagged issues",
-      pageContent: "Tagged issues",
+      visibleContent: "Untagged issues",
+      pageContent: "Untagged issues",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 523 },
-      result: "Clicked element 523.",
+      args: { id: 527 },
+      result: "Clicked element 527.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel untag target-disappearance tagging workflow confirma
 
     expect(evidence).toEqual([]);
   });
-
 });
