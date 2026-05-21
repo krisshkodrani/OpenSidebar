@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel send delivery action-update workflow confirmation", () => {
-  test("accepts send confirmation from named queued message disappearance", () => {
+describe("completion kernel post delivery action-update workflow confirmation", () => {
+  test("accepts post confirmation from named draft article disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+        "Draft articles Article Alpha Publish Article Alpha Article Beta Publish Article Beta",
       pageContent:
-        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+        "Draft articles Article Alpha Publish Article Alpha Article Beta Publish Article Beta",
       elements: [
-        actionButton(571, "Send Message Alpha"),
-        actionButton(572, "Send Message Beta"),
+        actionButton(573, "Publish Article Alpha"),
+        actionButton(574, "Publish Article Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Queued messages Message Beta Send Message Beta",
-      pageContent: "Queued messages Message Beta Send Message Beta",
-      elements: [actionButton(572, "Send Message Beta")],
+      visibleContent: "Draft articles Article Beta Publish Article Beta",
+      pageContent: "Draft articles Article Beta Publish Article Beta",
+      elements: [actionButton(574, "Publish Article Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Send Message Alpha.",
+      userRequest: "Publish Article Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 571 },
-      result: "Clicked element 571.",
+      args: { id: 573 },
+      result: "Clicked element 573.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel send delivery action-update workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Sent Message Alpha.",
+      summary: "Published Article Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "send",
-      targetLabel: "Message Alpha",
+      action: "post",
+      targetLabel: "Article Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:send:message-alpha",
+        logicalKey: "workflow:confirmation:post:article-alpha",
         detail: expect.objectContaining({
-          action: "send",
+          action: "post",
           source: "target_disappearance",
-          text: "Sent target no longer visible: Message Alpha",
+          text: "Posted target no longer visible: Article Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects send target-disappearance evidence for the wrong requested message", () => {
+  test("rejects post target-disappearance evidence for the wrong requested article", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+        "Draft articles Article Alpha Publish Article Alpha Article Beta Publish Article Beta",
       pageContent:
-        "Queued messages Message Alpha Send Message Alpha Message Beta Send Message Beta",
+        "Draft articles Article Alpha Publish Article Alpha Article Beta Publish Article Beta",
       elements: [
-        actionButton(571, "Send Message Alpha"),
-        actionButton(572, "Send Message Beta"),
+        actionButton(573, "Publish Article Alpha"),
+        actionButton(574, "Publish Article Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Queued messages Message Alpha Send Message Alpha",
-      pageContent: "Queued messages Message Alpha Send Message Alpha",
-      elements: [actionButton(571, "Send Message Alpha")],
+      visibleContent: "Draft articles Article Alpha Publish Article Alpha",
+      pageContent: "Draft articles Article Alpha Publish Article Alpha",
+      elements: [actionButton(573, "Publish Article Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Send Message Alpha.",
+      userRequest: "Publish Article Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 572 },
-      result: "Clicked element 572.",
+      args: { id: 574 },
+      result: "Clicked element 574.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel send delivery action-update workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Sent Message Alpha.",
+      summary: "Published Article Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "send",
-      targetLabel: "Message Alpha",
+      action: "post",
+      targetLabel: "Article Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:send:message-beta",
+        logicalKey: "workflow:confirmation:post:article-beta",
         detail: expect.objectContaining({
-          action: "send",
+          action: "post",
           source: "target_disappearance",
-          text: "Sent target no longer visible: Message Beta",
+          text: "Posted target no longer visible: Article Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel send delivery action-update workflow confirmation", 
     });
   });
 
-  test("does not infer send confirmation while the named queued message remains visible", () => {
+  test("does not infer post confirmation while the named draft article remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Queued messages Message Alpha Send Message Alpha",
-      pageContent: "Queued messages Message Alpha Send Message Alpha",
-      elements: [actionButton(571, "Send Message Alpha")],
+      visibleContent: "Draft articles Article Alpha Publish Article Alpha",
+      pageContent: "Draft articles Article Alpha Publish Article Alpha",
+      elements: [actionButton(573, "Publish Article Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Queued messages Message Alpha Send Message Alpha",
-      pageContent: "Queued messages Message Alpha Send Message Alpha",
-      elements: [actionButton(571, "Send Message Alpha")],
+      visibleContent: "Draft articles Article Alpha Publish Article Alpha",
+      pageContent: "Draft articles Article Alpha Publish Article Alpha",
+      elements: [actionButton(573, "Publish Article Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 571 },
-      result: "Clicked element 571.",
+      args: { id: 573 },
+      result: "Clicked element 573.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel send delivery action-update workflow confirmation", 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer send confirmation from a generic send message control", () => {
-    const genericSendMessageButton: TaggedElement = {
-      tag: 571,
+  test("does not infer post confirmation from a generic publish article control", () => {
+    const genericPublishArticleButton: TaggedElement = {
+      tag: 573,
       tagName: "button",
       role: "button",
-      text: "Send message",
+      text: "Publish article",
       attributes: {
-        id: "send-message",
-        "aria-label": "Send message",
+        id: "publish-article",
+        "aria-label": "Publish article",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Queued messages Message Alpha Send message",
-      pageContent: "Queued messages Message Alpha Send message",
-      elements: [genericSendMessageButton],
+      visibleContent: "Draft articles Article Alpha Publish article",
+      pageContent: "Draft articles Article Alpha Publish article",
+      elements: [genericPublishArticleButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Queued messages",
-      pageContent: "Queued messages",
+      visibleContent: "Draft articles",
+      pageContent: "Draft articles",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 571 },
-      result: "Clicked element 571.",
+      args: { id: 573 },
+      result: "Clicked element 573.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel send delivery action-update workflow confirmation", 
 
     expect(evidence).toEqual([]);
   });
-
 });
