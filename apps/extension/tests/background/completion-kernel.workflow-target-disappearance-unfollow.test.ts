@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel follow target-disappearance workflow confirmation", () => {
-  test("accepts follow confirmation from named unfollowed target disappearance", () => {
+describe("completion kernel unfollow target-disappearance workflow confirmation", () => {
+  test("accepts unfollow confirmation from named followed target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+        "Followed topics Topic Alpha Unfollow Topic Alpha Topic Beta Unfollow Topic Beta",
       pageContent:
-        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+        "Followed topics Topic Alpha Unfollow Topic Alpha Topic Beta Unfollow Topic Beta",
       elements: [
-        actionButton(533, "Follow Topic Alpha"),
-        actionButton(534, "Follow Topic Beta"),
+        actionButton(529, "Unfollow Topic Alpha"),
+        actionButton(530, "Unfollow Topic Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfollowed topics Topic Beta Follow Topic Beta",
-      pageContent: "Unfollowed topics Topic Beta Follow Topic Beta",
-      elements: [actionButton(534, "Follow Topic Beta")],
+      visibleContent: "Followed topics Topic Beta Unfollow Topic Beta",
+      pageContent: "Followed topics Topic Beta Unfollow Topic Beta",
+      elements: [actionButton(530, "Unfollow Topic Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Follow Topic Alpha.",
+      userRequest: "Unfollow Topic Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel follow target-disappearance workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Followed Topic Alpha.",
+      summary: "Unfollowed Topic Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "follow",
+      action: "unfollow",
       targetLabel: "Topic Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:follow:topic-alpha",
+        logicalKey: "workflow:confirmation:unfollow:topic-alpha",
         detail: expect.objectContaining({
-          action: "follow",
+          action: "unfollow",
           source: "target_disappearance",
-          text: "Followed target no longer visible: Topic Alpha",
+          text: "Unfollowed target no longer visible: Topic Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects follow target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unfollow target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+        "Followed topics Topic Alpha Unfollow Topic Alpha Topic Beta Unfollow Topic Beta",
       pageContent:
-        "Unfollowed topics Topic Alpha Follow Topic Alpha Topic Beta Follow Topic Beta",
+        "Followed topics Topic Alpha Unfollow Topic Alpha Topic Beta Unfollow Topic Beta",
       elements: [
-        actionButton(533, "Follow Topic Alpha"),
-        actionButton(534, "Follow Topic Beta"),
+        actionButton(529, "Unfollow Topic Alpha"),
+        actionButton(530, "Unfollow Topic Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      elements: [actionButton(533, "Follow Topic Alpha")],
+      visibleContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      pageContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      elements: [actionButton(529, "Unfollow Topic Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Follow Topic Alpha.",
+      userRequest: "Unfollow Topic Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 534 },
-      result: "Clicked element 534.",
+      args: { id: 530 },
+      result: "Clicked element 530.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel follow target-disappearance workflow confirmation", 
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Followed Topic Alpha.",
+      summary: "Unfollowed Topic Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "follow",
+      action: "unfollow",
       targetLabel: "Topic Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:follow:topic-beta",
+        logicalKey: "workflow:confirmation:unfollow:topic-beta",
         detail: expect.objectContaining({
-          action: "follow",
+          action: "unfollow",
           source: "target_disappearance",
-          text: "Followed target no longer visible: Topic Beta",
+          text: "Unfollowed target no longer visible: Topic Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel follow target-disappearance workflow confirmation", 
     });
   });
 
-  test("does not infer follow confirmation while the named target remains visible", () => {
+  test("does not infer unfollow confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      elements: [actionButton(533, "Follow Topic Alpha")],
+      visibleContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      pageContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      elements: [actionButton(529, "Unfollow Topic Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      pageContent: "Unfollowed topics Topic Alpha Follow Topic Alpha",
-      elements: [actionButton(533, "Follow Topic Alpha")],
+      visibleContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      pageContent: "Followed topics Topic Alpha Unfollow Topic Alpha",
+      elements: [actionButton(529, "Unfollow Topic Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel follow target-disappearance workflow confirmation", 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer follow confirmation from a generic follow button", () => {
-    const genericFollowButton: TaggedElement = {
-      tag: 533,
+  test("does not infer unfollow confirmation from a generic unfollow button", () => {
+    const genericUnfollowButton: TaggedElement = {
+      tag: 529,
       tagName: "button",
       role: "button",
-      text: "Follow",
+      text: "Unfollow",
       attributes: {
-        id: "follow",
-        "aria-label": "Follow",
+        id: "unfollow",
+        "aria-label": "Unfollow",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unfollowed topics Topic Alpha Follow",
-      pageContent: "Unfollowed topics Topic Alpha Follow",
-      elements: [genericFollowButton],
+      visibleContent: "Followed topics Topic Alpha Unfollow",
+      pageContent: "Followed topics Topic Alpha Unfollow",
+      elements: [genericUnfollowButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unfollowed topics",
-      pageContent: "Unfollowed topics",
+      visibleContent: "Followed topics",
+      pageContent: "Followed topics",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 533 },
-      result: "Clicked element 533.",
+      args: { id: 529 },
+      result: "Clicked element 529.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel follow target-disappearance workflow confirmation", 
 
     expect(evidence).toEqual([]);
   });
-
 });
