@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance pin preference workflow confirmation", () => {
-  test("accepts pin confirmation from named unpinned target disappearance", () => {
+describe("completion kernel target-disappearance unpin preference workflow confirmation", () => {
+  test("accepts unpin confirmation from named pinned target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unpinned reports Report Alpha Pin Report Alpha Report Beta Pin Report Beta",
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
       pageContent:
-        "Unpinned reports Report Alpha Pin Report Alpha Report Beta Pin Report Beta",
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
       elements: [
-        actionButton(543, "Pin Report Alpha"),
-        actionButton(544, "Pin Report Beta"),
+        actionButton(539, "Unpin Report Alpha"),
+        actionButton(540, "Unpin Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unpinned reports Report Beta Pin Report Beta",
-      pageContent: "Unpinned reports Report Beta Pin Report Beta",
-      elements: [actionButton(544, "Pin Report Beta")],
+      visibleContent: "Pinned reports Report Beta Unpin Report Beta",
+      pageContent: "Pinned reports Report Beta Unpin Report Beta",
+      elements: [actionButton(540, "Unpin Report Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Pin Report Alpha.",
+      userRequest: "Unpin Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 543 },
-      result: "Clicked element 543.",
+      args: { id: 539 },
+      result: "Clicked element 539.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel target-disappearance pin preference workflow confirm
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Pinned Report Alpha.",
+      summary: "Unpinned Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pin",
+      action: "unpin",
       targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:pin:report-alpha",
+        logicalKey: "workflow:confirmation:unpin:report-alpha",
         detail: expect.objectContaining({
-          action: "pin",
+          action: "unpin",
           source: "target_disappearance",
-          text: "Pinned target no longer visible: Report Alpha",
+          text: "Unpinned target no longer visible: Report Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects pin target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unpin target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Unpinned reports Report Alpha Pin Report Alpha Report Beta Pin Report Beta",
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
       pageContent:
-        "Unpinned reports Report Alpha Pin Report Alpha Report Beta Pin Report Beta",
+        "Pinned reports Report Alpha Unpin Report Alpha Report Beta Unpin Report Beta",
       elements: [
-        actionButton(543, "Pin Report Alpha"),
-        actionButton(544, "Pin Report Beta"),
+        actionButton(539, "Unpin Report Alpha"),
+        actionButton(540, "Unpin Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      pageContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      elements: [actionButton(543, "Pin Report Alpha")],
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Pin Report Alpha.",
+      userRequest: "Unpin Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 544 },
-      result: "Clicked element 544.",
+      args: { id: 540 },
+      result: "Clicked element 540.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel target-disappearance pin preference workflow confirm
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Pinned Report Alpha.",
+      summary: "Unpinned Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "pin",
+      action: "unpin",
       targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:pin:report-beta",
+        logicalKey: "workflow:confirmation:unpin:report-beta",
         detail: expect.objectContaining({
-          action: "pin",
+          action: "unpin",
           source: "target_disappearance",
-          text: "Pinned target no longer visible: Report Beta",
+          text: "Unpinned target no longer visible: Report Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel target-disappearance pin preference workflow confirm
     });
   });
 
-  test("does not infer pin confirmation while the named target remains visible", () => {
+  test("does not infer unpin confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      pageContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      elements: [actionButton(543, "Pin Report Alpha")],
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      pageContent: "Unpinned reports Report Alpha Pin Report Alpha",
-      elements: [actionButton(543, "Pin Report Alpha")],
+      visibleContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      pageContent: "Pinned reports Report Alpha Unpin Report Alpha",
+      elements: [actionButton(539, "Unpin Report Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 543 },
-      result: "Clicked element 543.",
+      args: { id: 539 },
+      result: "Clicked element 539.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel target-disappearance pin preference workflow confirm
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer pin confirmation from a generic pin button", () => {
-    const genericPinButton: TaggedElement = {
-      tag: 543,
+  test("does not infer unpin confirmation from a generic unpin button", () => {
+    const genericUnpinButton: TaggedElement = {
+      tag: 539,
       tagName: "button",
       role: "button",
-      text: "Pin",
+      text: "Unpin",
       attributes: {
-        id: "pin",
-        "aria-label": "Pin",
+        id: "unpin",
+        "aria-label": "Unpin",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Unpinned reports Report Alpha Pin",
-      pageContent: "Unpinned reports Report Alpha Pin",
-      elements: [genericPinButton],
+      visibleContent: "Pinned reports Report Alpha Unpin",
+      pageContent: "Pinned reports Report Alpha Unpin",
+      elements: [genericUnpinButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Unpinned reports",
-      pageContent: "Unpinned reports",
+      visibleContent: "Pinned reports",
+      pageContent: "Pinned reports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 543 },
-      result: "Clicked element 543.",
+      args: { id: 539 },
+      result: "Clicked element 539.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,6 +214,4 @@ describe("completion kernel target-disappearance pin preference workflow confirm
 
     expect(evidence).toEqual([]);
   });
-
 });
-
