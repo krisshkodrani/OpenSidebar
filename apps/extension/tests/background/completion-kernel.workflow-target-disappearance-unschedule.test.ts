@@ -37,31 +37,33 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel target-disappearance operational workflow confirmation", () => {
-  test("accepts unassign confirmation from named assigned target disappearance", () => {
+describe("completion kernel target-disappearance unschedule workflow confirmation", () => {
+  test("accepts unschedule confirmation from named scheduled target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Assigned tickets Ticket Alpha Unassign Ticket Alpha Ticket Beta Unassign Ticket Beta",
+        "Scheduled reports Report Alpha Unschedule Report Alpha Report Beta Unschedule Report Beta",
       pageContent:
-        "Assigned tickets Ticket Alpha Unassign Ticket Alpha Ticket Beta Unassign Ticket Beta",
+        "Scheduled reports Report Alpha Unschedule Report Alpha Report Beta Unschedule Report Beta",
       elements: [
-        actionButton(545, "Unassign Ticket Alpha"),
-        actionButton(546, "Unassign Ticket Beta"),
+        actionButton(543, "Unschedule Report Alpha"),
+        actionButton(544, "Unschedule Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Assigned tickets Ticket Beta Unassign Ticket Beta",
-      pageContent: "Assigned tickets Ticket Beta Unassign Ticket Beta",
-      elements: [actionButton(546, "Unassign Ticket Beta")],
+      visibleContent:
+        "Scheduled reports Report Beta Unschedule Report Beta",
+      pageContent:
+        "Scheduled reports Report Beta Unschedule Report Beta",
+      elements: [actionButton(544, "Unschedule Report Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unassign Ticket Alpha.",
+      userRequest: "Unschedule Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 545 },
-      result: "Clicked element 545.",
+      args: { id: 543 },
+      result: "Clicked element 543.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +73,55 @@ describe("completion kernel target-disappearance operational workflow confirmati
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unassigned Ticket Alpha.",
+      summary: "Unscheduled Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unassign",
-      targetLabel: "Ticket Alpha",
+      action: "unschedule",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unassign:ticket-alpha",
+        logicalKey: "workflow:confirmation:unschedule:report-alpha",
         detail: expect.objectContaining({
-          action: "unassign",
+          action: "unschedule",
           source: "target_disappearance",
-          text: "Unassigned target no longer visible: Ticket Alpha",
+          text: "Unscheduled target no longer visible: Report Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects unassign target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unschedule target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Assigned tickets Ticket Alpha Unassign Ticket Alpha Ticket Beta Unassign Ticket Beta",
+        "Scheduled reports Report Alpha Unschedule Report Alpha Report Beta Unschedule Report Beta",
       pageContent:
-        "Assigned tickets Ticket Alpha Unassign Ticket Alpha Ticket Beta Unassign Ticket Beta",
+        "Scheduled reports Report Alpha Unschedule Report Alpha Report Beta Unschedule Report Beta",
       elements: [
-        actionButton(545, "Unassign Ticket Alpha"),
-        actionButton(546, "Unassign Ticket Beta"),
+        actionButton(543, "Unschedule Report Alpha"),
+        actionButton(544, "Unschedule Report Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      pageContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      elements: [actionButton(545, "Unassign Ticket Alpha")],
+      visibleContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      pageContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      elements: [actionButton(543, "Unschedule Report Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Unassign Ticket Alpha.",
+      userRequest: "Unschedule Report Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 546 },
-      result: "Clicked element 546.",
+      args: { id: 544 },
+      result: "Clicked element 544.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +131,23 @@ describe("completion kernel target-disappearance operational workflow confirmati
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Unassigned Ticket Alpha.",
+      summary: "Unscheduled Report Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "unassign",
-      targetLabel: "Ticket Alpha",
+      action: "unschedule",
+      targetLabel: "Report Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:unassign:ticket-beta",
+        logicalKey: "workflow:confirmation:unschedule:report-beta",
         detail: expect.objectContaining({
-          action: "unassign",
+          action: "unschedule",
           source: "target_disappearance",
-          text: "Unassigned target no longer visible: Ticket Beta",
+          text: "Unscheduled target no longer visible: Report Beta",
         }),
       }),
     ]);
@@ -154,22 +158,26 @@ describe("completion kernel target-disappearance operational workflow confirmati
     });
   });
 
-  test("does not infer unassign confirmation while the named target remains visible", () => {
+  test("does not infer unschedule confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      pageContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      elements: [actionButton(545, "Unassign Ticket Alpha")],
+      visibleContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      pageContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      elements: [actionButton(543, "Unschedule Report Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      pageContent: "Assigned tickets Ticket Alpha Unassign Ticket Alpha",
-      elements: [actionButton(545, "Unassign Ticket Alpha")],
+      visibleContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      pageContent:
+        "Scheduled reports Report Alpha Unschedule Report Alpha",
+      elements: [actionButton(543, "Unschedule Report Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 545 },
-      result: "Clicked element 545.",
+      args: { id: 543 },
+      result: "Clicked element 543.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +186,35 @@ describe("completion kernel target-disappearance operational workflow confirmati
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer unassign confirmation from a generic unassign button", () => {
-    const genericUnassignButton: TaggedElement = {
-      tag: 545,
+  test("does not infer unschedule confirmation from a generic unschedule button", () => {
+    const genericUnscheduleButton: TaggedElement = {
+      tag: 543,
       tagName: "button",
       role: "button",
-      text: "Unassign",
+      text: "Unschedule",
       attributes: {
-        id: "unassign",
-        "aria-label": "Unassign",
+        id: "unschedule",
+        "aria-label": "Unschedule",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Assigned tickets Ticket Alpha Unassign",
-      pageContent: "Assigned tickets Ticket Alpha Unassign",
-      elements: [genericUnassignButton],
+      visibleContent: "Scheduled reports Report Alpha Unschedule",
+      pageContent: "Scheduled reports Report Alpha Unschedule",
+      elements: [genericUnscheduleButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Assigned tickets",
-      pageContent: "Assigned tickets",
+      visibleContent: "Scheduled reports",
+      pageContent: "Scheduled reports",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 545 },
-      result: "Clicked element 545.",
+      args: { id: 543 },
+      result: "Clicked element 543.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +222,4 @@ describe("completion kernel target-disappearance operational workflow confirmati
 
     expect(evidence).toEqual([]);
   });
-
 });
