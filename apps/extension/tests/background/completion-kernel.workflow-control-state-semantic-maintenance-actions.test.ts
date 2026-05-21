@@ -72,38 +72,38 @@ function dataStateActionButton(
   };
 }
 
-describe("completion kernel workflow control-state semantic release-maintenance action confirmation", () => {
+describe("completion kernel workflow control-state semantic maintenance action confirmation", () => {
   for (const scenario of [
     {
-      action: "deploy",
-      completion: "deployed",
-      label: "Deploy Release Alpha",
-      request: "Deploy Release Alpha.",
-      summary: "Deployed Release Alpha.",
-      target: "Release Alpha",
-      id: "release-alpha-deploy",
-      beforeState: "staged",
-      afterState: "deployed",
+      action: "backup",
+      completion: "backed up",
+      label: "Back up Database Alpha",
+      request: "Back up Database Alpha.",
+      summary: "Backed up Database Alpha.",
+      target: "Database Alpha",
+      id: "database-alpha-backup",
+      beforeState: "dirty",
+      afterState: "backed-up",
     },
     {
-      action: "rollback",
-      completion: "rolled back",
-      label: "Rollback Release Alpha",
-      request: "Rollback Release Alpha.",
-      summary: "Rolled back Release Alpha.",
-      target: "Release Alpha",
-      id: "release-alpha-rollback",
-      beforeState: "deployed",
-      afterState: "rolled-back",
+      action: "reset",
+      completion: "reset",
+      label: "Reset Password Alpha",
+      request: "Reset Password Alpha.",
+      summary: "Reset Password Alpha.",
+      target: "Password Alpha",
+      id: "password-alpha-reset",
+      beforeState: "modified",
+      afterState: "reset",
     },
   ] as const) {
-    test(`accepts ${scenario.action} confirmation from semantic deployment data-state control state change`, () => {
+    test(`accepts ${scenario.action} confirmation from semantic maintenance data-state control state change`, () => {
       const pre = workflowSnapshot({
         visibleContent: `${scenario.target} ${scenario.label}`,
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            770,
+            776,
             scenario.label,
             scenario.beforeState,
             scenario.id,
@@ -115,7 +115,7 @@ describe("completion kernel workflow control-state semantic release-maintenance 
         pageContent: `${scenario.target} ${scenario.label}`,
         elements: [
           dataStateActionButton(
-            771,
+            777,
             scenario.label,
             scenario.afterState,
             scenario.id,
@@ -128,8 +128,8 @@ describe("completion kernel workflow control-state semantic release-maintenance 
       });
       const evidence = deriveCompletionEvidenceFromToolOutcome({
         toolName: ToolName.CLICK_ELEMENT,
-        args: { id: 770 },
-        result: "Clicked element 770.",
+        args: { id: 776 },
+        result: "Clicked element 776.",
         preActionSnapshot: pre,
         currentSnapshot: current,
         turn: 11,
@@ -164,36 +164,36 @@ describe("completion kernel workflow control-state semantic release-maintenance 
     });
   }
 
-  test("does not infer deploy confirmation when semantic data-state was already deployed", () => {
+  test("does not infer backup confirmation when semantic data-state was already backed up", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Release Alpha Deploy Release Alpha",
-      pageContent: "Release Alpha Deploy Release Alpha",
+      visibleContent: "Database Alpha Back up Database Alpha",
+      pageContent: "Database Alpha Back up Database Alpha",
       elements: [
         dataStateActionButton(
-          772,
-          "Deploy Release Alpha",
-          "deployed",
-          "release-alpha-deploy",
+          778,
+          "Back up Database Alpha",
+          "backed-up",
+          "database-alpha-backup",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Release Alpha Deploy Release Alpha",
-      pageContent: "Release Alpha Deploy Release Alpha",
+      visibleContent: "Database Alpha Back up Database Alpha",
+      pageContent: "Database Alpha Back up Database Alpha",
       elements: [
         dataStateActionButton(
-          773,
-          "Deploy Release Alpha",
-          "deployed",
-          "release-alpha-deploy",
+          779,
+          "Back up Database Alpha",
+          "backed-up",
+          "database-alpha-backup",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 772 },
-      result: "Clicked element 772.",
+      args: { id: 778 },
+      result: "Clicked element 778.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -202,36 +202,36 @@ describe("completion kernel workflow control-state semantic release-maintenance 
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer rollback confirmation when semantic data-state flips deployed", () => {
+  test("does not infer reset confirmation when semantic data-state flips modified", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Release Alpha Rollback Release Alpha",
-      pageContent: "Release Alpha Rollback Release Alpha",
+      visibleContent: "Password Alpha Reset Password Alpha",
+      pageContent: "Password Alpha Reset Password Alpha",
       elements: [
         dataStateActionButton(
-          774,
-          "Rollback Release Alpha",
-          "rolled-back",
-          "release-alpha-rollback",
+          780,
+          "Reset Password Alpha",
+          "reset",
+          "password-alpha-reset",
         ),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Release Alpha Rollback Release Alpha",
-      pageContent: "Release Alpha Rollback Release Alpha",
+      visibleContent: "Password Alpha Reset Password Alpha",
+      pageContent: "Password Alpha Reset Password Alpha",
       elements: [
         dataStateActionButton(
-          775,
-          "Rollback Release Alpha",
-          "deployed",
-          "release-alpha-rollback",
+          781,
+          "Reset Password Alpha",
+          "modified",
+          "password-alpha-reset",
         ),
       ],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 774 },
-      result: "Clicked element 774.",
+      args: { id: 780 },
+      result: "Clicked element 780.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 11,
@@ -239,5 +239,4 @@ describe("completion kernel workflow control-state semantic release-maintenance 
 
     expect(evidence).toEqual([]);
   });
-
 });
