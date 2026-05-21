@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel block target-disappearance access-lifecycle workflow confirmation", () => {
-  test("accepts block confirmation from named allowed target disappearance", () => {
+describe("completion kernel unblock target-disappearance access-lifecycle workflow confirmation", () => {
+  test("accepts unblock confirmation from named blocklist target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+        "Blocked users User Alpha Unblock User Alpha User Beta Unblock User Beta",
       pageContent:
-        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+        "Blocked users User Alpha Unblock User Alpha User Beta Unblock User Beta",
       elements: [
-        actionButton(521, "Block User Alpha"),
-        actionButton(522, "Block User Beta"),
+        actionButton(513, "Unblock User Alpha"),
+        actionButton(514, "Unblock User Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Allowed users User Beta Block User Beta",
-      pageContent: "Allowed users User Beta Block User Beta",
-      elements: [actionButton(522, "Block User Beta")],
+      visibleContent: "Blocked users User Beta Unblock User Beta",
+      pageContent: "Blocked users User Beta Unblock User Beta",
+      elements: [actionButton(514, "Unblock User Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Block User Alpha.",
+      userRequest: "Unblock User Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 521 },
-      result: "Clicked element 521.",
+      args: { id: 513 },
+      result: "Clicked element 513.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel block target-disappearance access-lifecycle workflow
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Blocked User Alpha.",
+      summary: "Unblocked User Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "block",
+      action: "unblock",
       targetLabel: "User Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:block:user-alpha",
+        logicalKey: "workflow:confirmation:unblock:user-alpha",
         detail: expect.objectContaining({
-          action: "block",
+          action: "unblock",
           source: "target_disappearance",
-          text: "Blocked target no longer visible: User Alpha",
+          text: "Unblocked target no longer visible: User Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects block target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unblock target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+        "Blocked users User Alpha Unblock User Alpha User Beta Unblock User Beta",
       pageContent:
-        "Allowed users User Alpha Block User Alpha User Beta Block User Beta",
+        "Blocked users User Alpha Unblock User Alpha User Beta Unblock User Beta",
       elements: [
-        actionButton(521, "Block User Alpha"),
-        actionButton(522, "Block User Beta"),
+        actionButton(513, "Unblock User Alpha"),
+        actionButton(514, "Unblock User Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Allowed users User Alpha Block User Alpha",
-      pageContent: "Allowed users User Alpha Block User Alpha",
-      elements: [actionButton(521, "Block User Alpha")],
+      visibleContent: "Blocked users User Alpha Unblock User Alpha",
+      pageContent: "Blocked users User Alpha Unblock User Alpha",
+      elements: [actionButton(513, "Unblock User Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Block User Alpha.",
+      userRequest: "Unblock User Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 522 },
-      result: "Clicked element 522.",
+      args: { id: 514 },
+      result: "Clicked element 514.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel block target-disappearance access-lifecycle workflow
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Blocked User Alpha.",
+      summary: "Unblocked User Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "block",
+      action: "unblock",
       targetLabel: "User Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:block:user-beta",
+        logicalKey: "workflow:confirmation:unblock:user-beta",
         detail: expect.objectContaining({
-          action: "block",
+          action: "unblock",
           source: "target_disappearance",
-          text: "Blocked target no longer visible: User Beta",
+          text: "Unblocked target no longer visible: User Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel block target-disappearance access-lifecycle workflow
     });
   });
 
-  test("does not infer block confirmation while the named target remains visible", () => {
+  test("does not infer unblock confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Allowed users User Alpha Block User Alpha",
-      pageContent: "Allowed users User Alpha Block User Alpha",
-      elements: [actionButton(521, "Block User Alpha")],
+      visibleContent: "Blocked users User Alpha Unblock User Alpha",
+      pageContent: "Blocked users User Alpha Unblock User Alpha",
+      elements: [actionButton(513, "Unblock User Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Allowed users User Alpha Block User Alpha",
-      pageContent: "Allowed users User Alpha Block User Alpha",
-      elements: [actionButton(521, "Block User Alpha")],
+      visibleContent: "Blocked users User Alpha Unblock User Alpha",
+      pageContent: "Blocked users User Alpha Unblock User Alpha",
+      elements: [actionButton(513, "Unblock User Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 521 },
-      result: "Clicked element 521.",
+      args: { id: 513 },
+      result: "Clicked element 513.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel block target-disappearance access-lifecycle workflow
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer block confirmation from a generic block button", () => {
-    const genericBlockButton: TaggedElement = {
-      tag: 521,
+  test("does not infer unblock confirmation from a generic unblock button", () => {
+    const genericUnblockButton: TaggedElement = {
+      tag: 513,
       tagName: "button",
       role: "button",
-      text: "Block",
+      text: "Unblock",
       attributes: {
-        id: "block",
-        "aria-label": "Block",
+        id: "unblock",
+        "aria-label": "Unblock",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Allowed users User Alpha Block",
-      pageContent: "Allowed users User Alpha Block",
-      elements: [genericBlockButton],
+      visibleContent: "Blocked users User Alpha Unblock",
+      pageContent: "Blocked users User Alpha Unblock",
+      elements: [genericUnblockButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Allowed users",
-      pageContent: "Allowed users",
+      visibleContent: "Blocked users",
+      pageContent: "Blocked users",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 521 },
-      result: "Clicked element 521.",
+      args: { id: 513 },
+      result: "Clicked element 513.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -214,5 +214,4 @@ describe("completion kernel block target-disappearance access-lifecycle workflow
 
     expect(evidence).toEqual([]);
   });
-
 });
