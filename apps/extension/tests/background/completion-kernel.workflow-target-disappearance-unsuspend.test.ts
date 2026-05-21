@@ -37,31 +37,31 @@ function actionButton(tag: number, label: string): TaggedElement {
   };
 }
 
-describe("completion kernel suspend target-disappearance access-lifecycle workflow confirmation", () => {
-  test("accepts suspend confirmation from named active target disappearance", () => {
+describe("completion kernel unsuspend target-disappearance access-lifecycle workflow confirmation", () => {
+  test("accepts unsuspend confirmation from named suspended target disappearance", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+        "Suspended accounts Account Alpha Unsuspend Account Alpha Account Beta Unsuspend Account Beta",
       pageContent:
-        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+        "Suspended accounts Account Alpha Unsuspend Account Alpha Account Beta Unsuspend Account Beta",
       elements: [
-        actionButton(519, "Suspend Account Alpha"),
-        actionButton(520, "Suspend Account Beta"),
+        actionButton(515, "Unsuspend Account Alpha"),
+        actionButton(516, "Unsuspend Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Active accounts Account Beta Suspend Account Beta",
-      pageContent: "Active accounts Account Beta Suspend Account Beta",
-      elements: [actionButton(520, "Suspend Account Beta")],
+      visibleContent: "Suspended accounts Account Beta Unsuspend Account Beta",
+      pageContent: "Suspended accounts Account Beta Unsuspend Account Beta",
+      elements: [actionButton(516, "Unsuspend Account Beta")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Suspend Account Alpha.",
+      userRequest: "Unsuspend Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 519 },
-      result: "Clicked element 519.",
+      args: { id: 515 },
+      result: "Clicked element 515.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -71,53 +71,53 @@ describe("completion kernel suspend target-disappearance access-lifecycle workfl
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Suspended Account Alpha.",
+      summary: "Unsuspended Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "suspend",
+      action: "unsuspend",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:suspend:account-alpha",
+        logicalKey: "workflow:confirmation:unsuspend:account-alpha",
         detail: expect.objectContaining({
-          action: "suspend",
+          action: "unsuspend",
           source: "target_disappearance",
-          text: "Suspended target no longer visible: Account Alpha",
+          text: "Unsuspended target no longer visible: Account Alpha",
         }),
       }),
     ]);
     expect(decision.status).toBe("accepted");
   });
 
-  test("rejects suspend target-disappearance evidence for the wrong requested target", () => {
+  test("rejects unsuspend target-disappearance evidence for the wrong requested target", () => {
     const pre = workflowSnapshot({
       visibleContent:
-        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+        "Suspended accounts Account Alpha Unsuspend Account Alpha Account Beta Unsuspend Account Beta",
       pageContent:
-        "Active accounts Account Alpha Suspend Account Alpha Account Beta Suspend Account Beta",
+        "Suspended accounts Account Alpha Unsuspend Account Alpha Account Beta Unsuspend Account Beta",
       elements: [
-        actionButton(519, "Suspend Account Alpha"),
-        actionButton(520, "Suspend Account Beta"),
+        actionButton(515, "Unsuspend Account Alpha"),
+        actionButton(516, "Unsuspend Account Beta"),
       ],
     });
     const current = workflowSnapshot({
-      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
-      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
-      elements: [actionButton(519, "Suspend Account Alpha")],
+      visibleContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      pageContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      elements: [actionButton(515, "Unsuspend Account Alpha")],
     });
     const generated = generateCompletionContract({
-      userRequest: "Suspend Account Alpha.",
+      userRequest: "Unsuspend Account Alpha.",
       snapshot: current,
     });
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 520 },
-      result: "Clicked element 520.",
+      args: { id: 516 },
+      result: "Clicked element 516.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -127,23 +127,23 @@ describe("completion kernel suspend target-disappearance access-lifecycle workfl
       evidence,
       snapshot: current,
       candidateSource: "model_done",
-      summary: "Suspended Account Alpha.",
+      summary: "Unsuspended Account Alpha.",
     });
 
     expect(generated?.contract).toMatchObject({
       kind: "workflow_confirmation",
-      action: "suspend",
+      action: "unsuspend",
       targetLabel: "Account Alpha",
     });
     expect(evidence).toEqual([
       expect.objectContaining({
         type: "confirmation_state",
         confidence: "high",
-        logicalKey: "workflow:confirmation:suspend:account-beta",
+        logicalKey: "workflow:confirmation:unsuspend:account-beta",
         detail: expect.objectContaining({
-          action: "suspend",
+          action: "unsuspend",
           source: "target_disappearance",
-          text: "Suspended target no longer visible: Account Beta",
+          text: "Unsuspended target no longer visible: Account Beta",
         }),
       }),
     ]);
@@ -154,22 +154,22 @@ describe("completion kernel suspend target-disappearance access-lifecycle workfl
     });
   });
 
-  test("does not infer suspend confirmation while the named target remains visible", () => {
+  test("does not infer unsuspend confirmation while the named target remains visible", () => {
     const pre = workflowSnapshot({
-      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
-      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
-      elements: [actionButton(519, "Suspend Account Alpha")],
+      visibleContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      pageContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      elements: [actionButton(515, "Unsuspend Account Alpha")],
     });
     const current = workflowSnapshot({
-      visibleContent: "Active accounts Account Alpha Suspend Account Alpha",
-      pageContent: "Active accounts Account Alpha Suspend Account Alpha",
-      elements: [actionButton(519, "Suspend Account Alpha")],
+      visibleContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      pageContent: "Suspended accounts Account Alpha Unsuspend Account Alpha",
+      elements: [actionButton(515, "Unsuspend Account Alpha")],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 519 },
-      result: "Clicked element 519.",
+      args: { id: 515 },
+      result: "Clicked element 515.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
@@ -178,35 +178,35 @@ describe("completion kernel suspend target-disappearance access-lifecycle workfl
     expect(evidence).toEqual([]);
   });
 
-  test("does not infer suspend confirmation from a generic suspend button", () => {
-    const genericSuspendButton: TaggedElement = {
-      tag: 519,
+  test("does not infer unsuspend confirmation from a generic unsuspend button", () => {
+    const genericUnsuspendButton: TaggedElement = {
+      tag: 515,
       tagName: "button",
       role: "button",
-      text: "Suspend",
+      text: "Unsuspend",
       attributes: {
-        id: "suspend",
-        "aria-label": "Suspend",
+        id: "unsuspend",
+        "aria-label": "Unsuspend",
       },
       rect: { x: 500, y: 80, width: 120, height: 32 },
       isVisible: true,
       isDisabled: false,
     };
     const pre = workflowSnapshot({
-      visibleContent: "Active accounts Account Alpha Suspend",
-      pageContent: "Active accounts Account Alpha Suspend",
-      elements: [genericSuspendButton],
+      visibleContent: "Suspended accounts Account Alpha Unsuspend",
+      pageContent: "Suspended accounts Account Alpha Unsuspend",
+      elements: [genericUnsuspendButton],
     });
     const current = workflowSnapshot({
-      visibleContent: "Active accounts",
-      pageContent: "Active accounts",
+      visibleContent: "Suspended accounts",
+      pageContent: "Suspended accounts",
       elements: [],
     });
 
     const evidence = deriveCompletionEvidenceFromToolOutcome({
       toolName: ToolName.CLICK_ELEMENT,
-      args: { id: 519 },
-      result: "Clicked element 519.",
+      args: { id: 515 },
+      result: "Clicked element 515.",
       preActionSnapshot: pre,
       currentSnapshot: current,
       turn: 9,
