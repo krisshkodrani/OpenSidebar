@@ -304,6 +304,9 @@ chrome.action.onClicked.addListener(async (tab) => {
     logger.info("sidebar", "Icon clicked", { tabId: tab.id });
     const tabId = tab.id;
     try {
+      // Mark the user gesture before opening so a fast side-panel mount cannot
+      // race ahead of the SIDE_PANEL_OPENED handler's user-opened check.
+      await addUserOpenedPanel(tabId);
       // 0. Re-enable + open panel FIRST (must stay synchronous with gesture)
       chrome.sidePanel.setOptions({
         tabId,
@@ -311,9 +314,6 @@ chrome.action.onClicked.addListener(async (tab) => {
         enabled: true,
       });
       await chrome.sidePanel.open({ tabId });
-
-      // 1. Mark as user-initiated AFTER open succeeds (still before SIDE_PANEL_OPENED arrives)
-      await addUserOpenedPanel(tabId);
 
       // We can call the same handler as the side panel message, or just let the side panel message trigger it.
       // However, if the side panel message fires, we might double-create if we are not careful.
@@ -329,6 +329,7 @@ chrome.action.onClicked.addListener(async (tab) => {
       try {
         await chrome.sidePanel.open({ tabId });
       } catch (_e) {
+        await removeUserOpenedPanel(tabId);
         /* sidePanel.open fallback; error already logged above */
       }
     }

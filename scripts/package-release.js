@@ -277,7 +277,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts",
     ],
     remainingExternalGates: [
-      "Manual native Chrome side panel spot-check",
+      "Manual native Chrome side panel spot-check with npm run release:smoke:native-panel",
       "GitHub tag",
       "GitHub release notes publication",
       "Release artifact and checksum upload",

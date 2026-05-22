@@ -59,7 +59,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Run `corepack pnpm run release:package` and confirm it writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
 - While iterating on release changes, `corepack pnpm run release:preflight -- --allow-dirty` can validate the generated artifacts.
 - Before tagging, commit the release candidate, rerun `corepack pnpm run release:package`, then run the strict `corepack pnpm run release:preflight` and resolve any failed artifact, version, commit, checksum, or clean-tree check.
-- Spot-check the loaded extension from `dist/` in Chrome.
+- Spot-check the loaded extension from `dist/` in Chrome. Use `corepack pnpm run release:smoke:native-panel` for the assisted native side-panel smoke, then click the OpenSidebar toolbar icon in the launched Chrome window.
 
 ## 5. GitHub OSS BYOK Gate
 
@@ -70,6 +70,7 @@ For a broad GitHub-first BYOK release, also confirm:
 - The BYOK provider matrix documents required keys and supported provider modes.
 - Privacy, security, permissions, and safety-gate claims are consistent across public docs.
 - A recommended provider completes one safe first-task smoke from the built `dist/` extension.
+- The assisted native side-panel smoke records evidence under `.artifacts/e2e/native-sidepanel/`.
 - [Known limitations](./known-limitations.md) are reviewed and linked from the release notes.
 - The release artifact zip and checksum from `corepack pnpm run release:package` are attached to the GitHub release.
 

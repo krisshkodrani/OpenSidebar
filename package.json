@@ -57,6 +57,7 @@
     "release:verify": "nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension,backend && nx run extension:build && node scripts/check-dist.js && corepack pnpm audit --prod",
     "release:package": "node scripts/package-release.js",
     "release:preflight": "node scripts/check-release.js",
+    "release:smoke:native-panel": "tsx scripts/run-native-sidepanel-smoke.ts",
     "fmt": "prettier --write apps/extension/src/ packages/",
     "fixtures": "nx run tools:fixtures",
     "fixtures:build": "nx run fixture-online-shop-pro:build",

@@ -80,6 +80,7 @@ pnpm run verify   # Local confidence gate before commit or push
 pnpm run release:verify # Release confidence gate with production audit
 pnpm run release:package # Zip dist/ and write release artifacts
 pnpm run release:preflight # Validate release artifacts before tagging
+pnpm run release:smoke:native-panel # Assisted native Chrome side-panel smoke
 pnpm run doctor   # Diagnose local setup and show next commands
 ```
 
@@ -101,6 +102,7 @@ pnpm run verify               # Lint, typecheck, tests, build, and dist check
 pnpm run release:verify       # Release gate plus production dependency audit
 pnpm run release:package      # Create .artifacts/releases/ zip, checksum, notes, manifest
 pnpm run release:preflight    # Validate release artifacts before tagging
+pnpm run release:smoke:native-panel # Assisted native Chrome side-panel smoke
 pnpm run doctor               # Local setup diagnosis
 ```
 

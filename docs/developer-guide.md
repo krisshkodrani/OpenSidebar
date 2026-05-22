@@ -303,6 +303,7 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | `pnpm run release:verify`     | you want release confidence              | lint + typecheck + tests + build + dist check + production dependency audit |
 | `pnpm run release:package`    | you want release artifacts               | writes `.artifacts/releases/` zip, SHA-256 checksum, notes, and manifest from `dist/` |
 | `pnpm run release:preflight`  | you want to check release artifacts before tagging | validates artifact hash/version/commit consistency, requires a clean working tree, and prints publication commands |
+| `pnpm run release:smoke:native-panel` | you want the manual Chrome side-panel gate | launches headed Chrome with `dist/`, waits for a toolbar click, and writes evidence under `.artifacts/e2e/native-sidepanel/` |
 | `pnpm exec vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).

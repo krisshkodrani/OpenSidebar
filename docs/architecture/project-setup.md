@@ -57,6 +57,7 @@ pnpm run ci:local
 pnpm run release:verify
 pnpm run release:package
 pnpm run release:preflight
+pnpm run release:smoke:native-panel
 ```
 
 ## Prompts
@@ -87,3 +88,4 @@ The trace viewer is available at `http://127.0.0.1:7589/viewer`.
 - `ci:audit` checks production dependencies for known advisories.
 - `release:package` writes `.artifacts/releases/opensidebar-v<version>.zip`, a matching `.sha256` file, release notes, and an artifact manifest from the current `dist/` build.
 - `release:preflight` validates generated release artifacts, requires a clean working tree, reports tag/GitHub CLI readiness, and prints final publication commands.
+- `release:smoke:native-panel` launches headed Chrome with the built extension and records native side-panel handshake evidence after a manual toolbar click.
