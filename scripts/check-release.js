@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, relative, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -10,10 +10,12 @@ const args = new Set(process.argv.slice(2));
 const knownArgs = new Set([
   "--allow-dirty",
   "--require-gh",
+  "--require-native-smoke",
   "--require-tag",
 ]);
 const allowDirty = args.has("--allow-dirty");
 const requireGh = args.has("--require-gh");
+const requireNativeSmoke = args.has("--require-native-smoke");
 const requireTag = args.has("--require-tag");
 const errors = [];
 const warnings = [];
@@ -71,6 +73,20 @@ function fileSha256(path) {
 
 function asPosix(path) {
   return path.replace(/\\/g, "/");
+}
+
+function collectFiles(directory, predicate) {
+  if (!existsSync(directory)) return [];
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...collectFiles(path, predicate));
+    } else if (entry.isFile() && predicate(path)) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 const packageJson = readJson(resolve(rootPath, "package.json"));
@@ -204,6 +220,42 @@ if (existsSync(notesPath)) {
   if (zipHash && !notes.includes(zipHash)) {
     fail(`release notes are missing zip SHA-256 ${zipHash}`);
   }
+}
+
+const nativeSmokeDir = resolve(rootPath, ".artifacts", "e2e", "native-sidepanel");
+const nativeSmokeFiles = collectFiles(nativeSmokeDir, (path) =>
+  path.endsWith(".json"),
+);
+const nativeSmokeEvidence = nativeSmokeFiles
+  .map((path) => {
+    try {
+      return { path, report: JSON.parse(readFileSync(path, "utf-8")) };
+    } catch {
+      return null;
+    }
+  })
+  .filter(Boolean);
+const matchingNativeSmoke = nativeSmokeEvidence.find(
+  (entry) =>
+    entry.report?.result === "passed" &&
+    headCommit &&
+    entry.report?.commit === headCommit,
+);
+if (!matchingNativeSmoke) {
+  const latestNativeSmoke = nativeSmokeEvidence
+    .map((entry) => ({
+      ...entry,
+      mtimeMs: statSync(entry.path).mtimeMs,
+    }))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)[0];
+  const detail = latestNativeSmoke
+    ? ` Latest native smoke was ${latestNativeSmoke.report?.result ?? "unknown"} at ${asPosix(
+        relative(rootPath, latestNativeSmoke.path),
+      )}.`
+    : "";
+  const message = `No passing native side-panel smoke evidence found for HEAD ${headCommit ?? "unknown"}.${detail} Run npm run release:smoke:native-panel before tagging.`;
+  if (requireNativeSmoke) fail(message);
+  else warn(message);
 }
 
 const status = git(["status", "--porcelain"]);
