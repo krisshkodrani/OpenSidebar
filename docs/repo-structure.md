@@ -48,7 +48,7 @@ Advanced aliases remain available for targeted work:
 - `pnpm run test:e2e`: browser E2E validation
 - `pnpm run ci:local`: CI-equivalent local confidence gate
 - `pnpm run release:verify`: release confidence gate, including production dependency audit
-- `pnpm run release:package`: release zip and SHA-256 checksum under `.artifacts/releases/`
+- `pnpm run release:package`: release zip, SHA-256 checksum, notes, and manifest under `.artifacts/releases/`
 
 Use direct Nx commands for project-scoped work:
 

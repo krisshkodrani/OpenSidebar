@@ -30,7 +30,7 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 | `pnpm run fixtures` | Serve local E2E/demo fixtures |
 | `pnpm run test:e2e` | Build + real-browser E2E tests |
 | `pnpm run release:verify` | Release gate: lint, typecheck, tests, build, dist check, and production dependency audit |
-| `pnpm run release:package` | Create the release zip and SHA-256 checksum from `dist/` |
+| `pnpm run release:package` | Create the release zip, SHA-256 checksum, notes, and manifest from `dist/` |
 
 ## Testing
 
