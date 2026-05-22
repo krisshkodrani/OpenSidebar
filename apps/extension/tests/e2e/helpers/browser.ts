@@ -463,12 +463,11 @@ async function waitForE2EContentScriptReady(
   timeoutMs: number = DEFAULT_CONTENT_SCRIPT_READY_TIMEOUT_MS,
 ): Promise<void> {
   const helperPage = await openHelperPage(ctx);
-  const result = await helperPage.evaluate(
-    async (input: { targetTabId: number; timeoutMs: number }) => {
+  const result = await helperPage.evaluate(`
+(async () => {
+      const input = ${JSON.stringify({ targetTabId, timeoutMs })};
       const startedAt = Date.now();
       let lastDetail = "";
-      const sleep = (ms: number) =>
-        new Promise((resolve) => setTimeout(resolve, ms));
 
       while (Date.now() - startedAt < input.timeoutMs) {
         try {
@@ -482,18 +481,17 @@ async function waitForE2EContentScriptReady(
           lastDetail =
             typeof response?.detail === "string"
               ? response.detail
-              : `unexpected response ${JSON.stringify(response)}`;
+              : "unexpected response " + JSON.stringify(response);
         } catch (error) {
           lastDetail =
-            error instanceof Error ? error.message : String(error ?? "");
+              error instanceof Error ? error.message : String(error ?? "");
         }
-        await sleep(100);
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
       return { ok: false, detail: lastDetail };
-    },
-    { targetTabId, timeoutMs },
-  );
+})()
+  `);
 
   if (result?.ok) return;
   const detail = result?.detail ? ` Last error: ${result.detail}` : "";
@@ -528,13 +526,14 @@ export async function openInPageSidePanelOverlay(
   await waitForE2EContentScriptReady(ctx, targetTabId);
   const overlayBundlePath = await readOverlayBundlePath();
   const helperPage = await openHelperPage(ctx);
-  const response = await helperPage.evaluate(
-    async (input: {
-      targetTabId: number;
-      workspaceId: string;
-      overlayBundlePath: string;
-      overlayLoaderFile: string;
-    }) => {
+  const response = await helperPage.evaluate(`
+(async () => {
+      const input = ${JSON.stringify({
+        targetTabId,
+        workspaceId,
+        overlayBundlePath,
+        overlayLoaderFile: OVERLAY_LOADER_FILE,
+      })};
       const tab = await chrome.tabs.get(input.targetTabId);
       const overlayScriptUrl = chrome.runtime.getURL(input.overlayBundlePath);
       const extensionBaseUrl = new URL("/", overlayScriptUrl).toString();
@@ -583,20 +582,15 @@ export async function openInPageSidePanelOverlay(
         const secondResponse = await sendMountMessage();
         if (!secondResponse?.ok || secondResponse.loaded === false) {
           throw new Error(
-            `Failed to confirm E2E overlay panel mount: ${secondResponse?.detail ?? "unknown error"}`,
+            "Failed to confirm E2E overlay panel mount: " +
+              (secondResponse?.detail ?? "unknown error"),
           );
         }
         return secondResponse;
       }
       return firstResponse;
-    },
-    {
-      targetTabId,
-      workspaceId,
-      overlayBundlePath,
-      overlayLoaderFile: OVERLAY_LOADER_FILE,
-    },
-  );
+})()
+  `);
 
   if (!response?.ok) {
     throw new Error(
