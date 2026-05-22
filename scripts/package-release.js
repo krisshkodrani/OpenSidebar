@@ -17,6 +17,7 @@ const distPath = resolve(rootPath, "dist");
 const artifactDir = resolve(rootPath, ".artifacts", "releases");
 const fixedDosTime = 0;
 const fixedDosDate = (1 << 5) | 1; // 1980-01-01
+const nxCliPath = resolve(rootPath, "node_modules", "nx", "dist", "bin", "nx.js");
 
 const packageJson = JSON.parse(
   readFileSync(resolve(rootPath, "package.json"), "utf-8"),
@@ -25,6 +26,11 @@ const version = packageJson.version;
 if (typeof version !== "string" || version.length === 0) {
   throw new Error("package.json version is missing");
 }
+
+execFileSync(process.execPath, [nxCliPath, "run", "extension:build"], {
+  cwd: rootPath,
+  stdio: "inherit",
+});
 
 execFileSync(process.execPath, [resolve(rootPath, "scripts", "check-dist.js")], {
   cwd: rootPath,
@@ -178,7 +184,7 @@ OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. 
 ## Highlights
 
 - Multi-provider BYOK preview with Fireworks, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced split-provider modes.
-- Release package built from \`dist/\` with a SHA-256 checksum.
+- Release package builds \`dist/\` and writes a SHA-256 checksum.
 - Manifest/package version alignment enforced by \`ci:dist\`.
 - Public install docs use Corepack-managed pnpm and a safe read-only first task.
 - Known limitations are documented for agent reliability, Done/verifier behavior, permissions, traces, providers, and distribution.
