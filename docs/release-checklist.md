@@ -57,6 +57,8 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Confirm `dist/manifest.json` has the expected version.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
 - Run `corepack pnpm run release:package` and confirm it writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
+- While iterating on release changes, `corepack pnpm run release:preflight -- --allow-dirty` can validate the generated artifacts.
+- Before tagging, commit the release candidate, rerun `corepack pnpm run release:package`, then run the strict `corepack pnpm run release:preflight` and resolve any failed artifact, version, commit, checksum, or clean-tree check.
 - Spot-check the loaded extension from `dist/` in Chrome.
 
 ## 5. GitHub OSS BYOK Gate
@@ -74,8 +76,9 @@ For a broad GitHub-first BYOK release, also confirm:
 ## 6. Publish
 
 - Commit the release candidate changes
+- Rerun `corepack pnpm run release:package` and `corepack pnpm run release:preflight` on the exact commit being tagged
 - Tag the release commit
-- Attach release notes derived from `CHANGELOG.md`
+- Attach the generated release notes from `.artifacts/releases/`
 - Upload the built `dist/` package or release zip to the intended distribution channel
 
 GitHub CLI draft command after final manual spot-check:

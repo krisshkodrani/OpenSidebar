@@ -197,6 +197,7 @@ OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. 
 - \`npm run ci:dist\`
 - \`npm run ci:audit\`
 - \`npm run release:package\`
+- \`npm run release:preflight\`
 - Detached panel smoke: \`E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx tsx scripts/run-e2e-panel-smoke.ts --holdMs=1\`
 - Safe first-task smoke: \`E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts\`
 
@@ -271,6 +272,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
       "npm run ci:dist",
       "npm run ci:audit",
       "npm run release:package",
+      "npm run release:preflight",
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx tsx scripts/run-e2e-panel-smoke.ts --holdMs=1",
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts",
     ],

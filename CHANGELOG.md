@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a release preflight command to validate generated artifact version, commit, hash, and publication readiness before tagging.
+
 ### Changed
 
 - Synchronized the extension manifest version with the workspace package version for the OSS BYOK preview candidate.

@@ -49,6 +49,7 @@ Advanced aliases remain available for targeted work:
 - `pnpm run ci:local`: CI-equivalent local confidence gate
 - `pnpm run release:verify`: release confidence gate, including production dependency audit
 - `pnpm run release:package`: release zip, SHA-256 checksum, notes, and manifest under `.artifacts/releases/`
+- `pnpm run release:preflight`: release artifact/version/commit validation and publication-readiness warnings before tagging
 
 Use direct Nx commands for project-scoped work:
 
