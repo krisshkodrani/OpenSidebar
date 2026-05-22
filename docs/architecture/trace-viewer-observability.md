@@ -4,6 +4,8 @@ Date: 2026-05-12
 
 Scope: Trace Viewer metrics, trace indexing, and retention direction.
 
+Related: [Trace Viewer AI Concepts](../guides/trace-viewer-ai-concepts.md) for a concise explanation of the agent concepts and how the viewer makes those concepts observable.
+
 ## Goal
 
 The Trace Viewer should help engineers move from a failing browser-agent run to a clear diagnosis and action. SQLite is the long-lived viewer store. Raw trace files are short-lived local evidence for Codex/debugging and are retained for 7 days by default.

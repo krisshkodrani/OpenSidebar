@@ -6,9 +6,10 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 
 1. Fork the repository.
 2. Clone your fork.
-3. Run `pnpm install`.
-4. Copy `.env.example` to `.env` if you want local provider-backed runs.
-5. Run `pnpm run dev`.
+3. Use Node.js 22+.
+4. Run `corepack pnpm install`.
+5. Copy `.env.example` to `.env` if you want local provider-backed runs.
+6. Run `pnpm run dev`.
 
 `pnpm run dev` starts the extension build, the unified local server, and the trace viewer.
 
@@ -46,6 +47,8 @@ Run E2E only when you need browser-level validation:
 pnpm run test:e2e
 ```
 
+For browser-agent bugs, include the provider mode, model overrides, task prompt, URL shape, screenshots if safe, and whether a local trace or E2E report is available. Redact page data, credentials, cookies, and API keys before attaching diagnostics.
+
 ## Observability
 
 OpenSidebar keeps the trace/logging workflow:
@@ -79,5 +82,6 @@ The active product surface is:
 
 - Prefer removing stale features over preserving dead compatibility layers.
 - Keep docs aligned with the shipped product and current scripts.
+- Keep BYOK provider, privacy, safety-gate, and permission claims aligned across README, privacy, security, and release docs.
 - Do not add UI affordances for features that no longer have a backend path.
 - When removing functionality, also remove tests and documentation that keep advertising it.

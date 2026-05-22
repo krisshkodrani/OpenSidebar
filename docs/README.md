@@ -40,6 +40,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Personal Profile](./personal-profile.md)
 - [Repo Structure](./repo-structure.md)
 - [Release Checklist](./release-checklist.md)
+- [OSS BYOK Launch Roadmap](./oss-byok-launch-roadmap.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
 - [WorkArena Generalized Harness Philosophy](./guides/workarena-generalized-harness-philosophy.md)
@@ -57,6 +58,8 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Documentation Policy](./docs-policy.md)
 - [Design System](./design-system.md)
 - [Store Listing](./store-listing.md)
+- [Privacy Policy](../PRIVACY_POLICY.md)
+- [Security Policy](../SECURITY.md)
 
 ## Notes
 

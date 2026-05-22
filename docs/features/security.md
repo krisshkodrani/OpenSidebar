@@ -1,13 +1,14 @@
 # Security & Privacy
 
-OpenSidebar is designed with security and privacy as fundamental principles, keeping your data safe while providing powerful AI capabilities.
+OpenSidebar is designed around local-first BYOK operation, explicit browser permissions, configurable safety gates, and transparent agent actions.
 
 ## Privacy First
 
-### Local Data Storage
+### Local-First Data Storage
 
-- **Everything stays local** - All data stored in your browser only
-- **No cloud uploads** - Your information never leaves your device
+- **No OpenSidebar-hosted relay** - Normal extension use sends model requests directly to your configured provider
+- **Local settings and keys** - Extension settings, provider keys, workspace data, and diagnostics are stored in browser storage
+- **Provider-bound task data** - Page context and screenshots may be sent to the selected model provider when needed for an active task
 - **Browser encryption** - Chrome encrypts stored data at rest
 - **IndexedDB isolation** - Each extension has separate storage
 
@@ -49,7 +50,7 @@ Risk classifications are defined in `src/background/tools/metadata.ts` as the `T
 
 - **Visual indicators** - Tool badges show risk levels
 - **Transparency** - You see exactly what actions were taken
-- **No blocking** - Agent acts autonomously (confirmed by Stop button)
+- **Configurable gates** - Settings can require plan confirmation or approval for high-risk actions
 
 ## Input Sanitization
 
@@ -85,8 +86,8 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Secure Storage
 
-- **Chrome storage.sync** - Encrypted by Google account
-- **No local storage** - Keys never stored in plain text
+- **Chrome extension storage** - API keys are stored in Chrome extension storage
+- **No page storage** - Keys are not stored in website `localStorage`
 - **Permission boundaries** - Keys only accessible to extension
 
 ### Key Usage
@@ -101,28 +102,28 @@ function sanitizeUrl(url: string): Result<string> {
 - **Revocation** - Keys can be revoked at provider level
 - **Rotation** - Support for key changes and updates
 
-## Agent Autonomy Model
+## Agent Interaction Model
 
-### Autonomous Operation
+### Configurable Operation
 
-OpenSidebar operates without confirmation gates:
+OpenSidebar supports configurable confirmation behavior:
 
-1. **User intent established** - You typed a request and clicked Send
-2. **Agent executes** - AI performs needed actions autonomously
-3. **Stop button safety** - You can abort at any time
-4. **Transparency** - All actions shown after execution
+1. **Ask before acting** - require confirmation before actions
+2. **Ask for risky actions** - require approval for high-risk operations
+3. **Confirm plans only** - review multi-step plans before execution
+4. **Act without asking** - allow autonomous execution after the user starts a task
 
-### Why No Confirmation Gates?
+### Why Configurable Gates?
 
-- **Multi-step tasks** - Would require dozens of confirmations
-- **User experience** - Constant confirmations break workflow
-- **Industry standard** - Modern AI assistants operate similarly
-- **Efficiency** - Autonomous execution is more practical
+- **Different risk tolerance** - Users can choose conservative or fast modes
+- **Multi-step tasks** - Plan confirmation can reduce repeated interruptions
+- **Sensitive actions** - Risky operations can require explicit approval
+- **Efficiency** - Advanced users can run trusted workflows with fewer prompts
 
 ### Safety Mechanisms
 
 - **Stop button** - Immediate termination of any action
-- **Risk awareness** - High-risk actions logged and displayed
+- **Risk awareness** - High-risk actions can be approved, logged, and displayed
 - **Workspace isolation** - Actions limited to current context
 - **Recovery** - Graceful error handling and rollback
 
@@ -167,13 +168,13 @@ OpenSidebar operates without confirmation gates:
 
 ## Threat Model
 
-### Prevented Threats
+### Reduced Threats
 
-- **Data exfiltration** - No data sent to external servers
+- **Unexpected data sharing** - No OpenSidebar-hosted telemetry or relay; provider traffic is tied to the user's configured key
 - **Cross-site scripting** - Content script sandboxing prevents XSS
 - **Man-in-the-middle** - HTTPS encryption prevents interception
 - **Key theft** - Chrome's encrypted storage protects API keys
-- **Malicious sites** - Risk classification prevents dangerous actions
+- **Malicious sites** - Risk classification, approvals, and workspace boundaries reduce dangerous actions
 
 ### User Responsibilities
 
@@ -202,8 +203,8 @@ OpenSidebar operates without confirmation gates:
 
 - **GDPR alignment** - Data minimization and user control principles
 - **CCPA compliance** - California privacy law alignment
-- **Data locality** - Data stays in user's jurisdiction
-- **Right to deletion** - Users can delete all stored data
+- **Data locality** - Local extension data stays in browser storage; provider traffic follows the selected provider's terms and policies
+- **Right to deletion** - Users can delete local extension data through Chrome extension storage and profile controls
 
 ## Best Practices for Users
 
@@ -225,7 +226,7 @@ OpenSidebar operates without confirmation gates:
 
 ### Patch Process
 
-- **Automatic updates** - Chrome auto-updates extensions from store
+- **GitHub releases** - Broad OSS launch uses GitHub release artifacts and manual unpacked install first
 - **Security patches** - Critical fixes prioritized and released quickly
 - **Bug bounty** - Security researchers encouraged to report issues
 - **Transparency** - Security issues disclosed responsibly
