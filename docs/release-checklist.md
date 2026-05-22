@@ -13,7 +13,7 @@ Use this checklist when preparing a new OpenSidebar release.
 From the repo root:
 
 ```bash
-pnpm run verify
+corepack pnpm run release:verify
 ```
 
 This runs:
@@ -24,6 +24,7 @@ This runs:
 - backend tests
 - production build
 - extension artifact verification for the generated `dist/` manifest, side panel, trace viewer, service worker import, icons, content scripts, web-accessible resources, and Vite manifest
+- production dependency audit for known advisories
 
 ## 3. Run Final E2E Validation
 
@@ -52,8 +53,10 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 
 ## 4. Validate Release Artifacts
 
-- Confirm `pnpm run ci:dist` passes.
+- Confirm `corepack pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
+- Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
+- Run `corepack pnpm run release:package` and confirm it writes a release zip plus `.sha256` file under `.artifacts/releases/`.
 - Spot-check the loaded extension from `dist/` in Chrome.
 
 ## 5. GitHub OSS BYOK Gate
@@ -65,8 +68,8 @@ For a broad GitHub-first BYOK release, also confirm:
 - The BYOK provider matrix documents required keys and supported provider modes.
 - Privacy, security, permissions, and safety-gate claims are consistent across public docs.
 - A recommended provider completes one safe first-task smoke from the built `dist/` extension.
-- Known limitations are reviewed and linked from the release notes.
-- The release artifact zip and checksum are attached to the GitHub release.
+- [Known limitations](./known-limitations.md) are reviewed and linked from the release notes.
+- The release artifact zip and checksum from `corepack pnpm run release:package` are attached to the GitHub release.
 
 ## 6. Publish
 

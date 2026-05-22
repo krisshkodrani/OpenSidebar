@@ -203,10 +203,12 @@ const E2E_OVERLAY_MOUNT_EVENT = "opensidebar:overlay:mount";
 const E2E_OVERLAY_DISPOSE_EVENT = "opensidebar:overlay:dispose";
 let e2eOverlayBridgeInstalled = false;
 let e2eOverlayMounted = false;
+let e2eOverlayBridgeToken: string | null = null;
 
 type E2EOverlayMountPayload = {
   scriptUrl: string;
   extensionBaseUrl?: string;
+  bridgeToken?: string;
   workspaceId: string;
   tab: {
     id?: number;
@@ -224,6 +226,7 @@ type E2EOverlayStorageAreaName = "local" | "sync" | "session";
 
 type E2EOverlayStorageRequestDetail = {
   requestId?: string;
+  bridgeToken?: string;
   area?: E2EOverlayStorageAreaName;
   operation?: "get" | "set" | "remove";
   keys?: string | string[] | Record<string, unknown> | null;
@@ -259,6 +262,7 @@ function upsertE2EOverlayConfig(payload: E2EOverlayMountPayload): void {
     glass: true,
     runtimeOptions: {
       storageMode: "chrome-bridge",
+      bridgeToken: payload.bridgeToken,
       extensionBaseUrl: getE2EOverlayExtensionBaseUrl(payload),
       tab: payload.tab,
       window: payload.window,
@@ -299,7 +303,7 @@ function dispatchE2EOverlayRuntimeMessage(message: RuntimeMessage): void {
   if (!e2eOverlayMounted) return;
   window.dispatchEvent(
     new CustomEvent(E2E_OVERLAY_RECEIVE_MESSAGE_EVENT, {
-      detail: { message },
+      detail: { message, bridgeToken: e2eOverlayBridgeToken },
     }),
   );
 }
@@ -313,6 +317,7 @@ function dispatchE2EOverlayResponse(
     new CustomEvent(E2E_OVERLAY_SEND_RESPONSE_EVENT, {
       detail: {
         requestId,
+        bridgeToken: e2eOverlayBridgeToken,
         response,
         error:
           error instanceof Error
@@ -334,6 +339,7 @@ function dispatchE2EOverlayStorageResponse(
     new CustomEvent(E2E_OVERLAY_STORAGE_RESPONSE_EVENT, {
       detail: {
         requestId,
+        bridgeToken: e2eOverlayBridgeToken,
         response,
         error:
           error instanceof Error
@@ -352,16 +358,105 @@ function storageAreaForE2EOverlay(
   return chrome.storage[areaName];
 }
 
+const E2E_OVERLAY_STORAGE_ALLOWED_AREAS = new Set<E2EOverlayStorageAreaName>([
+  "local",
+  "sync",
+]);
+const E2E_OVERLAY_SENSITIVE_STORAGE_KEY =
+  /(?:api[_-]?key|authorization|auth[_-]?token|access[_-]?token|refresh[_-]?token|password|credential|secret)/i;
+
+function hasValidE2EOverlayBridgeToken(detail: {
+  bridgeToken?: string;
+}): boolean {
+  return Boolean(
+    e2eOverlayBridgeToken && detail.bridgeToken === e2eOverlayBridgeToken,
+  );
+}
+
+function listE2EOverlayStorageKeys(
+  keys: E2EOverlayStorageRequestDetail["keys"],
+): string[] | null {
+  if (keys == null) return null;
+  if (typeof keys === "string") return [keys];
+  if (Array.isArray(keys)) {
+    return keys.filter((key): key is string => typeof key === "string");
+  }
+  return Object.keys(keys);
+}
+
+function validateE2EOverlayStorageRequest(
+  detail: E2EOverlayStorageRequestDetail,
+): string | null {
+  if (!detail.area || !E2E_OVERLAY_STORAGE_ALLOWED_AREAS.has(detail.area)) {
+    return "Overlay storage bridge only allows local and sync areas.";
+  }
+  if (detail.operation === "get" && detail.keys == null) {
+    return "Overlay storage bridge blocks broad storage reads.";
+  }
+  const keys =
+    detail.operation === "set"
+      ? Object.keys(detail.items ?? {})
+      : listE2EOverlayStorageKeys(detail.keys);
+  if (!keys || keys.length === 0) {
+    return "Overlay storage bridge requires explicit storage keys.";
+  }
+  if (
+    detail.operation === "remove" &&
+    keys.some((key) => E2E_OVERLAY_SENSITIVE_STORAGE_KEY.test(key))
+  ) {
+    return "Overlay storage bridge blocks credential-like storage keys.";
+  }
+  return null;
+}
+
+function redactE2EOverlayStorageResponse(
+  response: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(response).filter(
+      ([key]) => !E2E_OVERLAY_SENSITIVE_STORAGE_KEY.test(key),
+    ),
+  );
+}
+
+function filterE2EOverlayStorageItems(
+  items: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(items).filter(
+      ([key]) => !E2E_OVERLAY_SENSITIVE_STORAGE_KEY.test(key),
+    ),
+  );
+}
+
+function sanitizeE2EOverlayRuntimeMessage(message: unknown): unknown {
+  if (!message || typeof message !== "object") return message;
+  const record = message as Record<string, unknown>;
+  if (typeof record.type !== "string") return message;
+  return {
+    ...record,
+    source: MessageSource.UI,
+    requestId:
+      typeof record.requestId === "string"
+        ? record.requestId
+        : crypto.randomUUID(),
+  };
+}
+
 function ensureE2EOverlayBridge(): void {
   if (e2eOverlayBridgeInstalled) return;
   e2eOverlayBridgeInstalled = true;
   window.addEventListener(E2E_OVERLAY_SEND_MESSAGE_EVENT, (event) => {
     const detail = (
-      event as CustomEvent<{ message?: unknown; requestId?: string }>
+      event as CustomEvent<{
+        message?: unknown;
+        requestId?: string;
+        bridgeToken?: string;
+      }>
     ).detail;
-    if (!detail?.requestId) return;
+    if (!detail?.requestId || !hasValidE2EOverlayBridgeToken(detail)) return;
     chrome.runtime
-      .sendMessage(detail.message)
+      .sendMessage(sanitizeE2EOverlayRuntimeMessage(detail.message))
       .then((response) =>
         dispatchE2EOverlayResponse(detail.requestId!, response),
       )
@@ -374,16 +469,24 @@ function ensureE2EOverlayBridge(): void {
       .detail;
     const requestId = detail?.requestId;
     if (!requestId || !detail.area || !detail.operation) return;
+    if (!hasValidE2EOverlayBridgeToken(detail)) return;
+    const validationError = validateE2EOverlayStorageRequest(detail);
+    if (validationError) {
+      dispatchE2EOverlayStorageResponse(requestId, undefined, validationError);
+      return;
+    }
     const area = storageAreaForE2EOverlay(detail.area);
     const run = async (): Promise<Record<string, unknown>> => {
       if (detail.operation === "get") {
-        return (await area.get(detail.keys as any)) as unknown as Record<
-          string,
-          unknown
-        >;
+        return redactE2EOverlayStorageResponse(
+          (await area.get(detail.keys as any)) as unknown as Record<
+            string,
+            unknown
+          >,
+        );
       }
       if (detail.operation === "set") {
-        await area.set(detail.items ?? {});
+        await area.set(filterE2EOverlayStorageItems(detail.items ?? {}));
         return {};
       }
       await area.remove(detail.keys as any);
@@ -402,6 +505,8 @@ function ensureE2EOverlayBridge(): void {
 async function mountE2EOverlay(
   payload: E2EOverlayMountPayload,
 ): Promise<{ ok: true; loaded: boolean }> {
+  e2eOverlayBridgeToken = payload.bridgeToken ?? crypto.randomUUID();
+  payload.bridgeToken = e2eOverlayBridgeToken;
   ensureE2EOverlayBridge();
   upsertE2EOverlayConfig(payload);
   const existingHost = document.getElementById(E2E_OVERLAY_HOST_ID);
@@ -442,6 +547,7 @@ function unmountE2EOverlay(): { ok: true } {
   document.getElementById(E2E_OVERLAY_HOST_ID)?.remove();
   document.getElementById(E2E_OVERLAY_CONFIG_ID)?.remove();
   e2eOverlayMounted = false;
+  e2eOverlayBridgeToken = null;
   return { ok: true };
 }
 
@@ -887,6 +993,13 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (messageType === "E2E_OVERLAY_MOUNT") {
+        if (
+          message.source !== MessageSource.SIDEPANEL &&
+          message.source !== MessageSource.UI
+        ) {
+          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          return true;
+        }
         void mountE2EOverlay(
           (message as unknown as { payload: E2EOverlayMountPayload }).payload,
         )
@@ -901,6 +1014,13 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
       }
 
       if (messageType === "E2E_OVERLAY_UNMOUNT") {
+        if (
+          message.source !== MessageSource.SIDEPANEL &&
+          message.source !== MessageSource.UI
+        ) {
+          sendResponse?.({ ok: false, detail: "Invalid overlay control source." });
+          return true;
+        }
         sendResponse?.(unmountE2EOverlay());
         return true;
       }

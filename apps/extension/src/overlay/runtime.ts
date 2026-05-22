@@ -22,15 +22,18 @@ export const OVERLAY_STORAGE_RESPONSE_EVENT =
 
 export interface OverlayRuntimeMessageEventDetail {
   message: RuntimeMessage;
+  bridgeToken?: string;
 }
 
 export interface OverlayRuntimeSendMessageEventDetail {
   message: unknown;
   requestId: string;
+  bridgeToken?: string;
 }
 
 export interface OverlayRuntimeSendResponseEventDetail {
   requestId: string;
+  bridgeToken?: string;
   response?: unknown;
   error?: string;
 }
@@ -40,6 +43,7 @@ export type OverlayStorageMode = "memory" | "chrome-bridge";
 
 export interface OverlayStorageRequestEventDetail {
   requestId: string;
+  bridgeToken?: string;
   area: StorageAreaName;
   operation: "get" | "set" | "remove";
   keys?: UiRuntimeStorageKeys;
@@ -48,6 +52,7 @@ export interface OverlayStorageRequestEventDetail {
 
 export interface OverlayStorageResponseEventDetail {
   requestId: string;
+  bridgeToken?: string;
   response?: Record<string, unknown>;
   error?: string;
 }
@@ -57,6 +62,7 @@ export interface OverlayUiRuntimeOptions {
   window?: UiRuntimeWindow;
   storage?: Partial<Record<StorageAreaName, Record<string, unknown>>>;
   storageMode?: OverlayStorageMode;
+  bridgeToken?: string;
   extensionBaseUrl?: string;
   e2ePanelConfig?: E2EPanelConfig | null;
   onSendMessage?: (message: unknown) => unknown | Promise<unknown>;
@@ -138,13 +144,17 @@ function extensionUrl(baseUrl: string | undefined, inputPath: string): string {
   return new URL(inputPath.replace(/^\/+/, ""), baseUrl).toString();
 }
 
-function dispatchOverlaySendMessage(message: unknown, requestId: string): void {
+function dispatchOverlaySendMessage(
+  message: unknown,
+  requestId: string,
+  bridgeToken?: string,
+): void {
   if (typeof window === "undefined" || typeof CustomEvent === "undefined") {
     return;
   }
   window.dispatchEvent(
     new CustomEvent(OVERLAY_SEND_MESSAGE_EVENT, {
-      detail: { message, requestId },
+      detail: { message, requestId, bridgeToken },
     }),
   );
 }
@@ -164,6 +174,7 @@ function dispatchOverlayStorageRequest(
 
 function createBridgeStorageArea(
   area: StorageAreaName,
+  bridgeToken: string | undefined,
   pendingResponses: Map<
     string,
     {
@@ -187,7 +198,7 @@ function createBridgeStorageArea(
         pendingResponses.set(requestId, { resolve, reject, timeout });
       },
     );
-    dispatchOverlayStorageRequest({ requestId, area, ...detail });
+    dispatchOverlayStorageRequest({ requestId, bridgeToken, area, ...detail });
     return responsePromise;
   };
 
@@ -207,6 +218,7 @@ function createBridgeStorageArea(
 export function createOverlayUiRuntimeHarness(
   options: OverlayUiRuntimeOptions = {},
 ): OverlayUiRuntimeHarness {
+  const bridgeToken = options.bridgeToken;
   const storageData: Record<StorageAreaName, Record<string, unknown>> = {
     local: { ...(options.storage?.local ?? {}) },
     sync: { ...(options.storage?.sync ?? {}) },
@@ -246,6 +258,9 @@ export function createOverlayUiRuntimeHarness(
     (activeInfo: UiRuntimeActiveTabInfo) => void | Promise<void>
   >();
 
+  const acceptsBridgeToken = (detail: { bridgeToken?: string }): boolean =>
+    !bridgeToken || detail.bridgeToken === bridgeToken;
+
   const setActiveTab = (tab: UiRuntimeTab) => {
     activeTab = {
       ...tab,
@@ -271,9 +286,11 @@ export function createOverlayUiRuntimeHarness(
   };
 
   const onRuntimeMessageEvent = (event: Event) => {
-    const message = (
+    const detail = (
       event as CustomEvent<Partial<OverlayRuntimeMessageEventDetail>>
-    ).detail?.message;
+    ).detail;
+    if (!detail || !acceptsBridgeToken(detail)) return;
+    const message = detail.message;
     if (
       message &&
       typeof message === "object" &&
@@ -288,7 +305,7 @@ export function createOverlayUiRuntimeHarness(
       event as CustomEvent<Partial<OverlayRuntimeSendResponseEventDetail>>
     ).detail;
     const requestId = detail?.requestId;
-    if (!requestId) return;
+    if (!detail || !requestId || !acceptsBridgeToken(detail)) return;
     const pending = pendingResponses.get(requestId);
     if (!pending) return;
     pendingResponses.delete(requestId);
@@ -305,7 +322,7 @@ export function createOverlayUiRuntimeHarness(
       event as CustomEvent<Partial<OverlayStorageResponseEventDetail>>
     ).detail;
     const requestId = detail?.requestId;
-    if (!requestId) return;
+    if (!detail || !requestId || !acceptsBridgeToken(detail)) return;
     const pending = pendingStorageResponses.get(requestId);
     if (!pending) return;
     pendingStorageResponses.delete(requestId);
@@ -339,7 +356,7 @@ export function createOverlayUiRuntimeHarness(
       sentMessages.push(message);
       const requestId = createBridgeRequestId();
       if (options.onSendMessage) {
-        dispatchOverlaySendMessage(message, requestId);
+        dispatchOverlaySendMessage(message, requestId, bridgeToken);
         return (await options.onSendMessage(message)) as TResponse;
       }
       if (typeof window === "undefined") return {} as TResponse;
@@ -350,7 +367,7 @@ export function createOverlayUiRuntimeHarness(
         }, 15_000);
         pendingResponses.set(requestId, { resolve, reject, timeout });
       });
-      dispatchOverlaySendMessage(message, requestId);
+      dispatchOverlaySendMessage(message, requestId, bridgeToken);
       return (await responsePromise) as TResponse;
     },
 
@@ -403,13 +420,13 @@ export function createOverlayUiRuntimeHarness(
 
     storage: {
       local: useChromeBridgeStorage
-        ? createBridgeStorageArea("local", pendingStorageResponses)
+        ? createBridgeStorageArea("local", bridgeToken, pendingStorageResponses)
         : createStorageArea(storageData.local),
       sync: useChromeBridgeStorage
-        ? createBridgeStorageArea("sync", pendingStorageResponses)
+        ? createBridgeStorageArea("sync", bridgeToken, pendingStorageResponses)
         : createStorageArea(storageData.sync),
       session: useChromeBridgeStorage
-        ? createBridgeStorageArea("session", pendingStorageResponses)
+        ? createBridgeStorageArea("session", bridgeToken, pendingStorageResponses)
         : createStorageArea(storageData.session),
     },
   };

@@ -66,16 +66,50 @@ function parseTextBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+const CORS_METHODS = "POST, GET, PATCH, DELETE, OPTIONS";
+const CORS_ALLOWED_HEADERS = "Content-Type";
+const EXTENSION_ORIGIN = /^(chrome|moz)-extension:\/\/[a-z0-9_-]+$/i;
+const LOCAL_BROWSER_ORIGINS = new Set([
+  "http://127.0.0.1:7589",
+  "http://localhost:7589",
+  "http://127.0.0.1:7590",
+  "http://localhost:7590",
+]);
 
-function setCorsHeaders(res: ServerResponse): void {
-  for (const [k, v] of Object.entries(CORS_HEADERS)) {
-    res.setHeader(k, v);
+function getConfiguredAllowedOrigins(): Set<string> {
+  return new Set(
+    (process.env.OPENSIDEBAR_LOCAL_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+}
+
+function firstHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+export function isAllowedLocalRequestOrigin(
+  origin: string | string[] | undefined,
+): boolean {
+  const value = firstHeaderValue(origin);
+  if (!value) return true;
+  if (EXTENSION_ORIGIN.test(value)) return true;
+  if (LOCAL_BROWSER_ORIGINS.has(value)) return true;
+  return getConfiguredAllowedOrigins().has(value);
+}
+
+function setCorsHeaders(
+  res: ServerResponse,
+  origin?: string | string[],
+): void {
+  res.setHeader("Vary", "Origin");
+  if (origin && isAllowedLocalRequestOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", firstHeaderValue(origin) ?? "");
   }
+  res.setHeader("Access-Control-Allow-Methods", CORS_METHODS);
+  res.setHeader("Access-Control-Allow-Headers", CORS_ALLOWED_HEADERS);
 }
 
 function sendJson(res: ServerResponse, data: unknown, status = 200): void {
@@ -110,6 +144,12 @@ export async function handleBackendRequest(
     searchParams: URLSearchParams;
   },
 ): Promise<void> {
+  setCorsHeaders(res, req.headers.origin);
+  if (!isAllowedLocalRequestOrigin(req.headers.origin)) {
+    sendError(res, "Origin not allowed", 403);
+    return;
+  }
+
   if (req.method === "OPTIONS") {
     sendEmpty(res);
     return;

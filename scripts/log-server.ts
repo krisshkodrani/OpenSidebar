@@ -43,6 +43,7 @@ import {
 import { initDatabase, closeDatabase } from "../apps/backend/src/db";
 import {
   handleBackendRequest,
+  isAllowedLocalRequestOrigin,
   loadBackendConfig,
 } from "../apps/backend/src/server";
 import {
@@ -101,21 +102,26 @@ function parseJsonBody(req: IncomingMessage): Promise<any> {
 }
 
 /**
- * CORS headers — permissive for local development only.
- * This server binds to 127.0.0.1 and is not intended for production or public exposure.
- * The wildcard origin allows the Chrome extension (which runs from a chrome-extension:// origin)
- * to send log/trace data to this local server during development.
+ * CORS headers for local development.
+ * Extension origins and local viewer origins are allowed.
+ * Arbitrary web origins are rejected before routing.
  */
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, GET, PATCH, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+const CORS_METHODS = "POST, GET, PATCH, PUT, DELETE, OPTIONS";
+const CORS_ALLOWED_HEADERS = "Content-Type";
 
-function setCorsHeaders(res: ServerResponse): void {
-  for (const [k, v] of Object.entries(CORS_HEADERS)) {
-    res.setHeader(k, v);
+function setCorsHeaders(
+  res: ServerResponse,
+  origin?: string | string[],
+): void {
+  res.setHeader("Vary", "Origin");
+  if (origin && isAllowedLocalRequestOrigin(origin)) {
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      Array.isArray(origin) ? origin[0] : origin,
+    );
   }
+  res.setHeader("Access-Control-Allow-Methods", CORS_METHODS);
+  res.setHeader("Access-Control-Allow-Headers", CORS_ALLOWED_HEADERS);
 }
 
 function sendJson(res: ServerResponse, data: unknown, status = 200): void {
@@ -305,6 +311,26 @@ function rotateIfNeeded(): void {
   }
 }
 
+function stripInlinePageStateScreenshots(entry: Record<string, unknown>): void {
+  const pageState = entry.pageState as Record<string, unknown> | undefined;
+  if (!pageState) return;
+  for (const capture of Object.values(pageState)) {
+    const screenshots = (capture as Record<string, unknown> | undefined)
+      ?.screenshots;
+    if (!Array.isArray(screenshots)) continue;
+    for (const screenshot of screenshots) {
+      if (!screenshot || typeof screenshot !== "object") continue;
+      const shot = screenshot as Record<string, unknown>;
+      if (
+        typeof shot.dataUrl === "string" &&
+        shot.dataUrl.startsWith("data:image/")
+      ) {
+        delete shot.dataUrl;
+      }
+    }
+  }
+}
+
 /* ── MIME type map ─────────────────────────────────────────── */
 
 const MIME_TYPES: Record<string, string> = {
@@ -324,6 +350,12 @@ const MIME_TYPES: Record<string, string> = {
 const server = createServer(
   async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
+    setCorsHeaders(res, req.headers.origin);
+
+    if (!isAllowedLocalRequestOrigin(req.headers.origin)) {
+      sendText(res, "Origin not allowed", 403);
+      return;
+    }
 
     // CORS preflight
     if (req.method === "OPTIONS") {
@@ -467,6 +499,8 @@ const server = createServer(
             }
           }
         }
+
+        stripInlinePageStateScreenshots(entry as Record<string, unknown>);
 
         const traceFile = join(TRACE_DIR, `${sessionId}.jsonl`);
         if (!hasTraceTurn(traceFile, entry)) {

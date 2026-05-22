@@ -16,6 +16,7 @@ export function getProviderKeyStatus(
     | "providerMode"
     | "openRouterApiKey"
     | "openaiApiKey"
+    | "groqApiKey"
     | "fireworksApiKey"
     | "deepseekApiKey"
     | "kimiApiKey"
@@ -38,6 +39,25 @@ export function getProviderKeyStatus(
     };
   }
 
+  if (mode === "openrouter-groq" || mode === "openai-groq") {
+    const executorKey =
+      mode === "openai-groq"
+        ? settings.openaiApiKey
+        : settings.openRouterApiKey;
+    const executorKeyName =
+      mode === "openai-groq" ? "OpenAI" : "OpenRouter";
+    const missingKeyNames: string[] = [];
+    if (!executorKey) missingKeyNames.push(executorKeyName);
+    if (!settings.groqApiKey) missingKeyNames.push("Groq");
+    return {
+      mode,
+      activeKey: missingKeyNames.length === 0 ? executorKey : undefined,
+      activeKeyName: `${executorKeyName} and Groq`,
+      missingKeyNames,
+      hasRequiredKeys: missingKeyNames.length === 0,
+    };
+  }
+
   const activeKey =
     mode === "fireworks"
       ? settings.fireworksApiKey
@@ -45,9 +65,7 @@ export function getProviderKeyStatus(
         ? settings.kimiApiKey
         : mode === "xiaomi"
           ? settings.xiaomiApiKey
-          : mode === "openai-groq"
-            ? settings.openaiApiKey
-            : settings.openRouterApiKey;
+          : settings.openRouterApiKey;
   const activeKeyName =
     mode === "fireworks"
       ? "Fireworks AI"
@@ -55,9 +73,7 @@ export function getProviderKeyStatus(
         ? "Moonshot AI"
         : mode === "xiaomi"
           ? "Xiaomi MiMo"
-          : mode === "openai-groq"
-            ? "OpenAI"
-            : "OpenRouter";
+          : "OpenRouter";
   const missingKeyNames = activeKey ? [] : [activeKeyName];
 
   return {

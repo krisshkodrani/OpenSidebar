@@ -36,7 +36,7 @@ export function isOwnElement(el: Element): boolean {
 export const MAX_SHADOW_DEPTH = 10;
 
 /** Time budget for cursor:pointer scan (ms) */
-const CLICKABLE_SCAN_BUDGET_MS = 10;
+const CLICKABLE_SCAN_BUDGET_MS = 25;
 
 export const INTERACTIVE_SELECTORS = [
   "a[href]",

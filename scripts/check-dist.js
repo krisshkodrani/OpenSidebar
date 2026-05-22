@@ -6,6 +6,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 const distPath = resolve(process.cwd(), "dist");
 const errors = [];
 const checked = [];
+let packageJson = null;
 
 function fail(message) {
   errors.push(message);
@@ -51,6 +52,15 @@ function existsDir(relativePath, label = relativePath) {
 function readJson(relativePath) {
   try {
     return JSON.parse(readFileSync(resolve(distPath, relativePath), "utf-8"));
+  } catch (error) {
+    fail(`${relativePath}: invalid JSON (${error.message})`);
+    return null;
+  }
+}
+
+function readRootJson(relativePath) {
+  try {
+    return JSON.parse(readFileSync(resolve(process.cwd(), relativePath), "utf-8"));
   } catch (error) {
     fail(`${relativePath}: invalid JSON (${error.message})`);
     return null;
@@ -134,6 +144,11 @@ function checkManifest() {
   if (typeof manifest.version !== "string" || manifest.version.length === 0) {
     fail("manifest.json: missing version");
   }
+  if (packageJson?.version && manifest.version !== packageJson.version) {
+    fail(
+      `manifest.json: version ${manifest.version} does not match package.json ${packageJson.version}`,
+    );
+  }
 
   checkServiceWorkerLoader(manifest);
 
@@ -192,6 +207,7 @@ function checkManifest() {
 if (!existsSync(distPath) || !statSync(distPath).isDirectory()) {
   fail("dist folder not found");
 } else {
+  packageJson = readRootJson("package.json");
   checkManifest();
   checkHtmlAssets("src/trace-viewer/index.html");
   existsFile(".vite/manifest.json", "Vite manifest");

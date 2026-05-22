@@ -35,12 +35,13 @@ opensidebar/
 ## Core Commands
 
 ```bash
-pnpm install
-pnpm run dev
-pnpm run dist
-pnpm test
-pnpm run verify
-pnpm run doctor
+corepack enable
+corepack pnpm install
+corepack pnpm run dev
+corepack pnpm run dist
+corepack pnpm test
+corepack pnpm run verify
+corepack pnpm run doctor
 ```
 
 Advanced CI and release aliases remain available for tooling:
@@ -51,8 +52,10 @@ pnpm run typecheck
 pnpm run ci:test
 pnpm run ci:build
 pnpm run ci:dist
+pnpm run ci:audit
 pnpm run ci:local
 pnpm run release:verify
+pnpm run release:package
 ```
 
 ## Prompts
@@ -79,4 +82,6 @@ The trace viewer is available at `http://127.0.0.1:7589/viewer`.
 - The runtime supports mixed provider lanes for executor, planner, perception, and TTS.
 - Dev extension output is written to `dist-dev/` while `pnpm run dev` is running.
 - Production/manual build output is written to `dist/`.
-- `ci:dist` verifies the extension artifact, including manifest references, side panel assets, trace viewer assets, service worker import, icons, content scripts, and Vite manifest.
+- `ci:dist` verifies the extension artifact, including manifest references, version alignment, side panel assets, trace viewer assets, service worker import, icons, content scripts, and Vite manifest.
+- `ci:audit` checks production dependencies for known advisories.
+- `release:package` writes `.artifacts/releases/opensidebar-v<version>.zip` and a matching `.sha256` file from the current `dist/` build.

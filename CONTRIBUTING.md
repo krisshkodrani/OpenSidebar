@@ -29,7 +29,8 @@ This repository has been trimmed to focus on the extension, the trace/logging wo
 | `pnpm run traces` | Trace query CLI |
 | `pnpm run fixtures` | Serve local E2E/demo fixtures |
 | `pnpm run test:e2e` | Build + real-browser E2E tests |
-| `pnpm run release:verify` | CI-equivalent lint, tests, and build |
+| `pnpm run release:verify` | Release gate: lint, typecheck, tests, build, dist check, and production dependency audit |
+| `pnpm run release:package` | Create the release zip and SHA-256 checksum from `dist/` |
 
 ## Testing
 

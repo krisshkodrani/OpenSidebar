@@ -665,9 +665,9 @@ Tools are classified by risk level:
 
 | Level      | Description                     | Tools                                                                                        |
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| **LOW**    | Read-only operations            | read_page, scroll_page, list_tabs, get_cookies, search_history, get_bookmarks, inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item |
-| **MEDIUM** | Mutates state but reversible    | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard      |
-| **HIGH**   | Navigation, tabs, external data | navigate, close_tab, create_tab, escalate, download_file                                     |
+| **LOW**    | Read-only page inspection       | read_page, scroll_page, list_tabs, get_bookmarks, inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item |
+| **MEDIUM** | Mutates page or browser state   | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard, download_file |
+| **HIGH**   | Navigation, tabs, browser data, or code execution | navigate, close_tab, create_tab, go_back, go_forward, execute_js, get_cookies, set_cookie, delete_cookie, search_history |
 
 ---
 

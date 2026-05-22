@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { AgentStatus, MessageSource } from "../../src/types";
 import {
   createOverlayUiRuntimeHarness,
+  OVERLAY_RECEIVE_MESSAGE_EVENT,
   OVERLAY_SEND_RESPONSE_EVENT,
   OVERLAY_SEND_MESSAGE_EVENT,
   OVERLAY_STORAGE_REQUEST_EVENT,
@@ -67,22 +68,26 @@ describe("overlay UI runtime", () => {
   test("can proxy storage through overlay bridge events", async () => {
     const harness = createOverlayUiRuntimeHarness({
       storageMode: "chrome-bridge",
+      bridgeToken: "bridge-secret",
     });
     const stored: Record<string, unknown> = { existing: "value" };
     const onStorageRequest = vi.fn((event: Event) => {
       const detail = (
         event as CustomEvent<{
           requestId: string;
+          bridgeToken?: string;
           operation: "get" | "set" | "remove";
           keys?: string | string[] | Record<string, unknown> | null;
           items?: Record<string, unknown>;
         }>
       ).detail;
+      expect(detail.bridgeToken).toBe("bridge-secret");
       if (detail.operation === "get") {
         window.dispatchEvent(
           new CustomEvent(OVERLAY_STORAGE_RESPONSE_EVENT, {
             detail: {
               requestId: detail.requestId,
+              bridgeToken: detail.bridgeToken,
               response: { existing: stored.existing },
             },
           }),
@@ -91,7 +96,11 @@ describe("overlay UI runtime", () => {
         Object.assign(stored, detail.items);
         window.dispatchEvent(
           new CustomEvent(OVERLAY_STORAGE_RESPONSE_EVENT, {
-            detail: { requestId: detail.requestId, response: {} },
+            detail: {
+              requestId: detail.requestId,
+              bridgeToken: detail.bridgeToken,
+              response: {},
+            },
           }),
         );
       }
@@ -106,6 +115,80 @@ describe("overlay UI runtime", () => {
     expect(onStorageRequest).toHaveBeenCalledTimes(2);
 
     window.removeEventListener(OVERLAY_STORAGE_REQUEST_EVENT, onStorageRequest);
+    harness.dispose();
+  });
+
+  test("ignores bridge events with the wrong token", async () => {
+    const harness = createOverlayUiRuntimeHarness({ bridgeToken: "expected" });
+    const received: string[] = [];
+    harness.port.subscribeMessages((message) => received.push(message.type));
+    let requestId = "";
+    const onSend = vi.fn((event: Event) => {
+      const detail = (
+        event as CustomEvent<{ requestId: string; bridgeToken?: string }>
+      ).detail;
+      requestId = detail.requestId;
+      expect(detail.bridgeToken).toBe("expected");
+      window.dispatchEvent(
+        new CustomEvent(OVERLAY_SEND_RESPONSE_EVENT, {
+          detail: {
+            requestId,
+            bridgeToken: "wrong",
+            response: { ignored: true },
+          },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent(OVERLAY_SEND_RESPONSE_EVENT, {
+          detail: {
+            requestId,
+            bridgeToken: "expected",
+            response: { ok: true },
+          },
+        }),
+      );
+    });
+    window.addEventListener(OVERLAY_SEND_MESSAGE_EVENT, onSend);
+
+    window.dispatchEvent(
+      new CustomEvent(OVERLAY_RECEIVE_MESSAGE_EVENT, {
+        detail: {
+          bridgeToken: "wrong",
+          message: {
+            type: "AGENT_STATUS",
+            source: MessageSource.BACKGROUND,
+            requestId: "bad",
+            payload: { status: AgentStatus.THINKING, detail: "Bad" },
+          },
+        },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent(OVERLAY_RECEIVE_MESSAGE_EVENT, {
+        detail: {
+          bridgeToken: "expected",
+          message: {
+            type: "AGENT_STATUS",
+            source: MessageSource.BACKGROUND,
+            requestId: "good",
+            payload: { status: AgentStatus.THINKING, detail: "Good" },
+          },
+        },
+      }),
+    );
+
+    await expect(
+      harness.port.sendMessage({
+        type: "SIDE_PANEL_OPENED",
+        source: harness.port.source,
+        requestId: "request-token",
+        payload: { tabId: 1 },
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    expect(received).toEqual(["AGENT_STATUS"]);
+    expect(onSend).toHaveBeenCalledTimes(1);
+    window.removeEventListener(OVERLAY_SEND_MESSAGE_EVENT, onSend);
     harness.dispose();
   });
 

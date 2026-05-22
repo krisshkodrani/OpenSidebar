@@ -189,7 +189,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
   },
   [ToolName.GET_COOKIES]: {
-    risk: RiskLevel.LOW,
+    risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: false,
     cacheable: "static",
@@ -207,7 +207,7 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     mutationSensitive: true,
   },
   [ToolName.SEARCH_HISTORY]: {
-    risk: RiskLevel.LOW,
+    risk: RiskLevel.HIGH,
     domModifying: false,
     sequential: false,
     cacheable: "static",

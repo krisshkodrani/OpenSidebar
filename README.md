@@ -48,8 +48,9 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 ```bash
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
-pnpm install
-pnpm run dist
+corepack enable
+corepack pnpm install
+corepack pnpm run dist
 ```
 
 ### Load in Chrome
@@ -69,13 +70,15 @@ Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi 
 
 ### Main Commands
 
-Use package scripts through pnpm for day-to-day work. Nx is the internal task runner behind those scripts.
+Use package scripts through Corepack-managed pnpm for day-to-day work. Nx is the internal task runner behind those scripts. The examples below assume `corepack enable` has activated the pinned pnpm version from `package.json`.
 
 ```bash
 pnpm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
 pnpm run dist     # Standalone production/manual extension build into dist/
 pnpm test         # Extension and backend unit/integration tests
-pnpm run verify   # Full local confidence gate before commit or push
+pnpm run verify   # Local confidence gate before commit or push
+pnpm run release:verify # Release confidence gate with production audit
+pnpm run release:package # Zip dist/ and write a SHA-256 checksum
 pnpm run doctor   # Diagnose local setup and show next commands
 ```
 
@@ -94,6 +97,8 @@ pnpm run dev                  # Local services + trace viewer + loadable dev ext
 pnpm run dist                 # Standalone production/manual extension build into dist/
 pnpm test                     # Extension and backend unit/integration tests
 pnpm run verify               # Lint, typecheck, tests, build, and dist check
+pnpm run release:verify       # Release gate plus production dependency audit
+pnpm run release:package      # Create .artifacts/releases/ zip and checksum
 pnpm run doctor               # Local setup diagnosis
 ```
 
@@ -191,12 +196,14 @@ pnpm run traces:compact              # index, then delete old raw files
 - [WorkArena Generalized Harness Philosophy](./docs/guides/workarena-generalized-harness-philosophy.md)
 - [Personal Profile](./docs/personal-profile.md)
 - [Release Checklist](./docs/release-checklist.md)
+- [Known Limitations](./docs/known-limitations.md)
 
 ## Security & Privacy
 
 - API keys are stored locally and only sent to configured providers.
 - No telemetry or analytics.
 - High-risk tools can require explicit approval depending on your interaction settings.
+- This is an OSS BYOK preview; review [Known Limitations](./docs/known-limitations.md) before using it on sensitive sites.
 - See [SECURITY.md](./SECURITY.md) and [PRIVACY_POLICY.md](./PRIVACY_POLICY.md).
 
 ## License
