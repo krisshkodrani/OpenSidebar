@@ -68,6 +68,7 @@ describe("trace sqlite store", () => {
           durationMs: 100,
           usage: {
             prompt_tokens: 10,
+            cached_tokens: 4,
             completion_tokens: 5,
             total_tokens: 15,
             cost: 0.01,
@@ -115,6 +116,8 @@ describe("trace sqlite store", () => {
       failedSessions: 1,
       llmRequests: 1,
       promptTokens: 10,
+      cachedTokens: 4,
+      nonCachedInputTokens: 6,
       completionTokens: 5,
       totalTokens: 15,
       toolCalls: 1,

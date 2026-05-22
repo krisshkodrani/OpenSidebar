@@ -155,6 +155,69 @@ describe("trace insights", () => {
     });
   });
 
+  test("aggregates estimated input, cached input, and output cost drivers", () => {
+    const sessions = [
+      {
+        sessionId: "s1",
+        runId: "run-1",
+        startTime: Date.UTC(2026, 4, 18, 9, 0, 0),
+        endTime: Date.UTC(2026, 4, 18, 9, 1, 0),
+        query: "Objective: cost split",
+        startUrl: "https://example.com",
+        outcome: "completed",
+        turnCount: 1,
+        metrics: { totalCost: 0.001152, modelBreakdown: {} },
+      },
+    ];
+    const entriesBySession = new Map<string, any[]>([
+      [
+        "s1",
+        [
+          {
+            llmRequest: {
+              model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+            },
+            llmResponse: {
+              actualProviderId: "fireworks",
+              durationMs: 100,
+              usage: {
+                prompt_tokens: 1000,
+                cached_tokens: 400,
+                completion_tokens: 100,
+                total_tokens: 1100,
+              },
+            },
+            toolExecutions: [],
+          },
+        ],
+      ],
+    ]);
+
+    const result = buildTraceInsights({ sessions, entriesBySession });
+
+    expect(result.summary).toMatchObject({
+      promptTokens: 1000,
+      cachedTokens: 400,
+      nonCachedInputTokens: 600,
+      completionTokens: 100,
+      outputTokenShare: 100 / 1100,
+      unpricedRequests: 0,
+    });
+    expect(result.summary.estimatedInputCost).toBeCloseTo(0.000594, 8);
+    expect(result.summary.estimatedCachedInputCost).toBeCloseTo(0.000064, 8);
+    expect(result.summary.estimatedOutputCost).toBeCloseTo(0.000494, 8);
+    expect(result.summary.estimatedRequestCost).toBeCloseTo(0.001152, 8);
+    expect(result.summary.outputCostShare).toBeCloseTo(0.000494 / 0.001152, 8);
+    expect(result.models[0]).toMatchObject({
+      id: "accounts/fireworks/routers/kimi-k2p6-turbo",
+      requests: 1,
+      promptTokens: 1000,
+      cachedTokens: 400,
+      completionTokens: 100,
+    });
+    expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.001152, 8);
+  });
+
   test("filters by failed tool", () => {
     const sessions = [
       {

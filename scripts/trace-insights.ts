@@ -6,6 +6,11 @@ import {
   type TraceSearchFiltersLike,
   type TraceSessionLike,
 } from "./log-server-helpers";
+import { estimateCostBreakdownUsd } from "../apps/extension/src/background/llm/pricing";
+import type {
+  ProviderConfig,
+  TokenUsage,
+} from "../apps/extension/src/background/llm/types";
 
 export interface TraceInsightsFilters extends TraceSearchFiltersLike {
   sessionId?: string;
@@ -29,6 +34,18 @@ export interface TraceInsightsMetricRow {
   averageDurationMs?: number;
   totalTurns?: number;
   totalCost?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
+  requestCost?: number;
+  estimatedInputCost?: number;
+  estimatedCachedInputCost?: number;
+  estimatedOutputCost?: number;
+  estimatedRequestCost?: number;
+  outputTokenShare?: number;
+  outputCostShare?: number;
+  unpricedRequests?: number;
   sampleSessionId?: string;
   sampleRunId?: string;
   sampleError?: string;
@@ -65,8 +82,17 @@ export interface TraceInsightsSummary {
   llmRequests: number;
   promptTokens: number;
   completionTokens: number;
+  cachedTokens: number;
+  nonCachedInputTokens: number;
   totalTokens: number;
   requestCost: number;
+  estimatedInputCost: number;
+  estimatedCachedInputCost: number;
+  estimatedOutputCost: number;
+  estimatedRequestCost: number;
+  outputTokenShare: number;
+  outputCostShare: number;
+  unpricedRequests: number;
   averagePromptTokens: number;
   averageCompletionTokens: number;
   averageTotalTokens: number;
@@ -119,10 +145,30 @@ interface MutableMetric {
   durationMs: number;
   totalTurns: number;
   totalCost: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  requestCost: number;
+  estimatedInputCost: number;
+  estimatedCachedInputCost: number;
+  estimatedOutputCost: number;
+  estimatedRequestCost: number;
+  unpricedRequests: number;
   sampleSessionId?: string;
   sampleRunId?: string;
   sampleError?: string;
 }
+
+const PROVIDER_IDS = new Set<ProviderConfig["providerId"]>([
+  "openrouter",
+  "openai",
+  "groq",
+  "fireworks",
+  "moonshot",
+  "deepseek",
+  "xiaomi",
+]);
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -147,6 +193,66 @@ function usageNumber(
     if (value > 0) return value;
   }
   return 0;
+}
+
+function cachedTokensFromUsage(
+  usage: Record<string, unknown> | null | undefined,
+  promptTokens: number,
+): number {
+  if (!usage) return 0;
+  let cachedTokens = usageNumber(usage, ["cached_tokens"]);
+  const promptTokenDetails =
+    usage.prompt_tokens_details && typeof usage.prompt_tokens_details === "object"
+      ? (usage.prompt_tokens_details as Record<string, unknown>)
+      : null;
+  if (cachedTokens === 0) {
+    cachedTokens = usageNumber(promptTokenDetails, ["cached_tokens"]);
+  }
+  const cacheTelemetry =
+    usage.cacheTelemetry && typeof usage.cacheTelemetry === "object"
+      ? (usage.cacheTelemetry as Record<string, unknown>)
+      : null;
+  if (cachedTokens === 0) {
+    cachedTokens = usageNumber(cacheTelemetry, ["cachedPromptTokens"]);
+  }
+  return Math.max(0, Math.min(cachedTokens, promptTokens));
+}
+
+function asProviderId(value: unknown): ProviderConfig["providerId"] | null {
+  const provider = asString(value);
+  return PROVIDER_IDS.has(provider as ProviderConfig["providerId"])
+    ? (provider as ProviderConfig["providerId"])
+    : null;
+}
+
+function inferProviderIdFromModel(
+  model: string,
+): ProviderConfig["providerId"] | null {
+  const normalized = model.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.startsWith("accounts/fireworks/")) return "fireworks";
+  if (normalized.startsWith("kimi-")) return "moonshot";
+  if (normalized.startsWith("deepseek-")) return "deepseek";
+  if (normalized.startsWith("mimo-")) return "xiaomi";
+  if (normalized.includes("kimi-k2p")) return "fireworks";
+  return null;
+}
+
+function estimateEntryCostBreakdown(args: {
+  providerId: ProviderConfig["providerId"] | null;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
+}) {
+  if (!args.providerId || !args.model) return null;
+  return estimateCostBreakdownUsd(args.providerId, args.model, {
+    prompt_tokens: args.promptTokens,
+    completion_tokens: args.completionTokens,
+    total_tokens: args.totalTokens,
+    cached_tokens: args.cachedTokens,
+  } satisfies TokenUsage);
 }
 
 function isSuccessOutcome(outcome: unknown): boolean {
@@ -286,6 +392,16 @@ function metric(
       durationMs: 0,
       totalTurns: 0,
       totalCost: 0,
+      promptTokens: 0,
+      completionTokens: 0,
+      cachedTokens: 0,
+      totalTokens: 0,
+      requestCost: 0,
+      estimatedInputCost: 0,
+      estimatedCachedInputCost: 0,
+      estimatedOutputCost: 0,
+      estimatedRequestCost: 0,
+      unpricedRequests: 0,
     };
     map.set(id, value);
   }
@@ -331,6 +447,22 @@ function finalizeMetricRows(map: Map<string, MutableMetric>): TraceInsightsMetri
         row.calls > 0 && row.durationMs > 0 ? row.durationMs / row.calls : undefined,
       totalTurns: row.totalTurns || undefined,
       totalCost: row.totalCost || undefined,
+      promptTokens: row.promptTokens || undefined,
+      completionTokens: row.completionTokens || undefined,
+      cachedTokens: row.cachedTokens || undefined,
+      totalTokens: row.totalTokens || undefined,
+      requestCost: row.requestCost || undefined,
+      estimatedInputCost: row.estimatedInputCost || undefined,
+      estimatedCachedInputCost: row.estimatedCachedInputCost || undefined,
+      estimatedOutputCost: row.estimatedOutputCost || undefined,
+      estimatedRequestCost: row.estimatedRequestCost || undefined,
+      outputTokenShare:
+        row.totalTokens > 0 ? row.completionTokens / row.totalTokens : undefined,
+      outputCostShare:
+        row.estimatedRequestCost > 0
+          ? row.estimatedOutputCost / row.estimatedRequestCost
+          : undefined,
+      unpricedRequests: row.unpricedRequests || undefined,
       sampleSessionId: row.sampleSessionId,
       sampleRunId: row.sampleRunId,
       sampleError: row.sampleError
@@ -416,8 +548,14 @@ export function buildTraceInsights({
   let llmRequests = 0;
   let promptTokens = 0;
   let completionTokens = 0;
+  let cachedTokens = 0;
   let totalTokens = 0;
   let requestCost = 0;
+  let estimatedInputCost = 0;
+  let estimatedCachedInputCost = 0;
+  let estimatedOutputCost = 0;
+  let estimatedRequestCost = 0;
+  let unpricedRequests = 0;
   let totalLlmDurationMs = 0;
   let llmDurationCount = 0;
   const processedRunEvents = new Set<string>();
@@ -502,6 +640,10 @@ export function buildTraceInsights({
       if (entry.llmRequest || entry.llmResponse) {
         llmRequests += 1;
       }
+      const request =
+        entry.llmRequest && typeof entry.llmRequest === "object"
+          ? (entry.llmRequest as Record<string, unknown>)
+          : null;
       const response =
         entry.llmResponse && typeof entry.llmResponse === "object"
           ? (entry.llmResponse as Record<string, unknown>)
@@ -518,27 +660,61 @@ export function buildTraceInsights({
         "completion_tokens",
         "output_tokens",
       ]);
-      promptTokens += entryPromptTokens;
-      completionTokens += entryCompletionTokens;
-      totalTokens +=
+      const entryCachedTokens = cachedTokensFromUsage(usage, entryPromptTokens);
+      const entryTotalTokens =
         usageNumber(usage, ["total_tokens"]) ||
         entryPromptTokens + entryCompletionTokens;
-      requestCost += usageNumber(usage, ["cost"]);
+      const entryRequestCost = usageNumber(usage, ["cost"]);
+      promptTokens += entryPromptTokens;
+      completionTokens += entryCompletionTokens;
+      cachedTokens += entryCachedTokens;
+      totalTokens += entryTotalTokens;
+      requestCost += entryRequestCost;
       const durationMs = asNumber(response?.durationMs);
       if (durationMs > 0) {
         totalLlmDurationMs += durationMs;
         llmDurationCount += 1;
       }
-      const request =
-        entry.llmRequest && typeof entry.llmRequest === "object"
-          ? (entry.llmRequest as Record<string, unknown>)
-          : null;
-      const requestModel = asString(request?.model);
+      const requestModel =
+        asString(response?.actualModel) || asString(request?.model);
+      const providerId =
+        asProviderId(response?.actualProviderId) ??
+        asProviderId(request?.provider) ??
+        inferProviderIdFromModel(requestModel);
+      const costBreakdown = estimateEntryCostBreakdown({
+        providerId,
+        model: requestModel,
+        promptTokens: entryPromptTokens,
+        completionTokens: entryCompletionTokens,
+        totalTokens: entryTotalTokens,
+        cachedTokens: entryCachedTokens,
+      });
+      if (costBreakdown) {
+        estimatedInputCost += costBreakdown.inputCostUsd;
+        estimatedCachedInputCost += costBreakdown.cachedInputCostUsd;
+        estimatedOutputCost += costBreakdown.outputCostUsd;
+        estimatedRequestCost += costBreakdown.totalCostUsd;
+      } else if (entryPromptTokens > 0 || entryCompletionTokens > 0) {
+        unpricedRequests += 1;
+      }
       if (requestModel) {
         const row = metric(models, requestModel);
         recordSessionMetric(row, session);
         row.requests += 1;
         row.durationMs += durationMs;
+        row.promptTokens += entryPromptTokens;
+        row.completionTokens += entryCompletionTokens;
+        row.cachedTokens += entryCachedTokens;
+        row.totalTokens += entryTotalTokens;
+        row.requestCost += entryRequestCost;
+        if (costBreakdown) {
+          row.estimatedInputCost += costBreakdown.inputCostUsd;
+          row.estimatedCachedInputCost += costBreakdown.cachedInputCostUsd;
+          row.estimatedOutputCost += costBreakdown.outputCostUsd;
+          row.estimatedRequestCost += costBreakdown.totalCostUsd;
+        } else if (entryPromptTokens > 0 || entryCompletionTokens > 0) {
+          row.unpricedRequests += 1;
+        }
       }
 
       const executions = Array.isArray(entry.toolExecutions)
@@ -653,8 +829,19 @@ export function buildTraceInsights({
       llmRequests,
       promptTokens,
       completionTokens,
+      cachedTokens,
+      nonCachedInputTokens: Math.max(promptTokens - cachedTokens, 0),
       totalTokens,
       requestCost,
+      estimatedInputCost,
+      estimatedCachedInputCost,
+      estimatedOutputCost,
+      estimatedRequestCost,
+      outputTokenShare:
+        totalTokens === 0 ? 0 : completionTokens / totalTokens,
+      outputCostShare:
+        estimatedRequestCost === 0 ? 0 : estimatedOutputCost / estimatedRequestCost,
+      unpricedRequests,
       averagePromptTokens: llmRequests === 0 ? 0 : promptTokens / llmRequests,
       averageCompletionTokens:
         llmRequests === 0 ? 0 : completionTokens / llmRequests,

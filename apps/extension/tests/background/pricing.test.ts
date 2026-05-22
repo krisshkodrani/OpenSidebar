@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  estimateCostBreakdownUsd,
   estimateCostUsd,
   findModelPricing,
 } from "../../src/background/llm/pricing";
@@ -76,6 +77,30 @@ describe("LLM pricing table", () => {
       cached_tokens: 500_000,
     });
     expect(cost).toBeCloseTo(0.15 * 0.5 + 0.075 * 0.5 + 0.6, 6);
+  });
+
+  test("returns input, cached input, and output cost components", () => {
+    const breakdown = estimateCostBreakdownUsd(
+      "fireworks",
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      {
+        prompt_tokens: 1_000,
+        cached_tokens: 400,
+        completion_tokens: 100,
+        total_tokens: 1_100,
+      },
+    );
+
+    expect(breakdown).toMatchObject({
+      promptTokens: 1_000,
+      nonCachedPromptTokens: 600,
+      cachedTokens: 400,
+      completionTokens: 100,
+    });
+    expect(breakdown?.inputCostUsd).toBeCloseTo(0.000594, 8);
+    expect(breakdown?.cachedInputCostUsd).toBeCloseTo(0.000064, 8);
+    expect(breakdown?.outputCostUsd).toBeCloseTo(0.000494, 8);
+    expect(breakdown?.totalCostUsd).toBeCloseTo(0.001152, 8);
   });
 
   test("returns null for unknown model pricing", () => {

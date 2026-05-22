@@ -61,6 +61,7 @@ describe("trace sqlite index", () => {
           durationMs: 100,
           usage: {
             prompt_tokens: 10,
+            cached_tokens: 4,
             completion_tokens: 5,
             total_tokens: 15,
             cost: 0.01,
@@ -119,9 +120,10 @@ describe("trace sqlite index", () => {
       db.prepare("SELECT COUNT(*) AS count FROM trace_sessions").get(),
     ).toMatchObject({ count: 2 });
     expect(
-      db.prepare("SELECT prompt_tokens, completion_tokens, total_tokens FROM trace_turns WHERE session_id = ?").get("session-1"),
+      db.prepare("SELECT prompt_tokens, cached_tokens, completion_tokens, total_tokens FROM trace_turns WHERE session_id = ?").get("session-1"),
     ).toMatchObject({
       prompt_tokens: 10,
+      cached_tokens: 4,
       completion_tokens: 5,
       total_tokens: 15,
     });
