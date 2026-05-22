@@ -77,6 +77,28 @@ function usageNumber(usage: Record<string, unknown> | null, keys: string[]): num
   return 0;
 }
 
+function cachedTokensFromUsage(
+  usage: Record<string, unknown> | null,
+  promptTokens: number,
+): number {
+  let cachedTokens = usageNumber(usage, ["cached_tokens"]);
+  const promptTokenDetails =
+    usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object"
+      ? (usage.prompt_tokens_details as Record<string, unknown>)
+      : null;
+  if (cachedTokens === 0) {
+    cachedTokens = usageNumber(promptTokenDetails, ["cached_tokens"]);
+  }
+  const cacheTelemetry =
+    usage?.cacheTelemetry && typeof usage.cacheTelemetry === "object"
+      ? (usage.cacheTelemetry as Record<string, unknown>)
+      : null;
+  if (cachedTokens === 0) {
+    cachedTokens = usageNumber(cacheTelemetry, ["cachedPromptTokens"]);
+  }
+  return Math.max(0, Math.min(cachedTokens, promptTokens));
+}
+
 function initSchema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS trace_sessions (
@@ -116,6 +138,7 @@ function initSchema(db: Database.Database): void {
       model_tier TEXT,
       provider TEXT,
       prompt_tokens INTEGER NOT NULL DEFAULT 0,
+      cached_tokens INTEGER NOT NULL DEFAULT 0,
       completion_tokens INTEGER NOT NULL DEFAULT 0,
       total_tokens INTEGER NOT NULL DEFAULT 0,
       cost REAL NOT NULL DEFAULT 0,
@@ -208,6 +231,18 @@ function initSchema(db: Database.Database): void {
   if (!artifactColumns.has("archive_state")) {
     db.exec(
       "ALTER TABLE trace_artifacts ADD COLUMN archive_state TEXT NOT NULL DEFAULT 'hot'",
+    );
+  }
+
+  const turnColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(trace_turns)")
+      .all()
+      .map((row) => String((row as { name: unknown }).name)),
+  );
+  if (!turnColumns.has("cached_tokens")) {
+    db.exec(
+      "ALTER TABLE trace_turns ADD COLUMN cached_tokens INTEGER NOT NULL DEFAULT 0",
     );
   }
 }
@@ -377,12 +412,13 @@ export function indexTracesToSqlite(
   const insertTurn = db.prepare(`
     INSERT OR REPLACE INTO trace_turns (
       session_id, turn_number, run_id, model, model_tier, provider,
-      prompt_tokens, completion_tokens, total_tokens, cost, duration_ms,
+      prompt_tokens, cached_tokens, completion_tokens, total_tokens, cost, duration_ms,
       context_utilization, dropped_messages, perception_mode, perception_source,
       screenshot_status, url, title, raw_json
     ) VALUES (
       @session_id, @turn_number, @run_id, @model, @model_tier, @provider,
-      @prompt_tokens, @completion_tokens, @total_tokens, @cost, @duration_ms,
+      @prompt_tokens, @cached_tokens, @completion_tokens, @total_tokens, @cost,
+      @duration_ms,
       @context_utilization, @dropped_messages, @perception_mode,
       @perception_source, @screenshot_status, @url, @title, @raw_json
     )
@@ -475,6 +511,7 @@ export function indexTracesToSqlite(
           "completion_tokens",
           "output_tokens",
         ]);
+        const cachedTokens = cachedTokensFromUsage(usage, promptTokens);
         const snapshot =
           entry.snapshot && typeof entry.snapshot === "object"
             ? (entry.snapshot as Record<string, unknown>)
@@ -495,6 +532,7 @@ export function indexTracesToSqlite(
           model_tier: asString(llmRequest?.modelTier) || null,
           provider: asString(llmResponse?.actualProviderId) || null,
           prompt_tokens: promptTokens,
+          cached_tokens: cachedTokens,
           completion_tokens: completionTokens,
           total_tokens:
             usageNumber(usage, ["total_tokens"]) || promptTokens + completionTokens,

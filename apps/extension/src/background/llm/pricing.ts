@@ -1,4 +1,4 @@
-import { ProviderConfig, TokenUsage } from "./types";
+import type { ProviderConfig, TokenUsage } from "./types";
 import { DEFAULT_MODEL_PRICING } from "./pricing-data";
 
 export interface ModelPricing {
@@ -38,6 +38,25 @@ export function estimateCostUsd(
   model: string,
   usage: TokenUsage,
 ): number | null {
+  return estimateCostBreakdownUsd(providerId, model, usage)?.totalCostUsd ?? null;
+}
+
+export interface CostBreakdownUsd {
+  promptTokens: number;
+  nonCachedPromptTokens: number;
+  cachedTokens: number;
+  completionTokens: number;
+  inputCostUsd: number;
+  cachedInputCostUsd: number;
+  outputCostUsd: number;
+  totalCostUsd: number;
+}
+
+export function estimateCostBreakdownUsd(
+  providerId: ProviderConfig["providerId"],
+  model: string,
+  usage: TokenUsage,
+): CostBreakdownUsd | null {
   const pricing = findModelPricing(providerId, model);
   if (!pricing) return null;
 
@@ -51,10 +70,26 @@ export function estimateCostUsd(
   const cachedRate =
     pricing.cachedInputUsdPerMillion ?? pricing.inputUsdPerMillion;
 
-  const cost =
+  const inputCostUsd =
+    (nonCachedPromptTokens / 1_000_000) * pricing.inputUsdPerMillion;
+  const cachedInputCostUsd = (cachedTokens / 1_000_000) * cachedRate;
+  const outputCostUsd =
+    (completionTokens / 1_000_000) * pricing.outputUsdPerMillion;
+  const totalCostUsd =
     (nonCachedPromptTokens / 1_000_000) * pricing.inputUsdPerMillion +
     (cachedTokens / 1_000_000) * cachedRate +
     (completionTokens / 1_000_000) * pricing.outputUsdPerMillion;
 
-  return Number.isFinite(cost) ? cost : null;
+  if (!Number.isFinite(totalCostUsd)) return null;
+
+  return {
+    promptTokens,
+    nonCachedPromptTokens,
+    cachedTokens,
+    completionTokens,
+    inputCostUsd,
+    cachedInputCostUsd,
+    outputCostUsd,
+    totalCostUsd,
+  };
 }

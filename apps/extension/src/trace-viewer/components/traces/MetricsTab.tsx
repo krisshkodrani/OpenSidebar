@@ -37,8 +37,17 @@ function emptyInsights(): TraceInsightsResponse {
       llmRequests: 0,
       promptTokens: 0,
       completionTokens: 0,
+      cachedTokens: 0,
+      nonCachedInputTokens: 0,
       totalTokens: 0,
       requestCost: 0,
+      estimatedInputCost: 0,
+      estimatedCachedInputCost: 0,
+      estimatedOutputCost: 0,
+      estimatedRequestCost: 0,
+      outputTokenShare: 0,
+      outputCostShare: 0,
+      unpricedRequests: 0,
       averagePromptTokens: 0,
       averageCompletionTokens: 0,
       averageTotalTokens: 0,
@@ -182,6 +191,11 @@ export default function MetricsTab() {
 
   const summary = insights.summary;
   const requestCost = summary.requestCost || summary.totalCost;
+  const estimatedRequestCost = summary.estimatedRequestCost || requestCost;
+  const costSourceDetail =
+    summary.unpricedRequests > 0
+      ? `${formatCount(summary.unpricedRequests)} unpriced requests`
+      : "Estimated from local pricing";
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-5 py-4">
@@ -272,12 +286,12 @@ export default function MetricsTab() {
               <MetricCard
                 label="Input Tokens"
                 value={formatTokens(summary.promptTokens)}
-                detail={`${formatTokens(Math.round(summary.averagePromptTokens))} avg/request`}
+                detail={`${formatTokens(summary.nonCachedInputTokens)} non-cached, ${formatTokens(summary.cachedTokens)} cached`}
               />
               <MetricCard
                 label="Output Tokens"
                 value={formatTokens(summary.completionTokens)}
-                detail={`${formatTokens(Math.round(summary.averageCompletionTokens))} avg/request`}
+                detail={`${formatPercent(summary.outputTokenShare)} of tokens`}
               />
               <MetricCard
                 label="Total Tokens"
@@ -285,14 +299,43 @@ export default function MetricsTab() {
                 detail={`${formatTokens(Math.round(summary.averageTotalTokens))} avg/request`}
               />
               <MetricCard
-                label="Request Cost"
-                value={formatCost(requestCost) || "$0"}
-                detail="Request usage when available; session total fallback"
+                label="Estimated Cost"
+                value={formatCost(estimatedRequestCost) || "$0"}
+                detail={costSourceDetail}
+                tone={summary.unpricedRequests > 0 ? "warning" : "neutral"}
               />
               <MetricCard
                 label="Avg LLM Latency"
                 value={formatDuration(summary.averageLlmDurationMs)}
                 detail={`${formatDuration(summary.totalLlmDurationMs)} total`}
+              />
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-trace-muted">
+              Cost Drivers
+            </div>
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+              <MetricCard
+                label="Input Cost"
+                value={formatCost(summary.estimatedInputCost) || "$0"}
+                detail={`${formatTokens(summary.nonCachedInputTokens)} non-cached input`}
+              />
+              <MetricCard
+                label="Cached Input Cost"
+                value={formatCost(summary.estimatedCachedInputCost) || "$0"}
+                detail={`${formatTokens(summary.cachedTokens)} cached input`}
+              />
+              <MetricCard
+                label="Output Cost"
+                value={formatCost(summary.estimatedOutputCost) || "$0"}
+                detail={`${formatTokens(summary.completionTokens)} output tokens`}
+              />
+              <MetricCard
+                label="Output Cost Share"
+                value={formatPercent(summary.outputCostShare)}
+                detail="Share of estimated request cost"
               />
             </div>
           </section>
@@ -307,11 +350,13 @@ export default function MetricsTab() {
               </div>
             </div>
             <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
-              <div className="grid grid-cols-[minmax(180px,1.6fr)_80px_80px_90px_90px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
+              <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
                 <span>Model</span>
                 <span>Sessions</span>
                 <span>Runs</span>
                 <span>Requests</span>
+                <span>Est. Cost</span>
+                <span>Output Share</span>
                 <span>Fail Rate</span>
               </div>
               {insights.models.length === 0 ? (
@@ -322,7 +367,7 @@ export default function MetricsTab() {
                 insights.models.slice(0, 12).map((row) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-[minmax(180px,1.6fr)_80px_80px_90px_90px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
+                    className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
                   >
                     <span className="min-w-0 truncate text-trace-text">
                       {row.label}
@@ -335,6 +380,18 @@ export default function MetricsTab() {
                     </span>
                     <span className="text-trace-subtle">
                       {formatCount(row.requests ?? row.calls)}
+                    </span>
+                    <span className="text-trace-subtle">
+                      {formatCost(
+                        row.estimatedRequestCost ??
+                          row.requestCost ??
+                          row.totalCost,
+                      ) || "-"}
+                    </span>
+                    <span className="text-trace-subtle">
+                      {row.outputCostShare == null
+                        ? "-"
+                        : formatPercent(row.outputCostShare)}
                     </span>
                     <span className="text-trace-subtle">
                       {formatPercent(row.failureRate)}
