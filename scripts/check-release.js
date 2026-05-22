@@ -112,6 +112,9 @@ const manifestPath = resolve(releaseDir, `${artifactBaseName}-manifest.json`);
 const expectedZipArtifactPath = asPosix(relative(rootPath, zipPath));
 const expectedChecksumArtifactPath = asPosix(relative(rootPath, checksumPath));
 const expectedNotesArtifactPath = asPosix(relative(rootPath, notesPath));
+const nativeSmokeCommand = "npm run release:smoke:native-panel";
+const strictNativeSmokePreflightCommand =
+  "npm run release:preflight -- --require-native-smoke";
 const releaseManifest = readJson(manifestPath);
 const headCommit = git(["rev-parse", "HEAD"]);
 const tagName = version ? `v${version}` : null;
@@ -138,6 +141,22 @@ if (releaseManifest) {
   if (headCommit && releaseManifest.commit !== headCommit) {
     fail(
       `release manifest commit ${releaseManifest.commit} does not match HEAD ${headCommit}`,
+    );
+  }
+  const verification = Array.isArray(releaseManifest.verification)
+    ? releaseManifest.verification
+    : [];
+  for (const command of [nativeSmokeCommand, strictNativeSmokePreflightCommand]) {
+    if (!verification.includes(command)) {
+      fail(`release manifest verification is missing ${command}`);
+    }
+  }
+  const externalGateText = JSON.stringify(
+    releaseManifest.remainingExternalGates ?? [],
+  );
+  if (!externalGateText.includes(strictNativeSmokePreflightCommand)) {
+    fail(
+      `release manifest remainingExternalGates is missing ${strictNativeSmokePreflightCommand}`,
     );
   }
 }
@@ -211,6 +230,8 @@ if (existsSync(notesPath)) {
     `OpenSidebar v${version}`,
     `${artifactBaseName}.zip`,
     "Known Limitations",
+    nativeSmokeCommand,
+    strictNativeSmokePreflightCommand,
     headCommit ?? "",
   ].filter(Boolean)) {
     if (!notes.includes(required)) {
@@ -253,7 +274,7 @@ if (!matchingNativeSmoke) {
         relative(rootPath, latestNativeSmoke.path),
       )}.`
     : "";
-  const message = `No passing native side-panel smoke evidence found for HEAD ${headCommit ?? "unknown"}.${detail} Run npm run release:smoke:native-panel before tagging.`;
+  const message = `No passing native side-panel smoke evidence found for HEAD ${headCommit ?? "unknown"}.${detail} Run ${nativeSmokeCommand}, then ${strictNativeSmokePreflightCommand} before tagging.`;
   if (requireNativeSmoke) fail(message);
   else warn(message);
 }
@@ -297,6 +318,7 @@ for (const warning of warnings) console.log(`[release:preflight] WARN ${warning}
 if (tagName) {
   console.log("");
   console.log("[release:preflight] Final publication commands after manual gates:");
+  console.log(`  ${strictNativeSmokePreflightCommand}`);
   console.log(`  git tag ${tagName}`);
   console.log(`  git push origin ${tagName}`);
   console.log(
