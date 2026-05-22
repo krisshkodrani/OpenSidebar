@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added a release preflight command to validate generated artifact version, commit, hash, and publication readiness before tagging.
+- Added an assisted native Chrome side-panel smoke command for the final manual launch gate.
 
 ### Changed
 
