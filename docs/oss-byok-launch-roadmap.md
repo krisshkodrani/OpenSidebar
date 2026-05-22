@@ -95,7 +95,7 @@ Exit criteria:
 - At least one recommended BYOK provider completes a safe first-task smoke.
 - `pnpm run release:verify` passes on the launch candidate.
 - A real-browser smoke run is recorded for the launch candidate when runtime behavior changed.
-- A GitHub release has a tag, changelog entry, `corepack pnpm run release:package` zip/checksum, and known limitations.
+- A GitHub release has a tag, changelog entry, `corepack pnpm run release:package` zip/checksum, `corepack pnpm run release:preflight` evidence, and known limitations.
 - Screenshots or a short demo show the side panel, settings/provider setup, a completed task, and the trace viewer.
 
 ## GitHub Launch Definition Of Done
@@ -108,4 +108,4 @@ The launch candidate is ready when:
 - privacy and permission claims match the extension manifest and runtime behavior;
 - install and first-task instructions work from a fresh clone;
 - contribution and bug-report paths are usable by someone outside the project;
-- release artifacts can be reproduced from checked-in commands.
+- release artifacts can be reproduced and preflighted from checked-in commands.
