@@ -78,7 +78,7 @@ pnpm run dist     # Standalone production/manual extension build into dist/
 pnpm test         # Extension and backend unit/integration tests
 pnpm run verify   # Local confidence gate before commit or push
 pnpm run release:verify # Release confidence gate with production audit
-pnpm run release:package # Zip dist/ and write a SHA-256 checksum
+pnpm run release:package # Zip dist/ and write release artifacts
 pnpm run doctor   # Diagnose local setup and show next commands
 ```
 
@@ -98,7 +98,7 @@ pnpm run dist                 # Standalone production/manual extension build int
 pnpm test                     # Extension and backend unit/integration tests
 pnpm run verify               # Lint, typecheck, tests, build, and dist check
 pnpm run release:verify       # Release gate plus production dependency audit
-pnpm run release:package      # Create .artifacts/releases/ zip and checksum
+pnpm run release:package      # Create .artifacts/releases/ zip, checksum, notes, manifest
 pnpm run doctor               # Local setup diagnosis
 ```
 

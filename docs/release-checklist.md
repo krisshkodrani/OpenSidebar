@@ -56,7 +56,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Confirm `corepack pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
-- Run `corepack pnpm run release:package` and confirm it writes a release zip plus `.sha256` file under `.artifacts/releases/`.
+- Run `corepack pnpm run release:package` and confirm it writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
 - Spot-check the loaded extension from `dist/` in Chrome.
 
 ## 5. GitHub OSS BYOK Gate
@@ -77,6 +77,17 @@ For a broad GitHub-first BYOK release, also confirm:
 - Tag the release commit
 - Attach release notes derived from `CHANGELOG.md`
 - Upload the built `dist/` package or release zip to the intended distribution channel
+
+GitHub CLI draft command after final manual spot-check:
+
+```bash
+gh release create v0.9.1 \
+  --draft \
+  --title "OpenSidebar v0.9.1 OSS BYOK Preview" \
+  --notes-file .artifacts/releases/opensidebar-v0.9.1-release-notes.md \
+  .artifacts/releases/opensidebar-v0.9.1.zip \
+  .artifacts/releases/opensidebar-v0.9.1.zip.sha256
+```
 
 ## Current Known Caveat
 

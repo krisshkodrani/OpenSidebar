@@ -84,4 +84,4 @@ The trace viewer is available at `http://127.0.0.1:7589/viewer`.
 - Production/manual build output is written to `dist/`.
 - `ci:dist` verifies the extension artifact, including manifest references, version alignment, side panel assets, trace viewer assets, service worker import, icons, content scripts, and Vite manifest.
 - `ci:audit` checks production dependencies for known advisories.
-- `release:package` writes `.artifacts/releases/opensidebar-v<version>.zip` and a matching `.sha256` file from the current `dist/` build.
+- `release:package` writes `.artifacts/releases/opensidebar-v<version>.zip`, a matching `.sha256` file, release notes, and an artifact manifest from the current `dist/` build.
