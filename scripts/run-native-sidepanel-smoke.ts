@@ -131,6 +131,7 @@ function printHelp(): void {
 
 Launches Chrome with dist/ loaded, opens a fixture tab, and waits for a real
 Chrome toolbar click to open the native side panel.
+If the icon is not pinned, open Chrome's Extensions menu and click OpenSidebar.
 
 Usage:
   npm run release:smoke:native-panel -- --timeoutMs=120000
@@ -204,6 +205,16 @@ async function main(): Promise<void> {
       }, fireworksKey);
     }
 
+    await helper.evaluate(async () => {
+      await chrome.action.setBadgeText({ text: "OPEN" }).catch(() => {});
+      await chrome.action
+        .setBadgeBackgroundColor({ color: "#2563eb" })
+        .catch(() => {});
+      await chrome.action
+        .setTitle({ title: "Open OpenSidebar native side panel" })
+        .catch(() => {});
+    });
+
     await helper.evaluate(async (targetTabId: number) => {
       const tab = await chrome.tabs.get(targetTabId);
       if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
@@ -215,6 +226,9 @@ async function main(): Promise<void> {
     console.log(`[native-sidepanel-smoke] Extension: ${ctx.extensionId}`);
     console.log(
       "[native-sidepanel-smoke] Click the OpenSidebar toolbar icon in the Chrome window.",
+    );
+    console.log(
+      "[native-sidepanel-smoke] If the icon is hidden, open Chrome's Extensions menu and click OpenSidebar.",
     );
     console.log(
       `[native-sidepanel-smoke] Waiting up to ${timeoutMs}ms for the side panel handshake.`,

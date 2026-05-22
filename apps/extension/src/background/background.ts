@@ -261,8 +261,10 @@ async function maybeStopKeepalive(): Promise<void> {
 
 // --- userOpenedPanel helpers (persisted to chrome.storage.session) ---
 const USER_OPENED_KEY = "userOpenedPanel";
+const userOpenedPanelTabs = new Set<number>();
 
 async function addUserOpenedPanel(tabId: number): Promise<void> {
+  userOpenedPanelTabs.add(tabId);
   const data = await chrome.storage.session.get(USER_OPENED_KEY);
   const arr: number[] = data[USER_OPENED_KEY] ?? [];
   if (!arr.includes(tabId)) arr.push(tabId);
@@ -270,12 +272,14 @@ async function addUserOpenedPanel(tabId: number): Promise<void> {
 }
 
 async function hasUserOpenedPanel(tabId: number): Promise<boolean> {
+  if (userOpenedPanelTabs.has(tabId)) return true;
   const data = await chrome.storage.session.get(USER_OPENED_KEY);
   const arr: number[] = data[USER_OPENED_KEY] ?? [];
   return arr.includes(tabId);
 }
 
 async function removeUserOpenedPanel(tabId: number): Promise<void> {
+  userOpenedPanelTabs.delete(tabId);
   const data = await chrome.storage.session.get(USER_OPENED_KEY);
   const arr: number[] = data[USER_OPENED_KEY] ?? [];
   await chrome.storage.session.set({
@@ -305,8 +309,14 @@ chrome.action.onClicked.addListener(async (tab) => {
     const tabId = tab.id;
     try {
       // Mark the user gesture before opening so a fast side-panel mount cannot
-      // race ahead of the SIDE_PANEL_OPENED handler's user-opened check.
-      await addUserOpenedPanel(tabId);
+      // race ahead of the SIDE_PANEL_OPENED handler's user-opened check. Do
+      // not await storage here; chrome.sidePanel.open needs the click gesture.
+      void addUserOpenedPanel(tabId).catch((error) => {
+        logger.warn("sidebar", "Failed to persist side panel open marker", {
+          tabId,
+          error,
+        });
+      });
       // 0. Re-enable + open panel FIRST (must stay synchronous with gesture)
       chrome.sidePanel.setOptions({
         tabId,

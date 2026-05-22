@@ -56,7 +56,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Confirm `corepack pnpm run ci:dist` passes.
 - Confirm `dist/manifest.json` has the expected version.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
-- Run `corepack pnpm run release:package` and confirm it writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
+- Run `corepack pnpm run release:package` and confirm it builds `dist/`, then writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
 - While iterating on release changes, `corepack pnpm run release:preflight -- --allow-dirty` can validate the generated artifacts.
 - Before tagging, commit the release candidate, rerun `corepack pnpm run release:package`, then run the strict `corepack pnpm run release:preflight` and resolve any failed artifact, version, commit, checksum, or clean-tree check.
 - Spot-check the loaded extension from `dist/` in Chrome. Use `corepack pnpm run release:smoke:native-panel` for the assisted native side-panel smoke, then click the OpenSidebar toolbar icon in the launched Chrome window.
