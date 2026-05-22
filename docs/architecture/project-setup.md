@@ -87,5 +87,5 @@ The trace viewer is available at `http://127.0.0.1:7589/viewer`.
 - `ci:dist` verifies the extension artifact, including manifest references, version alignment, side panel assets, trace viewer assets, service worker import, icons, content scripts, and Vite manifest.
 - `ci:audit` checks production dependencies for known advisories.
 - `release:package` builds `dist/`, then writes `.artifacts/releases/opensidebar-v<version>.zip`, a matching `.sha256` file, release notes, and an artifact manifest.
-- `release:preflight` validates generated release artifacts, requires a clean working tree, reports tag/GitHub CLI readiness, and prints final publication commands.
+- `release:preflight` validates generated release artifacts, requires a clean working tree, reports native-smoke/tag/GitHub CLI readiness, and prints final publication commands.
 - `release:smoke:native-panel` launches headed Chrome with the built extension and records native side-panel handshake evidence after a manual toolbar click.

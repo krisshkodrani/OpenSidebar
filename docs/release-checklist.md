@@ -60,6 +60,7 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - While iterating on release changes, `corepack pnpm run release:preflight -- --allow-dirty` can validate the generated artifacts.
 - Before tagging, commit the release candidate, rerun `corepack pnpm run release:package`, then run the strict `corepack pnpm run release:preflight` and resolve any failed artifact, version, commit, checksum, or clean-tree check.
 - Spot-check the loaded extension from `dist/` in Chrome. Use `corepack pnpm run release:smoke:native-panel` for the assisted native side-panel smoke, then click the OpenSidebar toolbar icon in the launched Chrome window.
+- After the native smoke passes, run `corepack pnpm run release:preflight -- --require-native-smoke` to ensure the current commit has matching pass evidence.
 
 ## 5. GitHub OSS BYOK Gate
 
@@ -77,7 +78,7 @@ For a broad GitHub-first BYOK release, also confirm:
 ## 6. Publish
 
 - Commit the release candidate changes
-- Rerun `corepack pnpm run release:package` and `corepack pnpm run release:preflight` on the exact commit being tagged
+- Rerun `corepack pnpm run release:package` and `corepack pnpm run release:preflight -- --require-native-smoke` on the exact commit being tagged
 - Tag the release commit
 - Attach the generated release notes from `.artifacts/releases/`
 - Upload the built `dist/` package or release zip to the intended distribution channel
