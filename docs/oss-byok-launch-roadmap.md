@@ -62,10 +62,11 @@ Exit criteria:
 - Permission explanations cover broad host access, tabs, cookies, history, downloads, and screenshots/tab capture.
 - First-run setup explains how to add a provider key and run a safe first task.
 
-Current known alignment items:
+Current alignment controls:
 
-- `package.json` and `apps/extension/manifest.json` currently advertise different versions and must be synchronized for the launch tag.
-- `apps/extension/manifest.json` currently describes BYOK through OpenRouter specifically; the launch copy should reflect the supported multi-provider BYOK model.
+- `package.json` and `apps/extension/manifest.json` must advertise the same version before tagging.
+- `pnpm run ci:dist` checks that the built `dist/manifest.json` version matches `package.json`.
+- `apps/extension/manifest.json` should describe multi-provider BYOK rather than a single provider-specific setup path.
 
 ## Phase P1: BYOK Clarity
 
@@ -90,11 +91,11 @@ Exit criteria:
 
 Exit criteria:
 
-- A fresh clone can run `corepack pnpm install`, `pnpm run dist`, and load `dist/` in Chrome.
+- A fresh clone can run `corepack enable`, `corepack pnpm install`, `corepack pnpm run dist`, and load `dist/` in Chrome.
 - At least one recommended BYOK provider completes a safe first-task smoke.
 - `pnpm run release:verify` passes on the launch candidate.
 - A real-browser smoke run is recorded for the launch candidate when runtime behavior changed.
-- A GitHub release has a tag, changelog entry, release zip, checksum, and known limitations.
+- A GitHub release has a tag, changelog entry, `corepack pnpm run release:package` zip/checksum, and known limitations.
 - Screenshots or a short demo show the side panel, settings/provider setup, a completed task, and the trace viewer.
 
 ## GitHub Launch Definition Of Done

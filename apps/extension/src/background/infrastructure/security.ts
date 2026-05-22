@@ -188,6 +188,31 @@ export function validateToolCalls(calls: ToolCall[]): ValidatedToolCall[] {
           reason: "Dynamic script injection is blocked due to XSS risk.",
         };
       }
+      if (
+        /\bdocument\s*\.\s*cookie\b/i.test(code) ||
+        /\bcookieStore\b/i.test(code) ||
+        /\b(?:localStorage|sessionStorage|indexedDB|caches)\b/i.test(code)
+      ) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "Page cookie and storage access is blocked. Use purpose-built browser tools with approval instead.",
+        };
+      }
+      if (
+        /\bfetch\s*\(/i.test(code) ||
+        /\bXMLHttpRequest\b/i.test(code) ||
+        /\bnavigator\s*\.\s*sendBeacon\s*\(/i.test(code) ||
+        /\b(?:WebSocket|EventSource)\s*\(/i.test(code)
+      ) {
+        return {
+          original: tc,
+          blocked: true,
+          reason:
+            "Network requests from execute_js are blocked to prevent page-context exfiltration.",
+        };
+      }
     }
 
     // navigate / open_tab / create_tab: re-validate URL at loop level

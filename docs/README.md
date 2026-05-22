@@ -41,6 +41,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 - [Repo Structure](./repo-structure.md)
 - [Release Checklist](./release-checklist.md)
 - [OSS BYOK Launch Roadmap](./oss-byok-launch-roadmap.md)
+- [Known Limitations](./known-limitations.md)
 - [Browser Navigation Challenge](./guides/browser-navigation-challenge.md)
 - [The Right Level Of Abstraction](./guides/right-level-of-abstraction.md)
 - [WorkArena Generalized Harness Philosophy](./guides/workarena-generalized-harness-philosophy.md)

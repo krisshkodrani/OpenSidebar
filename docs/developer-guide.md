@@ -300,7 +300,8 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | `pnpm exec tsx scripts/workarena-validate-reports.ts` | you need to validate WorkArena JSON reports | no ServiceNow or LLM calls |
 | `pnpm run verify`             | you want the local confidence gate        | lint + typecheck + tests + build + dist check  |
 | `pnpm run ci:local`           | you want the CI-equivalent local gate     | lint + typecheck + tests + build + dist check  |
-| `pnpm run release:verify`     | you want release confidence              | lint + typecheck + tests + build + dist check  |
+| `pnpm run release:verify`     | you want release confidence              | lint + typecheck + tests + build + dist check + production dependency audit |
+| `pnpm run release:package`    | you want release artifacts               | writes `.artifacts/releases/` zip + SHA-256 checksum from `dist/` |
 | `pnpm exec vitest run <file>`      | you want one focused test file            | useful during iteration                        |
 
 For the path from guarded WorkArena smoke runs to category-balanced graded evaluation, see [WorkArena Roadmap](./evals/workarena-roadmap.md).

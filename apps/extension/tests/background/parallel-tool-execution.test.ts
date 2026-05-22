@@ -23,8 +23,8 @@ describe("parallel tool execution assessment", () => {
   test("allows multiple low-risk read-only tools", () => {
     expect(
       assessParallelToolCalls([
-        toolCall(ToolName.GET_COOKIES),
-        toolCall(ToolName.SEARCH_HISTORY, { query: "example" }),
+        toolCall(ToolName.READ_ELEMENT, { id: 1 }),
+        toolCall(ToolName.INSPECT_HIDDEN, { query: "example" }),
       ]),
     ).toMatchObject({
       canParallelize: true,

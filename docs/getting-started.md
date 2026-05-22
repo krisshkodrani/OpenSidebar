@@ -13,8 +13,9 @@ Get OpenSidebar running in a few minutes.
 ```bash
 git clone https://github.com/krisshkodrani/OpenSidebar.git
 cd OpenSidebar
-pnpm install
-pnpm run dist
+corepack enable
+corepack pnpm install
+corepack pnpm run dist
 ```
 
 ## Load in Chrome
@@ -31,7 +32,7 @@ pnpm run dist
 3. Add the provider key you want to use
 4. Close Settings
 
-Supported agent provider modes include Fireworks AI, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced mixed-provider modes such as Fireworks+DeepSeek. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
+Supported agent provider modes include Fireworks AI, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced mixed-provider modes such as Fireworks+DeepSeek or OpenRouter+Groq. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
 
 | Provider mode | Required key(s) | Notes |
 | --- | --- | --- |
@@ -39,17 +40,32 @@ Supported agent provider modes include Fireworks AI, OpenRouter, Moonshot/Kimi, 
 | OpenRouter | `OPENROUTER_API_KEY` or OpenRouter key in Settings | Public BYOK option |
 | Moonshot/Kimi | `KIMI_API_KEY` or Kimi key in Settings | Direct Moonshot provider mode |
 | Xiaomi MiMo | `XIAOMI_API_KEY` or Xiaomi key in Settings | Agent traffic only |
-| Mixed advanced modes | Fireworks/OpenRouter/OpenAI-compatible key plus DeepSeek or Groq key | For advanced provider routing |
+| Fireworks + DeepSeek | Fireworks key plus `DEEPSEEK_API_KEY` or both keys in Settings | Fireworks executor, DeepSeek planner/verifier |
+| OpenRouter + Groq | OpenRouter key plus Groq key in Settings | OpenRouter executor, Groq planner |
+| OpenAI-compatible + Groq | OpenAI-compatible key plus Groq key in Settings | Advanced executor/planner split |
 
 Provider pricing, quotas, data handling, and rate limits are governed by the provider you configure.
 
-## First Task
+## First Safe Task
 
-Try one of these:
+Start with a read-only task on a non-sensitive page:
 
 - "Summarize this page"
 - "Find the pricing page and tell me the monthly cost"
-- "Fill in the contact form with John Smith and john@example.com"
+
+Watch the side panel while the agent works. Use **Stop** if it starts doing
+something unexpected. After you trust the setup, move to low-impact interaction
+tasks such as test forms or disposable demo accounts before using sensitive
+websites.
+
+Common provider setup failures:
+
+| Symptom | Likely cause |
+| --- | --- |
+| Authentication error | Missing, invalid, or revoked provider key |
+| Rate-limit or quota error | Provider account limit, billing state, or model quota |
+| Model unavailable | Provider routing issue or unsupported configured model |
+| Empty or degraded responses | Temporary provider outage or a model that does not support the requested modality |
 
 ## Development Mode
 
@@ -62,6 +78,8 @@ pnpm test         # run fast tests
 pnpm run verify   # run the full local confidence gate
 pnpm run doctor   # diagnose local setup
 ```
+
+These commands assume `corepack enable` has activated the pnpm version pinned in `package.json`. Use `corepack pnpm ...` if pnpm is not on your shell path.
 
 ```bash
 pnpm run dev

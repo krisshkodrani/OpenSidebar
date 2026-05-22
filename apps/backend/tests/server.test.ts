@@ -4,57 +4,14 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { unlinkSync, writeFileSync } from "fs";
 import { initDatabase, closeDatabase } from "../src/db";
+import { handleBackendRequest } from "../src/server";
 
-// We test the route handlers directly by building a minimal server.
-
-import { handleProfileRoutes } from "../src/routes/profile";
-import { handleTaskRunRoutes } from "../src/routes/task-runs";
-import type { RouteContext } from "../src/server";
+// Exercise the real request handler so local API security policy is covered.
 
 let server: Server;
 let baseUrl: string;
 let dbPath: string;
 let profilePath: string;
-
-function parseJsonBody(req: NodeJS.ReadableStream): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
-      } catch (err) {
-        reject(err);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function parseTextBody(req: NodeJS.ReadableStream): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
-      resolve(Buffer.concat(chunks).toString("utf-8"));
-    });
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res: any, data: unknown, status = 200): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
-  res.end(JSON.stringify(data));
-}
-
-function sendEmpty(res: any, status = 204): void {
-  res.writeHead(status);
-  res.end();
-}
-
-function sendError(res: any, message: string, status = 400): void {
-  sendJson(res, { error: message }, status);
-}
 
 beforeAll(async () => {
   dbPath = join(tmpdir(), `test-server-${Date.now()}.sqlite`);
@@ -74,35 +31,13 @@ beforeAll(async () => {
     ].join("\n"),
   );
 
-  server = createServer(async (req, res) => {
-    const url = new URL(req.url || "/", "http://localhost");
-    const ctx: RouteContext = {
-      pathname: url.pathname,
-      searchParams: url.searchParams,
-      method: req.method || "GET",
-      parseJsonBody: () => parseJsonBody(req),
-      parseTextBody: () => parseTextBody(req),
-      sendJson,
-      sendEmpty,
-      sendError,
-    };
-
-    if (url.pathname === "/health") {
-      sendJson(res, { status: "ok", pendingTasks: 0 });
-      return;
-    }
-
-    if (url.pathname.startsWith("/task-runs")) {
-      await handleTaskRunRoutes(req, res, ctx);
-      return;
-    }
-
-    if (url.pathname.startsWith("/profile")) {
-      await handleProfileRoutes(req, res, ctx);
-      return;
-    }
-
-    sendError(res, "Not found", 404);
+  server = createServer((req, res) => {
+    handleBackendRequest(req, res).catch((error) => {
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+      }
+      res.end(JSON.stringify({ error: error?.message ?? "Request failed" }));
+    });
   });
 
   await new Promise<void>((resolve) => {
@@ -136,14 +71,20 @@ afterEach(() => {
 async function api(
   path: string,
   options?: RequestInit,
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; headers: Headers; data: any }> {
+  const { headers, ...rest } = options ?? {};
+  const mergedHeaders = new Headers(headers);
+  if (!mergedHeaders.has("Content-Type")) {
+    mergedHeaders.set("Content-Type", "application/json");
+  }
   const res = await fetch(`${baseUrl}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
+    ...rest,
+    headers: mergedHeaders,
   });
   const text = await res.text();
   return {
     status: res.status,
+    headers: res.headers,
     data: text ? JSON.parse(text) : null,
   };
 }
@@ -153,6 +94,54 @@ describe("GET /health", () => {
     const { status, data } = await api("/health");
     expect(status).toBe(200);
     expect(data.status).toBe("ok");
+  });
+});
+
+describe("local API origin policy", () => {
+  test("allows extension origins and echoes the origin", async () => {
+    const origin = "chrome-extension://abcdefghijklmnop";
+    const { status, headers } = await api("/health", {
+      headers: { Origin: origin },
+    });
+
+    expect(status).toBe(200);
+    expect(headers.get("access-control-allow-origin")).toBe(origin);
+    expect(headers.get("vary")).toContain("Origin");
+  });
+
+  test("allows extension preflight requests", async () => {
+    const origin = "chrome-extension://abcdefghijklmnop";
+    const { status, data, headers } = await api("/task-runs", {
+      method: "OPTIONS",
+      headers: { Origin: origin },
+    });
+
+    expect(status).toBe(204);
+    expect(data).toBeNull();
+    expect(headers.get("access-control-allow-origin")).toBe(origin);
+  });
+
+  test("rejects arbitrary browser origins", async () => {
+    const { status, data, headers } = await api("/profile/resolve", {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+      body: JSON.stringify({ fields: ["identity.first_name"] }),
+    });
+
+    expect(status).toBe(403);
+    expect(data.error).toBe("Origin not allowed");
+    expect(headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  test("rejects arbitrary browser preflight requests", async () => {
+    const { status, data, headers } = await api("/task-runs", {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example" },
+    });
+
+    expect(status).toBe(403);
+    expect(data.error).toBe("Origin not allowed");
+    expect(headers.get("access-control-allow-origin")).toBeNull();
   });
 });
 

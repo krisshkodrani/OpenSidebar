@@ -5,6 +5,23 @@ All notable changes to OpenSidebar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Synchronized the extension manifest version with the workspace package version for the OSS BYOK preview candidate.
+- Updated the extension manifest description to describe multi-provider BYOK instead of OpenRouter-only setup.
+- Documented the current permission, browser-data, and local-development API security posture.
+- Added a public known-limitations page for the OSS BYOK preview.
+
+### Fixed
+
+- Hardened local backend/log-server origin handling so arbitrary browser origins are rejected.
+- Restricted the E2E overlay bridge with per-mount bridge tokens, storage limits, and credential-key filtering.
+- Reclassified cookies and browser history tools as high-risk actions.
+- Blocked `execute_js` from reading page cookies/storage or making page-context network requests.
+- Removed the unused vulnerable `uuid` dependency.
+
 ## [0.9.1 Release Checkpoint] - 2026-05-07
 
 ### Changed

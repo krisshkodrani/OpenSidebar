@@ -1,7 +1,7 @@
 /**
  * Centralized settings storage — splits sensitive credentials from general settings.
  *
- * API key → chrome.storage.session (service worker only, not accessible to content scripts)
+ * API keys → chrome.storage.local (persistent; never synced)
  * All other settings → chrome.storage.sync (cross-device sync)
  */
 
@@ -161,7 +161,8 @@ export async function saveSettings(
 }
 
 /**
- * Load settings: merge API key from session storage with settings from sync storage.
+ * Load settings: merge API keys from local storage with settings from sync storage.
+ * The legacy session key is read only for one-time migration.
  */
 export async function loadSettings(
   storage: SettingsStorageBackend = chromeSettingsStorage,

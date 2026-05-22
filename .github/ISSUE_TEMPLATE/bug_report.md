@@ -20,6 +20,9 @@ Steps to reproduce the behavior:
 **Agent task prompt**
 Paste the exact task prompt if it is safe to share. Redact sensitive page data.
 
+**Page or site context**
+Share the URL shape or site type, not private URLs or account-specific data. Example: `https://example.com/settings/...` or "internal CRM form".
+
 **Expected behavior**
 A clear description of what you expected to happen.
 
@@ -29,11 +32,12 @@ If applicable, add screenshots to help explain your problem.
 **Environment:**
 
 - OS: [e.g. macOS, Windows, Linux]
-- Browser: [e.g. Chrome, Brave, Edge]
-- Version: [e.g. 0.1.0]
+- Browser and version: [e.g. Chrome 126, Brave 1.67, Edge 126]
+- OpenSidebar version or commit: [e.g. 0.9.1 or commit SHA]
 - Provider mode: [e.g. fireworks, openrouter, moonshot, xiaomi]
 - Model(s): [if customized]
-- Trace/report available: [yes/no; redact sensitive page data before attaching]
+- Trace/report available: [yes/no]
+- Sensitive data redacted before attaching diagnostics: [yes/no/not attaching diagnostics]
 
 **Additional context**
 Add any other context about the problem here.

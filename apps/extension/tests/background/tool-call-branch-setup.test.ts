@@ -187,15 +187,15 @@ describe("prepareToolCallBranch", () => {
   });
 
   test("uses the original allowed batch shape for workflow redirect mode", () => {
-    const cookies = makeToolCall("cookies", ToolName.GET_COOKIES);
-    const history = makeToolCall("history", ToolName.SEARCH_HISTORY, {
+    const hidden = makeToolCall("hidden", ToolName.INSPECT_HIDDEN);
+    const table = makeToolCall("table", ToolName.INSPECT_TABLE, {
       query: "example",
     });
     const rewriteListDetailWorkflowToolCall = vi.fn((toolCall: ToolCall) => {
-      return toolCall.id === "history";
+      return toolCall.id === "table";
     });
     const deps = makeDeps({
-      response: makeResponse([cookies, history], "I will inspect stored data."),
+      response: makeResponse([hidden, table], "I will inspect page details."),
       consecutiveBlindToolTurns: 4,
       rewriteListDetailWorkflowToolCall,
     });
@@ -209,24 +209,24 @@ describe("prepareToolCallBranch", () => {
     });
     expect(rewriteListDetailWorkflowToolCall).toHaveBeenNthCalledWith(
       1,
-      cookies,
+      hidden,
       "parallel",
     );
     expect(rewriteListDetailWorkflowToolCall).toHaveBeenNthCalledWith(
       2,
-      history,
+      table,
       "parallel",
     );
-    expect(deps.response.tool_calls).toEqual([history]);
+    expect(deps.response.tool_calls).toEqual([table]);
     expect(deps.messages).toEqual([
       {
         role: "assistant",
-        content: "I will inspect stored data.",
+        content: "I will inspect page details.",
         tool_calls: [
           {
-            id: "history",
+            id: "table",
             type: "function",
-            function: history.function,
+            function: table.function,
           },
         ],
       },
@@ -234,12 +234,12 @@ describe("prepareToolCallBranch", () => {
   });
 
   test("keeps allowed read-only batches parallelizable when no redirect applies", () => {
-    const cookies = makeToolCall("cookies", ToolName.GET_COOKIES);
-    const history = makeToolCall("history", ToolName.SEARCH_HISTORY, {
+    const hidden = makeToolCall("hidden", ToolName.INSPECT_HIDDEN);
+    const table = makeToolCall("table", ToolName.INSPECT_TABLE, {
       query: "example",
     });
     const deps = makeDeps({
-      response: makeResponse([cookies, history], "I will inspect stored data."),
+      response: makeResponse([hidden, table], "I will inspect page details."),
     });
 
     const result = prepareToolCallBranch(deps);
@@ -249,21 +249,21 @@ describe("prepareToolCallBranch", () => {
       allCallsBlocked: false,
       canParallelize: true,
     });
-    expect(deps.response.tool_calls).toEqual([cookies, history]);
+    expect(deps.response.tool_calls).toEqual([hidden, table]);
     expect(deps.messages).toEqual([
       {
         role: "assistant",
-        content: "I will inspect stored data.",
+        content: "I will inspect page details.",
         tool_calls: [
           {
-            id: "cookies",
+            id: "hidden",
             type: "function",
-            function: cookies.function,
+            function: hidden.function,
           },
           {
-            id: "history",
+            id: "table",
             type: "function",
-            function: history.function,
+            function: table.function,
           },
         ],
       },

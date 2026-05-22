@@ -26,7 +26,7 @@ All AI actions are classified by risk level:
 
 - **Reading pages** - `read_page`, `read_element`, `read_pdf`
 - **Scrolling** - `scroll_page`
-- **Inspection** - `hover_element`, `find_element`, `inspect_hidden`, `list_tabs`, `get_cookies`, `search_history`, `get_bookmarks`
+- **Inspection** - `hover_element`, `find_element`, `inspect_hidden`, `list_tabs`, `get_bookmarks`
 - **Utility** - `wait`, `escalate`, `transcribe_audio`, `copy_to_clipboard`
 
 ### MEDIUM RISK (State Changes)
@@ -40,7 +40,8 @@ All AI actions are classified by risk level:
 
 - **Navigation** - `navigate`, `go_back`, `go_forward`
 - **Tab/Window Management** - `create_tab`, `close_tab`, `create_window`
-- **System** - `execute_js` (Arbitrary Code Execution), `set_cookie`, `delete_cookie`
+- **Browser data** - `get_cookies`, `search_history`, `set_cookie`, `delete_cookie`
+- **System** - `execute_js` (page-context JavaScript with storage, cookie, navigation, network, and injection guards)
 
 ### Risk Source of Truth
 
@@ -86,7 +87,7 @@ function sanitizeUrl(url: string): Result<string> {
 
 ### Secure Storage
 
-- **Chrome extension storage** - API keys are stored in Chrome extension storage
+- **Chrome local extension storage** - API keys are stored in `chrome.storage.local` for persistence and are never synced
 - **No page storage** - Keys are not stored in website `localStorage`
 - **Permission boundaries** - Keys only accessible to extension
 
@@ -150,6 +151,12 @@ OpenSidebar supports configurable confirmation behavior:
 - **No file system access** - Extension cannot read local files
 - **Clean uninstall** - Data removed on uninstall (optional)
 
+### Permission Model
+
+- **Broad host access** - The extension needs page access on user-selected sites to observe, click, type, and capture task context
+- **Browser data permissions** - Cookies, history, downloads, screenshots, and tab capture are treated as sensitive capabilities and surfaced as high-risk or user-visible actions where applicable
+- **Local development APIs** - Local trace/backend servers only allow extension origins and local viewer origins; arbitrary browser origins are rejected
+
 ## Monitoring & Logging
 
 ### Local Logging
@@ -195,7 +202,7 @@ OpenSidebar supports configurable confirmation behavior:
 ### Browser Extension Standards
 
 - **Manifest V3** - Follows latest Chrome extension standards
-- **Permission minimization** - Only requests necessary permissions
+- **Permission rationale** - Manifest permissions are documented and tied to browser-agent capabilities
 - **Content Security Policy** - Strict CSP for resource loading
 - **Web Vitals** - Optimized for performance and security
 
