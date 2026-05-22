@@ -7,12 +7,12 @@
 <p align="center">
   <a href="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml"><img src="https://github.com/krisshkodrani/OpenSidebar/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
-  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node.js" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D22-brightgreen" alt="Node.js" /></a>
 </p>
 
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
-  Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows autonomously.<br />
+  Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows with configurable safety gates.<br />
   Bring your own provider key. No subscription, no telemetry, and an optional local backend for profile data and durable task state.
 </p>
 
@@ -30,7 +30,7 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 
 **Intelligence** - Two-tier model architecture with automatic escalation, page perception, and recovery when the executor gets stuck.
 
-**Orchestration** - Planner, executor, and verifier lanes for multi-step tasks, with plan confirmation and approval gates.
+**Orchestration** - Planner, executor, and verifier lanes for multi-step tasks, with configurable plan confirmation and approval gates.
 
 **Observability** - Full-fidelity traces, structured logs, and a built-in trace viewer.
 
@@ -40,7 +40,7 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - A supported provider API key
 
 ### Install
@@ -64,6 +64,8 @@ pnpm run dist
 1. Open the side panel.
 2. Open **Settings**.
 3. Add the provider key you want to use.
+
+Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See the [OSS BYOK Launch Roadmap](./docs/oss-byok-launch-roadmap.md) for the provider matrix and launch readiness gates.
 
 ### Main Commands
 
@@ -184,6 +186,7 @@ pnpm run traces:compact              # index, then delete old raw files
 - [WorkArena Roadmap](./docs/evals/workarena-roadmap.md)
 - [WorkArena Setup](./docs/evals/workarena.md)
 - [WorkArena Major Full Run Checklist](./docs/evals/workarena-full-run-checklist.md)
+- [OSS BYOK Launch Roadmap](./docs/oss-byok-launch-roadmap.md)
 - [Right Level Of Abstraction](./docs/guides/right-level-of-abstraction.md)
 - [WorkArena Generalized Harness Philosophy](./docs/guides/workarena-generalized-harness-philosophy.md)
 - [Personal Profile](./docs/personal-profile.md)
@@ -193,7 +196,7 @@ pnpm run traces:compact              # index, then delete old raw files
 
 - API keys are stored locally and only sent to configured providers.
 - No telemetry or analytics.
-- High-risk tools can require explicit approval.
+- High-risk tools can require explicit approval depending on your interaction settings.
 - See [SECURITY.md](./SECURITY.md) and [PRIVACY_POLICY.md](./PRIVACY_POLICY.md).
 
 ## License

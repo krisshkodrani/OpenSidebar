@@ -4,7 +4,7 @@ Get OpenSidebar running in a few minutes.
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - Google Chrome
 - A supported provider API key
 
@@ -31,7 +31,17 @@ pnpm run dist
 3. Add the provider key you want to use
 4. Close Settings
 
-Supported agent provider keys include Fireworks AI, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
+Supported agent provider modes include Fireworks AI, OpenRouter, Moonshot/Kimi, Xiaomi MiMo, and advanced mixed-provider modes such as Fireworks+DeepSeek. For Xiaomi MiMo E2E runs, set `E2E_PROVIDER=xiaomi` and provide `XIAOMI_API_KEY` in your shell or repo-local `.env`.
+
+| Provider mode | Required key(s) | Notes |
+| --- | --- | --- |
+| Fireworks | `FIREWORKS_API_KEY` or Fireworks key in Settings | Recommended default |
+| OpenRouter | `OPENROUTER_API_KEY` or OpenRouter key in Settings | Public BYOK option |
+| Moonshot/Kimi | `KIMI_API_KEY` or Kimi key in Settings | Direct Moonshot provider mode |
+| Xiaomi MiMo | `XIAOMI_API_KEY` or Xiaomi key in Settings | Agent traffic only |
+| Mixed advanced modes | Fireworks/OpenRouter/OpenAI-compatible key plus DeepSeek or Groq key | For advanced provider routing |
+
+Provider pricing, quotas, data handling, and rate limits are governed by the provider you configure.
 
 ## First Task
 

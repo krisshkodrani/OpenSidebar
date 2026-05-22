@@ -56,12 +56,24 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Confirm `dist/manifest.json` has the expected version.
 - Spot-check the loaded extension from `dist/` in Chrome.
 
-## 5. Publish
+## 5. GitHub OSS BYOK Gate
+
+For a broad GitHub-first BYOK release, also confirm:
+
+- `package.json`, `apps/extension/manifest.json`, `CHANGELOG.md`, and release notes agree on the release version.
+- README and Getting Started install steps work from a fresh clone with Node.js 22+.
+- The BYOK provider matrix documents required keys and supported provider modes.
+- Privacy, security, permissions, and safety-gate claims are consistent across public docs.
+- A recommended provider completes one safe first-task smoke from the built `dist/` extension.
+- Known limitations are reviewed and linked from the release notes.
+- The release artifact zip and checksum are attached to the GitHub release.
+
+## 6. Publish
 
 - Commit the release candidate changes
 - Tag the release commit
 - Attach release notes derived from `CHANGELOG.md`
-- Upload or submit the built `dist/` package to the intended distribution channel
+- Upload the built `dist/` package or release zip to the intended distribution channel
 
 ## Current Known Caveat
 
