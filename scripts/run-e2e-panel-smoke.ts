@@ -85,21 +85,80 @@ async function main() {
     }, fireworksKey);
 
     await ensureE2EPanel(ctx, tabId, workspaceId);
-    await page.bringToFront();
 
-    await page.waitForFunction(
-      () => {
-        const host = document.getElementById("opensidebar-harness-host");
-        const text = host?.shadowRoot?.textContent ?? "";
-        return (
-          text.includes("Hi! What can I help with?") ||
-          text.includes("Open Settings")
-        );
-      },
-      { timeout: 15_000 },
-    );
+    const detachedPanel = ctx.detachedPanelPage;
+    if (detachedPanel) {
+      await detachedPanel.waitForFunction(
+        () => {
+          const text = document.body?.textContent ?? "";
+          return (
+            text.includes("Hi! What can I help with?") ||
+            text.includes("Open Settings")
+          );
+        },
+        { timeout: 15_000 },
+      );
+    } else {
+      await page.bringToFront();
+      await page.waitForFunction(
+        () => {
+          const host = document.getElementById("opensidebar-harness-host");
+          const text = host?.shadowRoot?.textContent ?? "";
+          return (
+            text.includes("Hi! What can I help with?") ||
+            text.includes("Open Settings")
+          );
+        },
+        { timeout: 15_000 },
+      );
+    }
 
-    const probe = await page.evaluate(() => {
+    const probe = detachedPanel
+      ? await detachedPanel.evaluate(() => {
+          const text = document.body?.textContent ?? "";
+          const logos = Array.from(
+            document.querySelectorAll('img[alt="OpenSidebar logo"]'),
+          ).map((logo) => {
+            const img = logo as HTMLImageElement;
+            const logoRect = img.getBoundingClientRect();
+            return {
+              src: img.currentSrc || img.src,
+              complete: img.complete,
+              naturalWidth: img.naturalWidth,
+              naturalHeight: img.naturalHeight,
+              width: Math.round(logoRect.width),
+              height: Math.round(logoRect.height),
+            };
+          });
+          return {
+            mode: "detached",
+            mounted: document.documentElement.hasAttribute(
+              "data-opensidebar-ready",
+            ),
+            dataGlass: null,
+            rect: {
+              width: Math.round(window.innerWidth),
+              height: Math.round(window.innerHeight),
+              left: 0,
+              top: 0,
+            },
+            display: "block",
+            visibility: "visible",
+            opacity: "1",
+            showsOpenSettings: text.includes("Open Settings"),
+            showsReadyPrompt: text.includes("Hi! What can I help with?"),
+            logoLoaded: logos.some(
+              (logo) => logo.complete && logo.naturalWidth > 0,
+            ),
+            logos,
+            configScriptUrl: null,
+            configExtensionBaseUrl: null,
+            runtimeLogoUrl: null,
+            title: document.title,
+            url: location.href,
+          };
+        })
+      : await page.evaluate(() => {
       const host = document.getElementById("opensidebar-harness-host");
       const shadowRoot = host?.shadowRoot ?? null;
       const rawConfig = document.getElementById("opensidebar-overlay-config")
@@ -157,10 +216,10 @@ async function main() {
 
     console.log(`[panel-smoke] ${JSON.stringify(probe)}`);
     if (!probe.mounted || probe.display === "none" || probe.visibility === "hidden") {
-      throw new Error("Real sidepanel overlay did not mount visibly.");
+      throw new Error("Real sidepanel did not mount visibly.");
     }
     if (probe.showsOpenSettings || !probe.showsReadyPrompt) {
-      throw new Error("Real sidepanel overlay did not load Fireworks settings.");
+      throw new Error("Real sidepanel did not load Fireworks settings.");
     }
     if (!probe.logoLoaded) {
       throw new Error("OpenSidebar logo did not load in the overlay.");
