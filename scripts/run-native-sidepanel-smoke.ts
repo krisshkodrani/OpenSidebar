@@ -134,7 +134,7 @@ Chrome toolbar click to open the native side panel.
 If the icon is not pinned, open Chrome's Extensions menu and click OpenSidebar.
 
 Usage:
-  npm run release:smoke:native-panel -- --timeoutMs=120000
+  corepack pnpm run release:smoke:native-panel --timeoutMs=120000
 
 Options:
   --route=<fixture route>      Fixture route to open. Default: login
