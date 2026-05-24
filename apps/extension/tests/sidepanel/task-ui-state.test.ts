@@ -49,6 +49,7 @@ describe("deriveTaskUiState", () => {
     expect(state.hasTerminalCompletion).toBe(true);
     expect(state.showPrimaryRail).toBe(false);
     expect(state.showPlanStrip).toBe(false);
+    expect(state.showPageActivityHud).toBe(false);
   });
 
   test("keeps user-stopped completions separate from failures", () => {
@@ -88,6 +89,7 @@ describe("deriveTaskUiState", () => {
 
     expect(state.phase).toBe("awaiting_user");
     expect(state.showPrimaryRail).toBe(true);
+    expect(state.showPageActivityHud).toBe(false);
     expect(state.rail.primaryLabel).toBe("The agent needs more information");
   });
 
@@ -170,6 +172,56 @@ describe("deriveTaskUiState", () => {
 
     expect(state.rail.primaryLabel).toBe("Planning next step");
     expect(state.rail.secondaryLabel).toBe("");
+  });
+
+
+  test("shows the page HUD only for active non-interruption work", () => {
+    expect(
+      deriveTaskUiState(
+        baseState({ agentStatus: AgentStatus.ACTING, isAgentRunning: true }),
+      ).showPageActivityHud,
+    ).toBe(true);
+    expect(deriveTaskUiState(baseState({ isPlanning: true })).showPageActivityHud).toBe(
+      true,
+    );
+    expect(
+      deriveTaskUiState(
+        baseState({ agentStatus: AgentStatus.PAUSED, isAgentRunning: true }),
+      ).showPageActivityHud,
+    ).toBe(false);
+    expect(
+      deriveTaskUiState(
+        baseState({ turnProgress: { turn: 3, maxTurns: 8 } }),
+      ).showPageActivityHud,
+    ).toBe(false);
+    expect(
+      deriveTaskUiState(
+        baseState({
+          agentStatus: AgentStatus.ACTING,
+          isAgentRunning: true,
+          stagnationState: {
+            signal: "escalate",
+            stagnantTurns: 4,
+            url: "https://example.com",
+            receivedAt: 2,
+          },
+        }),
+      ).showPageActivityHud,
+    ).toBe(false);
+    expect(
+      deriveTaskUiState(
+        baseState({
+          agentStatus: AgentStatus.THINKING,
+          isAgentRunning: true,
+          pendingPlanConfirmation: {
+            confirmationId: "plan-1",
+            nodes: [{ description: "Step", successCriteria: "Done" }],
+            query: "Do it",
+            requestedAt: 1,
+          },
+        }),
+      ).showPageActivityHud,
+    ).toBe(false);
   });
 
   test("shows plan strip only for active planning states", () => {

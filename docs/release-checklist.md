@@ -2,6 +2,32 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
+## Current RC Status - 2026-05-24
+
+Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
+
+| Gate | Status | Evidence / next action |
+| --- | --- | --- |
+| Working tree checkpoint | Pending | Current tree contains intentional Doing Now UI and completion-verifier hardening changes that still need a final commit. |
+| BYOK setup docs | Pass | README, Getting Started, Privacy Policy, Security Policy, and OSS BYOK Launch Roadmap document local keys, provider traffic, and supported provider modes. |
+| Runtime default docs | Pass | Fireworks is the default provider mode; default executor/planner model is `accounts/fireworks/routers/kimi-k2p6-turbo`. |
+| Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` both declare `0.9.1`. |
+| Permission/privacy alignment | Pass | Broad host access plus tabs, cookies, history, downloads, and tab capture are documented in `PRIVACY_POLICY.md`, `SECURITY.md`, `docs/features/security.md`, and `docs/known-limitations.md`. |
+| Focused unit regression | Pass | `npx vitest run apps\extension\tests\background\completion-kernel.form-fill.test.ts` passed: 25 tests. |
+| Focused UI/overlay regression | Pass | Sidepanel/overlay Doing Now HUD test group passed before this checklist update. |
+| Production build / dist validation / typecheck | Pass | `npm run build`, `npm run ci:dist`, and `npm run typecheck` passed after the Doing Now UI and completion-verifier changes. |
+| Focused real-browser smoke | Pass with caveat | Local mock login E2E passed with `E2E_LOCAL_MOCK_PROVIDER=1`; it required a retry after first-run Done rejections while async login state settled. See `.artifacts/e2e/e2e-report-2026-05-24.md`. |
+| Full release verification | Pending | Run `corepack pnpm run release:verify` on the release-candidate commit. |
+| Staged E2E release gate | Pending | Run at least `pnpm run test:e2e:smoke`; broaden to interactions/runtime if release changes touch runtime behavior. |
+| Native side-panel smoke | Pending | Run `corepack pnpm run release:smoke:native-panel` against `dist/`, then `corepack pnpm run release:preflight -- --require-native-smoke`. |
+| Release package/preflight | Pending | After commit, run `corepack pnpm run release:package` and strict `corepack pnpm run release:preflight`. |
+
+Open cleanup before calling the RC broad-release ready:
+
+- Make the local mock login smoke a clean first-run pass instead of a recovered retry pass, or explicitly accept it as a preview caveat.
+- Commit the Doing Now UI and completion-verifier changes after final diff review.
+- Run the full release verification and staged E2E gates on the exact release-candidate commit.
+
 ## 1. Freeze The Release Candidate
 
 - Ensure the working tree only contains intended release changes.

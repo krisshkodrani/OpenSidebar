@@ -56,6 +56,7 @@ export interface TaskUiState {
   phase: TaskUiPhase;
   hasTerminalCompletion: boolean;
   showAmbientActivity: boolean;
+  showPageActivityHud: boolean;
   showPlanStrip: boolean;
   showPrimaryRail: boolean;
   showStalledRecovery: boolean;
@@ -226,10 +227,20 @@ export function deriveTaskUiState(input: TaskUiStateInput): TaskUiState {
       !!input.taskProgress ||
       !!input.turnProgress);
 
+  const phase = resolvePhase(input);
+  const showPageActivityHud =
+    input.isPlanning ||
+    (input.isAgentRunning &&
+      phase === "running" &&
+      input.agentStatus !== AgentStatus.PAUSED &&
+      !input.stagnationState &&
+      !input.pendingPlanConfirmation);
+
   return {
-    phase: resolvePhase(input),
+    phase,
     hasTerminalCompletion,
     showAmbientActivity: input.isAgentRunning,
+    showPageActivityHud,
     showPlanStrip: Boolean(
       input.pendingPlanConfirmation || input.taskProgress || input.isPlanning,
     ),
