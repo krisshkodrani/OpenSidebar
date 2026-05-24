@@ -61,7 +61,10 @@ export function mountOpenSidebarOverlay(
   root.render(
     <React.StrictMode>
       <UiPortalProvider container={overlayHost.portalElement}>
-        <App themeRoot={overlayHost.themeRoot} />
+        <App
+          themeRoot={overlayHost.themeRoot}
+          activityHudRoot={overlayHost.activityHudElement}
+        />
       </UiPortalProvider>
     </React.StrictMode>,
   );

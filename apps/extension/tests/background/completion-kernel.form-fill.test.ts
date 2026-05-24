@@ -374,6 +374,138 @@ describe("completion kernel form-fill", () => {
     expect(buildCompletionRecoveryHint(decision)).toContain("Submit");
   });
 
+
+  test("accepts login form completion from authenticated dashboard state", () => {
+    const initial = formSnapshot({
+      title: "Sign In",
+      url: "https://example.test/login",
+      visibleContent: "Sign In Email Password Remember me Log In",
+      pageContent: "Sign In Email Password Remember me Log In",
+      elements: [
+        textField(201, "Email Address", "", "email"),
+        textField(202, "Password", "", "password"),
+        checkboxField(203, "Remember me", false),
+        buttonElement(204, "Log In"),
+      ],
+    });
+    const dashboard = formSnapshot({
+      title: "Admin Dashboard",
+      url: "https://example.test/dashboard",
+      visibleContent: "Admin Dashboard",
+      pageContent: "Admin Dashboard",
+      elements: [buttonElement(301, "Log Out")],
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Log in with email admin@example.com and password secret123. Check the Remember me box too.",
+      snapshot: initial,
+    });
+    const evidence = [
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.TYPE_TEXT,
+        args: { id: 201, text: "admin@example.com" },
+        result: "Typed text.",
+        preActionSnapshot: initial,
+        turn: 1,
+      }),
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.TYPE_TEXT,
+        args: { id: 202, text: "secret123" },
+        result: "Typed text.",
+        preActionSnapshot: initial,
+        turn: 1,
+      }),
+      ...deriveCompletionEvidenceFromToolOutcome({
+        toolName: ToolName.SET_CHECKBOX,
+        args: { id: 203, checked: true },
+        result: "Set checkbox.",
+        preActionSnapshot: initial,
+        turn: 1,
+      }),
+      ...deriveCompletionEvidenceFromSnapshot(dashboard, 2),
+    ];
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: dashboard,
+      candidateSource: "model_done",
+      summary: "Logged in as admin@example.com with Remember me checked.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "form_fill",
+      requiresSubmit: true,
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+
+  test("accepts authentication workflow completion from visible signed-in controls", () => {
+    const dashboard = formSnapshot({
+      title: "Admin Dashboard",
+      url: "https://example.test/dashboard",
+      visibleContent: "Admin Dashboard",
+      pageContent: "Admin Dashboard",
+      elements: [buttonElement(301, "Log Out")],
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(dashboard, 3);
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "submit",
+        targetLabel:
+          "Page or tool output shows the result needed to answer the user request.",
+      },
+      evidence,
+      snapshot: dashboard,
+      candidateSource: "model_done",
+      summary: "Logged in as admin@example.com with Remember me checked.",
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:submit",
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts authentication workflow completion when inferred action misses submit evidence", () => {
+    const dashboard = formSnapshot({
+      title: "Sign In",
+      url: "https://example.test/login",
+      visibleContent: "Welcome, Admin! You are logged in as admin@example.com",
+      pageContent: "Welcome, Admin! You are logged in as admin@example.com",
+      elements: [buttonElement(301, "Log Out")],
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(dashboard, 3);
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "start",
+        targetLabel:
+          "Page or tool output shows the result needed to answer the user request.",
+      },
+      evidence,
+      snapshot: dashboard,
+      candidateSource: "model_done",
+      summary: "Logged in as admin@example.com with Remember me checked.",
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "form:confirmation",
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
   test("does not require submit because decorated skill text mentions submit", () => {
     const snap = formSnapshot({
       title: "Modal & Overlay Test",

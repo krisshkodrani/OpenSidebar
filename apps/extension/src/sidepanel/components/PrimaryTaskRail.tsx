@@ -1,38 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Pause, Play, Square } from "lucide-react";
-import { AgentStatus, type SessionMetrics } from "../../types";
+import { AgentStatus } from "../../types";
 import { logger } from "../../utils";
 import { usefulProgressLabel } from "../progress-labels";
 import { uiRuntime } from "../runtime";
 import { useStore } from "../store";
+import { costLabel, formatTokens } from "../task-status-format";
 import { useTaskUiState, type TaskRailTone } from "../task-ui-state";
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function formatCost(cost: number): string {
-  if (cost === 0) return "$0";
-  if (cost >= 0.01) return `$${cost.toFixed(2)}`;
-  return `$${cost.toFixed(4)}`;
-}
-
-function costLabel(metrics: SessionMetrics): string {
-  const mode =
-    metrics.costMode ??
-    (metrics.totalCost > 0
-      ? (metrics.totalCostEstimated ?? 0) > 0 &&
-        (metrics.totalCostActual ?? 0) > 0
-        ? "mixed"
-        : (metrics.totalCostEstimated ?? 0) > 0
-          ? "estimated"
-          : "actual"
-      : "none");
-  const suffix = mode === "estimated" ? " est." : mode === "mixed" ? " ~" : "";
-  return `${formatCost(metrics.totalCost)}${suffix}`;
-}
 
 function fallbackPrimaryLabel(status: AgentStatus, detail: string): string {
   const detailLabel = usefulProgressLabel(detail);
@@ -196,25 +170,25 @@ export function PrimaryTaskRail() {
     <section
       aria-live="polite"
       aria-atomic="true"
-      className="mx-4 mt-2 max-h-[30vh] overflow-hidden rounded-xl border border-warm-200/80 bg-warm-50/90 px-3 py-2.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/65"
+      className="mx-3 mt-2 overflow-hidden rounded-lg border border-warm-200/80 bg-white/72 px-2.5 py-1.5 shadow-sm dark:border-warm-700/60 dark:bg-warm-900/58"
     >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 shrink-0">
+      <div className="flex min-h-8 items-center gap-2">
+        <div className="shrink-0">
           {rail.tone === "stalled" ? (
             <AlertTriangle
-              size={15}
+              size={14}
               className="text-amber-500"
               aria-label="Agent stalled"
             />
           ) : rail.showSpinner ? (
             <Loader2
-              size={15}
+              size={14}
               className="animate-spin text-primary-500"
               aria-label="Agent running"
             />
           ) : (
             <span
-              className={`mt-0.5 inline-flex h-2.5 w-2.5 rounded-full ${statusDotClass(
+              className={`inline-flex h-2 w-2 rounded-full ${statusDotClass(
                 rail.tone,
               )}`}
               role="status"
@@ -224,43 +198,44 @@ export function PrimaryTaskRail() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-warm-500 dark:text-warm-400">
-            {rail.eyebrow}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0 text-[10px] font-semibold uppercase text-warm-400 dark:text-warm-500">
+              {rail.eyebrow === "Now doing" ? "Doing" : "Latest"}
+            </span>
+            <span className="min-w-0 truncate text-xs font-medium leading-5 text-warm-800 dark:text-warm-100">
+              {rail.primaryLabel}
+            </span>
           </div>
-          <div className="mt-0.5 max-h-[16vh] overflow-y-auto pr-1 text-sm font-medium leading-snug text-warm-800 dark:text-warm-100">
-            {rail.primaryLabel}
-          </div>
-          {rail.secondaryLabel ? (
-            <div className="mt-0.5 text-xs leading-relaxed text-warm-500 dark:text-warm-400">
-              {rail.secondaryLabel}
-            </div>
-          ) : null}
-
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
             {rail.stopRequested ? (
-              <span className="rounded-full border border-red-300/70 bg-red-50/80 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+              <span className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-[10px] font-medium text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
                 Stop requested
               </span>
             ) : null}
             {pauseRequested ? (
-              <span className="rounded-full border border-yellow-300/70 bg-yellow-50/80 px-2 py-0.5 text-[10px] font-medium text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/30 dark:text-yellow-300">
+              <span className="rounded-md border border-yellow-300/70 bg-yellow-50/80 px-1.5 py-0.5 text-[10px] font-medium text-yellow-700 dark:border-yellow-900 dark:bg-yellow-950/30 dark:text-yellow-300">
                 Pause requested
               </span>
             ) : null}
+            {rail.secondaryLabel ? (
+              <span className="max-w-full truncate text-[10px] text-warm-500 dark:text-warm-400">
+                {rail.secondaryLabel}
+              </span>
+            ) : null}
             {rail.turnProgress?.provider ? (
-              <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] font-medium text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
                 {rail.turnProgress.provider}
               </span>
             ) : null}
             {rail.turnProgress ? (
-              <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
-                {rail.turnProgress.turn}/{rail.turnProgress.maxTurns} turns
+              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+                {rail.turnProgress.turn}/{rail.turnProgress.maxTurns}
               </span>
             ) : null}
             {showSessionMetrics &&
             rail.sessionMetrics &&
             rail.sessionMetrics.totalTokens > 0 ? (
-              <span className="rounded-full border border-warm-200/90 bg-white/70 px-2 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
+              <span className="rounded-md border border-warm-200/90 bg-white/70 px-1.5 py-0.5 text-[10px] tabular-nums text-warm-500 dark:border-warm-700 dark:bg-warm-900/50 dark:text-warm-400">
                 {formatTokens(rail.sessionMetrics.totalTokens)}
                 {rail.sessionMetrics.totalCost > 0
                   ? ` / ${costLabel(rail.sessionMetrics)}`
@@ -270,36 +245,36 @@ export function PrimaryTaskRail() {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1">
           {rail.canPause ? (
             <button
               onClick={() => void handlePause()}
               disabled={pauseRequested}
-              className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 disabled:cursor-wait disabled:opacity-70 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 bg-white/80 text-warm-600 transition-colors hover:bg-warm-100 disabled:cursor-wait disabled:opacity-70 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
               aria-label="Pause agent"
+              title="Pause agent"
             >
-              <Pause size={12} />
-              {pauseRequested ? "Pause requested" : "Pause"}
+              <Pause size={13} />
             </button>
           ) : null}
           {rail.showResume ? (
             <button
               onClick={() => void handleResume()}
-              className="inline-flex items-center gap-1 rounded-lg border border-warm-200 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 bg-white/80 text-warm-600 transition-colors hover:bg-warm-100 dark:border-warm-700 dark:bg-warm-900/60 dark:text-warm-300 dark:hover:bg-warm-800"
               aria-label="Resume agent"
+              title="Resume agent"
             >
-              <Play size={12} />
-              Resume
+              <Play size={13} />
             </button>
           ) : null}
           {rail.showStop ? (
             <button
               onClick={() => void handleStop()}
-              className="inline-flex items-center gap-1 rounded-lg bg-red-500 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-red-500 text-white transition-colors hover:bg-red-600"
               aria-label="Stop agent and take control"
+              title="Take control"
             >
               <Square size={11} fill="currentColor" />
-              Take control
             </button>
           ) : null}
         </div>

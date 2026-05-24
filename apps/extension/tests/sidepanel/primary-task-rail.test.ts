@@ -157,7 +157,7 @@ describe("PrimaryTaskRail label precedence", () => {
       const button = container.querySelector(
         'button[aria-label="Stop agent and take control"]',
       );
-      expect(button?.textContent).toContain("Take control");
+      expect(button?.getAttribute("title")).toBe("Take control");
     } finally {
       await act(async () => {
         root.unmount();
@@ -166,7 +166,7 @@ describe("PrimaryTaskRail label precedence", () => {
     }
   });
 
-  test("caps long primary labels inside a scrollable rail region", async () => {
+  test("keeps long primary labels truncated inside the compact rail", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -211,13 +211,12 @@ describe("PrimaryTaskRail label precedence", () => {
       });
 
       const rail = container.querySelector("section");
-      const label = [...container.querySelectorAll("div")].find(
+      const label = [...container.querySelectorAll("span")].find(
         (element) => element.textContent === expectedLabel,
       );
       expect(expectedLabel).toMatch(/\.\.\.$/);
-      expect(rail?.className).toContain("max-h-[30vh]");
-      expect(label?.className).toContain("max-h-[16vh]");
-      expect(label?.className).toContain("overflow-y-auto");
+      expect(rail?.className).toContain("rounded-lg");
+      expect(label?.className).toContain("truncate");
     } finally {
       await act(async () => {
         root.unmount();

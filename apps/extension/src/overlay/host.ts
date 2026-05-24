@@ -2,6 +2,7 @@ export const OPENSIDEBAR_OVERLAY_HOST_ID = "opensidebar-harness-host";
 
 const OVERLAY_ROOT_ID = "root";
 const OVERLAY_PORTAL_ID = "opensidebar-overlay-portal";
+const OVERLAY_ACTIVITY_HUD_ID = "opensidebar-overlay-activity-hud";
 const TITLEBAR_HEIGHT = 34;
 const MIN_VIEWPORT_GUTTER = 16;
 const INITIAL_HEIGHT_VIEWPORT_RATIO = 0.95;
@@ -113,6 +114,19 @@ const OVERLAY_FRAME_CSS = `
   z-index: 1;
 }
 
+#${OVERLAY_ACTIVITY_HUD_ID} {
+  position: fixed;
+  left: 50vw;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
 :host([data-minimized="true"]) .osb-overlay-body {
   display: none;
 }
@@ -123,6 +137,7 @@ export interface OpenSidebarOverlayHost {
   shadowRoot: ShadowRoot;
   mountElement: HTMLElement;
   portalElement: HTMLElement;
+  activityHudElement: HTMLElement;
   themeRoot: HTMLElement;
   dispose(): void;
 }
@@ -189,10 +204,14 @@ function existingOverlayHost(host: HTMLElement): OpenSidebarOverlayHost | null {
   const shadowRoot = host.shadowRoot;
   const mountElement = shadowRoot?.getElementById(OVERLAY_ROOT_ID);
   const portalElement = shadowRoot?.getElementById(OVERLAY_PORTAL_ID);
+  const activityHudElement = shadowRoot?.getElementById(
+    OVERLAY_ACTIVITY_HUD_ID,
+  );
   if (
     !shadowRoot ||
     !(mountElement instanceof HTMLElement) ||
-    !(portalElement instanceof HTMLElement)
+    !(portalElement instanceof HTMLElement) ||
+    !(activityHudElement instanceof HTMLElement)
   ) {
     return null;
   }
@@ -201,6 +220,7 @@ function existingOverlayHost(host: HTMLElement): OpenSidebarOverlayHost | null {
     shadowRoot,
     mountElement,
     portalElement,
+    activityHudElement,
     themeRoot: mountElement,
     dispose() {
       host.remove();
@@ -259,6 +279,7 @@ export function createOpenSidebarOverlayHost(
       <div id="${OVERLAY_ROOT_ID}"></div>
       <div id="${OVERLAY_PORTAL_ID}" data-osb-overlay-portal></div>
     </div>
+    <div id="${OVERLAY_ACTIVITY_HUD_ID}" data-osb-overlay-activity-hud></div>
   `;
 
   shadowRoot.append(style, frame);
@@ -270,9 +291,14 @@ export function createOpenSidebarOverlayHost(
   const closeButton = shadowRoot.querySelector("[data-osb-close]");
   const mountElement = shadowRoot.getElementById(OVERLAY_ROOT_ID);
   const portalElement = shadowRoot.getElementById(OVERLAY_PORTAL_ID);
-  if (!(mountElement instanceof HTMLElement) || !(portalElement instanceof HTMLElement)) {
+  const activityHudElement = shadowRoot.getElementById(OVERLAY_ACTIVITY_HUD_ID);
+  if (
+    !(mountElement instanceof HTMLElement) ||
+    !(portalElement instanceof HTMLElement) ||
+    !(activityHudElement instanceof HTMLElement)
+  ) {
     host.remove();
-    throw new Error("OpenSidebar overlay mount or portal element was not created.");
+    throw new Error("OpenSidebar overlay mount, portal, or HUD element was not created.");
   }
 
   host.dataset.dock = "right";
@@ -398,6 +424,7 @@ export function createOpenSidebarOverlayHost(
     shadowRoot,
     mountElement,
     portalElement,
+    activityHudElement,
     themeRoot: mountElement,
     dispose,
   };

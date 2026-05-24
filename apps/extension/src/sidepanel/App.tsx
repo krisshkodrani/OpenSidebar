@@ -9,6 +9,7 @@
  */
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useStore } from "./store";
 import { uiRuntime } from "./runtime";
@@ -19,6 +20,7 @@ import {
   PersonalProfileDrawer,
   TaskStatusRegion,
   WebsiteSkillsDrawer,
+  TaskActivityHud,
 } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -64,9 +66,10 @@ function getHeaderModeBadge(settings: {
 
 export interface AppProps {
   themeRoot?: HTMLElement | null;
+  activityHudRoot?: HTMLElement | null;
 }
 
-export default function App({ themeRoot }: AppProps = {}) {
+export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
   const ready = useStore((s) => s.ready);
   const messages = useStore((s) => s.messages);
   const setInputText = useStore((s) => s.setInputText);
@@ -482,6 +485,9 @@ export default function App({ themeRoot }: AppProps = {}) {
             </div>
           </div>
         )}
+
+        {activityHudRoot &&
+          createPortal(<TaskActivityHud />, activityHudRoot)}
 
         {screenshot && settings.showDebugScreenshots && (
           <div className="fixed bottom-4 right-4 z-50 max-w-md">

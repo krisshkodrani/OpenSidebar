@@ -23,6 +23,8 @@ describe("overlay host", () => {
     expect(overlay.mountElement.id).toBe("root");
     expect(overlay.portalElement.dataset.osbOverlayPortal).toBe("");
     expect(overlay.portalElement.getRootNode()).toBe(overlay.shadowRoot);
+    expect(overlay.activityHudElement.dataset.osbOverlayActivityHud).toBe("");
+    expect(overlay.activityHudElement.getRootNode()).toBe(overlay.shadowRoot);
     expect(overlay.shadowRoot.textContent).toContain(".probe");
   });
 
@@ -114,6 +116,7 @@ describe("overlay host", () => {
 
     expect(overlay.host.getAttribute("data-glass")).toBe("true");
     expect(overlay.shadowRoot.textContent).toContain("backdrop-filter");
+    expect(overlay.shadowRoot.textContent).toContain("opensidebar-overlay-activity-hud");
   });
 
   test("sizes the initial overlay to about 95vh while respecting gutters", () => {

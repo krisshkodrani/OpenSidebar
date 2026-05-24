@@ -1624,7 +1624,20 @@ function evaluateWorkflowConfirmation(params: {
     snapshot: params.snapshot,
     summary: params.summary,
   });
+  const authenticationState = findAuthenticationCompletionConfirmation(
+    params.evidence,
+    params.summary,
+    params.snapshot,
+  );
   if (confirmations.length > 0 && targetMatchedConfirmations.length === 0) {
+    if (authenticationState) {
+      return {
+        status: "accepted",
+        reason: "Workflow contract is satisfied by visible authenticated state.",
+        contract,
+        evidence: [authenticationState],
+      };
+    }
     if (visibleTargetState) {
       return {
         status: "accepted",
@@ -1660,6 +1673,14 @@ function evaluateWorkflowConfirmation(params: {
   }
   const confirmation = targetMatchedConfirmations[0];
   if (!confirmation) {
+    if (authenticationState) {
+      return {
+        status: "accepted",
+        reason: "Workflow contract is satisfied by visible authenticated state.",
+        contract,
+        evidence: [authenticationState],
+      };
+    }
     if (visibleTargetState) {
       return {
         status: "accepted",
@@ -3576,6 +3597,63 @@ function isTargetAwareVisibleWorkflowAction(
   );
 }
 
+function findAuthenticationCompletionConfirmation(
+  evidence: CompletionEvidence[],
+  summary?: string,
+  snapshot?: DomSnapshot | null,
+): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  if (
+    summary &&
+    !/\b(?:logged\s*in|signed\s*in|authenticated?|dashboard|log\s*in|login|sign\s*in|signin)\b/i.test(
+      summary,
+    )
+  ) {
+    return null;
+  }
+  const authenticationPattern =
+    /\b(?:logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i;
+  const formConfirmation = evidence.find(
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+      event.type === "confirmation_state" &&
+      event.logicalKey === "form:confirmation",
+  );
+  if (formConfirmation) return formConfirmation;
+  const eventMatch = evidence.find(
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+      event.type === "confirmation_state" &&
+      authenticationPattern.test(event.detail.text),
+  );
+  if (eventMatch) return eventMatch;
+  if (
+    snapshot &&
+    authenticationPattern.test(
+      workflowConfirmationTextCorpus(snapshot, { includeTitleAndUrl: true }),
+    )
+  ) {
+    return (
+      evidence.find(
+        (
+          event,
+        ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+          event.type === "confirmation_state" &&
+          event.logicalKey === "form:confirmation",
+      ) ??
+      evidence.find(
+        (
+          event,
+        ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+          event.type === "confirmation_state",
+      ) ??
+      null
+    );
+  }
+  return null;
+}
+
 function workflowTargetLabelCoveredByText(
   targetLabel: string,
   text: string,
@@ -4219,7 +4297,7 @@ function inferDismissWorkflowVisibleStateConfirmation(params: {
     observedAtTurn: latestObservedTurn(params.evidence),
     detail: {
       action: "dismiss",
-      source: "visible_absence",
+      source: "modal_disappearance",
       targetText: cleanLabel(contract.targetLabel ?? "modal or popup overlay"),
       text: "No visible modal, popup, overlay, banner, or dismissal control remains.",
     },
@@ -6006,17 +6084,14 @@ function extractFormConfirmationEvidence(
   snapshot: DomSnapshot,
   turn: number,
 ): CompletionEvidence[] {
-  const text = [
-    snapshot.title,
-    snapshot.url,
-    snapshot.visibleContent,
-    snapshot.pageContent,
-  ]
-    .filter(Boolean)
-    .join("\n")
-    .slice(0, 20_000);
+  const text = workflowConfirmationTextCorpus(snapshot, {
+    includeTitleAndUrl: true,
+  }).slice(0, 20_000);
   const hasStrongConfirmation =
     /\b(?:submission complete|submitted successfully|sent successfully|request has been submitted|thank you,? your request|request received|form submitted|order confirmed)\b/i.test(
+      text,
+    ) ||
+    /\b(?:authenticated dashboard|welcome,?\s+(?:admin|user)|logged in|signed in|you are signed in|log out|logout|sign out)\b/i.test(
       text,
     ) ||
     /\b(?:coupon|promo|discount|code)\b.{0,80}\b(?:applied|accepted|activated|successfully)\b/i.test(
@@ -6174,7 +6249,7 @@ function isTransactionalConfirmationAction(
 }
 
 function workflowTargetIsTransactional(targetLabel: string): boolean {
-  return /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request)\b/i.test(
+  return /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(
     normalizeText(targetLabel),
   );
 }
@@ -6184,7 +6259,7 @@ function transactionalConfirmationSummaryGrounded(
   evidenceText: string,
 ): boolean {
   const normalizedSummary = normalizeText(summary);
-  if (!/\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|confirmed|complete|completed|submitted|thank)\b/i.test(normalizedSummary)) {
+  if (!/\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|confirmed|complete|completed|submitted|thank|logged\s*in|signed\s*in|authenticated?|dashboard)\b/i.test(normalizedSummary)) {
     return false;
   }
   const orderId = extractTransactionReference(evidenceText);
@@ -6200,15 +6275,15 @@ function extractTransactionalConfirmationSnippet(value: string): string | null {
   if (!text) return null;
   if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;
 
-  const hasTransactionNoun = /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request)\b/i.test(text);
-  const hasCompletionState = /\b(?:confirmed|confirmation|complete|completed|submitted|successful|successfully|received|placed|thank\s+you|receipt)\b/i.test(text);
+  const hasTransactionNoun = /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(text);
+  const hasCompletionState = /\b(?:confirmed|confirmation|complete|completed|submitted|successful|successfully|received|placed|thank\s+you|receipt|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.test(text);
   const hasReference = /\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i.test(text);
   if (!hasTransactionNoun || (!hasCompletionState && !hasReference)) {
     return null;
   }
 
   const anchor =
-    /\b(?:thank\s+you|order\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|order\s+(?:confirmed|confirmation|complete|completed|submitted|placed)|confirmation\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|receipt|transaction\s+(?:complete|completed|confirmed|successful)|payment\s+(?:complete|completed|confirmed|successful))\b/i.exec(text) ??
+    /\b(?:thank\s+you|order\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|order\s+(?:confirmed|confirmation|complete|completed|submitted|placed)|confirmation\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|receipt|transaction\s+(?:complete|completed|confirmed|successful)|payment\s+(?:complete|completed|confirmed|successful)|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.exec(text) ??
     /\b(?:confirmed|confirmation|complete|completed|submitted|successful|received|placed)\b/i.exec(text);
   if (!anchor) return null;
   const start = Math.max(0, anchor.index - 180);
