@@ -285,7 +285,6 @@ const STEP_TOKEN_STOPWORDS = new Set([
   "open",
   "close",
   "button",
-  "cart",
   "catalog",
   "catalogue",
   "product",

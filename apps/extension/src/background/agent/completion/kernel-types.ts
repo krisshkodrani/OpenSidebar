@@ -69,6 +69,7 @@ export type CompletionEvidence =
         targetText?: string;
         source?:
           | "visible_text"
+          | "visible_absence"
           | "modal_disappearance"
           | "target_disappearance"
           | "form_disappearance"

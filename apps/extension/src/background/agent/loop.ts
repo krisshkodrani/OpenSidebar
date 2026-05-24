@@ -319,6 +319,15 @@ import {
 } from "./post-tool-snapshot-refresh";
 export { isDoneSummaryAskingClarification } from "./completion-kernel";
 
+type CompletionRejectionDecision = Extract<
+  CompletionEvaluation,
+  { status: "rejected" | "needs_verification" }
+>;
+type CompletionValidationErrorEvidence = Extract<
+  CompletionRejectionDecision["evidence"][number],
+  { type: "validation_error" }
+>;
+
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
@@ -2396,14 +2405,28 @@ export class AgentLoop {
     });
   }
 
+  private getPendingAutocompleteCompletionEvidence(
+    decision: CompletionRejectionDecision,
+  ): CompletionValidationErrorEvidence | undefined {
+    return decision.evidence.find(
+      (event): event is CompletionValidationErrorEvidence =>
+        event.type === "validation_error" &&
+        event.logicalKey.startsWith("form:autocomplete_pending:"),
+    );
+  }
+
   private getCompletionRejectionInstruction(
-    decision: Extract<
-      CompletionEvaluation,
-      { status: "rejected" | "needs_verification" }
-    >,
+    decision: CompletionRejectionDecision,
   ): string {
     if (decision.status === "needs_verification") {
       return decision.hint;
+    }
+
+    const pendingAutocomplete =
+      this.getPendingAutocompleteCompletionEvidence(decision);
+    const suggestionTag = pendingAutocomplete?.detail.suggestionElementId;
+    if (typeof suggestionTag === "number") {
+      return `YOUR NEXT ACTION: click_element({"id": ${suggestionTag}}), then verify the selected value is visible.`;
     }
 
     switch (decision.contract.kind) {
@@ -2426,10 +2449,7 @@ export class AgentLoop {
 
   private rejectDoneFromCompletionDecision(
     toolCallId: string,
-    decision: Extract<
-      CompletionEvaluation,
-      { status: "rejected" | "needs_verification" }
-    >,
+    decision: CompletionRejectionDecision,
   ): void {
     this.doneRejections++;
     this.lastCompletionRejection = decision;
@@ -2448,6 +2468,19 @@ export class AgentLoop {
       contractKind: decision.contract.kind,
       evidenceKeys: decision.evidence.map((event) => event.logicalKey),
     });
+    const pendingAutocomplete =
+      this.getPendingAutocompleteCompletionEvidence(decision);
+    if (pendingAutocomplete) {
+      this.traceRecorder?.recordEvent(
+        "done_rejected_autocomplete_suggestion_pending",
+        {
+          rejections: this.doneRejections,
+          inputTag: pendingAutocomplete.detail.inputElementId,
+          suggestionTag: pendingAutocomplete.detail.suggestionElementId,
+          value: String(pendingAutocomplete.detail.value ?? "").toLowerCase(),
+        },
+      );
+    }
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,

@@ -8,25 +8,25 @@ Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 
 | Gate | Status | Evidence / next action |
 | --- | --- | --- |
-| Working tree checkpoint | Pending | Current tree contains intentional Doing Now UI and completion-verifier hardening changes that still need a final commit. |
+| Working tree checkpoint | Pending | Commit the current completion-kernel, loop, loop-helper, and skill-ranking hardening fixes before tagging a final RC. Strict preflight must be rerun from a clean tree after the final release-candidate commit. |
 | BYOK setup docs | Pass | README, Getting Started, Privacy Policy, Security Policy, and OSS BYOK Launch Roadmap document local keys, provider traffic, and supported provider modes. |
 | Runtime default docs | Pass | Fireworks is the default provider mode; default executor/planner model is `accounts/fireworks/routers/kimi-k2p6-turbo`. |
 | Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` both declare `0.9.1`. |
 | Permission/privacy alignment | Pass | Broad host access plus tabs, cookies, history, downloads, and tab capture are documented in `PRIVACY_POLICY.md`, `SECURITY.md`, `docs/features/security.md`, and `docs/known-limitations.md`. |
-| Focused unit regression | Pass | `npx vitest run apps\extension\tests\background\completion-kernel.form-fill.test.ts` passed: 25 tests. |
+| Focused unit regression | Pass | `corepack pnpm exec vitest run --config vitest.config.ts --reporter=basic --silent=true tests/background/agent.test.ts` passed: 168 tests. |
 | Focused UI/overlay regression | Pass | Sidepanel/overlay Doing Now HUD test group passed before this checklist update. |
-| Production build / dist validation / typecheck | Pass | `npm run build`, `npm run ci:dist`, and `npm run typecheck` passed after the Doing Now UI and completion-verifier changes. |
-| Focused real-browser smoke | Pass with caveat | Local mock login E2E passed with `E2E_LOCAL_MOCK_PROVIDER=1`; it required a retry after first-run Done rejections while async login state settled. See `.artifacts/e2e/e2e-report-2026-05-24.md`. |
-| Full release verification | Pending | Run `corepack pnpm run release:verify` on the release-candidate commit. |
-| Staged E2E release gate | Pending | Run at least `pnpm run test:e2e:smoke`; broaden to interactions/runtime if release changes touch runtime behavior. |
-| Native side-panel smoke | Pending | Run `corepack pnpm run release:smoke:native-panel` against `dist/`, then `corepack pnpm run release:preflight -- --require-native-smoke`. |
-| Release package/preflight | Pending | After commit, run `corepack pnpm run release:package` and strict `corepack pnpm run release:preflight`. |
+| Production build / dist validation / typecheck | Pass | Covered by `corepack pnpm run release:verify`; `corepack pnpm run release:package` also rebuilt `dist/` and passed `ci:dist`. |
+| Focused real-browser smoke | Pass | Local mock login E2E passed with `E2E_LOCAL_MOCK_PROVIDER=1` after verifier hardening, with the earlier retry caveat documented in `.artifacts/e2e/e2e-report-2026-05-24.md`. The newer staged smoke login completed in one trace with accepted authenticated-state evidence. |
+| Full release verification | Pass | `corepack pnpm run release:verify` passed on 2026-05-24 after verifier hardening fixes. Existing lint warnings remain in `apps/extension/tests/e2e/multi-turn-workflows.test.ts`. |
+| Staged E2E release gate | Pass | `E2E_PROFILE=ci corepack pnpm run test:e2e:smoke` passed on 2026-05-24: 8 files, 9 tests. The run logged browser-close timeout warnings after several completed files; the harness killed those browser processes and the suite exited green. See `.artifacts/e2e/e2e-report-2026-05-24.md`. |
+| Native side-panel smoke | Pending | `corepack pnpm run release:smoke:native-panel -- --timeoutMs=120000 --holdMs=1000` was attempted on 2026-05-24 while the tree was dirty, but timed out waiting for the manual toolbar click. Evidence: `.artifacts/e2e/native-sidepanel/2026-05-24/native-sidepanel-smoke-2026-05-24_11-27-16-531.json`. Rerun after commit, click the OpenSidebar toolbar icon in the launched Chrome window, then run `corepack pnpm run release:preflight -- --require-native-smoke`. |
+| Release package/preflight | Partial | `corepack pnpm run release:package` refreshed `.artifacts/releases/opensidebar-v0.9.1.zip` (`sha256: 83a00fd694fab308eea03bb2185ee283f164d8aa97a51bdf4838a5ee4964c068`) and manifest for commit `2f8fb4884ae79d932d9b14eb7507d3a7ecc9e7ad`. Strict `corepack pnpm run release:preflight` failed because the working tree is dirty and tag `v0.9.1` still points to `4979f9f34909866f1b8e50c3aef6c2e721f109ed`. |
 
 Open cleanup before calling the RC broad-release ready:
 
-- Make the local mock login smoke a clean first-run pass instead of a recovered retry pass, or explicitly accept it as a preview caveat.
-- Commit the Doing Now UI and completion-verifier changes after final diff review.
-- Run the full release verification and staged E2E gates on the exact release-candidate commit.
+- Commit the current completion-verifier hardening changes after final diff review.
+- Run the native side-panel smoke gate on the exact release-candidate commit.
+- Rerun `corepack pnpm run release:package`, move or recreate tag `v0.9.1` on the release-candidate commit, then rerun strict `corepack pnpm run release:preflight`.
 
 ## 1. Freeze The Release Candidate
 

@@ -2556,7 +2556,7 @@ function trimInferredValue(
 
 function formFieldValueLooksLikeControlInstruction(value: string): boolean {
   return (
-    /^(?:[\/\s-]*(?:promo|discount|coupon|shipping|name|email|e-mail))*[\/\s-]*(?:input|field|box|control|form)\b/i.test(
+    /^(?:[/\s-]*(?:promo|discount|coupon|shipping|name|email|e-mail))*[/\s-]*(?:input|field|box|control|form)\b/i.test(
       value,
     ) ||
     /^\s*(?:in|inside|on|under)\s+(?:the\s+)?(?:[a-z0-9_-]+\s+){0,4}(?:input|field|box|control|form)\b/i.test(
@@ -3559,7 +3559,8 @@ function workflowConfirmationMatchesTarget(
     if (
       isTransactionalConfirmationAction(event.detail.action) &&
       extractTransactionalConfirmationSnippet(event.detail.text) &&
-      workflowTargetIsTransactional(targetLabel)
+      workflowTargetIsTransactional(targetLabel) &&
+      !workflowTargetHasSpecificTransactionalToken(targetLabel)
     ) {
       return true;
     }
@@ -4297,7 +4298,7 @@ function inferDismissWorkflowVisibleStateConfirmation(params: {
     observedAtTurn: latestObservedTurn(params.evidence),
     detail: {
       action: "dismiss",
-      source: "modal_disappearance",
+      source: "visible_absence",
       targetText: cleanLabel(contract.targetLabel ?? "modal or popup overlay"),
       text: "No visible modal, popup, overlay, banner, or dismissal control remains.",
     },
@@ -6224,16 +6225,16 @@ function extractWorkflowConfirmationSnippet(
     const cartState = extractCartCreationSnippet(text);
     if (cartState) return cartState;
   }
-  if (isTransactionalConfirmationAction(action)) {
-    const transactionState = extractTransactionalConfirmationSnippet(text);
-    if (transactionState) return transactionState;
-  }
-
   const sentence = text
     .split(/(?<=[.!?])\s+|\n+/g)
     .map((candidate) => cleanLabel(candidate))
     .find((candidate) => textConfirmsWorkflowAction(candidate, action, "visible"));
   if (sentence) return sentence;
+
+  if (isTransactionalConfirmationAction(action)) {
+    const transactionState = extractTransactionalConfirmationSnippet(text);
+    if (transactionState) return transactionState;
+  }
 
   const actionTerms = workflowActionTermPattern(action);
   const match = new RegExp(`.{0,120}\\b${actionTerms}\\b.{0,120}`, "i").exec(
@@ -6252,6 +6253,30 @@ function workflowTargetIsTransactional(targetLabel: string): boolean {
   return /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(
     normalizeText(targetLabel),
   );
+}
+
+function workflowTargetHasSpecificTransactionalToken(targetLabel: string): boolean {
+  const generic = new Set([
+    "order",
+    "checkout",
+    "purchase",
+    "payment",
+    "transaction",
+    "submission",
+    "confirmation",
+    "receipt",
+    "booking",
+    "reservation",
+    "request",
+    "login",
+    "signin",
+    "authenticated",
+    "dashboard",
+    "submit",
+    "complete",
+    "completed",
+  ]);
+  return tokenizeCompletionText(targetLabel).some((token) => !generic.has(token));
 }
 
 function transactionalConfirmationSummaryGrounded(
@@ -6338,7 +6363,9 @@ function extractModalDismissalEvidenceFromToolOutcome(params: {
 
   const dismissed = findModalLikeDescriptors(pre);
   const fallbackLabel =
-    dismissed.length === 0 && !snapshotHasVisibleDismissalControl(current)
+    dismissed.length === 0 &&
+    snapshotHasConsentBannerContext(pre) &&
+    !snapshotHasVisibleDismissalControl(current)
       ? clickedDismissalControlLabelFromToolOutcome(params)
       : null;
   if (dismissed.length === 0 && !fallbackLabel) return [];
@@ -7531,6 +7558,31 @@ function snapshotHasVisibleDismissalControl(snapshot: DomSnapshot): boolean {
   return snapshot.elements.some(
     (element) =>
       element.isVisible !== false && !element.isDisabled && isDismissalControl(element),
+  );
+}
+
+function snapshotHasConsentBannerContext(snapshot: DomSnapshot): boolean {
+  const text = normalizeText(
+    [
+      snapshot.title,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      ...snapshot.elements.flatMap((element) => [
+        element.text,
+        element.attributes["aria-label"],
+        element.attributes.label,
+        element.attributes.title,
+        element.attributes.id,
+      ]),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return (
+    /\b(?:cookie|cookies|consent|privacy|gdpr)\b/i.test(text) &&
+    /\b(?:accept|reject|decline|allow|agree|got it|ok|okay|dismiss|close)\b/i.test(
+      text,
+    )
   );
 }
 
@@ -11215,7 +11267,20 @@ function readAnswerSummaryGroundedInEvidence(
     expectedAnswerLabel
   ) {
     if (
+      readAnswerSummaryMatchesExpectedLabelValue(
+        summary,
+        evidence.detail.evidenceText,
+        expectedAnswerLabel,
+      )
+    ) {
+      return true;
+    }
+    if (
       readAnswerLabelCanUseDistinctAnswerToken(expectedAnswerLabel) &&
+      !extractExpectedLabelValueAnswer(
+        evidence.detail.evidenceText,
+        expectedAnswerLabel,
+      ) &&
       readAnswerSummarySharesDistinctAnswerToken(
         summary,
         evidence.detail.evidenceText,
@@ -11223,11 +11288,7 @@ function readAnswerSummaryGroundedInEvidence(
     ) {
       return true;
     }
-    return readAnswerSummaryMatchesExpectedLabelValue(
-      summary,
-      evidence.detail.evidenceText,
-      expectedAnswerLabel,
-    );
+    return false;
   }
 
   const sourceTokens = new Set(
