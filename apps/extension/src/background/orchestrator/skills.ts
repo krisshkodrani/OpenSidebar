@@ -850,9 +850,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "read_page",
       "read_element",
       "find_element",
-      "done",
     ],
-    discouragedTools: ["click_coordinates"],
+    discouragedTools: ["click_coordinates", "done"],
     contextScope: "turn",
     verifierMode: "deterministic",
     notes: [
