@@ -83,6 +83,91 @@ function normalizePlanText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+type FieldValueStepHint = {
+  field: string;
+  value: string;
+  hasSubmitIntent: boolean;
+};
+
+function extractFieldValueStepHints(query: string): FieldValueStepHint[] {
+  const hints: FieldValueStepHint[] = [];
+  const seen = new Set<string>();
+  const pattern =
+    /\b(?:set|update|change|fill|enter|type)\s+(?:the\s+)?([a-z0-9][a-z0-9 /_-]{1,80}?)\s+(?:to|as|=)\s+(?:"([^"]*)"|'([^']*)'|([^,.;\n]+?))(?=\s*(?:,|;|\.|\bthen\b|\band\s+(?:set|update|change|fill|enter|type|submit|save|send|apply|confirm|delete|remove)\b|$))/gi;
+
+  for (const match of query.matchAll(pattern)) {
+    const field = (match[1] ?? "").replace(/\s+/g, " ").trim();
+    const value = (match[2] ?? match[3] ?? match[4] ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!field || !value) continue;
+    const key = `${normalizePlanText(field)}\u0000${normalizePlanText(value)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const after = query.slice((match.index ?? 0) + (match[0] ?? "").length, (match.index ?? 0) + (match[0] ?? "").length + 100);
+    hints.push({
+      field,
+      value,
+      hasSubmitIntent: /^\s*(?:[,;.]|then\b|and\b)?\s*(?:then\s+|and\s+)?(?:save|submit|send|apply|confirm)\b/i.test(
+        after,
+      ),
+    });
+  }
+
+  return hints;
+}
+
+function planTextTokens(value: string): string[] {
+  return normalizePlanText(value).match(/[a-z0-9@._-]{3,}/g) ?? [];
+}
+
+function stepMatchesFieldValueHint(step: PlanStep, hint: FieldValueStepHint): boolean {
+  const stepText = normalizePlanText(`${step.objective}\n${step.successCriteria}`);
+  const fieldTokens = planTextTokens(hint.field);
+  const valueTokens = planTextTokens(hint.value);
+  if (fieldTokens.length === 0 || valueTokens.length === 0) return false;
+  return (
+    fieldTokens.every((token) => stepText.includes(token)) &&
+    valueTokens.some((token) => stepText.includes(token))
+  );
+}
+
+function stripUnsupportedFieldSubmitTail(value: string): string {
+  const stripped = value
+    .replace(/\s+(?:and|then)\s+(?:save\/confirm|save|submit|send|apply|confirm)\b[\s\S]*$/i, "")
+    .replace(/,\s*(?:then\s+)?(?:save\/confirm|save|submit|send|apply|confirm)\b[\s\S]*$/i, "")
+    .trim();
+  if (!stripped) return value;
+  return /[.!?]$/.test(stripped) ? stripped : `${stripped}.`;
+}
+
+function sanitizeUnsupportedFieldSubmitStep(query: string, step: PlanStep): PlanStep {
+  const matchingHint = extractFieldValueStepHints(query).find(
+    (hint) => !hint.hasSubmitIntent && stepMatchesFieldValueHint(step, hint),
+  );
+  if (!matchingHint) return step;
+
+  const stepText = normalizePlanText(`${step.objective}\n${step.successCriteria}`);
+  if (!/\b(?:save\/confirm|save|submit|send|apply|confirm)\b/i.test(stepText)) {
+    return step;
+  }
+
+  const objective = stripUnsupportedFieldSubmitTail(step.objective);
+  const successCriteria = stripUnsupportedFieldSubmitTail(step.successCriteria);
+  if (objective === step.objective && successCriteria === step.successCriteria) {
+    return step;
+  }
+
+  const toolProfile = inferToolProfileForStep(objective, successCriteria);
+  return {
+    ...step,
+    objective,
+    successCriteria,
+    ...(toolProfile ? { toolProfile } : {}),
+  };
+}
+
 function looksLikeNavigationOnlyStep(step: PlanStep): boolean {
   const text = normalizePlanText(`${step.objective} ${step.successCriteria}`);
   const hasNavigationVerb =
@@ -344,6 +429,17 @@ export function inferToolProfileForStep(
 
   if (
     /(add to cart|add item|apply coupon|apply promo|apply [a-z0-9-]{4,}|promo code|coupon code|select shipping|choose[^.\n]{0,30}shipping|shipping method|checkout|full name|email address|billing|payment|quantity|cart section|cart overlay|fill.*checkout|enter.*email|enter.*name|select.*option|choose.*option)/.test(
+      primaryText,
+    )
+  ) {
+    return "form_fill";
+  }
+
+  if (
+    /\b(?:upload|attach|import|choose|select)\b[^.\n]{0,100}\b(?:file|csv|resume|cv|attachment)\b/.test(
+      primaryText,
+    ) ||
+    /\b(?:file|csv|resume|cv|attachment)\b[^.\n]{0,100}\b(?:upload|attach|import|input|field)\b/.test(
       primaryText,
     )
   ) {
@@ -840,15 +936,17 @@ export class TaskPlanner {
             }
           }
 
-          result.push({
-            objective: obj.objective.trim(),
-            successCriteria,
-            dependencies,
-            assumptions,
-            ...(verifyAfter ? { verifyAfter } : {}),
-            ...(toolProfile ? { toolProfile } : {}),
-            ...(expectedState ? { expectedState } : {}),
-          });
+          result.push(
+            sanitizeUnsupportedFieldSubmitStep(query, {
+              objective: obj.objective.trim(),
+              successCriteria,
+              dependencies,
+              assumptions,
+              ...(verifyAfter ? { verifyAfter } : {}),
+              ...(toolProfile ? { toolProfile } : {}),
+              ...(expectedState ? { expectedState } : {}),
+            }),
+          );
         }
         return result;
       };

@@ -67,7 +67,200 @@ function dataStateActionButton(
   };
 }
 
+function textElement(tag: number, tagName: string, text: string): TaggedElement {
+  return {
+    tag,
+    tagName,
+    role: tagName,
+    text,
+    attributes: {},
+    rect: { x: 120, y: tag * 10, width: 360, height: 28 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
+function dialogElement(tag: number, text: string): TaggedElement {
+  return {
+    tag,
+    tagName: "div",
+    role: "dialog",
+    text,
+    attributes: {
+      id: "newsletter-backdrop",
+      "aria-modal": "true",
+    },
+    rect: { x: 180, y: 120, width: 480, height: 240 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 describe("completion kernel workflow control-state semantic create/dismiss action confirmation", () => {
+  test("accepts modal disappearance when the page heading still mentions modals", () => {
+    const pre = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page Newsletter Popup Reject",
+      pageContent: "Modal & Overlay Test Page Newsletter Popup Reject",
+      elements: [
+        textElement(820, "h1", "Modal & Overlay Test Page"),
+        dialogElement(821, "Newsletter Popup"),
+        actionButton(822, "Close newsletter popup"),
+      ],
+    });
+    const current = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page",
+      pageContent: "Modal & Overlay Test Page",
+      elements: [textElement(820, "h1", "Modal & Overlay Test Page")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close any visible popups or modal overlays on the page.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 822 },
+      result: 'Clicked [822] button "Close newsletter popup"',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 4,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Closed the visible newsletter popup.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "modal_disappearance",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts consent banner dismissal when only the clicked control disappears", () => {
+    const pre = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page We use cookies Accept Reject",
+      pageContent: "Modal & Overlay Test Page We use cookies Accept Reject",
+      elements: [
+        textElement(823, "h1", "Modal & Overlay Test Page"),
+        actionButton(824, "Accept"),
+        actionButton(825, "Reject"),
+      ],
+    });
+    const current = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page",
+      pageContent: "Modal & Overlay Test Page",
+      elements: [textElement(823, "h1", "Modal & Overlay Test Page")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close the cookie banner.",
+      snapshot: current,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.CLICK_ELEMENT,
+      args: { id: 824 },
+      result: 'Clicked [824] button "Accept"',
+      preActionSnapshot: pre,
+      currentSnapshot: current,
+      turn: 5,
+    });
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: current,
+      candidateSource: "model_done",
+      summary: "Closed the cookie banner.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:dismiss:accept",
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "modal_disappearance",
+          text: "Modal dismissed: Accept",
+        }),
+      }),
+    ]);
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts dismiss completion from visible absence of modal controls", () => {
+    const clean = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page",
+      pageContent: "Modal & Overlay Test Page",
+      elements: [textElement(826, "h1", "Modal & Overlay Test Page")],
+    });
+    const stillBlocked = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "Modal & Overlay Test Page We use cookies Accept",
+      pageContent: "Modal & Overlay Test Page We use cookies Accept",
+      elements: [
+        textElement(826, "h1", "Modal & Overlay Test Page"),
+        actionButton(827, "Accept"),
+      ],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Close any visible popups or modal overlays on the page.",
+      snapshot: clean,
+    });
+
+    const cleanDecision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: [],
+      snapshot: clean,
+      candidateSource: "model_done",
+      summary: "Closed all visible popups and modal overlays.",
+    });
+    const blockedDecision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence: [],
+      snapshot: stillBlocked,
+      candidateSource: "model_done",
+      summary: "Closed all visible popups and modal overlays.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "dismiss",
+    });
+    expect(cleanDecision.status).toBe("accepted");
+    expect(cleanDecision.evidence).toEqual([
+      expect.objectContaining({
+        type: "confirmation_state",
+        logicalKey: "workflow:confirmation:dismiss:visible-absence",
+        detail: expect.objectContaining({
+          action: "dismiss",
+          source: "visible_absence",
+        }),
+      }),
+    ]);
+    expect(blockedDecision.status).not.toBe("accepted");
+  });
+
   test("accepts create confirmation from semantic create data-state control state change", () => {
     const pre = workflowSnapshot({
       visibleContent: "Customer Alpha Create Customer Alpha",

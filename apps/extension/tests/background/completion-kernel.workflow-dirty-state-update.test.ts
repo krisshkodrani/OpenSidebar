@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  deriveCompletionEvidenceFromSnapshot,
   deriveCompletionEvidenceFromToolOutcome,
   evaluateCompletionContract,
   generateCompletionContract,
@@ -168,4 +169,72 @@ describe("completion kernel workflow update dirty-state confirmation", () => {
 
     expect(evidence).toEqual([]);
   });
+
+  test("accepts committed inline table update when requested target value is visible", () => {
+    const snap = workflowSnapshot({
+      title: "Spreadsheet Editor",
+      url: "https://example.test/keyboard-nav",
+      visibleContent:
+        "Product Q1 Sales Q2 Sales Q3 Sales Widget A 999 160 190 Widget B 180 210 240 Cell: Q1 Sales row 1 1 edit(s)",
+      pageContent:
+        "Product Q1 Sales Q2 Sales Q3 Sales Widget A 999 160 190 Widget B 180 210 240 Cell: Q1 Sales row 1 1 edit(s)",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "In the spreadsheet, change the Q1 Sales value in the first row to 999.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 6);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Successfully changed the Q1 Sales value in the first row to 999. The spreadsheet shows Widget A Q1 Sales: 999.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "update",
+      targetLabel: "Q1 Sales value",
+      targetValue: "999",
+    });
+    expect(decision).toMatchObject({
+      status: "accepted",
+      reason: "Update contract is satisfied by visible target value state.",
+    });
+  });
+  test("accepts visible target value state for update-like complete contracts", () => {
+    const snap = workflowSnapshot({
+      title: "Spreadsheet Editor",
+      url: "https://example.test/keyboard-nav",
+      visibleContent:
+        "Product Q1 Sales Q2 Sales Q3 Sales Widget A 999 160 190 Cell: Q1 Sales row 1 1 edit(s)",
+      pageContent:
+        "Product Q1 Sales Q2 Sales Q3 Sales Widget A 999 160 190 Cell: Q1 Sales row 1 1 edit(s)",
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: {
+        kind: "workflow_confirmation",
+        action: "complete",
+        targetLabel: "Q1 Sales value",
+        targetValue: "999",
+      },
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Task complete. The Q1 Sales value in the first row now shows 999 in the non-editing table state.",
+    });
+
+    expect(decision).toMatchObject({
+      status: "accepted",
+      reason: "Update contract is satisfied by visible target value state.",
+    });
+  });
+
 });

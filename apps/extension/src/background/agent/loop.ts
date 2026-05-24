@@ -108,6 +108,7 @@ import {
   isTextLikeInputElement,
   normalizeGuardText,
 } from "./text-entry-guards";
+import { assessRepeatedAddItemClick } from "./repeated-add-item-policy";
 export {
   rewriteAutocompleteTextEntry,
   validateTextEntryTarget,
@@ -320,6 +321,28 @@ export { isDoneSummaryAskingClarification } from "./completion-kernel";
 
 const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
+
+function shouldDeferStepWatchdogForOutcome(
+  outcome: TurnToolOutcomeRecord,
+): boolean {
+  if (/^(?:error|failed|failure|not found|unable|cannot|could not)\b/i.test(
+    outcome.resultContent,
+  )) {
+    return false;
+  }
+  switch (outcome.toolName) {
+    case ToolName.TYPE_TEXT:
+    case ToolName.SELECT_OPTION:
+    case ToolName.SET_CHECKBOX:
+      return true;
+    case ToolName.CLICK_ELEMENT:
+      return /\b(?:add(?:ed)?\b.{0,80}\b(?:cart|basket|bag)|apply|applied|place\s+order|placed\s+order|checkout|submit|submitted|confirm|confirmed|save|saved)\b/i.test(
+        outcome.resultContent,
+      );
+    default:
+      return false;
+  }
+}
 
 type TrustedCatalogOrderSubmission = {
   itemName: string | null;
@@ -1224,6 +1247,30 @@ export class AgentLoop {
       })
     ) {
       return false;
+    }
+
+    const repeatedAddItemBlock = assessRepeatedAddItemClick({
+      toolName,
+      args,
+      snapshot: this.context.getSnapshot(),
+      userRequest: this.originalQuery,
+    });
+    if (repeatedAddItemBlock) {
+      this.log.warn(
+        "agent",
+        "Idempotency guard: blocked repeated add-item click",
+        {
+          turn: this.turnCount,
+          tool: toolName,
+          args: JSON.stringify(args).slice(0, 100),
+        },
+      );
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: repeatedAddItemBlock,
+      });
+      return true;
     }
 
     const replay = this.lookupMutationReplay(toolName, args);
@@ -8299,6 +8346,8 @@ export class AgentLoop {
             messages: recentMessages,
             snapshot: this.context.getSnapshot(),
           });
+          const deferStepWatchdogForStateChangingAction =
+            turnToolOutcomes.some(shouldDeferStepWatchdogForOutcome);
           const observationSnapshot = this.context.getSnapshot();
           const observationSnapshotFingerprint = observationSnapshot
             ? getSnapshotFingerprint(observationSnapshot)
@@ -8704,6 +8753,8 @@ export class AgentLoop {
               cooldownRemaining,
               warnTurns: this.limits.stepWarnTurns,
               escalateTurns: this.limits.stepEscalateTurns,
+              deferForStateChangingAction:
+                deferStepWatchdogForStateChangingAction,
             });
             if (stepWatchdog.kind === "escalate") {
               this.log.warn("agent", "Step watchdog: force escalation", {
@@ -8759,6 +8810,18 @@ export class AgentLoop {
                   false,
                 );
               }
+            } else if (stepWatchdog.kind === "defer") {
+              this.log.info("agent", "Step watchdog deferred after state-changing action", {
+                turn: this.turnCount,
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+                tool: lastDomAffectingToolName,
+              });
+              this.traceRecorder?.recordEvent("step_watchdog_deferred", {
+                turnsOnStep: this.turnsOnCurrentStep,
+                stepIndex: this.lastPlanIndex,
+                tool: lastDomAffectingToolName,
+              });
             } else if (stepWatchdog.kind === "warn") {
               this.log.warn("agent", "Step watchdog: warn", {
                 turn: this.turnCount,

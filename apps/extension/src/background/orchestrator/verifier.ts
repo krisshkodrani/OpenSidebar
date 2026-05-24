@@ -214,6 +214,12 @@ const EXPLICIT_COMPLETION_MARKERS = [
   /\bchecked off\b/i,
 ];
 
+const OVERLAY_DISMISSAL_GOAL_RE =
+  /\b(?:close|dismiss|clear|remove)\b[\s\S]{0,100}\b(?:cookie|newsletter|popup|pop-up|banner|modal|overlay|dialog|notice|toast)s?\b|\b(?:cookie|newsletter|popup|pop-up|banner|modal|overlay|dialog|notice|toast)s?\b[\s\S]{0,100}\b(?:close|dismiss|clear|remove)\b/i;
+
+const OVERLAY_FINAL_ABSENCE_RE =
+  /\bno\b[\s\S]{0,80}\b(?:blocking\s+)?(?:cookie\s+banner|newsletter\s+popup|popup|pop-up|banner|modal|overlay|dialog|notice|toast|dismiss(?:al)?\s+target)s?\b[\s\S]{0,80}\b(?:remain|remains|visible|hidden|found|present)\b|\b(?:cookie\s+banner|newsletter\s+popup|popup|pop-up|banner|modal|overlay|dialog|notice|toast)\b[\s\S]{0,80}\b(?:gone|removed|dismissed|closed|no\s+longer\s+visible)\b/i;
+
 function hasGoalTokenSupport(
   text: string,
   objective: string,
@@ -333,6 +339,31 @@ function hasSupersedingFinalStateEvidence(
   if (!previousControlGone || !replacementStateVisible) return false;
   return hasGoalTokenSupport(
     lower,
+    input.objective || "",
+    input.successCriteria,
+    input.evidence,
+  );
+}
+
+function hasOverlayDismissalFinalStateEvidence(
+  input: ProgrammaticVerificationInput,
+): boolean {
+  if (input.executorOutcome !== "completed") return false;
+
+  const goalText = [
+    input.taskQuery,
+    input.objective,
+    input.successCriteria,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (!OVERLAY_DISMISSAL_GOAL_RE.test(goalText)) return false;
+
+  const output = input.output.trim();
+  if (!OVERLAY_FINAL_ABSENCE_RE.test(output)) return false;
+
+  return hasGoalTokenSupport(
+    output,
     input.objective || "",
     input.successCriteria,
     input.evidence,
@@ -463,6 +494,14 @@ export function programmaticVerify(
     };
   }
 
+  if (hasOverlayDismissalFinalStateEvidence(input)) {
+    return {
+      decision: "accept",
+      reason:
+        "Overlay dismissal final state is verified: no blocking popup, modal, banner, or dismissal target remains.",
+      confidence: 0.86,
+    };
+  }
   // Blocked markers → reroute (skip when executor completed — markers may be page content)
   if (
     input.executorOutcome !== "completed" &&

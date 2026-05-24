@@ -13,6 +13,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.resolve(__dirname, "../fixtures");
 const REACT_APP_DIR = path.join(FIXTURES_DIR, "online-shop-pro", "dist");
+const DOWNLOADS_DIR = path.join(FIXTURES_DIR, "downloads");
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -20,6 +21,8 @@ const MIME_TYPES: Record<string, string> = {
   ".js": "application/javascript",
   ".json": "application/json",
   ".png": "image/png",
+  ".csv": "text/csv",
+  ".txt": "text/plain",
   ".svg": "image/svg+xml",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
@@ -47,6 +50,31 @@ function serveReactApp(res: http.ServerResponse) {
   return false;
 }
 
+function serveDownloadFixture(
+  filename: string,
+  res: http.ServerResponse,
+): boolean {
+  if (!filename.startsWith("downloads/")) return false;
+
+  const filePath = path.resolve(FIXTURES_DIR, filename);
+  const downloadsRoot = `${path.resolve(DOWNLOADS_DIR)}${path.sep}`;
+  if (!filePath.startsWith(downloadsRoot) || !fs.existsSync(filePath)) {
+    res.writeHead(404);
+    res.end("Not found");
+    return true;
+  }
+
+  const ext = path.extname(filePath);
+  const contentType = MIME_TYPES[ext] || "application/octet-stream";
+  const content = fs.readFileSync(filePath);
+  res.writeHead(200, {
+    "Content-Type": contentType,
+    "Content-Disposition": `attachment; filename="${path.basename(filePath)}"`,
+  });
+  res.end(content);
+  return true;
+}
+
 export async function startFixtureServer(): Promise<number> {
   if (server && serverPort) {
     return serverPort;
@@ -68,6 +96,10 @@ export async function startFixtureServer(): Promise<number> {
           res.end(content);
           return;
         }
+      }
+
+      if (serveDownloadFixture(filename, res)) {
+        return;
       }
 
       // For any other path, serve the React app (SPA routing)

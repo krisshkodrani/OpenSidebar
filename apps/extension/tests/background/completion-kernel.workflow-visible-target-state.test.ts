@@ -337,4 +337,39 @@ describe("completion kernel target-aware visible close/reopen workflow state con
     });
   });
 
+
+  test("accepts action status evidence for decomposed shadow-dom action objective", () => {
+    const snap = workflowSnapshot({
+      title: "Web Components",
+      url: "https://example.test/web-components",
+      visibleContent:
+        "Web Components Notification Settings Privacy Settings Interaction Status Action: notifications Action: privacy",
+      pageContent:
+        "Web Components Notification Settings Privacy Settings Interaction Status Action: notifications Action: privacy",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Objective: Click the Privacy Settings action in the web components page\n" +
+        "Success criteria: Privacy Settings panel or dialog is visible, or a confirmation that privacy settings were activated\n\n" +
+        "Original user request:\n" +
+        "Activate the Notification Settings and Privacy Settings actions, then turn on dark mode.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 9);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Privacy Settings action activated.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Privacy Settings",
+    });
+    expect(decision.status).toBe("accepted");
+  });
 });

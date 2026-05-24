@@ -261,6 +261,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.SELECT_OPTION);
       expect(tools).toContain(ToolName.APPLY_LIST_FILTER);
       expect(tools).toContain(ToolName.GET_PROFILE_FIELDS);
+      expect(tools).toContain(ToolName.UPLOAD_FILE);
       expect(tools).not.toContain(ToolName.NAVIGATE);
       expect(tools).not.toContain(ToolName.CREATE_TAB);
       expect(tools).not.toContain(ToolName.GO_BACK);
@@ -328,6 +329,7 @@ describe("Tool Metadata", () => {
       expect(tools).toContain(ToolName.CLICK_ELEMENT);
       expect(tools).toContain(ToolName.PRESS_KEY);
       expect(tools).toContain(ToolName.TYPE_TEXT);
+      expect(tools).toContain(ToolName.UPLOAD_FILE);
       expect(tools).not.toContain(ToolName.EXECUTE_JS);
     });
 

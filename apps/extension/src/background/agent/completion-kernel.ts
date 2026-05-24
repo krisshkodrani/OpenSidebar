@@ -314,17 +314,33 @@ function generateFormFillContract(
   const fields = extractFormFieldObservations(snapshot);
   if (fields.length === 0) return null;
 
-  const expectedFields = inferExpectedFormFields(params.userRequest, fields);
+  const canonicalUserRequest = extractCanonicalUserRequest(params.userRequest);
+  const activeScopeText = [params.activeObjective, params.successCriteria]
+    .filter(Boolean)
+    .join("\n");
+  const scopedFormValueText = cleanLabel(params.activeObjective ?? "");
+  const expectedFields =
+    activeScopeText && activeScopeSuggestsFormFill(activeScopeText)
+      ? inferExpectedScopedFormFields(
+          activeScopeText,
+          scopedFormValueText,
+          canonicalUserRequest,
+          fields,
+        )
+      : inferExpectedFormFields(activeScopeText || canonicalUserRequest, fields);
   if (expectedFields.length === 0) return null;
 
   const requestText = normalizeText(
-    [params.userRequest, params.activeObjective, params.successCriteria]
+    [canonicalUserRequest, params.activeObjective, params.successCriteria]
       .filter(Boolean)
       .join("\n"),
   );
-  const requiresSubmit = /\b(?:log\s*in|sign\s*in|submit|send|save|create|register|apply|checkout|place\s+order|order|request|complete)\b/i.test(
+  const requiresSubmit = formFillRequiresSubmit({
+    canonicalUserRequest,
+    activeScopeText,
     requestText,
-  );
+    snapshot,
+  });
 
   return {
     contract: {
@@ -338,6 +354,110 @@ function generateFormFillContract(
     repairable: true,
     notes: [],
   };
+}
+
+function activeScopeSuggestsFormFill(value: string): boolean {
+  return /\b(?:field|form|fill|filled|type|typed|enter|entered|set|update|change|choose|select|check|uncheck|checkout|profile|input|email|e-mail|name|address|phone|coupon|promo|shipping|password|username)\b/i.test(
+    value,
+  );
+}
+
+function formFillRequiresSubmit(params: {
+  canonicalUserRequest: string;
+  activeScopeText: string;
+  requestText: string;
+  snapshot: DomSnapshot;
+}): boolean {
+  const canonicalText = normalizeText(params.canonicalUserRequest);
+  if (formFillTextHasSubmitIntent(canonicalText)) return true;
+
+  const activeText = normalizeText(params.activeScopeText);
+  if (!activeText || !formFillTextHasSubmitIntent(activeText)) return false;
+
+  if (
+    formFillTextLooksFieldOnly(activeText) &&
+    !snapshotHasMatchingFormSubmitControl(params.snapshot, activeText)
+  ) {
+    return false;
+  }
+
+  return formFillTextHasSubmitIntent(params.requestText);
+}
+
+function formFillTextHasSubmitIntent(value: string): boolean {
+  return /\b(?:log\s*in|sign\s*in|submit|send|save|create|register|apply|checkout|place\s+order|order|request|complete)\b/i.test(
+    value,
+  );
+}
+
+function formFillTextLooksFieldOnly(value: string): boolean {
+  return /\b(?:field|input|email|e-mail|name|address|phone|coupon|promo|shipping|password|username)\b/i.test(
+    value,
+  );
+}
+
+function snapshotHasMatchingFormSubmitControl(
+  snapshot: DomSnapshot,
+  text: string,
+): boolean {
+  const patterns = formSubmitControlPatternsForText(text);
+  if (patterns.length === 0) return false;
+
+  return snapshot.elements.some((element) => {
+    if (element.isDisabled || element.isVisible === false) return false;
+    const tagName = element.tagName.toLowerCase();
+    const type = element.attributes.type?.toLowerCase() ?? "";
+    const role = element.role.toLowerCase();
+    const isSubmitControl =
+      tagName === "button" ||
+      role === "button" ||
+      (tagName === "input" &&
+        /^(?:submit|button|image)$/i.test(type));
+    if (!isSubmitControl) return false;
+
+    const label = normalizeText(
+      [
+        element.text,
+        element.attributes.label,
+        element.attributes["aria-label"],
+        element.attributes.title,
+        element.attributes.value,
+        element.attributes.name,
+        element.attributes.id,
+        type,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return patterns.some((pattern) => pattern.test(label));
+  });
+}
+
+function formSubmitControlPatternsForText(text: string): RegExp[] {
+  const normalized = normalizeText(text);
+  const patterns: RegExp[] = [];
+  if (/\blog\s*in\b|\bsign\s*in\b/i.test(normalized)) {
+    patterns.push(/\b(?:log\s*in|sign\s*in|login|signin)\b/i);
+  }
+  if (/\bsubmit\b/i.test(normalized)) {
+    patterns.push(/\bsubmit\b/i);
+  }
+  if (/\bsend\b/i.test(normalized)) {
+    patterns.push(/\bsend\b/i);
+  }
+  if (/\bsave\b/i.test(normalized)) {
+    patterns.push(/\b(?:save|saved)\b/i);
+  }
+  if (/\bapply\b/i.test(normalized)) {
+    patterns.push(/\b(?:apply|update)\b/i);
+  }
+  if (/\bcheckout\b|\bplace\s+order\b|\border\b/i.test(normalized)) {
+    patterns.push(/\b(?:checkout|place\s+order|order|purchase)\b/i);
+  }
+  if (/\bcreate\b|\bregister\b|\brequest\b|\bcomplete\b/i.test(normalized)) {
+    patterns.push(/\b(?:create|register|request|complete|finish)\b/i);
+  }
+  return patterns;
 }
 
 function generateNavigationContract(
@@ -601,35 +721,44 @@ function generateWorkflowConfirmationContract(
   },
   _snapshot: DomSnapshot,
 ): GeneratedCompletionContract | null {
-  const requestText = [
-    extractCanonicalUserRequest(params.userRequest),
-    params.activeObjective,
-    params.successCriteria,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const action = inferWorkflowConfirmationAction(requestText);
-  if (!action) return null;
-  if (isBrowserManagementWorkflowRequest(requestText)) return null;
-  if (action === "dismiss" && isDismissalPartOfLargerTask(requestText)) {
-    return null;
-  }
-  const targetLabel = inferWorkflowConfirmationTargetLabel(
-    requestText,
-    action,
-  );
+  const canonicalUserRequest = extractCanonicalUserRequest(params.userRequest);
+  const requestTextCandidates = [
+    [params.activeObjective, params.successCriteria].filter(Boolean).join("\n"),
+    extractCurrentObjectiveRequestText(params.userRequest),
+    params.userRequest,
+    canonicalUserRequest,
+  ].filter(Boolean);
 
-  return {
-    contract: {
-      kind: "workflow_confirmation",
+  for (const requestText of requestTextCandidates) {
+    const action = inferWorkflowConfirmationAction(requestText);
+    if (!action) continue;
+    if (isBrowserManagementWorkflowRequest(requestText)) continue;
+    if (hasPageReadAnswerIntent(requestText, _snapshot)) continue;
+    if (action === "dismiss" && isDismissalPartOfLargerTask(requestText)) {
+      continue;
+    }
+    const targetLabel = inferWorkflowConfirmationTargetLabel(
+      requestText,
       action,
-      ...(targetLabel ? { targetLabel } : {}),
-    },
-    confidence: "medium",
-    source: "heuristic",
-    repairable: true,
-    notes: [],
-  };
+    );
+
+    const targetValue = inferWorkflowUpdateTargetValue(requestText);
+
+    return {
+      contract: {
+        kind: "workflow_confirmation",
+        action,
+        ...(targetLabel ? { targetLabel } : {}),
+        ...(targetValue ? { targetValue } : {}),
+      },
+      confidence: "medium",
+      source: "heuristic",
+      repairable: true,
+      notes: [],
+    };
+  }
+
+  return null;
 }
 
 export function deriveCompletionEvidenceFromToolOutcome(params: {
@@ -826,6 +955,7 @@ export function evaluateCompletionContract(params: {
       contract: params.contract,
       evidence: params.evidence,
       candidateSource: params.candidateSource,
+      snapshot: params.snapshot,
       summary: params.summary,
     });
   }
@@ -1458,6 +1588,7 @@ function evaluateWorkflowConfirmation(params: {
   contract: WorkflowConfirmationContract;
   evidence: CompletionEvidence[];
   candidateSource: CompletionCandidateSource;
+  snapshot?: DomSnapshot | null;
   summary?: string;
 }): CompletionEvaluation {
   const contract = params.contract;
@@ -1475,7 +1606,50 @@ function evaluateWorkflowConfirmation(params: {
   const targetMatchedConfirmations = confirmations.filter((event) =>
     workflowConfirmationMatchesTarget(event, contract.targetLabel),
   );
+  const visibleTargetState = inferWorkflowVisibleTargetStateConfirmation({
+    contract,
+    evidence: params.evidence,
+    snapshot: params.snapshot,
+    summary: params.summary,
+  });
+  const visibleDismissState = inferDismissWorkflowVisibleStateConfirmation({
+    contract,
+    evidence: params.evidence,
+    snapshot: params.snapshot,
+    summary: params.summary,
+  });
+  const visibleUpdateState = inferWorkflowUpdateVisibleStateConfirmation({
+    contract,
+    evidence: params.evidence,
+    snapshot: params.snapshot,
+    summary: params.summary,
+  });
   if (confirmations.length > 0 && targetMatchedConfirmations.length === 0) {
+    if (visibleTargetState) {
+      return {
+        status: "accepted",
+        reason: "Workflow contract is satisfied by visible target state.",
+        contract,
+        evidence: [visibleTargetState],
+      };
+    }
+    if (visibleDismissState) {
+      return {
+        status: "accepted",
+        reason: "Dismiss contract is satisfied by visible absence of modal controls.",
+        contract,
+        evidence: [visibleDismissState],
+      };
+    }
+    if (visibleUpdateState) {
+      return {
+        status: "accepted",
+        reason: "Update contract is satisfied by visible target value state.",
+        contract,
+        evidence: [visibleUpdateState],
+      };
+    }
+
     return {
       status: "rejected",
       reason:
@@ -1486,6 +1660,32 @@ function evaluateWorkflowConfirmation(params: {
   }
   const confirmation = targetMatchedConfirmations[0];
   if (!confirmation) {
+    if (visibleTargetState) {
+      return {
+        status: "accepted",
+        reason: "Workflow contract is satisfied by visible target state.",
+        contract,
+        evidence: [visibleTargetState],
+      };
+    }
+    if (visibleDismissState) {
+      return {
+        status: "accepted",
+        reason: "Dismiss contract is satisfied by visible absence of modal controls.",
+        contract,
+        evidence: [visibleDismissState],
+      };
+    }
+
+    if (visibleUpdateState) {
+      return {
+        status: "accepted",
+        reason: "Update contract is satisfied by visible target value state.",
+        contract,
+        evidence: [visibleUpdateState],
+      };
+    }
+
     return {
       status: "needs_verification",
       reason:
@@ -1500,7 +1700,11 @@ function evaluateWorkflowConfirmation(params: {
   if (
     params.candidateSource === "model_done" &&
     params.summary &&
-    !summaryConfirmsWorkflowAction(params.summary, contract.action)
+    !summaryConfirmsWorkflowActionOrSatisfiedState(
+      params.summary,
+      contract,
+      confirmation,
+    )
   ) {
     return {
       status: "inconclusive",
@@ -2125,6 +2329,39 @@ function inferExpectedFormFields(
   return expectedFields;
 }
 
+function inferExpectedScopedFormFields(
+  activeScopeText: string,
+  scopedValueText: string,
+  canonicalUserRequest: string,
+  fields: FormFieldObservation[],
+): FormFillFieldExpectation[] {
+  const expectedFields: FormFillFieldExpectation[] = [];
+  for (const field of fields) {
+    if (!formFieldMentionedInText(activeScopeText, field)) continue;
+    const value =
+      inferExpectedFieldValue(scopedValueText || activeScopeText, field, fields) ??
+      inferExpectedFieldValue(canonicalUserRequest, field, fields);
+    if (value == null) continue;
+    expectedFields.push({
+      label: field.label,
+      value,
+      elementId: field.elementId,
+      stableKey: field.stableKey,
+    });
+  }
+  return expectedFields;
+}
+
+function formFieldMentionedInText(
+  text: string,
+  field: FormFieldObservation,
+): boolean {
+  const normalized = normalizeText(text);
+  return formFieldAliases(field).some((alias) =>
+    new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(normalized),
+  );
+}
+
 function inferExpectedFieldValue(
   userRequest: string,
   field: FormFieldObservation,
@@ -2133,27 +2370,80 @@ function inferExpectedFieldValue(
   if (field.kind === "checkbox" || field.kind === "radio") {
     return inferExpectedBooleanValue(userRequest, field);
   }
+  if (field.kind === "select") {
+    const selectedValue = inferExpectedCurrentSelectValue(userRequest, field);
+    if (selectedValue) return selectedValue;
+  }
 
   const text = cleanLabel(userRequest);
   for (const alias of formFieldAliases(field)) {
-    const quoted = new RegExp(
-      `\\b${escapeRegExp(alias)}\\b\\s*(?:is|=|:|to|as)?\\s*["']([^"']+)["']`,
-      "i",
-    ).exec(text);
-    if (quoted?.[1]) {
-      const value = trimInferredValue(quoted[1], field, fields);
+    const quotedPattern = new RegExp(
+      `\\b${escapeRegExp(alias)}\\b\\s*(?:(is|=|:|to|as|with|equals?|shows?|contains?|reads?|displays?)\\s*)?["']([^"']+)["']`,
+      "gi",
+    );
+    for (const quoted of text.matchAll(quotedPattern)) {
+      if (
+        !quoted[1] &&
+        !hasFieldValueIntentBeforeAlias(text, quoted.index ?? 0)
+      ) {
+        continue;
+      }
+      const value = trimInferredValue(quoted[2], field, fields);
       if (value) return value;
     }
 
-    const unquoted = new RegExp(
-      `\\b${escapeRegExp(alias)}\\b\\s*(?:is|=|:|to|as)?\\s+([^,;\\n]+(?:\\s+[^,;\\n]+){0,16})`,
-      "i",
-    ).exec(text);
-    if (!unquoted?.[1]) continue;
-    const value = trimInferredValue(unquoted[1], field, fields);
-    if (value) return value;
+    const unquotedPattern = new RegExp(
+      `\\b${escapeRegExp(alias)}\\b\\s*(?:(is|=|:|to|as|with|equals?|shows?|contains?|reads?|displays?)\\s+)?([^,;\\n]+(?:\\s+[^,;\\n]+){0,16})`,
+      "gi",
+    );
+    for (const unquoted of text.matchAll(unquotedPattern)) {
+      if (!unquoted?.[2]) continue;
+      if (
+        !unquoted[1] &&
+        !hasFieldValueIntentBeforeAlias(text, unquoted.index ?? 0)
+      ) {
+        continue;
+      }
+      const value = trimInferredValue(unquoted[2], field, fields);
+      if (value) return value;
+    }
   }
   return null;
+}
+
+function inferExpectedCurrentSelectValue(
+  userRequest: string,
+  field: FormFieldObservation,
+): string | null {
+  const value = cleanLabel(field.value);
+  if (!value) return null;
+
+  const requestText = normalizeText(userRequest);
+  const valueText = normalizeText(value);
+  if (!valueText || !valueTokenCoveredBySummary(requestText, valueText)) {
+    return null;
+  }
+
+  const aliases = formFieldAliases(field);
+  if (
+    aliases.some((alias) =>
+      new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(requestText),
+    )
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function hasFieldValueIntentBeforeAlias(
+  text: string,
+  aliasIndex: number,
+): boolean {
+  const prefix = text.slice(Math.max(0, aliasIndex - 80), aliasIndex);
+  return /\b(?:fill|filled|enter|entered|type|typed|write|written|set|update|change|choose|select|check|uncheck|use|using|with|log\s*in|sign\s*in|register|apply|checkout|order)\b/i.test(
+    prefix,
+  );
 }
 
 function inferExpectedBooleanValue(
@@ -2195,6 +2485,16 @@ function trimInferredValue(
   fields: FormFieldObservation[],
 ): string {
   let value = cleanLabel(rawValue);
+  if (formFieldValueLooksLikeControlInstruction(value)) return "";
+  if (/\be[-\s]?mail\b/i.test(field.label)) {
+    const email = value.match(/[^\s"'<>(),;:]+@[^\s"'<>(),;:]+\.[^\s"'<>(),;:.]+/i)
+      ?.[0];
+    if (email) return email.replace(/[.,;:!?]+$/g, "");
+  }
+  if (isCodeLikeFormField(field)) {
+    const conciseCode = extractConciseCodeFormValue(value);
+    if (conciseCode) value = conciseCode;
+  }
   let trimmedAtBoundary = false;
   const otherAliases = fields
     .filter((candidate) => candidate.stableKey !== field.stableKey)
@@ -2216,12 +2516,58 @@ function trimInferredValue(
     /\.\s+(?:then|and|click|press|submit|save|check|uncheck|select|set|choose|fill|enter|type)\b.*$/i,
     "",
   );
+  value = value.replace(
+    /\s+(?:in|inside|on|under)\s+(?:the\s+)?(?:[a-z0-9_-]+\s+){0,3}(?:field|input|box|control|form)\b.*$/i,
+    "",
+  );
+  if (formFieldValueLooksLikeControlInstruction(value)) return "";
   if (trimmedAtBoundary) {
     value = value.replace(/[.]+$/g, "");
+  }
+  if (/\bcode\b/i.test(field.label)) value = value.replace(/[.,;:!?]+$/g, "");
+  if (isEmailLikeFormValue(field, value)) {
+    value = value.replace(/[.,;:!?]+$/g, "");
   }
   value = value.replace(/\b(?:and|then|also|too)$/i, "");
   value = value.replace(/^["']|["']$/g, "");
   return cleanLabel(value);
+}
+
+function formFieldValueLooksLikeControlInstruction(value: string): boolean {
+  return (
+    /^(?:[\/\s-]*(?:promo|discount|coupon|shipping|name|email|e-mail))*[\/\s-]*(?:input|field|box|control|form)\b/i.test(
+      value,
+    ) ||
+    /^\s*(?:in|inside|on|under)\s+(?:the\s+)?(?:[a-z0-9_-]+\s+){0,4}(?:input|field|box|control|form)\b/i.test(
+      value,
+    )
+  );
+}
+
+function isCodeLikeFormField(field: FormFieldObservation): boolean {
+  return /\b(?:code|coupon|promo|discount)\b/i.test(field.label);
+}
+
+function extractConciseCodeFormValue(value: string): string | null {
+  const match = /\b([A-Za-z0-9][A-Za-z0-9_-]{2,})\b(?=\s*(?:$|[.,;:!?]|\b(?:for|in|inside|on|under|as|and|then|please|to)\b))/i.exec(
+    value,
+  );
+  if (!match) return null;
+  const candidate = match[1].replace(/[.,;:!?]+$/g, "");
+  if (/^(?:the|for|and|then|please|input|field|coupon|promo|discount|code)$/i.test(candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
+function isEmailLikeFormValue(
+  field: FormFieldObservation,
+  value: string,
+): boolean {
+  return (
+    /\be[-\s]?mail\b/i.test(field.label) ||
+    /^[^\s@]+@[^\s@]+\.[^\s@]+[.,;:!?]?$/i.test(value)
+  );
 }
 
 function formFieldAliases(field: FormFieldObservation): string[] {
@@ -2243,6 +2589,19 @@ function formFieldAliases(field: FormFieldObservation): string[] {
   if (/\blast\s*name\b/i.test(normalizedLabel)) aliases.add("last name");
   if (/\bpostal\b/i.test(normalizedLabel)) aliases.add("postal code");
   if (/\bzip\b/i.test(normalizedLabel)) aliases.add("zip");
+  if (/\bcode\b/i.test(normalizedLabel)) {
+    aliases.add("coupon code");
+    aliases.add("promo code");
+    aliases.add("coupon");
+    aliases.add("promo");
+  }
+
+  if (/\b(?:coupon|promo|discount)\b/i.test(normalizedLabel)) {
+    aliases.add("coupon code");
+    aliases.add("promo code");
+    aliases.add("coupon");
+    aliases.add("promo");
+  }
 
   for (const term of [
     "address",
@@ -2250,17 +2609,31 @@ function formFieldAliases(field: FormFieldObservation): string[] {
     "company",
     "country",
     "description",
+    "color",
+    "engraving",
     "message",
     "name",
     "password",
     "phone",
     "priority",
+    "size",
     "state",
     "subject",
     "title",
     "username",
   ]) {
     if (normalizedLabel.includes(term)) aliases.add(term);
+  }
+
+  for (const token of normalizedLabel.split(/\s+/)) {
+    if (
+      token.length >= 4 &&
+      !/^(?:field|input|select|checkbox|radio|control|option|value)$/i.test(
+        token,
+      )
+    ) {
+      aliases.add(token);
+    }
   }
 
   return [...aliases]
@@ -2482,6 +2855,9 @@ function inferWorkflowConfirmationAction(
     )
   ) {
     return "restore";
+  }
+  if (/\badd(?:ed)?\b.{0,120}\b(?:cart|basket|bag)\b/i.test(text)) {
+    return "create";
   }
   if (
     /\b(?:create(?:d)?|add(?:ed)?|register(?:ed)?)\s+(?:the\s+)?(?:record|item|task|ticket|request|entry|row|template|report|page|document|file|workflow|rule|dashboard|view|list|policy|profile|account|user|order|case|issue|incident|project|contact|customer)\b/i.test(
@@ -2801,7 +3177,13 @@ function inferWorkflowConfirmationAction(
   if (/\b(?:update|updated|change|changed|apply|applied)\b/i.test(text)) {
     return "update";
   }
-  if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  if (
+    /\b(?:submit|submitted|submission|place\s+order|placed\s+order|checkout|purchase|purchased|order\s+confirmation)\b/i.test(
+      text,
+    )
+  ) {
+    return "submit";
+  }
   if (isCompleteWorkflowRequest(text)) return "complete";
   return null;
 }
@@ -2823,13 +3205,42 @@ function inferWorkflowConfirmationTargetLabel(
     .filter(Boolean);
 
   for (const line of lines) {
+    if (action === "enable" || action === "disable") {
+      const indirectActionTarget = /\b(?:click|press|select|choose|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:action|button|control|toggle|switch)\b/i.exec(
+        line,
+      )?.[1];
+      const indirectActionTargetLabel = normalizeWorkflowTargetLabel(
+        indirectActionTarget ?? "",
+      );
+      if (indirectActionTargetLabel) return indirectActionTargetLabel;
+    }
+
     if (!new RegExp(`\\b${actionPattern}\\b`, "i").test(line)) continue;
+    if (/^the subtask outcome for\b/i.test(line)) continue;
 
     const quoted = /["']([^"']{2,120})["']/.exec(line)?.[1];
     const quotedTarget = normalizeWorkflowTargetLabel(quoted ?? "", {
       quoted: true,
     });
     if (quotedTarget) return quotedTarget;
+
+    if (action === "update") {
+      const inlineEditTarget = /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:and|then)\s+(?:change|update|set|edit|replace)\s+(?:its|the)\s+(?:value|text|name|cell|field)\b/i.exec(
+        line,
+      )?.[1];
+      const inlineEditTargetLabel = normalizeWorkflowTargetLabel(
+        inlineEditTarget ?? "",
+      );
+      if (inlineEditTargetLabel) return inlineEditTargetLabel;
+
+      const typeThenCommitTarget = /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s*,?\s+(?:type|enter)\s+[^,.;\n]{1,80}\s*,?\s+(?:and\s+)?(?:press|hit)?\s*(?:enter|tab)\b/i.exec(
+        line,
+      )?.[1];
+      const typeThenCommitTargetLabel = normalizeWorkflowTargetLabel(
+        typeThenCommitTarget ?? "",
+      );
+      if (typeThenCommitTargetLabel) return typeThenCommitTargetLabel;
+    }
 
     const direct = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.+?)(?:[.;,]|$)`,
@@ -3019,10 +3430,7 @@ function workflowTargetActionPattern(
     case "submit":
       return "(?:submit)";
     case "complete":
-      return "(?:complete|mark|set)";
-    default:
-      return null;
-  }
+      return "(?:complete|mark|set)";  }
 }
 
 function inferCompleteWorkflowTargetLabel(value: string): string | null {
@@ -3066,7 +3474,19 @@ function normalizeWorkflowTargetLabel(
     "",
   );
   target = target.replace(
-    /\s+(?:and|then|after that)\s+(?:confirm|verify|make sure|ensure|check|click|press|select|open|go)\b.+$/i,
+    /\s+(?:and|then|after that)\s+(?:confirm|verify|make sure|ensure|check|click|press|select|open|go)\b.*$/i,
+    "",
+  );
+  target = target.replace(
+    /\s+by\s+(?:clicking|pressing|selecting|choosing|using|toggling|opening|checking)\b.+$/i,
+    "",
+  );
+  target = target.replace(
+    /\s+(?:using|with)\s+(?:its|the|a|an)?\s*(?:button|toggle|control|link|menu|option|checkbox|switch)\b.*$/i,
+    "",
+  );
+  target = target.replace(
+    /\s+(?:action|actions|button|buttons|toggle|toggles|control|controls|link|links|switch|switches|checkbox|checkboxes)\s*$/i,
     "",
   );
   target = target.replace(/\s+(?:from|in|on|under|inside)\s+.+$/i, "");
@@ -3115,6 +3535,13 @@ function workflowConfirmationMatchesTarget(
     event.detail.source === "visible_text" &&
     isTargetAwareVisibleWorkflowAction(event.detail.action)
   ) {
+    if (
+      isTransactionalConfirmationAction(event.detail.action) &&
+      extractTransactionalConfirmationSnippet(event.detail.text) &&
+      workflowTargetIsTransactional(targetLabel)
+    ) {
+      return true;
+    }
     return visibleWorkflowConfirmationMatchesTarget(
       event.detail.text,
       event.detail.action,
@@ -3162,13 +3589,15 @@ function workflowTargetLabelCoveredByText(
   const targetTokens = tokenizeCompletionText(targetLabel);
   const meaningfulTargetTokens = targetTokens.filter(
     (token) =>
-      !/^(?:record|item|row|entry|object|button|link|target)$/i.test(token),
+      !/^(?:record|item|items|row|entry|object|button|buttons|link|links|target|action|actions|control|controls|panel|setting|settings|toggle|toggles|switch|switches|checkbox|checkboxes|click|clicking|press|pressing|select|selecting|choose|choosing|use|using|confirm|confirmation|confirmed|delete|deleted|deletion|remove|removed|removal|create|created|creation|update|updated|change|changed|save|saved|cart|basket|bag|product|products|listing|catalog|catalogue|shoe|shoes|coupon|promo|discount|code|status|input|field)$/i.test(
+        token,
+      ),
   );
   if (
     meaningfulTargetTokens.length > 0 &&
     meaningfulTargetTokens.length < targetTokens.length &&
     meaningfulTargetTokens.every((token) =>
-      valueTokenCoveredBySummary(normalizedText, token),
+      workflowTargetTokenCoveredByText(normalizedText, token),
     )
   ) {
     return true;
@@ -3176,9 +3605,25 @@ function workflowTargetLabelCoveredByText(
   return (
     targetTokens.length > 0 &&
     targetTokens.every((token) =>
-      valueTokenCoveredBySummary(normalizedText, token),
+      workflowTargetTokenCoveredByText(normalizedText, token),
     )
   );
+}
+
+function workflowTargetTokenCoveredByText(
+  normalizedText: string,
+  normalizedToken: string,
+): boolean {
+  if (valueTokenCoveredBySummary(normalizedText, normalizedToken)) return true;
+  if (normalizedToken.endsWith("y")) {
+    const plural = `${normalizedToken.slice(0, -1)}ies`;
+    if (valueTokenCoveredBySummary(normalizedText, plural)) return true;
+  }
+  if (!normalizedToken.endsWith("s")) {
+    const plural = `${normalizedToken}s`;
+    if (valueTokenCoveredBySummary(normalizedText, plural)) return true;
+  }
+  return false;
 }
 
 function visibleWorkflowConfirmationMatchesTarget(
@@ -3186,15 +3631,21 @@ function visibleWorkflowConfirmationMatchesTarget(
   action: TargetAwareVisibleWorkflowAction,
   targetLabel: string,
 ): boolean {
+  if (
+    action === "create" &&
+    extractCartCreationSnippet(text) &&
+    workflowTargetLabelCoveredByText(targetLabel, text)
+  ) {
+    return true;
+  }
+
   const candidate = extractVisibleWorkflowConfirmationTarget(
     text,
     action,
     targetLabel,
   );
   if (!candidate) {
-    // Named requests need visible target grounding before target-aware
-    // visible-text confirmations can be accepted.
-    return false;
+    return workflowTargetLabelCoveredByText(targetLabel, text);
   }
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
 }
@@ -3211,6 +3662,34 @@ function extractVisibleWorkflowConfirmationTarget(
   const targetTokenCount = Math.max(1, Math.min(targetTokens.length, 8));
   const resultTerms = workflowTargetVisibleResultPattern(action);
   const nounTerms = workflowTargetVisibleNounPattern(action);
+  if (action === "create") {
+    const cartState = extractCartCreationSnippet(normalizedText);
+    if (cartState) return cartState;
+  }
+  if (action === "enable") {
+    const actionStatusMatches = [
+      ...normalizedText.matchAll(
+        /\bAction\s*:\s*([a-z0-9][a-z0-9 _-]{0,80}?)(?=\s+[a-z0-9][a-z0-9 _-]{1,40}\s*:|[.!?]|$)/gi,
+      ),
+    ];
+    for (const match of actionStatusMatches) {
+      const candidate =
+        normalizeWorkflowTargetLabel(match[1] ?? "", { allowShort: true }) ??
+        normalizeWorkflowTargetHead(match[1] ?? "", targetTokenCount);
+      if (candidate && workflowTargetLabelCoveredByText(targetLabel, candidate)) {
+        return candidate;
+      }
+    }
+    const firstCandidate =
+      normalizeWorkflowTargetLabel(actionStatusMatches[0]?.[1] ?? "", {
+        allowShort: true,
+      }) ??
+      normalizeWorkflowTargetHead(
+        actionStatusMatches[0]?.[1] ?? "",
+        targetTokenCount,
+      );
+    if (firstCandidate) return firstCandidate;
+  }
   const beforeResult = new RegExp(
     `(.{2,180}?)\\s+(?:was\\s+)?${resultTerms}\\s+(?:successfully|complete|completed|confirmed)\\b`,
     "i",
@@ -3687,6 +4166,416 @@ function summaryConfirmsWorkflowAction(
   action: WorkflowConfirmationAction,
 ): boolean {
   return textConfirmsWorkflowAction(summary, action, "summary");
+}
+
+function summaryConfirmsWorkflowActionOrSatisfiedState(
+  summary: string,
+  contract: WorkflowConfirmationContract,
+  confirmation: Extract<CompletionEvidence, { type: "confirmation_state" }>,
+): boolean {
+  if (
+    isTransactionalConfirmationAction(contract.action) &&
+    extractTransactionalConfirmationSnippet(confirmation.detail.text) &&
+    (!contract.targetLabel || workflowTargetIsTransactional(contract.targetLabel))
+  ) {
+    return transactionalConfirmationSummaryGrounded(summary, confirmation.detail.text);
+  }
+  if (summaryConfirmsWorkflowAction(summary, contract.action)) return true;
+  if (contract.action !== "create" || !contract.targetLabel) return false;
+  if (!extractCartCreationSnippet(confirmation.detail.text)) return false;
+  if (!workflowTargetLabelCoveredByText(contract.targetLabel, summary)) {
+    return false;
+  }
+  return /\b(?:cart|basket|bag|already|present|contains|shows|displays|visible|satisfied)\b/i.test(
+    summary,
+  );
+}
+
+
+
+function inferDismissWorkflowVisibleStateConfirmation(params: {
+  contract: WorkflowConfirmationContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  const { contract, snapshot } = params;
+  if (contract.action !== "dismiss" || !snapshot) return null;
+  if (findModalLikeDescriptors(snapshot).length > 0) return null;
+  if (snapshotHasVisibleDismissalControl(snapshot)) return null;
+  if (
+    params.summary &&
+    !/\b(?:closed|dismissed|removed|cleared|gone|no\s+(?:modal|popup|pop-up|overlay|banner)|no\s+longer\s+visible)\b/i.test(
+      params.summary,
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    type: "confirmation_state",
+    confidence: "medium",
+    logicalKey: "workflow:confirmation:dismiss:visible-absence",
+    observedAtTurn: latestObservedTurn(params.evidence),
+    detail: {
+      action: "dismiss",
+      source: "visible_absence",
+      targetText: cleanLabel(contract.targetLabel ?? "modal or popup overlay"),
+      text: "No visible modal, popup, overlay, banner, or dismissal control remains.",
+    },
+  };
+}
+
+function inferWorkflowVisibleTargetStateConfirmation(params: {
+  contract: WorkflowConfirmationContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  const { contract, snapshot } = params;
+  if (!contract.targetLabel || !snapshot) return null;
+
+  const statePattern = workflowVisibleTargetStatePattern(contract.action);
+  if (!statePattern) return null;
+
+  const visibleText = cleanLabel(
+    [snapshot.visibleContent, snapshot.pageContent].filter(Boolean).join("\n"),
+  );
+  if (!visibleText) return null;
+  if (
+    !workflowVisibleTargetStateMatches(
+      contract.targetLabel,
+      statePattern,
+      visibleText,
+    )
+  ) {
+    return null;
+  }
+  if (
+    params.summary &&
+    !workflowVisibleTargetStateSummaryMatches(
+      params.summary,
+      contract.targetLabel,
+      contract.action,
+      statePattern,
+    )
+  ) {
+    return null;
+  }
+
+  const targetKey = compactKey(contract.targetLabel + ":" + contract.action);
+  return {
+    type: "confirmation_state",
+    confidence: "medium",
+    logicalKey:
+      "workflow:confirmation:" +
+      contract.action +
+      ":visible-target-state:" +
+      targetKey,
+    observedAtTurn: latestObservedTurn(params.evidence),
+    detail: {
+      action: contract.action,
+      source: "visible_text",
+      targetText: contract.targetLabel,
+      text: workflowVisibleTargetStateSnippet(
+        visibleText,
+        contract.targetLabel,
+        statePattern,
+      ),
+    },
+  };
+}
+
+function workflowVisibleTargetStatePattern(
+  action: WorkflowConfirmationAction,
+): string | null {
+  switch (action) {
+    case "enable":
+      return "(?:enabled|activated|on|active)";
+    case "disable":
+      return "(?:disabled|deactivated|off|inactive)";
+    default:
+      return null;
+  }
+}
+
+function workflowVisibleTargetStateMatches(
+  targetLabel: string,
+  statePattern: string,
+  visibleText: string,
+): boolean {
+  const targetTokens = workflowVisibleTargetStateTokens(targetLabel);
+  if (targetTokens.length === 0) return false;
+
+  const normalizedText = normalizeText(visibleText);
+  const targetPattern = targetTokens.map(escapeRegExp).join("\\s+");
+  return new RegExp(
+    `\\b${targetPattern}\\b(?:\\s*(?:[:=\\-])\\s*|\\s+(?:is|now|currently|has\\s+been|was|turned|set\\s+to|status(?:\\s+is)?|state(?:\\s+is)?)\\s+|\\s+)${statePattern}\\b`,
+    "i",
+  ).test(normalizedText);
+}
+
+function workflowVisibleTargetStateSummaryMatches(
+  summary: string,
+  targetLabel: string,
+  action: WorkflowConfirmationAction,
+  statePattern: string,
+): boolean {
+  if (workflowVisibleTargetStateMatches(targetLabel, statePattern, summary)) {
+    return true;
+  }
+  if (!workflowTargetLabelCoveredByText(targetLabel, summary)) return false;
+  if (summaryConfirmsWorkflowAction(summary, action)) return true;
+  if (action === "enable") {
+    return /\b(?:turn(?:ed)?\s+on|switched\s+on|enabled|activated)\b/i.test(
+      summary,
+    );
+  }
+  if (action === "disable") {
+    return /\b(?:turn(?:ed)?\s+off|switched\s+off|disabled|deactivated)\b/i.test(
+      summary,
+    );
+  }
+  return false;
+}
+
+function workflowVisibleTargetStateTokens(targetLabel: string): string[] {
+  return tokenizeCompletionText(targetLabel).filter(
+    (token) =>
+      !/^(?:enable|enabled|activate|activated|activation|disable|disabled|deactivate|deactivated|deactivation|turn|turned|on|off|active|inactive|toggle|toggles|switch|switches|setting|settings|status|state|control|button)$/i.test(
+        token,
+      ),
+  );
+}
+
+function workflowVisibleTargetStateSnippet(
+  visibleText: string,
+  targetLabel: string,
+  statePattern: string,
+): string {
+  const normalizedText = normalizeText(visibleText);
+  const targetTokens = workflowVisibleTargetStateTokens(targetLabel);
+  const targetPattern = targetTokens.map(escapeRegExp).join("\\s+");
+  const match = new RegExp(
+    `\\b${targetPattern}\\b(?:\\s*(?:[:=\\-])\\s*|\\s+(?:is|now|currently|has\\s+been|was|turned|set\\s+to|status(?:\\s+is)?|state(?:\\s+is)?)\\s+|\\s+)${statePattern}\\b`,
+    "i",
+  ).exec(normalizedText);
+  if (!match) return cleanLabel(targetLabel);
+  const start = Math.max(0, match.index - 120);
+  const end = Math.min(visibleText.length, match.index + match[0].length + 120);
+  return cleanLabel(visibleText.slice(start, end));
+}
+
+function inferWorkflowUpdateVisibleStateConfirmation(params: {
+  contract: WorkflowConfirmationContract;
+  evidence: CompletionEvidence[];
+  snapshot?: DomSnapshot | null;
+  summary?: string;
+}): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  const { contract, snapshot } = params;
+  if (!contract.targetLabel) return null;
+  const targetValue = cleanLabel(contract.targetValue ?? "");
+  if (!targetValue || !snapshot) return null;
+  if (workflowUpdateValueStillInActiveEditor(snapshot, targetValue)) {
+    return null;
+  }
+
+  const visibleText = cleanLabel(
+    [
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      workflowUpdateCommittedElementText(snapshot),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  if (!visibleText) return null;
+  if (!workflowUpdateVisibleStateMatches(contract.targetLabel, targetValue, visibleText)) {
+    return null;
+  }
+  if (
+    params.summary &&
+    !workflowUpdateSummaryMatchesVisibleState(
+      params.summary,
+      contract.targetLabel,
+      targetValue,
+    )
+  ) {
+    return null;
+  }
+
+  const targetKey = compactKey(contract.targetLabel + ":" + targetValue);
+  return {
+    type: "confirmation_state",
+    confidence: "medium",
+    logicalKey:
+      "workflow:confirmation:" +
+      contract.action +
+      ":visible-target-value:" +
+      targetKey,
+    observedAtTurn: latestObservedTurn(params.evidence),
+    detail: {
+      action: contract.action,
+      source: "visible_text",
+      targetText: contract.targetLabel + " " + targetValue,
+      text: workflowUpdateVisibleStateSnippet(
+        visibleText,
+        contract.targetLabel,
+        targetValue,
+      ),
+    },
+  };
+}
+
+function workflowUpdateValueStillInActiveEditor(
+  snapshot: DomSnapshot,
+  targetValue: string,
+): boolean {
+  const normalizedValue = normalizeText(targetValue);
+  if (!normalizedValue) return false;
+  return snapshot.elements.some((element) => {
+    if (!element.isVisible) return false;
+    if (!getFormFieldKind(element)) return false;
+    const value = cleanLabel(
+      [
+        element.attributes.value,
+        element.text,
+        element.attributes["aria-label"],
+        element.attributes.label,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    return valueTokenCoveredBySummary(normalizeText(value), normalizedValue);
+  });
+}
+
+function workflowUpdateCommittedElementText(snapshot: DomSnapshot): string {
+  return snapshot.elements
+    .filter((element) => element.isVisible)
+    .filter((element) => !getFormFieldKind(element))
+    .filter((element) => {
+      const tagName = element.tagName.toLowerCase();
+      const role = (element.role ?? "").toLowerCase();
+      return (
+        /^(?:table|thead|tbody|tfoot|tr|td|th)$/i.test(tagName) ||
+        /^(?:table|grid|row|cell|gridcell|columnheader|rowheader)$/i.test(role)
+      );
+    })
+    .map((element) => element.text)
+    .filter(Boolean)
+    .join("\n");
+}
+function workflowUpdateVisibleStateMatches(
+  targetLabel: string,
+  targetValue: string,
+  visibleText: string,
+): boolean {
+  const normalizedText = normalizeText(visibleText);
+  const normalizedValue = normalizeText(targetValue);
+  if (!valueTokenCoveredBySummary(normalizedText, normalizedValue)) return false;
+  const targetTokens = workflowUpdateStateTargetTokens(targetLabel);
+  if (targetTokens.length === 0) return false;
+  if (
+    !targetTokens.every((token) =>
+      workflowTargetTokenCoveredByText(normalizedText, token),
+    )
+  ) {
+    return false;
+  }
+  return workflowUpdateValueAppearsNearTarget(
+    normalizedText,
+    targetTokens,
+    normalizedValue,
+  );
+}
+
+function workflowUpdateSummaryMatchesVisibleState(
+  summary: string,
+  targetLabel: string,
+  targetValue: string,
+): boolean {
+  const normalizedSummary = normalizeText(summary);
+  const normalizedValue = normalizeText(targetValue);
+  if (!valueTokenCoveredBySummary(normalizedSummary, normalizedValue)) {
+    return false;
+  }
+  const targetTokens = workflowUpdateStateTargetTokens(targetLabel);
+  if (
+    targetTokens.length > 0 &&
+    !targetTokens.every((token) =>
+      workflowTargetTokenCoveredByText(normalizedSummary, token),
+    )
+  ) {
+    return false;
+  }
+  return (
+    summaryConfirmsWorkflowAction(summary, "update") ||
+    /\b(?:now|shows?|displays?|visible|committed|set|value)\b/i.test(summary)
+  );
+}
+
+function workflowUpdateStateTargetTokens(targetLabel: string): string[] {
+  return tokenizeCompletionText(targetLabel).filter(
+    (token) =>
+      !/^(?:value|values|cell|cells|field|fields|input|inputs|row|rows|column|columns|first|second|third|fourth|fifth|data)$/i.test(
+        token,
+      ),
+  );
+}
+
+function workflowUpdateValueAppearsNearTarget(
+  normalizedText: string,
+  targetTokens: string[],
+  normalizedValue: string,
+): boolean {
+  const valueIndex = normalizedText.indexOf(normalizedValue);
+  if (valueIndex < 0) return false;
+  return targetTokens.some((token) => {
+    const tokenIndex = normalizedText.indexOf(token);
+    return tokenIndex >= 0 && Math.abs(tokenIndex - valueIndex) <= 600;
+  });
+}
+
+function workflowUpdateVisibleStateSnippet(
+  visibleText: string,
+  targetLabel: string,
+  targetValue: string,
+): string {
+  const valueIndex = normalizeText(visibleText).indexOf(normalizeText(targetValue));
+  if (valueIndex < 0) return cleanLabel(targetLabel + " " + targetValue);
+  const start = Math.max(0, valueIndex - 180);
+  const end = Math.min(visibleText.length, valueIndex + targetValue.length + 180);
+  return cleanLabel(visibleText.slice(start, end));
+}
+
+function inferWorkflowUpdateTargetValue(value: string): string | null {
+  const text = cleanLabel(value);
+  const patterns = [
+    /\b(?:change|update|set|replace|edit)\b.{0,120}?\b(?:to|as)\s+["']?([^"',.;\n]{1,80})["']?/i,
+    /\b(?:type|enter)\s+["']?([^"'\s,.;\n]{1,80})["']?/i,
+  ];
+  for (const pattern of patterns) {
+    const candidate = normalizeWorkflowUpdateTargetValue(pattern.exec(text)?.[1] ?? "");
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function normalizeWorkflowUpdateTargetValue(value: string): string | null {
+  let targetValue = cleanLabel(value);
+  targetValue = targetValue.replace(
+    /\s+(?:and|then|press|click|confirm|save|submit|verify|check|the\s+subtask\s+outcome|is\s+verified|verified\s+on)\b.*$/i,
+    "",
+  );
+  targetValue = targetValue.replace(/^["']|["']$/g, "");
+  targetValue = cleanLabel(targetValue);
+  if (!targetValue) return null;
+  if (/^(?:confirm|verify|check)\b/i.test(targetValue)) return null;
+  if (!/[0-9$@._-]/.test(targetValue) && !/^.{2,40}$/.test(targetValue)) {
+    return null;
+  }
+  return targetValue.slice(0, 80);
 }
 
 function textConfirmsWorkflowAction(
@@ -4632,7 +5521,8 @@ function textConfirmsWorkflowAction(
           /\b(?:enabled|activated)\s+successfully\b/i.test(text) ||
           /\b(?:enable|activation)\s+(?:complete|completed|successful)\b/i.test(
             text,
-          )
+          ) ||
+          /\bAction\s*:\s*[a-z0-9][a-z0-9 _-]{1,120}\b/i.test(text)
         );
       }
       return /\b(?:enabled|activated|enable complete|enable completed|enable successful|activation complete|activation completed|activation successful)\b/i.test(
@@ -4804,11 +5694,14 @@ function textConfirmsWorkflowAction(
           /\bsubmitted\s+successfully\b/i.test(text) ||
           /\bsuccessfully\s+submitted\b/i.test(text) ||
           /\bsubmission\s+(?:complete|completed|successful)\b/i.test(text) ||
-          /\bsubmit\s+(?:complete|completed|successful)\b/i.test(text)
+          /\bsubmit\s+(?:complete|completed|successful)\b/i.test(text) ||
+          extractTransactionalConfirmationSnippet(text) !== null
         );
       }
-      return /\b(?:submitted|submission|submit complete|submit completed|submit successful)\b/i.test(
-        text,
+      return (
+        /\b(?:submitted|submission|submit complete|submit completed|submit successful)\b/i.test(
+          text,
+        ) || extractTransactionalConfirmationSnippet(text) !== null
       );
     case "complete":
       if (mode === "visible") {
@@ -4818,16 +5711,17 @@ function textConfirmsWorkflowAction(
           /\b(?:task|item|record|request|ticket|todo|to-do)\s+completed\b/i.test(
             text,
           ) ||
-          /\bcompletion\s+(?:complete|completed|successful)\b/i.test(text)
+          /\bcompletion\s+(?:complete|completed|successful)\b/i.test(text) ||
+          extractTransactionalConfirmationSnippet(text) !== null
         );
       }
       return (
         /\bmark(?:ed)?\b.{0,40}\bcomplete(?:d)?\b/i.test(text) ||
         /\b(?:completed|completion complete|completion completed|completion successful)\b/i.test(
           text,
-        )
-      );
-  }
+        ) ||
+        extractTransactionalConfirmationSnippet(text) !== null
+      );  }
   return false;
 }
 
@@ -5089,7 +5983,7 @@ function extractValidationErrorEvidence(
     .join("\n")
     .slice(0, 20_000);
   if (
-    !/\b(?:error|invalid|missing|please fill|please enter|is required|are required|required field|cannot be blank|can't be blank|must be filled)\b/i.test(
+    !/\b(?:validation errors?|invalid|missing|please fill|please enter|is required|are required|required field|cannot be blank|can't be blank|must be filled)\b/i.test(
       text,
     )
   ) {
@@ -5122,7 +6016,13 @@ function extractFormConfirmationEvidence(
     .join("\n")
     .slice(0, 20_000);
   const hasStrongConfirmation =
-    /\b(?:submission complete|submitted successfully|request has been submitted|thank you,? your request|request received|form submitted|order confirmed)\b/i.test(
+    /\b(?:submission complete|submitted successfully|sent successfully|request has been submitted|thank you,? your request|request received|form submitted|order confirmed)\b/i.test(
+      text,
+    ) ||
+    /\b(?:coupon|promo|discount|code)\b.{0,80}\b(?:applied|accepted|activated|successfully)\b/i.test(
+      text,
+    ) ||
+    /\b(?:applied|accepted|activated|successfully)\b.{0,80}\b(?:coupon|promo|discount|code)\b/i.test(
       text,
     );
   const hasReferenceConfirmation =
@@ -5154,21 +6054,22 @@ function extractWorkflowConfirmationEvidence(
   snapshot: DomSnapshot,
   turn: number,
 ): CompletionEvidence[] {
-  const text = [
-    snapshot.title,
-    snapshot.url,
-    snapshot.visibleContent,
-    snapshot.pageContent,
-  ]
-    .filter(Boolean)
-    .join("\n")
-    .slice(0, 20_000);
+  const text = workflowConfirmationTextCorpus(snapshot, {
+    includeTitleAndUrl: true,
+  }).slice(0, 20_000);
   const actions = new Set<WorkflowConfirmationAction>();
 
   for (const action of WORKFLOW_CONFIRMATION_ACTIONS) {
     if (textConfirmsWorkflowAction(text, action, "visible")) {
       actions.add(action);
     }
+  }
+  if (extractCartCreationSnippet(text)) {
+    actions.add("create");
+  }
+  if (extractTransactionalConfirmationSnippet(text)) {
+    actions.add("submit");
+    actions.add("complete");
   }
 
   return [...actions].map((action) => ({
@@ -5189,12 +6090,42 @@ function workflowConfirmationEvidenceText(
   snapshot: DomSnapshot,
   action: WorkflowConfirmationAction,
 ): string {
-  const source = cleanLabel(
-    snapshot.visibleContent || snapshot.pageContent || snapshot.title,
-  );
+  const source = workflowConfirmationTextCorpus(snapshot, {
+    includeTitleAndUrl: false,
+  });
   return (
     extractWorkflowConfirmationSnippet(source, action) ?? source
   ).slice(0, 1000);
+}
+
+function workflowConfirmationTextCorpus(
+  snapshot: DomSnapshot,
+  options: { includeTitleAndUrl: boolean },
+): string {
+  const parts = [
+    ...(options.includeTitleAndUrl ? [snapshot.title, snapshot.url] : []),
+    snapshot.visibleContent,
+    snapshot.pageContent,
+    ...snapshot.elements.flatMap((element) => {
+      if (element.isVisible === false) return [];
+      return [
+        element.text,
+        element.attributes.label,
+        element.attributes["aria-label"],
+        element.attributes.title,
+        element.attributes.value,
+      ];
+    }),
+  ];
+  const seen = new Set<string>();
+  const unique = parts
+    .map((part) => cleanLabel(part ?? ""))
+    .filter((part) => {
+      if (!part || seen.has(part)) return false;
+      seen.add(part);
+      return true;
+    });
+  return unique.join("\n");
 }
 
 function extractWorkflowConfirmationSnippet(
@@ -5203,6 +6134,25 @@ function extractWorkflowConfirmationSnippet(
 ): string | null {
   const text = cleanLabel(value);
   if (!text) return null;
+
+  if (action === "enable") {
+    const actionStatuses = [
+      ...text.matchAll(
+        /\bAction\s*:\s*[a-z0-9][a-z0-9 _-]{0,80}?(?=\s+[a-z0-9][a-z0-9 _-]{1,40}\s*:|[.!?]|$)/gi,
+      ),
+    ]
+      .map((match) => cleanLabel(match[0] ?? ""))
+      .filter(Boolean);
+    if (actionStatuses.length > 0) return actionStatuses.join(" ");
+  }
+  if (action === "create") {
+    const cartState = extractCartCreationSnippet(text);
+    if (cartState) return cartState;
+  }
+  if (isTransactionalConfirmationAction(action)) {
+    const transactionState = extractTransactionalConfirmationSnippet(text);
+    if (transactionState) return transactionState;
+  }
 
   const sentence = text
     .split(/(?<=[.!?])\s+|\n+/g)
@@ -5215,6 +6165,83 @@ function extractWorkflowConfirmationSnippet(
     text,
   )?.[0];
   return match ? cleanLabel(match) : null;
+}
+
+function isTransactionalConfirmationAction(
+  action: WorkflowConfirmationAction | undefined,
+): action is "submit" | "complete" {
+  return action === "submit" || action === "complete";
+}
+
+function workflowTargetIsTransactional(targetLabel: string): boolean {
+  return /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request)\b/i.test(
+    normalizeText(targetLabel),
+  );
+}
+
+function transactionalConfirmationSummaryGrounded(
+  summary: string,
+  evidenceText: string,
+): boolean {
+  const normalizedSummary = normalizeText(summary);
+  if (!/\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|confirmed|complete|completed|submitted|thank)\b/i.test(normalizedSummary)) {
+    return false;
+  }
+  const orderId = extractTransactionReference(evidenceText);
+  return !orderId || normalizedSummary.includes(normalizeText(orderId));
+}
+
+function extractTransactionReference(value: string): string | null {
+  return cleanLabel(value).match(/\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*([a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i)?.[1] ?? null;
+}
+
+function extractTransactionalConfirmationSnippet(value: string): string | null {
+  const text = cleanLabel(value);
+  if (!text) return null;
+  if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;
+
+  const hasTransactionNoun = /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request)\b/i.test(text);
+  const hasCompletionState = /\b(?:confirmed|confirmation|complete|completed|submitted|successful|successfully|received|placed|thank\s+you|receipt)\b/i.test(text);
+  const hasReference = /\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i.test(text);
+  if (!hasTransactionNoun || (!hasCompletionState && !hasReference)) {
+    return null;
+  }
+
+  const anchor =
+    /\b(?:thank\s+you|order\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|order\s+(?:confirmed|confirmation|complete|completed|submitted|placed)|confirmation\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|receipt|transaction\s+(?:complete|completed|confirmed|successful)|payment\s+(?:complete|completed|confirmed|successful))\b/i.exec(text) ??
+    /\b(?:confirmed|confirmation|complete|completed|submitted|successful|received|placed)\b/i.exec(text);
+  if (!anchor) return null;
+  const start = Math.max(0, anchor.index - 180);
+  const end = Math.min(text.length, anchor.index + 1200);
+  return cleanLabel(text.slice(start, end));
+}
+function extractCartCreationSnippet(value: string): string | null {
+  const text = cleanLabel(value);
+  if (!text) return null;
+  if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;
+  if (
+    !/\b(?:your\s+cart|shopping\s+cart|cart\s*:?\s*[1-9]\d*|basket|bag)\b/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
+  if (
+    !/\b(?:qty|quantity|subtotal|unit\s+\$?\d|items?\b|cart\s*:?\s*[1-9]\d*)\b/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
+
+  const anchor =
+    /\b(?:your\s+cart|shopping\s+cart)\b/i.exec(text) ??
+    /\bcart\s*:?\s*[1-9]\d*\b/i.exec(text) ??
+    /\b(?:basket|bag)\b/i.exec(text);
+  if (!anchor) return null;
+  const start = Math.max(0, anchor.index - 120);
+  const end = Math.min(text.length, anchor.index + 900);
+  return cleanLabel(text.slice(start, end));
 }
 
 function extractModalDismissalEvidenceFromToolOutcome(params: {
@@ -5231,20 +6258,31 @@ function extractModalDismissalEvidenceFromToolOutcome(params: {
   if (!samePageUrl(pre.url, current.url)) return [];
   if (!isModalDismissalToolOutcome(params)) return [];
 
-  const dismissed = findModalLikeDescriptors(pre);
-  if (dismissed.length === 0) return [];
-  if (findModalLikeDescriptors(current).length > 0) return [];
+  const currentDescriptors = findModalLikeDescriptors(current);
+  if (currentDescriptors.length > 0) return [];
 
-  const label = dismissed
-    .map((descriptor) => descriptor.label)
-    .filter(Boolean)
-    .join(" | ")
-    .slice(0, 240);
+  const dismissed = findModalLikeDescriptors(pre);
+  const fallbackLabel =
+    dismissed.length === 0 && !snapshotHasVisibleDismissalControl(current)
+      ? clickedDismissalControlLabelFromToolOutcome(params)
+      : null;
+  if (dismissed.length === 0 && !fallbackLabel) return [];
+
+  const label = (
+    dismissed.length > 0
+      ? dismissed
+          .map((descriptor) => descriptor.label)
+          .filter(Boolean)
+          .join(" | ")
+      : fallbackLabel || "dismissal control"
+  ).slice(0, 240);
   const identity = compactKey(
-    dismissed
-      .map((descriptor) => descriptor.key)
-      .filter(Boolean)
-      .join("-") || label || "modal",
+    dismissed.length > 0
+      ? dismissed
+          .map((descriptor) => descriptor.key)
+          .filter(Boolean)
+          .join("-") || label || "modal"
+      : label || "dismissal-control",
   );
 
   return [
@@ -6389,6 +7427,38 @@ function extractReadAnswerEvidenceFromToolOutcome(params: {
   });
 }
 
+function clickedDismissalControlLabelFromToolOutcome(params: {
+  toolName: ToolName;
+  args: Record<string, unknown>;
+  preActionSnapshot?: DomSnapshot | null;
+}): string | null {
+  if (params.toolName !== "click_element") return null;
+  const id = Number(params.args.id);
+  if (!Number.isFinite(id)) return null;
+  const element = params.preActionSnapshot?.elements.find(
+    (candidate) => candidate.tag === id,
+  );
+  if (!element || !isDismissalControl(element)) return null;
+  const label = [
+    element.text,
+    element.attributes["aria-label"],
+    element.attributes.label,
+    element.attributes.value,
+    element.attributes.title,
+    element.attributes.id,
+  ]
+    .map((part) => cleanLabel(part ?? ""))
+    .find(Boolean);
+  return label ?? cleanLabel(elementControlText(element));
+}
+
+function snapshotHasVisibleDismissalControl(snapshot: DomSnapshot): boolean {
+  return snapshot.elements.some(
+    (element) =>
+      element.isVisible !== false && !element.isDisabled && isDismissalControl(element),
+  );
+}
+
 function isModalDismissalToolOutcome(params: {
   toolName: ToolName;
   args: Record<string, unknown>;
@@ -6598,7 +7668,13 @@ function inferTargetDisappearanceAction(
   }
   if (/\bescalat(?:e|ed|ing|ion)\b/i.test(text)) return "escalate";
   if (isCompleteWorkflowRequest(text)) return "complete";
-  if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  if (
+    /\b(?:submit|submitted|submission|place\s+order|placed\s+order|checkout|purchase|purchased|order\s+confirmation)\b/i.test(
+      text,
+    )
+  ) {
+    return "submit";
+  }
   if (/\b(?:send|sent|sending|email|emailed|emailing)\b/i.test(text)) {
     return "send";
   }
@@ -6892,7 +7968,13 @@ function inferControlStateChangeAction(
   }
   if (/\breset(?:ting)?\b/i.test(text)) return "reset";
   if (isCompleteWorkflowRequest(text)) return "complete";
-  if (/\b(?:submit|submitted|submission)\b/i.test(text)) return "submit";
+  if (
+    /\b(?:submit|submitted|submission|place\s+order|placed\s+order|checkout|purchase|purchased|order\s+confirmation)\b/i.test(
+      text,
+    )
+  ) {
+    return "submit";
+  }
   if (/\b(?:post|posted|posting|publish|published|publishing)\b/i.test(text)) {
     return "post";
   }
@@ -7968,7 +9050,7 @@ function snapshotContainsNormalizedText(
 function isDismissalControl(element: TaggedElement): boolean {
   const text = normalizeText(elementControlText(element));
   if (!text) return false;
-  return /\b(?:close|dismiss|no thanks|not now|cancel|got it|ok|okay|done|hide|skip|continue)\b/i.test(
+  return /\b(?:close|dismiss|no thanks|not now|cancel|got it|ok|okay|done|hide|skip|continue|accept|accept all|reject|decline|allow)\b/i.test(
     text,
   );
 }
@@ -7987,7 +9069,7 @@ function findModalLikeDescriptors(snapshot: DomSnapshot): Array<{
     const role = normalizeText(element.role || "");
     const tagName = normalizeText(element.tagName || "");
     const attrs = element.attributes;
-    const attrText = normalizeText(
+    const semanticAttrText = normalizeText(
       [
         attrs.role,
         attrs["aria-modal"],
@@ -7996,7 +9078,6 @@ function findModalLikeDescriptors(snapshot: DomSnapshot): Array<{
         attrs.id,
         attrs.name,
         attrs.class,
-        element.text,
       ]
         .filter(Boolean)
         .join(" "),
@@ -8016,7 +9097,7 @@ function findModalLikeDescriptors(snapshot: DomSnapshot): Array<{
     const isNamedModal =
       !isActionControl &&
       /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
-        attrText,
+        semanticAttrText,
       ) && (element.rect.width > 0 || element.rect.height > 0);
 
     if (!isSemanticDialog && !isKnownOverlay && !isNamedModal) continue;
@@ -8350,13 +9431,17 @@ function extractNavigationTarget(value: string): URL | null {
     null;
   if (explicitUrl) return parseNavigationTarget(explicitUrl);
 
-  const domain =
-    value
-      .match(
-        /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|ai|app|dev|test|local|co|uk|de|fr|ca|us)\b(?:\/[^\s"'<>]*)?/i,
-      )?.[0]
-      ?.replace(/[),.;]+$/g, "") ?? null;
-  return domain ? parseNavigationTarget(`https://${domain}`) : null;
+  const domainPattern =
+    /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|ai|app|dev|test|local|co|uk|de|fr|ca|us)\b(?:\/[^\s"'<>]*)?/gi;
+  for (const match of value.matchAll(domainPattern)) {
+    const rawDomain = match[0];
+    const index = match.index ?? 0;
+    if (index > 0 && value[index - 1] === "@") continue;
+    const domain = rawDomain.replace(/[),.;]+$/g, "");
+    const parsed = parseNavigationTarget(`https://${domain}`);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function parseNavigationTarget(value: string): URL | null {
@@ -8440,6 +9525,7 @@ function hasPageReadAnswerIntent(
     /\bextract\b.+\b(page|article|post|document|readme|content)\b/,
     /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\b(?:source|reference|citation)\b.{0,50}\b(?:referenced|cited|cites?)\b.{0,120}\b(?:article|document|page|post|readme)\b/,
     /\b(?:find|identify|locate|tell me|what(?:'s| is))\b.{0,120}\bfootnote\b.{0,120}\b(?:article|document|page|post|readme)\b/,
+    /\b(?:find|identify|locate)\b.{0,160}\b(?:article|document|page|post|record|item)\b.{0,160}\b(?:tell me|extract|read|report|identify)\b.{0,80}\b(?:code|token|key|id|identifier)\b/,
     /\bmain points?\b/,
     /\bkey points?\b/,
     /\bheadlines?\b/,
@@ -8452,10 +9538,28 @@ function hasPageReadAnswerIntent(
   ];
 
   if (pageReadTasks.some((pattern) => pattern.test(normalized))) return true;
+  if (hasDecomposedReadAnswerIntent(normalized)) return true;
 
   return hasGroundedDirectPageQuestion(normalized, snapshot);
 }
 
+
+function hasDecomposedReadAnswerIntent(normalized: string): boolean {
+  const requestedResult =
+    /\b(?:requested|target|matching|found|located)\s+(?:result|results|answer|answers|value|values|code|token|key|identifier|id)s?\b/;
+  const answerNoun =
+    /\b(?:answer|answers|result|results|value|values|code|token|key|identifier|id)s?\b/;
+  const readOrReportVerb =
+    /\b(?:read|report|extract|identify|tell me|return|provide|find|locate)\b/;
+  const navigationVerb =
+    /\b(?:navigate to|open|go to|visit|scroll to)\b/;
+
+  return (
+    readOrReportVerb.test(normalized) &&
+    (requestedResult.test(normalized) ||
+      (navigationVerb.test(normalized) && answerNoun.test(normalized)))
+  );
+}
 const DIRECT_PAGE_QUESTION_STOPWORDS = new Set([
   ...LABEL_STOPWORDS,
   "about",
@@ -10035,6 +11139,15 @@ function readAnswerSummaryGroundedInEvidence(
   if (
     expectedAnswerLabel
   ) {
+    if (
+      readAnswerLabelCanUseDistinctAnswerToken(expectedAnswerLabel) &&
+      readAnswerSummarySharesDistinctAnswerToken(
+        summary,
+        evidence.detail.evidenceText,
+      )
+    ) {
+      return true;
+    }
     return readAnswerSummaryMatchesExpectedLabelValue(
       summary,
       evidence.detail.evidenceText,
@@ -10059,6 +11172,30 @@ function readAnswerSummaryGroundedInEvidence(
   return overlap >= requiredOverlap;
 }
 
+function readAnswerLabelCanUseDistinctAnswerToken(label: string): boolean {
+  return /\b(?:code|token|key|identifier|id|number)\b/i.test(label);
+}
+
+function readAnswerSummarySharesDistinctAnswerToken(
+  summary: string,
+  evidenceText: string,
+): boolean {
+  const evidenceTokens = new Set(extractDistinctAnswerTokens(evidenceText));
+  if (evidenceTokens.size === 0) return false;
+  return extractDistinctAnswerTokens(summary).some((token) =>
+    evidenceTokens.has(token),
+  );
+}
+
+function extractDistinctAnswerTokens(value: string): string[] {
+  return Array.from(
+    new Set(
+      (value.match(/\b[A-Z0-9]{2,}(?:[-_][A-Z0-9]{2,})+\b/g) ?? []).map(
+        (token) => token.toLowerCase(),
+      ),
+    ),
+  );
+}
 function readAnswerSummaryMatchesSentenceScopedAnswer(
   summary: string,
   expectedAnswer: string,
@@ -12675,11 +13812,25 @@ function tokenizeCompletionText(value: string): string[] {
   ].filter((token) => !LABEL_STOPWORDS.has(token));
 }
 
+const USER_CONTEXT_MARKERS: RegExp[] = [
+  /\bStay focused on this goal\b/i,
+  /\s##\s+/i,
+  /\n\s*(?:Objective|Success criteria|Page Context|Page history[^\n:]*|Prior actions[^\n:]*|Current task|Relevant context|Planner assumptions|Selected workflow skill|Skill procedure|Skill evidence requirements|Skill execution contract|Handoff context|Execution policy|Parallel work context|Step-scoped task context|Reality check signal|Original user request[^\n:]*|Pre-execution advisory)\s*:/i,
+];
+
+const CURRENT_OBJECTIVE_MARKERS: RegExp[] = [
+  /\n\s*(?:Success criteria|Planner assumptions|Selected workflow skill|Skill procedure|Skill evidence requirements|Skill execution contract|Handoff context|Execution policy|Parallel work context|Step-scoped task context|Reality check signal|Original user request[^\n:]*|Page history[^\n:]*|Prior actions[^\n:]*|Pre-execution advisory)\s*:/i,
+  /\s##\s+/i,
+];
+
+const CURRENT_SUCCESS_CRITERIA_MARKERS: RegExp[] = [
+  /\n\s*(?:Planner assumptions|Selected workflow skill|Skill procedure|Skill evidence requirements|Skill execution contract|Handoff context|Execution policy|Parallel work context|Step-scoped task context|Reality check signal|Original user request[^\n:]*|Page history[^\n:]*|Prior actions[^\n:]*|Pre-execution advisory)\s*:/i,
+  /\s##\s+/i,
+];
+
 function extractCanonicalUserRequest(value: string): string {
   const originalUserRequest = extractLabeledRequest(value, [
-    /\bStay focused on this goal\b/i,
-    /\s##\s+/i,
-    /\n\s*(?:Objective|Success criteria|Page Context|Current task|Relevant context)\s*:/i,
+    ...USER_CONTEXT_MARKERS,
   ]);
   if (originalUserRequest) return originalUserRequest;
 
@@ -12689,7 +13840,7 @@ function extractCanonicalUserRequest(value: string): string {
     );
   if (workflowMatch) {
     const request = takeUntilFirstMarker(workflowMatch[1], [
-      /\n\s*(?:Success criteria|Page Context|Current task|Relevant context)\s*:/i,
+      /\n\s*(?:Success criteria|Page Context|Page history[^\n:]*|Prior actions[^\n:]*|Current task|Relevant context|Planner assumptions|Selected workflow skill|Skill procedure|Skill evidence requirements|Skill execution contract|Handoff context|Execution policy|Parallel work context|Step-scoped task context|Reality check signal|Original user request[^\n:]*|Pre-execution advisory)\s*:/i,
       /\s+Success criteria\s*:/i,
       /\s##\s+/i,
     ]);
@@ -12697,6 +13848,30 @@ function extractCanonicalUserRequest(value: string): string {
   }
 
   return cleanLabel(value);
+}
+
+function extractCurrentObjectiveRequestText(value: string): string {
+  const objective = extractPromptSection(
+    value,
+    "Objective",
+    CURRENT_OBJECTIVE_MARKERS,
+  );
+  const successCriteria = extractPromptSection(
+    value,
+    "Success criteria",
+    CURRENT_SUCCESS_CRITERIA_MARKERS,
+  );
+  return [objective, successCriteria].filter(Boolean).join("\n");
+}
+
+function extractPromptSection(
+  value: string,
+  label: string,
+  markers: RegExp[],
+): string | null {
+  const match = new RegExp(`(?:^|\\n)\\s*${label}\\s*:\\s*`, "i").exec(value);
+  if (!match) return null;
+  return takeUntilFirstMarker(value.slice(match.index + match[0].length), markers);
 }
 
 function extractLabeledRequest(
@@ -12723,3 +13898,5 @@ function takeUntilFirstMarker(value: string, markers: RegExp[]): string {
 function evidenceConfidenceRank(event: CompletionEvidence): number {
   return event.confidence === "high" ? 2 : 1;
 }
+
+

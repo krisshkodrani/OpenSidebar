@@ -285,6 +285,15 @@ const STEP_TOKEN_STOPWORDS = new Set([
   "open",
   "close",
   "button",
+  "cart",
+  "catalog",
+  "catalogue",
+  "product",
+  "products",
+  "panel",
+  "drawer",
+  "access",
+  "full",
   "input",
   "field",
   "section",
@@ -1791,6 +1800,7 @@ export function updatePostEscalationPivot(params: {
 export type StepDurationWatchdogDecision =
   | { kind: "none" }
   | { kind: "warn" }
+  | { kind: "defer" }
   | { kind: "escalate" };
 
 export function assessStepDurationWatchdog(params: {
@@ -1801,6 +1811,7 @@ export function assessStepDurationWatchdog(params: {
   cooldownRemaining: number;
   warnTurns: number;
   escalateTurns: number;
+  deferForStateChangingAction?: boolean;
 }): StepDurationWatchdogDecision {
   if (
     !params.hasTaskId ||
@@ -1808,6 +1819,13 @@ export function assessStepDurationWatchdog(params: {
     params.turnsOnCurrentStep <= 0
   ) {
     return { kind: "none" };
+  }
+
+  if (
+    params.deferForStateChangingAction &&
+    params.turnsOnCurrentStep >= params.warnTurns
+  ) {
+    return { kind: "defer" };
   }
 
   if (

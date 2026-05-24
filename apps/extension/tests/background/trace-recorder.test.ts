@@ -363,4 +363,73 @@ describe("TraceRecorder skill tool metrics", () => {
     expect(body).not.toContain("john.doe@example.com");
     expect(body).toContain("[REDACTED_PROFILE_VALUE]");
   });
+  test("finalize drains queued turn traces after session flush succeeds", async () => {
+    let traceAttempts = 0;
+    globalThis.fetch = vi.fn(async (url: any) => {
+      const path = String(url);
+      if (path.endsWith("/traces")) {
+        traceAttempts += 1;
+        if (traceAttempts <= 2) {
+          throw new Error("trace server busy");
+        }
+      }
+      return new Response(null, { status: 204 });
+    }) as any;
+
+    const recorder = new TraceRecorder("session-final-drain");
+    recorder.setSessionInfo("Summarize this page", "https://example.com/article");
+    recorder.startTurn(
+      1,
+      {
+        url: "https://example.com/article",
+        title: "Article",
+        elementCount: 1,
+        visibleContentLength: 100,
+        pageContentLength: 150,
+        scrollY: 0,
+      },
+      [],
+      2,
+      1,
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
+      "none",
+    );
+    recorder.recordLLMResponse(
+      "Done",
+      [
+        {
+          id: "done-call",
+          type: "function",
+          function: {
+            name: ToolName.DONE,
+            arguments: JSON.stringify({ summary: "Summary complete" }),
+          },
+        } as any,
+      ],
+      "tool_calls",
+      null,
+      10,
+    );
+
+    await recorder.endTurn();
+    await recorder.finalize("completed", "Summary complete", 1, null, null);
+
+    const fetchMock = globalThis.fetch as any;
+    const paths = fetchMock.mock.calls.map(([url]: [string]) =>
+      String(url).replace("http://127.0.0.1:7589", ""),
+    );
+    expect(paths).toEqual([
+      "/traces",
+      "/traces",
+      "/traces/session",
+      "/traces",
+    ]);
+    expect(traceAttempts).toBe(3);
+
+    const finalTraceCall = fetchMock.mock.calls.at(-1);
+    expect(finalTraceCall?.[0]).toContain("/traces");
+    expect(JSON.parse(finalTraceCall?.[1].body).sessionId).toBe(
+      "session-final-drain",
+    );
+  });
 });

@@ -27,6 +27,22 @@ export function isTextLikeInputElement(
   ].includes(type);
 }
 
+function isFileInputElement(
+  element: DomSnapshot["elements"][number] | null | undefined,
+): boolean {
+  if (!element) return false;
+  return (
+    element.tagName.toLowerCase() === "input" &&
+    String(element.attributes.type || "").toLowerCase() === "file"
+  );
+}
+
+function shouldUseFileUploadTool(objectiveText: string): boolean {
+  return /\b(upload|attach|import|choose file|select file|file input|csv|resume|cv)\b/i.test(
+    objectiveText,
+  );
+}
+
 function inferElementInputKind(
   element: DomSnapshot["elements"][number] | null | undefined,
 ): "email" | "name" | "coupon" | null {
@@ -133,6 +149,12 @@ export function validateTextEntryTarget(
   typedText: string,
 ): string | null {
   if (!element) return null;
+  if (isFileInputElement(element)) {
+    return (
+      `Error: [${element.tag}] is a file input. Use upload_file with ` +
+      `{"id":${element.tag}} and either a url or profileFile instead of typing text into it.`
+    );
+  }
   if (!isTextLikeInputElement(element)) {
     return `Error: [${element.tag}] is not a text-entry field. Use a real input like the "${typedText}" field instead.`;
   }
@@ -170,6 +192,18 @@ export function assessTextEntryClickGuard(params: {
   element: DomSnapshot["elements"][number] | null | undefined;
   targetId: number;
 }): TextEntryClickGuardDecision {
+  if (
+    isFileInputElement(params.element) &&
+    shouldUseFileUploadTool(params.objectiveText)
+  ) {
+    return {
+      explicitValue: null,
+      blockReason:
+        `Error: [${params.targetId}] is a file input. Use upload_file with ` +
+        `{"id":${params.targetId}} and either a url or profileFile instead of clicking it.`,
+    };
+  }
+
   const explicitValue = extractExplicitInputValueForElement(
     params.objectiveText,
     params.element,

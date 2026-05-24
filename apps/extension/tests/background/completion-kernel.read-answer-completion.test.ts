@@ -294,4 +294,78 @@ describe("completion kernel read-answer completion", () => {
       ],
     });
   });
+
+  test("accepts code extraction answer when page evidence uses answer phrasing", () => {
+    const snap = workflowSnapshot({
+      title: "Social Feed",
+      url: "https://example.test/infinite-scroll",
+      visibleContent:
+        "Post #35 The Secret Formula for Productivity The answer to maximum productivity is: CODE-OMEGA-42.",
+      pageContent:
+        "Post #35 by Eve K. The Secret Formula for Productivity. The answer to maximum productivity is: CODE-OMEGA-42. Remember this code - it unlocks the productivity dashboard.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+
+      evidence: deriveCompletionEvidenceFromSnapshot(snap, 7),
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "The secret code mentioned in Post #35 'The Secret Formula for Productivity' is CODE-OMEGA-42.",
+    });
+
+    expect(decision.status).toBe("accepted");
+  });
+  test("classifies decomposed navigate-read requested result objectives as read-answer", () => {
+    const snap = workflowSnapshot({
+      title: "Social Feed",
+      url: "https://example.test/infinite-scroll",
+      visibleContent:
+        "Post #35 The Secret Formula for Productivity The answer to maximum productivity is: CODE-OMEGA-42.",
+      pageContent:
+        "Post #35 by Eve K. The Secret Formula for Productivity. The answer to maximum productivity is: CODE-OMEGA-42. Remember this code - it unlocks the productivity dashboard.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
+      activeObjective:
+        "Navigate to Post #35 and read the requested result there.",
+      successCriteria:
+        "The requested result is reported from the matching post.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
+
+  test("classifies decomposed report requested results objectives as read-answer", () => {
+    const snap = workflowSnapshot({
+      title: "Social Feed",
+      url: "https://example.test/infinite-scroll",
+      visibleContent:
+        "Post #35 The Secret Formula for Productivity The answer to maximum productivity is: CODE-OMEGA-42.",
+      pageContent:
+        "Post #35 by Eve K. The Secret Formula for Productivity. The answer to maximum productivity is: CODE-OMEGA-42. Remember this code - it unlocks the productivity dashboard.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find Post #35 'The Secret Formula for Productivity' in the feed and tell me the secret code mentioned in it.",
+      activeObjective:
+        "Report the requested results for the secret formula for productivity.",
+      successCriteria:
+        "The requested result is reported from the matching post.",
+      snapshot: snap,
+    });
+
+    expect(generated?.contract).toMatchObject({ kind: "read_answer" });
+  });
 });
+

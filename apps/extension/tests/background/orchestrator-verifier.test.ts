@@ -383,6 +383,33 @@ describe("programmaticVerify", () => {
     expect(result?.decision).not.toBe("accept");
   });
 
+  test("accepts overlay dismissal final-state evidence", () => {
+    const result = programmaticVerify({
+      taskQuery: "Close any visible popups or modal overlays on the page",
+      output:
+        "No blocking cookie banner, newsletter popup, modal, or overlay dismiss target remains visible or hidden; the page is accessible.",
+      objective: "Close any visible popups or modal overlays on the page",
+      successCriteria: "No blocking popups, modals, overlays, or banners remain",
+      executorOutcome: "completed",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.decision).toBe("accept");
+    expect(result!.reason).toContain("Overlay dismissal final state");
+  });
+
+  test("does not treat overlay absence text as evidence for unrelated steps", () => {
+    const result = programmaticVerify({
+      taskQuery: "Set the notification email field to user@test.com",
+      output:
+        "No blocking cookie banner, newsletter popup, modal, or overlay dismiss target remains visible or hidden; the page is accessible.",
+      objective: "Set the notification email field to user@test.com",
+      successCriteria: "The notification email field contains user@test.com",
+      executorOutcome: "completed",
+    });
+
+    expect(result?.decision).not.toBe("accept");
+  });
   test("accepts substantive low-risk output without verifier LLM", () => {
     const result = programmaticVerify({
       taskQuery: "Open the details panel and report what appears",
