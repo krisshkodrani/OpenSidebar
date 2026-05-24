@@ -19,14 +19,14 @@ Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 | Focused real-browser smoke | Pass | Local mock login E2E passed with `E2E_LOCAL_MOCK_PROVIDER=1` after verifier hardening, with the earlier retry caveat documented in `.artifacts/e2e/e2e-report-2026-05-24.md`. The newer staged smoke login completed in one trace with accepted authenticated-state evidence. |
 | Full release verification | Pass | `corepack pnpm run release:verify` passed on 2026-05-24 after verifier hardening fixes. Existing lint warnings remain in `apps/extension/tests/e2e/multi-turn-workflows.test.ts`. |
 | Staged E2E release gate | Pass | `E2E_PROFILE=ci corepack pnpm run test:e2e:smoke` passed on 2026-05-24: 8 files, 9 tests. The run logged browser-close timeout warnings after several completed files; the harness killed those browser processes and the suite exited green. See `.artifacts/e2e/e2e-report-2026-05-24.md`. |
-| Native side-panel smoke | Pending | `corepack pnpm run release:smoke:native-panel -- --timeoutMs=240000 --holdMs=1000` was attempted on 2026-05-24 for commit `5ea9af9afa9890ea3ad8dee372869c790c6cd349`, but timed out waiting for the manual toolbar click. Evidence: `.artifacts/e2e/native-sidepanel/2026-05-24/native-sidepanel-smoke-2026-05-24_11-34-23-161.json`. Rerun on the final commit, click the OpenSidebar toolbar icon in the launched Chrome window, then run `corepack pnpm run release:preflight -- --require-native-smoke`. |
+| Native side-panel smoke | Pending | A native side-panel smoke was attempted on 2026-05-24 for commit `5ea9af9afa9890ea3ad8dee372869c790c6cd349`, but timed out waiting for the manual toolbar click. Evidence: `.artifacts/e2e/native-sidepanel/2026-05-24/native-sidepanel-smoke-2026-05-24_11-34-23-161.json`. Rerun on the final commit with `corepack pnpm run release:smoke:native-panel --timeoutMs=240000 --holdMs=1000`, click the OpenSidebar toolbar icon in the launched Chrome window, then run `corepack pnpm run release:preflight --require-native-smoke`. |
 | Release package/preflight | Partial | `corepack pnpm run release:package` refreshed `.artifacts/releases/opensidebar-v0.9.1.zip` (`sha256: 83a00fd694fab308eea03bb2185ee283f164d8aa97a51bdf4838a5ee4964c068`); the artifact manifest records the exact packaged commit. Non-native `corepack pnpm run release:preflight` reaches the tag gate and fails because local tag `v0.9.1` still points to `4979f9f34909866f1b8e50c3aef6c2e721f109ed`. |
 
 Open cleanup before calling the RC broad-release ready:
 
 - Run the native side-panel smoke gate on the exact release-candidate commit.
 - Move or recreate local tag `v0.9.1` on the final release-candidate commit after the native side-panel smoke passes.
-- Rerun `corepack pnpm run release:package`, then rerun strict `corepack pnpm run release:preflight -- --require-native-smoke`.
+- Rerun `corepack pnpm run release:package`, then rerun strict `corepack pnpm run release:preflight --require-native-smoke`.
 
 ## 1. Freeze The Release Candidate
 
@@ -83,10 +83,10 @@ When you run the E2E suite or prepare the summary, write the dated report to:
 - Confirm `dist/manifest.json` has the expected version.
 - Confirm `corepack pnpm run ci:audit` reports no production vulnerabilities.
 - Run `corepack pnpm run release:package` and confirm it builds `dist/`, then writes a release zip, `.sha256`, release notes, and artifact manifest under `.artifacts/releases/`.
-- While iterating on release changes, `corepack pnpm run release:preflight -- --allow-dirty` can validate the generated artifacts.
+- While iterating on release changes, `corepack pnpm run release:preflight --allow-dirty` can validate the generated artifacts.
 - Before tagging, commit the release candidate, rerun `corepack pnpm run release:package`, then run the strict `corepack pnpm run release:preflight` and resolve any failed artifact, version, commit, checksum, or clean-tree check.
 - Spot-check the loaded extension from `dist/` in Chrome. Use `corepack pnpm run release:smoke:native-panel` for the assisted native side-panel smoke, then click the OpenSidebar toolbar icon in the launched Chrome window.
-- After the native smoke passes, run `corepack pnpm run release:preflight -- --require-native-smoke` to ensure the current commit has matching pass evidence.
+- After the native smoke passes, run `corepack pnpm run release:preflight --require-native-smoke` to ensure the current commit has matching pass evidence.
 
 ## 5. GitHub OSS BYOK Gate
 
@@ -104,7 +104,7 @@ For a broad GitHub-first BYOK release, also confirm:
 ## 6. Publish
 
 - Commit the release candidate changes
-- Rerun `corepack pnpm run release:package` and `corepack pnpm run release:preflight -- --require-native-smoke` on the exact commit being tagged
+- Rerun `corepack pnpm run release:package` and `corepack pnpm run release:preflight --require-native-smoke` on the exact commit being tagged
 - Tag the release commit
 - Attach the generated release notes from `.artifacts/releases/`
 - Upload the built `dist/` package or release zip to the intended distribution channel
