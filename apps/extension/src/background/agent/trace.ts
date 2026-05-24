@@ -28,6 +28,9 @@ import { attachActualPromptTokens } from "./context-economy";
 
 const TRACE_SERVER_URL = "http://127.0.0.1:7589";
 const FLUSH_TIMEOUT_MS = 2000;
+const FINAL_FLUSH_TIMEOUT_MS = 5000;
+const FINAL_PENDING_DRAIN_ATTEMPTS = 2;
+const FINAL_PENDING_DRAIN_DELAY_MS = 250;
 const MAX_PENDING = 50;
 const TRACE_SCHEMA_VERSION = "2026-02-19" as const;
 const TRACE_PRODUCER = "background.agent.trace-recorder" as const;
@@ -654,26 +657,55 @@ export class TraceRecorder {
     };
 
     await this.flush("/traces/session", session);
+    await this.drainPending({
+      attempts: FINAL_PENDING_DRAIN_ATTEMPTS,
+      delayMs: FINAL_PENDING_DRAIN_DELAY_MS,
+      timeoutMs: FINAL_FLUSH_TIMEOUT_MS,
+    });
   }
 
-  /** Drain pending queue items (best-effort, stop on first failure) */
-  private async drainPending(): Promise<void> {
-    while (this.pendingQueue.length > 0) {
-      const item = this.pendingQueue[0];
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), FLUSH_TIMEOUT_MS);
-        const response = await fetch(`${TRACE_SERVER_URL}${item.path}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: item.data,
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        this.pendingQueue.shift(); // Success — remove from queue
-      } catch {
-        break; // Server still down — stop draining, items stay queued
+  /** Drain pending queue items (best-effort, stop on first failure per attempt) */
+  private async drainPending(
+    options: {
+      attempts?: number;
+      delayMs?: number;
+      timeoutMs?: number;
+    } = {},
+  ): Promise<void> {
+    const attempts = Math.max(1, options.attempts ?? 1);
+    const delayMs = Math.max(0, options.delayMs ?? 0);
+    const timeoutMs = Math.max(1, options.timeoutMs ?? FLUSH_TIMEOUT_MS);
+
+    for (
+      let attempt = 0;
+      attempt < attempts && this.pendingQueue.length > 0;
+      attempt += 1
+    ) {
+      while (this.pendingQueue.length > 0) {
+        const item = this.pendingQueue[0];
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), timeoutMs);
+          const response = await fetch(`${TRACE_SERVER_URL}${item.path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: item.data,
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          this.pendingQueue.shift(); // Success — remove from queue
+        } catch {
+          break; // Server still down or busy — retry only if another attempt remains.
+        }
+      }
+
+      if (
+        this.pendingQueue.length > 0 &&
+        attempt < attempts - 1 &&
+        delayMs > 0
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
   }

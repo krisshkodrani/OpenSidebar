@@ -49,6 +49,16 @@ describe("text entry guards", () => {
     ).toContain("is not a text-entry field");
   });
 
+  test("steers file inputs to upload_file instead of text entry", () => {
+    expect(
+      validateTextEntryTarget(
+        "Upload the vendor CSV",
+        element({ attributes: { type: "file" } }),
+        "C:\\tmp\\vendor.csv",
+      ),
+    ).toContain("Use upload_file");
+  });
+
   test("rejects mismatched explicit value for a labeled field", () => {
     expect(
       validateTextEntryTarget(
@@ -97,6 +107,16 @@ describe("text entry guards", () => {
       explicitValue: null,
       blockReason: null,
     });
+  });
+
+  test("blocks clicking a file input when the objective requires upload", () => {
+    expect(
+      assessTextEntryClickGuard({
+        objectiveText: "Upload the vendor catalog CSV to the import field",
+        element: element({ attributes: { type: "file" } }),
+        targetId: 7,
+      }).blockReason,
+    ).toContain("Use upload_file");
   });
 
   test("retargets inline-edit text entry from a cell to the active input", () => {

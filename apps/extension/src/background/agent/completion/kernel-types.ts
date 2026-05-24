@@ -177,6 +177,7 @@ export interface WorkflowConfirmationContract {
   kind: "workflow_confirmation";
   action: WorkflowConfirmationAction;
   targetLabel?: string;
+  targetValue?: string;
 }
 
 export type CompletionContract =

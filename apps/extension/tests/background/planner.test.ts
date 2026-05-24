@@ -109,6 +109,54 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("removes unsupported save requirements from field-only update steps", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective: "Close any visible popups or modal overlays on the page",
+                        successCriteria: "No popup, modal, overlay, or banner is visible",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Set the notification email to user@test.com in the email preference field and save",
+                        successCriteria: "Email input field shows user@test.com and save/confirm action completes",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Delete the account and confirm the deletion",
+                        successCriteria: "Account deletion confirmation is visible",
+                        dependencies: [1],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Close any popups on the page, set the notification email to user@test.com, then delete the account and confirm.",
+            "Modal & Overlay Test",
+            "https://example.test/modal-overlays",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(3);
+        expect(result!.steps![1].objective).toBe(
+            "Set the notification email to user@test.com in the email preference field.",
+        );
+        expect(result!.steps![1].successCriteria).toBe(
+            "Email input field shows user@test.com.",
+        );
+        expect(result!.steps![1].toolProfile).not.toBe("submit_form");
+    });
     test("compacts over-decomposed field-value form plans instead of truncating submit", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -696,6 +744,12 @@ describe("TaskPlanner.decompose", () => {
             inferToolProfileForStep(
                 "Click Add to cart, apply SAVE10, choose Express shipping, then fill checkout",
                 "The cart is updated and checkout fields are completed",
+            ),
+        ).toBe("form_fill");
+        expect(
+            inferToolProfileForStep(
+                "Upload the vendor catalog CSV to the vendor import field",
+                "The CSV attachment is visible on the form",
             ),
         ).toBe("form_fill");
         expect(

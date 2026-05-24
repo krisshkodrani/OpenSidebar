@@ -415,6 +415,68 @@ async function submitUserChatThroughE2EPanel(
   return true;
 }
 
+async function collectE2EPanelSubmitDiagnostics(
+  ctx: ExtensionContext,
+  tabId: number,
+): Promise<Record<string, unknown>> {
+  const mode = getE2EPanelMode();
+  if (mode === "off") return { mode };
+
+  const panelPage =
+    mode === "detached"
+      ? ctx.detachedPanelPage
+      : await getPuppeteerPageForChromeTab(ctx, tabId);
+  if (!panelPage || panelPage.isClosed()) {
+    return { mode, panelPageFound: false };
+  }
+
+  return {
+    mode,
+    panelPageFound: true,
+    ...(await panelPage.evaluate((panelMode: "overlay" | "detached") => {
+      const root =
+        panelMode === "overlay"
+          ? document.getElementById("opensidebar-harness-host")?.shadowRoot
+          : document;
+      const mount = root?.getElementById("root");
+      const textarea = root?.querySelector("textarea");
+      const button = root?.querySelector(
+        'button[aria-label="Send message"], button[aria-label="Send guidance"]',
+      );
+      const sentMessages =
+        (window as any).__opensidebarOverlayRuntime?.sentMessages ?? [];
+      return {
+        hostExists:
+          panelMode === "detached" ||
+          Boolean(document.getElementById("opensidebar-harness-host")),
+        ready: Boolean(mount?.hasAttribute("data-opensidebar-ready")),
+        textareaFound: textarea instanceof HTMLTextAreaElement,
+        textareaTextLength:
+          textarea instanceof HTMLTextAreaElement ? textarea.value.length : null,
+        buttonFound: button instanceof HTMLButtonElement,
+        buttonDisabled:
+          button instanceof HTMLButtonElement ? button.disabled : null,
+        activeElementTag:
+          root?.activeElement instanceof Element
+            ? root.activeElement.tagName
+            : null,
+        sentMessages: Array.isArray(sentMessages)
+          ? sentMessages.slice(-5).map((message: any) => ({
+              type: message?.type,
+              source: message?.source,
+              workspaceId: message?.payload?.workspaceId,
+              tabId: message?.payload?.tabId,
+              payloadTextLength:
+                typeof message?.payload?.text === "string"
+                  ? message.payload.text.length
+                  : null,
+            }))
+          : null,
+      };
+    }, mode as "overlay" | "detached")),
+  };
+}
+
 /**
  * Set up event monitoring in the service worker context.
  * Wraps `chrome.runtime.sendMessage` to capture key background runtime events
@@ -788,15 +850,33 @@ export async function sendUserChat(
   );
   if (sentViaPanel) {
     const expectedText = message.trim();
-    await waitForMonitoredEvent(
-      ctx.serviceWorker,
-      (event: any) =>
-        event.type === "USER_CHAT_ACCEPTED" &&
-        event.timestamp >= panelSubmitStartedAt &&
-        event.payload?.text === expectedText,
-      20_000,
-      effectiveWorkspaceId,
-    );
+    try {
+      await waitForMonitoredEvent(
+        ctx.serviceWorker,
+        (event: any) =>
+          event.type === "USER_CHAT_ACCEPTED" &&
+          event.timestamp >= panelSubmitStartedAt &&
+          event.payload?.text === expectedText,
+        20_000,
+        effectiveWorkspaceId,
+      );
+    } catch (error) {
+      const diagnostics = await collectE2EPanelSubmitDiagnostics(
+        ctx,
+        tabId,
+      ).catch((diagnosticError) => ({
+        error:
+          diagnosticError instanceof Error
+            ? diagnosticError.message
+            : String(diagnosticError),
+      }));
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `${detail}. E2E panel submit diagnostics: ${JSON.stringify(
+          diagnostics,
+        )}`,
+      );
+    }
     return effectiveWorkspaceId;
   }
 

@@ -26,6 +26,8 @@ const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const LOG_SERVER_SCRIPT = join(PROJECT_ROOT, "scripts", "log-server.ts");
 const TSX_CLI = join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const LOG_SERVER_PORT = 7589;
+const LOG_SERVER_START_TIMEOUT_MS =
+  Number(process.env.E2E_LOG_SERVER_START_TIMEOUT_MS) || 30_000;
 
 let logServerProcess: ChildProcess | null = null;
 
@@ -34,30 +36,40 @@ let logServerProcess: ChildProcess | null = null;
 export async function startLogServer(): Promise<void> {
   if (logServerProcess) return;
 
-  // Check if server is already running
-  try {
-    const res = await fetch(`http://127.0.0.1:${LOG_SERVER_PORT}/health`, {
-      signal: AbortSignal.timeout(1000),
-    });
-    if (res.ok) {
-      console.log("[e2e] Log server already running on port", LOG_SERVER_PORT);
-      return;
-    }
-  } catch {
-    // Not running — start it
+  const alreadyRunning = await waitForServer(
+    LOG_SERVER_PORT,
+    process.env.E2E_GLOBAL_LOG_SERVER === "1"
+      ? LOG_SERVER_START_TIMEOUT_MS
+      : 1_000,
+  );
+  if (alreadyRunning) {
+    console.log("[e2e] Log server already running on port", LOG_SERVER_PORT);
+    return;
   }
 
+  let stderr = "";
   logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
+  logServerProcess.stdout?.resume();
+  logServerProcess.stderr?.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
 
-  // Wait for the server to be ready
-  const started = await waitForServer(LOG_SERVER_PORT, 10_000);
+  const started = await waitForServer(
+    LOG_SERVER_PORT,
+    LOG_SERVER_START_TIMEOUT_MS,
+  );
   if (!started) {
     await stopLogServer();
-    throw new Error("Log server failed to start within 10s");
+    const detail = stderr.trim();
+    throw new Error(
+      detail
+        ? `Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms: ${detail}`
+        : `Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms`,
+    );
   }
   console.log("[e2e] Log server started on port", LOG_SERVER_PORT);
 }

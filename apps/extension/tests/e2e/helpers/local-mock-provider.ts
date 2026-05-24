@@ -40,8 +40,7 @@ export const localMockProviderScenarios: Record<
   navigation: {
     fixture: "navigation",
     label: "local-mock-navigation-ux-rfc-post",
-    prompt:
-      "Click Advance three times to reveal the secret code, then enter it and submit.",
+    prompt: "Please complete the navigation challenge on this page.",
     maxTurns: 12,
     timeoutMs: 180_000,
   },

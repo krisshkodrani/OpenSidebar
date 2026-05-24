@@ -5,7 +5,7 @@ import {
   evaluateCompletionContract,
   generateCompletionContract,
 } from "../../src/background/agent/completion-kernel";
-import type { DomSnapshot } from "../../src/types";
+import type { DomSnapshot, TaggedElement } from "../../src/types";
 
 function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   return {
@@ -17,6 +17,19 @@ function workflowSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
     viewport: { width: 1280, height: 720 },
     scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
     ...overrides,
+  };
+}
+
+function statusElement(tag: number, text: string): TaggedElement {
+  return {
+    tag,
+    tagName: "p",
+    role: "p",
+    text,
+    attributes: {},
+    rect: { x: 0, y: tag * 20, width: 320, height: 24 },
+    isVisible: true,
+    isDisabled: false,
   };
 }
 describe("completion kernel target-aware visible preference workflow confirmation matrix", () => {
@@ -361,4 +374,207 @@ describe("completion kernel target-aware visible preference workflow confirmatio
       });
     });
   }
+
+  test("accepts visible enabled state for dark mode when other enable confirmations are present", () => {
+    const visible =
+      "Interaction Status Action: notifications Action: privacy Dark Mode: enabled";
+    const snap = workflowSnapshot({
+      visibleContent: visible,
+      pageContent: visible,
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Turn on dark mode.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Dark mode is turned on.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "dark mode",
+    });
+    expect(decision).toMatchObject({
+      status: "accepted",
+      reason: "Workflow contract is satisfied by visible target state.",
+    });
+  });
+
+  test("accepts delete confirmation from visible element text when page text is empty", () => {
+    const snap = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "",
+      pageContent: "",
+      elements: [statusElement(155, "Account deleted successfully.")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Delete the account and confirm.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The account was deleted successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:delete",
+          detail: expect.objectContaining({
+            text: "Account deleted successfully.",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts delete confirmation when planner target includes button or link wording", () => {
+    const snap = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "",
+      pageContent: "",
+      elements: [statusElement(155, "Account deleted successfully.")],
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Click the delete account button/link and confirm the deletion in the confirmation dialog.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The account was deleted successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+      targetLabel: "account button/link",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+  test("accepts delete confirmation when target label keeps delete action wording", () => {
+    const snap = workflowSnapshot({
+      title: "Modal & Overlay Test",
+      url: "https://example.test/modal-overlays",
+      visibleContent: "",
+      pageContent: "",
+      elements: [statusElement(155, "Account deleted successfully.")],
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Click the delete account button and confirm the deletion in the confirmation dialog.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "The account was deleted successfully.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "delete",
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("rejects visible disabled state for a dark mode enable request", () => {
+    const visible = "Interaction Status Action: notifications Dark Mode: disabled";
+    const snap = workflowSnapshot({
+      visibleContent: visible,
+      pageContent: visible,
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Turn on dark mode.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Dark mode is turned on.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "dark mode",
+    });
+    expect(decision).toMatchObject({
+      status: "rejected",
+      reason:
+        "Workflow confirmation evidence is for a different target than the requested action.",
+    });
+  });
+
+  test("accepts a later action status for the requested enabled target", () => {
+    const visible = "Interaction Status Action: notifications Action: privacy";
+    const snap = workflowSnapshot({
+      visibleContent: visible,
+      pageContent: visible,
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Activate the Privacy Settings action.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Activated the Privacy Settings action.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "enable",
+      targetLabel: "Privacy Settings",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:enable",
+          detail: expect.objectContaining({
+            text: "Action: notifications Action: privacy",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
 });

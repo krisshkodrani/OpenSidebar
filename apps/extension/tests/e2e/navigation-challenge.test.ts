@@ -37,8 +37,7 @@ describe.skipIf(!h.apiKey)("E2E: Navigation Challenge", () => {
     const tabId = await getActiveTabId(h.ctx.serviceWorker);
     expect(tabId).toBeGreaterThan(0);
 
-    const prompt =
-      "Click Advance three times to reveal the secret code, then enter it and submit.";
+    const prompt = "Please complete the navigation challenge on this page.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 

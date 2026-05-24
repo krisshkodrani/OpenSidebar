@@ -4,9 +4,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import { useComposerActions } from "../../src/sidepanel/hooks/useComposerActions";
+import {
+  setUiRuntimePortForTesting,
+  type UiRuntimePort,
+} from "../../src/sidepanel/runtime";
 import { useStore } from "../../src/sidepanel/store";
 import { DEFAULT_SETTINGS } from "../../src/sidepanel/store/settings-slice";
-import { AgentStatus } from "../../src/types";
+import { AgentStatus, MessageSource } from "../../src/types";
 
 type ComposerActions = ReturnType<typeof useComposerActions>;
 
@@ -27,6 +31,7 @@ describe("useComposerActions /new command", () => {
   let root: Root;
   let actions: ComposerActions;
   let onSendStarted: ReturnType<typeof vi.fn>;
+  let restoreRuntime: (() => void) | null = null;
 
   beforeEach(async () => {
     (chrome.runtime.sendMessage as any) = vi.fn(async () => ({ ok: true }));
@@ -77,6 +82,8 @@ describe("useComposerActions /new command", () => {
   });
 
   afterEach(async () => {
+    restoreRuntime?.();
+    restoreRuntime = null;
     await act(async () => {
       root.unmount();
     });
@@ -177,5 +184,61 @@ describe("useComposerActions /new command", () => {
       "Stop the active run or watch mode before starting a new chat.",
     );
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("blocks normal sends without a configured provider key", async () => {
+    await act(async () => {
+      await actions.handleSend("Summarize the page");
+    });
+
+    expect(useStore.getState().messages).toEqual([]);
+    expect(useStore.getState().error).toBe(
+      "Please add your Fireworks AI API key in Settings to get started.",
+    );
+    expect(onSendStarted).not.toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  test("lets E2E panel sends reach the runtime without exposing provider keys", async () => {
+    const sendMessage = vi.fn(async () => ({ ok: true }));
+    restoreRuntime = setUiRuntimePortForTesting({
+      source: MessageSource.UI,
+      e2ePanelConfig: { targetTabId: 42, workspaceId: "e2e-panel" },
+      getUrl: (path: string) => path,
+      sendMessage,
+      subscribeMessages: () => () => {},
+      connectKeepalive: () => null,
+      getActiveTab: async () => ({ id: 42, windowId: 7 }),
+      getTab: async () => null,
+      getCurrentWindow: async () => ({ id: 7 }),
+      onActiveTabChanged: () => () => {},
+      createTab: async (url: string) => ({ id: 43, url }),
+      requestPermissions: async () => false,
+      storage: {
+        local: { get: async () => ({}), set: async () => {}, remove: async () => {} },
+        sync: { get: async () => ({}), set: async () => {}, remove: async () => {} },
+        session: { get: async () => ({}), set: async () => {}, remove: async () => {} },
+      },
+    } as UiRuntimePort);
+    useStore.getState().setActiveWorkspaceId("e2e-panel");
+
+    await act(async () => {
+      await actions.handleSend("Summarize the page");
+    });
+
+    expect(onSendStarted).toHaveBeenCalledTimes(1);
+    expect(useStore.getState().messages).toHaveLength(1);
+    expect(useStore.getState().error).toBeNull();
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "USER_CHAT",
+        source: MessageSource.UI,
+        payload: expect.objectContaining({
+          text: "Summarize the page",
+          tabId: 42,
+          workspaceId: "e2e-panel",
+        }),
+      }),
+    );
   });
 });

@@ -284,4 +284,19 @@ describe("completion kernel", () => {
     expect(decision.status).toBe("rejected");
     expect(decision.reason).toContain("does not match requested host");
   });
+
+  test("does not treat an email domain as a navigation target", () => {
+    const generated = generateCompletionContract({
+      userRequest:
+        "Open the cart and checkout as Alex Morgan (alex.morgan@example.com).",
+      snapshot: navigationSnapshot({
+        url: "https://shop.example.test/cart",
+        title: "Shop cart",
+        visibleContent: "Your Cart Checkout",
+        pageContent: "Your Cart Checkout",
+      }),
+    });
+
+    expect(generated?.contract.kind).not.toBe("navigation");
+  });
 });

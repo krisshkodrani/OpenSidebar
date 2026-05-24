@@ -5,7 +5,7 @@ import {
   formatMissingProviderKeys,
   getProviderKeyStatus,
 } from "../../utils/provider-keys";
-import { uiRuntime } from "../runtime";
+import { getE2EPanelConfig, uiRuntime } from "../runtime";
 import { useStore } from "../store";
 
 function isNewChatCommand(text: string): boolean {
@@ -55,8 +55,11 @@ export function useComposerActions(options: { onSendStarted: () => void }): {
 
       if (store.isAgentRunning) return;
 
+      const isE2EPanel = getE2EPanelConfig() != null;
       const providerKeyStatus = getProviderKeyStatus(store.settings);
-      if (!providerKeyStatus.hasRequiredKeys) {
+      // E2E overlays intentionally do not receive local credential keys.
+      // The background runtime remains the source of truth for provider access.
+      if (!isE2EPanel && !providerKeyStatus.hasRequiredKeys) {
         const missingKeys = formatMissingProviderKeys(providerKeyStatus);
         const keyNoun =
           providerKeyStatus.missingKeyNames.length === 1

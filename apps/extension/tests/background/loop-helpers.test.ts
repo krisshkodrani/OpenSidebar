@@ -15,6 +15,7 @@ import {
   buildSubgoalAttempt,
   buildZeroEffectDecision,
   countTrailingToolResultOutcomes,
+  detectStructuralStepAdvance,
   extractDiscoveredTagIds,
   normalizeOutcome,
   recordRecentSuccessfulAction,
@@ -81,6 +82,32 @@ describe("buildZeroEffectDecision", () => {
     expect(decision.kind).toBe("escalate");
     expect(decision.message).toContain("- click [12] Save");
     expect(decision.message).toContain("- read_page()");
+  });
+});
+
+describe("detectStructuralStepAdvance", () => {
+  it("does not advance on only generic cart/catalog access words", () => {
+    const decision = detectStructuralStepAdvance({
+      currentStepDescription: "Open the cart panel",
+      currentStepSuccessCriteria: "Cart drawer is open",
+      nextStepDescription: "Close the cart panel to access the full product catalog",
+      currentSnapshot: {
+        title: "Northstar Outfitters - Performance Running",
+        url: "https://example.test/shop",
+        visibleContent:
+          "Cart: 1 Close Cart Performance Running Collection Catalog",
+        pageContent:
+          "Cart: 1 Close Cart Performance Running Collection Catalog",
+        elements: [],
+      } as any,
+      actionEffect: {
+        deltaPercent: 0.2,
+        urlChanged: false,
+      } as any,
+      toolName: ToolName.CLICK_ELEMENT,
+    });
+
+    expect(decision).toBeNull();
   });
 });
 
@@ -1053,6 +1080,16 @@ describe("assessStepDurationWatchdog", () => {
         turnsOnCurrentStep: 5,
       }),
     ).toEqual({ kind: "escalate" });
+  });
+
+  it("defers escalation on a turn with a state-changing action", () => {
+    expect(
+      assessStepDurationWatchdog({
+        ...base,
+        turnsOnCurrentStep: 5,
+        deferForStateChangingAction: true,
+      }),
+    ).toEqual({ kind: "defer" });
   });
 
   it("does not escalate while already escalated or cooling down", () => {

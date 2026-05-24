@@ -14,6 +14,8 @@ const PROJECT_ROOT = resolve(__dirname, "../../../..");
 const LOG_SERVER_SCRIPT = resolve(PROJECT_ROOT, "scripts", "log-server.ts");
 const TSX_CLI = resolve(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const LOG_SERVER_PORT = 7589;
+const LOG_SERVER_START_TIMEOUT_MS =
+  Number(process.env.E2E_LOG_SERVER_START_TIMEOUT_MS) || 30_000;
 
 let logServerProcess: ChildProcess | null = null;
 
@@ -48,6 +50,8 @@ async function waitForServer(
 }
 
 export async function setup(): Promise<void> {
+  process.env.E2E_GLOBAL_LOG_SERVER = "1";
+
   if (await isServerRunning()) {
     console.log(
       "[global-setup] Log server already running on port",
@@ -60,13 +64,19 @@ export async function setup(): Promise<void> {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
+    windowsHide: true,
   });
 
-  const started = await waitForServer(LOG_SERVER_PORT, 10_000);
+  const started = await waitForServer(
+    LOG_SERVER_PORT,
+    LOG_SERVER_START_TIMEOUT_MS,
+  );
   if (!started) {
     logServerProcess.kill();
     logServerProcess = null;
-    throw new Error("[global-setup] Log server failed to start within 10s");
+    throw new Error(
+      `[global-setup] Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms`,
+    );
   }
   console.log("[global-setup] Log server started on port", LOG_SERVER_PORT);
 }

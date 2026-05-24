@@ -599,6 +599,8 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "multi-field data entry",
       "choose values then submit",
       "configure product options",
+      "upload file",
+      "attach file",
     ],
     maturity: "candidate",
     preferredTools: [
@@ -606,6 +608,7 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "type_text",
       "select_option",
       "set_checkbox",
+      "upload_file",
       "click_element",
     ],
     discouragedTools: ["press_key"],
@@ -847,8 +850,9 @@ const SKILL_CATALOG: SkillDescriptor[] = [
       "read_page",
       "read_element",
       "find_element",
+      "done",
     ],
-    discouragedTools: ["click_coordinates", "done"],
+    discouragedTools: ["click_coordinates"],
     contextScope: "turn",
     verifierMode: "deterministic",
     notes: [
@@ -1563,23 +1567,23 @@ const SKILL_BODIES: Record<
   },
   "cart-modify-checkout": {
     procedureMarkdown: [
-      "1. Read current cart contents before making changes.",
-      "2. Record item, quantity, price, and any visible coupon state.",
-      "3. Perform the minimum mutation needed to reach the requested cart state.",
-      "4. Re-read the cart and confirm the requested item is present and the old item is removed or replaced.",
+      "1. If the requested item state is already visible in the cart, call done() instead of mutating the cart again.",
+      "2. If the requested item is absent, close only the drawer or overlay that blocks the catalog, then locate the requested product/add control.",
+      "3. When the requested product's Add-to-Cart control is visible, click it immediately; do not keep inspecting unrelated cart controls.",
+      "4. Re-read the cart once after mutation and confirm the requested item, quantity, price, and any visible coupon state.",
       "5. Apply coupon only after cart contents are correct unless the site clearly requires the reverse order.",
       "6. Proceed to checkout only after cart contents and pricing state match the request.",
     ].join("\n"),
     requiredEvidence: [
-      "Cart contents before modification",
       "Cart contents after modification",
       "Visible coupon or discount state",
-      "Checkout readiness",
+      "Checkout readiness only when the current objective includes checkout",
     ],
     commonFailures: [
       {
-        signal: "new item added without removing old item",
-        recovery: "re-read cart and correct the cart state before checkout",
+        signal: "additive request treated as replacement",
+        recovery:
+          "keep existing requested items unless the user explicitly asked to remove or replace them",
       },
       {
         signal: "coupon applied before cart state stabilizes",
@@ -1588,16 +1592,18 @@ const SKILL_BODIES: Record<
     ],
     executionContract: {
       sequencing: [
-        "Read the cart before mutation, mutate the cart, verify the new cart state, then proceed to coupon or checkout.",
+        "For additive item requests: verify existing cart state, click the requested product's add control if needed, then verify the cart state.",
       ],
       toolDiscipline: [
+        "If an Add-to-Cart control for the requested product is visible, prefer that direct click over more cart open/close inspection.",
+        "Do not click plus, minus, or remove controls for existing cart items unless the objective explicitly asks for a quantity change, removal, or replacement.",
         "Avoid checkout actions until the requested cart state is visible.",
       ],
       completionChecks: [
         "The requested item state and pricing state are visible before checkout.",
       ],
       failureRecovery: [
-        "If the cart shows both old and new items, repair the cart before any checkout action.",
+        "If the cart shows both old and new requested items for an additive order, preserve them and continue.",
       ],
     },
   },
@@ -1857,6 +1863,7 @@ const SKILL_BODIES: Record<
         "Batch independent type_text, select_option, and set_checkbox calls in one executor turn after field mapping; re-ground once before submit instead of re-reading between every field.",
         "Avoid press_key submit shortcuts until field mapping and validation checks are complete.",
         'Use read_element(attribute="value") for filled textareas or long exact literals when read_page evidence is ambiguous.',
+        'Use upload_file for input type="file" controls; do not click the file input or type a local path into it.',
         "For configurators, use read_page after option changes to verify the derived total or summary.",
         "After validation feedback changes the page, use read_page or read_element before reusing submit or field element ids.",
       ],
@@ -2225,6 +2232,7 @@ const SKILL_BODIES: Record<
       "5. Commit the edit explicitly, for example with Enter, Tab, or the page's apply/rename control.",
       "6. Re-read the page and verify the committed value is visible in the non-editing surface.",
       "7. If an inline editor is still visible, the task is not done yet. Commit or apply the edit first.",
+      "8. If the requested value is visible in the non-editing surface and no inline editor is active, call done() immediately instead of re-opening or probing the cell.",
     ].join("\n"),
     requiredEvidence: [
       "The target editable surface identified before editing",
@@ -2257,6 +2265,7 @@ const SKILL_BODIES: Record<
       toolDiscipline: [
         "Prefer click_element, press_key, and type_text over click_coordinates for inline editors.",
         "Use read_page or read_element after committing the edit to verify the non-editing state.",
+        "After the committed non-editing state is verified, call done() instead of clicking or finding the edited value again.",
       ],
       completionChecks: [
         "The requested replacement value is visible in the committed page state.",
@@ -3521,6 +3530,12 @@ function selectPrimarySkillWithKeywordMatcher(
       /\b(fill|form|field|dropdown|checkbox|input|email|name|phone|category|budget)\b/i.test(
         stepCorpus,
       )) ||
+    /\b(?:upload|attach|import|choose|select)\b[\s\S]{0,100}\b(?:file|csv|resume|cv|attachment)\b/i.test(
+      stepCorpus,
+    ) ||
+    /\b(?:file|csv|resume|cv|attachment)\b[\s\S]{0,100}\b(?:upload|attach|import|input|field)\b/i.test(
+      stepCorpus,
+    ) ||
     configuratorPattern.test(stepCorpus);
   const currentStepLooksLikeProgressiveRepeatableForm =
     progressiveRepeatableFormPattern.test(stepCorpus) ||

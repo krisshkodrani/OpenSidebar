@@ -46,6 +46,8 @@ import VisualCanvas from "./routes/visual-canvas";
 import MemoryLab from "./routes/memory-lab";
 import ParallelWork from "./routes/parallel-work";
 import QuizDerailment from "./routes/quiz-derailment";
+import FileTransfer from "./routes/file-transfer";
+import PromptInjectionReview from "./routes/prompt-injection";
 
 const routes = [
   { path: "/summarize", label: "Summarize", title: "Transformer Architecture in Modern AI", component: Summarize },
@@ -92,6 +94,8 @@ const routes = [
   { path: "/memory-lab", label: "Memory", title: "Memory Lab Dashboard", component: MemoryLab },
   { path: "/parallel-work", label: "Parallel", title: "Parallel Work Lab", component: ParallelWork },
   { path: "/quiz-derailment", label: "Quiz", title: "Quiz Derailment Fixture", component: QuizDerailment },
+  { path: "/file-transfer", label: "Files", title: "Vendor File Transfer", component: FileTransfer },
+  { path: "/prompt-injection", label: "Injection", title: "Customer Renewal Update", component: PromptInjectionReview },
 ];
 
 function Layout({ children, currentPath }) {
