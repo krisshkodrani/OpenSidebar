@@ -197,15 +197,15 @@ OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. 
 ## Verification
 
 - \`corepack pnpm install --frozen-lockfile\`
-- \`npm run lint\`
-- \`npm run typecheck\`
-- \`npm run ci:test\`
-- \`npm run ci:dist\`
-- \`npm run ci:audit\`
-- \`npm run release:package\`
-- \`npm run release:preflight\`
-- Assisted native side-panel smoke: \`npm run release:smoke:native-panel\`
-- Strict native-smoke preflight before tagging: \`npm run release:preflight -- --require-native-smoke\`
+- \`corepack pnpm run lint\`
+- \`corepack pnpm run typecheck\`
+- \`corepack pnpm run ci:test\`
+- \`corepack pnpm run ci:dist\`
+- \`corepack pnpm run ci:audit\`
+- \`corepack pnpm run release:package\`
+- \`corepack pnpm run release:preflight\`
+- Assisted native side-panel smoke: \`corepack pnpm run release:smoke:native-panel\`
+- Strict native-smoke preflight before tagging: \`corepack pnpm run release:preflight --require-native-smoke\`
 - Detached panel smoke: \`E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx tsx scripts/run-e2e-panel-smoke.ts --holdMs=1\`
 - Safe first-task smoke: \`E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts\`
 
@@ -274,20 +274,20 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
     ],
     verification: [
       "corepack pnpm install --frozen-lockfile",
-      "npm run lint",
-      "npm run typecheck",
-      "npm run ci:test",
-      "npm run ci:dist",
-      "npm run ci:audit",
-      "npm run release:package",
-      "npm run release:preflight",
-      "npm run release:smoke:native-panel",
-      "npm run release:preflight -- --require-native-smoke",
+      "corepack pnpm run lint",
+      "corepack pnpm run typecheck",
+      "corepack pnpm run ci:test",
+      "corepack pnpm run ci:dist",
+      "corepack pnpm run ci:audit",
+      "corepack pnpm run release:package",
+      "corepack pnpm run release:preflight",
+      "corepack pnpm run release:smoke:native-panel",
+      "corepack pnpm run release:preflight --require-native-smoke",
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx tsx scripts/run-e2e-panel-smoke.ts --holdMs=1",
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts",
     ],
     remainingExternalGates: [
-      "Manual native Chrome side panel spot-check with npm run release:smoke:native-panel, followed by npm run release:preflight -- --require-native-smoke",
+      "Manual native Chrome side panel spot-check with corepack pnpm run release:smoke:native-panel, followed by corepack pnpm run release:preflight --require-native-smoke",
       "GitHub tag",
       "GitHub release notes publication",
       "Release artifact and checksum upload",

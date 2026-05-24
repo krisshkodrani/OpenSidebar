@@ -112,16 +112,17 @@ const manifestPath = resolve(releaseDir, `${artifactBaseName}-manifest.json`);
 const expectedZipArtifactPath = asPosix(relative(rootPath, zipPath));
 const expectedChecksumArtifactPath = asPosix(relative(rootPath, checksumPath));
 const expectedNotesArtifactPath = asPosix(relative(rootPath, notesPath));
-const nativeSmokeCommand = "npm run release:smoke:native-panel";
+const packageCommand = "corepack pnpm run release:package";
+const nativeSmokeCommand = "corepack pnpm run release:smoke:native-panel";
 const strictNativeSmokePreflightCommand =
-  "npm run release:preflight -- --require-native-smoke";
+  "corepack pnpm run release:preflight --require-native-smoke";
 const releaseManifest = readJson(manifestPath);
 const headCommit = git(["rev-parse", "HEAD"]);
 const tagName = version ? `v${version}` : null;
 let zipHash = null;
 
 for (const path of [zipPath, checksumPath, notesPath, manifestPath]) {
-  if (!existsSync(path)) fail(`${path}: missing; run npm run release:package`);
+  if (!existsSync(path)) fail(`${path}: missing; run ${packageCommand}`);
 }
 
 if (releaseManifest) {
