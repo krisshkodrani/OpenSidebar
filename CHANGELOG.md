@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-05-25
+
 ### Added
 
 - Added a release preflight command to validate generated artifact version, commit, hash, and publication readiness before tagging.
 - Added an assisted native Chrome side-panel smoke command for the final manual launch gate.
+- Added a default extension action keyboard shortcut so the native side-panel launch path can be driven during demos and smoke checks.
 
 ### Changed
 

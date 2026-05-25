@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenSidebar",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Open-source AI browser agent. Navigate, click, type, and automate web tasks from a side panel with your own provider key.",
   "permissions": [
     "sidePanel",
@@ -36,6 +36,15 @@
       "16": "public/icons/icon-16.png",
       "48": "public/icons/icon-48.png",
       "128": "public/icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Open OpenSidebar"
     }
   },
   "side_panel": {
