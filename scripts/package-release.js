@@ -187,6 +187,7 @@ OpenSidebar v${version} is the GitHub-first OSS BYOK preview release candidate. 
 - Release package builds \`dist/\` and writes a SHA-256 checksum.
 - Manifest/package version alignment enforced by \`ci:dist\`.
 - Public install docs use Corepack-managed pnpm and a safe read-only first task.
+- Native side-panel launch can be driven through the default \`Ctrl+Shift+Y\` extension action shortcut.
 - Known limitations are documented for agent reliability, Done/verifier behavior, permissions, traces, providers, and distribution.
 - Local backend and log-server origin handling rejects arbitrary browser origins.
 - E2E overlay bridge uses per-mount tokens, explicit storage keys, and credential-key filtering.
@@ -287,7 +288,7 @@ function writeReleaseManifest({ commit, distManifest, hash, zipSize }) {
       "E2E_PROFILE=headless E2E_ARTIFACTS=detached-panel,screenshots npx vitest run --config apps/extension/tests/e2e/vitest.e2e.config.ts apps/extension/tests/e2e/summarize.test.ts",
     ],
     remainingExternalGates: [
-      "Manual native Chrome side panel spot-check with corepack pnpm run release:smoke:native-panel, followed by corepack pnpm run release:preflight --require-native-smoke",
+      "Native Chrome side-panel smoke with corepack pnpm run release:smoke:native-panel, followed by corepack pnpm run release:preflight --require-native-smoke",
       "GitHub tag",
       "GitHub release notes publication",
       "Release artifact and checksum upload",

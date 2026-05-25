@@ -2,6 +2,7 @@ import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, relative, resolve } from "path";
 import { fileURLToPath } from "url";
+import type { Page } from "puppeteer";
 import {
   closeExtension,
   launchWithExtension,
@@ -33,6 +34,11 @@ interface SmokeState {
   } | null;
 }
 
+interface NativePanelOpenResult {
+  ok: boolean;
+  detail?: string;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const repoEnvPath = resolve(repoRoot, ".env");
@@ -58,6 +64,132 @@ function readEnvValue(name: string): string | undefined {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    promise
+      .then(resolve, reject)
+      .finally(() => clearTimeout(timer));
+  });
+}
+
+function normalizeShortcutKey(key: string): string {
+  const normalized = key.trim();
+  if (/^[a-z]$/i.test(normalized)) return `Key${normalized.toUpperCase()}`;
+  if (/^[0-9]$/.test(normalized)) return `Digit${normalized}`;
+  return normalized;
+}
+
+function normalizeModifier(modifier: string): string {
+  const normalized = modifier.trim().toLowerCase();
+  if (normalized === "ctrl" || normalized === "control") return "Control";
+  if (normalized === "cmd" || normalized === "command" || normalized === "meta") {
+    return "Meta";
+  }
+  if (normalized === "shift") return "Shift";
+  if (normalized === "alt" || normalized === "option") return "Alt";
+  return modifier.trim();
+}
+
+async function pressShortcut(page: Page, shortcut: string): Promise<void> {
+  const parts = shortcut
+    .split("+")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return;
+
+  const key = normalizeShortcutKey(parts[parts.length - 1]);
+  const modifiers = parts.slice(0, -1).map(normalizeModifier);
+
+  for (const modifier of modifiers) {
+    await page.keyboard.down(modifier);
+  }
+  try {
+    await page.keyboard.press(key);
+  } finally {
+    for (const modifier of modifiers.reverse()) {
+      await page.keyboard.up(modifier);
+    }
+  }
+}
+
+async function openNativePanelFromHelper(
+  helper: Awaited<ReturnType<typeof openHelperPage>>,
+  tabId: number,
+): Promise<NativePanelOpenResult> {
+  await helper.evaluate((targetTabId: number) => {
+    const existing = document.getElementById("open-native-sidepanel");
+    existing?.remove();
+
+    const button = document.createElement("button");
+    button.id = "open-native-sidepanel";
+    button.textContent = "Open native side panel";
+    button.addEventListener("click", async () => {
+      try {
+        const tab = await chrome.tabs.get(targetTabId);
+        if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true });
+        await chrome.tabs.update(targetTabId, { active: true });
+        const data = await chrome.storage.session.get("userOpenedPanel");
+        const opened = Array.isArray(data.userOpenedPanel)
+          ? data.userOpenedPanel
+          : [];
+        if (!opened.includes(targetTabId)) opened.push(targetTabId);
+        await chrome.storage.session.set({ userOpenedPanel: opened });
+        await chrome.sidePanel.setOptions({
+          tabId: targetTabId,
+          path: "src/sidepanel/index.html",
+          enabled: true,
+        });
+        await chrome.sidePanel.open({ tabId: targetTabId });
+        (window as any).__nativePanelOpenResult = { ok: true };
+      } catch (error) {
+        (window as any).__nativePanelOpenResult = {
+          ok: false,
+          detail: error instanceof Error ? error.message : String(error),
+        };
+      }
+    });
+    document.body.appendChild(button);
+  }, tabId);
+
+  try {
+    await helper.bringToFront();
+    await withTimeout(
+      helper.click("#open-native-sidepanel"),
+      5_000,
+      "Helper native side-panel button click",
+    );
+    return await withTimeout(
+      helper.evaluate(async () => {
+        const started = Date.now();
+        while (Date.now() - started < 5_000) {
+          const result = (window as any).__nativePanelOpenResult;
+          if (result) return result as NativePanelOpenResult;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return {
+          ok: false,
+          detail: "Timed out waiting for helper-page native panel open result.",
+        };
+      }),
+      7_000,
+      "Helper native side-panel result read",
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function readGitCommit(): string {
@@ -140,6 +272,9 @@ Options:
   --route=<fixture route>      Fixture route to open. Default: login
   --timeoutMs=<ms>            Time to wait for the manual toolbar click. Default: 120000
   --holdMs=<ms>               Time to keep Chrome open after success. Default: 5000
+  --shortcut=<combo>          Keyboard shortcut to trigger the extension action. Default: Control+Shift+Y
+  --manual-only               Do not press the action shortcut automatically
+  --no-helper-open            Do not use the extension helper-page open fallback
   --no-provider-seed          Do not seed Fireworks settings even if FIREWORKS_API_KEY exists
   --help                      Show this help
 `);
@@ -157,6 +292,9 @@ async function main(): Promise<void> {
   const route = parseArg("route") ?? "login";
   const timeoutMs = Number(parseArg("timeoutMs") ?? "120000");
   const holdMs = Number(parseArg("holdMs") ?? "5000");
+  const shortcut = parseArg("shortcut") ?? "Control+Shift+Y";
+  const manualOnly = hasFlag("manual-only");
+  const helperOpen = !hasFlag("no-helper-open");
   const shouldSeedProvider = !hasFlag("no-provider-seed");
   const fireworksKey = shouldSeedProvider
     ? readEnvValue("FIREWORKS_API_KEY")
@@ -164,6 +302,10 @@ async function main(): Promise<void> {
   const startedAt = new Date().toISOString();
   const outputPath = artifactPath();
   let lastState: SmokeState | null = null;
+  let trigger: "shortcut" | "helper_open" | "manual" = manualOnly
+    ? "manual"
+    : "shortcut";
+  let helperOpenResult: NativePanelOpenResult | null = null;
 
   await startFixtureServer();
   const ctx = await launchWithExtension();
@@ -230,6 +372,29 @@ async function main(): Promise<void> {
     console.log(
       "[native-sidepanel-smoke] If the icon is hidden, open Chrome's Extensions menu and click OpenSidebar.",
     );
+    if (!manualOnly) {
+      console.log(
+        `[native-sidepanel-smoke] Pressing ${shortcut} to trigger the extension action.`,
+      );
+      await sleep(750);
+      await pressShortcut(page, shortcut);
+    }
+    if (helperOpen) {
+      await sleep(1_000);
+      lastState = await readSmokeState(helper, tabId);
+      if (!lastState.workspace) {
+        console.log(
+          "[native-sidepanel-smoke] Opening native side panel from extension helper user gesture.",
+        );
+        trigger = "helper_open";
+        helperOpenResult = await openNativePanelFromHelper(helper, tabId);
+        if (!helperOpenResult.ok) {
+          console.log(
+            `[native-sidepanel-smoke] Helper open failed: ${helperOpenResult.detail ?? "unknown error"}`,
+          );
+        }
+      }
+    }
     console.log(
       `[native-sidepanel-smoke] Waiting up to ${timeoutMs}ms for the side panel handshake.`,
     );
@@ -251,6 +416,8 @@ async function main(): Promise<void> {
           extensionId: ctx.extensionId,
           tabId,
           providerSeeded: Boolean(fireworksKey),
+          trigger,
+          helperOpenResult,
           state: lastState,
         };
         mkdirSync(dirname(outputPath), { recursive: true });
@@ -277,6 +444,8 @@ async function main(): Promise<void> {
       extensionId: ctx.extensionId,
       tabId,
       providerSeeded: Boolean(fireworksKey),
+      trigger,
+      helperOpenResult,
       lastState,
       reason: "Timed out waiting for a workspace created by native side-panel open.",
     };
