@@ -11,6 +11,7 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 ## Architecture
 
 - [Overview](./architecture/overview.md)
+- [AI Architecture Overview](./architecture/ai-architecture-overview.html)
 - [Agent Loop](./architecture/agent-loop.md)
 - [Orchestrator](./architecture/orchestrator.md)
 - [First-Class Parallel Work Roadmap](./architecture/parallel-work-roadmap.md)
