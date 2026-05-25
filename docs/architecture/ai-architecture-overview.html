@@ -1,0 +1,1206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenSidebar AI Architecture Overview</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ee;
+        --paper: #fffdf8;
+        --panel: #ffffff;
+        --panel-2: #f3f7f5;
+        --ink: #1d2430;
+        --muted: #5f6d7a;
+        --line: #d9dfd8;
+        --line-strong: #9aa9a0;
+        --green: #0f766e;
+        --green-soft: #d9f2ed;
+        --blue: #2563eb;
+        --blue-soft: #dbeafe;
+        --red: #b42318;
+        --red-soft: #fee4e2;
+        --gold: #a16207;
+        --gold-soft: #fef3c7;
+        --plum: #7c3aed;
+        --plum-soft: #ede9fe;
+        --shadow: 0 18px 45px rgba(20, 34, 48, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(247, 244, 238, 0.92)),
+          var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.58 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 34px 22px 56px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 820px;
+        font-size: clamp(34px, 5vw, 58px);
+        line-height: 1.02;
+        margin-bottom: 14px;
+      }
+
+      h2 {
+        font-size: 26px;
+        line-height: 1.16;
+        margin-bottom: 12px;
+      }
+
+      h3 {
+        font-size: 17px;
+        line-height: 1.25;
+        margin-bottom: 8px;
+      }
+
+      p {
+        color: var(--muted);
+      }
+
+      code {
+        background: #f0ede5;
+        border: 1px solid #e4ded2;
+        border-radius: 5px;
+        color: #111827;
+        padding: 1px 5px;
+        font-size: 0.92em;
+      }
+
+      .eyebrow {
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+      }
+
+      .lead {
+        max-width: 860px;
+        color: #42515f;
+        font-size: 18px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 22px;
+      }
+
+      .summary-panel,
+      .card,
+      .diagram-card,
+      .concept-section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 253, 248, 0.95);
+        box-shadow: var(--shadow);
+      }
+
+      .summary-panel {
+        padding: 20px;
+      }
+
+      .summary-panel dl {
+        display: grid;
+        gap: 13px;
+        margin: 0;
+      }
+
+      .summary-panel dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .summary-panel dd {
+        margin: 3px 0 0;
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .toc {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 22px 0 24px;
+      }
+
+      .toc a {
+        min-height: 74px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--ink);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 13px;
+        text-decoration: none;
+      }
+
+      .toc span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .concept-section {
+        margin: 18px 0;
+        padding: 22px;
+      }
+
+      .concept-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        padding: 16px;
+      }
+
+      .card p:last-child,
+      .concept-section p:last-child {
+        margin-bottom: 0;
+      }
+
+      .tag-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 0;
+      }
+
+      .tag {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel-2);
+        color: #314252;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 4px 8px;
+      }
+
+      .diagram-card {
+        padding: 14px;
+        overflow: hidden;
+      }
+
+      .diagram-title {
+        align-items: baseline;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .diagram-title strong {
+        color: var(--ink);
+      }
+
+      .diagram-title span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .node {
+        fill: #ffffff;
+        stroke: #aeb9b1;
+        stroke-width: 1.4;
+      }
+
+      .node.green {
+        fill: var(--green-soft);
+        stroke: #70b7ab;
+      }
+
+      .node.blue {
+        fill: var(--blue-soft);
+        stroke: #88a8f5;
+      }
+
+      .node.gold {
+        fill: var(--gold-soft);
+        stroke: #e3b94d;
+      }
+
+      .node.red {
+        fill: var(--red-soft);
+        stroke: #f1a4a0;
+      }
+
+      .node.plum {
+        fill: var(--plum-soft);
+        stroke: #b49af7;
+      }
+
+      .label {
+        fill: var(--ink);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .small {
+        fill: #51616e;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .line {
+        fill: none;
+        stroke: #718071;
+        stroke-width: 1.6;
+      }
+
+      .line.blue {
+        stroke: var(--blue);
+      }
+
+      .line.green {
+        stroke: var(--green);
+      }
+
+      .line.red {
+        stroke: var(--red);
+      }
+
+      .line.gold {
+        stroke: var(--gold);
+      }
+
+      .arrow {
+        fill: #718071;
+      }
+
+      .arrow.blue {
+        fill: var(--blue);
+      }
+
+      .arrow.green {
+        fill: var(--green);
+      }
+
+      .arrow.red {
+        fill: var(--red);
+      }
+
+      .arrow.gold {
+        fill: var(--gold);
+      }
+
+      .callout-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .callout {
+        border-left: 4px solid var(--green);
+        background: #f6fbf8;
+        border-radius: 6px;
+        padding: 13px 14px;
+      }
+
+      .callout.blue {
+        border-left-color: var(--blue);
+        background: #f7faff;
+      }
+
+      .callout.gold {
+        border-left-color: var(--gold);
+        background: #fffaf0;
+      }
+
+      .callout.red {
+        border-left-color: var(--red);
+        background: #fff8f7;
+      }
+
+      .callout strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+      }
+
+      .list li {
+        margin: 7px 0;
+      }
+
+      .matrix {
+        border-collapse: collapse;
+        width: 100%;
+        overflow: hidden;
+        border-radius: 8px;
+        font-size: 13px;
+      }
+
+      .matrix th,
+      .matrix td {
+        border: 1px solid var(--line);
+        padding: 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .matrix th {
+        background: #eff5f2;
+        color: #20342d;
+      }
+
+      .matrix td {
+        background: #fffefa;
+        color: var(--muted);
+      }
+
+      .note {
+        border: 1px solid #e2c76e;
+        border-radius: 8px;
+        background: #fffaf0;
+        color: #6b4f0c;
+        padding: 14px;
+      }
+
+      .sources {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 920px) {
+        .hero,
+        .concept-grid,
+        .callout-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .toc {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 560px) {
+        main {
+          padding: 24px 14px 38px;
+        }
+
+        .concept-section {
+          padding: 16px;
+        }
+
+        .toc {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">OpenSidebar architecture atlas</div>
+          <h1>AI browser-agent architecture, separated by concept.</h1>
+          <p class="lead">
+            OpenSidebar is a Manifest V3 Chrome extension that wraps an LLM in a grounded
+            browser-agent runtime. The model plans and chooses tools, while the runtime owns
+            browser state, safety policy, execution, verification, persistence, and traces.
+          </p>
+          <div class="tag-row" aria-label="Architecture keywords">
+            <span class="tag">Chrome MV3</span>
+            <span class="tag">agent loop</span>
+            <span class="tag">tool calling</span>
+            <span class="tag">planner/executor/verifier</span>
+            <span class="tag">visual perception</span>
+            <span class="tag">BYOK providers</span>
+            <span class="tag">trace viewer</span>
+          </div>
+        </div>
+        <aside class="summary-panel" aria-label="Architecture summary">
+          <dl>
+            <div>
+              <dt>Production surfaces</dt>
+              <dd>Side panel, service worker, content script</dd>
+            </div>
+            <div>
+              <dt>AI roles</dt>
+              <dd>Executor, planner, verifier, perception</dd>
+            </div>
+            <div>
+              <dt>Default provider mode</dt>
+              <dd><code>fireworks</code></dd>
+            </div>
+            <div>
+              <dt>Default Fireworks model</dt>
+              <dd><code>accounts/fireworks/routers/kimi-k2p6-turbo</code></dd>
+            </div>
+            <div>
+              <dt>Runtime principle</dt>
+              <dd>Model proposes; runtime validates, executes, and verifies.</dd>
+            </div>
+          </dl>
+        </aside>
+      </section>
+
+      <nav class="toc" aria-label="Concept navigation">
+        <a href="#runtime-topology"><strong>Runtime Topology</strong><span>Where code runs</span></a>
+        <a href="#ai-roles"><strong>AI Roles</strong><span>Planner, executor, verifier, perception</span></a>
+        <a href="#agent-loop"><strong>Agent Loop</strong><span>Observe, think, act, verify</span></a>
+        <a href="#tools"><strong>Tool Layer</strong><span>Typed browser operations</span></a>
+        <a href="#orchestration"><strong>Orchestration</strong><span>Multi-step task graphs</span></a>
+        <a href="#perception"><strong>Perception</strong><span>DOM plus visual grounding</span></a>
+        <a href="#providers"><strong>Provider Routing</strong><span>BYOK model stack</span></a>
+        <a href="#observability"><strong>Observability</strong><span>Traces, metrics, release gates</span></a>
+      </nav>
+
+      <section id="runtime-topology" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 1</div>
+              <h2>Runtime topology</h2>
+              <p>
+                Production OpenSidebar is split across the Chrome side panel, the extension
+                service worker, and content scripts injected into pages. The same React side panel
+                also runs in the overlay test harness through an in-memory UI runtime port.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Why this split matters</h3>
+              <ul class="list">
+                <li>UI components stay environment-agnostic and use <code>UiRuntimePort</code>.</li>
+                <li>Chrome APIs stay in adapters and production shell code.</li>
+                <li>Content scripts own page snapshots, element tags, and DOM actions.</li>
+                <li>The service worker owns the agent loop, orchestration, provider calls, and traces.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Production and test surfaces</strong>
+              <span>message and data boundaries</span>
+            </div>
+            <svg viewBox="0 0 760 420" role="img" aria-label="Runtime topology graph">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow blue" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow green" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node blue" x="35" y="45" width="190" height="84" rx="8"></rect>
+              <text class="label" x="130" y="78" text-anchor="middle">Chrome side panel</text>
+              <text class="small" x="130" y="100" text-anchor="middle">React UI, approvals, metrics</text>
+
+              <rect class="node green" x="285" y="45" width="190" height="84" rx="8"></rect>
+              <text class="label" x="380" y="78" text-anchor="middle">Service worker</text>
+              <text class="small" x="380" y="100" text-anchor="middle">Agent loop, orchestration</text>
+
+              <rect class="node gold" x="535" y="45" width="190" height="84" rx="8"></rect>
+              <text class="label" x="630" y="78" text-anchor="middle">Content script</text>
+              <text class="small" x="630" y="100" text-anchor="middle">Snapshot, tags, DOM tools</text>
+
+              <rect class="node" x="35" y="210" width="190" height="76" rx="8"></rect>
+              <text class="label" x="130" y="240" text-anchor="middle">Overlay harness</text>
+              <text class="small" x="130" y="262" text-anchor="middle">Shared UI, in-memory port</text>
+
+              <rect class="node plum" x="285" y="210" width="190" height="76" rx="8"></rect>
+              <text class="label" x="380" y="240" text-anchor="middle">Local backend</text>
+              <text class="small" x="380" y="262" text-anchor="middle">Profile and durable runs</text>
+
+              <rect class="node red" x="535" y="210" width="190" height="76" rx="8"></rect>
+              <text class="label" x="630" y="240" text-anchor="middle">Model providers</text>
+              <text class="small" x="630" y="262" text-anchor="middle">BYOK direct requests</text>
+
+              <rect class="node" x="285" y="335" width="190" height="56" rx="8"></rect>
+              <text class="label" x="380" y="368" text-anchor="middle">Traces and logs</text>
+
+              <path class="line blue" marker-end="url(#arrow-blue)" d="M225 87 H285"></path>
+              <text class="small" x="255" y="76" text-anchor="middle">runtime messages</text>
+
+              <path class="line green" marker-end="url(#arrow-green)" d="M475 87 H535"></path>
+              <text class="small" x="505" y="76" text-anchor="middle">bridge calls</text>
+
+              <path class="line" marker-end="url(#arrow)" d="M380 129 V210"></path>
+              <text class="small" x="401" y="174">optional APIs</text>
+
+              <path class="line red" marker-end="url(#arrow)" d="M475 240 H535"></path>
+              <text class="small" x="505" y="229" text-anchor="middle">LLM calls</text>
+
+              <path class="line" marker-end="url(#arrow)" d="M380 286 V335"></path>
+              <text class="small" x="399" y="314">trace writes</text>
+
+              <path class="line blue" marker-end="url(#arrow-blue)" d="M130 210 V129"></path>
+              <text class="small" x="151" y="174">same UI port</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="ai-roles" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 2</div>
+              <h2>AI role separation</h2>
+              <p>
+                The AI architecture separates fast action execution from planning, verification,
+                and visual interpretation. That makes it possible to keep common tasks cheap while
+                still escalating difficult workflows into more deliberate reasoning.
+              </p>
+            </div>
+            <table class="matrix">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Responsibility</th>
+                  <th>Primary evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Executor</td>
+                  <td>Chooses browser tools during observe-think-act turns.</td>
+                  <td>Visible elements, page text, perception, tool outcomes.</td>
+                </tr>
+                <tr>
+                  <td>Planner</td>
+                  <td>Decomposes difficult tasks into scoped nodes.</td>
+                  <td>User goal, current page context, tool capabilities.</td>
+                </tr>
+                <tr>
+                  <td>Verifier</td>
+                  <td>Judges whether a node or final goal is actually satisfied.</td>
+                  <td>Success criteria, page evidence, executor output.</td>
+                </tr>
+                <tr>
+                  <td>Perception</td>
+                  <td>Adds screenshot-based grounding where DOM is insufficient.</td>
+                  <td>Screenshot, tagged elements, prior observations.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>AI role graph</strong>
+              <span>model responsibilities around one task</span>
+            </div>
+            <svg viewBox="0 0 760 430" role="img" aria-label="AI role graph">
+              <defs>
+                <marker id="role-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="role-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow blue" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="role-green" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow green" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="role-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow red" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node" x="38" y="178" width="122" height="64" rx="8"></rect>
+              <text class="label" x="99" y="205" text-anchor="middle">User goal</text>
+              <text class="small" x="99" y="225" text-anchor="middle">plain English</text>
+
+              <rect class="node plum" x="218" y="54" width="138" height="70" rx="8"></rect>
+              <text class="label" x="287" y="83" text-anchor="middle">Planner</text>
+              <text class="small" x="287" y="104" text-anchor="middle">steps and criteria</text>
+
+              <rect class="node green" x="218" y="178" width="138" height="70" rx="8"></rect>
+              <text class="label" x="287" y="207" text-anchor="middle">Executor</text>
+              <text class="small" x="287" y="228" text-anchor="middle">tool calls</text>
+
+              <rect class="node gold" x="218" y="302" width="138" height="70" rx="8"></rect>
+              <text class="label" x="287" y="331" text-anchor="middle">Perception</text>
+              <text class="small" x="287" y="352" text-anchor="middle">visual grounding</text>
+
+              <rect class="node blue" x="436" y="178" width="138" height="70" rx="8"></rect>
+              <text class="label" x="505" y="207" text-anchor="middle">Browser tools</text>
+              <text class="small" x="505" y="228" text-anchor="middle">typed actions</text>
+
+              <rect class="node" x="626" y="178" width="104" height="70" rx="8"></rect>
+              <text class="label" x="678" y="207" text-anchor="middle">Page</text>
+              <text class="small" x="678" y="228" text-anchor="middle">state changes</text>
+
+              <rect class="node red" x="436" y="54" width="138" height="70" rx="8"></rect>
+              <text class="label" x="505" y="83" text-anchor="middle">Verifier</text>
+              <text class="small" x="505" y="104" text-anchor="middle">accept/retry</text>
+
+              <rect class="node" x="436" y="302" width="138" height="70" rx="8"></rect>
+              <text class="label" x="505" y="331" text-anchor="middle">Trace recorder</text>
+              <text class="small" x="505" y="352" text-anchor="middle">evidence stream</text>
+
+              <path class="line" marker-end="url(#role-arrow)" d="M160 210 H218"></path>
+              <path class="line" marker-end="url(#role-arrow)" d="M160 195 C190 112 207 92 218 90"></path>
+              <path class="line green" marker-end="url(#role-green)" d="M356 213 H436"></path>
+              <path class="line green" marker-end="url(#role-green)" d="M574 213 H626"></path>
+              <path class="line" marker-end="url(#role-arrow)" d="M678 248 C650 340 610 344 574 338"></path>
+              <path class="line blue" marker-end="url(#role-blue)" d="M356 337 H436"></path>
+              <path class="line red" marker-end="url(#role-red)" d="M505 178 V124"></path>
+              <path class="line red" marker-end="url(#role-red)" d="M436 89 H356"></path>
+              <text class="small" x="394" y="78" text-anchor="middle">retry context</text>
+              <path class="line" marker-end="url(#role-arrow)" d="M505 248 V302"></path>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="agent-loop" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 3</div>
+              <h2>Agent loop lifecycle</h2>
+              <p>
+                The executor loop repeatedly observes page state, asks the model for the next tool
+                call, executes the tool, refreshes state, and decides whether to continue. The loop
+                streams model output to the UI but keeps tool execution inside validated runtime code.
+              </p>
+            </div>
+            <div class="callout-grid">
+              <div class="callout">
+                <strong>Observe</strong>
+                DOM snapshot, URL/title, visible elements, perception, and prior tool outcomes.
+              </div>
+              <div class="callout blue">
+                <strong>Act</strong>
+                Model returns structured tool calls such as click, type, inspect, navigate, or done.
+              </div>
+              <div class="callout gold">
+                <strong>Verify</strong>
+                Runtime checks whether action effects and final completion claims match evidence.
+              </div>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Turn lifecycle</strong>
+              <span>one executor cycle</span>
+            </div>
+            <svg viewBox="0 0 760 360" role="img" aria-label="Agent loop lifecycle graph">
+              <defs>
+                <marker id="loop-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow green" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node green" x="40" y="122" width="122" height="78" rx="8"></rect>
+              <text class="label" x="101" y="153" text-anchor="middle">Observe</text>
+              <text class="small" x="101" y="174" text-anchor="middle">page snapshot</text>
+
+              <rect class="node blue" x="208" y="122" width="122" height="78" rx="8"></rect>
+              <text class="label" x="269" y="153" text-anchor="middle">Prompt</text>
+              <text class="small" x="269" y="174" text-anchor="middle">context window</text>
+
+              <rect class="node plum" x="376" y="122" width="122" height="78" rx="8"></rect>
+              <text class="label" x="437" y="153" text-anchor="middle">LLM</text>
+              <text class="small" x="437" y="174" text-anchor="middle">tool decision</text>
+
+              <rect class="node gold" x="544" y="122" width="122" height="78" rx="8"></rect>
+              <text class="label" x="605" y="153" text-anchor="middle">Execute</text>
+              <text class="small" x="605" y="174" text-anchor="middle">browser tool</text>
+
+              <rect class="node" x="292" y="250" width="178" height="58" rx="8"></rect>
+              <text class="label" x="381" y="282" text-anchor="middle">Update context and trace</text>
+
+              <path class="line green" marker-end="url(#loop-arrow)" d="M162 161 H208"></path>
+              <path class="line green" marker-end="url(#loop-arrow)" d="M330 161 H376"></path>
+              <path class="line green" marker-end="url(#loop-arrow)" d="M498 161 H544"></path>
+              <path class="line green" marker-end="url(#loop-arrow)" d="M605 200 C590 248 528 278 470 279"></path>
+              <path class="line green" marker-end="url(#loop-arrow)" d="M292 279 C190 274 102 232 101 200"></path>
+
+              <rect class="node red" x="544" y="34" width="122" height="48" rx="8"></rect>
+              <text class="label" x="605" y="64" text-anchor="middle">done?</text>
+              <path class="line red" marker-end="url(#loop-arrow)" d="M605 122 V82"></path>
+              <text class="small" x="633" y="105">completion gate</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="tools" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 4</div>
+              <h2>Tool layer and safety gates</h2>
+              <p>
+                Tools are the contract between the model and the browser. The model emits a typed
+                request; runtime middleware validates the request, classifies its risk, applies
+                approval policy, dispatches to service-worker or content-script code, and records
+                the result.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Tool categories</h3>
+              <ul class="list">
+                <li>DOM interaction: click, type, select, set checkbox, drag, hover, coordinates.</li>
+                <li>Navigation and tabs: navigate, go back, create tab, switch tab, create window.</li>
+                <li>Inspection: page, element, hidden content, tables, filters, charts, catalogs.</li>
+                <li>Browser data: cookies, history, downloads, profile fields.</li>
+                <li>Control flow: done, escalate, clarify, update plan.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Tool dispatch path</strong>
+              <span>constrained browser action</span>
+            </div>
+            <svg viewBox="0 0 760 370" role="img" aria-label="Tool dispatch safety graph">
+              <defs>
+                <marker id="tool-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node plum" x="40" y="48" width="136" height="64" rx="8"></rect>
+              <text class="label" x="108" y="77" text-anchor="middle">LLM tool call</text>
+              <text class="small" x="108" y="97" text-anchor="middle">name plus args</text>
+
+              <rect class="node blue" x="230" y="48" width="136" height="64" rx="8"></rect>
+              <text class="label" x="298" y="77" text-anchor="middle">Validate</text>
+              <text class="small" x="298" y="97" text-anchor="middle">schema and tags</text>
+
+              <rect class="node gold" x="420" y="48" width="136" height="64" rx="8"></rect>
+              <text class="label" x="488" y="77" text-anchor="middle">Classify risk</text>
+              <text class="small" x="488" y="97" text-anchor="middle">low, medium, high</text>
+
+              <rect class="node red" x="590" y="48" width="136" height="64" rx="8"></rect>
+              <text class="label" x="658" y="77" text-anchor="middle">Approval gate</text>
+              <text class="small" x="658" y="97" text-anchor="middle">if required</text>
+
+              <rect class="node green" x="135" y="205" width="150" height="72" rx="8"></rect>
+              <text class="label" x="210" y="235" text-anchor="middle">Content tool</text>
+              <text class="small" x="210" y="256" text-anchor="middle">DOM action in page</text>
+
+              <rect class="node" x="325" y="205" width="150" height="72" rx="8"></rect>
+              <text class="label" x="400" y="235" text-anchor="middle">Browser API tool</text>
+              <text class="small" x="400" y="256" text-anchor="middle">tabs, cookies, history</text>
+
+              <rect class="node blue" x="515" y="205" width="150" height="72" rx="8"></rect>
+              <text class="label" x="590" y="235" text-anchor="middle">Inspection tool</text>
+              <text class="small" x="590" y="256" text-anchor="middle">read-only evidence</text>
+
+              <rect class="node" x="302" y="315" width="156" height="40" rx="8"></rect>
+              <text class="label" x="380" y="340" text-anchor="middle">Tool result to context</text>
+
+              <path class="line" marker-end="url(#tool-arrow)" d="M176 80 H230"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M366 80 H420"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M556 80 H590"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M658 112 C640 172 592 195 590 205"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M658 112 C548 168 405 178 400 205"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M658 112 C488 168 215 174 210 205"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M210 277 C245 312 300 333 302 335"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M400 277 V315"></path>
+              <path class="line" marker-end="url(#tool-arrow)" d="M590 277 C548 312 460 333 458 335"></path>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="orchestration" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 5</div>
+              <h2>Multi-step orchestration</h2>
+              <p>
+                Complex workflows are represented as task nodes. Each node has a scoped objective,
+                observable success criteria, dependencies, tool constraints, assumptions, and handoff
+                artifacts. The scheduler runs only runnable nodes, verifies each node, and retries or
+                reroutes failures with context.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Design rules</h3>
+              <ul class="list">
+                <li>The planner plans; it does not execute browser tools.</li>
+                <li>The executor handles one scoped objective at a time.</li>
+                <li>The verifier judges the node objective, not the entire full task too early.</li>
+                <li>Plan repair adds missing return/read/report steps when the planner drops them.</li>
+                <li>Parallel hints are conservative and serialize ambiguous shared resources.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Task graph and verification</strong>
+              <span>orchestrator model</span>
+            </div>
+            <svg viewBox="0 0 760 390" role="img" aria-label="Task graph and verification diagram">
+              <defs>
+                <marker id="orch-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow blue" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="orch-red" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow red" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node plum" x="38" y="40" width="150" height="58" rx="8"></rect>
+              <text class="label" x="113" y="73" text-anchor="middle">User task</text>
+
+              <rect class="node blue" x="248" y="40" width="150" height="58" rx="8"></rect>
+              <text class="label" x="323" y="73" text-anchor="middle">Decompose</text>
+
+              <rect class="node green" x="118" y="172" width="132" height="62" rx="8"></rect>
+              <text class="label" x="184" y="198" text-anchor="middle">Node A</text>
+              <text class="small" x="184" y="218" text-anchor="middle">navigate/read</text>
+
+              <rect class="node green" x="314" y="172" width="132" height="62" rx="8"></rect>
+              <text class="label" x="380" y="198" text-anchor="middle">Node B</text>
+              <text class="small" x="380" y="218" text-anchor="middle">fill/submit</text>
+
+              <rect class="node gold" x="510" y="172" width="132" height="62" rx="8"></rect>
+              <text class="label" x="576" y="198" text-anchor="middle">Node C</text>
+              <text class="small" x="576" y="218" text-anchor="middle">verify/report</text>
+
+              <rect class="node red" x="314" y="296" width="132" height="58" rx="8"></rect>
+              <text class="label" x="380" y="330" text-anchor="middle">Verifier</text>
+
+              <rect class="node" x="540" y="296" width="132" height="58" rx="8"></rect>
+              <text class="label" x="606" y="330" text-anchor="middle">Final result</text>
+
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M188 69 H248"></path>
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M323 98 C280 130 204 150 184 172"></path>
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M250 203 H314"></path>
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M446 203 H510"></path>
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M380 234 V296"></path>
+              <path class="line blue" marker-end="url(#orch-arrow)" d="M446 325 H540"></path>
+              <path class="line red" marker-end="url(#orch-red)" d="M314 325 C236 318 184 278 184 234"></path>
+              <text class="small" x="230" y="302">retry or reroute</text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="perception" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 6</div>
+              <h2>Perception and grounding</h2>
+              <p>
+                DOM snapshots are the default grounding layer, but browser pages often hide critical
+                information in canvas, images, modals, charts, styling, or layout. OpenSidebar supports
+                visual grounding so the executor can reason over what the page looks like, not only
+                what the DOM exposes.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Structured perception contract</h3>
+              <ul class="list">
+                <li><code>LOCATION</code>: where the agent is.</li>
+                <li><code>CHANGES</code>: DOM-grounded changes since the prior observation.</li>
+                <li><code>BLOCKERS</code>: popups, prerequisites, mismatches, and obstacles.</li>
+                <li><code>VISUAL-ONLY</code>: visible values not present in element text.</li>
+                <li><code>AFFORDANCES</code>: relevant visible controls and valid tag IDs.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Observation paths</strong>
+              <span>DOM plus screenshot grounding</span>
+            </div>
+            <svg viewBox="0 0 760 360" role="img" aria-label="Perception observation paths graph">
+              <defs>
+                <marker id="perc-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow green" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+                <marker id="perc-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow blue" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node" x="44" y="142" width="126" height="64" rx="8"></rect>
+              <text class="label" x="107" y="171" text-anchor="middle">Browser page</text>
+              <text class="small" x="107" y="191" text-anchor="middle">DOM and pixels</text>
+
+              <rect class="node green" x="230" y="62" width="146" height="66" rx="8"></rect>
+              <text class="label" x="303" y="91" text-anchor="middle">DOM snapshot</text>
+              <text class="small" x="303" y="111" text-anchor="middle">tags and text</text>
+
+              <rect class="node gold" x="230" y="222" width="146" height="66" rx="8"></rect>
+              <text class="label" x="303" y="251" text-anchor="middle">Screenshot</text>
+              <text class="small" x="303" y="271" text-anchor="middle">visual evidence</text>
+
+              <rect class="node blue" x="442" y="62" width="146" height="66" rx="8"></rect>
+              <text class="label" x="515" y="91" text-anchor="middle">Executor VL</text>
+              <text class="small" x="515" y="111" text-anchor="middle">unified path</text>
+
+              <rect class="node plum" x="442" y="222" width="146" height="66" rx="8"></rect>
+              <text class="label" x="515" y="251" text-anchor="middle">Perception agent</text>
+              <text class="small" x="515" y="271" text-anchor="middle">structured path</text>
+
+              <rect class="node" x="638" y="142" width="86" height="64" rx="8"></rect>
+              <text class="label" x="681" y="170" text-anchor="middle">Prompt</text>
+              <text class="small" x="681" y="190" text-anchor="middle">grounded turn</text>
+
+              <path class="line green" marker-end="url(#perc-arrow)" d="M170 158 C194 118 210 96 230 95"></path>
+              <path class="line gold" marker-end="url(#perc-arrow)" d="M170 190 C194 230 210 253 230 255"></path>
+              <path class="line blue" marker-end="url(#perc-blue)" d="M376 95 H442"></path>
+              <path class="line green" marker-end="url(#perc-arrow)" d="M376 255 H442"></path>
+              <path class="line blue" marker-end="url(#perc-blue)" d="M588 95 C618 110 643 134 681 142"></path>
+              <path class="line green" marker-end="url(#perc-arrow)" d="M588 255 C618 239 643 213 681 206"></path>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="providers" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 7</div>
+              <h2>Provider routing and BYOK model stack</h2>
+              <p>
+                OpenSidebar is bring-your-own-key. Settings select a provider mode, and the service
+                worker sends model requests directly to the configured provider. The LLM client handles
+                streaming, tool-call parsing, provider-specific payload shaping, retries, image fallback,
+                and usage telemetry.
+              </p>
+            </div>
+            <table class="matrix">
+              <thead>
+                <tr>
+                  <th>Provider mode</th>
+                  <th>Typical role split</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>fireworks</code></td><td>Fireworks executor and planner. Recommended default.</td></tr>
+                <tr><td><code>fireworks-deepseek</code></td><td>Fireworks executor, DeepSeek planner/verifier.</td></tr>
+                <tr><td><code>openrouter</code></td><td>OpenRouter-backed executor and planner.</td></tr>
+                <tr><td><code>openrouter-groq</code></td><td>OpenRouter executor, Groq planner.</td></tr>
+                <tr><td><code>moonshot</code></td><td>Moonshot/Kimi executor and planner.</td></tr>
+                <tr><td><code>xiaomi</code></td><td>Xiaomi MiMo executor and planner.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>BYOK routing</strong>
+              <span>settings to model request</span>
+            </div>
+            <svg viewBox="0 0 760 350" role="img" aria-label="Provider routing graph">
+              <defs>
+                <marker id="provider-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow blue" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node" x="40" y="126" width="126" height="68" rx="8"></rect>
+              <text class="label" x="103" y="155" text-anchor="middle">Settings</text>
+              <text class="small" x="103" y="176" text-anchor="middle">keys and mode</text>
+
+              <rect class="node blue" x="226" y="126" width="132" height="68" rx="8"></rect>
+              <text class="label" x="292" y="155" text-anchor="middle">LLM client</text>
+              <text class="small" x="292" y="176" text-anchor="middle">payload shaping</text>
+
+              <rect class="node green" x="418" y="42" width="126" height="58" rx="8"></rect>
+              <text class="label" x="481" y="76" text-anchor="middle">Executor pool</text>
+
+              <rect class="node plum" x="418" y="126" width="126" height="58" rx="8"></rect>
+              <text class="label" x="481" y="160" text-anchor="middle">Planner pool</text>
+
+              <rect class="node gold" x="418" y="210" width="126" height="58" rx="8"></rect>
+              <text class="label" x="481" y="244" text-anchor="middle">Perception path</text>
+
+              <rect class="node red" x="610" y="126" width="110" height="68" rx="8"></rect>
+              <text class="label" x="665" y="155" text-anchor="middle">Provider</text>
+              <text class="small" x="665" y="176" text-anchor="middle">direct HTTPS</text>
+
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M166 160 H226"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M358 160 H418"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M358 150 C382 104 397 75 418 71"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M358 170 C382 212 397 237 418 239"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M544 71 C580 92 608 126 610 145"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M544 155 H610"></path>
+              <path class="line blue" marker-end="url(#provider-arrow)" d="M544 239 C580 222 608 195 610 176"></path>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="observability" class="concept-section">
+        <div class="concept-grid">
+          <div class="stack">
+            <div>
+              <div class="eyebrow">Concept 8</div>
+              <h2>Observability, tests, and release gates</h2>
+              <p>
+                Browser agents need traceability because final success or failure is not enough to
+                debug AI behavior. OpenSidebar records traces for model calls, tool calls, tool
+                results, perception, verifier decisions, retries, costs, and run-level events.
+              </p>
+            </div>
+            <div class="card">
+              <h3>Current release-candidate evidence</h3>
+              <ul class="list">
+                <li><code>release:verify</code> passed on 2026-05-25 for version <code>0.9.2</code>.</li>
+                <li><code>test:e2e:smoke</code> passed: 8 files, 9 tests, 25 trace turns.</li>
+                <li>Native Chrome side-panel smoke passed for commit <code>5161aa6a58c271ce0641d1fce88b24e0992af64d</code>.</li>
+                <li>Release package and preflight generated and verified the <code>opensidebar-v0.9.2.zip</code> artifact.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="diagram-card">
+            <div class="diagram-title">
+              <strong>Trace data flow</strong>
+              <span>from runtime to diagnosis</span>
+            </div>
+            <svg viewBox="0 0 760 350" role="img" aria-label="Trace data flow graph">
+              <defs>
+                <marker id="trace-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path class="arrow green" d="M0,0 L8,4 L0,8 Z"></path>
+                </marker>
+              </defs>
+
+              <rect class="node green" x="34" y="54" width="142" height="64" rx="8"></rect>
+              <text class="label" x="105" y="83" text-anchor="middle">Agent turn</text>
+              <text class="small" x="105" y="103" text-anchor="middle">LLM and tools</text>
+
+              <rect class="node blue" x="232" y="54" width="142" height="64" rx="8"></rect>
+              <text class="label" x="303" y="83" text-anchor="middle">Trace recorder</text>
+              <text class="small" x="303" y="103" text-anchor="middle">turn JSON</text>
+
+              <rect class="node gold" x="430" y="54" width="142" height="64" rx="8"></rect>
+              <text class="label" x="501" y="83" text-anchor="middle">Local log server</text>
+              <text class="small" x="501" y="103" text-anchor="middle">JSONL plus screenshots</text>
+
+              <rect class="node" x="232" y="206" width="142" height="64" rx="8"></rect>
+              <text class="label" x="303" y="235" text-anchor="middle">SQLite index</text>
+              <text class="small" x="303" y="255" text-anchor="middle">long-lived store</text>
+
+              <rect class="node plum" x="430" y="206" width="142" height="64" rx="8"></rect>
+              <text class="label" x="501" y="235" text-anchor="middle">Trace viewer</text>
+              <text class="small" x="501" y="255" text-anchor="middle">analysis UI</text>
+
+              <rect class="node red" x="628" y="206" width="98" height="64" rx="8"></rect>
+              <text class="label" x="677" y="235" text-anchor="middle">Fix</text>
+              <text class="small" x="677" y="255" text-anchor="middle">runtime/test</text>
+
+              <path class="line green" marker-end="url(#trace-arrow)" d="M176 86 H232"></path>
+              <path class="line green" marker-end="url(#trace-arrow)" d="M374 86 H430"></path>
+              <path class="line green" marker-end="url(#trace-arrow)" d="M501 118 V206"></path>
+              <path class="line green" marker-end="url(#trace-arrow)" d="M430 238 H374"></path>
+              <path class="line green" marker-end="url(#trace-arrow)" d="M374 238 H430"></path>
+              <path class="line green" marker-end="url(#trace-arrow)" d="M572 238 H628"></path>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section class="concept-section">
+        <div class="eyebrow">How to explain it in an interview</div>
+        <h2>Architecture talking points</h2>
+        <div class="callout-grid">
+          <div class="callout">
+            <strong>System design</strong>
+            The LLM is inside a runtime boundary. It chooses typed tools, but the extension validates,
+            executes, records, and verifies browser effects.
+          </div>
+          <div class="callout blue">
+            <strong>Reliability</strong>
+            Completion is evidence-based. The agent cannot safely finish just because the model says
+            it is done.
+          </div>
+          <div class="callout gold">
+            <strong>Debuggability</strong>
+            Every run is traceable across model calls, tool calls, page observations, perception,
+            verification, cost, and latency.
+          </div>
+        </div>
+        <p class="note" style="margin-top: 16px">
+          Balanced caveat: OpenSidebar is an OSS BYOK preview and supervised browser agent. It is
+          demo-ready with release-candidate evidence, but dynamic sites, provider outages, rate limits,
+          cross-origin frames, and custom widgets can still require user supervision or runtime fixes.
+        </p>
+      </section>
+
+      <section class="concept-section">
+        <div class="eyebrow">Source map</div>
+        <h2>Where to read the implementation</h2>
+        <p class="sources">
+          Core runtime: <code>apps/extension/src/background/agent/</code>.
+          Orchestrator: <code>apps/extension/src/background/orchestrator/</code>.
+          Perception: <code>apps/extension/src/background/perception/</code>.
+          LLM client: <code>apps/extension/src/background/llm/</code>.
+          Tools: <code>apps/extension/src/background/tools/</code>.
+          Content script: <code>apps/extension/src/content/</code>.
+          Side panel: <code>apps/extension/src/sidepanel/</code>.
+          Prompts: <code>prompts/runtime/</code>.
+          Shared contracts: <code>packages/shared-types/src/</code>.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

@@ -19,9 +19,9 @@ The same side panel React app also runs inside the overlay harness for browser-d
 | Role | Current Default |
 | --- | --- |
 | Provider mode | `fireworks` |
-| Executor | `accounts/fireworks/routers/kimi-k2p5-turbo` |
-| Executor fallback | `accounts/fireworks/routers/kimi-k2p5-turbo` |
-| Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` |
+| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` |
+| Executor fallback | `accounts/fireworks/routers/kimi-k2p6-turbo` |
+| Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` |
 | Perception | `unified_vl` through the executor by default; structured fallback is provider-specific |
 
 Models are configurable in Settings.
@@ -57,6 +57,7 @@ Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_AP
 
 ## See Also
 
+- [AI Architecture Overview](./ai-architecture-overview.html)
 - [Orchestrator](./orchestrator.md)
 - [First-Class Parallel Work Roadmap](./parallel-work-roadmap.md)
 - [Agent Loop](./agent-loop.md)
