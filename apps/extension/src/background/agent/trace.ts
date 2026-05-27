@@ -19,6 +19,7 @@ import {
   TracePerceptionMode,
   TracePerceptionScreenshotStatus,
   TracePerceptionSource,
+  PartialProgressHandoff,
 } from "../../types";
 import { TokenUsage } from "../llm/types";
 import { LLMMessage } from "../llm/types";
@@ -54,6 +55,7 @@ export class TraceRecorder {
   private currentTurn: Partial<TraceEntry> | null = null;
   private turnToolExecutions: TraceToolExecution[] = [];
   private turnEvents: TraceEvent[] = [];
+  private sessionEvents: TraceEvent[] = [];
 
   // Retry queue for failed flushes
   private pendingQueue: Array<{ path: string; data: string }> = [];
@@ -303,11 +305,16 @@ export class TraceRecorder {
   ): void;
   recordEvent(type: string, data: Record<string, unknown>): void {
     this.updateSkillToolMetrics(type, data);
-    this.turnEvents.push({
+    const event = {
       type,
       timestamp: Date.now(),
       data: this.redactSensitiveTraceValue(data),
-    } as TraceEvent);
+    } as TraceEvent;
+    if (this.currentTurn) {
+      this.turnEvents.push(event);
+    } else {
+      this.sessionEvents.push(event);
+    }
   }
 
   private updateSkillToolMetrics(
@@ -607,6 +614,7 @@ export class TraceRecorder {
     turnCount: number,
     failure: TraceFailureInfo | null,
     metrics: SessionMetrics | null,
+    partialHandoff?: PartialProgressHandoff | null,
   ): Promise<void> {
     // Flush any pending turn
     if (this.currentTurn) {
@@ -618,6 +626,11 @@ export class TraceRecorder {
         ? Object.keys(metrics.modelBreakdown)
         : undefined;
     const skillToolMetrics = this.buildSkillToolMetrics();
+    const sessionEvents = this.sessionEvents.map((event, index) => ({
+      eventId: `${this.sessionId}:session:event:${index}`,
+      sessionId: this.sessionId,
+      ...event,
+    }));
 
     const session: TraceSession = {
       schemaVersion: TRACE_SCHEMA_VERSION,
@@ -654,6 +667,8 @@ export class TraceRecorder {
         ? { planDecomposition: this.planDecomposition }
         : {}),
       ...(skillToolMetrics ? { skillToolMetrics } : {}),
+      ...(sessionEvents.length > 0 ? { events: sessionEvents } : {}),
+      ...(partialHandoff ? { partialHandoff } : {}),
     };
 
     await this.flush("/traces/session", session);

@@ -25,4 +25,33 @@ describe("done summary completeness guard", () => {
       }),
     ).toBeNull();
   });
+
+  test("allows summaries that end in a complete sentence wrapped in Markdown emphasis", () => {
+    const summary =
+      "Found Post #35 'The Secret Formula for Productivity' in the feed. " +
+      "The answer to maximum productivity is the secret code CODE-OMEGA-42, " +
+      'which unlocks the productivity dashboard. Most people overlook this simple insight."*';
+
+    expect(
+      getIncompleteDoneSummaryReason({
+        summary,
+        taskContext: "Find the post and read the secret code mentioned in it",
+      }),
+    ).toBeNull();
+  });
+
+  test("does not apply summarize punctuation checks to draft review tasks", () => {
+    const summary =
+      "- Drafted the German apology message in the composer\n" +
+      "- Confirmed the composer contains the requested apology and job-search context\n" +
+      "- Left unsent in the composer for your review - the Send button was not clicked";
+
+    expect(
+      getIncompleteDoneSummaryReason({
+        summary,
+        taskContext:
+          "Type a German apology message in the composer and do NOT send, leave for user review.",
+      }),
+    ).toBeNull();
+  });
 });

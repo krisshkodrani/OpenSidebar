@@ -23,7 +23,11 @@ const FAILURE_STAGES = [
   "validation",
   "teardown",
 ] as const;
-const PROMPT_SOURCES = ["workarena_goal_after_reset", "local_fixture_prompt"] as const;
+const PROMPT_SOURCES = [
+  "workarena_goal_after_reset",
+  "local_fixture_prompt",
+  "prompt_override",
+] as const;
 const BROWSER_ATTACH_STRATEGIES = [
   "extension-loaded-browser-context",
   "separate-extension-browser-with-transferred-session",

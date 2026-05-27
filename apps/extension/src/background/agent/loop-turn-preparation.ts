@@ -32,6 +32,7 @@ export type LlmTurnPreparationDeps = {
     PerceptionAgent,
     | "getInterpretation"
     | "getLastTraceMeta"
+    | "getLastTraceStats"
     | "getLastScreenshot"
     | "getPanoramicShots"
   >;
@@ -134,12 +135,11 @@ export async function prepareLlmTurnRequest(
     if (deps.turnCount === 1 && interpretation) {
       const elSummary = snap ? buildElementSummary(snap.elements) : undefined;
       const perceptionMeta = deps.perception.getLastTraceMeta();
+      const perceptionStats = deps.perception.getLastTraceStats();
       await deps.traceRecorder.recordPerception(
         {
           interpretation,
-          model: "google/gemini-2.5-flash",
-          durationMs: 0,
-          cached: false,
+          ...perceptionStats,
           ...perceptionMeta,
         },
         deps.perception.getLastScreenshot() || undefined,

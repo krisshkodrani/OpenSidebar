@@ -12,6 +12,7 @@ import {
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "./task-contract";
+import { isDraftOnlyCommunicationTask } from "./consequential-action-policy";
 
 /** Generic criteria patterns that have no DOM-observable tokens */
 const GENERIC_CRITERIA = [
@@ -166,6 +167,180 @@ function sanitizeUnsupportedFieldSubmitStep(query: string, step: PlanStep): Plan
     successCriteria,
     ...(toolProfile ? { toolProfile } : {}),
   };
+}
+
+function hasCommunicationCompositionIntent(text: string): boolean {
+  return (
+    /\b(?:draft|compose|write|prepare|create|type|fill)\b[^.!?\n]{0,100}\b(?:reply|response|email|e-mail|message|comment|post|copy|text|composer|editor)\b/i.test(
+      text,
+    ) ||
+    /\b(?:reply|response|email|e-mail|message|comment|post|copy|text)\s+draft\b/i.test(
+      text,
+    ) ||
+    /\bdraft\s+(?:reply|response|email|e-mail|message|comment|post|copy|text)\b/i.test(
+      text,
+    ) ||
+    /\b(?:composer|editor)\b[\s\S]{0,80}\b(?:contains|shows|has|includes|visible)\b/i.test(
+      text,
+    )
+  );
+}
+
+function hasCommunicationTerm(text: string): boolean {
+  return /\b(?:reply|response|email|e-mail|message|comment|post|copy|text|composer|editor|thread)\b/i.test(
+    text,
+  );
+}
+
+function hasNegatedCommunicationSendEvidence(text: string): boolean {
+  return (
+    /\b(?:do not|don't|dont|never|without|not|has not|have not)\s+(?:been\s+)?(?:send|sent|post|posted|reply|submit|submitted|publish|published)\b/i.test(
+      text,
+    ) ||
+    /\b(?:unsent|not sent|not posted|not submitted|not published)\b/i.test(text)
+  );
+}
+
+function isCommunicationFinalActionStep(step: PlanStep): boolean {
+  const text = `${step.objective}\n${step.successCriteria}`;
+  if (!hasCommunicationTerm(text)) return false;
+  if (hasNegatedCommunicationSendEvidence(text)) return false;
+
+  return (
+    /\b(?:click|press|select|use|activate|hit)?\s*(?:the\s+)?(?:send|post|reply|submit|publish)\b/i.test(
+      text,
+    ) ||
+    /\b(?:message|reply|response|email|e-mail|comment|post|copy|text)\b[\s\S]{0,80}\b(?:is\s+|was\s+|has\s+been\s+)?(?:sent|posted|submitted|published)\b/i.test(
+      text,
+    ) ||
+    /\b(?:sent|posted|submitted|published)\b[\s\S]{0,80}\b(?:message|reply|response|email|e-mail|comment|post)\b/i.test(
+      text,
+    )
+  );
+}
+
+function stripCommunicationSendTail(value: string): string {
+  const stripped = value
+    .replace(
+      /\s+(?:and|then)\s+(?:click\s+|press\s+|select\s+|use\s+|activate\s+)?(?:send|post|reply|submit|publish)\b[\s\S]*$/i,
+      "",
+    )
+    .replace(
+      /,\s*(?:then\s+)?(?:click\s+|press\s+|select\s+|use\s+|activate\s+)?(?:send|post|reply|submit|publish)\b[\s\S]*$/i,
+      "",
+    )
+    .trim();
+  if (!stripped) return value;
+  return /[.!?]$/.test(stripped) ? stripped : `${stripped}.`;
+}
+
+function draftOnlyCommunicationCriteria(criteria: string): string {
+  if (
+    /\b(?:unsent|not sent|not posted|not submitted|not published|has not been sent|has not been posted|draft remains)\b/i.test(
+      criteria,
+    )
+  ) {
+    return criteria;
+  }
+
+  const base = stripCommunicationSendTail(criteria)
+    .replace(
+      /\s+(?:and|then)\s+(?:is\s+)?(?:sent|posted|submitted|published)\b[\s\S]*$/i,
+      "",
+    )
+    .trim();
+  const prefix = base && base !== criteria ? base.replace(/[.:\s]+$/, "") : "";
+  const draftEvidence =
+    "the requested message draft is visible in the composer/editor and has not been sent or posted.";
+  return prefix ? `${prefix}; ${draftEvidence}` : draftEvidence;
+}
+
+function sanitizeDraftOnlyCommunicationStep(step: PlanStep): PlanStep | null {
+  if (!isCommunicationFinalActionStep(step)) return step;
+
+  const text = `${step.objective}\n${step.successCriteria}`;
+  if (!hasCommunicationCompositionIntent(text)) {
+    return null;
+  }
+
+  const objective = stripCommunicationSendTail(step.objective);
+  return {
+    ...step,
+    objective:
+      objective === step.objective &&
+      /^\s*(?:send|post|reply|submit|publish)\b/i.test(objective)
+        ? "Create the requested message draft and leave it visible for user review."
+        : objective,
+    successCriteria:
+      "The requested message draft is visible in the composer/editor and has not been sent or posted.",
+    verifyAfter: {
+      trigger:
+        "The requested message draft is visible in the composer/editor and has not been sent or posted.",
+      action: "call_done",
+    },
+    toolProfile: "form_fill",
+  };
+}
+
+function enforceDraftOnlyCommunicationStop(
+  query: string,
+  steps: PlanStep[],
+): PlanStep[] {
+  if (!isDraftOnlyCommunicationTask(query)) return steps;
+
+  const sanitized: Array<{ originalIndex: number; step: PlanStep }> = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = sanitizeDraftOnlyCommunicationStep(steps[i]);
+    if (step) sanitized.push({ originalIndex: i, step });
+  }
+
+  if (sanitized.length === 0) return steps;
+
+  const indexMap = new Map<number, number>();
+  sanitized.forEach(({ originalIndex }, newIndex) => {
+    indexMap.set(originalIndex, newIndex);
+  });
+
+  const remapped = sanitized.map(({ step }, newIndex) => ({
+    ...step,
+    dependencies: step.dependencies
+      .map((dep) => indexMap.get(dep))
+      .filter(
+        (dep): dep is number =>
+          typeof dep === "number" && dep >= 0 && dep < newIndex,
+      ),
+  }));
+
+  const finalIndex = remapped.length - 1;
+  return remapped.map((step, index) => {
+    if (index !== finalIndex) return step;
+
+    const successCriteria = draftOnlyCommunicationCriteria(
+      step.successCriteria,
+    );
+    const toolProfile =
+      step.toolProfile === "submit_form" ||
+      hasCommunicationCompositionIntent(step.objective)
+        ? "form_fill"
+        : step.toolProfile;
+    return {
+      ...step,
+      successCriteria,
+      verifyAfter: {
+        ...(step.verifyAfter ?? {}),
+        trigger: step.verifyAfter?.trigger || successCriteria,
+        action: "call_done",
+      },
+      ...(toolProfile ? { toolProfile } : {}),
+    };
+  });
+}
+
+function postProcessPlanSteps(query: string, steps: PlanStep[]): PlanStep[] {
+  return enforceDraftOnlyCommunicationStop(
+    query,
+    mergeAdjacentRoundTripReadSteps(repairPlanCoverage({ query, steps })),
+  );
 }
 
 function looksLikeNavigationOnlyStep(step: PlanStep): boolean {
@@ -777,9 +952,7 @@ export class TaskPlanner {
             dependencies: [] as number[],
             assumptions: [] as string[],
           }));
-          const repairedSteps = mergeAdjacentRoundTripReadSteps(
-            repairPlanCoverage({ query, steps: simpleSteps }),
-          );
+          const repairedSteps = postProcessPlanSteps(query, simpleSteps);
           if (repairedSteps.length >= 2) {
             logger.info(
               "agent",
@@ -953,9 +1126,7 @@ export class TaskPlanner {
 
       const parsedSteps = parseSteps(parsed.steps);
       const steps = parsedSteps
-        ? mergeAdjacentRoundTripReadSteps(
-            repairPlanCoverage({ query, steps: parsedSteps }),
-          )
+        ? postProcessPlanSteps(query, parsedSteps)
         : null;
       if (
         synthesizedFallback &&
@@ -1044,7 +1215,9 @@ export class TaskPlanner {
       const subtasks =
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
-      if (subtasks.length < 2) {
+      const acceptsSingleStructuredPlan =
+        !!steps && steps.length === 1 && isDraftOnlyCommunicationTask(query);
+      if (subtasks.length < 2 && !acceptsSingleStructuredPlan) {
         // Only fall back to synthesis when the planner returned NO parsed
         // steps at all, or when the task requires a round-trip and the planner
         // missed the return leg. For normal tasks, the planner's steps preserve

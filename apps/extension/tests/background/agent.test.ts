@@ -232,6 +232,117 @@ describe("AgentLoop", () => {
     expect(result).toBe("Profile saved");
   });
 
+  test("perception refresh can switch from structured DOM to unified VL", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      { perceptionMode: "auto" },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery = "Review the current page.";
+    (agent as any).useVLExecutor = false;
+    (agent as any).refreshPerception = vi.fn();
+    (agent as any).triagePopups = vi.fn();
+    (agent as any).captureScreenshotForVLExecutor = vi.fn();
+    (agent as any).context.setSnapshot({
+      title: "Chart Canvas",
+      url: "https://example.com/chart",
+      visibleContent: "Q4 status",
+      pageContent: "Q4 status",
+      elements: [
+        {
+          tag: 1,
+          tagName: "canvas",
+          role: "img",
+          text: "",
+          attributes: {},
+          rect: { x: 0, y: 0, width: 600, height: 320 },
+          isVisible: true,
+          isDisabled: false,
+        },
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    await (agent as any).refreshPerceptionAndTriage(123);
+
+    expect((agent as any).useVLExecutor).toBe(true);
+    expect((agent as any).captureScreenshotForVLExecutor).toHaveBeenCalledWith(
+      123,
+    );
+    expect((agent as any).refreshPerception).not.toHaveBeenCalled();
+    expect((agent as any).triagePopups).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "perception_mode_decision",
+      expect.objectContaining({
+        dynamic: true,
+        previousMode: "structured",
+        mode: "unified_vl",
+        reason: "canvas_present",
+      }),
+    );
+  });
+
+  test("perception refresh can switch from unified VL back to structured DOM", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      { perceptionMode: "auto" },
+    );
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery = "Fill out the account form.";
+    (agent as any).useVLExecutor = true;
+    (agent as any).refreshPerception = vi.fn();
+    (agent as any).triagePopups = vi.fn();
+    (agent as any).captureScreenshotForVLExecutor = vi.fn();
+    const text = "Account form ".repeat(60);
+    (agent as any).context.setSnapshot({
+      title: "Account Form",
+      url: "https://example.com/account",
+      visibleContent: text,
+      pageContent: text,
+      elements: Array.from({ length: 10 }, (_, index) => ({
+        tag: index + 1,
+        tagName: "input",
+        role: "textbox",
+        text: `Field ${index + 1}`,
+        attributes: { value: "" },
+        rect: { x: 0, y: index * 32, width: 320, height: 24 },
+        isVisible: true,
+        isDisabled: false,
+      })),
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    await (agent as any).refreshPerceptionAndTriage(123);
+
+    expect((agent as any).useVLExecutor).toBe(false);
+    expect((agent as any).refreshPerception).toHaveBeenCalledWith(123);
+    expect((agent as any).triagePopups).toHaveBeenCalledWith(123);
+    expect((agent as any).captureScreenshotForVLExecutor).not.toHaveBeenCalled();
+    expect(recordEvent).toHaveBeenCalledWith(
+      "perception_mode_decision",
+      expect.objectContaining({
+        dynamic: true,
+        previousMode: "unified_vl",
+        mode: "structured",
+        reason: "dom_signals_sufficient",
+      }),
+    );
+  });
+
   test("job-application submit approval ignores workflow boilerplate", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
@@ -2797,6 +2908,107 @@ describe("AgentLoop", () => {
     expect((agent as any).doneRejections).toBe(0);
   });
 
+  test("done grounding preflight runs before deterministic quiz acceptance", async () => {
+    const recordEvent = vi.fn();
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).traceRecorder = { recordEvent };
+    (agent as any).originalQuery =
+      "Read this page, then select the correct option/s.";
+    (agent as any).hasReadPage = true;
+    (agent as any).hasExplicitPageRead = false;
+    (agent as any).taskId = "task-quiz-grounding";
+    (agent as any).forceGroundingRefresh = vi.fn(async () => undefined);
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: false,
+      reason: "planner should not run",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Quiz",
+      url: "https://example.test/quiz",
+      visibleContent:
+        "Question 32. Which approaches help adapt a foundation model? Select two. The page contains a long prompt with multiple answer choices and explanatory text.",
+      pageContent:
+        "Question 32. Which approaches help adapt a foundation model? Select two. The page contains a long prompt with multiple answer choices and explanatory text.",
+      elements: [
+        {
+          tag: 158,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-158",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Domain Adaptation Fine-Tuning",
+          },
+          rect: { x: 0, y: 0, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        {
+          tag: 159,
+          tagName: "input",
+          role: "checkbox",
+          text: "on",
+          attributes: {
+            id: "choice-159",
+            name: "answer",
+            type: "checkbox",
+            checked: "true",
+            label: "Continued Pre-Training",
+          },
+          rect: { x: 0, y: 20, width: 16, height: 16 },
+          isVisible: true,
+          isDisabled: false,
+        },
+        ...Array.from({ length: 4 }, (_, index) => ({
+          tag: 200 + index,
+          tagName: "div",
+          role: "text",
+          text: `Supporting quiz content ${index + 1}`,
+          attributes: {},
+          rect: { x: 0, y: 40 + index * 20, width: 300, height: 18 },
+          isVisible: true,
+          isDisabled: false,
+        })),
+      ],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-grounded-quiz",
+      "Selected Domain Adaptation Fine-Tuning and Continued Pre-Training.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).completedResult).toBeNull();
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    expect((agent as any).forceGroundingRefresh).toHaveBeenCalledWith(
+      123,
+      "done_before_grounding_read",
+    );
+    expect(recordEvent).toHaveBeenCalledWith(
+      "done_rejected_no_read",
+      expect.objectContaining({
+        elementCount: 6,
+      }),
+    );
+    expect(recordEvent).not.toHaveBeenCalledWith(
+      "completion_decision",
+      expect.objectContaining({
+        status: "accepted",
+        contractKind: "quiz_selection",
+      }),
+    );
+  });
+
   test("disabled deterministic completion acceptance falls back to legacy done validation", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop(
@@ -3063,6 +3275,55 @@ describe("AgentLoop", () => {
       tool_call_id: "done-call-task-contract",
       content: expect.stringContaining("Complete the missing task obligations"),
     });
+  });
+
+  test("repeated done rejection reports consolidated outstanding issues", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    (agent as any).originalQuery =
+      "Open Warehouse Gamma, then use go_back twice to return to Warehouse Alpha before calling done.";
+    (agent as any).planner.validateDone = vi.fn(async () => ({
+      approved: true,
+      reason: "planner should not be reached",
+    }));
+    (agent as any).context.setSnapshot({
+      title: "Warehouse Gamma",
+      url: "https://shop.example.com/warehouse/gamma",
+      visibleContent: "Warehouse Gamma inventory count: 6,412 units",
+      pageContent: "Warehouse Gamma inventory count: 6,412 units",
+      elements: [],
+      viewport: { width: 1280, height: 720 },
+      scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
+    });
+
+    await (agent as any).handleDoneToolCall(
+      "done-call-task-contract-1",
+      "Opened Warehouse Gamma successfully.",
+      123,
+    );
+    const accepted = await (agent as any).handleDoneToolCall(
+      "done-call-task-contract-2",
+      "Opened Warehouse Gamma successfully.",
+      123,
+    );
+
+    expect(accepted).toBe(false);
+    expect((agent as any).doneRejections).toBe(2);
+    expect((agent as any).planner.validateDone).not.toHaveBeenCalled();
+    const messages = (agent as any).context.getMessages();
+    expect(messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "done-call-task-contract-2",
+      content: expect.stringContaining("done() REJECTED (attempt 2/"),
+    });
+    expect(String(messages.at(-1)?.content)).toContain("Outstanding:");
+    expect(String(messages.at(-1)?.content)).toContain("task contract:");
+    expect(String(messages.at(-1)?.content).toLowerCase()).toContain(
+      "warehouse alpha",
+    );
   });
 
   test("done rejects incomplete list-detail review through kernel preflight", async () => {

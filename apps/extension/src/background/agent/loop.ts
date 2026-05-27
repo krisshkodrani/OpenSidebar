@@ -4,6 +4,7 @@ import {
   AgentStep,
   Citation,
   MessageSource,
+  PartialProgressHandoff,
   PerceptionRuntimeMode,
   RiskLevel,
   SessionMetrics,
@@ -159,6 +160,14 @@ import {
   taskProgressMessage,
 } from "./agent-broadcast";
 import {
+  buildPartialProgressHandoff,
+  createProgressLedger,
+  formatPartialProgressHandoffSummary,
+  recordProgressLedgerToolResult,
+  updateProgressLedgerState,
+  type ProgressLedger,
+} from "./partial-progress-handoff";
+import {
   approvalRequestStep,
   clarificationRequestStep,
 } from "./agent-interaction-steps";
@@ -222,6 +231,7 @@ import {
   buildSubgoalAttempt,
   buildStructuredFailureContext,
   buildZeroEffectDecision,
+  clearStepScopedActionMemory,
   buildFirstTurnTextOnlyNudge,
   countTrailingToolResultOutcomes,
   detectInstructionContradiction,
@@ -653,6 +663,8 @@ export class AgentLoop {
   private planner: TaskPlanner;
   /** Number of times done() has been rejected by the planner */
   private doneRejections = 0;
+  /** Set when a done() rejection mid-point is reached and escalation should fire on the next main-loop tick. */
+  private pendingDoneRejectionEscalation = false;
   /** Whether read_page or xray_page has been called at least once this session */
   private hasReadPage = false;
   /** Whether read_page has been explicitly called rather than inferred from initial context. */
@@ -694,6 +706,8 @@ export class AgentLoop {
 
   /** Trace recorder for session capture */
   private traceRecorder: TraceRecorder | null = null;
+  /** Compact deterministic progress state used for partial handoffs. */
+  private progressLedger: ProgressLedger = createProgressLedger();
 
   /** Session-scoped logger — falls back to global logger before start() */
   private log: typeof logger | SessionScopedLogger = logger;
@@ -1790,9 +1804,13 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        "done() REJECTED: Call read_page first to verify actual page content before reporting. " +
-        "Do NOT summarize from the page title or URL alone.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason:
+          "Call read_page first to verify actual page content before reporting.",
+        fallbackInstruction:
+          "Do NOT summarize from the page title or URL alone.",
+      }),
     });
     if (groundingPreflight.needsGroundingRead) {
       await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
@@ -1838,19 +1856,185 @@ export class AgentLoop {
       return true;
     }
 
-    if (this.rejectDoneForIncompleteListDetailReview(toolCallId)) {
+    if (this.rejectDoneForIncompleteListDetailReview(toolCallId, summary)) {
       return true;
     }
 
     return false;
   }
 
+  private collectDoneDiagnosticIssues(summary: string): string[] {
+    const issues = new Set<string>();
+    const addIssue = (label: string, reason: string | null | undefined) => {
+      const clean = reason?.trim();
+      if (clean) issues.add(`${label}: ${clean}`);
+    };
+
+    const summaryPreflight = evaluateCompletionSummaryPreflight({
+      summary,
+      taskContext: this.getCompletionSummaryTaskContext(),
+      turnCount: this.turnCount,
+      rootUserRequest: this.originalQuery,
+      isOrchestratorNode: Boolean(this.nodeId),
+    });
+    if (summaryPreflight.status !== "valid") {
+      addIssue("summary", summaryPreflight.reason);
+    }
+
+    const groundingPreflight = evaluateCompletionGroundingReadPreflight({
+      userRequest: this.originalQuery,
+      summary,
+      snapshot: this.context.getSnapshot(),
+      hasReadPage: this.hasReadPage,
+      hasExplicitPageRead: this.hasExplicitPageRead,
+      hasTaskId: Boolean(this.taskId),
+    });
+    if (groundingPreflight.status === "rejected") {
+      issues.add("grounding: call read_page first to verify actual page content");
+    }
+
+    const incompleteMoneyTableScan =
+      this.getIncompleteMoneyTableAggregateDoneRejection();
+    const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
+      incompleteScanReason: incompleteMoneyTableScan,
+      incorrectAnswerReason: incompleteMoneyTableScan
+        ? null
+        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
+    });
+    if (moneyTablePreflight.status !== "valid") {
+      addIssue("money table", moneyTablePreflight.reason);
+    }
+
+    const earlyMultiStepPreflight = evaluateCompletionEarlyMultiStepPreflight({
+      userRequest: this.originalQuery,
+      doneRejections: this.doneRejections,
+      turnCount: this.turnCount,
+      hasNodeId: Boolean(this.nodeId),
+    });
+    if (earlyMultiStepPreflight.status !== "valid") {
+      issues.add(
+        `plan progress: task has ${earlyMultiStepPreflight.stepCount} steps and is not ready to finish`,
+      );
+    }
+
+    const taskContractGuard = this.isSkillOwnedListDetailReview()
+      ? null
+      : evaluateCompletionTaskContractPreflight({
+          userRequest: this.originalQuery,
+          summary,
+          snapshot: this.context.getSnapshot(),
+        });
+    if (taskContractGuard?.blocked) {
+      addIssue("task contract", taskContractGuard.reason);
+    }
+
+    const workflowSnapshot = this.context.getSnapshot();
+    const workflowDoneGuard = evaluateCompletionWorkflowContractPreflight({
+      userRequest: this.originalQuery,
+      summary,
+      selectedSkillId: this.selectedSkillId,
+      pageUrl: workflowSnapshot?.url,
+      pageTitle: workflowSnapshot?.title,
+    });
+    if (workflowDoneGuard.blocked) {
+      addIssue("workflow contract", workflowDoneGuard.reason);
+    }
+
+    const visibleDetailActionCount = Math.max(
+      this.listDetailVisibleActionCount,
+      countVisibleListDetailActions(this.context.getSnapshot()),
+    );
+    const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
+      selectedSkillId: this.selectedSkillId,
+      userRequest: this.originalQuery,
+      reviewedDetailCount: this.listDetailReviewedTargets.size,
+      visibleDetailActionCount,
+    });
+    if (listDetailPreflight.status !== "valid") {
+      addIssue("list-detail review", listDetailPreflight.reason);
+    }
+
+    const activePlanIdx =
+      this.planSubtasks.length > 0
+        ? this.planSubtasks.findIndex((s) => s.status === "running")
+        : -1;
+    const effectivePlanIdx =
+      activePlanIdx >= 0
+        ? activePlanIdx
+        : Math.min(
+            this.planSubtasks.filter((s) => s.status === "completed").length,
+            this.planSubtasks.length - 1,
+          );
+    const autocompletePreflight = evaluateCompletionPendingAutocompletePreflight({
+      snapshot: this.context.getSnapshot(),
+      userRequest: this.originalQuery,
+      activeObjective:
+        effectivePlanIdx >= 0
+          ? this.planSubtasks[effectivePlanIdx]?.description
+          : undefined,
+      successCriteria:
+        effectivePlanIdx >= 0
+          ? this.planSteps[effectivePlanIdx]?.successCriteria
+          : undefined,
+      summary,
+    });
+    if (autocompletePreflight.status !== "valid") {
+      addIssue("autocomplete", autocompletePreflight.reason);
+    }
+
+    const requiredEvidencePreflight =
+      evaluateCompletionRequiredEvidencePreflight({
+        missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
+      });
+    if (requiredEvidencePreflight.status !== "valid") {
+      issues.add(
+        `typed evidence: missing ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}`,
+      );
+    }
+
+    return Array.from(issues);
+  }
+
+  private doneRejectionDiagnosticContent(params: {
+    summary: string;
+    primaryReason: string;
+    fallbackInstruction: string;
+    nextStepHint?: string;
+  }): string {
+    const nextStepHint = params.nextStepHint ?? "";
+    if (this.doneRejections < 2) {
+      return (
+        `done() REJECTED: ${params.primaryReason}\n\n` +
+        params.fallbackInstruction +
+        nextStepHint
+      );
+    }
+
+    const issues = this.collectDoneDiagnosticIssues(params.summary);
+    if (!issues.some((issue) => issue.includes(params.primaryReason))) {
+      issues.unshift(params.primaryReason);
+    }
+    const outstanding =
+      issues.length > 0
+        ? issues.map((issue, index) => `${index + 1}. ${issue}`).join("\n")
+        : `1. ${params.primaryReason}`;
+
+    return (
+      `done() REJECTED (attempt ${this.doneRejections}/${this.limits.maxDoneRejections}). Outstanding:\n` +
+      `${outstanding}\n\n` +
+      "Fix all outstanding issues before calling done(). Take a concrete page action or call escalate() if the current approach cannot resolve them." +
+      nextStepHint
+    );
+  }
+
   private rejectDoneAfterPlanValidation(
     toolCallId: string,
+    summary: string,
     rejectReason: string,
     effectiveCurrentIdx: number,
   ): void {
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     // Activate idempotency guard: prevent re-execution of actions
     // that already succeeded but whose done() was rejected by verifier
     this.guardAfterDoneRejection = true;
@@ -1890,11 +2074,14 @@ export class AgentLoop {
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
-        content:
-          `done() REJECTED: ${rejectReason}\n\n` +
-          "You have repeated done() too many times while the task is still incomplete. " +
-          "Do not call done() again from this state. Take a different action or call escalate()." +
+        content: this.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason: rejectReason,
+          fallbackInstruction:
+            "You have repeated done() too many times while the task is still incomplete. " +
+            "Do not call done() again from this state. Take a different action or call escalate().",
           nextStepHint,
+        }),
       });
       return;
     }
@@ -1902,11 +2089,14 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${rejectReason}\n\n` +
-        "Take concrete actions to complete this step — click, type, scroll, or navigate. " +
-        "Do NOT call done() again until you have performed the missing actions." +
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: rejectReason,
+        fallbackInstruction:
+          "Take concrete actions to complete this step - click, type, scroll, or navigate. " +
+          "Do NOT call done() again until you have performed the missing actions.",
         nextStepHint,
+      }),
     });
     this.stepHandler(
       {
@@ -2241,6 +2431,7 @@ export class AgentLoop {
 
     this.rejectDoneAfterPlanValidation(
       toolCallId,
+      summary,
       rejectReason,
       effectiveCurrentIdx,
     );
@@ -2440,9 +2631,11 @@ export class AgentLoop {
 
   private rejectDoneFromCompletionDecision(
     toolCallId: string,
+    summary: string,
     decision: CompletionRejectionDecision,
   ): void {
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.lastCompletionRejection = decision;
     this.log.warn("agent", "DONE rejected by deterministic completion kernel", {
       turn: this.turnCount,
@@ -2475,7 +2668,11 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content: `done() REJECTED: ${decision.reason}\n\n${this.getCompletionRejectionInstruction(decision)}`,
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: decision.reason,
+        fallbackInstruction: this.getCompletionRejectionInstruction(decision),
+      }),
     });
   }
 
@@ -2513,6 +2710,10 @@ export class AgentLoop {
       return false;
     }
 
+    if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
+      return false;
+    }
+
     const deterministicDone = this.evaluateCompletionCandidate(
       "model_done",
       summary,
@@ -2545,7 +2746,11 @@ export class AgentLoop {
         deterministicDone.status === "rejected" ||
         deterministicDone.status === "needs_verification"
       ) {
-        this.rejectDoneFromCompletionDecision(toolCallId, deterministicDone);
+        this.rejectDoneFromCompletionDecision(
+          toolCallId,
+          summary,
+          deterministicDone,
+        );
         return false;
       }
     } else {
@@ -2662,6 +2867,7 @@ export class AgentLoop {
     }
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     if (decision.kind === "missing_multi_return_coverage") {
       this.log.warn("agent", "DONE rejected: incomplete multi-return summary", {
         turn: this.turnCount,
@@ -2675,9 +2881,12 @@ export class AgentLoop {
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
-        content:
-          `done() REJECTED: ${decision.reason}\n\n` +
-          "Return all requested results before calling done().",
+        content: this.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason: decision.reason,
+          fallbackInstruction:
+            "Return all requested results before calling done().",
+        }),
       });
       return true;
     }
@@ -2696,9 +2905,12 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: The summary appears cut off (${decision.reason}).\n\n` +
-        "YOUR NEXT ACTION: call done() again with a complete, concise summary using complete sentences. Do not continue browsing unless page evidence is missing.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: `The summary appears cut off (${decision.reason}).`,
+        fallbackInstruction:
+          "YOUR NEXT ACTION: call done() again with a complete, concise summary using complete sentences. Do not continue browsing unless page evidence is missing.",
+      }),
     });
     return true;
   }
@@ -2736,6 +2948,7 @@ export class AgentLoop {
     if (decision.status === "valid") return false;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: autocomplete suggestion pending", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -2755,9 +2968,11 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${decision.reason}\n\n` +
-        `YOUR NEXT ACTION: click_element({"id": ${decision.suggestionTag}}), then verify the selected value is visible.`,
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: decision.reason,
+        fallbackInstruction: `YOUR NEXT ACTION: click_element({"id": ${decision.suggestionTag}}), then verify the selected value is visible.`,
+      }),
     });
     return true;
   }
@@ -2799,6 +3014,7 @@ export class AgentLoop {
     if (requiredEvidencePreflight.status === "valid") return false;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: missing typed evidence", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -2815,9 +3031,12 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: Missing required typed evidence: ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}.\n\n` +
-        "Use the selected workflow tool to complete and verify the action before calling done().",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: `Missing required typed evidence: ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}.`,
+        fallbackInstruction:
+          "Use the selected workflow tool to complete and verify the action before calling done().",
+      }),
     });
     return true;
   }
@@ -2937,6 +3156,7 @@ export class AgentLoop {
     if (!taskContractGuard.blocked) return false;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: task contract incomplete", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -2970,10 +3190,14 @@ export class AgentLoop {
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
-        content:
-          `done() REJECTED: ${taskContractGuard.reason}\n\n` +
-          "You have repeated done() too many times while the task is still incomplete. " +
-          "Do not call done() again from this state. Take a different action or call escalate().",
+        content: this.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason:
+            taskContractGuard.reason ?? "Task contract remains incomplete.",
+          fallbackInstruction:
+            "You have repeated done() too many times while the task is still incomplete. " +
+            "Do not call done() again from this state. Take a different action or call escalate().",
+        }),
       });
       return true;
     }
@@ -2981,9 +3205,13 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${taskContractGuard.reason}\n\n` +
-        "Complete the missing task obligations, verify them on the page, then call done() again.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason:
+          taskContractGuard.reason ?? "Task contract remains incomplete.",
+        fallbackInstruction:
+          "Complete the missing task obligations, verify them on the page, then call done() again.",
+      }),
     });
     return true;
   }
@@ -3003,6 +3231,7 @@ export class AgentLoop {
     if (!workflowDoneGuard.blocked) return false;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: workflow completion guard", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -3017,14 +3246,21 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${workflowDoneGuard.reason}\n\n` +
-        "Continue the workflow, verify the requested final state, then call done() again.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason:
+          workflowDoneGuard.reason ?? "Workflow contract remains incomplete.",
+        fallbackInstruction:
+          "Continue the workflow, verify the requested final state, then call done() again.",
+      }),
     });
     return true;
   }
 
-  private rejectDoneForIncompleteListDetailReview(toolCallId: string): boolean {
+  private rejectDoneForIncompleteListDetailReview(
+    toolCallId: string,
+    summary: string,
+  ): boolean {
     const latestListDetailActionCount = countVisibleListDetailActions(
       this.context.getSnapshot(),
     );
@@ -3042,6 +3278,7 @@ export class AgentLoop {
     const listDetailDoneRejection = listDetailPreflight.reason;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: list-detail review incomplete", {
       turn: this.turnCount,
       rejections: this.doneRejections,
@@ -3058,9 +3295,13 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${listDetailDoneRejection}\n\n` +
-        "Do NOT synthesize the recommendation from list-card snippets alone.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason:
+          listDetailDoneRejection ?? "List-detail review remains incomplete.",
+        fallbackInstruction:
+          "Do NOT synthesize the recommendation from list-card snippets alone.",
+      }),
     });
     return true;
   }
@@ -3082,6 +3323,7 @@ export class AgentLoop {
 
     if (moneyTablePreflight.kind === "incomplete_money_table_scan") {
       this.doneRejections++;
+      this.checkAndSetDoneRejectionEscalation();
       this.log.warn(
         "agent",
         "DONE rejected: paginated money table scan incomplete",
@@ -3101,14 +3343,18 @@ export class AgentLoop {
       this.context.addMessage({
         role: "tool",
         tool_call_id: toolCallId,
-        content:
-          `done() REJECTED: ${moneyTablePreflight.reason}\n\n` +
-          "Do not call done() until the scan is exhaustive.",
+        content: this.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason: moneyTablePreflight.reason,
+          fallbackInstruction:
+            "Do not call done() until the scan is exhaustive.",
+        }),
       });
       return true;
     }
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn(
       "agent",
       "DONE rejected: paginated money table answer conflicts with aggregate",
@@ -3128,9 +3374,12 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: ${moneyTablePreflight.reason}\n\n` +
-        "Use the tracked aggregate candidate in the final answer.",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: moneyTablePreflight.reason,
+        fallbackInstruction:
+          "Use the tracked aggregate candidate in the final answer.",
+      }),
     });
     return true;
   }
@@ -3148,6 +3397,7 @@ export class AgentLoop {
     if (earlyMultiStepPreflight.status === "valid") return false;
 
     this.doneRejections++;
+    this.checkAndSetDoneRejectionEscalation();
     this.log.warn("agent", "DONE rejected: multi-step query, too few turns", {
       turn: this.turnCount,
       stepCount: earlyMultiStepPreflight.stepCount,
@@ -3161,16 +3411,67 @@ export class AgentLoop {
     this.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
-      content:
-        `done() REJECTED: The task has ${earlyMultiStepPreflight.stepCount} steps but you have only completed the first action. ` +
-        "Continue working through the remaining steps before calling done().",
+      content: this.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: `The task has ${earlyMultiStepPreflight.stepCount} steps but you have only completed the first action.`,
+        fallbackInstruction:
+          "Continue working through the remaining steps before calling done().",
+      }),
     });
     return true;
+  }
+
+  private getActiveSubtaskDescription(): string | undefined {
+    const running = this.planSubtasks.find(
+      (subtask) => subtask.status === "running",
+    );
+    if (running?.description) return running.description;
+    const plan = this.context.getPlanStatusRaw?.();
+    const currentIndex =
+      typeof plan?.currentIndex === "number" ? plan.currentIndex : this.lastPlanIndex;
+    return this.planSubtasks[currentIndex]?.description;
+  }
+
+  private updatePartialProgressState(lastAction?: string): void {
+    updateProgressLedgerState(
+      this.progressLedger,
+      this.context.getSnapshot?.() ?? null,
+      this.getActiveSubtaskDescription(),
+      lastAction,
+    );
+  }
+
+  public recordPartialProgressToolResult(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+  ): void {
+    const lastAction = formatStepLabel(toolName, args, this.elementResolver);
+    this.updatePartialProgressState(lastAction);
+    recordProgressLedgerToolResult(this.progressLedger, {
+      toolName,
+      args,
+      result,
+      turn: this.turnCount,
+      url: this.context.getCurrentUrl?.() || this.context.getSnapshot()?.url,
+    });
+  }
+
+  private buildMaxTurnPartialHandoff(): PartialProgressHandoff {
+    this.updatePartialProgressState();
+    return buildPartialProgressHandoff({
+      ledger: this.progressLedger,
+      task: this.originalQuery,
+      reason: "max_turns",
+      turnsUsed: this.turnCount,
+      maxTurns: this.maxTurns,
+    });
   }
 
   private broadcastPlanTermination(
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
+    partialHandoff?: PartialProgressHandoff,
   ): void {
     const message = planTerminationMessage({
       taskId: this.taskId,
@@ -3182,6 +3483,7 @@ export class AgentLoop {
       totalTimeMs: Date.now() - this.taskStartTime,
       urlHistory: this.urlHistory,
       metrics: this.getMetrics(),
+      partialHandoff,
     });
     if (message) this.broadcast(message);
   }
@@ -3545,9 +3847,11 @@ export class AgentLoop {
     this.planSubtasks = [];
     this.planSteps = [];
     this.planRequiresTabManagement = false;
+    this.progressLedger = createProgressLedger();
     this.taskStartTime = Date.now();
     this.urlHistory = [];
     this.doneRejections = 0;
+    this.pendingDoneRejectionEscalation = false;
     this.consecutiveAutoAdvances = 0;
     this.turnsOnCurrentStep = 0;
     this.lastPlanIndex = 0;
@@ -3767,6 +4071,12 @@ export class AgentLoop {
           warmupFingerprint,
           warmupScreenshot,
           snapshot.url,
+          {
+            model: warmupPerception.model,
+            providerId: warmupPerception.providerId,
+            durationMs: warmupPerception.durationMs,
+            cached: true,
+          },
         );
         this.context.setPageInterpretation(warmupPerception.interpretation);
         this.recordCachedVisionUsage();
@@ -4006,6 +4316,32 @@ export class AgentLoop {
       model: this.llm.getCurrentModel(),
       provider: this.llm.getCurrentProvider(),
     });
+  }
+
+  /**
+   * Check whether a done() rejection mid-point has been reached and we should
+   * escalate to planner mode on the next main-loop tick.
+   * Only fires when we have not already escalated (executor tier only) and the
+   * task has a meaningful rejection budget (≥ 2 allowed rejections).
+   */
+  private shouldEscalateOnDoneRejection(): boolean {
+    if (this.limits.maxDoneRejections < 2) return false;
+    const midPoint = Math.ceil(this.limits.maxDoneRejections / 2);
+    return this.doneRejections === midPoint && !this.llm.isPlannerTier();
+  }
+
+  /**
+   * Called after every doneRejections++ to schedule a planner escalation when
+   * the mid-point threshold is crossed.  The actual escalation happens in the
+   * main loop so that escalationTier (a loop-local variable) is updated there.
+   */
+  private checkAndSetDoneRejectionEscalation(): void {
+    if (!this.shouldEscalateOnDoneRejection()) return;
+    this.pendingDoneRejectionEscalation = true;
+    this.traceRecorder?.recordEvent("done_rejection_escalation", {
+      doneRejections: this.doneRejections,
+      maxDoneRejections: this.limits.maxDoneRejections,
+    } as Record<string, unknown>);
   }
 
   /** Get the tab IDs belonging to this agent's workspace, or null if no workspace. */
@@ -4584,7 +4920,46 @@ export class AgentLoop {
    * Refresh perception then auto-dismiss nuisance popups identified in BLOCKERS.
    * Use this instead of bare `refreshPerception()` at all call sites.
    */
+  private updatePerceptionRuntimeModeFromSnapshot(
+    snapshot: DomSnapshot | null | undefined,
+  ): void {
+    if (!snapshot) return;
+
+    const decision = resolvePerceptionRuntimeModeDecision({
+      perceptionMode: this.perceptionModeOption,
+      useVLExecutor: this.useVLExecutorOption,
+      providerMode: this.providerModeOption,
+      taskText: this.originalQuery ?? "",
+      imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
+      maxImagePromptTokens: resolveImagePromptTokenBudget(
+        this.maxImagePromptTokenEstimate,
+      ),
+      nextImagePromptTokenEstimate: imagePromptUsageForCount(1).estimatedTokens,
+      ...extractPerceptionPageSignals(snapshot),
+    });
+    const previousMode = this.useVLExecutor ? "unified_vl" : "structured";
+    this.useVLExecutor = decision.mode === "unified_vl";
+    recordPerceptionModeDecision(this.metrics, decision);
+
+    if (previousMode === decision.mode) return;
+
+    this.log.info("agent", "Updated perception runtime mode", {
+      previousMode,
+      mode: decision.mode,
+      reason: decision.reason,
+      signals: decision.signals,
+    });
+    this.traceRecorder?.recordEvent("perception_mode_decision", {
+      mode: decision.mode,
+      previousMode,
+      reason: decision.reason,
+      signals: decision.signals,
+      dynamic: true,
+    });
+  }
+
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
+    this.updatePerceptionRuntimeModeFromSnapshot(this.context.getSnapshot());
     if (this.useVLExecutor) {
       // Unified VL mode: capture screenshot for the executor, skip perception VLM call.
       // The executor LLM receives the screenshot directly as an image content block.
@@ -4781,9 +5156,10 @@ export class AgentLoop {
       return;
     }
 
-    if (this.replanCount >= 3) {
+    if (this.replanCount >= this.limits.maxReplans) {
       this.log.warn("agent", "Plan deviation detected but replan cap reached", {
         replanCount: this.replanCount,
+        maxReplans: this.limits.maxReplans,
       });
       return;
     }
@@ -4907,9 +5283,10 @@ export class AgentLoop {
     }
 
     // Guard: replan cap
-    if (this.replanCount >= 3) {
+    if (this.replanCount >= this.limits.maxReplans) {
       this.log.info("agent", "replanOnEscalation: cap reached", {
         replanCount: this.replanCount,
+        maxReplans: this.limits.maxReplans,
       });
       return false;
     }
@@ -7803,7 +8180,8 @@ export class AgentLoop {
 
   /**
    * Check whether a navigate() target URL matches a completed plan step's URL.
-   * Compares origin + pathname only (ignores query params and hash).
+   * Compares origin + pathname for plain URLs, and includes query params when
+   * either side has them so SPA view-state URLs remain distinct. Hash is ignored.
    * Returns a block message if matched, or null to allow navigation.
    */
   private checkNavigateGuard(targetUrl: string): string | null {
@@ -7815,19 +8193,24 @@ export class AgentLoop {
 
     if (completedWithUrls.length === 0) return null;
 
-    let targetOriginPath: string;
+    let target: URL;
     try {
-      const u = new URL(targetUrl);
-      targetOriginPath = u.origin + u.pathname;
+      target = new URL(targetUrl);
     } catch {
       return null; // Unparseable URL — let it through
     }
 
     for (const step of completedWithUrls) {
       try {
-        const u = new URL(step.completedAtUrl!);
-        const stepOriginPath = u.origin + u.pathname;
-        if (targetOriginPath === stepOriginPath) {
+        const completed = new URL(step.completedAtUrl!);
+        const includeSearch = Boolean(target.search || completed.search);
+        const targetKey =
+          target.origin + target.pathname + (includeSearch ? target.search : "");
+        const completedKey =
+          completed.origin +
+          completed.pathname +
+          (includeSearch ? completed.search : "");
+        if (targetKey === completedKey) {
           return (
             `BLOCKED: Cannot navigate to "${targetUrl}" — matches completed step ${step.index + 1} ("${step.description}").\n` +
             `Navigating back would undo progress. Continue with the current step.\n` +
@@ -7873,8 +8256,12 @@ export class AgentLoop {
     let effectiveOrientationTurns: number = ORIENTATION.PHASE_TURNS;
     const orientationToolsUsed = new Set<string>();
 
+    // Budget urgency: track level transitions for trace events
+    let previousBudgetUrgencyLevel: "normal" | "low" | "critical" = "normal";
+
     // Circuit breaker: consecutive all-fail turns
     let consecutiveAllFailTurns = 0;
+    let consecutiveAllFailDeterministicTurns = 0;
 
     // Circuit breaker: same-tool repeat failure
     const toolFailCounts = new Map<string, number>();
@@ -7915,6 +8302,28 @@ export class AgentLoop {
       string,
       ServiceNowMissingFieldSearchEvidence
     >();
+    let lastActionMemoryPlanIndex = this.lastPlanIndex;
+
+    const resetStepScopedActionMemory = (): void => {
+      if (this.lastPlanIndex === lastActionMemoryPlanIndex) return;
+      const fromPlanIndex = lastActionMemoryPlanIndex;
+      const toPlanIndex = this.lastPlanIndex;
+      const reset = clearStepScopedActionMemory({
+        recentToolCalls,
+        recentSuccesses,
+        blockedActions,
+        verifiedFinalClickBypassKeys,
+      });
+      lastReadElementId = null;
+      consecutiveReadElementSameId = 0;
+      lastActionMemoryPlanIndex = toPlanIndex;
+      this.traceRecorder?.recordEvent("step_action_memory_reset", {
+        turn: this.turnCount,
+        fromPlanIndex,
+        toPlanIndex,
+        ...reset,
+      });
+    };
 
     const resetEscalationWorkingMemory = (options?: {
       resetProgressSignals?: boolean;
@@ -7954,6 +8363,7 @@ export class AgentLoop {
 
       this.turnCount++;
       this.turnsOnCurrentStep++;
+      resetStepScopedActionMemory();
 
       // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
       // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
@@ -8104,6 +8514,26 @@ export class AgentLoop {
         this.maxTurns,
         this.sessionStartTime,
       );
+      // Emit trace events on budget urgency level transitions
+      {
+        const currentBudgetLevel = this.context.getBudgetUrgencyLevel();
+        if (currentBudgetLevel !== previousBudgetUrgencyLevel) {
+          if (currentBudgetLevel === "critical") {
+            this.traceRecorder?.recordEvent("budget_critical", {
+              turnCount: this.turnCount,
+              maxTurns: this.maxTurns,
+              remaining: Math.max(0, this.maxTurns - this.turnCount),
+            });
+          } else if (currentBudgetLevel === "low") {
+            this.traceRecorder?.recordEvent("budget_warning", {
+              turnCount: this.turnCount,
+              maxTurns: this.maxTurns,
+              remaining: Math.max(0, this.maxTurns - this.turnCount),
+            });
+          }
+          previousBudgetUrgencyLevel = currentBudgetLevel;
+        }
+      }
       this.updateMoneyTableAggregateFromSnapshot();
       const catalogSnapshotCompletion =
         this.maybeCompleteCatalogOrderFromSnapshot();
@@ -8276,6 +8706,43 @@ export class AgentLoop {
           continue; // All tool calls blocked - retry
         }
 
+        // Exploration hard block: after HARD_BLOCK consecutive exploration-only turns,
+        // inject synthetic error results for blocked exploration calls and skip their dispatch.
+        // Non-exploration calls in the same response proceed normally.
+        let effectiveToolCalls = response.tool_calls;
+        if (consecutiveExplorationTurns >= EXPLORATION_BUDGET.HARD_BLOCK) {
+          const hardBlockedCalls = response.tool_calls.filter((tc) =>
+            EXPLORATION_ONLY_TOOLS.has(tc.function.name),
+          );
+          if (hardBlockedCalls.length > 0) {
+            for (const tc of hardBlockedCalls) {
+              this.context.addMessage({
+                role: "tool" as const,
+                tool_call_id: tc.id,
+                content:
+                  `Exploration blocked: ${consecutiveExplorationTurns} consecutive read-only turns. ` +
+                  `Take a concrete action (click, type, navigate, scroll) or call escalate() if stuck.`,
+              });
+            }
+            this.log.warn("agent", "Exploration hard block: blocked read-only calls", {
+              turn: this.turnCount,
+              consecutiveExplorationTurns,
+              blockedCount: hardBlockedCalls.length,
+            });
+            this.traceRecorder?.recordEvent("exploration_hard_block", {
+              consecutiveTurns: consecutiveExplorationTurns,
+              blockedCount: hardBlockedCalls.length,
+            } as Record<string, unknown>);
+            effectiveToolCalls = response.tool_calls.filter(
+              (tc) => !EXPLORATION_ONLY_TOOLS.has(tc.function.name),
+            );
+            if (effectiveToolCalls.length === 0) {
+              // All calls were exploration — skip dispatch for this turn
+              continue;
+            }
+          }
+        }
+
         const canParallelize = toolCallSetup.canParallelize;
 
         if (canParallelize) {
@@ -8284,7 +8751,7 @@ export class AgentLoop {
           const parallelDispatch = await executeParallelToolCalls(
             this as unknown as ParallelToolDispatchHost,
             {
-              toolCalls: response.tool_calls,
+              toolCalls: effectiveToolCalls,
               tabId,
               repeatActionWindow: REPEAT_ACTION_WINDOW,
               llmIntention,
@@ -8319,7 +8786,7 @@ export class AgentLoop {
             await executeSequentialToolCalls.call(
               this as unknown as SequentialToolDispatchHost,
               {
-                toolCalls: response.tool_calls,
+                toolCalls: effectiveToolCalls,
                 repeatActionWindow: REPEAT_ACTION_WINDOW,
                 llmIntention,
                 signalCompletedResult,
@@ -8462,12 +8929,54 @@ export class AgentLoop {
             countTrailingToolResultOutcomes(recentMessages);
 
           // A. Consecutive all-fail turns
-          consecutiveAllFailTurns = updateConsecutiveAllFailTurns({
+          const failureResults = turnToolOutcomes.map((o) => o.resultContent);
+          const allFailResult = updateConsecutiveAllFailTurns({
             previousCount: consecutiveAllFailTurns,
+            previousDeterministicCount: consecutiveAllFailDeterministicTurns,
             turnSuccesses,
             turnFailures,
+            failureResults,
           });
+          consecutiveAllFailTurns = allFailResult.count;
+          consecutiveAllFailDeterministicTurns = allFailResult.deterministicCount;
 
+          // A1. Deterministic fast-path: circuit break one turn earlier when failures are
+          //     guaranteed unrecoverable (element not found, access denied, etc.)
+          const deterministicThreshold = Math.max(
+            1,
+            this.limits.maxConsecutiveAllFail - 1,
+          );
+          if (
+            consecutiveAllFailDeterministicTurns >= deterministicThreshold &&
+            consecutiveAllFailTurns < this.limits.maxConsecutiveAllFail
+          ) {
+            this.log.warn(
+              "agent",
+              "Circuit breaker: consecutive deterministic failures",
+              {
+                turn: this.turnCount,
+                consecutiveAllFailDeterministicTurns,
+                deterministicThreshold,
+              },
+            );
+            this.traceRecorder?.recordEvent("deterministic_circuit_break", {
+              consecutiveAllFailTurns,
+              consecutiveAllFailDeterministicTurns,
+              deterministicThreshold,
+            });
+            this.circuitBreakerExit(
+              `Deterministic errors prevented progress for ${consecutiveAllFailDeterministicTurns} consecutive turns. ` +
+                `Try navigating to a different page or sending new instructions.`,
+            );
+            return {
+              outcome: "error" as const,
+              turnCount: this.turnCount,
+              summary: "Circuit breaker: deterministic tool failures",
+              metrics: this.getMetrics(),
+            };
+          }
+
+          // A2. General all-fail circuit breaker
           if (consecutiveAllFailTurns >= this.limits.maxConsecutiveAllFail) {
             this.log.warn(
               "agent",
@@ -8543,6 +9052,23 @@ export class AgentLoop {
               this.context.addMessage({
                 role: "user",
                 content: failureTracking.message,
+              });
+            }
+          }
+
+          // B1.5. Done-rejection escalation: if the mid-point threshold was crossed in a
+          //        rejection handler this turn, escalate to planner mode now.
+          if (this.pendingDoneRejectionEscalation) {
+            this.pendingDoneRejectionEscalation = false;
+            if (escalationTier === 0) {
+              this.escalateModel();
+              escalationTier = 1;
+              orientationPhase = false;
+              plannerModelStartTurn = this.turnCount;
+              this.log.info("agent", "Escalated to planner after done() rejection mid-point", {
+                turn: this.turnCount,
+                doneRejections: this.doneRejections,
+                maxDoneRejections: this.limits.maxDoneRejections,
               });
             }
           }
@@ -9128,7 +9654,7 @@ export class AgentLoop {
                 if (monitorResult) {
                   if (
                     monitorResult.alignment === "deviated" &&
-                    this.replanCount < 3
+                    this.replanCount < this.limits.maxReplans
                   ) {
                     await this.handlePlanDeviation(
                       monitorResult,
@@ -10231,7 +10757,17 @@ export class AgentLoop {
         turns: this.turnCount,
         maxTurns: this.maxTurns,
       });
-      const limitMsg = `Reached turn limit (${this.turnCount}/${this.maxTurns}). You can increase the limit in Settings or send a follow-up message to continue.`;
+      const partialHandoff = this.buildMaxTurnPartialHandoff();
+      this.traceRecorder?.recordEvent("partial_handoff_created", {
+        reason: partialHandoff.reason,
+        turnsUsed: partialHandoff.turnsUsed,
+        maxTurns: partialHandoff.maxTurns,
+        completedCount: partialHandoff.completed.length,
+        evidenceCount: partialHandoff.evidence.length,
+        remainingCount: partialHandoff.remaining.length,
+        handoff: partialHandoff,
+      });
+      const limitMsg = formatPartialProgressHandoffSummary(partialHandoff);
       this.broadcast({
         type: "STREAM_CHUNK",
         payload: { delta: "", done: false, replaceContent: limitMsg },
@@ -10251,6 +10787,7 @@ export class AgentLoop {
           detail: limitMsg,
         },
         metrics: this.getMetrics(),
+        partialHandoff,
       };
     }
 

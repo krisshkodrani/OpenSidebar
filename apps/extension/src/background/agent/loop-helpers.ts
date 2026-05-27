@@ -1308,6 +1308,28 @@ export interface BlockedAction {
   turn: number;
 }
 
+export interface StepScopedActionMemoryReset {
+  recentToolCallCount: number;
+  recentSuccessCount: number;
+  blockedActionCount: number;
+}
+
+export function clearStepScopedActionMemory(params: {
+  recentToolCalls: Array<{ tool: ToolName; argsKey: string }>;
+  recentSuccesses: RecentAction[];
+  blockedActions: BlockedAction[];
+  verifiedFinalClickBypassKeys?: Set<string>;
+}): StepScopedActionMemoryReset {
+  const recentToolCallCount = params.recentToolCalls.length;
+  const recentSuccessCount = params.recentSuccesses.length;
+  const blockedActionCount = params.blockedActions.length;
+  params.recentToolCalls.length = 0;
+  params.recentSuccesses.length = 0;
+  params.blockedActions.length = 0;
+  params.verifiedFinalClickBypassKeys?.clear();
+  return { recentToolCallCount, recentSuccessCount, blockedActionCount };
+}
+
 /** Check if the same tool+args already failed. Returns the prior failure or null. */
 export function findPriorFailure(
   blockedActions: BlockedAction[],
@@ -1587,14 +1609,71 @@ export function countTrailingToolResultOutcomes(
   return { turnSuccesses, turnFailures };
 }
 
+/**
+ * Classify a tool failure result string as deterministic, transient, or unknown.
+ *
+ * - deterministic: the failure cannot resolve without external intervention
+ *   (wrong element, access denied, rejected). The circuit breaker fires faster.
+ * - transient: likely a timing or infrastructure issue (timeout, network).
+ *   Normal circuit breaker cadence applies.
+ * - unknown: unclassified; treated as non-deterministic.
+ */
+export function classifyToolFailure(
+  result: string,
+): "deterministic" | "transient" | "unknown" {
+  const lower = result.toLowerCase();
+  if (
+    lower.includes("no element with tag") ||
+    lower.includes("does not appear to be") ||
+    lower.includes("click intercepted") ||
+    lower.includes("access denied") ||
+    lower.includes("not clickable") ||
+    lower.includes("not found") ||
+    lower.includes("rejected")
+  ) {
+    return "deterministic";
+  }
+  if (
+    lower.includes("timeout") ||
+    lower.includes("network") ||
+    lower.includes("extension context") ||
+    lower.includes("could not establish") ||
+    lower.includes("rate limit")
+  ) {
+    return "transient";
+  }
+  return "unknown";
+}
+
+export interface ConsecutiveAllFailResult {
+  /** Total consecutive all-fail turn count (same semantics as the previous scalar return). */
+  count: number;
+  /** Subset count: turns where ALL failures were deterministic. Resets when a transient/unknown failure appears. */
+  deterministicCount: number;
+}
+
 export function updateConsecutiveAllFailTurns(params: {
   previousCount: number;
+  previousDeterministicCount: number;
   turnSuccesses: number;
   turnFailures: number;
-}): number {
-  return params.turnFailures > 0 && params.turnSuccesses === 0
-    ? params.previousCount + 1
-    : 0;
+  /** Raw result strings for the failed tool calls this turn (used for deterministic classification). */
+  failureResults: string[];
+}): ConsecutiveAllFailResult {
+  if (params.turnFailures === 0 || params.turnSuccesses > 0) {
+    return { count: 0, deterministicCount: 0 };
+  }
+  const allFailuresDeterministic =
+    params.failureResults.length === params.turnFailures &&
+    params.failureResults.every(
+      (r) => classifyToolFailure(r) === "deterministic",
+    );
+  return {
+    count: params.previousCount + 1,
+    deterministicCount: allFailuresDeterministic
+      ? params.previousDeterministicCount + 1
+      : 0,
+  };
 }
 
 export type SameToolFailureTrackingDecision =

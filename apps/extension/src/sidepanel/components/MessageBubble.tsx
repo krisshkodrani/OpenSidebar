@@ -16,6 +16,7 @@ import {
   CompletionDetails,
   CompletionFrame,
   CompletionStatusHeader,
+  PartialHandoffPanel,
 } from "./message/CompletionSummary";
 
 export { normalizeCompletionMarkdown };
@@ -125,6 +126,9 @@ export const MessageBubble = React.memo(function MessageBubble({
       ) : null}
       {message.completionData ? (
         <CompletionDetails data={message.completionData} />
+      ) : null}
+      {message.completionData?.partialHandoff ? (
+        <PartialHandoffPanel handoff={message.completionData.partialHandoff} />
       ) : null}
     </>
   ) : null;

@@ -36,6 +36,13 @@ function domain(session: TraceSession): string | null {
   }
 }
 
+export function normalizeTraceModelId(model: string): string {
+  return model
+    .trim()
+    .replace(/^accounts\/[^/]+\/routers\//, "")
+    .replace(/:nitro$/, "");
+}
+
 function sessionModels(session: TraceSession): string[] {
   const stored = Array.isArray(session.models)
     ? session.models.filter((model): model is string => Boolean(model))
@@ -43,7 +50,13 @@ function sessionModels(session: TraceSession): string[] {
   const breakdown = session.metrics?.modelBreakdown
     ? Object.keys(session.metrics.modelBreakdown)
     : [];
-  return Array.from(new Set([...stored, ...breakdown]));
+  return Array.from(
+    new Set(
+      [...stored, ...breakdown]
+        .map(normalizeTraceModelId)
+        .filter((model) => model.length > 0),
+    ),
+  );
 }
 
 function sessionSkills(session: TraceSession): string[] {

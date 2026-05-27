@@ -139,6 +139,48 @@ describe("completion kernel target-aware visible lifecycle workflow state confir
     });
   });
 
+  test("accepts transactional submit confirmation when the success page repeats core target tokens", () => {
+    const snap = workflowSnapshot({
+      visibleContent:
+        "Partner portal. Submission complete. Registration received. Sam Rivera is registered for Northstar Analytics. Email sam.rivera@example.com. Phone +1 415 555 0134. Invite code PN-4821.",
+      pageContent:
+        "Partner portal. Submission complete. Registration received. Sam Rivera is registered for Northstar Analytics. Email sam.rivera@example.com. Phone +1 415 555 0134. Invite code PN-4821.",
+    });
+    const generated = generateCompletionContract({
+      userRequest:
+        "Submit the partner registration for Sam Rivera at Northstar Analytics with email sam.rivera@example.com, phone +1 415 555 0134, role Partnerships Lead, team Alliances, invite code PN-4821, and accept the partner terms.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromSnapshot(snap, 7);
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Submitted the partner registration for Sam Rivera at Northstar Analytics.",
+    });
+
+    expect(generated?.contract).toMatchObject({
+      kind: "workflow_confirmation",
+      action: "submit",
+    });
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "confirmation_state",
+          logicalKey: "workflow:confirmation:submit",
+          detail: expect.objectContaining({
+            action: "submit",
+            source: "visible_text",
+          }),
+        }),
+      ]),
+    );
+    expect(decision.status).toBe("accepted");
+  });
+
   test("accepts target-aware visible complete confirmation for the requested target", () => {
     const snap = workflowSnapshot({
       visibleContent:

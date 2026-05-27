@@ -14,8 +14,10 @@ import {
   assessStepDurationWatchdog,
   buildSubgoalAttempt,
   buildZeroEffectDecision,
+  clearStepScopedActionMemory,
   countTrailingToolResultOutcomes,
   detectStructuralStepAdvance,
+  classifyToolFailure,
   extractDiscoveredTagIds,
   normalizeOutcome,
   recordRecentSuccessfulAction,
@@ -699,6 +701,49 @@ describe("recordRecentSuccessfulAction", () => {
   });
 });
 
+describe("clearStepScopedActionMemory", () => {
+  it("clears repeat, success, failure, and final-click bypass state together", () => {
+    const recentToolCalls = [
+      { tool: ToolName.CLICK_ELEMENT, argsKey: '{"id":1}' },
+      { tool: ToolName.TYPE_TEXT, argsKey: '{"id":2,"text":"A"}' },
+    ];
+    const recentSuccesses = [
+      {
+        tool: ToolName.CLICK_ELEMENT,
+        args: '{"id":1}',
+        result: "Clicked",
+        snapshotFingerprint: "page|1|a",
+      },
+    ];
+    const blockedActions = [
+      {
+        tool: ToolName.CLICK_ELEMENT,
+        argsKey: '{"id":3}',
+        error: "No element",
+        turn: 4,
+      },
+    ];
+    const verifiedFinalClickBypassKeys = new Set(["click:submit"]);
+
+    expect(
+      clearStepScopedActionMemory({
+        recentToolCalls,
+        recentSuccesses,
+        blockedActions,
+        verifiedFinalClickBypassKeys,
+      }),
+    ).toEqual({
+      recentToolCallCount: 2,
+      recentSuccessCount: 1,
+      blockedActionCount: 1,
+    });
+    expect(recentToolCalls).toEqual([]);
+    expect(recentSuccesses).toEqual([]);
+    expect(blockedActions).toEqual([]);
+    expect(verifiedFinalClickBypassKeys.size).toBe(0);
+  });
+});
+
 describe("tool result turn failure tracking", () => {
   it("counts only trailing tool result messages", () => {
     expect(
@@ -719,24 +764,75 @@ describe("tool result turn failure tracking", () => {
     expect(
       updateConsecutiveAllFailTurns({
         previousCount: 2,
+        previousDeterministicCount: 0,
         turnSuccesses: 0,
         turnFailures: 1,
-      }),
+        failureResults: [],
+      }).count,
     ).toBe(3);
     expect(
       updateConsecutiveAllFailTurns({
         previousCount: 2,
+        previousDeterministicCount: 0,
         turnSuccesses: 1,
         turnFailures: 1,
-      }),
+        failureResults: [],
+      }).count,
     ).toBe(0);
     expect(
       updateConsecutiveAllFailTurns({
         previousCount: 2,
+        previousDeterministicCount: 0,
         turnSuccesses: 0,
         turnFailures: 0,
-      }),
+        failureResults: [],
+      }).count,
     ).toBe(0);
+  });
+
+  it("tracks deterministic consecutive failures separately", () => {
+    const deterministicResult = updateConsecutiveAllFailTurns({
+      previousCount: 1,
+      previousDeterministicCount: 1,
+      turnSuccesses: 0,
+      turnFailures: 1,
+      failureResults: ["Error: No element with tag 42"],
+    });
+    expect(deterministicResult.count).toBe(2);
+    expect(deterministicResult.deterministicCount).toBe(2);
+
+    const transientResult = updateConsecutiveAllFailTurns({
+      previousCount: 1,
+      previousDeterministicCount: 1,
+      turnSuccesses: 0,
+      turnFailures: 1,
+      failureResults: ["Error: timeout after 5000ms"],
+    });
+    expect(transientResult.count).toBe(2);
+    expect(transientResult.deterministicCount).toBe(0);
+
+    const mixedResult = updateConsecutiveAllFailTurns({
+      previousCount: 1,
+      previousDeterministicCount: 1,
+      turnSuccesses: 0,
+      turnFailures: 2,
+      failureResults: [
+        "Error: No element with tag 42",
+        "Error: timeout after 5000ms",
+      ],
+    });
+    expect(mixedResult.count).toBe(2);
+    expect(mixedResult.deterministicCount).toBe(0);
+
+    const resetResult = updateConsecutiveAllFailTurns({
+      previousCount: 3,
+      previousDeterministicCount: 3,
+      turnSuccesses: 1,
+      turnFailures: 0,
+      failureResults: [],
+    });
+    expect(resetResult.count).toBe(0);
+    expect(resetResult.deterministicCount).toBe(0);
   });
 });
 
@@ -1147,6 +1243,50 @@ describe("assessSameUrlForcedEscalation", () => {
         sameUrlEscalate: 5,
       }),
     ).toEqual({ kind: "none" });
+  });
+});
+
+describe("classifyToolFailure", () => {
+  it("classifies deterministic failures correctly", () => {
+    expect(classifyToolFailure("Error: No element with tag 42")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Error: Element does not appear to be visible")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Error: Click intercepted by overlay")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Access denied to resource")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Element is not clickable at this position")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Resource not found on page")).toBe(
+      "deterministic",
+    );
+    expect(classifyToolFailure("Action REJECTED by safety policy")).toBe(
+      "deterministic",
+    );
+  });
+
+  it("classifies transient failures correctly", () => {
+    expect(classifyToolFailure("Error: timeout after 5000ms")).toBe("transient");
+    expect(classifyToolFailure("Network request failed")).toBe("transient");
+    expect(classifyToolFailure("Extension context invalidated")).toBe("transient");
+    expect(classifyToolFailure("Could not establish connection")).toBe("transient");
+    expect(classifyToolFailure("Rate limit exceeded, retry after 1s")).toBe(
+      "transient",
+    );
+  });
+
+  it("classifies unknown failures as unknown", () => {
+    expect(classifyToolFailure("Something unexpected happened")).toBe("unknown");
+    expect(classifyToolFailure("Exploration blocked: 5 consecutive read-only turns")).toBe(
+      "unknown",
+    );
+    expect(classifyToolFailure("Clicked [5] button")).toBe("unknown");
   });
 });
 
