@@ -11,6 +11,10 @@ export const AGENT_LIMITS = {
   MAX_DONE_REJECTIONS: 3,
   /** Maximum consecutive all-fail turns before circuit breaker */
   MAX_CONSECUTIVE_ALL_FAIL: 5,
+  /** Remaining turns threshold for LOW BUDGET warning injection into system prompt */
+  LOW_BUDGET_TURNS: 5,
+  /** Remaining turns threshold for CRITICAL BUDGET warning injection into system prompt */
+  CRITICAL_BUDGET_TURNS: 2,
 } as const;
 
 /** Stuck detection thresholds */
@@ -64,7 +68,12 @@ export const TOOL_FAILURE_THRESHOLDS = {
 } as const;
 
 /** Exploration budget: nudge after consecutive turns of only reading/inspecting */
-export const EXPLORATION_BUDGET = { MAX_CONSECUTIVE: 3 } as const;
+export const EXPLORATION_BUDGET = {
+  /** Soft nudge injected after this many consecutive exploration-only turns */
+  MAX_CONSECUTIVE: 3,
+  /** Hard block: exploration-only tool calls are rejected after this many turns (nudge + 2 grace) */
+  HARD_BLOCK: 5,
+} as const;
 
 /** Tools classified as exploration-only (read/inspect, no side-effects on the page) */
 export const EXPLORATION_ONLY_TOOLS = new Set<string>([
@@ -235,6 +244,7 @@ export interface RuntimeLimits {
   toolFailureWarn: number;
   toolFailureExit: number;
   maxDoneRejections: number;
+  maxReplans: number;
   maxConsecutiveAllFail: number;
   stagnationReflection: number;
   stagnationPivot: number;
@@ -254,6 +264,7 @@ export const DEFAULT_RUNTIME_LIMITS: RuntimeLimits = {
   toolFailureWarn: TOOL_FAILURE_THRESHOLDS.WARN,
   toolFailureExit: TOOL_FAILURE_THRESHOLDS.EXIT,
   maxDoneRejections: AGENT_LIMITS.MAX_DONE_REJECTIONS,
+  maxReplans: 3,
   maxConsecutiveAllFail: AGENT_LIMITS.MAX_CONSECUTIVE_ALL_FAIL,
   stagnationReflection: STAGNATION_DETECTION.REFLECTION_THRESHOLD,
   stagnationPivot: STAGNATION_DETECTION.PIVOT_THRESHOLD,
@@ -273,6 +284,7 @@ const MINIMUM_LIMITS: RuntimeLimits = {
   toolFailureWarn: 2,
   toolFailureExit: 3,
   maxDoneRejections: 1,
+  maxReplans: 1,
   maxConsecutiveAllFail: 2,
   stagnationReflection: 2,
   stagnationPivot: 3,
@@ -292,6 +304,7 @@ const MAXIMUM_LIMITS: RuntimeLimits = {
   toolFailureWarn: 10,
   toolFailureExit: 15,
   maxDoneRejections: 7,
+  maxReplans: 8,
   maxConsecutiveAllFail: 10,
   stagnationReflection: 6,
   stagnationPivot: 10,
@@ -311,6 +324,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureWarn: 2,
     toolFailureExit: 3,
     maxDoneRejections: 1,
+    maxReplans: 2,
     maxConsecutiveAllFail: 2,
     stagnationReflection: 2,
     stagnationPivot: 3,
@@ -323,6 +337,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     // Tighter than old defaults — fail fast, escalate sooner
     stuckEscalate: 4,
     maxDoneRejections: 2,
+    maxReplans: 3,
     stepEscalateTurns: 7,
     sameUrlEscalate: 6,
   },
@@ -334,6 +349,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureWarn: 5,
     toolFailureExit: 8,
     maxDoneRejections: 4,
+    maxReplans: 4,
     maxConsecutiveAllFail: 6,
     stagnationReflection: 4,
     stagnationPivot: 6,
@@ -351,6 +367,7 @@ export const DIFFICULTY_PROFILES: Record<Difficulty, Partial<RuntimeLimits>> = {
     toolFailureWarn: 6,
     toolFailureExit: 10,
     maxDoneRejections: 5,
+    maxReplans: 6,
     maxConsecutiveAllFail: 7,
     stagnationReflection: 4,
     stagnationPivot: 7,

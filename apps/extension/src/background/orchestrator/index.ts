@@ -192,6 +192,7 @@ import type {
 } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
+import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
 
 function isTurnCheckpointCompatible(
   checkpoint: TurnCheckpoint,
@@ -3443,7 +3444,9 @@ export class Orchestrator {
           status:
             task.status === "stopped"
               ? "stopped"
-              : task.status === "completed"
+              : hasUsefulPartialProgressHandoff(task.partialHandoff)
+                ? "partial"
+                : task.status === "completed"
                 ? completed === subtaskResults.length
                   ? "completed"
                   : "partial"
@@ -3460,6 +3463,9 @@ export class Orchestrator {
           urlHistory: [],
           metrics: task.sessionMetrics,
           terminationReason: task.terminationReason,
+          ...(task.partialHandoff
+            ? { partialHandoff: task.partialHandoff }
+            : {}),
         },
       });
       if (task.sessionMetrics) {
@@ -4747,6 +4753,10 @@ export class Orchestrator {
         if (result.trajectory && result.trajectory.length > 0) {
           node.trajectory = result.trajectory;
         }
+        if (result.partialHandoff) {
+          node.partialHandoff = result.partialHandoff;
+          task.partialHandoff = result.partialHandoff;
+        }
 
         if (node.status !== "running") {
           this.emitTraceEvent(
@@ -5448,6 +5458,27 @@ export class Orchestrator {
               );
             }
           } // end verification pipeline
+        } else if (result.outcome === "max_turns" && result.partialHandoff) {
+          node.status = "failed";
+          node.error = result.summary;
+          task.partialHandoff = result.partialHandoff;
+          task.terminationReason =
+            task.terminationReason ||
+            `Turn limit reached (${result.turnCount}/${result.partialHandoff.maxTurns})`;
+          this.emitTraceEvent(
+            task,
+            "partial_handoff_created",
+            {
+              nodeId: node.id,
+              reason: result.partialHandoff.reason,
+              turnsUsed: result.partialHandoff.turnsUsed,
+              maxTurns: result.partialHandoff.maxTurns,
+              completedCount: result.partialHandoff.completed.length,
+              evidenceCount: result.partialHandoff.evidence.length,
+              remainingCount: result.partialHandoff.remaining.length,
+            },
+            "executor",
+          );
         } else {
           const retryDecision = decideRetryPolicy(
             {
@@ -6206,8 +6237,13 @@ export class Orchestrator {
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
     ).length;
 
+    const hasUsefulHandoff = hasUsefulPartialProgressHandoff(
+      task.partialHandoff,
+    );
     let completionStatus: "completed" | "partial" | "failed" =
-      failed > 0
+      hasUsefulHandoff
+        ? "partial"
+        : failed > 0
         ? completed > 0 || penalizedSkipped > 0
           ? "partial"
           : "failed"
@@ -6293,6 +6329,7 @@ export class Orchestrator {
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason: task.terminationReason,
+      ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     this.sendMessage({
@@ -7011,7 +7048,11 @@ export class Orchestrator {
 
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
-      status: stopped ? "stopped" : completed > 0 ? "partial" : "failed",
+      status: stopped
+        ? "stopped"
+        : hasUsefulPartialProgressHandoff(task.partialHandoff) || completed > 0
+          ? "partial"
+          : "failed",
       totalTurnsUsed: 0,
       totalTimeMs:
         (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
@@ -7020,6 +7061,7 @@ export class Orchestrator {
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason,
+      ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     this.sendMessage({

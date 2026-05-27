@@ -3,7 +3,10 @@ import type { Difficulty } from "../agent/constants";
 import type { ToolProfile } from "../tools/metadata";
 import type { LaneTopologyMode } from "./lane-topology";
 import type { PendingUserInteraction } from "../agent/loop-types";
-import type { TaskRunProgressInput } from "@shared-types/progress";
+import type {
+  PartialProgressHandoff,
+  TaskRunProgressInput,
+} from "@shared-types/progress";
 import {
   AgentRole,
   EvidenceEvent,
@@ -140,6 +143,8 @@ export interface TaskNode {
   error?: string;
   /** Condensed action history from the executor for same-tab handoff */
   trajectory?: string[];
+  /** Structured continuation artifact from an incomplete-but-useful executor run. */
+  partialHandoff?: PartialProgressHandoff;
 }
 
 export interface BuildNodesResult {
@@ -199,6 +204,8 @@ export interface OrchestratorTask {
     maxTotalCostUsd: number;
   };
   terminationReason?: string;
+  /** Structured continuation artifact from a max-turn or interrupted executor run. */
+  partialHandoff?: PartialProgressHandoff;
   pendingEscalation?: {
     packet: EscalationPacket;
     selectedOption?: EscalationDecisionMessage["payload"];

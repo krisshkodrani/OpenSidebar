@@ -92,30 +92,36 @@ describe("StagnationMonitor", () => {
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 4
   });
 
-  it("fires escalation only once", () => {
+  it("repeats escalation after the repeat interval", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
     feedStale(tracker, snap, 4); // stale 1-4
     const first = tracker.onSnapshotRefresh(snap); // stale 5 → escalate
     expect(first!.type).toBe("escalate");
 
-    // Further stale turns return null (one-shot)
+    // Further stale turns are quiet until the repeat interval elapses.
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 6
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 7
     expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 8
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 9
+    expect(tracker.onSnapshotRefresh(snap)).toBeNull(); // stale 10
+    const repeated = tracker.onSnapshotRefresh(snap); // stale 11
+    expect(repeated).not.toBeNull();
+    expect(repeated!.type).toBe("escalate");
+    expect(repeated!.stagnantTurns).toBe(11);
   });
 
-  it("no further signals after escalation fires", () => {
+  it("does not fire between repeat escalation intervals", () => {
     const snap = makeSnap();
     tracker.onSnapshotRefresh(snap); // baseline
 
-    // Drive to stale 12
-    for (let i = 0; i < 11; i++) {
-      tracker.onSnapshotRefresh(snap);
-    }
-    const signal = tracker.onSnapshotRefresh(snap); // stale 12
-    // Only the first escalate at 5 fired, everything after is null
-    expect(signal).toBeNull();
+    feedStale(tracker, snap, 10); // stale 5 fires, stale 6-10 quiet
+    const repeated = tracker.onSnapshotRefresh(snap); // stale 11
+    expect(repeated).not.toBeNull();
+    expect(repeated!.stagnantTurns).toBe(11);
+
+    const quiet = tracker.onSnapshotRefresh(snap); // stale 12
+    expect(quiet).toBeNull();
   });
 
   it("treats text change on same URL as progress", () => {
@@ -408,6 +414,27 @@ describe("StagnationMonitor — delta threshold", () => {
     // 3 more stale turns should NOT trigger escalation (counter was reset, need 5)
     feedStale(tracker, snap2, 3);
     expect(tracker.onSnapshotRefresh(snap2)).toBeNull(); // stale 4, still below threshold
+  });
+
+  it("large transient-only DOM change does not reset stale count", () => {
+    const snap1 = makeManyElementSnap(20);
+    tracker.onSnapshotRefresh(snap1); // baseline
+    feedStale(tracker, snap1, 4); // stale 1-4
+
+    const transientExtras = Array.from({ length: 6 }, (_, i) =>
+      makeElement({
+        tag: 100 + i,
+        tagName: "div",
+        text: `Loading spinner ${i + 1}`,
+      }),
+    );
+    const snapWithSpinner = makeManyElementSnap(20, transientExtras);
+
+    const signal = tracker.onSnapshotRefresh(snapWithSpinner);
+    expect(signal).not.toBeNull();
+    expect(signal!.type).toBe("escalate");
+    expect(signal!.stagnantTurns).toBe(5);
+    expect(tracker.sameUrlTurns).toBe(5);
   });
 
   it("full page swap always counts as progress", () => {

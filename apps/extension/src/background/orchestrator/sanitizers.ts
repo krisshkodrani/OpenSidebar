@@ -22,6 +22,7 @@ import {
   TaskTabRole,
 } from "./types";
 import type {
+  PartialProgressHandoff,
   TaskRunProgressInput,
   TaskRunProgressKind,
 } from "@shared-types/progress";
@@ -114,6 +115,40 @@ function sanitizeStructuredProgressEntry(
     kind: raw.kind,
     payload: raw.payload as Record<string, import("@shared-types/progress").TaskRunProgressFactValue>,
   };
+}
+
+function sanitizePartialProgressHandoff(
+  raw: unknown,
+): PartialProgressHandoff | null {
+  if (!isRecord(raw)) return null;
+  if (raw.schemaVersion !== "2026-05-26") return null;
+  if (raw.status !== "partial_handoff") return null;
+  if (typeof raw.task !== "string" || typeof raw.generatedAt !== "string") {
+    return null;
+  }
+  if (!isNonNegativeInteger(raw.turnsUsed) || !isNonNegativeInteger(raw.maxTurns)) {
+    return null;
+  }
+  if (
+    raw.reason !== "max_turns" &&
+    raw.reason !== "timeout" &&
+    raw.reason !== "tool_error" &&
+    raw.reason !== "provider_error" &&
+    raw.reason !== "manual_stop"
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(raw.completed) ||
+    !Array.isArray(raw.evidence) ||
+    !isRecord(raw.currentState) ||
+    !Array.isArray(raw.remaining) ||
+    !Array.isArray(raw.uncertainty) ||
+    typeof raw.suggestedContinuationPrompt !== "string"
+  ) {
+    return null;
+  }
+  return raw as unknown as PartialProgressHandoff;
 }
 
 export function isNonNegativeInteger(value: unknown): value is number {
@@ -345,6 +380,11 @@ export function sanitizeTaskNode(raw: unknown): TaskNode | null {
     node.userFacingResult = raw.userFacingResult;
   }
   if (typeof raw.error === "string") node.error = raw.error;
+  if (raw.partialHandoff !== undefined) {
+    const partialHandoff = sanitizePartialProgressHandoff(raw.partialHandoff);
+    if (!partialHandoff) return null;
+    node.partialHandoff = partialHandoff;
+  }
   return node;
 }
 
@@ -559,6 +599,11 @@ export function sanitizeTask(raw: unknown): OrchestratorTask | null {
   if (raw.terminationReason !== undefined) {
     if (typeof raw.terminationReason !== "string") return null;
     task.terminationReason = raw.terminationReason;
+  }
+  if (raw.partialHandoff !== undefined) {
+    const partialHandoff = sanitizePartialProgressHandoff(raw.partialHandoff);
+    if (!partialHandoff) return null;
+    task.partialHandoff = partialHandoff;
   }
   if (Array.isArray(raw.createdWorkerTabIds)) {
     const tabIds = raw.createdWorkerTabIds.filter((id): id is number =>

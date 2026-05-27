@@ -4,25 +4,7 @@ import type {
   TraceInvestigation,
   InvestigationFinding,
 } from "./types";
-
-function toolNames(entry: TraceEntry): string[] {
-  return (entry.toolExecutions ?? []).map((tool) => String(tool.toolName));
-}
-
-function sameSnapshot(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  if (!a) return false;
-  return (
-    a.snapshot?.url === b.snapshot?.url &&
-    a.snapshot?.title === b.snapshot?.title
-  );
-}
-
-function sameToolSequence(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  if (!a) return false;
-  const prev = toolNames(a);
-  const next = toolNames(b);
-  return prev.length > 0 && prev.join("|") === next.join("|");
-}
+import { findRepeatedActionPatterns } from "./repeat-actions";
 
 function countEvents(entries: TraceEntry[], type: string): number {
   return entries.reduce(
@@ -151,35 +133,36 @@ export function analyzeTraceSession(
     }
   }
 
-  for (let i = 1; i < entries.length; i++) {
-    const entry = entries[i];
-    const previous = entries[i - 1];
-    if (sameToolSequence(previous, entry) && sameSnapshot(previous, entry)) {
-      addFinding(findings, {
-        id: `repeat-loop-t${entry.turnNumber}`,
-        category: "loop",
-        severity: "warning",
-        title: "Repeated action loop",
-        summary: `Turns ${previous.turnNumber} and ${entry.turnNumber} used the same tool sequence without a page-state change.`,
-        confidence: 0.8,
-        firstTurn: entry.turnNumber,
-        evidence: [
-          {
-            kind: "turn",
-            sessionId,
-            turnNumber: previous.turnNumber,
-            label: `Previous repeated turn ${previous.turnNumber}`,
-          },
-          {
-            kind: "turn",
-            sessionId,
-            turnNumber: entry.turnNumber,
-            label: `Repeated turn ${entry.turnNumber}`,
-          },
-        ],
-      });
-      break;
-    }
+  for (const pattern of findRepeatedActionPatterns(entries)) {
+    addFinding(findings, {
+      id: `repeat-loop-t${pattern.current.turnNumber}`,
+      category: "loop",
+      severity: "warning",
+      title:
+        pattern.kind === "exact"
+          ? "Repeated action loop"
+          : "Near repeated action loop",
+      summary:
+        pattern.kind === "exact"
+          ? `Turns ${pattern.previous.turnNumber} and ${pattern.current.turnNumber} used the same tool sequence and arguments without a page-state change.`
+          : `Turns ${pattern.previous.turnNumber} and ${pattern.current.turnNumber} used a near-identical ${pattern.toolSequence.join(", ")} sequence without a page-state change.`,
+      confidence: pattern.kind === "exact" ? 0.85 : 0.7,
+      firstTurn: pattern.current.turnNumber,
+      evidence: [
+        {
+          kind: "turn",
+          sessionId,
+          turnNumber: pattern.previous.turnNumber,
+          label: `Previous repeated turn ${pattern.previous.turnNumber}`,
+        },
+        {
+          kind: "turn",
+          sessionId,
+          turnNumber: pattern.current.turnNumber,
+          label: `Repeated turn ${pattern.current.turnNumber}`,
+        },
+      ],
+    });
   }
 
   const doneRejections = findEvents(entries, "done_rejected");

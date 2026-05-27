@@ -126,6 +126,11 @@ export interface AgentLoopToolHandlerHost {
     result: string,
     preActionSnapshot?: unknown,
   ): void;
+  recordPartialProgressToolResult?(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
+  ): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   refreshSnapshotWithRetry(
     tabId: number,
@@ -234,6 +239,11 @@ export function recordSuccessfulToolExecution(
     true,
     toolMs,
     params.preDecision.riskLevel,
+  );
+  loop.recordPartialProgressToolResult?.(
+    params.toolName,
+    params.args,
+    params.result,
   );
   return toolMs;
 }

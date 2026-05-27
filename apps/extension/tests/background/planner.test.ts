@@ -109,6 +109,50 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("stops review-first message drafts after the unsent copy is visible", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective:
+                            "Read the current conversation and create the requested German message draft in the composer.",
+                        successCriteria:
+                            "The German message draft is visible in the composer.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Send the message after verifying the draft.",
+                        successCriteria: "The message is sent in the thread.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Create a message in german to say that I am sorry for not answering before and that I am currently looking for a job in my proffesion. Let me review the copy first",
+            "XING Messages",
+            "https://www.xing.com/messages",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(1);
+        expect(result!.steps![0].objective).toMatch(/message draft|composer/i);
+        expect(result!.steps![0].successCriteria).toMatch(
+            /visible in the composer\/editor|not been sent|unsent/i,
+        );
+        expect(result!.steps![0].verifyAfter?.action).toBe("call_done");
+        expect(result!.steps![0].toolProfile).toBe("form_fill");
+    });
+
     test("removes unsupported save requirements from field-only update steps", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

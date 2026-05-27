@@ -178,6 +178,108 @@ describe("trace investigation analysis", () => {
     expect(investigation.metrics.doneRejectionCount).toBe(1);
     expect(investigation.metrics.replanCount).toBe(0);
   });
+
+  test("detects near-repeat tool loops within a five-turn window", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "max_turns" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          toolExecutions: [
+            {
+              toolCallId: "tc-1",
+              toolName: "click_element",
+              args: { id: 101 },
+              result: "clicked",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 2,
+          toolExecutions: [
+            {
+              toolCallId: "tc-2",
+              toolName: "read_page",
+              args: {},
+              result: "same page",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 3,
+          toolExecutions: [
+            {
+              toolCallId: "tc-3",
+              toolName: "click_element",
+              args: { id: 202 },
+              result: "clicked",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(investigation.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "repeat-loop-t3",
+          title: "Near repeated action loop",
+          firstTurn: 3,
+        }),
+      ]),
+    );
+  });
+
+  test("does not treat changed numeric non-id arguments as near repeats", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "max_turns" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          toolExecutions: [
+            {
+              toolCallId: "tc-1",
+              toolName: "type_text",
+              args: { id: 101, text: "100" },
+              result: "typed",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 2,
+          toolExecutions: [
+            {
+              toolCallId: "tc-2",
+              toolName: "type_text",
+              args: { id: 202, text: "200" },
+              result: "typed",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(
+      investigation.findings.some(
+        (finding) => finding.id === "repeat-loop-t2",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("trace validation", () => {
@@ -810,6 +912,36 @@ describe("trace fleet analysis", () => {
     });
     expect(analysis.topSkillClusters[0]).toMatchObject({
       label: "checkout",
+      failedCount: 2,
+    });
+  });
+
+  test("normalizes routing prefixes and nitro suffixes in model clusters", () => {
+    const analysis = analyzeTraceFleet(
+      [
+        session({
+          sessionId: "s1",
+          outcome: "error",
+          models: ["accounts/fireworks/routers/kimi-k2p6-turbo:nitro"],
+        }),
+        session({
+          sessionId: "s2",
+          outcome: "max_turns",
+          metrics: {
+            totalTokens: 100,
+            totalCost: 0.02,
+            modelBreakdown: {
+              "kimi-k2p6-turbo": { calls: 1 },
+            },
+          } as any,
+        }),
+      ],
+      3,
+    );
+
+    expect(analysis.topModelClusters[0]).toMatchObject({
+      label: "kimi-k2p6-turbo",
+      count: 2,
       failedCount: 2,
     });
   });
