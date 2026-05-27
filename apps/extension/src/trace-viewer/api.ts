@@ -9,7 +9,10 @@ import type {
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  if (!r.ok) {
+    const body = (await r.text().catch(() => "")).trim();
+    throw new Error(body ? `${body} (HTTP ${r.status})` : `HTTP ${r.status}`);
+  }
   return r.json();
 }
 
@@ -145,6 +148,9 @@ export interface TraceInsightsResponse {
     averageTotalTokens: number;
     totalLlmDurationMs: number;
     averageLlmDurationMs: number;
+    partialHandoffCount: number;
+    maxTurnsWithHandoffCount: number;
+    maxTurnsWithoutUsefulProgressCount: number;
   };
   facets: {
     runs: string[];

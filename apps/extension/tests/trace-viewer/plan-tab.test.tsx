@@ -212,7 +212,7 @@ describe("PlanTab", () => {
     });
 
     expect(container.textContent).toContain(
-      "No plan decomposition available for this session.",
+      "No plan decomposition available for this trace.",
     );
   });
 

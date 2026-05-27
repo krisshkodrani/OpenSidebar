@@ -148,7 +148,7 @@ export default function LogList() {
   if (sessionLogs.length === 0) {
     return (
       <div className="py-10 px-4 text-center text-trace-muted text-[13px]">
-        No logs for this session.
+        No logs for this trace.
         <br />
         <span className="text-trace-dim text-[11px]">
           Logs are correlated when the log drain server is running during agent

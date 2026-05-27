@@ -48,6 +48,9 @@ export default function TurnCard({
   const compressionLevel = llmRequest?.compressionLevel;
   const modelTier = llmRequest?.modelTier;
   const actualProviderId = llmResponse?.actualProviderId;
+  const actualModel = llmResponse?.actualModel;
+  const cacheTelemetry = usage?.cacheTelemetry;
+  const cacheHitPct = cacheTelemetry?.cacheHitPct;
 
   // Generate decision summary from tool calls
   const decisionSummary = generateDecisionSummary(toolCalls, toolExecutions);
@@ -89,6 +92,16 @@ export default function TurnCard({
               via {actualProviderId}
             </span>
           )}
+        {actualModel &&
+          actualModel !== model &&
+          !model.startsWith("manual") &&
+          !model.startsWith("recording") && (
+            <Tooltip content={`Failover: requested ${model}, served ${actualModel}`}>
+              <span className="text-[9px] text-state-warning cursor-help">
+                → {actualModel.split("/").pop()}
+              </span>
+            </Tooltip>
+          )}
         {compressionLevel && compressionLevel !== "NONE" && (
           <Tooltip content="Context compression level applied to reduce token usage">
             <span className="text-[10px] text-trace-muted cursor-help">
@@ -113,6 +126,21 @@ export default function TurnCard({
             <Tooltip content="Estimated API cost">
               <span className="font-mono cursor-help">
                 {formatCost(usage.cost)}
+              </span>
+            </Tooltip>
+          )}
+          {cacheHitPct != null && (
+            <Tooltip content={`Cache hit rate: ${cacheHitPct}% of prompt tokens served from cache`}>
+              <span
+                className={`text-[10px] font-mono cursor-help px-1 py-0.5 rounded ${
+                  cacheHitPct >= 80
+                    ? "text-state-success bg-state-success/10"
+                    : cacheHitPct >= 30
+                      ? "text-state-warning bg-state-warning/10"
+                      : "text-trace-dim bg-trace-border/30"
+                }`}
+              >
+                {cacheHitPct}% cache
               </span>
             </Tooltip>
           )}

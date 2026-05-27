@@ -6,6 +6,7 @@ import type { RiskLevel, ToolName } from "./enums";
 import type { ToolCall } from "./agent";
 import type { TaggedElement } from "./dom";
 import type { SessionMetrics } from "./messages";
+import type { PartialProgressHandoff } from "./progress";
 
 // --- Trace Types (for recording agent sessions) ---
 
@@ -540,6 +541,10 @@ export interface TraceSession {
   };
   /** Session-level summary of skill-guided tool ranking and tool choice */
   skillToolMetrics?: TraceSkillToolMetrics;
+  /** Session-level events emitted after the last flushed turn, such as final handoff creation. */
+  events?: TraceEvent[];
+  /** Structured continuation artifact for incomplete-but-useful runs. */
+  partialHandoff?: PartialProgressHandoff;
 }
 
 /** Normalized failure info for trace/session rollups */

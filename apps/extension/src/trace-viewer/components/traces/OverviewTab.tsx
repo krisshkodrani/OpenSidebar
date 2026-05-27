@@ -1,5 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { TraceSession } from "../../../types/traces";
+import type { PartialProgressHandoff } from "../../../types";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import {
@@ -8,15 +9,106 @@ import {
   formatTokens,
   extractQueryTitle,
   compactTraceTaskLabel,
+  truncate,
 } from "../../utils";
 import InvestigationSummary from "./InvestigationSummary";
 import EvidenceTimeline from "./EvidenceTimeline";
 import SessionComparisonPanel from "./SessionComparisonPanel";
 import TimelineDiffPanel from "./TimelineDiffPanel";
-import TraceIntegrityPanel from "./TraceIntegrityPanel";
 
 interface OverviewTabProps {
   session: TraceSession;
+}
+
+// ── Partial Handoff Full Panel ─────────────────────────────────────────────
+
+function PartialHandoffPanel({ handoff }: { handoff: PartialProgressHandoff }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyPrompt = () => {
+    navigator.clipboard.writeText(handoff.suggestedContinuationPrompt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const confidenceClass = (c: string) =>
+    c === "high"
+      ? "text-state-success"
+      : c === "medium"
+        ? "text-state-warning"
+        : "text-state-error";
+
+  return (
+    <div className="bg-trace-panel border border-state-warning/30 rounded-lg p-4">
+      <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-3 flex items-center gap-2">
+        Partial Handoff Details
+        <Badge variant="max_turns">
+          {handoff.turnsUsed}/{handoff.maxTurns} turns
+        </Badge>
+        <span className="text-[10px] normal-case text-trace-dim">
+          {handoff.reason}
+        </span>
+      </div>
+
+      {/* Uncertainty */}
+      {handoff.uncertainty.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[10px] uppercase tracking-wider text-trace-subtle mb-1.5 font-semibold">
+            Uncertainty
+          </div>
+          <ul className="space-y-1">
+            {handoff.uncertainty.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-[12px]">
+                <span className={`shrink-0 font-medium ${confidenceClass(item.confidence)}`}>
+                  [{item.confidence}]
+                </span>
+                <span className="text-trace-muted">{item.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Current state */}
+      {(handoff.currentState.activeSubtask || handoff.currentState.lastAction) && (
+        <div className="mb-3 text-[11px] text-trace-muted flex flex-wrap gap-x-4 gap-y-1 py-2 border-y border-trace-border/50">
+          {handoff.currentState.activeSubtask && (
+            <span>
+              <span className="text-trace-subtle font-medium">Subtask: </span>
+              {truncate(handoff.currentState.activeSubtask, 80)}
+            </span>
+          )}
+          {handoff.currentState.lastAction && (
+            <span>
+              <span className="text-trace-subtle font-medium">Last action: </span>
+              {truncate(handoff.currentState.lastAction, 80)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Continuation prompt */}
+      {handoff.suggestedContinuationPrompt && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-[10px] uppercase tracking-wider text-trace-subtle font-semibold">
+              Continuation Prompt
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyPrompt}
+              className="text-[10px] text-trace-muted hover:text-trace-accent-light border border-trace-border rounded px-2 py-0.5 transition-colors"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <pre className="p-2.5 bg-trace-bg border border-trace-border rounded text-[11px] text-trace-subtle font-mono leading-relaxed whitespace-pre-wrap break-words overflow-auto max-h-40">
+            {handoff.suggestedContinuationPrompt}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getAllSkillIds(session: TraceSession): string[] {
@@ -55,27 +147,12 @@ export default function OverviewTab({ session }: OverviewTabProps) {
 
   return (
     <div className="space-y-4">
+      {/* 1. Diagnostic signal first */}
       <InvestigationSummary session={session} />
 
-      <EvidenceTimeline session={session} />
-
-      <SessionComparisonPanel session={session} />
-
-      <TimelineDiffPanel session={session} />
-
-      <TraceIntegrityPanel session={session} />
-
-      {/* Query Section */}
+      {/* 2. Outcome & Metrics compact card */}
       <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-        <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
-          Query
-        </div>
-        <div className="text-sm text-trace-text font-medium">{title}</div>
-      </div>
-
-      {/* Outcome & Metrics */}
-      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-        <div className="flex items-center gap-3 mb-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Badge
             variant={
               session.outcome === "completed"
@@ -92,12 +169,12 @@ export default function OverviewTab({ session }: OverviewTabProps) {
           <span className="text-[11px] text-trace-muted">
             {session.turnCount || 0} turns · {duration}
           </span>
-          {metrics?.totalCost && (
+          {metrics?.totalCost != null && (
             <span className="text-[11px] text-trace-muted">
               {formatCost(metrics.totalCost)}
             </span>
           )}
-          {metrics?.totalTokens && (
+          {metrics?.totalTokens != null && (
             <span className="text-[11px] text-trace-muted">
               {formatTokens(metrics.totalTokens)} tokens
             </span>
@@ -105,7 +182,49 @@ export default function OverviewTab({ session }: OverviewTabProps) {
         </div>
       </div>
 
-      {/* Plan Progress */}
+      {/* 3. Evidence timeline */}
+      <EvidenceTimeline session={session} />
+
+      {/* 4. Partial handoff (full panel — extends header summary) */}
+      {session.partialHandoff && (
+        <PartialHandoffPanel handoff={session.partialHandoff} />
+      )}
+
+      {/* 5. Skills */}
+      {skillIds.length > 0 && (
+        <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
+            Skills Used
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {skillIds.map((skillId) => (
+              <Tooltip
+                key={skillId}
+                content={
+                  <div className="space-y-1">
+                    <div className="font-semibold">{skillId}</div>
+                    {skills?.skillId === skillId && (
+                      <>
+                        <div>
+                          Preferred:{" "}
+                          {Math.round(skills.preferredSelectionRate * 100)}%
+                        </div>
+                        <div>Total selections: {skills.totalSelections}</div>
+                      </>
+                    )}
+                  </div>
+                }
+              >
+                <span className="inline-flex items-center px-2 py-1 rounded bg-brand-live/10 text-brand-live text-[11px] font-medium cursor-help">
+                  {skillId}
+                </span>
+              </Tooltip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 6. Plan Progress */}
       {plan && (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
@@ -144,39 +263,19 @@ export default function OverviewTab({ session }: OverviewTabProps) {
         </div>
       )}
 
-      {/* Skills */}
-      {skillIds.length > 0 && (
-        <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
-            Skills Used
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {skillIds.map((skillId) => (
-              <Tooltip
-                key={skillId}
-                content={
-                  <div className="space-y-1">
-                    <div className="font-semibold">{skillId}</div>
-                    {skills?.skillId === skillId && (
-                      <>
-                        <div>
-                          Preferred:{" "}
-                          {Math.round(skills.preferredSelectionRate * 100)}%
-                        </div>
-                        <div>Total selections: {skills.totalSelections}</div>
-                      </>
-                    )}
-                  </div>
-                }
-              >
-                <span className="inline-flex items-center px-2 py-1 rounded bg-brand-live/10 text-brand-live text-[11px] font-medium cursor-help">
-                  {skillId}
-                </span>
-              </Tooltip>
-            ))}
-          </div>
+      {/* 7. Session comparison */}
+      <SessionComparisonPanel session={session} />
+
+      {/* 8. Timeline diff */}
+      <TimelineDiffPanel session={session} />
+
+      {/* 9. Query (context reference, not diagnostic) */}
+      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+        <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
+          Query
         </div>
-      )}
+        <div className="text-sm text-trace-text font-medium">{title}</div>
+      </div>
     </div>
   );
 }

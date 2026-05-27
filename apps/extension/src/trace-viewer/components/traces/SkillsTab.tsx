@@ -20,7 +20,7 @@ export default function SkillsTab({ session, entries }: SkillsTabProps) {
   if (!metrics && extraction.events.length === 0) {
     return (
       <div className="bg-trace-panel border border-trace-border rounded-lg p-4 text-sm text-trace-muted">
-        No skill metrics or skill events were recorded for this session.
+        No skill metrics or skill events were recorded for this trace.
       </div>
     );
   }
@@ -31,7 +31,7 @@ export default function SkillsTab({ session, entries }: SkillsTabProps) {
         <SkillMetricsCard metrics={metrics} />
       ) : (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4 text-sm text-trace-muted">
-          No aggregate skill metrics available for this session.
+          No aggregate skill metrics available for this trace.
         </div>
       )}
       <SkillEventStream events={extraction.events} />

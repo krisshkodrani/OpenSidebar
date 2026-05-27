@@ -27,17 +27,11 @@ vi.mock("../../src/trace-viewer/components/traces/FleetInsights", () => ({
 vi.mock("../../src/trace-viewer/components/traces/FilterBar", () => ({
   default: () => <div>FilterBar</div>,
 }));
-vi.mock("../../src/trace-viewer/components/traces/SessionsTableView", () => ({
-  default: () => <div>SessionsTableView</div>,
-}));
 vi.mock("../../src/trace-viewer/components/traces/RunsTableView", () => ({
   default: () => <div>RunsTableView</div>,
 }));
 vi.mock("../../src/trace-viewer/components/traces/MetricsTab", () => ({
   default: () => <div>MetricsTab</div>,
-}));
-vi.mock("../../src/trace-viewer/components/traces/DocsTab", () => ({
-  default: () => <div>DocsTab</div>,
 }));
 vi.mock(
   "../../src/trace-viewer/components/traces/UnifiedSessionsTableView",
@@ -193,7 +187,7 @@ describe("trace-viewer App", () => {
     });
   });
 
-  test("renders docs view from top-level hash route", async () => {
+  test("ignores unknown top-level hash routes", async () => {
     window.location.hash = "#top=docs";
 
     await act(async () => {
@@ -201,15 +195,15 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(useStore.getState().activeTopLevelView).toBe("docs");
-      expect(container.textContent).toContain("DocsTab");
-      expect(container.textContent).not.toContain("FilterBar");
-      expect(container.textContent).not.toContain("FleetOverview");
-      expect(container.textContent).not.toContain("FleetInsights");
+      expect(useStore.getState().activeTopLevelView).toBe("sessions");
+      expect(container.textContent).toContain("UnifiedSessionsTableView");
+      expect(container.textContent).toContain("FilterBar");
+      expect(container.textContent).toContain("FleetOverview");
+      expect(container.textContent).toContain("FleetInsights");
     });
   });
 
-  test("renders sessions as the default trace list", async () => {
+  test("renders traces as the default trace list", async () => {
     mockUseTraceData.mockReturnValue({
       sessions: [
         {
@@ -283,8 +277,12 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain("Sessions (2)");
+      const text = container.textContent ?? "";
       expect(container.textContent).toContain("Runs (1)");
+      expect(container.textContent).toContain("Traces (2)");
+      expect(text.indexOf("Runs (1)")).toBeLessThan(
+        text.indexOf("Traces (2)"),
+      );
       expect(container.textContent).toContain("Insights");
       expect(container.textContent).toContain("Metrics");
       expect(container.textContent).not.toContain("Insights (2)");
@@ -332,8 +330,8 @@ describe("trace-viewer App", () => {
     });
 
     await waitFor(() => {
-      expect(container.textContent).toContain("Sessions (1,000+)");
       expect(container.textContent).toContain("Runs (1+)");
+      expect(container.textContent).toContain("Traces (1,000+)");
       expect(container.textContent).not.toContain("Insights (1,000+)");
       expect(container.textContent).not.toContain("Metrics (1,000+)");
     });

@@ -266,7 +266,7 @@ describe("trace-viewer App regression flows", () => {
 
     await waitFor(() => {
       expect(container.textContent).toContain("Investigation");
-      expect(container.textContent).toContain("Related Sessions");
+      expect(container.textContent).toContain("Related Traces");
       expect(container.textContent).toContain("Turn Diff");
       expect(container.textContent).toContain("First divergence at T1");
     });

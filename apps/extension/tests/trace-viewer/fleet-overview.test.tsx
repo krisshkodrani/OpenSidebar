@@ -70,7 +70,7 @@ describe("FleetOverview", () => {
     });
 
     expect(container.textContent).toContain("Summary");
-    expect(container.textContent).toContain("Sessions:");
+    expect(container.textContent).toContain("Traces:");
     expect(container.textContent).toContain("2");
     expect(container.textContent).toContain("Runs:");
     expect(container.textContent).toContain("Success:");

@@ -41,7 +41,7 @@ function ClusterRow({
       </div>
       <div className="mt-1 text-[11px] text-trace-muted flex flex-wrap gap-x-3 gap-y-1">
         <span>{cluster.failedCount} failed</span>
-        <span>{cluster.count} sessions</span>
+        <span>{cluster.count} traces</span>
         <span>{pct(cluster.failureRate)} fail rate</span>
         {cluster.totalCost > 0 && <span>{formatCost(cluster.totalCost)}</span>}
       </div>
