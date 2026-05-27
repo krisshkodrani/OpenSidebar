@@ -2,15 +2,20 @@ import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import {
-  buildTraceInsights,
   type TraceInsightsFilters,
+  type TraceInsightsFacets,
+  type TraceInsightsMetricRow,
   type TraceInsightsResponse,
+  type TraceInsightsRunRow,
+  type TraceInsightsSummary,
 } from "./trace-insights";
 import {
   isIsoDay,
   type TraceEntryLike,
   type TraceSessionLike,
 } from "./log-server-helpers";
+import { estimateCostBreakdownUsd } from "../apps/extension/src/background/llm/pricing";
+import type { ProviderConfig } from "../apps/extension/src/background/llm/types";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 const HOT_TRACE_DAYS = 7;
@@ -169,13 +174,6 @@ function sessionInsightFilterSql(filters: TraceInsightsFilters): {
   };
 }
 
-function chunks<T>(values: T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let index = 0; index < values.length; index += size) {
-    result.push(values.slice(index, index + size));
-  }
-  return result;
-}
 
 function domain(rawUrl: unknown): string | null {
   if (typeof rawUrl !== "string" || rawUrl.length === 0) return null;
@@ -843,6 +841,719 @@ export function getTraceIndexStatus(
   }
 }
 
+// ── Provider helpers (mirrors trace-insights.ts, kept local to avoid circular dep) ──
+const INSIGHT_PROVIDER_IDS = new Set<ProviderConfig["providerId"]>([
+  "openrouter", "openai", "groq", "fireworks", "moonshot", "deepseek", "xiaomi",
+]);
+
+function asProviderId(value: unknown): ProviderConfig["providerId"] | null {
+  const p = asString(value);
+  return INSIGHT_PROVIDER_IDS.has(p as ProviderConfig["providerId"])
+    ? (p as ProviderConfig["providerId"])
+    : null;
+}
+
+function inferProviderIdFromModel(model: string): ProviderConfig["providerId"] | null {
+  const n = model.trim().toLowerCase();
+  if (!n) return null;
+  if (n.startsWith("accounts/fireworks/")) return "fireworks";
+  if (n.includes("kimi-k2p")) return "fireworks";
+  if (n.startsWith("kimi-")) return "moonshot";
+  if (n.startsWith("deepseek-")) return "deepseek";
+  if (n.startsWith("mimo-")) return "xiaomi";
+  return null;
+}
+
+/**
+ * Build the SQL WHERE clause + params for the filtered session CTE.
+ *
+ * Extends `sessionInsightFilterSql` with additional filters that require
+ * sub-selects (model, tier, mode, tool, toolStatus, skill, failure, eventType).
+ * All extra param names are prefixed with `_f` to avoid collisions.
+ */
+function buildSessionCteFilter(
+  filters: TraceInsightsFilters,
+): { whereSql: string; params: Record<string, string | number> } {
+  const base = sessionInsightFilterSql(filters);
+  const conditions: string[] = base.whereSql
+    ? [base.whereSql.replace(/^WHERE\s+/i, "")]
+    : [];
+  const params: Record<string, string | number> = { ...base.params };
+  const esc = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+  // Model filter — sessions that have a turn with this model
+  const model = asString(filters.model).trim();
+  if (model && model !== "all") {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM trace_turns _fm WHERE _fm.session_id = s.session_id AND _fm.model = @_fModel)`,
+    );
+    params._fModel = model;
+  }
+
+  // Tier filter — executor / planner
+  const tier = asString(filters.tier).trim();
+  if (tier && tier !== "all") {
+    conditions.push(
+      `EXISTS (SELECT 1 FROM trace_turns _ft WHERE _ft.session_id = s.session_id AND _ft.model_tier = @_fTier)`,
+    );
+    params._fTier = tier;
+  }
+
+  // Mode filter — recording, manual, agent
+  const mode = asString(filters.mode).trim();
+  if (mode && mode !== "all") {
+    if (mode === "recording") {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model = 'recording')`,
+      );
+    } else if (mode === "manual") {
+      conditions.push(
+        `EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model = 'manual')`,
+      );
+    } else if (mode === "agent") {
+      conditions.push(
+        `NOT EXISTS (SELECT 1 FROM trace_turns _fmo WHERE _fmo.session_id = s.session_id AND _fmo.model IN ('recording', 'manual'))`,
+      );
+    }
+  }
+
+  // Tool / toolStatus filter
+  const tool = asString(filters.tool).trim();
+  const toolStatus = asString(filters.toolStatus).trim();
+  if (tool || (toolStatus && toolStatus !== "all")) {
+    const tc: string[] = ["_ftl.session_id = s.session_id"];
+    if (tool) { tc.push("_ftl.tool_name = @_fToolName"); params._fToolName = tool; }
+    if (toolStatus === "success") tc.push("_ftl.success = 1");
+    else if (toolStatus === "failure") tc.push("_ftl.success = 0");
+    conditions.push(`EXISTS (SELECT 1 FROM trace_tools _ftl WHERE ${tc.join(" AND ")})`);
+  }
+
+  // Skill filter — embedded in raw_json (LIKE is imprecise but fast enough)
+  const skill = asString(filters.skill).trim();
+  if (skill && skill !== "all") {
+    conditions.push(`s.raw_json LIKE @_fSkill ESCAPE '\\'`);
+    params._fSkill = `%${esc(skill)}%`;
+  }
+
+  // Failure filter — failureCode > failureCategory > outcome
+  const failure = asString(filters.failure).trim();
+  if (failure && failure !== "all") {
+    conditions.push(`(
+      json_extract(s.raw_json, '$.failureCode') = @_fFailure
+      OR (json_extract(s.raw_json, '$.failureCode') IS NULL
+          AND json_extract(s.raw_json, '$.failureCategory') = @_fFailure)
+      OR (json_extract(s.raw_json, '$.failureCode') IS NULL
+          AND json_extract(s.raw_json, '$.failureCategory') IS NULL
+          AND s.outcome = @_fFailure)
+    )`);
+    params._fFailure = failure;
+  }
+
+  // Event type filter — turn/session event or run event associated with the session's run
+  const eventType = asString(filters.eventType).trim();
+  if (eventType && eventType !== "all") {
+    conditions.push(`(
+      EXISTS (
+        SELECT 1 FROM trace_run_events _fre
+        WHERE _fre.run_id = s.run_id AND _fre.type = @_fEventType
+      )
+      OR EXISTS (
+        SELECT 1 FROM trace_turns _fet
+        JOIN json_each(_fet.raw_json, '$.events') _fee
+        WHERE _fet.session_id = s.session_id
+          AND json_extract(_fee.value, '$.type') = @_fEventType
+      )
+      OR EXISTS (
+        SELECT 1 FROM json_each(s.raw_json, '$.events') _fse
+        WHERE json_extract(_fse.value, '$.type') = @_fEventType
+      )
+    )`);
+    params._fEventType = eventType;
+  }
+
+  return {
+    whereSql: conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "",
+    params,
+  };
+}
+
+const MAX_INSIGHTS_MODEL_ROWS = 12;
+const MAX_INSIGHTS_TOOL_ROWS = 30;
+const MAX_INSIGHTS_FAILURE_ROWS = 20;
+const MAX_INSIGHTS_SKILL_ROWS = 20;
+const MAX_INSIGHTS_EVENT_ROWS = 20;
+const MAX_INSIGHTS_RUN_ROWS = 200;
+const MAX_INSIGHTS_FACET_IDS = 500;
+
+/**
+ * Build trace insights entirely from SQL aggregation — no row-per-row JS loops.
+ *
+ * Replaces the old approach of loading every session + turn + tool row into
+ * memory and aggregating in JavaScript.  All GROUP BY / COUNT / SUM work is
+ * done inside SQLite (C), which is 10–100× faster for large trace stores.
+ *
+ * Estimated costs (which require calling estimateCostBreakdownUsd) are computed
+ * per unique model rather than per turn — O(M models) instead of O(N turns).
+ */
+function buildInsightsSql(
+  db: Database.Database,
+  filters: TraceInsightsFilters,
+): TraceInsightsResponse {
+  const { whereSql, params } = buildSessionCteFilter(filters);
+
+  // Reusable CTE for filtered sessions — does NOT include raw_json to keep
+  // it lean. Queries that need raw_json JOIN back to trace_sessions.
+  const cte = `WITH filtered AS (
+    SELECT s.session_id, s.run_id, s.outcome, s.domain,
+           s.turn_count, s.total_cost, s.start_time, s.end_time,
+           s.query, s.start_url
+    FROM trace_sessions s
+    ${whereSql}
+  )`;
+
+  // ── 1. Session summary (one row) ────────────────────────────────────────
+  const sr = db.prepare(`
+    ${cte}
+    SELECT
+      COUNT(*)                                                                    AS totalSessions,
+      COUNT(DISTINCT f.run_id)                                                    AS totalRuns,
+      SUM(CASE WHEN f.outcome IN ('completed','success') THEN 1 ELSE 0 END)      AS completedSessions,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success')
+               AND f.outcome IS NOT NULL THEN 1 ELSE 0 END)                      AS failedSessions,
+      SUM(COALESCE(f.turn_count, 0))                                             AS totalTurns,
+      AVG(CAST(f.end_time - f.start_time AS REAL))                               AS averageDurationMs,
+      SUM(CASE WHEN json_extract(ts.raw_json,'$.partialHandoff') IS NOT NULL
+               THEN 1 ELSE 0 END)                                                AS partialHandoffCount,
+      SUM(CASE WHEN f.outcome = 'max_turns'
+               AND json_extract(ts.raw_json,'$.partialHandoff') IS NOT NULL
+               THEN 1 ELSE 0 END)                                                AS maxTurnsWithHandoffCount,
+      SUM(CASE WHEN f.outcome = 'max_turns'
+               AND (
+                 json_extract(ts.raw_json,'$.partialHandoff') IS NULL
+                 OR (
+                   COALESCE(json_array_length(json_extract(ts.raw_json,'$.partialHandoff.evidence')),0) = 0
+                   AND COALESCE(json_array_length(json_extract(ts.raw_json,'$.partialHandoff.completed')),0) = 0
+                   AND NULLIF(json_extract(ts.raw_json,'$.partialHandoff.currentState.url'),'') IS NULL
+                   AND NULLIF(json_extract(ts.raw_json,'$.partialHandoff.currentState.title'),'') IS NULL
+                 )
+               )
+               THEN 1 ELSE 0 END)                                                AS maxTurnsWithoutUsefulProgressCount
+    FROM filtered f
+    JOIN trace_sessions ts ON ts.session_id = f.session_id
+  `).get(params) as Record<string, unknown> | undefined;
+
+  // Return empty response if no sessions matched
+  if (!sr || (sr.totalSessions ?? 0) === 0) {
+    return buildEmptyInsightsResponse();
+  }
+
+  // ── 2. Turn / token / cost aggregate (one row) ─────────────────────────
+  const tr = (db.prepare(`
+    ${cte}
+    SELECT
+      COUNT(*)                                   AS llmRequests,
+      SUM(t.prompt_tokens)                       AS promptTokens,
+      SUM(t.cached_tokens)                       AS cachedTokens,
+      SUM(t.completion_tokens)                   AS completionTokens,
+      SUM(t.total_tokens)                        AS totalTokens,
+      SUM(t.cost)                                AS requestCost,
+      SUM(t.duration_ms)                         AS totalLlmDurationMs,
+      AVG(CAST(t.duration_ms AS REAL))           AS averageLlmDurationMs,
+      AVG(CAST(t.prompt_tokens AS REAL))         AS averagePromptTokens,
+      AVG(CAST(t.completion_tokens AS REAL))     AS averageCompletionTokens,
+      AVG(CAST(t.total_tokens AS REAL))          AS averageTotalTokens
+    FROM trace_turns t
+    WHERE t.session_id IN (SELECT session_id FROM filtered)
+  `).get(params) ?? {}) as Record<string, unknown>;
+
+  // ── 3. Tool counts (one row) ────────────────────────────────────────────
+  const toolr = (db.prepare(`
+    ${cte}
+    SELECT
+      COUNT(*) AS toolCalls,
+      SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS toolFailures
+    FROM trace_tools tt
+    WHERE tt.session_id IN (SELECT session_id FROM filtered)
+  `).get(params) ?? {}) as Record<string, unknown>;
+
+  // ── 4. Per-model aggregates (for model mix + cost estimation) ───────────
+  const modelAggs = db.prepare(`
+    ${cte}
+    SELECT
+      t.model,
+      t.provider,
+      COUNT(DISTINCT t.session_id)           AS sessions,
+      COUNT(DISTINCT f.run_id)               AS runs,
+      COUNT(*)                               AS requests,
+      SUM(t.prompt_tokens)                   AS promptTokens,
+      SUM(t.cached_tokens)                   AS cachedTokens,
+      SUM(t.completion_tokens)               AS completionTokens,
+      SUM(t.total_tokens)                    AS totalTokens,
+      SUM(t.cost)                            AS requestCost,
+      MIN(t.session_id)                      AS sampleSessionId,
+      MIN(f.run_id)                          AS sampleRunId
+    FROM trace_turns t
+    JOIN filtered f ON f.session_id = t.session_id
+    WHERE t.model IS NOT NULL AND t.model != ''
+    GROUP BY t.model
+    ORDER BY requests DESC
+    LIMIT ${MAX_INSIGHTS_MODEL_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  // ── 5. Tool breakdown ───────────────────────────────────────────────────
+  const toolAggs = db.prepare(`
+    ${cte}
+    SELECT
+      tt.tool_name,
+      COUNT(DISTINCT tt.session_id)                              AS sessions,
+      COUNT(DISTINCT f.run_id)                                   AS runs,
+      COUNT(*)                                                   AS calls,
+      SUM(CASE WHEN tt.success = 0 THEN 1 ELSE 0 END)           AS failures,
+      MIN(CASE WHEN tt.success = 0 THEN tt.error ELSE NULL END)  AS sampleError,
+      MIN(tt.session_id)                                         AS sampleSessionId
+    FROM trace_tools tt
+    JOIN filtered f ON f.session_id = tt.session_id
+    WHERE tt.tool_name IS NOT NULL AND tt.tool_name != ''
+    GROUP BY tt.tool_name
+    ORDER BY calls DESC
+    LIMIT ${MAX_INSIGHTS_TOOL_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  // ── 6. Failure breakdown ────────────────────────────────────────────────
+  const failureAggs = db.prepare(`
+    ${cte}
+    SELECT
+      COALESCE(
+        NULLIF(json_extract(ts.raw_json,'$.failureCode'),''),
+        NULLIF(json_extract(ts.raw_json,'$.failureCategory'),''),
+        NULLIF(f.outcome,''),
+        'unknown'
+      ) AS failureLabel,
+      COUNT(*)                  AS sessions,
+      COUNT(DISTINCT f.run_id)  AS runs,
+      MIN(f.session_id)         AS sampleSessionId,
+      MIN(f.run_id)             AS sampleRunId
+    FROM filtered f
+    JOIN trace_sessions ts ON ts.session_id = f.session_id
+    WHERE f.outcome NOT IN ('completed','success') AND f.outcome IS NOT NULL
+    GROUP BY failureLabel
+    ORDER BY sessions DESC
+    LIMIT ${MAX_INSIGHTS_FAILURE_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  // ── 7. Skill breakdown (from raw_json.skillToolMetrics.skillId) ─────────
+  const skillAggs = db.prepare(`
+    ${cte}
+    SELECT
+      json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skillId,
+      COUNT(*)                  AS sessions,
+      COUNT(DISTINCT f.run_id)  AS runs,
+      MIN(f.session_id)         AS sampleSessionId
+    FROM filtered f
+    JOIN trace_sessions ts ON ts.session_id = f.session_id
+    WHERE json_extract(ts.raw_json,'$.skillToolMetrics.skillId') IS NOT NULL
+      AND json_extract(ts.raw_json,'$.skillToolMetrics.skillId') != ''
+    GROUP BY skillId
+    ORDER BY sessions DESC
+    LIMIT ${MAX_INSIGHTS_SKILL_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  // ── 8. Event type breakdown (turn, session, and run events) ──────────────
+  const eventAggs = db.prepare(`
+    ${cte}
+    , filtered_runs AS (
+      SELECT run_id, MIN(session_id) AS sample_session_id
+      FROM filtered
+      WHERE run_id IS NOT NULL AND run_id != ''
+      GROUP BY run_id
+    ),
+    event_source AS (
+      SELECT
+        t.session_id AS session_id,
+        f.run_id AS run_id,
+        json_extract(ev.value, '$.type') AS type
+      FROM trace_turns t
+      JOIN filtered f ON f.session_id = t.session_id
+      JOIN json_each(t.raw_json, '$.events') ev
+
+      UNION ALL
+
+      SELECT
+        f.session_id AS session_id,
+        f.run_id AS run_id,
+        json_extract(ev.value, '$.type') AS type
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.events') ev
+
+      UNION ALL
+
+      SELECT
+        fr.sample_session_id AS session_id,
+        re.run_id AS run_id,
+        re.type AS type
+      FROM trace_run_events re
+      JOIN filtered_runs fr ON fr.run_id = re.run_id
+    )
+    SELECT
+      type,
+      COUNT(DISTINCT session_id) AS sessions,
+      COUNT(DISTINCT run_id)     AS runs,
+      COUNT(*)                   AS calls
+    FROM event_source
+    WHERE type IS NOT NULL AND type != ''
+    GROUP BY type
+    ORDER BY calls DESC
+    LIMIT ${MAX_INSIGHTS_EVENT_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  // ── 9. Run rows ─────────────────────────────────────────────────────────
+  const runAggs = db.prepare(`
+    ${cte}
+    SELECT
+      f.run_id,
+      MIN(ts.query)    AS query,
+      CASE WHEN SUM(CASE WHEN f.outcome NOT IN ('completed','success') THEN 1 ELSE 0 END) = 0
+           THEN 'completed' ELSE 'failed' END                                        AS outcome,
+      COUNT(*)                                                                        AS sessions,
+      SUM(CASE WHEN f.outcome NOT IN ('completed','success')
+               AND f.outcome IS NOT NULL THEN 1 ELSE 0 END)                          AS failedSessions,
+      SUM(COALESCE(f.turn_count, 0))                                                  AS totalTurns,
+      SUM(COALESCE(f.total_cost, 0))                                                  AS totalCost,
+      MAX(f.end_time) - MIN(f.start_time)                                             AS durationMs,
+      MIN(f.session_id)                                                               AS sampleSessionId
+    FROM filtered f
+    JOIN trace_sessions ts ON ts.session_id = f.session_id
+    WHERE f.run_id IS NOT NULL AND f.run_id != ''
+    GROUP BY f.run_id
+    ORDER BY MIN(f.start_time) DESC
+    LIMIT ${MAX_INSIGHTS_RUN_ROWS}
+  `).all(params) as Array<Record<string, unknown>>;
+
+  const runToolRows = db.prepare(`
+    ${cte}
+    SELECT
+      f.run_id,
+      tt.tool_name,
+      COUNT(*) AS calls
+    FROM trace_tools tt
+    JOIN filtered f ON f.session_id = tt.session_id
+    WHERE f.run_id IS NOT NULL AND f.run_id != ''
+      AND tt.tool_name IS NOT NULL AND tt.tool_name != ''
+    GROUP BY f.run_id, tt.tool_name
+    ORDER BY f.run_id, calls DESC, tt.tool_name
+  `).all(params) as Array<Record<string, unknown>>;
+
+  const runSkillRows = db.prepare(`
+    ${cte}
+    , skill_source AS (
+      SELECT
+        f.run_id AS run_id,
+        json_extract(ts.raw_json,'$.skillToolMetrics.skillId') AS skill_id
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+      WHERE f.run_id IS NOT NULL AND f.run_id != ''
+
+      UNION ALL
+
+      SELECT
+        f.run_id AS run_id,
+        json_extract(step.value, '$.selectedSkillId') AS skill_id
+      FROM filtered f
+      JOIN trace_sessions ts ON ts.session_id = f.session_id
+      JOIN json_each(ts.raw_json, '$.planDecomposition.steps') step
+      WHERE f.run_id IS NOT NULL AND f.run_id != ''
+    )
+    SELECT
+      run_id,
+      skill_id,
+      COUNT(*) AS calls
+    FROM skill_source
+    WHERE skill_id IS NOT NULL AND skill_id != ''
+    GROUP BY run_id, skill_id
+    ORDER BY run_id, calls DESC, skill_id
+  `).all(params) as Array<Record<string, unknown>>;
+
+  const topByRun = (
+    rows: Array<Record<string, unknown>>,
+    valueKey: string,
+  ): Map<string, string[]> => {
+    const result = new Map<string, string[]>();
+    for (const row of rows) {
+      const runId = asString(row.run_id);
+      const value = asString(row[valueKey]);
+      if (!runId || !value) continue;
+      const values = result.get(runId) ?? [];
+      if (values.length >= 3) continue;
+      values.push(value);
+      result.set(runId, values);
+    }
+    return result;
+  };
+  const topToolsByRun = topByRun(runToolRows, "tool_name");
+  const topSkillsByRun = topByRun(runSkillRows, "skill_id");
+
+  // ── 10. Facets ──────────────────────────────────────────────────────────
+  const toStr = (rows: Array<Record<string, unknown>>, key: string) =>
+    rows.map((r) => asString(r[key])).filter(Boolean);
+
+  const facetRuns = toStr(
+    db.prepare(
+      `${cte} SELECT DISTINCT run_id FROM filtered WHERE run_id IS NOT NULL AND run_id != '' LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+    ).all(params) as Array<Record<string, unknown>>,
+    "run_id",
+  );
+  const facetSessions = toStr(
+    db.prepare(
+      `${cte} SELECT session_id FROM filtered LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+    ).all(params) as Array<Record<string, unknown>>,
+    "session_id",
+  );
+  const facetDomains = toStr(
+    db.prepare(
+      `${cte} SELECT DISTINCT domain FROM filtered WHERE domain IS NOT NULL AND domain != '' LIMIT ${MAX_INSIGHTS_FACET_IDS}`,
+    ).all(params) as Array<Record<string, unknown>>,
+    "domain",
+  );
+  const facetModels = toStr(
+    db.prepare(`
+      ${cte}
+      SELECT DISTINCT t.model FROM trace_turns t
+      WHERE t.session_id IN (SELECT session_id FROM filtered)
+        AND t.model IS NOT NULL AND t.model != ''
+      LIMIT ${MAX_INSIGHTS_FACET_IDS}
+    `).all(params) as Array<Record<string, unknown>>,
+    "model",
+  );
+
+  // ── Compute estimated costs per model (O(M) instead of O(N turns)) ──────
+  let estimatedInputCost = 0;
+  let estimatedCachedInputCost = 0;
+  let estimatedOutputCost = 0;
+  let unpricedRequests = 0;
+
+  for (const row of modelAggs) {
+    const model = asString(row.model);
+    const providerId =
+      asProviderId(row.provider) ?? inferProviderIdFromModel(model);
+    const breakdown = providerId
+      ? estimateCostBreakdownUsd(providerId, model, {
+          prompt_tokens: asNumber(row.promptTokens),
+          completion_tokens: asNumber(row.completionTokens),
+          total_tokens: asNumber(row.totalTokens),
+          cached_tokens: asNumber(row.cachedTokens),
+        })
+      : null;
+    if (breakdown) {
+      estimatedInputCost += breakdown.inputCostUsd;
+      estimatedCachedInputCost += breakdown.cachedInputCostUsd;
+      estimatedOutputCost += breakdown.outputCostUsd;
+    } else {
+      unpricedRequests += asNumber(row.requests);
+    }
+  }
+
+  const estimatedRequestCost =
+    estimatedInputCost + estimatedCachedInputCost + estimatedOutputCost;
+
+  // ── Assemble summary ────────────────────────────────────────────────────
+  const totalSessions = asNumber(sr.totalSessions);
+  const totalRuns = asNumber(sr.totalRuns);
+  const completedSessions = asNumber(sr.completedSessions);
+  const failedSessions = asNumber(sr.failedSessions);
+  const totalTurns = asNumber(sr.totalTurns);
+  const llmRequests = asNumber(tr.llmRequests);
+  const promptTokens = asNumber(tr.promptTokens);
+  const cachedTokens = asNumber(tr.cachedTokens);
+  const completionTokens = asNumber(tr.completionTokens);
+  const totalTokens = asNumber(tr.totalTokens);
+  const requestCost = asNumber(tr.requestCost);
+  const totalLlmDurationMs = asNumber(tr.totalLlmDurationMs);
+  const toolCalls = asNumber(toolr.toolCalls);
+  const toolFailures = asNumber(toolr.toolFailures);
+
+  const summary: TraceInsightsSummary = {
+    totalSessions,
+    totalRuns,
+    completedSessions,
+    failedSessions,
+    successRate: totalSessions > 0 ? completedSessions / totalSessions : 0,
+    failureRate: totalSessions > 0 ? failedSessions / totalSessions : 0,
+    totalTurns,
+    averageTurns: totalSessions > 0 ? totalTurns / totalSessions : 0,
+    totalCost: requestCost,
+    averageDurationMs: asNumber(sr.averageDurationMs),
+    toolCalls,
+    toolFailures,
+    toolFailureRate: toolCalls > 0 ? toolFailures / toolCalls : 0,
+    llmRequests,
+    promptTokens,
+    completionTokens,
+    cachedTokens,
+    nonCachedInputTokens: Math.max(0, promptTokens - cachedTokens),
+    totalTokens,
+    requestCost,
+    estimatedInputCost,
+    estimatedCachedInputCost,
+    estimatedOutputCost,
+    estimatedRequestCost,
+    outputTokenShare: totalTokens > 0 ? completionTokens / totalTokens : 0,
+    outputCostShare:
+      estimatedRequestCost > 0 ? estimatedOutputCost / estimatedRequestCost : 0,
+    unpricedRequests,
+    averagePromptTokens: asNumber(tr.averagePromptTokens),
+    averageCompletionTokens: asNumber(tr.averageCompletionTokens),
+    averageTotalTokens: asNumber(tr.averageTotalTokens),
+    totalLlmDurationMs,
+    averageLlmDurationMs: asNumber(tr.averageLlmDurationMs),
+    partialHandoffCount: asNumber(sr.partialHandoffCount),
+    maxTurnsWithHandoffCount: asNumber(sr.maxTurnsWithHandoffCount),
+    maxTurnsWithoutUsefulProgressCount: asNumber(
+      sr.maxTurnsWithoutUsefulProgressCount,
+    ),
+  };
+
+  // ── Model rows ──────────────────────────────────────────────────────────
+  const models: TraceInsightsMetricRow[] = modelAggs.map((row) => {
+    const model = asString(row.model);
+    const mRequests = asNumber(row.requests);
+    const mPrompt = asNumber(row.promptTokens);
+    const mCached = asNumber(row.cachedTokens);
+    const mCompletion = asNumber(row.completionTokens);
+    const mTotal = asNumber(row.totalTokens);
+    const mReqCost = asNumber(row.requestCost);
+    const providerId =
+      asProviderId(row.provider) ?? inferProviderIdFromModel(model);
+    const bd = providerId
+      ? estimateCostBreakdownUsd(providerId, model, {
+          prompt_tokens: mPrompt,
+          completion_tokens: mCompletion,
+          total_tokens: mTotal,
+          cached_tokens: mCached,
+        })
+      : null;
+    const mEstInput = bd?.inputCostUsd ?? 0;
+    const mEstCached = bd?.cachedInputCostUsd ?? 0;
+    const mEstOutput = bd?.outputCostUsd ?? 0;
+    const mEstReq = mEstInput + mEstCached + mEstOutput;
+    return {
+      id: model,
+      label: model,
+      sessions: asNumber(row.sessions),
+      runs: asNumber(row.runs),
+      requests: mRequests,
+      totalCost: mReqCost,
+      requestCost: mReqCost,
+      promptTokens: mPrompt,
+      cachedTokens: mCached,
+      completionTokens: mCompletion,
+      totalTokens: mTotal,
+      estimatedInputCost: mEstInput,
+      estimatedCachedInputCost: mEstCached,
+      estimatedOutputCost: mEstOutput,
+      estimatedRequestCost: mEstReq,
+      outputCostShare: mEstReq > 0 ? mEstOutput / mEstReq : undefined,
+      unpricedRequests: bd ? 0 : mRequests,
+      sampleSessionId: asString(row.sampleSessionId) || undefined,
+      sampleRunId: asString(row.sampleRunId) || undefined,
+    };
+  });
+
+  // ── Tool rows ───────────────────────────────────────────────────────────
+  const tools: TraceInsightsMetricRow[] = toolAggs.map((row) => {
+    const calls = asNumber(row.calls);
+    const failures = asNumber(row.failures);
+    return {
+      id: asString(row.tool_name),
+      label: asString(row.tool_name),
+      sessions: asNumber(row.sessions),
+      runs: asNumber(row.runs),
+      calls,
+      failures,
+      failureRate: calls > 0 ? failures / calls : 0,
+      sampleSessionId: asString(row.sampleSessionId) || undefined,
+      sampleError: asString(row.sampleError) || undefined,
+    };
+  });
+
+  // ── Failure rows ────────────────────────────────────────────────────────
+  const failures: TraceInsightsMetricRow[] = failureAggs.map((row) => ({
+    id: asString(row.failureLabel),
+    label: asString(row.failureLabel),
+    sessions: asNumber(row.sessions),
+    runs: asNumber(row.runs),
+    sampleSessionId: asString(row.sampleSessionId) || undefined,
+    sampleRunId: asString(row.sampleRunId) || undefined,
+  }));
+
+  // ── Skill rows ──────────────────────────────────────────────────────────
+  const skills: TraceInsightsMetricRow[] = skillAggs.map((row) => ({
+    id: asString(row.skillId),
+    label: asString(row.skillId),
+    sessions: asNumber(row.sessions),
+    runs: asNumber(row.runs),
+    sampleSessionId: asString(row.sampleSessionId) || undefined,
+  }));
+
+  // ── Event rows ──────────────────────────────────────────────────────────
+  const events: TraceInsightsMetricRow[] = eventAggs.map((row) => ({
+    id: asString(row.type),
+    label: asString(row.type),
+    sessions: asNumber(row.sessions),
+    runs: asNumber(row.runs),
+    calls: asNumber(row.calls),
+  }));
+
+  // ── Run rows ────────────────────────────────────────────────────────────
+  const runs: TraceInsightsRunRow[] = runAggs.map((row) => ({
+    runId: asString(row.run_id),
+    query: asString(row.query),
+    outcome: asString(row.outcome),
+    sessions: asNumber(row.sessions),
+    failedSessions: asNumber(row.failedSessions),
+    totalTurns: asNumber(row.totalTurns),
+    totalCost: asNumber(row.totalCost),
+    durationMs: asNumber(row.durationMs),
+    topTools: topToolsByRun.get(asString(row.run_id)) ?? [],
+    topSkills: topSkillsByRun.get(asString(row.run_id)) ?? [],
+    sampleSessionId: asString(row.sampleSessionId),
+  }));
+
+  // ── Facets ──────────────────────────────────────────────────────────────
+  const facets: TraceInsightsFacets = {
+    runs: facetRuns,
+    sessions: facetSessions,
+    domains: facetDomains,
+    models: facetModels,
+    skills: skillAggs.map((r) => asString(r.skillId)).filter(Boolean),
+    tools: toolAggs.map((r) => asString(r.tool_name)).filter(Boolean),
+    failures: failureAggs.map((r) => asString(r.failureLabel)).filter(Boolean),
+    eventTypes: eventAggs.map((r) => asString(r.type)).filter(Boolean),
+  };
+
+  return { summary, facets, tools, skills, models, failures, events, runs };
+}
+
+/** Empty response used when no sessions match the active filters. */
+function buildEmptyInsightsResponse(): TraceInsightsResponse {
+  return {
+    summary: {
+      totalSessions: 0, totalRuns: 0, completedSessions: 0, failedSessions: 0,
+      successRate: 0, failureRate: 0, totalTurns: 0, averageTurns: 0, totalCost: 0,
+      averageDurationMs: 0, toolCalls: 0, toolFailures: 0, toolFailureRate: 0,
+      llmRequests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0,
+      nonCachedInputTokens: 0, totalTokens: 0, requestCost: 0, estimatedInputCost: 0,
+      estimatedCachedInputCost: 0, estimatedOutputCost: 0, estimatedRequestCost: 0,
+      outputTokenShare: 0, outputCostShare: 0, unpricedRequests: 0,
+      averagePromptTokens: 0, averageCompletionTokens: 0, averageTotalTokens: 0,
+      totalLlmDurationMs: 0, averageLlmDurationMs: 0,
+      partialHandoffCount: 0, maxTurnsWithHandoffCount: 0, maxTurnsWithoutUsefulProgressCount: 0,
+    },
+    facets: { runs: [], sessions: [], domains: [], models: [], skills: [], tools: [], failures: [], eventTypes: [] },
+    tools: [], skills: [], models: [], failures: [], events: [], runs: [],
+  };
+}
+
 export function buildTraceInsightsFromSqlite(
   projectRoot: string,
   filters: TraceInsightsFilters,
@@ -851,208 +1562,8 @@ export function buildTraceInsightsFromSqlite(
   const pathToDb = dbPath(projectRoot, path);
   const db = openReadonly(pathToDb);
   if (!db) return null;
-
   try {
-    const sessionFilter = sessionInsightFilterSql(filters);
-    const sessionRows = db
-      .prepare(
-        `SELECT session_id, raw_json, run_id, source, start_time, end_time,
-          outcome, query, start_url, turn_count, total_cost
-        FROM trace_sessions
-        ${sessionFilter.whereSql}
-        ORDER BY start_time DESC`,
-      )
-      .all(sessionFilter.params) as Array<Record<string, unknown>>;
-    const sessions = sessionRows.map((row) => {
-      const parsed = parseJson<Record<string, unknown>>(row.raw_json, {});
-      return {
-        sessionId: asString(row.session_id),
-        runId: asString(row.run_id),
-        source: asString(row.source),
-        startTime: asNumber(row.start_time),
-        endTime: asNumber(row.end_time),
-        outcome: asString(row.outcome),
-        query: asString(row.query),
-        startUrl: asString(row.start_url),
-        turnCount: asNumber(row.turn_count),
-        metrics: { totalCost: asNumber(row.total_cost) },
-        ...parsed,
-      } as TraceSessionLike;
-    });
-
-    const entriesBySession = new Map<string, TraceEntryLike[]>();
-    const entriesByKey = new Map<string, TraceEntryLike>();
-    const modelsBySession = new Map<string, Set<string>>();
-    const sessionIds = sessions
-      .map((session) => asString(session.sessionId))
-      .filter((sessionId) => sessionId.length > 0);
-    for (const batch of chunks(sessionIds, 500)) {
-      const placeholders = batch.map(() => "?").join(", ");
-      for (const row of db
-        .prepare(
-          `SELECT session_id, turn_number, model, model_tier, provider,
-            prompt_tokens, cached_tokens, completion_tokens, total_tokens, cost,
-            duration_ms
-          FROM trace_turns
-          WHERE session_id IN (${placeholders})
-          ORDER BY session_id, turn_number`,
-        )
-        .all(...batch) as Array<Record<string, unknown>>) {
-        const sessionId = asString(row.session_id);
-        const turnNumber = asNumber(row.turn_number);
-        if (!sessionId || turnNumber <= 0) continue;
-        const entry: TraceEntryLike = {
-          sessionId,
-          turnNumber,
-          toolExecutions: [],
-        };
-        const model = asString(row.model);
-        const modelTier = asString(row.model_tier);
-        const provider = asString(row.provider);
-        const promptTokens = asNumber(row.prompt_tokens);
-        const cachedTokens = Math.max(
-          0,
-          Math.min(asNumber(row.cached_tokens), promptTokens),
-        );
-        const completionTokens = asNumber(row.completion_tokens);
-        const totalTokens = asNumber(row.total_tokens);
-        const cost = asNumber(row.cost);
-        const durationMs = asNumber(row.duration_ms);
-        if (model) {
-          const models = modelsBySession.get(sessionId) ?? new Set<string>();
-          models.add(model);
-          modelsBySession.set(sessionId, models);
-        }
-        if (
-          model ||
-          modelTier ||
-          provider ||
-          promptTokens > 0 ||
-          cachedTokens > 0 ||
-          completionTokens > 0 ||
-          totalTokens > 0 ||
-          cost > 0 ||
-          durationMs > 0
-        ) {
-          entry.llmRequest = {
-            ...(model ? { model } : {}),
-            ...(modelTier === "executor" || modelTier === "planner"
-              ? { modelTier }
-              : {}),
-            ...(provider ? { provider } : {}),
-          };
-          entry.llmResponse = {
-            durationMs,
-            usage: {
-              prompt_tokens: promptTokens,
-              cached_tokens: cachedTokens,
-              completion_tokens: completionTokens,
-              total_tokens: totalTokens,
-              cost,
-            },
-          };
-        }
-        entriesByKey.set(`${sessionId}:${turnNumber}`, entry);
-        const entries = entriesBySession.get(sessionId) ?? [];
-        entries.push(entry);
-        entriesBySession.set(sessionId, entries);
-      }
-
-      for (const row of db
-        .prepare(
-          `SELECT session_id, turn_number, tool_name, success, duration_ms,
-            error, result
-          FROM trace_tools
-          WHERE session_id IN (${placeholders})
-          ORDER BY session_id, turn_number, ordinal`,
-        )
-        .all(...batch) as Array<Record<string, unknown>>) {
-        const sessionId = asString(row.session_id);
-        const turnNumber = asNumber(row.turn_number);
-        if (!sessionId || turnNumber <= 0) continue;
-        const key = `${sessionId}:${turnNumber}`;
-        let entry = entriesByKey.get(key);
-        if (!entry) {
-          entry = {
-            sessionId,
-            turnNumber,
-            toolExecutions: [],
-          };
-          entriesByKey.set(key, entry);
-          const entries = entriesBySession.get(sessionId) ?? [];
-          entries.push(entry);
-          entriesBySession.set(sessionId, entries);
-        }
-        const executions = Array.isArray(entry.toolExecutions)
-          ? entry.toolExecutions
-          : [];
-        executions.push({
-          toolName: asString(row.tool_name),
-          success: asNumber(row.success) === 1,
-          durationMs: asNumber(row.duration_ms),
-          error: asString(row.error),
-          result: asString(row.result),
-        });
-        entry.toolExecutions = executions;
-      }
-    }
-
-    for (const session of sessions) {
-      const sessionId = asString(session.sessionId);
-      const models = modelsBySession.get(sessionId);
-      if (!models || models.size === 0) continue;
-      session.models = Array.from(
-        new Set([
-          ...(Array.isArray(session.models)
-            ? session.models.filter(
-                (model): model is string =>
-                  typeof model === "string" && model.length > 0,
-              )
-            : []),
-          ...models,
-        ]),
-      );
-    }
-
-    const runEventsByRun = new Map<string, TraceEntryLike[]>();
-    const runIds = Array.from(
-      new Set(
-        sessions
-          .map((session) => asString(session.runId))
-          .filter((runId) => runId.length > 0),
-      ),
-    );
-    for (const batch of chunks(runIds, 500)) {
-      const placeholders = batch.map(() => "?").join(", ");
-      for (const row of db
-        .prepare(
-          `SELECT run_id, type, role, turn_number, ts
-          FROM trace_run_events
-          WHERE run_id IN (${placeholders})
-          ORDER BY run_id, ordinal`,
-        )
-        .all(...batch) as Array<Record<string, unknown>>) {
-        const runId = asString(row.run_id);
-        if (!runId) continue;
-        const entry: TraceEntryLike = {
-          runId,
-          type: asString(row.type),
-          role: asString(row.role),
-          turn: asNumber(row.turn_number),
-          recordedAt: asString(row.ts),
-        };
-        const events = runEventsByRun.get(runId) ?? [];
-        events.push(entry);
-        runEventsByRun.set(runId, events);
-      }
-    }
-
-    return buildTraceInsights({
-      sessions,
-      entriesBySession,
-      runEventsByRun,
-      filters,
-    });
+    return buildInsightsSql(db, filters);
   } finally {
     db.close();
   }

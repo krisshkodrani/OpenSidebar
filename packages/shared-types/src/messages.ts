@@ -13,6 +13,7 @@ import type {
   UserWebsiteSkill,
   UserWebsiteSkillDraft,
 } from "./agent";
+import type { PartialProgressHandoff } from "./progress";
 
 export type UiMessageSource = MessageSource.SIDEPANEL | MessageSource.UI;
 export type PassiveInputSource = "page" | "screenshot" | "tabAudio";
@@ -741,6 +742,8 @@ export interface TaskCompletionMessage extends BaseMessage {
     metrics?: SessionMetrics;
     /** Explicit termination reason for budget/guardrail stops */
     terminationReason?: string;
+    /** Structured continuation artifact for incomplete-but-useful runs. */
+    partialHandoff?: PartialProgressHandoff;
   };
 }
 

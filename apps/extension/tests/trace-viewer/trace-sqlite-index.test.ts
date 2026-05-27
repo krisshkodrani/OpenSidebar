@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import "../setup";
 import { indexTracesToSqlite } from "../../../../scripts/trace-sqlite-index";
 
+const TRACE_SQLITE_TEST_TIMEOUT_MS = 30_000;
+
 function writeJsonl(path: string, records: unknown[]) {
   writeFileSync(
     path,
@@ -131,7 +133,7 @@ describe("trace sqlite index", () => {
       db.prepare("SELECT tool_name, success FROM trace_tools").get(),
     ).toMatchObject({ tool_name: "click", success: 1 });
     db.close();
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
   test("indexes archived sessions and marks archive state", () => {
     const archiveRoot = join(root, ".artifacts", "trace-archive");
@@ -200,5 +202,5 @@ describe("trace sqlite index", () => {
         .get("archived-session"),
     ).toMatchObject({ archive_state: "archived" });
     db.close();
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 });

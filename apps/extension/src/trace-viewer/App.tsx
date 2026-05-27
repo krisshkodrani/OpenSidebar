@@ -31,7 +31,6 @@ import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableVi
 import RunsTableView from "./components/traces/RunsTableView";
 import InsightsTab from "./components/traces/InsightsTab";
 import MetricsTab from "./components/traces/MetricsTab";
-import DocsTab from "./components/traces/DocsTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
@@ -74,7 +73,6 @@ const VALID_TOP_LEVEL_VIEWS = new Set([
   "runs",
   "insights",
   "metrics",
-  "docs",
 ]);
 
 // App
@@ -181,7 +179,7 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
-  // Restore scroll position when switching tabs or sessions
+  // Restore scroll position when switching tabs or traces
   useEffect(() => {
     if (scrollContainerRef.current) {
       const key = currentSessionId
@@ -211,8 +209,8 @@ export default function App() {
         <div className="fixed right-4 bottom-4 z-50 rounded-lg border border-trace-border bg-trace-bg/95 px-3 py-2 text-[11px] text-trace-muted shadow-xl">
           <div className="mb-1 font-semibold text-trace-text">Shortcuts</div>
           <div>? toggle help</div>
-          <div>Esc back to sessions</div>
-          <div>[ / ] previous / next session</div>
+          <div>Esc back to traces</div>
+          <div>[ / ] previous / next trace</div>
           <div>1-7 switch detail tabs</div>
         </div>
       )}
@@ -391,7 +389,7 @@ function ViewerBody({
             onClick={deselectSession}
             className="text-[11px] text-trace-muted hover:text-trace-accent-light transition-colors"
           >
-            &larr; All Sessions
+            &larr; All Traces
           </button>
           <span className="text-trace-muted text-[10px]">&middot;</span>
           <span className="text-[10px] text-trace-muted">
@@ -403,7 +401,7 @@ function ViewerBody({
               onClick={() => navigateSession(-1)}
               disabled={!hasPrev}
               className="w-6 h-6 flex items-center justify-center rounded border border-trace-border text-trace-muted hover:text-trace-accent-light hover:border-trace-accent/40 disabled:opacity-30 disabled:hover:text-trace-muted disabled:hover:border-trace-border transition-colors text-xs"
-              title="Previous session ( [ )"
+              title="Previous trace ( [ )"
             >
               &#8249;
             </button>
@@ -411,12 +409,12 @@ function ViewerBody({
               onClick={() => navigateSession(1)}
               disabled={!hasNext}
               className="w-6 h-6 flex items-center justify-center rounded border border-trace-border text-trace-muted hover:text-trace-accent-light hover:border-trace-accent/40 disabled:opacity-30 disabled:hover:text-trace-muted disabled:hover:border-trace-border transition-colors text-xs"
-              title="Next session ( ] )"
+              title="Next trace ( ] )"
             >
               &#8250;
             </button>
           </div>
-          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=sessions">
+          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=traces">
             <span className="ml-auto text-[9px] text-trace-muted font-mono cursor-help">
               Esc · [ ] · 1-7
             </span>
@@ -490,42 +488,36 @@ function ViewerBody({
     );
   }
 
-  // No session: filter bar + unified sessions table
+  // No selected trace: filter bar + unified traces table
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <TopLevelTabs
         active={activeTopLevelView}
         onChange={setActiveTopLevelView}
       />
-      {activeTopLevelView !== "docs" && (
-        <FilterBar onFiltersChanged={refreshSessions} />
-      )}
+      <FilterBar onFiltersChanged={refreshSessions} />
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" &&
-        activeTopLevelView !== "docs" && (
+        activeTopLevelView !== "metrics" && (
         <FleetOverview onFiltersChanged={refreshSessions} />
       )}
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" &&
-        activeTopLevelView !== "docs" && (
+        activeTopLevelView !== "metrics" && (
           <FleetInsights onSelectSession={selectSession} />
         )}
-      {tracesError ? (
+      {activeTopLevelView === "insights" ? (
+        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
+      ) : activeTopLevelView === "metrics" ? (
+        <MetricsTab />
+      ) : tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
-            message={`Failed to load sessions: ${tracesError}`}
+            message={`Failed to load traces: ${tracesError}`}
             hint="Ensure the local server is running (pnpm run logs)"
             onRetry={refreshSessions}
           />
         </div>
       ) : activeTopLevelView === "runs" ? (
         <RunsTableView onSelectSession={selectSession} />
-      ) : activeTopLevelView === "insights" ? (
-        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
-      ) : activeTopLevelView === "metrics" ? (
-        <MetricsTab />
-      ) : activeTopLevelView === "docs" ? (
-        <DocsTab />
       ) : (
         <UnifiedSessionsTableView
           onSelect={selectSession}
@@ -554,11 +546,10 @@ function TopLevelTabs({
     sessionsLimitReached ? "+" : ""
   }`;
   const tabs: Array<{ id: TopLevelView; label: string; countLabel?: string }> = [
-    { id: "sessions", label: "Sessions", countLabel: sessionsCountLabel },
     { id: "runs", label: "Runs", countLabel: runsCountLabel },
+    { id: "sessions", label: "Traces", countLabel: sessionsCountLabel },
     { id: "insights", label: "Insights" },
     { id: "metrics", label: "Metrics" },
-    { id: "docs", label: "Docs" },
   ];
 
   return (

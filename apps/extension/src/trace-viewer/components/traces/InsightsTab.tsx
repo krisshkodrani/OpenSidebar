@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   fetchHarnessRatchet,
-  fetchTraceInsights,
   type HarnessRatchetCandidate,
   type TraceInsightsMetricRow,
   type TraceInsightsQuery,
-  type TraceInsightsResponse,
   type TraceInsightsRunRow,
 } from "../../api";
+import { useInsightsData } from "../../hooks/useInsightsData";
 import { useStore } from "../../store";
 import {
   extractQueryTitle,
@@ -45,62 +44,6 @@ const SECTIONS: Array<{ id: InsightSection; label: string }> = [
   { id: "events", label: "Events" },
 ];
 
-const INSIGHTS_TIMEOUT_MS = 30_000;
-
-function emptyInsights(): TraceInsightsResponse {
-  return {
-    summary: {
-      totalSessions: 0,
-      totalRuns: 0,
-      completedSessions: 0,
-      failedSessions: 0,
-      successRate: 0,
-      failureRate: 0,
-      totalTurns: 0,
-      averageTurns: 0,
-      totalCost: 0,
-      averageDurationMs: 0,
-      toolCalls: 0,
-      toolFailures: 0,
-      toolFailureRate: 0,
-      llmRequests: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      cachedTokens: 0,
-      nonCachedInputTokens: 0,
-      totalTokens: 0,
-      requestCost: 0,
-      estimatedInputCost: 0,
-      estimatedCachedInputCost: 0,
-      estimatedOutputCost: 0,
-      estimatedRequestCost: 0,
-      outputTokenShare: 0,
-      outputCostShare: 0,
-      unpricedRequests: 0,
-      averagePromptTokens: 0,
-      averageCompletionTokens: 0,
-      averageTotalTokens: 0,
-      totalLlmDurationMs: 0,
-      averageLlmDurationMs: 0,
-    },
-    facets: {
-      runs: [],
-      sessions: [],
-      domains: [],
-      models: [],
-      skills: [],
-      tools: [],
-      failures: [],
-      eventTypes: [],
-    },
-    tools: [],
-    skills: [],
-    models: [],
-    failures: [],
-    events: [],
-    runs: [],
-  };
-}
 
 export default function InsightsTab({
   onSelectSession,
@@ -115,10 +58,7 @@ export default function InsightsTab({
   const [failure, setFailure] = useState("all");
   const [eventType, setEventType] = useState("all");
   const [query, setQuery] = useState("");
-  const [insights, setInsights] = useState<TraceInsightsResponse>(emptyInsights);
   const [ratchet, setRatchet] = useState<HarnessRatchetCandidate[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const requestFilters = useMemo<TraceInsightsQuery>(
     () => ({
@@ -153,39 +93,7 @@ export default function InsightsTab({
     ],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    let timedOut = false;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, INSIGHTS_TIMEOUT_MS);
-    setLoading(true);
-    setError(null);
-    fetchTraceInsights(requestFilters, controller.signal)
-      .then((result) => {
-        if (!cancelled) setInsights(result);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(
-            timedOut
-              ? "Timed out loading trace insights. Try narrowing the filters or rebuilding the trace index."
-              : String(err),
-          );
-        }
-      })
-      .finally(() => {
-        window.clearTimeout(timeoutId);
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [requestFilters]);
+  const { insights, loading, error } = useInsightsData(requestFilters);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,7 +117,7 @@ export default function InsightsTab({
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div className="grid grid-cols-2 xl:grid-cols-6 gap-2 px-5 py-3 border-b border-trace-border bg-trace-panel/70 shrink-0">
-        <KpiCard label="Sessions" value={formatCount(insights.summary.totalSessions)} />
+        <KpiCard label="Traces" value={formatCount(insights.summary.totalSessions)} />
         <KpiCard label="Runs" value={formatCount(insights.summary.totalRuns)} />
         <KpiCard label="Success" value={formatPercent(insights.summary.successRate)} />
         <KpiCard label="Tool fails" value={formatPercent(insights.summary.toolFailureRate)} />
@@ -222,7 +130,7 @@ export default function InsightsTab({
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search query, URL, session..."
+            placeholder="Search query, URL, trace..."
             className="md:col-span-2 xl:col-span-2 px-3 py-1.5 text-sm bg-trace-surface border border-trace-border rounded text-trace-text placeholder:text-trace-dim focus:outline-none focus:border-trace-accent"
           />
           <SelectFilter
@@ -402,7 +310,7 @@ function MetricTable({
     <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
       <div className="grid grid-cols-[minmax(180px,1.7fr)_80px_80px_90px_90px_100px_minmax(120px,1fr)] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
         <span>Name</span>
-        <span>Sessions</span>
+        <span>Traces</span>
         <span>Runs</span>
         <span>{activityLabel}</span>
         <span>Fail rate</span>
@@ -502,7 +410,7 @@ function RatchetTable({
       row.failureRate == null
         ? null
         : `Failure rate: ${formatPercent(row.failureRate)}`,
-      row.sampleSessionId ? `Sample session: ${row.sampleSessionId}` : null,
+      row.sampleSessionId ? `Sample trace: ${row.sampleSessionId}` : null,
       row.sampleRunId ? `Sample run: ${row.sampleRunId}` : null,
       `Evidence query: ${row.evidenceQuery}`,
       `Suggested action: ${row.suggestedAction}`,
@@ -601,7 +509,7 @@ function RunsInsightTable({
         <span>Run</span>
         <span>Query</span>
         <span>Outcome</span>
-        <span>Sessions</span>
+        <span>Traces</span>
         <span>Turns</span>
         <span>Cost</span>
         <span>Tools</span>

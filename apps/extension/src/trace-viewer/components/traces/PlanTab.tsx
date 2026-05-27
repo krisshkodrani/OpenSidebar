@@ -38,7 +38,7 @@ export default function PlanTab({ session }: PlanTabProps) {
 
     return (
       <div className="text-sm text-trace-muted p-4">
-        No plan decomposition available for this session.
+        No plan decomposition available for this trace.
       </div>
     );
   }
@@ -81,6 +81,14 @@ export default function PlanTab({ session }: PlanTabProps) {
             </ol>
           )}
         </div>
+
+        {/* Resolved limits + planner overrides */}
+        {session.resolvedLimits && Object.keys(session.resolvedLimits).length > 0 && (
+          <ResolvedLimitsTable
+            resolved={session.resolvedLimits}
+            overrides={session.plannerLimitOverrides ?? null}
+          />
+        )}
       </div>
 
       {/* Plan Timeline */}
@@ -139,6 +147,67 @@ export default function PlanTab({ session }: PlanTabProps) {
           <ParallelWorkerTimeline runEvents={currentRunEvents} />
           <RunEventTimeline runEvents={currentRunEvents} compact />
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Resolved Limits Table ─────────────────────────────────────────────────
+
+function ResolvedLimitsTable({
+  resolved,
+  overrides,
+}: {
+  resolved: Record<string, number>;
+  overrides: Record<string, number> | null;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const overrideKeys = new Set(Object.keys(overrides ?? {}));
+  const entries = Object.entries(resolved).sort(([a], [b]) => {
+    // overridden keys first
+    const aOv = overrideKeys.has(a) ? 0 : 1;
+    const bOv = overrideKeys.has(b) ? 0 : 1;
+    return aOv - bOv || a.localeCompare(b);
+  });
+
+  if (entries.length === 0) return null;
+  const overriddenCount = entries.filter(([k]) => overrideKeys.has(k)).length;
+
+  return (
+    <div className="mt-3 border-t border-trace-border/50 pt-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 text-[10px] text-trace-muted hover:text-trace-subtle transition-colors"
+      >
+        <span className="uppercase tracking-wide">Runtime Limits</span>
+        {overriddenCount > 0 && (
+          <Badge variant="max_turns">{overriddenCount} overrides</Badge>
+        )}
+        <span>{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          {entries.map(([key, value]) => {
+            const isOverridden = overrideKeys.has(key);
+            return (
+              <div
+                key={key}
+                className={`flex justify-between rounded px-2 py-1 text-[10px] border ${
+                  isOverridden
+                    ? "border-state-warning/30 bg-state-warning/5"
+                    : "border-trace-border/60 bg-trace-bg"
+                }`}
+              >
+                <span className="text-trace-muted truncate mr-1">{key}</span>
+                <span className={`font-mono font-semibold shrink-0 ${isOverridden ? "text-state-warning" : "text-trace-subtle"}`}>
+                  {value}
+                  {isOverridden && " ↑"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

@@ -43,6 +43,19 @@ function panoramicFromCapture(
     }));
 }
 
+function hasLegacyBackfilledPerceptionMeta(
+  p: NonNullable<TraceEntry["perception"]>,
+): boolean {
+  return (
+    p.model === "google/gemini-2.5-flash" &&
+    p.durationMs === 0 &&
+    !p.providerId &&
+    p.cached === false &&
+    p.source === "fresh" &&
+    p.freshnessReason === "new_fingerprint"
+  );
+}
+
 export default function PerceptionCard({
   entry,
   sessionId,
@@ -58,6 +71,7 @@ export default function PerceptionCard({
   );
   const panoramicShots = panoramicFromCapture(capture);
   const legacyPanoramicShots = p.panoramicShots ?? [];
+  const legacyBackfilledMeta = hasLegacyBackfilledPerceptionMeta(p);
 
   const screenshotSrc = pageStateScreenshot?.dataUrl
     ? pageStateScreenshot.dataUrl
@@ -84,7 +98,7 @@ export default function PerceptionCard({
   return (
     <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-4 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-trace-accent/[0.08] border-b border-trace-accent/[0.12]">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-trace-accent/[0.08] border-b border-trace-accent/[0.12] flex-wrap">
         <button
           type="button"
           className="text-[13px] font-bold text-trace-accent-light hover:underline cursor-pointer"
@@ -102,6 +116,34 @@ export default function PerceptionCard({
           <Badge variant="type">DOM distillation</Badge>
         )}
         {p.fallbackReason && <Badge variant="error">{p.fallbackReason}</Badge>}
+        {/* Freshness badge — promoted from footer */}
+        {p.freshnessReason && (
+          <Badge
+            variant={
+              p.freshnessReason === "new_fingerprint"
+                ? "completed"
+                : p.freshnessReason === "dom_fallback"
+                  ? "error"
+                  : "max_turns"
+            }
+          >
+            {p.freshnessReason}
+          </Badge>
+        )}
+        {/* Screenshot status badge — promoted from footer */}
+        {p.screenshotStatus && p.screenshotStatus !== "captured" && (
+          <Badge
+            variant={
+              p.screenshotStatus === "capture_failed" || p.screenshotStatus === "missing"
+                ? "error"
+                : p.screenshotStatus === "cached"
+                  ? "stopped"
+                  : "type"
+            }
+          >
+            screenshot: {p.screenshotStatus}
+          </Badge>
+        )}
       </div>
 
       {/* Body */}
@@ -151,17 +193,20 @@ export default function PerceptionCard({
                 </CollapsibleSection>
               )}
               <div className="flex gap-3 flex-wrap text-[11px] text-trace-muted mt-auto pt-2 border-t border-trace-accent/[0.12]">
-                <span>Model: {p.model || "?"}</span>
-                {p.providerId && <span>Provider: {p.providerId}</span>}
-                <span>
-                  Duration: {p.durationMs != null ? `${p.durationMs}ms` : "?"}
-                </span>
-                <span>Cached: {p.cached ? "Yes" : "No"}</span>
-                {p.freshnessReason && (
-                  <span>Freshness: {p.freshnessReason}</span>
-                )}
-                {p.screenshotStatus && (
-                  <span>Screenshot: {p.screenshotStatus}</span>
+                {legacyBackfilledMeta ? (
+                  <span title="Older traces backfilled first-turn perception after the call and did not persist the actual perception model or timing.">
+                    Perception metadata: unavailable (legacy backfill)
+                  </span>
+                ) : (
+                  <>
+                    <span>Model: {p.model || "?"}</span>
+                    {p.providerId && <span>Provider: {p.providerId}</span>}
+                    <span>
+                      Duration:{" "}
+                      {p.durationMs != null ? `${p.durationMs}ms` : "?"}
+                    </span>
+                    <span>Cached: {p.cached ? "Yes" : "No"}</span>
+                  </>
                 )}
                 {p.pageStateRef && <span>Page state: {p.pageStateRef}</span>}
               </div>

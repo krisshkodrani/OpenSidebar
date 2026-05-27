@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   fetchTraceIndexStatus,
-  fetchTraceInsights,
   type TraceIndexStatus,
   type TraceInsightsQuery,
-  type TraceInsightsResponse,
 } from "../../api";
 import { useStore } from "../../store";
+import { useInsightsData } from "../../hooks/useInsightsData";
 import {
   formatCount,
   formatCost,
@@ -16,62 +15,6 @@ import {
 } from "../../utils";
 import LoadingSpinner from "../LoadingSpinner";
 
-const METRICS_TIMEOUT_MS = 30_000;
-
-function emptyInsights(): TraceInsightsResponse {
-  return {
-    summary: {
-      totalSessions: 0,
-      totalRuns: 0,
-      completedSessions: 0,
-      failedSessions: 0,
-      successRate: 0,
-      failureRate: 0,
-      totalTurns: 0,
-      averageTurns: 0,
-      totalCost: 0,
-      averageDurationMs: 0,
-      toolCalls: 0,
-      toolFailures: 0,
-      toolFailureRate: 0,
-      llmRequests: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      cachedTokens: 0,
-      nonCachedInputTokens: 0,
-      totalTokens: 0,
-      requestCost: 0,
-      estimatedInputCost: 0,
-      estimatedCachedInputCost: 0,
-      estimatedOutputCost: 0,
-      estimatedRequestCost: 0,
-      outputTokenShare: 0,
-      outputCostShare: 0,
-      unpricedRequests: 0,
-      averagePromptTokens: 0,
-      averageCompletionTokens: 0,
-      averageTotalTokens: 0,
-      totalLlmDurationMs: 0,
-      averageLlmDurationMs: 0,
-    },
-    facets: {
-      runs: [],
-      sessions: [],
-      domains: [],
-      models: [],
-      skills: [],
-      tools: [],
-      failures: [],
-      eventTypes: [],
-    },
-    tools: [],
-    skills: [],
-    models: [],
-    failures: [],
-    events: [],
-    runs: [],
-  };
-}
 
 function formatIndexedAt(value: number | null): string {
   if (!value) return "Never";
@@ -136,44 +79,9 @@ export default function MetricsTab() {
       filters.to,
     ],
   );
-  const [insights, setInsights] = useState<TraceInsightsResponse>(emptyInsights);
-  const [indexStatus, setIndexStatus] = useState<TraceIndexStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let timedOut = false;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, METRICS_TIMEOUT_MS);
-    setLoading(true);
-    setError(null);
-    fetchTraceInsights(requestFilters, controller.signal)
-      .then((result) => {
-        if (!cancelled) setInsights(result);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(
-            timedOut
-              ? "Timed out loading trace metrics. Try narrowing the filters or rebuilding the trace index."
-              : String(err),
-          );
-        }
-      })
-      .finally(() => {
-        window.clearTimeout(timeoutId);
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [requestFilters]);
+  const { insights, loading, error } = useInsightsData(requestFilters);
+  const [indexStatus, setIndexStatus] = useState<TraceIndexStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +127,7 @@ export default function MetricsTab() {
               </div>
               <div className="grid grid-cols-2 xl:grid-cols-5 gap-2">
                 <MetricCard
-                  label="Indexed Sessions"
+                  label="Indexed Traces"
                   value={formatCount(indexStatus.sessions)}
                   detail={`${formatCount(indexStatus.hotSessions)} hot, ${formatCount(indexStatus.archivedSessions)} archived`}
                   tone={indexStatus.available ? "success" : "warning"}
@@ -256,12 +164,12 @@ export default function MetricsTab() {
               <MetricCard
                 label="LLM Requests"
                 value={formatCount(summary.llmRequests)}
-                detail={`${formatCount(summary.totalSessions)} sessions, ${formatCount(summary.totalRuns)} runs`}
+                detail={`${formatCount(summary.totalSessions)} traces, ${formatCount(summary.totalRuns)} runs`}
               />
               <MetricCard
                 label="Total Turns"
                 value={formatCount(summary.totalTurns)}
-                detail={`${summary.averageTurns.toFixed(1)} avg turns/session`}
+                detail={`${summary.averageTurns.toFixed(1)} avg turns/trace`}
               />
               <MetricCard
                 label="Success Rate"
@@ -352,7 +260,7 @@ export default function MetricsTab() {
             <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
               <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
                 <span>Model</span>
-                <span>Sessions</span>
+                <span>Traces</span>
                 <span>Runs</span>
                 <span>Requests</span>
                 <span>Est. Cost</span>

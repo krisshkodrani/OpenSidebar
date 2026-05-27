@@ -68,7 +68,7 @@ describe("RunsTableView", () => {
     });
 
     expect(container.textContent).toContain("run-1234");
-    expect(container.textContent).toContain("2 sessions");
+    expect(container.textContent).toContain("2 traces");
     expect(container.textContent).toContain("5 turns");
 
     const buttons = Array.from(container.querySelectorAll("button"));
@@ -97,7 +97,7 @@ describe("RunsTableView", () => {
     expect(onSelectSession).toHaveBeenCalledWith("session-2");
   });
 
-  test("offers a path back to sessions when no run groups exist", async () => {
+  test("offers a path back to traces when no run groups exist", async () => {
     await act(async () => {
       useStore.getState().setSessions([
         {
@@ -112,7 +112,7 @@ describe("RunsTableView", () => {
           metrics: null,
         },
       ] as any);
-      useStore.getState().setTraceListMode("runs");
+      useStore.getState().setActiveTopLevelView("runs");
     });
 
     await act(async () => {
@@ -122,9 +122,13 @@ describe("RunsTableView", () => {
     expect(container.textContent).toContain("No trace runs found");
     const sessionsButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("View sessions"));
+    ).find((button) => button.textContent?.includes("View traces"));
     expect(sessionsButton).toBeTruthy();
 
     expect(sessionsButton?.getAttribute("type")).toBe("button");
+    await act(async () => {
+      sessionsButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(useStore.getState().activeTopLevelView).toBe("sessions");
   });
 });

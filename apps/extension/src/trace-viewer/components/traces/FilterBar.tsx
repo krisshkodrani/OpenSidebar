@@ -59,7 +59,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   }
   const availableOutcomes = outcomeSnapshot.current ?? computedOutcomes;
 
-  // Compute available skills from sessions
+  // Compute available skills from traces
   const skillSnapshot = useRef<OptionItem[] | null>(null);
 
   const computedSkills = useMemo(() => {
@@ -137,7 +137,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   return (
     <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border/40 shrink-0 flex-wrap">
       {/* Filters */}
-      <Tooltip content="Filter by session outcome (completed, error, etc.)">
+      <Tooltip content="Filter by trace outcome (completed, error, etc.)">
         <select
           aria-label="Filter by outcome"
           value={filters.outcome}
@@ -192,7 +192,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       </Tooltip>
 
       {availableSkills.length > 0 && (
-        <Tooltip content="Filter by skill used in this session">
+        <Tooltip content="Filter by skill used in this trace">
           <select
             aria-label="Filter by skill"
             value={filters.skill}
@@ -250,9 +250,6 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         </button>
       )}
 
-      <span className="ml-auto text-[10px] text-trace-muted">
-        {sessions.length} session{sessions.length === 1 ? "" : "s"}
-      </span>
     </div>
   );
 }

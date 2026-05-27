@@ -84,6 +84,26 @@ const MAX_ROTATED = 5;
 
 let entryCount = 0;
 
+/* ── Insights response cache ──────────────────────────────── */
+// /api/trace-insights re-reads every session row, every turn, every tool call,
+// and every run event from SQLite on every request. A single request with
+// hundreds of sessions can take several seconds. This cache short-circuits
+// repeated calls with identical filter parameters.
+
+interface InsightsCacheSlot {
+  key: string;
+  payload: string; // pre-serialised JSON — avoids re-serialising on every hit
+  ts: number;
+}
+
+const INSIGHTS_CACHE_TTL_MS = 30_000; // 30 s — fresh enough for local dev
+let insightsCache: InsightsCacheSlot | null = null;
+
+/** Call whenever a write makes cached insights stale. */
+function invalidateInsightsCache(): void {
+  insightsCache = null;
+}
+
 /* ── Node.js HTTP helpers ─────────────────────────────────── */
 
 function parseJsonBody(req: IncomingMessage): Promise<any> {
@@ -507,6 +527,7 @@ const server = createServer(
           await appendFile(traceFile, JSON.stringify(entry) + "\n");
         }
         insertTraceTurnToSqlite(PROJECT_ROOT, entry as TraceEntryLike);
+        invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Trace error: ${err}`, 500);
@@ -524,6 +545,7 @@ const server = createServer(
         upsertTraceSessionToSqlite(PROJECT_ROOT, session, {
           traceFile: sessionId ? join(TRACE_DIR, `${sessionId}.jsonl`) : undefined,
         });
+        invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Trace session error: ${err}`, 500);
@@ -580,6 +602,7 @@ const server = createServer(
         const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
         await appendFile(traceFile, JSON.stringify(event) + "\n");
         insertRunTraceEventToSqlite(PROJECT_ROOT, event as TraceEntryLike);
+        invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Run trace error: ${err}`, 500);
@@ -703,18 +726,48 @@ const server = createServer(
     // GET /api/trace-insights — aggregate sessions, tools, skills, runs, models, failures, events
     if (url.pathname === "/api/trace-insights" && req.method === "GET") {
       try {
+        // Stable cache key: sorted query-string so param order doesn't matter.
+        const cacheKey = Array.from(url.searchParams.entries())
+          .filter(([, v]) => v !== "" && v !== "all")
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([k, v]) => `${k}=${v}`)
+          .join("&");
+
+        if (
+          insightsCache &&
+          insightsCache.key === cacheKey &&
+          Date.now() - insightsCache.ts < INSIGHTS_CACHE_TTL_MS
+        ) {
+          setCorsHeaders(res, req.headers.origin);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(insightsCache.payload);
+          return;
+        }
+
         const filters = traceInsightsFilters(url.searchParams);
         let sqliteInsights = null;
+        const indexStatus = getTraceIndexStatus(PROJECT_ROOT);
         try {
           sqliteInsights = buildTraceInsightsFromSqlite(PROJECT_ROOT, filters);
         } catch (err) {
           console.warn(
-            "SQLite trace insights unavailable, falling back to JSONL:",
+            "SQLite trace insights failed:",
             err,
           );
+          if (indexStatus.available) {
+            sendText(
+              res,
+              "SQLite trace index failed while building insights. Rebuild the trace index instead of falling back to the slow JSONL scan.",
+              500,
+            );
+            return;
+          }
         }
         if (sqliteInsights) {
-          sendJson(res, sqliteInsights);
+          const payload = JSON.stringify(sqliteInsights);
+          insightsCache = { key: cacheKey, payload, ts: Date.now() };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(payload);
           return;
         }
 
@@ -736,15 +789,16 @@ const server = createServer(
           }),
         );
 
-        sendJson(
-          res,
-          buildTraceInsights({
-            sessions,
-            entriesBySession,
-            runEventsByRun,
-            filters,
-          }),
-        );
+        const jsonlInsights = buildTraceInsights({
+          sessions,
+          entriesBySession,
+          runEventsByRun,
+          filters,
+        });
+        const payload = JSON.stringify(jsonlInsights);
+        insightsCache = { key: cacheKey, payload, ts: Date.now() };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(payload);
       } catch (err) {
         sendText(res, `Error reading trace insights: ${err}`, 500);
       }

@@ -21,6 +21,7 @@ import {
   compactTraceTaskLabel,
   getSessionModels,
 } from "../../utils";
+import type { PartialProgressHandoff } from "../../../types";
 
 interface TraceDetailHeaderProps {
   session: TraceSession;
@@ -33,6 +34,63 @@ function percentile(sorted: number[], p: number): number {
   const hi = Math.ceil(idx);
   if (lo === hi) return sorted[lo];
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+function PartialHandoffSummary({
+  handoff,
+}: {
+  handoff: PartialProgressHandoff;
+}) {
+  return (
+    <div className="mt-3 rounded border border-state-warning/25 bg-state-warning/5 p-3 text-[11px] text-trace-muted">
+      <div className="flex items-center gap-2">
+        <Badge variant="max_turns">partial_handoff</Badge>
+        <span>
+          {handoff.reason} after {handoff.turnsUsed}/{handoff.maxTurns} turns
+        </span>
+        <span className="ml-auto">
+          {handoff.evidence.length} evidence, {handoff.remaining.length} remaining
+        </span>
+      </div>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        <div>
+          <div className="mb-1 font-semibold uppercase tracking-wide text-trace-subtle">
+            Evidence
+          </div>
+          <ul className="space-y-1">
+            {handoff.evidence.length > 0 ? (
+              handoff.evidence.slice(0, 3).map((item, index) => (
+                <li key={index}>
+                  <span className="text-trace-subtle">{item.label}:</span>{" "}
+                  {truncate(item.value, 160)}
+                </li>
+              ))
+            ) : (
+              <li>No durable evidence captured.</li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <div className="mb-1 font-semibold uppercase tracking-wide text-trace-subtle">
+            Remaining
+          </div>
+          <ul className="space-y-1">
+            {handoff.remaining.slice(0, 3).map((item, index) => (
+              <li key={index}>{truncate(item.text, 160)}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      {handoff.currentState.url || handoff.currentState.title ? (
+        <div className="mt-2 truncate text-trace-subtle">
+          Current state:{" "}
+          {[handoff.currentState.title, handoff.currentState.url]
+            .filter(Boolean)
+            .join(" | ")}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
@@ -122,7 +180,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
         </span>
         <button
           className="text-trace-muted hover:text-trace-text transition-colors p-0.5 -ml-1.5"
-          title="Copy session ID"
+          title="Copy trace ID"
           onClick={handleCopy}
         >
           {copied ? (
@@ -173,7 +231,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           </button>
           <button
             className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
-            title="Export session as JSONL"
+            title="Export trace as JSONL"
             onClick={handleExport}
           >
             Export JSONL
@@ -199,6 +257,10 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           {detailsExpanded ? "Hide details" : "Show details"}
         </button>
       </div>
+
+      {session.partialHandoff ? (
+        <PartialHandoffSummary handoff={session.partialHandoff} />
+      ) : null}
 
       {detailsExpanded && (
         <>

@@ -36,7 +36,7 @@ export default function FleetOverview({
     const averageTurns =
       sessions.length === 0 ? "0.0" : (totalTurns / sessions.length).toFixed(1);
 
-    // Calculate standalone vs grouped sessions
+    // Calculate standalone vs grouped traces
     const sessionsInRuns = runGroups.reduce(
       (sum, group) => sum + group.sessions.length,
       0,
@@ -66,19 +66,28 @@ export default function FleetOverview({
   };
 
   return (
-    <section className="flex items-center gap-3 px-5 py-2 border-b border-trace-border bg-trace-panel/70 shrink-0 min-w-0">
+    <section className="border-b border-trace-border bg-trace-panel/70 shrink-0">
+      {sessionsLimitReached && (
+        <div className="px-5 py-1.5 bg-state-warning/5 border-b border-state-warning/20 text-[11px] text-state-warning flex items-center gap-2">
+          <span className="font-semibold">⚠ Session list capped at 1,000.</span>
+          <span className="text-trace-muted">
+            Use Insights or Metrics tabs for aggregate totals. Apply filters to narrow results.
+          </span>
+        </div>
+      )}
+      <div className="flex items-center gap-3 px-5 py-2 min-w-0">
       <span className="text-[10px] uppercase tracking-[0.22em] text-trace-muted shrink-0">
         Summary
       </span>
       <div className="min-w-0 flex-1 flex items-center gap-x-4 gap-y-1 text-[11px] text-trace-muted flex-wrap">
         <InlineStat
-          label="Sessions"
+          label="Traces"
           value={`${formatCount(sessions.length)}${
             sessionsLimitReached ? "+" : ""
           }`}
           tooltip={
             sessionsLimitReached
-              ? `Loaded session rows; list is capped at ${formatCount(
+              ? `Loaded trace rows; list is capped at ${formatCount(
                   TRACE_SESSION_SEARCH_LIMIT,
                 )}. Use Insights or Metrics for aggregate totals.`
               : `${formatCount(stats.standaloneSessions)} standalone, ${formatCount(stats.sessionsInRuns)} in ${formatCount(runGroups.length)} runs`
@@ -93,24 +102,24 @@ export default function FleetOverview({
             sessionsLimitReached
               ? `Unique loaded run groups; list is capped at ${formatCount(
                   TRACE_SESSION_SEARCH_LIMIT,
-                )} session rows.`
-              : "Unique run groups (sessions with the same runId)"
+                )} trace rows.`
+              : "Unique run groups (traces with the same runId)"
           }
         />
         <InlineStat
           label="Success"
           value={`${stats.successRate}%`}
-          tooltip="% of sessions with outcome 'completed' or 'success'"
+          tooltip="% of traces with outcome 'completed' or 'success'"
         />
         <InlineStat
           label="Avg turns"
           value={stats.averageTurns}
-          tooltip="Average number of turns per session"
+          tooltip="Average number of turns per trace"
         />
         <InlineStat
           label="Est. cost"
           value={formatCost(stats.totalCost) || "$0"}
-          tooltip="Estimated total API cost across all sessions"
+          tooltip="Estimated total API cost across all traces"
         />
       </div>
       {hasActiveFilters && (
@@ -122,6 +131,7 @@ export default function FleetOverview({
           Clear filters
         </button>
       )}
+      </div>
     </section>
   );
 }
