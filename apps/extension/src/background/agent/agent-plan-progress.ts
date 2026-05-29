@@ -34,6 +34,22 @@ export function buildInitialPlanSubtasks(
   }));
 }
 
+export function annotateCompletedPlanSubtasksForAcceptedDone(args: {
+  subtasks: Pick<SubtaskSummary, "status" | "result">[];
+  summary: string;
+}): void {
+  for (const subtask of args.subtasks) {
+    if (subtask.status === "completed" && !subtask.result) {
+      subtask.result = "Completed";
+    }
+  }
+
+  const lastSubtask = args.subtasks[args.subtasks.length - 1];
+  if (lastSubtask?.status === "completed") {
+    lastSubtask.result = args.summary.slice(0, 200);
+  }
+}
+
 export function buildRestoredPlanState(
   initialPlanState: RestorablePlanState,
 ): {
