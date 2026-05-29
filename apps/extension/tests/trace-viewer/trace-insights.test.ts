@@ -203,11 +203,11 @@ describe("trace insights", () => {
       outputTokenShare: 100 / 1100,
       unpricedRequests: 0,
     });
-    expect(result.summary.estimatedInputCost).toBeCloseTo(0.000594, 8);
-    expect(result.summary.estimatedCachedInputCost).toBeCloseTo(0.000064, 8);
-    expect(result.summary.estimatedOutputCost).toBeCloseTo(0.000494, 8);
-    expect(result.summary.estimatedRequestCost).toBeCloseTo(0.001152, 8);
-    expect(result.summary.outputCostShare).toBeCloseTo(0.000494 / 0.001152, 8);
+    expect(result.summary.estimatedInputCost).toBeCloseTo(0.0012, 8);
+    expect(result.summary.estimatedCachedInputCost).toBeCloseTo(0.00012, 8);
+    expect(result.summary.estimatedOutputCost).toBeCloseTo(0.0008, 8);
+    expect(result.summary.estimatedRequestCost).toBeCloseTo(0.00212, 8);
+    expect(result.summary.outputCostShare).toBeCloseTo(0.0008 / 0.00212, 8);
     expect(result.models[0]).toMatchObject({
       id: "accounts/fireworks/routers/kimi-k2p6-turbo",
       requests: 1,
@@ -215,7 +215,7 @@ describe("trace insights", () => {
       cachedTokens: 400,
       completionTokens: 100,
     });
-    expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.001152, 8);
+    expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.00212, 8);
   });
 
   test("filters by failed tool", () => {

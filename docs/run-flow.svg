@@ -1,0 +1,355 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1760" font-family="'Segoe UI', system-ui, sans-serif">
+  <defs>
+    <marker id="arrow"       markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#64748b"/></marker>
+    <marker id="arrow-blue"  markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#3b82f6"/></marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#22c55e"/></marker>
+    <marker id="arrow-red"   markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ef4444"/></marker>
+    <marker id="arrow-amber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#f59e0b"/></marker>
+    <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#00000025"/></filter>
+
+    <linearGradient id="bg"          x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0d1117"/><stop offset="100%" stop-color="#161b22"/></linearGradient>
+    <linearGradient id="sp-g"        x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#4f46e5"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient>
+    <linearGradient id="orch-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0369a1"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient>
+    <linearGradient id="plan-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#7e22ce"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+    <linearGradient id="lane-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#065f46"/><stop offset="100%" stop-color="#059669"/></linearGradient>
+    <linearGradient id="loop-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0c4a6e"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient>
+    <linearGradient id="vlexec-g"    x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#164e63"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient>
+    <linearGradient id="perc-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#3b0764"/><stop offset="100%" stop-color="#9333ea"/></linearGradient>
+    <linearGradient id="tool-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#14532d"/><stop offset="100%" stop-color="#16a34a"/></linearGradient>
+    <linearGradient id="stag-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#78350f"/><stop offset="100%" stop-color="#d97706"/></linearGradient>
+    <linearGradient id="esc-g"       x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#7f1d1d"/><stop offset="100%" stop-color="#ef4444"/></linearGradient>
+    <linearGradient id="comp-g"      x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#14532d"/><stop offset="100%" stop-color="#22c55e"/></linearGradient>
+    <linearGradient id="verif-g"     x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#064e3b"/><stop offset="100%" stop-color="#10b981"/></linearGradient>
+  </defs>
+
+  <!-- Canvas background -->
+  <rect width="1100" height="1760" fill="url(#bg)"/>
+
+  <!-- ── Title ──────────────────────────────────────────────────── -->
+  <text x="550" y="44" text-anchor="middle" font-size="22" font-weight="700" fill="#f0f6fc" letter-spacing="0.3">OpenSidebar — Run Flow</text>
+  <text x="550" y="64" text-anchor="middle" font-size="12" fill="#8b949e">User query → multimodal executor → task completion</text>
+
+  <!-- ── Legend ─────────────────────────────────────────────────── -->
+  <rect x="30" y="74" width="1040" height="36" rx="8" fill="#ffffff07" stroke="#ffffff0e"/>
+  <circle cx="68"  cy="92" r="5" fill="#7c3aed"/><text x="78"  y="96" font-size="10" fill="#8b949e">Side Panel</text>
+  <circle cx="150" cy="92" r="5" fill="#0ea5e9"/><text x="160" y="96" font-size="10" fill="#8b949e">Orchestrator</text>
+  <circle cx="248" cy="92" r="5" fill="#a855f7"/><text x="258" y="96" font-size="10" fill="#8b949e">Planner</text>
+  <circle cx="322" cy="92" r="5" fill="#06b6d4"/><text x="332" y="96" font-size="10" fill="#8b949e">VL Executor (multimodal)</text>
+  <circle cx="480" cy="92" r="5" fill="#9333ea"/><text x="490" y="96" font-size="10" fill="#8b949e">Structured Perception</text>
+  <circle cx="614" cy="92" r="5" fill="#16a34a"/><text x="624" y="96" font-size="10" fill="#8b949e">Tool Use / DOM</text>
+  <circle cx="700" cy="92" r="5" fill="#d97706"/><text x="710" y="96" font-size="10" fill="#8b949e">Stagnation</text>
+  <circle cx="780" cy="92" r="5" fill="#22c55e"/><text x="790" y="96" font-size="10" fill="#8b949e">Completion</text>
+  <circle cx="858" cy="92" r="5" fill="#ef4444"/><text x="868" y="96" font-size="10" fill="#8b949e">Failure/Reroute</text>
+  <rect x="930" y="87" width="20" height="4" rx="2" fill="#3b82f6"/>
+  <line x1="950" y1="89" x2="956" y2="89" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="960" y="96" font-size="10" fill="#8b949e">Human-in-loop</text>
+  <rect x="1044" y="87" width="18" height="4" rx="2" fill="#64748b"/><text x="1065" y="96" font-size="10" fill="#8b949e">Data</text>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       0. USER INPUT
+  ══════════════════════════════════════════════════════════════ -->
+  <ellipse cx="550" cy="148" rx="100" ry="28" fill="#161b22" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="550" y="145" text-anchor="middle" font-size="13" font-weight="600" fill="#c9a9f7">👤  User Query</text>
+  <text x="550" y="162" text-anchor="middle" font-size="10" fill="#8b949e">Side Panel — STT or text input</text>
+  <line x1="550" y1="176" x2="550" y2="206" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       1. ORCHESTRATOR INTAKE
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="290" y="210" width="520" height="78" rx="12" fill="#0a1929" stroke="#0ea5e9" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="290" y="210" width="520" height="22" rx="12" fill="url(#orch-g)" opacity="0.9"/>
+  <rect x="290" y="224" width="520" height="8"  fill="url(#orch-g)" opacity="0.9"/>
+  <text x="550" y="226" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Orchestrator  — Intake</text>
+  <text x="310" y="248" font-size="10" fill="#7dd3fc">① Load settings · resolve provider mode · validate API keys</text>
+  <text x="310" y="263" font-size="10" fill="#7dd3fc">② Claim task tab · init Lane Supervisor · init Trace writer</text>
+  <text x="310" y="278" font-size="10" fill="#7dd3fc">③ resolvePerceptionRuntimeMode → initial mode decision (unified_vl | structured)</text>
+  <rect x="680" y="216" width="122" height="14" rx="6" fill="#0ea5e915" stroke="#0ea5e930"/>
+  <text x="741" y="226" text-anchor="middle" font-size="8" fill="#38bdf8">Provider Routing</text>
+  <line x1="550" y1="288" x2="550" y2="314" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       2. TASK PLANNING
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="290" y="318" width="520" height="86" rx="12" fill="#170a2e" stroke="#a855f7" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="290" y="318" width="520" height="22" rx="12" fill="url(#plan-g)" opacity="0.9"/>
+  <rect x="290" y="332" width="520" height="8"  fill="url(#plan-g)" opacity="0.9"/>
+  <text x="550" y="333" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">OrchestratorPlanner  ·  Planner LLM (Kimi K2 P6 Turbo)</text>
+  <text x="310" y="356" font-size="10" fill="#d8b4fe">① buildTaskContract — field-value pairs · constraints · DOM signal context</text>
+  <text x="310" y="371" font-size="10" fill="#d8b4fe">② Decompose → TaskNode[] with dependencies · successCriteria · assumptions</text>
+  <text x="310" y="386" font-size="10" fill="#d8b4fe">③ inferToolProfile per node · set RuntimeLimits (difficulty: easy|medium|hard)</text>
+  <text x="310" y="400" font-size="10" fill="#d8b4fe">④ synthesizeBatchedExhaustivePlan for complex multi-step tasks</text>
+  <rect x="680" y="324" width="80" height="14" rx="6" fill="#a855f715" stroke="#a855f730"/>
+  <text x="720" y="334" text-anchor="middle" font-size="8" fill="#d8b4fe">Task Decomp.</text>
+  <rect x="768" y="324" width="72" height="14" rx="6" fill="#a855f715" stroke="#a855f730"/>
+  <text x="804" y="334" text-anchor="middle" font-size="8" fill="#d8b4fe">Planner LLM</text>
+  <line x1="550" y1="404" x2="550" y2="428" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       Plan Confirmation Gate
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="370" y="432" width="360" height="46" rx="10" fill="#0f172a" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="5 3" filter="url(#shadow)"/>
+  <text x="550" y="452" text-anchor="middle" font-size="11" font-weight="600" fill="#93c5fd">🧑  Plan Confirmation Gate</text>
+  <text x="550" y="468" text-anchor="middle" font-size="10" fill="#60a5fa">User approves / cancels / provides feedback  (≥ 2 nodes)</text>
+  <rect x="400" y="430" width="100" height="13" rx="6" fill="#3b82f620"/>
+  <text x="450" y="440" text-anchor="middle" font-size="8" fill="#93c5fd">Human-in-the-Loop</text>
+  <line x1="550" y1="478" x2="550" y2="502" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="558" y="495" font-size="9" fill="#22c55e">approve</text>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       3. LANE SUPERVISOR
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="290" y="506" width="520" height="56" rx="12" fill="#091a0f" stroke="#059669" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="290" y="506" width="520" height="22" rx="12" fill="url(#lane-g)" opacity="0.9"/>
+  <rect x="290" y="520" width="520" height="8"  fill="url(#lane-g)" opacity="0.9"/>
+  <text x="550" y="521" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Lane Supervisor  ·  Node Scheduler</text>
+  <text x="310" y="543" font-size="10" fill="#86efac">Topology: serial | parallel · dependency resolution · budget guard (tokens / cost / time)</text>
+  <text x="310" y="557" font-size="10" fill="#86efac">Tab coordination per node · retry policy · reroute depth cap (max 3)</text>
+  <rect x="668" y="512" width="60" height="13" rx="6" fill="#05996815" stroke="#05996830"/>
+  <text x="698" y="522" text-anchor="middle" font-size="8" fill="#86efac">Parallelism</text>
+  <rect x="736" y="512" width="64" height="13" rx="6" fill="#05996815" stroke="#05996830"/>
+  <text x="768" y="522" text-anchor="middle" font-size="8" fill="#86efac">Scheduling</text>
+  <line x1="550" y1="562" x2="550" y2="592" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       4. AGENT LOOP — outer shell
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="44" y="596" width="1012" height="832" rx="16" fill="#040c14" stroke="#0ea5e9" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="44" y="596" width="1012" height="28" rx="16" fill="url(#loop-g)" opacity="0.85"/>
+  <rect x="44" y="616" width="1012" height="8"  fill="url(#loop-g)" opacity="0.85"/>
+  <text x="550" y="616" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Agent Loop  (per TaskNode)</text>
+  <text x="90"  y="636" font-size="10" fill="#38bdf8">Repeats until: done() · max_turns · stopped · awaiting_approval · awaiting_clarification · error</text>
+
+  <!-- ── 4-A Turn Start ────────────────────────────────────────── -->
+  <rect x="66" y="646" width="968" height="60" rx="10" fill="#071a2a" stroke="#0ea5e940" stroke-width="1"/>
+  <text x="88" y="663" font-size="11" font-weight="600" fill="#7dd3fc">Turn Start</text>
+  <text x="88" y="679" font-size="10" fill="#94a3b8">① waitForDomReady · ② Content-script bridge health check · ③ Stagnation fingerprint snapshot</text>
+  <text x="88" y="693" font-size="10" fill="#94a3b8">④ Context compression (NONE→LIGHT→MEDIUM→HEAVY by token budget) · ⑤ Build LLM message history</text>
+  <rect x="872" y="652" width="148" height="13" rx="6" fill="#0ea5e910" stroke="#0ea5e928"/>
+  <text x="946" y="662" text-anchor="middle" font-size="8" fill="#38bdf8">Context / History Mgmt</text>
+  <rect x="872" y="669" width="148" height="13" rx="6" fill="#0ea5e910" stroke="#0ea5e928"/>
+  <text x="946" y="679" text-anchor="middle" font-size="8" fill="#38bdf8">Dynamic Compression</text>
+
+  <!-- ── 4-B Perception mode decision (fork) ───────────────────── -->
+  <line x1="550" y1="706" x2="550" y2="724" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Decision diamond -->
+  <polygon points="550,728 620,756 550,784 480,756" fill="#0a1929" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="550" y="753" text-anchor="middle" font-size="10" font-weight="600" fill="#7dd3fc">resolvePerception</text>
+  <text x="550" y="767" text-anchor="middle" font-size="9" fill="#94a3b8">RuntimeMode?</text>
+
+  <!-- Left branch: unified_vl -->
+  <line x1="480" y1="756" x2="280" y2="756" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <text x="380" y="748" text-anchor="middle" font-size="9" fill="#06b6d4">unified_vl</text>
+  <text x="380" y="760" text-anchor="middle" font-size="8" fill="#8b949e">(visual task / sparse DOM /</text>
+  <text x="380" y="771" text-anchor="middle" font-size="8" fill="#8b949e">canvas / image-heavy)</text>
+
+  <!-- Right branch: structured -->
+  <line x1="620" y1="756" x2="820" y2="756" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="720" y="748" text-anchor="middle" font-size="9" fill="#9333ea">structured</text>
+  <text x="720" y="760" text-anchor="middle" font-size="8" fill="#8b949e">(DOM signals sufficient /</text>
+  <text x="720" y="771" text-anchor="middle" font-size="8" fill="#8b949e">image budget exhausted)</text>
+
+  <!-- ── 4-B-1: Unified VL path ───────────────────────────────── -->
+  <rect x="66" y="784" width="440" height="80" rx="10" fill="#051a22" stroke="#06b6d460" stroke-width="1"/>
+  <text x="88" y="804" font-size="11" font-weight="600" fill="#67e8f9">Unified VL Mode  (screenshot → executor)</text>
+  <text x="88" y="820" font-size="10" fill="#94a3b8">captureScreenshotForVLExecutor() — JPEG 70% quality</text>
+  <text x="88" y="835" font-size="10" fill="#94a3b8">context.setScreenshotForExecutor(dataUrl)</text>
+  <text x="88" y="850" font-size="10" fill="#94a3b8">Screenshot injected as image_url content block into executor turn</text>
+  <text x="88" y="864" font-size="10" fill="#94a3b8">No separate perception VLM call — executor sees &amp; reasons over raw pixels</text>
+  <rect x="390" y="788" width="104" height="13" rx="6" fill="#06b6d415" stroke="#06b6d430"/>
+  <text x="442" y="798" text-anchor="middle" font-size="8" fill="#67e8f9">Multimodal Executor</text>
+  <rect x="390" y="805" width="104" height="13" rx="6" fill="#06b6d415" stroke="#06b6d430"/>
+  <text x="442" y="815" text-anchor="middle" font-size="8" fill="#67e8f9">Image Budget Guard</text>
+
+  <!-- ── 4-B-2: Structured Perception path ──────────────────── -->
+  <rect x="594" y="784" width="440" height="80" rx="10" fill="#16072a" stroke="#9333ea60" stroke-width="1"/>
+  <text x="616" y="804" font-size="11" font-weight="600" fill="#c084fc">Structured Perception Mode  (separate VLM call)</text>
+  <text x="616" y="820" font-size="10" fill="#94a3b8">PerceptionAgent.observe() → provider-appropriate model:</text>
+  <text x="616" y="835" font-size="10" fill="#94a3b8">  Fireworks: kimi-k2p6-turbo · Moonshot: kimi-k2.6 · Groq: llama-4-scout</text>
+  <text x="616" y="850" font-size="10" fill="#94a3b8">5-section prompt: LOCATION · CHANGES · BLOCKERS · VISUAL-ONLY · AFFORDANCES</text>
+  <text x="616" y="864" font-size="10" fill="#94a3b8">Prior obs. window=5 · validatePerceptionTagIds() · lang/dir detection</text>
+  <rect x="910" y="788" width="104" height="13" rx="6" fill="#9333ea15" stroke="#9333ea30"/>
+  <text x="962" y="798" text-anchor="middle" font-size="8" fill="#c084fc">Stateful Obs. History</text>
+  <rect x="910" y="805" width="104" height="13" rx="6" fill="#9333ea15" stroke="#9333ea30"/>
+  <text x="962" y="815" text-anchor="middle" font-size="8" fill="#c084fc">Tag Halluc. Guard</text>
+
+  <!-- ── Re-merge arrows from both branches → LLM Completion ── -->
+  <line x1="286" y1="824" x2="286" y2="882" stroke="#06b6d4" stroke-width="1.5"/>
+  <line x1="286" y1="882" x2="540" y2="882" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="814" y1="824" x2="814" y2="882" stroke="#9333ea" stroke-width="1.5"/>
+  <line x1="814" y1="882" x2="560" y2="882" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ── 4-C: LLM Completion (Executor) ───────────────────────── -->
+  <rect x="66" y="886" width="968" height="88" rx="10" fill="#071a2a" stroke="#0ea5e940" stroke-width="1"/>
+  <text x="88" y="906" font-size="11" font-weight="600" fill="#7dd3fc">LLM Completion  ·  Executor Tier  (Kimi K2 P6 Turbo — multimodal, VL-capable)</text>
+  <text x="88" y="922" font-size="10" fill="#94a3b8">① prepareLlmTurnRequest — system persona + history + perception text or image_url block + plan step</text>
+  <text x="88" y="937" font-size="10" fill="#94a3b8">② completeStream()  streaming, max_tokens=4096, tool_choice:"auto" — raw think blocks kept in history</text>
+  <text x="88" y="952" font-size="10" fill="#94a3b8">③ stripThinkTags() for logic/logs · cleanContent drives decisions · rawContent stored for reasoning continuity</text>
+  <text x="88" y="967" font-size="10" fill="#94a3b8">④ Text-only → nudge (T2) → escalate (T3) · recoverToolCallsFromText() · 429 failover to fallback pool</text>
+  <rect x="872" y="892" width="148" height="13" rx="6" fill="#0ea5e910" stroke="#0ea5e928"/>
+  <text x="946" y="902" text-anchor="middle" font-size="8" fill="#38bdf8">Streaming + Think Blocks</text>
+  <rect x="872" y="909" width="148" height="13" rx="6" fill="#0ea5e910" stroke="#0ea5e928"/>
+  <text x="946" y="919" text-anchor="middle" font-size="8" fill="#38bdf8">Provider Pool Failover</text>
+  <rect x="872" y="926" width="148" height="13" rx="6" fill="#0ea5e910" stroke="#0ea5e928"/>
+  <text x="946" y="936" text-anchor="middle" font-size="8" fill="#38bdf8">Tool Call Recovery</text>
+  <line x1="550" y1="974" x2="550" y2="994" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ── 4-D: Policy Gates ──────────────────────────────────── -->
+  <!-- Approval -->
+  <rect x="66" y="998" width="472" height="52" rx="10" fill="#1c1007" stroke="#d9770640" stroke-width="1"/>
+  <text x="88" y="1016" font-size="11" font-weight="600" fill="#fcd34d">Consequential Action Policy</text>
+  <text x="88" y="1031" font-size="10" fill="#94a3b8">HIGH/CRITICAL risk tools → approvalRequest pauses loop</text>
+  <text x="88" y="1045" font-size="10" fill="#94a3b8">User approve/deny → 120 s timeout · requireApprovals setting</text>
+  <rect x="84" y="996" width="72" height="12" rx="5" fill="#d9770620"/>
+  <text x="120" y="1005" text-anchor="middle" font-size="7.5" fill="#fcd34d">Risk Gating</text>
+  <!-- Clarification -->
+  <rect x="562" y="998" width="472" height="52" rx="10" fill="#0c172e" stroke="#3b82f650" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="584" y="1016" font-size="11" font-weight="600" fill="#93c5fd">🧑  Mid-Run Clarification</text>
+  <text x="584" y="1031" font-size="10" fill="#94a3b8">clarify tool intercepted → CLARIFICATION_REQUEST broadcast</text>
+  <text x="584" y="1045" font-size="10" fill="#94a3b8">Side panel overlay · resolveClarification() unblocks loop</text>
+  <rect x="558" y="996" width="100" height="12" rx="5" fill="#3b82f620"/>
+  <text x="608" y="1005" text-anchor="middle" font-size="7.5" fill="#93c5fd">Human-in-the-Loop</text>
+  <line x1="550" y1="1050" x2="550" y2="1070" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ── 4-E: Tool Execution ────────────────────────────────── -->
+  <rect x="66" y="1074" width="968" height="100" rx="10" fill="#071a0e" stroke="#16a34a40" stroke-width="1"/>
+  <text x="88" y="1093" font-size="11" font-weight="600" fill="#4ade80">Tool Execution  (38 registered tools · DOM bridge via Content Script)</text>
+
+  <!-- tool tiles -->
+  <rect x="88"  y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="159" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">🖱 DOM Actions</text>
+  <text x="159" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">click · type · scroll · press_key</text>
+
+  <rect x="238" y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="309" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">🔍 Exploration</text>
+  <text x="309" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">snapshot · read_page · find_element</text>
+
+  <rect x="388" y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="459" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">🌐 Navigation</text>
+  <text x="459" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">navigate · go_back · create_tab</text>
+
+  <rect x="538" y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="609" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">📋 Overlays</text>
+  <text x="609" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">dismiss_overlays · escalate</text>
+
+  <rect x="688" y="1100" width="142" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="759" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">✅ Control</text>
+  <text x="759" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">done · update_plan · clarify</text>
+
+  <rect x="838" y="1100" width="180" height="30" rx="6" fill="#16a34a10" stroke="#16a34a25"/>
+  <text x="928" y="1114" text-anchor="middle" font-size="9" font-weight="600" fill="#86efac">💾 Reference</text>
+  <text x="928" y="1126" text-anchor="middle" font-size="8" fill="#94a3b8">save_content · extract_data</text>
+
+  <text x="88" y="1162" font-size="10" fill="#94a3b8">Stable hash element IDs · empty-page retry 300+500 ms · ToolResultCache idempotency guard · DOM-modifying refresh policy</text>
+  <rect x="872" y="1078" width="148" height="13" rx="6" fill="#16a34a10" stroke="#16a34a28"/>
+  <text x="946" y="1088" text-anchor="middle" font-size="8" fill="#4ade80">Tool Use  ·  38 tools</text>
+  <line x1="550" y1="1174" x2="550" y2="1192" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ── 4-F: Stagnation / Escalation ──────────────────────── -->
+  <rect x="66"  y="1196" width="472" height="68" rx="10" fill="#1c0f00" stroke="#d9770640" stroke-width="1"/>
+  <text x="88" y="1215" font-size="11" font-weight="600" fill="#fcd34d">Stagnation Monitor</text>
+  <text x="88" y="1231" font-size="10" fill="#94a3b8">Fingerprint: URL + element count + sorted sigs</text>
+  <text x="88" y="1246" font-size="10" fill="#94a3b8">Nudge @6 stagnant turns · Escalate @12 · Repeat @+6</text>
+  <text x="88" y="1261" font-size="10" fill="#94a3b8">AGENT_STAGNATION broadcast → side panel banner</text>
+
+  <rect x="562" y="1196" width="472" height="68" rx="10" fill="#1c0505" stroke="#ef444440" stroke-width="1"/>
+  <text x="584" y="1215" font-size="11" font-weight="600" fill="#fca5a5">Tier Escalation  (executor → planner)</text>
+  <text x="584" y="1231" font-size="10" fill="#94a3b8">escalate tool intercepted · summarizeTrajectory() distills history</text>
+  <text x="584" y="1246" font-size="10" fill="#94a3b8">Planner LLM (Kimi K2) takes over · ESCALATION_REFLECTION injected</text>
+  <text x="584" y="1261" font-size="10" fill="#94a3b8">De-escalates after plan issued · plannerTenure/plannerTurns tracked</text>
+  <rect x="558" y="1194" width="88" height="12" rx="5" fill="#ef444420"/>
+  <text x="602" y="1203" text-anchor="middle" font-size="7.5" fill="#fca5a5">2-Tier LLM</text>
+
+  <!-- loop-back arrows (left + right verticals) -->
+  <line x1="44"  y1="1264" x2="44"  y2="662" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <line x1="44"  y1="662"  x2="102" y2="662" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#arrow-blue)"/>
+  <line x1="1056" y1="1264" x2="1056" y2="662" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <line x1="1056" y1="662"  x2="998"  y2="662" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <text x="30" y="945" text-anchor="middle" font-size="9" fill="#38bdf8" transform="rotate(-90,30,945)">next turn</text>
+
+  <!-- ── 4-G: Completion Kernel ─────────────────────────────── -->
+  <line x1="550" y1="1264" x2="550" y2="1284" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="66" y="1288" width="968" height="118" rx="10" fill="#071a0e" stroke="#22c55e50" stroke-width="1"/>
+  <text x="88" y="1308" font-size="11" font-weight="600" fill="#86efac">Completion Kernel  —  done() intercept  ·  multi-preflight gate</text>
+  <text x="88" y="1324" font-size="10" fill="#94a3b8">All preflights must pass — any failure → done() rejected, loop continues:</text>
+
+  <!-- preflight grid -->
+  <rect x="88"  y="1330" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="172" y="1342" text-anchor="middle" font-size="9" fill="#86efac">TaskContract coverage</text>
+  <rect x="264" y="1330" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="348" y="1342" text-anchor="middle" font-size="9" fill="#86efac">WorkflowContract</text>
+  <rect x="440" y="1330" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="524" y="1342" text-anchor="middle" font-size="9" fill="#86efac">RequiredEvidence</text>
+  <rect x="616" y="1330" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="700" y="1342" text-anchor="middle" font-size="9" fill="#86efac">CompletionSummary</text>
+  <rect x="792" y="1330" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="876" y="1342" text-anchor="middle" font-size="9" fill="#86efac">GroundingRead</text>
+
+  <rect x="88"  y="1354" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="172" y="1366" text-anchor="middle" font-size="9" fill="#86efac">ListDetailReview</text>
+  <rect x="264" y="1354" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="348" y="1366" text-anchor="middle" font-size="9" fill="#86efac">MoneyTableAggregate</text>
+  <rect x="440" y="1354" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="524" y="1366" text-anchor="middle" font-size="9" fill="#86efac">PendingAutocomplete</text>
+  <rect x="616" y="1354" width="168" height="18" rx="5" fill="#22c55e0e" stroke="#22c55e25"/>
+  <text x="700" y="1366" text-anchor="middle" font-size="9" fill="#86efac">EarlyMultiStep</text>
+
+  <text x="88" y="1394" font-size="10" fill="#94a3b8">✓ all pass → CompletionEnvelope (contractKind · evidenceKeys · resultId · decisionReason) → LoopResult emitted</text>
+  <rect x="872" y="1294" width="148" height="13" rx="6" fill="#22c55e10" stroke="#22c55e28"/>
+  <text x="946" y="1304" text-anchor="middle" font-size="8" fill="#86efac">Evidence Accumulation</text>
+  <rect x="872" y="1311" width="148" height="13" rx="6" fill="#22c55e10" stroke="#22c55e28"/>
+  <text x="946" y="1321" text-anchor="middle" font-size="8" fill="#86efac">9 Preflight Checks</text>
+
+  <!-- end agent loop box -->
+
+  <!-- ══════════════════════════════════════════════════════════════
+       5. VERIFIER
+  ══════════════════════════════════════════════════════════════ -->
+  <line x1="550" y1="1428" x2="550" y2="1454" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="290" y="1458" width="520" height="72" rx="12" fill="#071a0e" stroke="#10b981" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="290" y="1458" width="520" height="22" rx="12" fill="url(#verif-g)" opacity="0.85"/>
+  <rect x="290" y="1472" width="520" height="8"  fill="url(#verif-g)" opacity="0.85"/>
+  <text x="550" y="1473" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">OrchestratorVerifier</text>
+  <text x="310" y="1496" font-size="10" fill="#6ee7b7">① verifyDeterministicCompletionEnvelope → accept (conf 0.95) | reroute (conf 0.85)</text>
+  <text x="310" y="1511" font-size="10" fill="#6ee7b7">② assessTaskContractCoverage · matchSuccessCriteria</text>
+  <text x="310" y="1526" font-size="10" fill="#6ee7b7">③ reroute → new TaskNode with repairObjective (max depth 3)</text>
+
+  <!-- reroute back arrow -->
+  <path d="M810,1496 Q940,1496 940,560 Q940,532 810,532" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5 3" fill="none" marker-end="url(#arrow-red)"/>
+  <text x="948" y="1014" text-anchor="middle" font-size="9" fill="#ef4444" transform="rotate(90,952,1014)">reroute / retry</text>
+
+  <!-- accept arrow down -->
+  <line x1="550" y1="1530" x2="550" y2="1558" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="558" y="1550" font-size="9" fill="#22c55e">accept</text>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       6. SESSION WRAP-UP
+  ══════════════════════════════════════════════════════════════ -->
+  <rect x="290" y="1562" width="520" height="72" rx="12" fill="#0a1929" stroke="#0ea5e9" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="290" y="1562" width="520" height="22" rx="12" fill="url(#orch-g)" opacity="0.85"/>
+  <rect x="290" y="1576" width="520" height="8"  fill="url(#orch-g)" opacity="0.85"/>
+  <text x="550" y="1577" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">Orchestrator  — Session Wrap-up</text>
+  <text x="310" y="1600" font-size="10" fill="#7dd3fc">① Merge node TokenUsage + cost → SESSION_METRICS broadcast every 3 turns + on completion</text>
+  <text x="310" y="1615" font-size="10" fill="#7dd3fc">② Build SubtaskSummary[] · reset tab group appearance · release tab</text>
+  <text x="310" y="1630" font-size="10" fill="#7dd3fc">③ Save HTTP run trace · upsert DurableTaskRun · pruneOrchestratorCheckpoints</text>
+  <rect x="658" y="1568" width="138" height="13" rx="6" fill="#0ea5e912" stroke="#0ea5e928"/>
+  <text x="727" y="1578" text-anchor="middle" font-size="8" fill="#38bdf8">Token / Cost Tracking</text>
+  <rect x="658" y="1585" width="138" height="13" rx="6" fill="#0ea5e912" stroke="#0ea5e928"/>
+  <text x="727" y="1595" text-anchor="middle" font-size="8" fill="#38bdf8">Tracing</text>
+  <line x1="550" y1="1634" x2="550" y2="1660" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       7. RESULT
+  ══════════════════════════════════════════════════════════════ -->
+  <ellipse cx="550" cy="1696" rx="200" ry="32" fill="#161b22" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="550" y="1691" text-anchor="middle" font-size="13" font-weight="600" fill="#c9a9f7">✅  Side Panel — Result</text>
+  <text x="550" y="1707" text-anchor="middle" font-size="10" fill="#8b949e">CompletionSummary · TTS (OpenAI /audio/speech) · session cost badge</text>
+
+  <!-- ── Summary footer ─────────────────────────────────────────── -->
+  <rect x="30" y="1734" width="1040" height="18" rx="8" fill="#ffffff06"/>
+  <text x="550" y="1747" text-anchor="middle" font-size="9" fill="#4b5563">
+    Agentic concepts: Task Decomp · Planner LLM · Multimodal Executor (VL) · Unified VL Perception · Structured Perception (fallback) · Tool Use · 2-Tier Escalation · Human-in-Loop · Context Compression · Evidence Accum. · 9-Preflight Completion · Stagnation Detection · Retry/Reroute · Parallelism · Token Tracking
+  </text>
+</svg>

@@ -78,12 +78,12 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   {
     providerId: "fireworks",
     model: "accounts/fireworks/routers/kimi-k2p6-turbo",
-    inputUsdPerMillion: 0.99,
-    outputUsdPerMillion: 4.94,
-    cachedInputUsdPerMillion: 0.16,
-    effectiveDate: "2026-05-09",
-    sourceUrl: "https://fireworks.ai/pricing",
-    confidence: "best_effort",
+    inputUsdPerMillion: 2.0,
+    outputUsdPerMillion: 8.0,
+    cachedInputUsdPerMillion: 0.3,
+    effectiveDate: "2026-05-29",
+    sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
+    confidence: "official",
   },
   {
     providerId: "fireworks",
