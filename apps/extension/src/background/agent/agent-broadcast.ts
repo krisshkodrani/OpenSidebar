@@ -187,11 +187,13 @@ export function successfulTaskCompletionMessage(args: {
   const subtaskResults: SubtaskResult[] = args.subtasks.map((st) => ({
     description: st.description,
     status:
-      st.status === "failed"
-        ? ("failed" as const)
-        : st.status === "skipped"
-          ? ("skipped" as const)
-          : ("completed" as const),
+      st.status === "completed"
+        ? ("completed" as const)
+        : st.status === "failed"
+          ? ("failed" as const)
+          : st.status === "skipped"
+            ? ("skipped" as const)
+            : ("stopped" as const),
     turnsUsed: st.turnsUsed,
     result: st.result || "",
   }));
@@ -200,9 +202,7 @@ export function successfulTaskCompletionMessage(args: {
     type: "TASK_COMPLETION",
     payload: {
       taskId: args.taskId,
-      status: subtaskResults.every((sr) => sr.status === "completed")
-        ? "completed"
-        : "partial",
+      status: "completed",
       totalTurnsUsed: args.turnCount,
       totalTimeMs: args.totalTimeMs,
       summary: args.summary,

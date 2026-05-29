@@ -493,7 +493,7 @@ The agent uses a two-tier architecture with independent provider pools for each 
 
 The Xiaomi provider uses OpenAI-compatible chat completions at `https://api.xiaomimimo.com/v1/chat/completions` with `XIAOMI_API_KEY`. Xiaomi support is scoped to the agent provider stack; it does not add TTS, STT, image generation, or audio support.
 
-Both pools use `ProviderPool` with `PoolConfig` for generic configuration. The `TaskPlanner` also uses the planner pool.
+Both pools use `ProviderPool` with configured provider slots. The `TaskPlanner` also uses the planner pool.
 
 ### Context Distillation
 
