@@ -1,4 +1,4 @@
-import { DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER } from "../../utils/executor-model-policy";
+import { DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER } from "../utils/executor-model-policy";
 
 export interface LLMModelDefaults {
   executor: string;

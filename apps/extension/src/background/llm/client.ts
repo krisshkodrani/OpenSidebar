@@ -16,7 +16,7 @@ import {
   ProviderConfig,
   TokenUsage,
 } from "./types";
-import { LLM_MODEL_CONFIG } from "./model-config";
+import { LLM_MODEL_CONFIG } from "../../config/model-config";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
 

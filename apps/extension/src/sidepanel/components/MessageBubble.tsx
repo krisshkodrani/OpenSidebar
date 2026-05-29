@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { clsx } from "clsx";
 import { Eye, MessageCircle } from "lucide-react";
 import type { ChatEntry, ToolCallSummary } from "../../types";
-import { formatStepLabel } from "../../background/agent/step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import {
   cleanAssistantContent,
   normalizeCompletionMarkdown,
