@@ -64,6 +64,10 @@ credentials.json
 # Internal planning docs
 plans/
 
+# Pitch/marketing decks (kept local, not part of public source)
+OpenSidebar-deck.html
+OpenSidebar-deck.md
+
 # Local artifacts
 .artifacts/
 

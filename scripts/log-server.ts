@@ -76,6 +76,11 @@ const TRACE_DIR = join(PROJECT_ROOT, "traces");
 const TRACE_INDEX = join(TRACE_DIR, "index.jsonl");
 const RUN_TRACE_DIR = join(TRACE_DIR, "runs");
 const RUN_TRACE_INDEX = join(RUN_TRACE_DIR, "index.jsonl");
+const TRACE_SQLITE_INDEX = join(
+  PROJECT_ROOT,
+  ".artifacts",
+  "trace-index.sqlite",
+);
 const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
 const VIEWER_DIR = join(PROJECT_ROOT, "dist", "src", "trace-viewer");
@@ -83,6 +88,43 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
 
 let entryCount = 0;
+
+/* Trace-session response cache */
+// Viewer startup calls /api/traces/search, /api/traces/days, and
+// /api/traces/models in parallel. All three need the same session list, so keep
+// one source-aware in-memory copy and share the in-flight load.
+
+interface TraceSessionsCacheSlot {
+  sessions: TraceSessionLike[] | null;
+  promise: Promise<TraceSessionLike[]> | null;
+  sourceMtime: number;
+}
+
+let traceSessionsCache: TraceSessionsCacheSlot | null = null;
+let traceSessionsCacheVersion = 0;
+
+function invalidateTraceSessionsCache(): void {
+  traceSessionsCache = null;
+  traceSessionsCacheVersion += 1;
+}
+
+function traceSessionsSourceMtime(): number {
+  let latest = 0;
+  for (const path of [
+    TRACE_SQLITE_INDEX,
+    `${TRACE_SQLITE_INDEX}-wal`,
+    TRACE_INDEX,
+  ]) {
+    try {
+      if (existsSync(path)) {
+        latest = Math.max(latest, statSync(path).mtimeMs);
+      }
+    } catch {
+      // Best effort: explicit invalidation handles normal server writes.
+    }
+  }
+  return latest;
+}
 
 /* ── Insights response cache ──────────────────────────────── */
 // /api/trace-insights re-reads every session row, every turn, every tool call,
@@ -102,6 +144,11 @@ let insightsCache: InsightsCacheSlot | null = null;
 /** Call whenever a write makes cached insights stale. */
 function invalidateInsightsCache(): void {
   insightsCache = null;
+}
+
+function invalidateTraceViewerCaches(): void {
+  invalidateTraceSessionsCache();
+  invalidateInsightsCache();
 }
 
 /* ── Node.js HTTP helpers ─────────────────────────────────── */
@@ -180,7 +227,7 @@ function sendFile(
 
 /* ── Normalization helpers ─────────────────────────────────── */
 
-async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
+async function loadAllTraceSessions(): Promise<TraceSessionLike[]> {
   const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT);
   if (sqliteSessions && sqliteSessions.length > 0) return sqliteSessions;
 
@@ -200,6 +247,73 @@ async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
       }
     })
     .filter(Boolean) as TraceSessionLike[];
+}
+
+async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
+  const sourceMtime = traceSessionsSourceMtime();
+  if (
+    traceSessionsCache?.sessions &&
+    traceSessionsCache.sourceMtime === sourceMtime
+  ) {
+    return traceSessionsCache.sessions.slice();
+  }
+
+  if (traceSessionsCache?.promise) {
+    const sessions = await traceSessionsCache.promise;
+    return sessions.slice();
+  }
+
+  const staleSessions = traceSessionsCache?.sessions ?? null;
+  const staleSourceMtime = traceSessionsCache?.sourceMtime ?? 0;
+  const cacheVersion = traceSessionsCacheVersion;
+  const promise = loadAllTraceSessions()
+    .then((sessions) => {
+      const loadedSourceMtime = traceSessionsSourceMtime();
+      if (
+        traceSessionsCacheVersion === cacheVersion &&
+        traceSessionsCache?.promise === promise
+      ) {
+        traceSessionsCache =
+          loadedSourceMtime === sourceMtime
+            ? {
+                sessions,
+                promise: null,
+                sourceMtime,
+              }
+            : staleSessions
+              ? {
+                  sessions: staleSessions,
+                  promise: null,
+                  sourceMtime: staleSourceMtime,
+                }
+              : null;
+      }
+      return sessions;
+    })
+    .catch((err) => {
+      if (
+        traceSessionsCacheVersion === cacheVersion &&
+        traceSessionsCache?.promise === promise
+      ) {
+        traceSessionsCache = staleSessions
+          ? {
+              sessions: staleSessions,
+              promise: null,
+              sourceMtime: staleSourceMtime,
+            }
+          : null;
+      }
+      throw err;
+    });
+
+  traceSessionsCache = {
+    sessions: staleSessions,
+    promise,
+    sourceMtime: staleSourceMtime,
+  };
+
+  const sessions = await promise;
+  return sessions.slice();
 }
 
 async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
@@ -545,7 +659,7 @@ const server = createServer(
         upsertTraceSessionToSqlite(PROJECT_ROOT, session, {
           traceFile: sessionId ? join(TRACE_DIR, `${sessionId}.jsonl`) : undefined,
         });
-        invalidateInsightsCache();
+        invalidateTraceViewerCaches();
         sendEmpty(res, 204);
       } catch (err) {
         sendText(res, `Trace session error: ${err}`, 500);
@@ -674,6 +788,7 @@ const server = createServer(
         // Run traces
         removeDirFiles(RUN_TRACE_DIR, (f) => f.endsWith(".jsonl"));
 
+        invalidateTraceViewerCaches();
         sendJson(res, { deleted });
       } catch (err) {
         sendText(res, `Delete error: ${err}`, 500);
@@ -1211,6 +1326,9 @@ server.listen(PORT, HOST, () => {
   console.log(`Trace viewer: http://${HOST}:${PORT}/viewer`);
   console.log(`Backend API: http://${HOST}:${PORT}/api/backend/health`);
   console.log(`Press Ctrl+C to stop\n`);
+  readAllTraceSessions().catch((err) => {
+    console.warn("Trace viewer session cache warmup failed:", err);
+  });
 });
 
 function hasTraceTurn(

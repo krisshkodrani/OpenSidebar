@@ -27,9 +27,9 @@ describe("LLM pricing table", () => {
       "accounts/fireworks/routers/kimi-k2p6-turbo",
     );
     expect(pricing).toMatchObject({
-      inputUsdPerMillion: 0.99,
-      outputUsdPerMillion: 4.94,
-      cachedInputUsdPerMillion: 0.16,
+      inputUsdPerMillion: 2.0,
+      outputUsdPerMillion: 8.0,
+      cachedInputUsdPerMillion: 0.3,
     });
   });
 
@@ -97,10 +97,10 @@ describe("LLM pricing table", () => {
       cachedTokens: 400,
       completionTokens: 100,
     });
-    expect(breakdown?.inputCostUsd).toBeCloseTo(0.000594, 8);
-    expect(breakdown?.cachedInputCostUsd).toBeCloseTo(0.000064, 8);
-    expect(breakdown?.outputCostUsd).toBeCloseTo(0.000494, 8);
-    expect(breakdown?.totalCostUsd).toBeCloseTo(0.001152, 8);
+    expect(breakdown?.inputCostUsd).toBeCloseTo(0.0012, 8);
+    expect(breakdown?.cachedInputCostUsd).toBeCloseTo(0.00012, 8);
+    expect(breakdown?.outputCostUsd).toBeCloseTo(0.0008, 8);
+    expect(breakdown?.totalCostUsd).toBeCloseTo(0.00212, 8);
   });
 
   test("returns null for unknown model pricing", () => {

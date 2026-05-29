@@ -3,7 +3,7 @@ import {
   DEFAULT_LLM_MODEL_CONFIG,
   LLM_MODEL_CONFIG,
   resolveLLMModelConfig,
-} from "../../src/background/llm/model-config";
+} from "../../src/config/model-config";
 
 describe("LLM model config", () => {
   test("uses checked-in defaults", () => {
