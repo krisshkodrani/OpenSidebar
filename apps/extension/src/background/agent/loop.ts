@@ -89,13 +89,12 @@ import {
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
   evaluateCompletionWorkflowContractPreflight,
-  evaluateCompletionContract,
-  generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
   type TrustedCompletionCandidate,
 } from "./completion-kernel";
+import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 import {
   TURN_CHECKPOINT_VERSION,
   turnCheckpointKey,
@@ -164,6 +163,7 @@ import {
   clarificationRequestStep,
 } from "./agent-interaction-steps";
 import {
+  annotateCompletedPlanSubtasksForAcceptedDone,
   buildCompletedPlanStepSummaries,
   buildFailedPlanStep,
   buildPlanMonitorReplanMessage,
@@ -1701,13 +1701,10 @@ export class AgentLoop {
     this.completeTaskUi(summary);
 
     if (this.taskId && this.planSubtasks.length > 0) {
-      for (const sub of this.planSubtasks) {
-        if (!sub.result) sub.result = "Completed";
-      }
-      this.planSubtasks[this.planSubtasks.length - 1].result = summary.slice(
-        0,
-        200,
-      );
+      annotateCompletedPlanSubtasksForAcceptedDone({
+        subtasks: this.planSubtasks,
+        summary,
+      });
 
       const completionMessage = successfulTaskCompletionMessage({
         taskId: this.taskId,
@@ -2333,11 +2330,15 @@ export class AgentLoop {
   ): CompletionEvaluation {
     this.refreshCompletionEvidenceFromSnapshot("candidate_evaluation");
     const completionContext = this.getActiveCompletionContext();
-    const generated = generateCompletionContract({
+    const snapshot = this.context.getSnapshot();
+    const { generated, decision } = evaluateGeneratedCompletionCandidate({
       userRequest: this.originalQuery,
-      snapshot: this.context.getSnapshot(),
+      snapshot,
       activeObjective: completionContext.activeObjective,
       successCriteria: completionContext.successCriteria,
+      evidence: this.completionEvidence.toArray(),
+      candidateSource: source,
+      summary,
     });
     this.traceRecorder?.recordEvent("completion_candidate", {
       turn: this.turnCount,
@@ -2352,13 +2353,6 @@ export class AgentLoop {
         contractKind: generated.contract.kind,
       });
     }
-    const decision = evaluateCompletionContract({
-      contract: generated?.contract,
-      evidence: this.completionEvidence.toArray(),
-      snapshot: this.context.getSnapshot(),
-      candidateSource: source,
-      summary,
-    });
     if (decision.status !== "accepted") {
       this.lastCompletionRejection = decision;
     }
@@ -2368,11 +2362,14 @@ export class AgentLoop {
   private getCompletionRecoveryHintForCurrentState(): string | null {
     this.refreshCompletionEvidenceFromSnapshot("recovery_consult");
     const completionContext = this.getActiveCompletionContext();
-    const generated = generateCompletionContract({
+    const snapshot = this.context.getSnapshot();
+    const { generated, decision } = evaluateGeneratedCompletionCandidate({
       userRequest: this.originalQuery,
-      snapshot: this.context.getSnapshot(),
+      snapshot,
       activeObjective: completionContext.activeObjective,
       successCriteria: completionContext.successCriteria,
+      evidence: this.completionEvidence.toArray(),
+      candidateSource: "model_done",
     });
     if (generated?.notes.length) {
       this.traceRecorder?.recordEvent("completion_contract_repaired", {
@@ -2382,12 +2379,6 @@ export class AgentLoop {
         source: "recovery_consult",
       });
     }
-    const decision = evaluateCompletionContract({
-      contract: generated?.contract,
-      evidence: this.completionEvidence.toArray(),
-      snapshot: this.context.getSnapshot(),
-      candidateSource: "model_done",
-    });
     return buildCompletionRecoveryHint(decision);
   }
 
