@@ -537,6 +537,19 @@ describe("complete() payload & response", () => {
     expect(payload.model).toBe("deepseek-v4-pro");
   });
 
+  test("fireworks mode initializes active provider as Fireworks", () => {
+    const client = makeClient({
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-test",
+    });
+
+    expect(client.getCurrentProvider()).toBe("fireworks");
+    expect(client.getActiveProviderInfo()).toEqual({
+      providerId: "fireworks",
+      model: MODEL_EXECUTOR,
+    });
+  });
+
   test("fireworks requests include per-task cache affinity headers", async () => {
     const client = makeClient({
       providerMode: "fireworks",

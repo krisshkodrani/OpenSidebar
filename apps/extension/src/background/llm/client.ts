@@ -517,7 +517,7 @@ function isImageUrlUnsupported(status: number, errorText: string): boolean {
   );
 }
 
-// --- Provider Pool (priority-based failover) ---
+// --- Provider Pool (configured-slot failover) ---
 
 const COOLDOWN_MS = 60_000;
 
@@ -527,25 +527,42 @@ export interface ProviderSlot {
   model: string;
 }
 
-/** Model identifier for a provider pool tier. */
-export interface PoolConfig {
-  openRouterModel: string;
+export interface ProviderPoolSlotInput {
+  provider: ProviderConfig;
+  model: string;
+  cooldownUntil?: number;
 }
 
-/**
- * Provider pool. Currently single-provider (OpenRouter).
- * Retains multi-slot structure for future provider additions.
- */
+export interface ProviderPoolConfig {
+  slots: ProviderPoolSlotInput[];
+}
+
+export function singleProviderPool(
+  provider: ProviderConfig,
+  model: string,
+): ProviderPool {
+  return new ProviderPool({ slots: [{ provider, model }] });
+}
+
+export function openRouterProviderPool(
+  openRouterKey: string,
+  model: string,
+): ProviderPool {
+  return singleProviderPool(openRouterProvider(openRouterKey), model);
+}
+
 export class ProviderPool {
   private slots: ProviderSlot[];
 
-  constructor(openRouterKey: string, config: PoolConfig) {
-    this.slots = [];
-    this.slots.push({
-      provider: openRouterProvider(openRouterKey),
-      cooldownUntil: 0,
-      model: config.openRouterModel,
-    });
+  constructor(config: ProviderPoolConfig) {
+    if (config.slots.length === 0) {
+      throw new Error("ProviderPool requires at least one provider slot");
+    }
+    this.slots = config.slots.map((slot) => ({
+      provider: slot.provider,
+      cooldownUntil: slot.cooldownUntil ?? 0,
+      model: slot.model,
+    }));
   }
 
   /** Returns highest-priority provider not on cooldown */
@@ -553,7 +570,7 @@ export class ProviderPool {
     const now = Date.now();
     return (
       this.slots.find((s) => now >= s.cooldownUntil) ??
-      this.slots[this.slots.length - 1] // OpenRouter as absolute fallback
+      this.slots[this.slots.length - 1]
     );
   }
 
@@ -573,7 +590,6 @@ export class ProviderPool {
     for (let i = idx + 1; i < this.slots.length; i++) {
       if (now >= this.slots[i].cooldownUntil) return this.slots[i];
     }
-    // All downstream are on cooldown — return OpenRouter as absolute fallback
     return this.slots[this.slots.length - 1];
   }
 
@@ -649,9 +665,9 @@ export class LLMClient {
   private provider: ProviderConfig;
   private model: string;
   private openRouterApiKey: string;
-  /** Priority-based provider pool for executor model failover */
+  /** Configured provider pool for executor model failover */
   private executorPool: ProviderPool;
-  /** Priority-based provider pool for planner model failover */
+  /** Configured provider pool for planner model failover */
   private plannerPool: ProviderPool;
   /** Whether the client is currently in planner model tier */
   private _isPlannerTier = false;
@@ -693,10 +709,7 @@ export class LLMClient {
         providerMode: "fireworks-deepseek",
         executorModel: options?.executorModel,
       });
-      this.executorPool = new ProviderPool(fwKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = fwProv;
+      this.executorPool = singleProviderPool(fwProv, executorModel);
       this.executorFallbackModel = normalizeExecutorFallbackModel({
         providerMode: "fireworks-deepseek",
         executorModel,
@@ -709,10 +722,7 @@ export class LLMClient {
         providerMode: "moonshot",
         executorModel: options?.executorModel,
       });
-      this.executorPool = new ProviderPool(kimiKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = kimiProv;
+      this.executorPool = singleProviderPool(kimiProv, executorModel);
       this.executorFallbackModel = normalizeExecutorFallbackModel({
         providerMode: "moonshot",
         executorModel,
@@ -725,10 +735,7 @@ export class LLMClient {
         providerMode: "xiaomi",
         executorModel: options?.executorModel,
       });
-      this.executorPool = new ProviderPool(xiaomiKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = xiaomiProv;
+      this.executorPool = singleProviderPool(xiaomiProv, executorModel);
       this.executorFallbackModel = normalizeExecutorFallbackModel({
         providerMode: "xiaomi",
         executorModel,
@@ -741,10 +748,7 @@ export class LLMClient {
         providerMode: "fireworks",
         executorModel: options?.executorModel,
       });
-      this.executorPool = new ProviderPool(fwKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = fwProv;
+      this.executorPool = singleProviderPool(fwProv, executorModel);
       this.executorFallbackModel = normalizeExecutorFallbackModel({
         providerMode: "fireworks",
         executorModel,
@@ -757,10 +761,7 @@ export class LLMClient {
         providerMode: "openai-groq",
         executorModel: options?.executorModel,
       });
-      this.executorPool = new ProviderPool(oaiKey, {
-        openRouterModel: executorModel,
-      });
-      this.executorPool.getSlots()[0].provider = oaiProv;
+      this.executorPool = singleProviderPool(oaiProv, executorModel);
       this.executorFallbackModel = normalizeExecutorFallbackModel({
         providerMode: "openai-groq",
         executorModel,
@@ -779,9 +780,10 @@ export class LLMClient {
         executorModel,
         executorFallbackModel: options?.executorFallbackModel,
       });
-      this.executorPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(executorModel, nitro),
-      });
+      this.executorPool = openRouterProviderPool(
+        openRouterApiKey,
+        applyNitro(executorModel, nitro),
+      );
       this.executorFallbackModel = applyNitro(executorFallbackModel, nitro);
     }
 
@@ -790,34 +792,22 @@ export class LLMClient {
       const deepseekKey = options?.deepseekApiKey ?? "";
       const deepseekProv = deepseekProvider(deepseekKey);
       const plannerModel = options?.plannerModel || DEEPSEEK_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(deepseekKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = deepseekProv;
+      this.plannerPool = singleProviderPool(deepseekProv, plannerModel);
     } else if (mode === "moonshot" && hasMoonshot) {
       const kimiKey = options!.kimiApiKey!;
       const kimiProv = moonshotProvider(kimiKey);
       const plannerModel = options?.plannerModel || MOONSHOT_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(kimiKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = kimiProv;
+      this.plannerPool = singleProviderPool(kimiProv, plannerModel);
     } else if (mode === "xiaomi" && hasXiaomi) {
       const xiaomiKey = options!.xiaomiApiKey!;
       const xiaomiProv = xiaomiProvider(xiaomiKey);
       const plannerModel = options?.plannerModel || XIAOMI_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(xiaomiKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = xiaomiProv;
+      this.plannerPool = singleProviderPool(xiaomiProv, plannerModel);
     } else if (mode === "fireworks" && hasFireworks) {
       const fwKey = options!.fireworksApiKey!;
       const fwProv = fireworksProvider(fwKey);
       const plannerModel = options?.plannerModel || FIREWORKS_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(fwKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = fwProv;
+      this.plannerPool = singleProviderPool(fwProv, plannerModel);
     } else if (
       (mode === "openrouter-groq" || mode === "openai-groq") &&
       hasGroq
@@ -825,27 +815,22 @@ export class LLMClient {
       const groqKey = options!.groqApiKey!;
       const groqProv = groqProvider(groqKey);
       const plannerModel = options?.plannerModel || GROQ_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(groqKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = groqProv;
+      this.plannerPool = singleProviderPool(groqProv, plannerModel);
     } else if (mode === "openai-groq" && hasOpenAI) {
       // No Groq key but OpenAI mode — planner uses OpenAI too
       const oaiKey = options!.openaiApiKey!;
       const oaiProv = openAIProvider(oaiKey);
       const plannerModel = options?.plannerModel || OPENAI_MODEL_PLANNER;
-      this.plannerPool = new ProviderPool(oaiKey, {
-        openRouterModel: plannerModel,
-      });
-      this.plannerPool.getSlots()[0].provider = oaiProv;
+      this.plannerPool = singleProviderPool(oaiProv, plannerModel);
     } else {
       // OpenRouter for planner
-      this.plannerPool = new ProviderPool(openRouterApiKey, {
-        openRouterModel: applyNitro(
+      this.plannerPool = openRouterProviderPool(
+        openRouterApiKey,
+        applyNitro(
           options?.plannerModel || MODEL_PLANNER,
           nitro,
         ),
-      });
+      );
     }
 
     // Initialize from executor pool's top priority
