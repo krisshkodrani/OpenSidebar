@@ -3,7 +3,7 @@ import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import { ToolResultCache } from "./tool-cache";
 import type { CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";

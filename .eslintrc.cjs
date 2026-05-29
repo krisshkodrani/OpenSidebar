@@ -31,4 +31,36 @@ module.exports = {
     es2022: true,
     worker: true,
   },
+  overrides: [
+    {
+      // Boundary rule (bulletproof-react unidirectional architecture):
+      // the React UI must not reach into the agent runtime layers.
+      // Share via packages/shared-types or route through sidepanel/runtime.ts.
+      files: [
+        "apps/extension/src/sidepanel/**/*.{ts,tsx}",
+        "apps/extension/src/trace-viewer/**/*.{ts,tsx}",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: [
+                  "**/background/**",
+                  "**/content/**",
+                  "**/offscreen/**",
+                  "@/background/**",
+                  "@/content/**",
+                  "@/offscreen/**",
+                ],
+                message:
+                  "UI must not import from runtime layers (background/content/offscreen). Share types via packages/shared-types or route calls through sidepanel/runtime.ts.",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
 };

@@ -52,7 +52,7 @@ import {
   formatStepLabel,
   buildElementResolver,
   ElementResolver,
-} from "./step-labels";
+} from "../../utils/step-labels";
 import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";

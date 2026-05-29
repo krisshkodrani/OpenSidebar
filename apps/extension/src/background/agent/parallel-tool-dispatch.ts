@@ -48,7 +48,7 @@ import {
   rememberRepeatAction,
 } from "./repeat-action-policy";
 import { getPreToolDeniedReason } from "./sequential-pre-tool-gate";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import {
   assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,

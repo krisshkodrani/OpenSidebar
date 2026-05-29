@@ -1,4 +1,4 @@
-import { ToolName, TaggedElement } from "../../types";
+import { ToolName, TaggedElement } from "../types";
 
 /** Resolve an element tag ID to a short human-readable label like `"Submit" button` */
 export type ElementResolver = (id: number) => string | undefined;

@@ -78,7 +78,7 @@ import {
   shouldReportApprovalBypass,
 } from "./sequential-pre-tool-gate";
 import { mergeGenericSequentialToolState } from "./sequential-tool-state";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import {
   assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,
