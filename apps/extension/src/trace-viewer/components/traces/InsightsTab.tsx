@@ -7,6 +7,7 @@ import {
   type TraceInsightsRunRow,
 } from "../../api";
 import { useInsightsData } from "../../hooks/useInsightsData";
+import { useDebounce } from "../../hooks/useDebounce";
 import { useStore } from "../../store";
 import {
   extractQueryTitle,
@@ -58,6 +59,9 @@ export default function InsightsTab({
   const [failure, setFailure] = useState("all");
   const [eventType, setEventType] = useState("all");
   const [query, setQuery] = useState("");
+  // Debounce the free-text query so each keystroke does not refetch insights;
+  // the input stays controlled by `query` for instant feedback.
+  const debouncedQuery = useDebounce(query, 250);
   const [ratchet, setRatchet] = useState<HarnessRatchetCandidate[]>([]);
 
   const requestFilters = useMemo<TraceInsightsQuery>(
@@ -74,7 +78,7 @@ export default function InsightsTab({
       toolStatus,
       failure,
       eventType,
-      q: query,
+      q: debouncedQuery,
     }),
     [
       eventType,
@@ -86,7 +90,7 @@ export default function InsightsTab({
       filters.outcome,
       filters.runId,
       filters.to,
-      query,
+      debouncedQuery,
       skill,
       tool,
       toolStatus,

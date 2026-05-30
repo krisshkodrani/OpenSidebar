@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { TraceSession, TraceEntry } from "../../../types/traces";
 import type { RunTraceEvent } from "../../../utils/run-trace";
 import Badge from "../Badge";
@@ -31,6 +31,22 @@ export default function PlanTab({ session }: PlanTabProps) {
   const currentRunEvents = useStore((s) => s.currentRunEvents);
   const plan = session.planDecomposition;
 
+  // Build step statuses from plan_monitor events (memoized: a single pass over
+  // entries, recomputed only when the plan or entries change).
+  const steps = useMemo(
+    () => buildStepStatuses(plan?.steps ?? [], currentEntries),
+    [plan, currentEntries],
+  );
+
+  // Find replan events
+  const replanEvents = useMemo(
+    () =>
+      currentEntries.flatMap((entry) =>
+        (entry.events || []).filter((e) => e.type === "plan_replan"),
+      ),
+    [currentEntries],
+  );
+
   if (!plan || !plan.steps || plan.steps.length === 0) {
     if (currentRunEvents.length > 0) {
       return <RunPlannerActivity runEvents={currentRunEvents} />;
@@ -42,14 +58,6 @@ export default function PlanTab({ session }: PlanTabProps) {
       </div>
     );
   }
-
-  // Build step statuses from plan_monitor events
-  const steps = buildStepStatuses(plan.steps || [], currentEntries);
-
-  // Find replan events
-  const replanEvents = currentEntries.flatMap((entry) =>
-    (entry.events || []).filter((e) => e.type === "plan_replan"),
-  );
 
   return (
     <div className="space-y-4">
@@ -873,7 +881,7 @@ function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
   );
 }
 
-function buildStepStatuses(
+export function buildStepStatuses(
   steps: Array<{
     objective: string;
     successCriteria?: string;
@@ -888,8 +896,10 @@ function buildStepStatuses(
     number,
     "aligned" | "progressing" | "deviated" | "blocked"
   >();
+  // stepIndex -> turn range, accumulated in the same pass as alignments.
+  const turnRanges = new Map<number, { start: number; end: number }>();
 
-  // Process plan_monitor events to determine alignment
+  // Process plan_monitor events to determine alignment + turn ranges
   for (const entry of entries) {
     for (const event of entry.events || []) {
       if (event.type === "plan_monitor") {
@@ -900,6 +910,16 @@ function buildStepStatuses(
         stepAlignments.set(data.stepIndex, data.alignment);
         if (data.alignment === "aligned" || data.alignment === "progressing") {
           currentStepIndex = Math.max(currentStepIndex, data.stepIndex);
+        }
+        const turnNum = entry.turnNumber;
+        if (typeof turnNum === "number") {
+          const range = turnRanges.get(data.stepIndex);
+          if (!range) {
+            turnRanges.set(data.stepIndex, { start: turnNum, end: turnNum });
+          } else {
+            if (turnNum < range.start) range.start = turnNum;
+            if (turnNum > range.end) range.end = turnNum;
+          }
         }
       }
     }
@@ -924,9 +944,6 @@ function buildStepStatuses(
       status = "in-progress";
     }
 
-    // Find turn range for this step (heuristic)
-    const turnRange = findTurnRangeForStep(index, entries);
-
     return {
       index,
       objective: step.objective,
@@ -935,30 +952,7 @@ function buildStepStatuses(
       dependencies: step.dependencies,
       status,
       alignment,
-      turnRange,
+      turnRange: turnRanges.get(index),
     };
   });
-}
-
-function findTurnRangeForStep(
-  stepIndex: number,
-  entries: TraceEntry[],
-): { start: number; end: number } | undefined {
-  // Heuristic: find turns where plan_monitor mentions this step
-  const relevantTurns = entries
-    .filter((entry) =>
-      (entry.events || []).some(
-        (e) =>
-          e.type === "plan_monitor" &&
-          (e.data as { stepIndex: number }).stepIndex === stepIndex,
-      ),
-    )
-    .map((e) => e.turnNumber);
-
-  if (relevantTurns.length === 0) return undefined;
-
-  return {
-    start: Math.min(...relevantTurns),
-    end: Math.max(...relevantTurns),
-  };
 }

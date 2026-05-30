@@ -389,4 +389,107 @@ describe("trace-viewer App", () => {
       expect(container.textContent).toContain("TurnList");
     });
   });
+
+  // --- Scroll save / restore / flush guard (perf hardening) ---
+
+  function detailSession(sessionId: string) {
+    return {
+      sessionId,
+      startTime: 100,
+      endTime: 200,
+      query: `Objective: ${sessionId}`,
+      startUrl: "https://example.com",
+      outcome: "completed",
+      turnCount: 1,
+      summary: "done",
+      metrics: null,
+    };
+  }
+
+  function getScrollContainer(): HTMLElement {
+    const el = container.querySelector<HTMLElement>(
+      ".flex-1.min-h-0.overflow-y-auto",
+    );
+    if (!el) throw new Error("scroll container not found");
+    return el;
+  }
+
+  async function renderDetail(sessionId: string, sessions = [detailSession(sessionId)]) {
+    useStore.setState({ currentSessionId: sessionId, activeSubview: "overview" });
+    mockUseTraceData.mockReturnValue({
+      sessions,
+      currentSessionId: sessionId,
+      refreshSessions: vi.fn(),
+    });
+    await act(async () => {
+      root.render(<App />);
+    });
+    await waitFor(() => {
+      getScrollContainer();
+    });
+  }
+
+  function setScrollTop(el: HTMLElement, value: number) {
+    // happy-dom does not lay out content, so make scrollTop a real stored value.
+    Object.defineProperty(el, "scrollTop", {
+      configurable: true,
+      writable: true,
+      value,
+    });
+  }
+
+  test("saves scroll position to the store keyed by session and subview", async () => {
+    await renderDetail("session-1");
+    const el = getScrollContainer();
+
+    setScrollTop(el, 120);
+    await act(async () => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    await flushAsyncWork();
+
+    expect(useStore.getState().scrollPositions["session-1:overview"]).toBe(120);
+  });
+
+  test("restores the saved scroll position when the subview changes", async () => {
+    useStore.setState({
+      scrollPositions: { "session-1:perception": 88 },
+    } as any);
+    await renderDetail("session-1");
+    const el = getScrollContainer();
+    expect(el.scrollTop).toBe(0);
+
+    await act(async () => {
+      useStore.getState().setActiveSubview("perception");
+    });
+    await flushAsyncWork();
+
+    expect(getScrollContainer().scrollTop).toBe(88);
+  });
+
+  test("does not write a leaving session's scroll under the new session's key", async () => {
+    await renderDetail("session-1", [
+      detailSession("session-1"),
+      detailSession("session-2"),
+    ]);
+    const el = getScrollContainer();
+
+    // Scroll session-1, but switch to session-2 before the rAF flush runs.
+    setScrollTop(el, 200);
+    el.dispatchEvent(new Event("scroll"));
+    await act(async () => {
+      mockUseTraceData.mockReturnValue({
+        sessions: [detailSession("session-1"), detailSession("session-2")],
+        currentSessionId: "session-2",
+        refreshSessions: vi.fn(),
+      });
+      useStore.getState().setCurrentSessionId("session-2");
+    });
+    await flushAsyncWork();
+
+    // session-1's scrollTop (200) must not leak under session-2's key.
+    expect(
+      useStore.getState().scrollPositions["session-2:overview"],
+    ).not.toBe(200);
+  });
 });
