@@ -261,35 +261,46 @@ export default function App({ themeRoot, activityHudRoot }: AppProps = {}) {
           recordingActive={skillRecordingStatus === "recording"}
         />
 
-        <SettingsDrawer
-          isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-        />
+        {/* Drawers are only mounted while open so closed drawers do no store
+            subscriptions, grouping, or hashing work. Each resets its draft
+            state on open, so nothing meaningful is lost on unmount. */}
+        {isSettingsOpen && (
+          <SettingsDrawer
+            isOpen
+            onClose={() => setIsSettingsOpen(false)}
+          />
+        )}
 
-        <PersonalProfileDrawer
-          isOpen={isPersonalProfileOpen}
-          onClose={() => setIsPersonalProfileOpen(false)}
-        />
+        {isPersonalProfileOpen && (
+          <PersonalProfileDrawer
+            isOpen
+            onClose={() => setIsPersonalProfileOpen(false)}
+          />
+        )}
 
-        <SavedPromptsDrawer
-          isOpen={isSavedPromptsOpen}
-          onClose={() => {
-            setIsSavedPromptsOpen(false);
-            setSavedPromptsPrefill(undefined);
-          }}
-          onSelectPrompt={(content) => {
-            setInputText(content);
-            setIsSavedPromptsOpen(false);
-            setSavedPromptsPrefill(undefined);
-          }}
-          prefillContent={savedPromptsPrefill}
-        />
+        {isSavedPromptsOpen && (
+          <SavedPromptsDrawer
+            isOpen
+            onClose={() => {
+              setIsSavedPromptsOpen(false);
+              setSavedPromptsPrefill(undefined);
+            }}
+            onSelectPrompt={(content) => {
+              setInputText(content);
+              setIsSavedPromptsOpen(false);
+              setSavedPromptsPrefill(undefined);
+            }}
+            prefillContent={savedPromptsPrefill}
+          />
+        )}
 
-        <WebsiteSkillsDrawer
-          isOpen={isWebsiteSkillsOpen}
-          onClose={() => setIsWebsiteSkillsOpen(false)}
-          onStartRecording={handleRecordSkill}
-        />
+        {isWebsiteSkillsOpen && (
+          <WebsiteSkillsDrawer
+            isOpen
+            onClose={() => setIsWebsiteSkillsOpen(false)}
+            onStartRecording={handleRecordSkill}
+          />
+        )}
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
           <TaskStatusRegion

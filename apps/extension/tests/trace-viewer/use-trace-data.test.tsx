@@ -392,4 +392,136 @@ describe("useTraceData", () => {
       },
     ]);
   });
+
+  test("does not refetch the open trace when a session refresh keeps the same runId", async () => {
+    useStore.setState({ currentSessionId: "session-1" });
+    const sessionRow = {
+      sessionId: "session-1",
+      runId: "run-1",
+      startTime: 100,
+      endTime: 200,
+      query: "Objective: test",
+      startUrl: "https://example.com",
+      outcome: "completed",
+      turnCount: 2,
+      summary: "done",
+      metrics: null,
+    };
+    // Fresh array + object identity on every call, so the sessions array
+    // reference changes on refresh even though the runId is unchanged.
+    vi.mocked(api.fetchTraceSessions).mockImplementation(
+      async () => [{ ...sessionRow }] as any,
+    );
+    vi.mocked(api.fetchTraceEntries).mockResolvedValue([
+      { sessionId: "session-1", turnNumber: 1 },
+    ] as any);
+    vi.mocked(api.fetchRunTraceEvents).mockResolvedValue([
+      { runId: "run-1", type: "x" },
+    ] as any);
+
+    let refresh: () => Promise<void> = async () => {};
+    function RefreshHarness() {
+      refresh = useTraceData().refreshSessions as () => Promise<void>;
+      return null;
+    }
+
+    await act(async () => {
+      root.render(<RefreshHarness />);
+    });
+    // Wait until the runId has resolved and the detail load has fully settled.
+    await waitFor(() => {
+      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith(
+        "run-1",
+        expect.any(AbortSignal),
+      );
+      expect(useStore.getState().currentEntries).toEqual([
+        { sessionId: "session-1", turnNumber: 1 },
+      ]);
+    });
+
+    const entriesBefore = vi.mocked(api.fetchTraceEntries).mock.calls.length;
+    const runEventsBefore =
+      vi.mocked(api.fetchRunTraceEvents).mock.calls.length;
+    const sessionsBefore = vi.mocked(api.fetchTraceSessions).mock.calls.length;
+
+    await act(async () => {
+      await refresh();
+    });
+    await flushAsyncWork();
+
+    // The refresh happened (sessions array identity changed)...
+    expect(
+      vi.mocked(api.fetchTraceSessions).mock.calls.length,
+    ).toBeGreaterThan(sessionsBefore);
+    // ...but the open trace was neither blanked nor refetched.
+    expect(vi.mocked(api.fetchTraceEntries).mock.calls.length).toBe(
+      entriesBefore,
+    );
+    expect(vi.mocked(api.fetchRunTraceEvents).mock.calls.length).toBe(
+      runEventsBefore,
+    );
+    expect(useStore.getState().currentEntries).toEqual([
+      { sessionId: "session-1", turnNumber: 1 },
+    ]);
+  });
+
+  test("refetches the open trace when a session refresh changes its runId", async () => {
+    useStore.setState({ currentSessionId: "session-1" });
+    let currentRunId = "run-1";
+    vi.mocked(api.fetchTraceSessions).mockImplementation(
+      async () =>
+        [
+          {
+            sessionId: "session-1",
+            runId: currentRunId,
+            startTime: 100,
+            endTime: 200,
+            query: "Objective: test",
+            startUrl: "https://example.com",
+            outcome: "completed",
+            turnCount: 2,
+            summary: "done",
+            metrics: null,
+          },
+        ] as any,
+    );
+    vi.mocked(api.fetchTraceEntries).mockResolvedValue([
+      { sessionId: "session-1", turnNumber: 1 },
+    ] as any);
+    vi.mocked(api.fetchRunTraceEvents).mockResolvedValue([] as any);
+
+    let refresh: () => Promise<void> = async () => {};
+    function RefreshHarness() {
+      refresh = useTraceData().refreshSessions as () => Promise<void>;
+      return null;
+    }
+
+    await act(async () => {
+      root.render(<RefreshHarness />);
+    });
+    await waitFor(() => {
+      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith(
+        "run-1",
+        expect.any(AbortSignal),
+      );
+    });
+
+    const entriesBefore = vi.mocked(api.fetchTraceEntries).mock.calls.length;
+
+    // The same open session now reports a different runId.
+    currentRunId = "run-2";
+    await act(async () => {
+      await refresh();
+    });
+    await waitFor(() => {
+      expect(api.fetchRunTraceEvents).toHaveBeenCalledWith(
+        "run-2",
+        expect.any(AbortSignal),
+      );
+    });
+
+    expect(
+      vi.mocked(api.fetchTraceEntries).mock.calls.length,
+    ).toBeGreaterThan(entriesBefore);
+  });
 });

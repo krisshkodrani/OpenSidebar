@@ -85,13 +85,10 @@ export default function App() {
   const setActiveSubview = useStore((s) => s.setActiveSubview);
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
-  const scrollPositions = useStore((s) => s.scrollPositions);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
   const [backendView, setBackendView] = useState<boolean>(false);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
-
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Apply viewer theme
   useEffect(() => {
@@ -179,16 +176,6 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
-  // Restore scroll position when switching tabs or traces
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      const key = currentSessionId
-        ? `${currentSessionId}:${activeSubview}`
-        : activeSubview;
-      scrollContainerRef.current.scrollTop = scrollPositions[key] || 0;
-    }
-  }, [activeSubview, scrollPositions, currentSessionId]);
-
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <ViewerHeader />
@@ -199,7 +186,6 @@ export default function App() {
           <BackendPanel />
         ) : (
           <ViewerBody
-            scrollContainerRef={scrollContainerRef}
             navigateToSkill={navigateToSkill}
             setShowShortcuts={setShowShortcuts}
           />
@@ -221,11 +207,9 @@ export default function App() {
 // Viewer body
 
 function ViewerBody({
-  scrollContainerRef,
   navigateToSkill,
   setShowShortcuts,
 }: {
-  scrollContainerRef: React.RefObject<HTMLDivElement>;
   navigateToSkill: (skillId: string) => void;
   setShowShortcuts: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
@@ -243,6 +227,14 @@ function ViewerBody({
   const setFilter = useStore((s) => s.setFilter);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
   const { sessions, refreshSessions } = useTraceData();
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Live scroll position lives in a ref so scrolling never triggers a render.
+  const liveScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  // The session the live scroll value belongs to, so a flush that fires after
+  // a session switch does not write the old scrollTop under the new key.
+  const scrollSessionRef = useRef<string | null>(null);
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
@@ -370,15 +362,66 @@ function ViewerBody({
     setShowShortcuts,
   ]);
 
-  // Save scroll position on scroll
+  // Track the live scroll position in a ref and flush to the store at most
+  // once per animation frame. The store write no longer re-renders anything
+  // (nothing subscribes to scrollPositions reactively), and throttling keeps
+  // the writes off the hot scroll path.
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
-      if (currentSessionId) {
-        saveScrollPosition(activeSubview, e.currentTarget.scrollTop);
-      }
+      liveScrollTopRef.current = e.currentTarget.scrollTop;
+      scrollSessionRef.current = useStore.getState().currentSessionId;
+      if (scrollRafRef.current != null) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        const state = useStore.getState();
+        // Skip if the session changed since this scroll was captured —
+        // saveScrollPosition keys off the live currentSessionId.
+        if (
+          state.currentSessionId &&
+          state.currentSessionId === scrollSessionRef.current
+        ) {
+          state.saveScrollPosition(state.activeSubview, liveScrollTopRef.current);
+        }
+      });
     },
-    [currentSessionId, activeSubview, saveScrollPosition],
+    [],
   );
+
+  // Restore the saved scroll position when the tab/session changes, and flush
+  // the final position for the tab/session we are leaving. Read positions
+  // imperatively so this effect does not subscribe to every scroll write.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const sessionAtMount = currentSessionId;
+    const viewAtMount = activeSubview;
+    const key = sessionAtMount
+      ? `${sessionAtMount}:${viewAtMount}`
+      : viewAtMount;
+    el.scrollTop = useStore.getState().scrollPositions[key] || 0;
+    liveScrollTopRef.current = el.scrollTop;
+    scrollSessionRef.current = sessionAtMount;
+    return () => {
+      // Only flush if we are still on the same session, otherwise the store's
+      // currentSessionId has already advanced and saveScrollPosition would
+      // write under the wrong key.
+      if (
+        sessionAtMount &&
+        useStore.getState().currentSessionId === sessionAtMount
+      ) {
+        saveScrollPosition(viewAtMount, liveScrollTopRef.current);
+      }
+    };
+  }, [activeSubview, currentSessionId, saveScrollPosition]);
+
+  // Cancel any pending flush on unmount.
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
 
   // Session selected: drill-in detail
   if (currentSessionId && currentSession) {
