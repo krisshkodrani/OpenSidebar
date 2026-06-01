@@ -28,7 +28,7 @@ describe("log-server helpers", () => {
 
     expect(normalized.correlationId).toBe("run-1");
     expect(normalized.parentRunId).toBe("run-1");
-    expect(normalized.models).toEqual(["openai/gpt-5.4-mini:nitro"]);
+    expect(normalized.models).toEqual(["openai/gpt-5.4-mini"]);
     expect(normalized.recordedAt).toBe("2026-04-15T09:31:00.000Z");
   });
 
@@ -43,7 +43,7 @@ describe("log-server helpers", () => {
           },
         },
       } as any),
-    ).toEqual(["manual", "openai/gpt-5.4-mini:nitro", "openai/gpt-5.4"]);
+    ).toEqual(["manual", "openai/gpt-5.4-mini", "openai/gpt-5.4"]);
   });
 
   test("matchesTraceFilters combines domain, mode, model, tier, runId, and query", () => {

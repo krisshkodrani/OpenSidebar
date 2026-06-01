@@ -2,6 +2,7 @@ import {
   extractDomain,
   getSessionModels,
   matchesTraceFilters,
+  normalizeTraceModelId,
   type TraceEntryLike,
   type TraceSearchFiltersLike,
   type TraceSessionLike,
@@ -736,15 +737,15 @@ export function buildTraceInsights({
         totalLlmDurationMs += durationMs;
         llmDurationCount += 1;
       }
-      const requestModel =
-        asString(response?.actualModel) || asString(request?.model);
+      const rawRequestModel = asString(response?.actualModel) || asString(request?.model);
+      const requestModel = normalizeTraceModelId(rawRequestModel);
       const providerId =
         asProviderId(response?.actualProviderId) ??
         asProviderId(request?.provider) ??
-        inferProviderIdFromModel(requestModel);
+        inferProviderIdFromModel(rawRequestModel);
       const costBreakdown = estimateEntryCostBreakdown({
         providerId,
-        model: requestModel,
+        model: rawRequestModel,
         promptTokens: entryPromptTokens,
         completionTokens: entryCompletionTokens,
         totalTokens: entryTotalTokens,
