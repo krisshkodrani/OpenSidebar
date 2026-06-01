@@ -25,6 +25,13 @@ const SEVERITY_DOT: Record<InvestigationFinding["severity"], string> = {
   info: "bg-trace-accent",
 };
 
+const SOURCE_LABEL: Record<NonNullable<InvestigationFinding["source"]>, string> =
+  {
+    deterministic: "deterministic",
+    heuristic: "heuristic",
+    llm_verifier: "LLM verifier",
+  };
+
 function formatClass(value: string): string {
   if (value === "none") return "none";
   return value.replace(/_/g, " ");
@@ -228,12 +235,29 @@ export default function InvestigationSummary({
                   {finding.title}
                 </div>
                 <div className="ml-auto text-[10px] text-trace-muted shrink-0">
+                  {finding.source ? SOURCE_LABEL[finding.source] : "unknown"} -{" "}
                   {Math.round(finding.confidence * 100)}%
                 </div>
               </div>
               <div className="mt-1 text-[11px] text-trace-muted leading-relaxed">
                 {finding.summary}
               </div>
+              {finding.evidence.some(
+                (evidence) => evidence.resolved === false,
+              ) && (
+                <div className="mt-1 text-[11px] text-state-warning">
+                  Evidence unavailable:{" "}
+                  {finding.evidence
+                    .filter((evidence) => evidence.resolved === false)
+                    .map(
+                      (evidence) =>
+                        evidence.resolutionDetail ??
+                        evidence.resolutionStatus ??
+                        evidence.label,
+                    )
+                    .join("; ")}
+                </div>
+              )}
               {finding.firstTurn != null && (
                 <button
                   type="button"

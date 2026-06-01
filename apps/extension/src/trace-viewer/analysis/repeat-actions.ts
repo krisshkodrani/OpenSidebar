@@ -17,6 +17,9 @@ const VOLATILE_ID_KEYS = new Set([
   "tagId",
 ]);
 
+export const REPEAT_ACTION_DEFAULT_WINDOW_SIZE = 5;
+export const REPEAT_ACTION_DEFAULT_MAX_FINDINGS = 3;
+
 function stableValue(
   value: unknown,
   normalizeVolatileIds: boolean,
@@ -115,8 +118,9 @@ export function findRepeatedActionPatterns(
   entries: TraceEntry[],
   options: { windowSize?: number; maxFindings?: number } = {},
 ): RepeatActionPattern[] {
-  const windowSize = options.windowSize ?? 5;
-  const maxFindings = options.maxFindings ?? 3;
+  const windowSize = options.windowSize ?? REPEAT_ACTION_DEFAULT_WINDOW_SIZE;
+  const maxFindings =
+    options.maxFindings ?? REPEAT_ACTION_DEFAULT_MAX_FINDINGS;
   const findings: RepeatActionPattern[] = [];
   const seen = new Set<string>();
 

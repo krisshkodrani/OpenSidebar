@@ -13,6 +13,10 @@ function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function pctRange(value: { low: number; high: number } | undefined): string {
+  return value ? `${pct(value.low)}-${pct(value.high)}` : "n/a";
+}
+
 function clusterBadge(cluster: TraceFleetCluster) {
   if (cluster.kind === "failure") return "error" as const;
   if (cluster.failureRate >= 0.75) return "max_turns" as const;
@@ -41,8 +45,15 @@ function ClusterRow({
       </div>
       <div className="mt-1 text-[11px] text-trace-muted flex flex-wrap gap-x-3 gap-y-1">
         <span>{cluster.failedCount} failed</span>
-        <span>{cluster.count} traces</span>
-        <span>{pct(cluster.failureRate)} fail rate</span>
+        <span>n={cluster.count}</span>
+        <span>
+          {pct(cluster.failureRate)} fail ({pctRange(cluster.failureRateCI)})
+        </span>
+        {cluster.count < 5 && <span>low n</span>}
+        <span>{cluster.averageTurns.toFixed(1)} avg turns</span>
+        {(cluster.turnsStdDev ?? 0) > 0 && (
+          <span>sd {cluster.turnsStdDev!.toFixed(1)}</span>
+        )}
         {cluster.totalCost > 0 && <span>{formatCost(cluster.totalCost)}</span>}
       </div>
     </button>
@@ -75,8 +86,12 @@ export default function FleetInsights({ onSelectSession }: FleetInsightsProps) {
           </div>
           <div className="mt-0.5 text-[12px] text-trace-muted">
             {analysis.failedSessions}/{analysis.totalSessions} failed /{" "}
-            {pct(analysis.successRate)} success / avg{" "}
+            {pct(analysis.successRate)} success (
+            {pctRange(analysis.successRateCI)}) / avg{" "}
             {analysis.averageTurns.toFixed(1)} turns
+            {(analysis.turnsStdDev ?? 0) > 0
+              ? ` sd ${analysis.turnsStdDev!.toFixed(1)}`
+              : ""}
           </div>
         </div>
       </div>

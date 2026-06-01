@@ -35,6 +35,18 @@ export default function FleetOverview({
         : Math.round((completed / sessions.length) * 100);
     const averageTurns =
       sessions.length === 0 ? "0.0" : (totalTurns / sessions.length).toFixed(1);
+    const turnValues = sessions.map((session) => session.turnCount || 0);
+    const turnMean =
+      sessions.length === 0 ? 0 : totalTurns / Math.max(sessions.length, 1);
+    const turnsStdDev =
+      turnValues.length <= 1
+        ? 0
+        : Math.sqrt(
+            turnValues.reduce(
+              (sum, value) => sum + (value - turnMean) ** 2,
+              0,
+            ) / turnValues.length,
+          );
 
     // Calculate standalone vs grouped traces
     const sessionsInRuns = runGroups.reduce(
@@ -46,6 +58,7 @@ export default function FleetOverview({
     return {
       successRate,
       averageTurns,
+      turnsStdDev,
       totalCost,
       sessionsInRuns,
       standaloneSessions,
@@ -109,12 +122,12 @@ export default function FleetOverview({
         <InlineStat
           label="Success"
           value={`${stats.successRate}%`}
-          tooltip="% of traces with outcome 'completed' or 'success'"
+          tooltip={`% of traces with outcome 'completed' or 'success' (n=${formatCount(sessions.length)})`}
         />
         <InlineStat
           label="Avg turns"
           value={stats.averageTurns}
-          tooltip="Average number of turns per trace"
+          tooltip={`Average turns per trace (n=${formatCount(sessions.length)}, sd=${stats.turnsStdDev.toFixed(1)})`}
         />
         <InlineStat
           label="Est. cost"

@@ -21,6 +21,30 @@ function formatIndexedAt(value: number | null): string {
   return new Date(value).toLocaleString();
 }
 
+function rateConfidenceInterval(
+  successes: number,
+  total: number,
+): { low: number; high: number } {
+  if (total <= 0) return { low: 0, high: 0 };
+  const z = 1.96;
+  const phat = successes / total;
+  const z2 = z * z;
+  const denominator = 1 + z2 / total;
+  const center = phat + z2 / (2 * total);
+  const margin =
+    z *
+    Math.sqrt((phat * (1 - phat) + z2 / (4 * total)) / total);
+  return {
+    low: Math.max(0, (center - margin) / denominator),
+    high: Math.min(1, (center + margin) / denominator),
+  };
+}
+
+function formatRateRange(successes: number, total: number): string {
+  const ci = rateConfidenceInterval(successes, total);
+  return `${formatPercent(ci.low)}-${formatPercent(ci.high)}`;
+}
+
 function MetricCard({
   label,
   value,
@@ -169,18 +193,18 @@ export default function MetricsTab() {
               <MetricCard
                 label="Total Turns"
                 value={formatCount(summary.totalTurns)}
-                detail={`${summary.averageTurns.toFixed(1)} avg turns/trace`}
+                detail={`${summary.averageTurns.toFixed(1)} avg turns/trace, n=${formatCount(summary.totalSessions)}`}
               />
               <MetricCard
                 label="Success Rate"
                 value={formatPercent(summary.successRate)}
-                detail={`${formatCount(summary.completedSessions)} completed, ${formatCount(summary.failedSessions)} failed`}
+                detail={`n=${formatCount(summary.totalSessions)}, ${formatRateRange(summary.completedSessions, summary.totalSessions)}`}
                 tone={summary.failedSessions > 0 ? "warning" : "success"}
               />
               <MetricCard
                 label="Tool Failure Rate"
                 value={formatPercent(summary.toolFailureRate)}
-                detail={`${formatCount(summary.toolFailures)} failed of ${formatCount(summary.toolCalls)} calls`}
+                detail={`n=${formatCount(summary.toolCalls)}, ${formatRateRange(summary.toolFailures, summary.toolCalls)}`}
                 tone={summary.toolFailures > 0 ? "warning" : "success"}
               />
             </div>
@@ -258,14 +282,14 @@ export default function MetricsTab() {
               </div>
             </div>
             <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
-              <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
+              <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_110px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
                 <span>Model</span>
                 <span>Traces</span>
                 <span>Runs</span>
                 <span>Requests</span>
                 <span>Est. Cost</span>
                 <span>Output Share</span>
-                <span>Fail Rate</span>
+                <span>Fail Rate (n)</span>
               </div>
               {insights.models.length === 0 ? (
                 <div className="px-3 py-8 text-center text-sm text-trace-muted">
@@ -275,7 +299,7 @@ export default function MetricsTab() {
                 insights.models.slice(0, 12).map((row) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
+                    className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_110px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
                   >
                     <span className="min-w-0 truncate text-trace-text">
                       {row.label}
@@ -302,7 +326,8 @@ export default function MetricsTab() {
                         : formatPercent(row.outputCostShare)}
                     </span>
                     <span className="text-trace-subtle">
-                      {formatPercent(row.failureRate)}
+                      {formatPercent(row.failureRate)} (
+                      {formatCount(row.calls ?? row.requests ?? row.sessions)})
                     </span>
                   </div>
                 ))
