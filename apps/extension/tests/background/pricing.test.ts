@@ -30,6 +30,9 @@ describe("LLM pricing table", () => {
       inputUsdPerMillion: 2.0,
       outputUsdPerMillion: 8.0,
       cachedInputUsdPerMillion: 0.3,
+      effectiveDate: "2026-05-29",
+      sourceUrl: "https://docs.fireworks.ai/serverless/pricing",
+      confidence: "official",
     });
   });
 

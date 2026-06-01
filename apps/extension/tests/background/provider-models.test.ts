@@ -53,6 +53,21 @@ describe("provider-scoped model catalogs", () => {
     );
   });
 
+  test("fireworks Kimi K2.6 Turbo catalog pricing matches Fireworks serverless pricing", () => {
+    expect(
+      FIREWORKS_MODELS.find(
+        (model) => model.id === "accounts/fireworks/routers/kimi-k2p6-turbo",
+      ),
+    ).toMatchObject({
+      name: "Kimi K2.6 Turbo",
+      promptPrice: 2.0 / 1_000_000,
+      completionPrice: 8.0 / 1_000_000,
+      effectiveDate: "2026-05-29",
+      source: "curated",
+      provider: "fireworks",
+    });
+  });
+
   test("openrouter-groq planner uses curated Groq models", () => {
     expect(
       getProviderModelOptions({
