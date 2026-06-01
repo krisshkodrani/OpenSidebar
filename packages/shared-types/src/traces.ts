@@ -149,7 +149,9 @@ export type TracePerceptionScreenshotStatus =
   | "cached"
   | "missing"
   | "capture_failed"
-  | "not_requested";
+  | "not_requested"
+  | "pruned"
+  | "load_failed";
 
 export interface TraceScreenshotArtifact {
   /** Stable screenshot ID for correlation with extracted screenshot artifacts */
