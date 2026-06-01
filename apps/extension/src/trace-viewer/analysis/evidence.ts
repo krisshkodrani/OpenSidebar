@@ -7,6 +7,11 @@ import type {
   TraceEvidenceSignal,
   TraceEvidenceTurn,
 } from "./types";
+import {
+  STAGNANT_PROGRESS_TURN_THRESHOLD,
+  isContextHotTurn,
+  isDegradedPerceptionTurn,
+} from "./analyze";
 import { compareToolSequence, sameSnapshot } from "./repeat-actions";
 
 const SEVERITY_RANK: Record<InvestigationSeverity, number> = {
@@ -126,7 +131,8 @@ export function buildTraceEvidenceSignalsForTurn(
   }
 
   if (
-    (entry.progressState?.stagnantTurns ?? 0) >= 3 ||
+    (entry.progressState?.stagnantTurns ?? 0) >=
+      STAGNANT_PROGRESS_TURN_THRESHOLD ||
     Boolean(entry.progressState?.signal)
   ) {
     pushSignal(signals, {
@@ -197,11 +203,7 @@ export function buildTraceEvidenceSignalsForTurn(
 
   if (
     entry.perception &&
-    (entry.perception.mode === "element_only" ||
-      entry.perception.source === "fallback" ||
-      Boolean(entry.perception.fallbackReason) ||
-      entry.perception.screenshotStatus === "capture_failed" ||
-      entry.perception.screenshotStatus === "missing")
+    isDegradedPerceptionTurn(entry)
   ) {
     pushSignal(signals, {
       id: "degraded-perception",
@@ -217,10 +219,7 @@ export function buildTraceEvidenceSignalsForTurn(
     });
   }
 
-  if (
-    (entry.llmRequest?.contextMetrics?.utilization ?? 0) >= 0.85 ||
-    (entry.llmRequest?.contextMetrics?.droppedMessageCount ?? 0) > 0
-  ) {
+  if (isContextHotTurn(entry)) {
     const metrics = entry.llmRequest.contextMetrics;
     pushSignal(signals, {
       id: "context-pressure",

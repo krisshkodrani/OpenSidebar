@@ -6,6 +6,10 @@ import type {
 } from "../../../types/traces";
 import type { RunTraceEvent } from "../../../utils/run-trace";
 import { redactTracePayload } from "../../../utils/trace-protection";
+import {
+  buildFrozenTraceBundle,
+  validateFrozenTraceBundle,
+} from "../../analysis";
 import { useStore } from "../../store";
 import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
@@ -96,8 +100,10 @@ function PartialHandoffSummary({
 export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   const currentEntries = useStore((s) => s.currentEntries);
   const currentRunEvents = useStore((s) => s.currentRunEvents);
+  const sessionLogs = useStore((s) => s.sessionLogs);
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [frozenExported, setFrozenExported] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const outcome = session.outcome;
   const metrics = session.metrics;
@@ -172,6 +178,34 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
     URL.revokeObjectURL(url);
   };
 
+  const handleFreezeExport = () => {
+    const bundle = buildFrozenTraceBundle({
+      session,
+      entries: currentEntries,
+      runEvents: currentRunEvents,
+      logs: sessionLogs,
+    });
+    const redactedBundle = {
+      ...redactTracePayload(bundle, { mode: "export" }),
+      screenshots: bundle.screenshots,
+    };
+    const issues = validateFrozenTraceBundle(redactedBundle);
+    if (issues.some((issue) => issue.severity === "error")) {
+      console.warn("Frozen trace bundle validation failed", issues);
+    }
+    const blob = new Blob([`${JSON.stringify(redactedBundle, null, 2)}\n`], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${session.sessionId}.frozen-trace.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setFrozenExported(true);
+    setTimeout(() => setFrozenExported(false), 1200);
+  };
+
   return (
     <div className="px-5 py-3.5">
       <div className="flex items-center gap-3 mb-1.5 min-w-0 flex-wrap">
@@ -235,6 +269,13 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
             onClick={handleExport}
           >
             Export JSONL
+          </button>
+          <button
+            className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
+            title="Freeze this trace as a permanent JSON bundle"
+            onClick={handleFreezeExport}
+          >
+            {frozenExported ? "Frozen" : "Freeze Bundle"}
           </button>
         </div>
       </div>

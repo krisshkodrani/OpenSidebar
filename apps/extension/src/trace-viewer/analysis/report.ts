@@ -96,12 +96,16 @@ function selectRelevantTurns(
 }
 
 function appendFinding(lines: string[], finding: InvestigationFinding): void {
+  const source = finding.source ? `, source ${finding.source}` : "";
   lines.push(
     `- [${finding.severity}] ${finding.title} (${finding.category}, confidence ${Math.round(
       finding.confidence * 100,
-    )}%)`,
+    )}%${source})`,
   );
   lines.push(`  ${finding.summary}`);
+  if (finding.derivation) {
+    lines.push(`  Derivation: ${finding.derivation}`);
+  }
   if (finding.firstTurn != null) {
     lines.push(`  First turn: T${finding.firstTurn}`);
   }
@@ -114,6 +118,9 @@ function appendFinding(lines: string[], finding: InvestigationFinding): void {
             evidence.turnNumber != null ? `T${evidence.turnNumber}` : "",
             evidence.eventType ? `event=${evidence.eventType}` : "",
             evidence.toolCallId ? `tool=${evidence.toolCallId}` : "",
+            evidence.resolved === false
+              ? `unresolved=${evidence.resolutionDetail ?? evidence.resolutionStatus ?? "unknown"}`
+              : "",
           ]
             .filter(Boolean)
             .join(" "),
