@@ -11,6 +11,7 @@ import {
 } from "./trace-insights";
 import {
   isIsoDay,
+  normalizeTraceModelId,
   type TraceEntryLike,
   type TraceSessionLike,
 } from "./log-server-helpers";
@@ -498,7 +499,10 @@ export function insertTraceTurnToSqlite(
         session_id: sessionId,
         turn_number: turnNumber,
         run_id: asString(entry.runId) || null,
-        model: asString(llmRequest?.model) || null,
+        model:
+          normalizeTraceModelId(
+            asString(llmResponse?.actualModel) || asString(llmRequest?.model),
+          ) || null,
         model_tier: asString(llmRequest?.modelTier) || null,
         provider: asString(llmResponse?.actualProviderId) || null,
         prompt_tokens: promptTokens,
@@ -864,6 +868,16 @@ function inferProviderIdFromModel(model: string): ProviderConfig["providerId"] |
   return null;
 }
 
+function pricingModelForNormalizedId(
+  providerId: ProviderConfig["providerId"] | null,
+  model: string,
+): string {
+  if (providerId === "fireworks" && !model.includes("/")) {
+    return `accounts/fireworks/routers/${model}`;
+  }
+  return model;
+}
+
 /**
  * Build the SQL WHERE clause + params for the filtered session CTE.
  *
@@ -882,7 +896,7 @@ function buildSessionCteFilter(
   const esc = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
 
   // Model filter — sessions that have a turn with this model
-  const model = asString(filters.model).trim();
+  const model = normalizeTraceModelId(asString(filters.model).trim());
   if (model && model !== "all") {
     conditions.push(
       `EXISTS (SELECT 1 FROM trace_turns _fm WHERE _fm.session_id = s.session_id AND _fm.model = @_fModel)`,
@@ -1336,8 +1350,9 @@ function buildInsightsSql(
     const model = asString(row.model);
     const providerId =
       asProviderId(row.provider) ?? inferProviderIdFromModel(model);
+    const pricingModel = pricingModelForNormalizedId(providerId, model);
     const breakdown = providerId
-      ? estimateCostBreakdownUsd(providerId, model, {
+      ? estimateCostBreakdownUsd(providerId, pricingModel, {
           prompt_tokens: asNumber(row.promptTokens),
           completion_tokens: asNumber(row.completionTokens),
           total_tokens: asNumber(row.totalTokens),
@@ -1424,8 +1439,9 @@ function buildInsightsSql(
     const mReqCost = asNumber(row.requestCost);
     const providerId =
       asProviderId(row.provider) ?? inferProviderIdFromModel(model);
+    const pricingModel = pricingModelForNormalizedId(providerId, model);
     const bd = providerId
-      ? estimateCostBreakdownUsd(providerId, model, {
+      ? estimateCostBreakdownUsd(providerId, pricingModel, {
           prompt_tokens: mPrompt,
           completion_tokens: mCompletion,
           total_tokens: mTotal,

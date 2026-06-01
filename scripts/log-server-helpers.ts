@@ -73,6 +73,13 @@ export function extractDomain(rawUrl: unknown): string | null {
   }
 }
 
+export function normalizeTraceModelId(model: string): string {
+  return model
+    .trim()
+    .replace(/^accounts\/[^/]+\/routers\//, "")
+    .replace(/:nitro$/, "");
+}
+
 export function getSessionModels(
   session: Pick<TraceSessionLike, "models" | "metrics">,
 ): string[] {
@@ -86,7 +93,13 @@ export function getSessionModels(
     typeof session.metrics.modelBreakdown === "object"
       ? Object.keys(session.metrics.modelBreakdown)
       : [];
-  return Array.from(new Set([...storedModels, ...breakdownModels]));
+  return Array.from(
+    new Set(
+      [...storedModels, ...breakdownModels]
+        .map(normalizeTraceModelId)
+        .filter((model) => model.length > 0),
+    ),
+  );
 }
 
 export function normalizeAgentTurnRecord(
@@ -238,7 +251,7 @@ export function matchesTraceFilters(
     typeof session.outcome === "string" ? session.outcome : "";
   const domain = (filters.domain || "").toLowerCase().trim();
   const q = (filters.q || "").toLowerCase().trim();
-  const model = (filters.model || "").trim();
+  const model = normalizeTraceModelId((filters.model || "").trim());
   const mode = (filters.mode || "").trim();
   const runId = (filters.runId || "").trim();
   const tier = (filters.tier || "").trim();

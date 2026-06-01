@@ -209,13 +209,52 @@ describe("trace insights", () => {
     expect(result.summary.estimatedRequestCost).toBeCloseTo(0.00212, 8);
     expect(result.summary.outputCostShare).toBeCloseTo(0.0008 / 0.00212, 8);
     expect(result.models[0]).toMatchObject({
-      id: "accounts/fireworks/routers/kimi-k2p6-turbo",
+      id: "kimi-k2p6-turbo",
       requests: 1,
       promptTokens: 1000,
       cachedTokens: 400,
       completionTokens: 100,
     });
     expect(result.models[0].estimatedRequestCost).toBeCloseTo(0.00212, 8);
+  });
+
+  test("normalizes served model ids before aggregating model rows", () => {
+    const sessions = [
+      {
+        sessionId: "s1",
+        startTime: Date.UTC(2026, 4, 18, 9, 0, 0),
+        endTime: Date.UTC(2026, 4, 18, 9, 1, 0),
+        query: "Objective: model normalization",
+        startUrl: "https://example.com",
+        outcome: "completed",
+        turnCount: 1,
+        metrics: {
+          modelBreakdown: {
+            "accounts/fireworks/routers/kimi-k2p6-turbo:nitro": { calls: 1 },
+          },
+        },
+      },
+    ];
+    const entriesBySession = new Map<string, any[]>([
+      [
+        "s1",
+        [
+          {
+            llmRequest: { model: "router-placeholder" },
+            llmResponse: {
+              actualModel: "accounts/fireworks/routers/kimi-k2p6-turbo:nitro",
+              durationMs: 1,
+              usage: null,
+            },
+            toolExecutions: [],
+          },
+        ],
+      ],
+    ]);
+
+    const result = buildTraceInsights({ sessions, entriesBySession });
+
+    expect(result.models.map((row) => row.id)).toEqual(["kimi-k2p6-turbo"]);
   });
 
   test("filters by failed tool", () => {
