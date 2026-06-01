@@ -136,6 +136,9 @@ export default function PerceptionCard({
             variant={
               p.screenshotStatus === "capture_failed" || p.screenshotStatus === "missing"
                 ? "error"
+                : p.screenshotStatus === "pruned" ||
+                    p.screenshotStatus === "load_failed"
+                  ? "stopped"
                 : p.screenshotStatus === "cached"
                   ? "stopped"
                   : "type"
@@ -160,7 +163,9 @@ export default function PerceptionCard({
             />
           ) : (
             <div className="bg-trace-accent/[0.08] border border-dashed border-trace-accent/[0.15] rounded p-8 text-center text-trace-dim text-xs">
-              Screenshot not available
+              {p.screenshotStatus === "pruned"
+                ? "Screenshot pruned (hot window elapsed)"
+                : "Screenshot failed to load"}
             </div>
           )}
           {panoramicShots.length > 0 ? (

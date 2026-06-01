@@ -41,7 +41,7 @@ export default function PanoramicThumbnails({
           >
             {failedIndexes.has(i) ? (
               <span className="flex h-16 w-24 items-center justify-center px-2 text-center text-[10px] text-trace-dim">
-                Image unavailable
+                Image failed to load
               </span>
             ) : (
               <img
@@ -76,7 +76,7 @@ export default function PanoramicThumbnails({
           </div>
           {failedIndexes.has(expandedIdx) ? (
             <div className="p-8 text-center text-xs text-trace-dim bg-trace-panel">
-              Panoramic image unavailable
+              Panoramic image failed to load
             </div>
           ) : (
             <img
