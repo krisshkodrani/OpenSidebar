@@ -42,9 +42,9 @@ const scenarios: Record<string, Scenario> = {
       "Fill this Ashby application but do not submit using these data.",
       "| Field | Copy This |",
       "|---|---|",
-      "| Name | Kris Shkodrani |",
-      "| Email | kshkodrani@gmail.com |",
-      "| LinkedIn URL | https://www.linkedin.com/in/krisshkodrani |",
+      "| Name | Jordan Rivera |",
+      "| Email | jordan.rivera@example.com |",
+      "| LinkedIn URL | https://www.linkedin.com/in/jordan-rivera |",
       "| Phone | +43 664 99503226 |",
       "| Current Location | Linz, Austria |",
       "| EU Work Permit | Yes |",
@@ -64,9 +64,9 @@ const scenarios: Record<string, Scenario> = {
         }
 
         const matches =
-          draft.name === "Kris Shkodrani" &&
-          draft.email === "kshkodrani@gmail.com" &&
-          draft.linkedIn === "https://www.linkedin.com/in/krisshkodrani" &&
+          draft.name === "Jordan Rivera" &&
+          draft.email === "jordan.rivera@example.com" &&
+          draft.linkedIn === "https://www.linkedin.com/in/jordan-rivera" &&
           draft.phone === "+43 664 99503226" &&
           draft.currentLocation === "Linz, Austria" &&
           draft.euWorkPermit === "Yes" &&

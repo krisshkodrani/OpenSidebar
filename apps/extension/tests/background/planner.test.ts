@@ -2082,14 +2082,14 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
                 difficulty: "moderate",
                 steps: [
                     {
-                        objective: "Fill the Name field with Kris Shkodrani",
-                        successCriteria: "Name input contains Kris Shkodrani",
+                        objective: "Fill the Name field with Jordan Rivera",
+                        successCriteria: "Name input contains Jordan Rivera",
                         dependencies: [],
                         assumptions: [],
                     },
                     {
-                        objective: "Fill the Email field with kshkodrani@gmail.com",
-                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        objective: "Fill the Email field with jordan.rivera@example.com",
+                        successCriteria: "Email input contains jordan.rivera@example.com",
                         dependencies: [0],
                         assumptions: [],
                     },
@@ -2103,8 +2103,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "Fill the application but dont send using these data",
             "| Field | Copy This |",
             "|---|---|",
-            "| Name | Kris Shkodrani |",
-            "| Email | kshkodrani@gmail.com |",
+            "| Name | Jordan Rivera |",
+            "| Email | jordan.rivera@example.com |",
             "| Earliest Start Date | 2026-06-01 |",
             "",
             "## Why Do You Care About Langfuse?",
@@ -2139,14 +2139,14 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
                 difficulty: "moderate",
                 steps: [
                     {
-                        objective: "Fill the Name field with Kris Shkodrani",
-                        successCriteria: "Name input contains Kris Shkodrani",
+                        objective: "Fill the Name field with Jordan Rivera",
+                        successCriteria: "Name input contains Jordan Rivera",
                         dependencies: [],
                         assumptions: [],
                     },
                     {
-                        objective: "Fill the Email field with kshkodrani@gmail.com",
-                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        objective: "Fill the Email field with jordan.rivera@example.com",
+                        successCriteria: "Email input contains jordan.rivera@example.com",
                         dependencies: [0],
                         assumptions: [],
                     },
@@ -2163,8 +2163,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "- Assistant: Senior Product Engineer @ Langfuse summary",
             "",
             "PROFILE DIGEST CONTEXT:",
-            "- Fact: Full name = Kris Shkodrani",
-            "- Fact: Email = kshkodrani@gmail.com",
+            "- Fact: Full name = Jordan Rivera",
+            "- Fact: Email = jordan.rivera@example.com",
             "",
             `CURRENT REQUEST:\n${currentRequest}`,
         ].join("\n");
@@ -2186,7 +2186,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toContain(
             "Complete the workflow for the original request: Fill the profile",
         );
-        expect(result.nodes[0].description).toContain("Kris Shkodrani");
+        expect(result.nodes[0].description).toContain("Jordan Rivera");
         expect(result.nodes[0].description).not.toContain(
             "RECENT WORKSPACE CONVERSATION",
         );

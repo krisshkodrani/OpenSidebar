@@ -12,8 +12,8 @@ OpenSidebar streams model output into the side panel in real time.
 
 ## Current Model Routing
 
-- executor turns default to `accounts/fireworks/routers/kimi-k2p5-turbo`
-- planner turns default to `accounts/fireworks/routers/kimi-k2p5-turbo`
+- executor turns default to `accounts/fireworks/routers/kimi-k2p6-turbo`
+- planner turns default to `accounts/fireworks/routers/kimi-k2p6-turbo`
 - runtime can temporarily fall back to the configured executor fallback model
 
 ## Technical Flow

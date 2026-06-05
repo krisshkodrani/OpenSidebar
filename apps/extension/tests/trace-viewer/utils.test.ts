@@ -63,7 +63,7 @@ describe("trace-viewer utils", () => {
       "RECENT WORKSPACE CONVERSATION:",
       "- Assistant: long previous answer",
       "PROFILE DIGEST CONTEXT:",
-      "- Fact: Email = kshkodrani@gmail.com",
+      "- Fact: Email = jordan.rivera@example.com",
       "CURRENT REQUEST:",
       "Fill the profile",
       "Planner assumptions:",

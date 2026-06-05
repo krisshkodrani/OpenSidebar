@@ -337,7 +337,7 @@ describe("Orchestrator handoff briefing", () => {
       "Fill the application but dont send using these data",
       "| Field | Copy This |",
       "|---|---|",
-      "| Name | Kris Shkodrani |",
+      "| Name | Jordan Rivera |",
       "| Earliest Start Date | 2026-06-01 |",
       "",
       "## Why Do You Care About Langfuse?",

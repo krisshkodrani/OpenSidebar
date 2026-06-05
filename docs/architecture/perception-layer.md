@@ -27,7 +27,7 @@ This contract is shared between production and the corrected perception eval har
 
 ## Structured Path Model
 
-- default structured-perception model: provider-specific, with Fireworks using `accounts/fireworks/routers/kimi-k2p5-turbo`
+- default structured-perception model: provider-specific, with Fireworks using `accounts/fireworks/routers/kimi-k2p6-turbo`
 - OpenRouter structured fallback: `x-ai/grok-4.1-fast`
 - prompt source: `prompts/runtime/perception/interpret_page.md`
 
