@@ -1,7 +1,10 @@
 # RFC 0006 - Metric Semantics Definitions
 
-Status: Implemented
+Lifecycle status: Archived
 Date: 2026-05-30
+Decision date: 2026-06-06
+Archived date: 2026-06-06
+Closure: Verified implementation accepted.
 Scope: `analysis/types.ts` (`InvestigationSummaryMetrics`), `analysis/analyze.ts`, `analysis/repeat-actions.ts` (`sameSnapshot`, `compareToolSequence`, `findRepeatedActionPatterns`), docs
 
 ## Problem
@@ -51,3 +54,39 @@ Definitions live only in code and can shift between versions without notice.
 
 Low: mostly documentation + extracting constants + locking tests. No data-model
 change.
+
+## Decision
+
+Status: Approved
+
+Chosen path:
+
+- Keep the metric dictionary, named predicates/constants, and locking tests as
+  one reviewed contract for investigation metrics and repeated-action
+  detection.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- None.
+
+Do not do:
+
+- Do not change a metric threshold, repeat window, snapshot equality rule, or
+  argument-normalization rule without updating both the dictionary and tests.
+
+Evidence required before merge:
+
+- `analysis.test.ts` locks the five-turn repeat window and near-repeat argument
+  semantics.
+- `diagnostics.test.ts` and investigation analysis tests cover productive,
+  failed-tool, degraded-perception, and context-hot counts.
+- `docs/architecture/trace-viewer-metric-semantics.md` records the matching
+  definitions.
+
+Next action:
+
+- Archive

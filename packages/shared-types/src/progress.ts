@@ -51,7 +51,8 @@ export type PartialHandoffReason =
   | "timeout"
   | "tool_error"
   | "provider_error"
-  | "manual_stop";
+  | "manual_stop"
+  | "escalation_failed";
 
 export type HandoffConfidence = "high" | "medium" | "low";
 

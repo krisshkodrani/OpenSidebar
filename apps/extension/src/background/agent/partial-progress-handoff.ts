@@ -279,6 +279,8 @@ function formatHandoffReason(reason: PartialHandoffReason): string {
       return "provider error";
     case "manual_stop":
       return "manual stop";
+    case "escalation_failed":
+      return "escalation without recovery";
   }
 }
 

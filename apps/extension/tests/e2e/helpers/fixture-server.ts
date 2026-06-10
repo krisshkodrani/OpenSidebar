@@ -50,6 +50,27 @@ function serveReactApp(res: http.ServerResponse) {
   return false;
 }
 
+function serveStucknessFixture(
+  filename: string,
+  res: http.ServerResponse,
+): boolean {
+  if (!filename.startsWith("stuckness/")) return false;
+
+  const filePath = path.resolve(FIXTURES_DIR, filename);
+  const stucknessRoot = `${path.resolve(FIXTURES_DIR, "stuckness")}${path.sep}`;
+  if (!filePath.startsWith(stucknessRoot) || !fs.existsSync(filePath)) {
+    res.writeHead(404);
+    res.end("Not found");
+    return true;
+  }
+
+  const ext = path.extname(filePath);
+  const contentType = MIME_TYPES[ext] || "text/html";
+  res.writeHead(200, { "Content-Type": contentType });
+  res.end(fs.readFileSync(filePath));
+  return true;
+}
+
 function serveDownloadFixture(
   filename: string,
   res: http.ServerResponse,
@@ -96,6 +117,10 @@ export async function startFixtureServer(): Promise<number> {
           res.end(content);
           return;
         }
+      }
+
+      if (serveStucknessFixture(filename, res)) {
+        return;
       }
 
       if (serveDownloadFixture(filename, res)) {

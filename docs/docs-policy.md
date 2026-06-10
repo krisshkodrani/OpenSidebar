@@ -27,6 +27,19 @@ Use Notion for material that is useful but not a stable product contract:
 
 If a Notion note becomes a product decision, promote only the stable conclusion into `docs/` and keep the full investigation in Notion.
 
+## RFC Decisions
+
+RFCs follow this lifecycle:
+
+`Draft -> Reviewed -> Decision stamped -> Implementation plan -> Implementation -> Verification -> Archived or promoted to docs`
+
+A review does not authorize implementation. The user or a maintainer must record
+the final Decision Stamp before an implementation plan or product-code change
+starts. Agents may recommend a decision, but may not infer or assign approval.
+
+Use [RFC Decision Process](engineering/rfc-decision-process.md) for the required
+stamp, status semantics, review prompt, and implementation gate.
+
 ## Promotion Criteria
 
 Move content from Notion into repo docs only when all of these are true:
@@ -56,10 +69,11 @@ Use the existing HQ surfaces this way:
 - `E2E Runs`: run records using the same metrics as repo-generated `.artifacts/e2e/` reports.
 - `Archive`: imported repo artifacts, dated research, old reports, and one-off notes that should not sit in active repo docs.
 
-| Property | Values |
-| --- | --- |
-| Type | RFC, Research, Experiment, E2E Report, Design Study, Debug Investigation, Decision |
-| Status | Draft, Active, Superseded, Promoted to Repo, Archived |
-| Area | Runtime, UI, E2E, Models, Perception, Docs, CI |
-| Repo impact | None, Follow-up issue, PR needed, Promoted |
-| Canonical repo doc | Link to the stable repo document, if promoted |
+| Property           | Values                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| Type               | RFC, Research, Experiment, E2E Report, Design Study, Debug Investigation, Decision |
+| Lifecycle status   | Draft, In review, Decided, Implementing, Verifying, Promoted to Repo, Archived     |
+| Decision           | Pending, Approved, Approved with edits, Rejected, Parked, Needs more research      |
+| Area               | Runtime, UI, E2E, Models, Perception, Docs, CI                                     |
+| Repo impact        | None, Follow-up issue, PR needed, Promoted                                         |
+| Canonical repo doc | Link to the stable repo document, if promoted                                      |

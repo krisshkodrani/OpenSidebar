@@ -1,12 +1,15 @@
 # RFC 0001 - Evidence Trust & Expiry Signaling
 
-Status: Implemented
+Lifecycle status: Archived
 Date: 2026-05-30
+Decision date: 2026-06-06
+Archived date: 2026-06-06
+Closure: Verified implementation accepted.
 Scope: `analysis/analyze.ts`, `analysis/evidence.ts`, `components/traces/TurnSnapshotSection.tsx`, `components/traces/PanoramicThumbnails.tsx`, `components/traces/InvestigationSummary.tsx`
 
 ## Problem
 
-Two distinct ways the viewer can show *untrustworthy evidence*:
+Two distinct ways the viewer can show _untrustworthy evidence_:
 
 1. **Dangling evidence pointers.** An `InvestigationFinding` cites
    `TraceEvidencePointer`s (turn / tool / event / perception / log). Nothing
@@ -24,7 +27,7 @@ Two distinct ways the viewer can show *untrustworthy evidence*:
   stale evidence." A broken screenshot misattributed to a perception failure
   sends debugging down the wrong path.
 - **AI researcher:** A finding that cites evidence which no longer resolves is a
-  *false observation*; and confusing "pruned" with "absent" corrupts any
+  _false observation_; and confusing "pruned" with "absent" corrupts any
   perception-usage statistic. You also need to see the reproducibility boundary
   explicitly.
 
@@ -63,3 +66,36 @@ Add optional `resolved?: boolean`, `resolutionStatus?: "resolved" |
 ## Rollout
 
 Low effort, non-breaking. Ship behind the existing component tests; no migration.
+
+## Decision
+
+Status: Approved
+
+Chosen path:
+
+- Resolve evidence pointers against the loaded trace, preserve explicit
+  unresolved/pruned/load-failed states, and render screenshot expiry separately
+  from generic image failures.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- None.
+
+Do not do:
+
+- Do not silently drop unresolved evidence or describe an unclassified image
+  failure as retention pruning.
+
+Evidence required before merge:
+
+- `analysis.test.ts` proves missing pointers remain visible as unresolved.
+- `turn-snapshot-section.test.tsx` distinguishes known pruning from generic
+  image load failure.
+
+Next action:
+
+- Archive

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vortex Beta Signup</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input[type="text"], input[type="email"] { width: 100%; padding: 0.5rem; margin-top: 0.25rem; }
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    #submit-btn { margin-top: 1.5rem; padding: 0.6rem 1.4rem; }
+    #banner { margin-top: 1.5rem; padding: 0.75rem; background: #e6f7e6; border: 1px solid #71c171; display: none; }
+    #terms-row { margin-top: 1rem; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Beta Program Signup</h1>
+  <p>Fill in the form and submit to join the beta program.</p>
+  <form id="signup">
+    <label for="name">Full name</label>
+    <input type="text" id="name" name="name" placeholder="Jane Doe" />
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" placeholder="jane@example.com" />
+    <div id="terms-row">
+      <label><input type="checkbox" id="terms" /> I accept the beta terms</label>
+    </div>
+    <button id="submit-btn" type="submit" disabled>Submit</button>
+  </form>
+  <div id="banner">Signup complete — welcome to the beta!</div>
+
+  <script>
+    // Fault-injection fixture (RFC LP-2): the submit button stays disabled
+    // because a required terms checkbox is not rendered until the lock
+    // releases (interactions or elapsed time). Guarantees a stuck phase for
+    // any agent, then becomes solvable after escalation/replanning.
+    const INTERACTIONS_TO_UNLOCK = 10;
+    const UNLOCK_MS = 90_000;
+    const startedAt = Date.now();
+    window.fixtureState = { solved: false, interactions: 0, unlocked: false };
+
+    function maybeUnlock() {
+      if (window.fixtureState.unlocked) return;
+      if (
+        window.fixtureState.interactions >= INTERACTIONS_TO_UNLOCK ||
+        Date.now() - startedAt >= UNLOCK_MS
+      ) {
+        window.fixtureState.unlocked = true;
+        document.getElementById("terms-row").style.display = "block";
+      }
+    }
+    setInterval(maybeUnlock, 1000);
+    document.addEventListener("click", () => {
+      window.fixtureState.interactions++;
+      maybeUnlock();
+    });
+    document.addEventListener("keydown", () => {
+      window.fixtureState.interactions++;
+      maybeUnlock();
+    });
+
+    function refreshSubmit() {
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("email").value.trim();
+      const terms = document.getElementById("terms").checked;
+      document.getElementById("submit-btn").disabled = !(
+        name && email && terms
+      );
+    }
+    document.getElementById("signup").addEventListener("input", refreshSubmit);
+    document.getElementById("terms").addEventListener("change", refreshSubmit);
+    document.getElementById("signup").addEventListener("submit", (e) => {
+      e.preventDefault();
+      document.getElementById("banner").style.display = "block";
+      window.fixtureState.solved = true;
+    });
+  </script>
+</body>
+</html>

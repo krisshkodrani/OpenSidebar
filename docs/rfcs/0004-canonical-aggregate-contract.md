@@ -1,7 +1,11 @@
 # RFC 0004 - Canonical Aggregate Contract (JSONL <-> SQLite Parity)
 
-Status: Implemented
+Lifecycle status: Archived
 Date: 2026-05-30
+Decision date: 2026-06-06
+Archived date: 2026-06-06
+Closure: Rejected as written because SQLite is now the authoritative viewer
+store and JSONL is primarily an ingestion, bootstrap, and repair source.
 Scope: `scripts/log-server.ts` (`/api/trace-insights`, `/api/traces/*` aggregates), `scripts/trace-sqlite-index.ts`, `analysis/fleet.ts`, viewer `api.ts` / `hooks/useInsightsData.ts`
 
 ## Problem
@@ -54,3 +58,35 @@ normalization, etc.).
 
 Medium: a contract/parity refactor plus shared scalar helpers. No data-model
 change for existing consumers; additive statistical fields are allowed.
+
+## Decision
+
+Status: Rejected
+
+Chosen path:
+
+- Keep SQLite authoritative for viewer aggregates. Use JSONL to bootstrap or
+  rebuild a missing index, and test normalization and ingestion compatibility
+  at those boundaries instead of maintaining full dual-engine aggregate parity.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- Add targeted compatibility tests only when a concrete ingestion or rebuild
+  drift risk is identified.
+
+Do not do:
+
+- Do not maintain JSONL and SQLite as equal production aggregate engines, and do
+  not silently fall back to JSONL when an existing SQLite index fails.
+
+Evidence required before merge:
+
+- None.
+
+Next action:
+
+- Archive
