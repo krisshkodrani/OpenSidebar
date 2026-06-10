@@ -138,6 +138,30 @@ pnpm exec nx run-many -t typecheck
 - Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
+## Measured Performance
+
+We benchmark on a neutral public set — [Online-Mind2Web](https://huggingface.co/datasets/osunlp/Online-Mind2Web)
+(verified live-web tasks, WebJudge auto-eval) — rather than only internal
+fixtures, so the number means something outside this repo. The adapter is in
+`scripts/bench/` (see [`scripts/bench/README.md`](scripts/bench/README.md)).
+
+```bash
+pnpm run bench               # headed sweep on the bundled read-only sample → prints a score
+pnpm run bench:fetch         # vendor the official task set (needs HF_TOKEN; dataset is gated)
+pnpm run bench -- --size 100 # a 100-task stratified sweep once the official set is vendored
+```
+
+Each sweep writes a re-openable receipt per task plus `report.md` / `summary.json`
+under `.artifacts/bench/`. Scores are reported per model config
+(`E2E_PROVIDER` / `E2E_MODEL`) with cost, the easy/medium/hard breakdown, and a
+judge-vs-manual disagreement check alongside the headline rate.
+
+> **Published numbers:** _pending the first full sweep._ Online-Mind2Web is not
+> saturated (public SOTA is ~42%), so we publish honest mid-range numbers with
+> their receipts rather than a cherry-picked figure. Write-mutating tasks
+> (purchase, checkout, account changes) are skipped on the live web and counted
+> as skipped, not failed.
+
 ## Harness And Skill Philosophy
 
 OpenSidebar uses benchmarks and fixtures to expose missing general browser-agent capabilities, not as targets for one-off shortcuts. The harness should stay thin: it can reset state, transfer sessions, collect traces, and validate outcomes, but product behavior belongs in the runtime, tools, controllers, prompts, or reusable skills.

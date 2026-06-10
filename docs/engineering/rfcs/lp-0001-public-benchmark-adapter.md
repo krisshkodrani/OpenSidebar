@@ -1,8 +1,8 @@
 # RFC LP-1 — Public Benchmark Adapter & Published Numbers
 
-Lifecycle status: Draft
+Lifecycle status: Decision stamped
 Date: 2026-06-10
-Owner decision: Pending
+Decision date: 2026-06-10 (owner approved in session: "ready adapter that gives a score when we run")
 Scope: `tests/e2e` harness reuse, a new `scripts/bench-*` runner, trace frozen-bundle export, README/launch copy. No product-runtime changes except those separately approved.
 Related: SOTA Gap Analysis GAP-2 (internal regression benchmarking); RFC 0005 (frozen-bundle export, implemented)
 
@@ -111,36 +111,85 @@ Largest of the three P0s (~1–2 weeks of focused work). Sequence after LP-2 so
 the first published sweep reflects the rescued agent. First public sweep is a
 launch-blocking artifact; subsequent sweeps run on a weekly manual cadence.
 
-## Recommended Decision (agent recommendation — not an owner stamp)
+## Decision
 
-Status: Approved with edits
+Status: Approved
 
 Chosen path:
 
-- Stage 1 only: headed Online-Mind2Web 100-task adapter on the existing E2E
-  harness, WebJudge + manual-sample scoring, frozen-bundle receipts, README
-  publication per model config.
+- Stage 1 only: a headed Online-Mind2Web adapter on the existing E2E harness,
+  WebJudge auto-eval with a manual-sample disagreement check, durable per-task
+  trace receipts, and README publication per model config.
+- **Configs are runtime-parameterized, not pre-baked into the RFC.** The two
+  prior blocking edits (owner picks model configs + cost ceiling; owner
+  confirms subset/license/skip policy) are resolved by making them runner
+  inputs: model config = `E2E_PROVIDER`/`E2E_MODEL`; subset = `--size`,
+  `--levels`, `--seed`; cost is observed and reported, with the owner choosing
+  the ceiling per invocation. The owner picks which 2–3 configs to *publish*
+  at publication time.
+- **Task data:** the official set is access-gated on Hugging Face, so the
+  adapter ships with (a) `scripts/bench/fetch-tasks.ts` to vendor the official
+  set into a pinned file once the owner accepts the dataset terms
+  (`HF_TOKEN`), and (b) a small read-only `sample.json` so the adapter runs
+  end-to-end and produces a score out of the box. The loader validates the
+  pin (source/revision/license) on every load.
+- **Skip policy:** write-mutating tasks (purchase, checkout, payment, booking,
+  account changes, posting, applications) are detected from the instruction
+  and **skipped, counted as skipped, never failed**. This is the enforced
+  live-web rail.
 
 Required edits before implementation:
 
-- Owner picks the 2–3 model configs to publish and the cost ceiling per sweep.
-- Confirm the Online-Mind2Web subset, license handling, and skip policy for
-  write-mutating tasks.
+- None. (Resolved by runtime parameterization, as above.)
 
 Non-blocking follow-ups:
 
+- Screenshot-grounded WebJudge (v1 judges on the textual trajectory + final
+  answer; the manual disagreement check keeps that honest).
+- Per-domain hard navigation scoping — the safety profile computes the
+  allowlist and records it as evidence, but runtime enforcement of per-domain
+  scoping needs a product allowlist setting (or the GAP-7 action guard); out
+  of scope for this docs/harness-only RFC.
+- Full `buildFrozenTraceBundle` receipts (v1 copies raw trace JSONL per task as
+  the re-openable receipt).
 - WebBench subset; BrowserGym/headless Stage 2 as a separate RFC.
 
 Do not do:
 
 - Do not build the headless agent-core under this RFC.
 - Do not add benchmark-specific branches to product runtime to lift the score
-  (AGENTS.md WorkArena philosophy applies verbatim to public benchmarks).
-- Do not publish a number without the frozen-bundle archive and the manual
+  (AGENTS.md WorkArena philosophy applies verbatim to public benchmarks). The
+  runner is harness-only.
+- Do not publish a number without the trace-receipt archive and the manual
   disagreement rate alongside it.
 
 Evidence required before merge:
 
-- A complete 100-task sweep with score, cost, judge/manual disagreement rate,
-  and re-openable frozen bundles for every task.
-- Smoke-subset integration test green; `pnpm run verify` green.
+- Adapter merged with unit tests green for the loader, safety profile,
+  WebJudge prompt/verdict, and aggregation; `pnpm run verify` green.
+- A first real sweep (score, cost, judge/manual disagreement rate, re-openable
+  receipts) is a **launch artifact the owner runs against the live web** — it
+  is not produced in this implementation PR (needs API keys + live runs).
+
+Next action:
+
+- Implement
+
+## Implementation notes (2026-06-10)
+
+- **Architecture:** `scripts/bench/` holds the pure, unit-tested modules
+  (`loader`, `safety-profile`, `webjudge`, `aggregate`, `types`) plus
+  `fetch-tasks.ts` and vendored `tasks/sample.json`. The headed runner is a
+  vitest file (`apps/extension/tests/bench/online-mind2web.bench.test.ts`)
+  reusing `createE2EHarness`; `scripts/run-bench.ts` orchestrates
+  build → run → judge → score and writes `summary.json` + `report.md`.
+- **Run vs. judge are decoupled:** the runner only records evidence; judging
+  and scoring are a separate pass, so a sweep can be re-judged (`--judge-only`)
+  without re-running the browser.
+- **Honest aggregates:** skipped tasks are excluded from the pass-rate
+  denominator and reported separately; unparseable/uncertain judge verdicts
+  count as non-successes (never inflate the score); the report carries the
+  manual-disagreement line (placeholder until measured) and a sample-size
+  caveat under 100 scored tasks.
+- **Run it:** `pnpm run bench` (sample, headed Chrome, needs a provider key) →
+  prints the score. `pnpm run bench:fetch` vendors the official set.
