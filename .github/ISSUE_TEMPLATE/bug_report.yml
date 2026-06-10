@@ -1,0 +1,85 @@
+name: Bug report
+description: Report incorrect agent behavior or a broken feature. Browser-agent bugs need a trace or frozen bundle.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For **browser-agent** bugs (the agent did the
+        wrong thing on a page), a trace or frozen bundle is what makes the bug
+        reproducible — please attach one. **Redact page data, credentials,
+        cookies, and API keys** before attaching anything.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did the agent (or extension) do, and what did you expect instead?
+      placeholder: The agent clicked … but should have …
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps. If you can reproduce on a public page or a fixture, say which.
+      placeholder: |
+        1. Open …
+        2. Ask the agent to …
+        3. Observe …
+    validations:
+      required: true
+  - type: input
+    id: task-prompt
+    attributes:
+      label: Agent task prompt
+      description: The exact prompt, if safe to share. Redact sensitive data.
+    validations:
+      required: false
+  - type: input
+    id: page-context
+    attributes:
+      label: Page or site shape
+      description: The URL *shape* or site type — not private URLs or account data. e.g. `example.com/settings/...` or "internal CRM form".
+    validations:
+      required: true
+  - type: dropdown
+    id: trace
+    attributes:
+      label: Trace or frozen bundle attached?
+      description: Browser-agent bugs are hard to act on without one. Export from the trace viewer (Freeze Bundle / Export JSONL) and redact before attaching.
+      options:
+        - "Yes — attached below"
+        - "No — not a browser-agent bug (build/UI/docs)"
+        - "No — cannot share a trace (please explain why below)"
+    validations:
+      required: true
+  - type: input
+    id: provider-model
+    attributes:
+      label: Provider mode and model(s)
+      description: Which provider mode and any model overrides you were running.
+      placeholder: e.g. openrouter, executor openai/gpt-5.4-mini
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: OpenSidebar version or commit
+      placeholder: e.g. 0.2.3 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser, version, and OS
+      placeholder: e.g. Chrome 142 on Windows 11
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Trace excerpts, screenshots (redacted), logs, or anything else.
+    validations:
+      required: false

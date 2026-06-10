@@ -1,8 +1,8 @@
 # RFC LP-3 — Contributor Surface for Public Launch
 
-Lifecycle status: Draft
+Lifecycle status: Decision stamped
 Date: 2026-06-10
-Owner decision: Pending
+Decision date: 2026-06-10 (owner approved in session)
 Scope: `CONTRIBUTING.md`, `.github/` issue/PR templates and labels, a contribution-seams doc under `docs/engineering/`, curated good-first-issues. Documentation and repo process only — no product-runtime changes.
 Related: SOTA Gap Analysis GAP-12 (pack plugin interface, P1 — referenced as the headline collaborator project, not implemented here)
 
@@ -104,22 +104,33 @@ Small (~1–2 days of writing + issue curation). Ship first of the three P0s —
 it has no code risk and everything else benefits from it being in place when
 launch traffic arrives.
 
-## Recommended Decision (agent recommendation — not an owner stamp)
+## Decision
 
-Status: Approved with edits
+Status: Approved
 
 Chosen path:
 
 - CONTRIBUTING.md with seam map and do-not-enter map, .github templates and
   label taxonomy, 10–15 curated good-first-issues, a contribution-seams doc
   framing GAP-12 and research lanes as collaborator projects, and minimum
-  governance (DCO, Code of Conduct, honest review SLA).
+  governance.
+- Governance, as decided by the owner this session:
+  - **Provenance:** MIT inbound=outbound only — no DCO sign-off, no CLA. The
+    license already grants the needed terms; contribution implies licensing
+    under the same MIT terms.
+  - **Review SLA:** best-effort, with **no stated time guarantee**. State the
+    project is maintained best-effort rather than promise a window the owner
+    cannot keep.
+  - **Code of Conduct:** keep the existing stock Contributor Covenant
+    adaptation already in `CODE_OF_CONDUCT.md`.
+- Good-first-issues are created as **live GitHub issues** via `gh` at
+  implementation time, drawn from real, current failure categories and
+  bounded SOTA-gap work (not invented placeholders).
 
 Required edits before implementation:
 
-- Owner confirms governance choices (DCO vs. CLA, Code of Conduct text,
-  review SLA wording).
-- Owner approves the initial good-first-issue list before publication.
+- None. (The two prior blocking edits — governance confirmation and GFI
+  approval — were resolved by the owner in this session.)
 
 Non-blocking follow-ups:
 
@@ -131,11 +142,15 @@ Do not do:
 - No refactoring of `loop.ts`, `completion-kernel.ts`, or `skills.ts` under
   this RFC.
 - No GAP-12 implementation under this RFC — it is recruited for, not built.
-- Do not promise response times or contribution scopes the owner cannot
-  sustain.
+- Do not add a DCO bot, CLA assistant, or any stated response-time promise.
+- Do not promise contribution scopes the owner cannot sustain.
 
 Evidence required before merge:
 
 - CONTRIBUTING.md, templates, labels, and seams doc merged; issues published.
 - One completed dry-run contribution (clone → fixture PR → review) with
   friction notes addressed.
+
+Next action:
+
+- Implement

@@ -1,0 +1,44 @@
+name: Fixture proposal
+description: Propose a thin E2E fixture for a page pattern the agent fails on. The canonical first contribution.
+title: "[fixture] "
+labels: ["fixture", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a page pattern the agent fails on? Proposing (or contributing) a
+        thin failing fixture is the most valuable first contribution — it gives
+        maintainers a deterministic reproduction. A failing fixture **with a
+        trace** is complete and useful *even without a fix*. See
+        [CONTRIBUTING.md → seam #1](../blob/main/CONTRIBUTING.md#1-e2e-fixtures--the-canonical-first-pr).
+  - type: textarea
+    id: pattern
+    attributes:
+      label: The page pattern
+      description: What DOM / timing / interaction shape trips the agent up? Be specific about the mechanic (e.g. "React conditional render commits after the snapshot", "IntersectionObserver content not rendered yet", "disabled submit until N interactions").
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected agent behavior
+      description: What *should* a competent agent do on this page to succeed?
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior (if you've tried it)
+      description: How does the agent currently fail? Attach a trace if you have one (redacted).
+    validations:
+      required: false
+  - type: dropdown
+    id: offering
+    attributes:
+      label: Are you offering to write the fixture?
+      options:
+        - "Yes — I'll open a PR with the fixture HTML + test"
+        - "Yes — fixture only, I'd like help wiring the test"
+        - "No — proposing the pattern for someone else to pick up"
+    validations:
+      required: true
