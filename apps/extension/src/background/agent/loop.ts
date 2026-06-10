@@ -4,6 +4,7 @@ import {
   AgentStep,
   Citation,
   MessageSource,
+  PartialHandoffReason,
   PartialProgressHandoff,
   PerceptionRuntimeMode,
   RiskLevel,
@@ -74,6 +75,7 @@ import { finalizeStartResult } from "./start-finalization";
 import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
+import { EscalationRescueTracker } from "./escalation-rescue-policy";
 import {
   buildCompletionEnvelope,
   buildCompletionRecoveryHint,
@@ -748,6 +750,8 @@ export class AgentLoop {
     reason: string;
   } | null = null;
   private evidenceAccumulator = new EvidenceAccumulator();
+  /** Escalation rescue policy state (RFC LP-2): progress clocks + efficacy window. */
+  private escalationRescue = new EscalationRescueTracker();
   private completionEvidence = new CompletionEvidenceLedger();
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
@@ -1070,6 +1074,16 @@ export class AgentLoop {
   }
 
   private async finalizeLoopStartResult(result: LoopResult): Promise<void> {
+    // Resolve any still-open escalation efficacy window for outcome telemetry.
+    this.escalationRescue.onLoopEnd(
+      this.turnCount,
+      result.outcome === "completed"
+        ? "completed"
+        : result.outcome === "max_turns"
+          ? "max_turns"
+          : "other",
+    );
+    this.flushEscalationRescueEvents();
     await finalizeStartResult({
       result,
       taskId: this.taskId,
@@ -1331,6 +1345,74 @@ export class AgentLoop {
       planIndex: this.lastPlanIndex,
       turn: this.turnCount,
     });
+    if (!/^\s*(error|failed)\b/i.test(result)) {
+      this.escalationRescue.recordVerifiedProgress(this.turnCount, "mutation");
+    }
+  }
+
+  /** Verified-progress hook for plan-step advancement (loop-plan-progress host). */
+  public recordVerifiedPlanAdvance(): void {
+    this.escalationRescue.recordVerifiedProgress(
+      this.turnCount,
+      "plan_step_advance",
+    );
+  }
+
+  /** Verified-progress hook for first visits to new URLs (post-tool snapshot host). */
+  public recordVerifiedNewUrl(): void {
+    this.escalationRescue.recordVerifiedProgress(this.turnCount, "new_url");
+  }
+
+  /** Forward queued escalation-rescue telemetry to the trace stream. */
+  private flushEscalationRescueEvents(): void {
+    for (const event of this.escalationRescue.drainEvents()) {
+      this.traceRecorder?.recordEvent(event.type, event.data);
+    }
+  }
+
+  /**
+   * End the run after a failed escalation (RFC LP-2 efficacy guard): the
+   * escalation produced no verified progress within the efficacy window, so
+   * burning the remaining budget is waste. Surfaces a partial-progress
+   * handoff so the orchestrator or user can restart with context.
+   */
+  private failFastAfterEscalation(reason: string): LoopResult {
+    this.log.warn("agent", "Escalation rescue: failing fast", {
+      turn: this.turnCount,
+      reason,
+    });
+    const partialHandoff = this.buildMaxTurnPartialHandoff("escalation_failed");
+    this.traceRecorder?.recordEvent("partial_handoff_created", {
+      reason: partialHandoff.reason,
+      turnsUsed: partialHandoff.turnsUsed,
+      maxTurns: partialHandoff.maxTurns,
+      completedCount: partialHandoff.completed.length,
+      evidenceCount: partialHandoff.evidence.length,
+      remainingCount: partialHandoff.remaining.length,
+      handoff: partialHandoff,
+    });
+    const summary = formatPartialProgressHandoffSummary(partialHandoff);
+    this.broadcast({
+      type: "STREAM_CHUNK",
+      payload: { delta: "", done: false, replaceContent: summary },
+    });
+    this.finishStream();
+    this.statusHandler(
+      AgentStatus.IDLE,
+      "Stalled — escalation did not recover",
+    );
+    return {
+      outcome: "max_turns" as const,
+      turnCount: this.turnCount,
+      summary,
+      failure: {
+        category: "stuck",
+        code: "escalation_failed",
+        detail: reason,
+      },
+      metrics: this.getMetrics(),
+      partialHandoff,
+    };
   }
 
   private isMoneyTableAggregateTask(): boolean {
@@ -3457,12 +3539,14 @@ export class AgentLoop {
     });
   }
 
-  private buildMaxTurnPartialHandoff(): PartialProgressHandoff {
+  private buildMaxTurnPartialHandoff(
+    reason: PartialHandoffReason = "max_turns",
+  ): PartialProgressHandoff {
     this.updatePartialProgressState();
     return buildPartialProgressHandoff({
       ledger: this.progressLedger,
       task: this.originalQuery,
-      reason: "max_turns",
+      reason,
       turnsUsed: this.turnCount,
       maxTurns: this.maxTurns,
     });
@@ -3842,6 +3926,7 @@ export class AgentLoop {
     this.originalQuery = initialUserText;
     this.context.setOriginalQuery(initialUserText);
     this.stagnation.reset();
+    this.escalationRescue.reset();
     this.pendingFeedback = null;
     this.taskId = null;
     this.planSubtasks = [];
@@ -5774,6 +5859,10 @@ export class AgentLoop {
         added,
         total: this.evidenceAccumulator.toArray().length,
       });
+      this.escalationRescue.recordVerifiedProgress(
+        this.turnCount,
+        "trusted_evidence",
+      );
     }
     return execution.result;
   }
@@ -8463,6 +8552,8 @@ export class AgentLoop {
           content: `[User feedback]: ${this.pendingFeedback}`,
         });
         this.pendingFeedback = null;
+        // User redirection restarts the rescue-policy progress clocks.
+        this.escalationRescue.noteUserIntervention(this.turnCount);
       }
 
       const historicalToolCalls = this.context
@@ -8539,6 +8630,81 @@ export class AgentLoop {
         this.maybeCompleteCatalogOrderFromSnapshot();
       if (catalogSnapshotCompletion) {
         return catalogSnapshotCompletion;
+      }
+
+      // Escalation rescue policy (RFC LP-2): fail fast when a prior escalation
+      // produced no verified progress, then fire progress-based triggers that
+      // the snapshot-delta monitors cannot see (moving page, frozen progress).
+      {
+        const rescueAssessment = this.escalationRescue.assess({
+          turn: this.turnCount,
+          maxTurns: this.maxTurns,
+          escalationTier,
+          cooldownRemaining,
+          planSubtaskCount: this.planSubtasks.length,
+          planCompletedCount: this.planSubtasks.filter(
+            (subtask) => subtask.status === "completed",
+          ).length,
+        });
+        if (rescueAssessment.kind === "fail_fast") {
+          this.flushEscalationRescueEvents();
+          await this.traceRecorder?.endTurn();
+          return this.failFastAfterEscalation(rescueAssessment.reason);
+        }
+        if (rescueAssessment.kind === "escalate") {
+          this.log.warn("agent", "Escalation rescue trigger fired", {
+            turn: this.turnCount,
+            trigger: rescueAssessment.trigger,
+            reason: rescueAssessment.reason,
+          });
+          this.escalationRescue.noteEscalation(
+            this.turnCount,
+            rescueAssessment.trigger,
+          );
+
+          // Try replan-on-escalation first (planner replans, executor continues)
+          const rescueReplanOk = await this.replanOnEscalation(
+            tabId,
+            subgoalAttempts,
+            this.abortController?.signal,
+          );
+          if (rescueReplanOk) {
+            resetEscalationWorkingMemory();
+          } else {
+            // Fallback: prompt-based persona escalation + strategy pivot
+            const rescueAttemptSummary = extractAttemptSummary(
+              this.context.getMessages(),
+            );
+            this.escalateModel();
+            this.escalationsOnCurrentStep++;
+            escalationTier = 1;
+            orientationPhase = false;
+            plannerModelStartTurn = this.turnCount;
+            await this.strategyPivot(tabId, rescueAttemptSummary);
+            this.stagnation.resetEscalation();
+            this.context.addMessage({
+              role: "user",
+              content:
+                rescueAssessment.trigger === "budget_stall"
+                  ? `BUDGET STALL: ${rescueAssessment.reason}. ${ESCALATION_REFLECTION("over half the turn budget is gone with most of the plan incomplete")}`
+                  : `NO-PROGRESS ESCALATION: ${rescueAssessment.reason}. ${ESCALATION_REFLECTION(rescueAssessment.reason)}`,
+            });
+            this.stepHandler(
+              {
+                id: crypto.randomUUID(),
+                type: "info",
+                label:
+                  rescueAssessment.trigger === "budget_stall"
+                    ? "Budget stall — escalating to planner model"
+                    : "No verified progress — escalating to planner model",
+                status: "done",
+                timestamp: Date.now(),
+              },
+              false,
+            );
+          }
+        }
+        this.flushEscalationRescueEvents();
       }
 
       // 1. LLM Inference (streamed)
@@ -8815,6 +8981,10 @@ export class AgentLoop {
             );
           tabId = sequentialDispatch.tabId;
           prevElementCount = sequentialDispatch.prevElementCount;
+          if (sequentialDispatch.escalationTier > escalationTier) {
+            // Voluntary escalate() tool call upgraded the tier this turn.
+            this.escalationRescue.noteEscalation(this.turnCount, "voluntary");
+          }
           escalationTier = sequentialDispatch.escalationTier;
           plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
           orientationPhase = sequentialDispatch.orientationPhase;
@@ -9065,6 +9235,10 @@ export class AgentLoop {
               escalationTier = 1;
               orientationPhase = false;
               plannerModelStartTurn = this.turnCount;
+              this.escalationRescue.noteEscalation(
+                this.turnCount,
+                "done_rejection",
+              );
               this.log.info("agent", "Escalated to planner after done() rejection mid-point", {
                 turn: this.turnCount,
                 doneRejections: this.doneRejections,
@@ -9317,6 +9491,10 @@ export class AgentLoop {
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
               });
+              this.escalationRescue.noteEscalation(
+                this.turnCount,
+                "step_watchdog",
+              );
 
               // Try replan-on-escalation first: planner replans, executor continues
               const replanSucceeded = await this.replanOnEscalation(
@@ -9410,6 +9588,7 @@ export class AgentLoop {
             sameUrlTurns: this.stagnation.sameUrlTurns,
             threshold: this.limits.sameUrlEscalate,
           });
+          this.escalationRescue.noteEscalation(this.turnCount, "same_url");
 
           // Try replan-on-escalation first
           const sameUrlReplanOk = await this.replanOnEscalation(

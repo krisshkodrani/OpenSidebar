@@ -19,6 +19,7 @@ export interface AgentLoopPlanProgressHost {
     invalidateCache(): void;
   };
   planSubtasks: Parameters<typeof advanceCompletedPlanSubtasks>[0]["subtasks"];
+  recordVerifiedPlanAdvance(): void;
   stepRetryCount: number;
   turnsOnCurrentStep: number;
 }
@@ -45,6 +46,7 @@ export function advanceCompletedSubtasks(
     loop.escalationsOnCurrentStep = 0;
     loop.stepRetryCount = 0;
     loop.mutationLedger.clearStepLedger();
+    loop.recordVerifiedPlanAdvance();
   }
   return result.currentIndex;
 }
@@ -72,6 +74,7 @@ export function completeSingleSubtask(
     loop.turnsOnCurrentStep = 0;
     loop.escalationsOnCurrentStep = 0;
     loop.mutationLedger.clearReplayState();
+    loop.recordVerifiedPlanAdvance();
   }
 
   return result.currentIndex;
@@ -96,6 +99,7 @@ export function completeRemainingSubtasks(
     loop.turnsOnCurrentStep = 0;
     loop.escalationsOnCurrentStep = 0;
     loop.mutationLedger.clearReplayState();
+    loop.recordVerifiedPlanAdvance();
   }
 
   return completion.currentIndex;

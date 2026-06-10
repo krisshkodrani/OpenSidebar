@@ -1,7 +1,11 @@
 # RFC 0003 - Label Provenance for Findings & Verdicts
 
-Status: Implemented
+Lifecycle status: Archived
 Date: 2026-05-30
+Decision date: 2026-06-06
+Archived date: 2026-06-06
+Closure: Implemented scope accepted; remaining viewer attribution superseded by
+[GitHub issue #37](https://github.com/krisshkodrani/OpenSidebar/issues/37).
 Scope: `analysis/types.ts` (`InvestigationFinding`), `analysis/analyze.ts`, `components/traces/InvestigationSummary.tsx`; relates to completion logic in `background/agent/loop.ts` + `background/agent/completion-kernel.ts`
 
 ## Problem
@@ -45,7 +49,7 @@ follow-up if not already in events).
 
 - Keep a single opaque confidence and document it globally: rejected; provenance
   is per-finding and changes behavior.
-- Drop confidence entirely: rejected; it's useful *with* provenance.
+- Drop confidence entirely: rejected; it's useful _with_ provenance.
 
 ## Testing
 
@@ -57,3 +61,39 @@ follow-up if not already in events).
 
 Low for the field + badge. Completion-path attribution may be staged behind a
 runtime change; until then default completion-finding `source` conservatively.
+
+## Decision
+
+Status: Approved
+
+Chosen path:
+
+- Keep the implemented finding source, derivation, provenance badges, and
+  completion decision metadata; move the remaining authoritative-path viewer
+  attribution to GitHub issue #37 and close this RFC.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- Complete GitHub issue #37 without reopening or expanding this RFC.
+
+Do not do:
+
+- Do not present shadow completion decisions as authoritative, and do not keep
+  this broad RFC active for one bounded viewer-analysis change.
+
+Evidence required before merge:
+
+- Existing trace-viewer analysis tests prove deterministic, heuristic, and LLM
+  verifier source assignment with derivation text.
+- `InvestigationSummary.tsx` renders provenance badges for the supported source
+  values.
+- Runtime tests prove `completion_decision` events distinguish authoritative
+  and shadow/legacy paths.
+
+Next action:
+
+- Archive

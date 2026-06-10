@@ -29,6 +29,18 @@ export const STUCK_THRESHOLDS = {
   SAME_URL_ESCALATE: 6,
 } as const;
 
+/** Escalation rescue policy (RFC LP-2): progress-based triggers + efficacy fail-fast */
+export const ESCALATION_RESCUE = {
+  /** Turns without verified progress before forcing escalation (no-plan runs only) */
+  NO_PROGRESS_TURNS: 6,
+  /** Fraction of the turn budget consumed that arms the budget-stall trigger */
+  BUDGET_STALL_TURN_FRACTION: 0.5,
+  /** Plan-completion fraction below which the budget-stall trigger fires */
+  BUDGET_STALL_PLAN_FRACTION: 0.5,
+  /** Turns after an escalation without verified progress before failing fast */
+  EFFICACY_TURNS: 6,
+} as const;
+
 /** Escalation/de-escalation cycle limits */
 export const ESCALATION_LIMITS = {
   /** Max escalation→de-escalation cycles before cooldown becomes effectively permanent */

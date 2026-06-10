@@ -37,6 +37,7 @@ function createHost(): PostToolSnapshotRefreshHost {
     },
     offDomainWarned: false,
     recordCitation: vi.fn(),
+    recordVerifiedNewUrl: vi.fn(),
     refreshPerceptionAndTriage: vi.fn(),
     startingOrigin: "https://example.test",
     toolCache: {

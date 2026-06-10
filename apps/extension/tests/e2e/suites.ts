@@ -9,7 +9,8 @@ export type E2EFocusSuiteName =
   | "local-mock-provider"
   | "showcase"
   | "memory-regression"
-  | "multi-turn-workflows";
+  | "multi-turn-workflows"
+  | "escalation-rescue";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
@@ -81,6 +82,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "memory-recall-dashboard.test.ts",
   ],
   "multi-turn-workflows": ["multi-turn-workflows.test.ts"],
+  "escalation-rescue": ["escalation-rescue.test.ts"],
 };
 
 export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
@@ -97,6 +99,7 @@ export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "showcase",
   "memory-regression",
   "multi-turn-workflows",
+  "escalation-rescue",
 ];
 
 export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [

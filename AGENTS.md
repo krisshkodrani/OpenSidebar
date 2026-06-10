@@ -67,6 +67,67 @@ for trivial tasks; do not trade correctness for speed.
 - Keep diffs tightly scoped. Don't reformat, rename, or refactor adjacent code unless required. Match existing style. Remove only what your own change makes obsolete; don't delete pre-existing dead code unless asked.
 - Turn work into verifiable outcomes. For bug fixes, prefer a focused reproduction/regression test. For behavior changes, verify observable behavior, not planner artifacts. For refactors, preserve behavior and run the narrowest relevant tests.
 
+## RFC Review And Decision Discipline
+
+An RFC review is advisory until an authorized owner (the user or a maintainer)
+records a Decision Stamp. Critique, recommendations, and implementation ideas do
+not imply approval.
+
+Use this lifecycle:
+
+`Draft -> Reviewed -> Decision stamped -> Implementation plan -> Implementation -> Verification -> Archived or promoted to docs`
+
+When reviewing an RFC:
+
+- Do not end with critique alone. Summarize the recommendation, then obtain and
+  record the owner's decision.
+- Agents may recommend a status, but must not invent approval. If the owner has
+  not decided, ask for the decision before implementation.
+- Do not create an implementation plan or modify product code from an RFC whose
+  decision is missing, `Parked`, `Rejected`, or `Needs more research`.
+- For `Approved with edits`, complete the required RFC edits before implementation.
+- Treat the latest owner-authored Decision Stamp as binding. The `Do not do`
+  section defines the boundary agents must not reinterpret. For shipped behavior,
+  current code and promoted stable docs remain authoritative.
+
+Every decision must use the complete block below. Use `None` deliberately when a
+section has no items; do not leave placeholders such as `TBD` or `...`.
+
+```md
+## Decision
+
+Status: Approved / Approved with edits / Rejected / Parked / Needs more research
+
+Chosen path:
+
+- ...
+
+Required edits before implementation:
+
+- ...
+
+Non-blocking follow-ups:
+
+- ...
+
+Do not do:
+
+- ...
+
+Evidence required before merge:
+
+- ...
+
+Next action:
+
+- Implement / Revise RFC / Run spike / Archive
+```
+
+The canonical process and copy-ready review prompt are in
+`docs/engineering/rfc-decision-process.md`. RFCs still live in Notion; do not add
+new RFC drafts to the repo. If an RFC Markdown file must be validated locally, run
+`pnpm rfcs:check -- <path>`.
+
 ### Feature direction changes
 
 When a feature's direction changes, identify UX, copy, settings, docs, tests,

@@ -368,10 +368,38 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
               </Tooltip>
             )}
             {diagnostics.escalations > 0 && (
-              <Tooltip content="Times the agent escalated to a higher-tier model">
+              <Tooltip content="Times the agent escalated (replan or planner-tier swap)">
                 <div>
                   <Badge variant="event-escalation">
                     {diagnostics.escalations} escalations
+                  </Badge>
+                </div>
+              </Tooltip>
+            )}
+            {diagnostics.escalationOutcomes.rescued > 0 && (
+              <Tooltip content="Escalations followed by verified progress (plan advance, successful mutation, trusted evidence, or new page)">
+                <div>
+                  <Badge variant="completed">
+                    {diagnostics.escalationOutcomes.rescued} rescued
+                  </Badge>
+                </div>
+              </Tooltip>
+            )}
+            {diagnostics.escalationOutcomes.failedFast > 0 && (
+              <Tooltip content="Runs ended early because an escalation produced no verified progress within the efficacy window">
+                <div>
+                  <Badge variant="error">
+                    {diagnostics.escalationOutcomes.failedFast} failed fast
+                  </Badge>
+                </div>
+              </Tooltip>
+            )}
+            {diagnostics.escalationOutcomes.budgetExhausted > 0 && (
+              <Tooltip content="Escalations still unresolved when the turn budget ran out">
+                <div>
+                  <Badge variant="error">
+                    {diagnostics.escalationOutcomes.budgetExhausted} budget
+                    exhausted
                   </Badge>
                 </div>
               </Tooltip>

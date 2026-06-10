@@ -1,7 +1,12 @@
 # RFC 0005 - Freeze / Export a Run as a Permanent Bundle
 
-Status: Implemented (export/validation; import path deferred)
+Lifecycle status: Archived
 Date: 2026-05-30
+Decision date: 2026-06-06
+Archived date: 2026-06-06
+Implementation note: Export and validation are implemented; import/load and
+read-only frozen-artifact rendering are parked pending a demonstrated portable
+bundle exchange workflow.
 Scope: `analysis/report.ts` (`buildTraceInvestigationReport`), `scripts/log-server.ts`, `scripts/trace-archive.ts`, viewer `api.ts`, a new import/load path
 
 ## Problem
@@ -34,11 +39,11 @@ interactive trace (entries + run events + logs + screenshots) after pruning.
 
 ## Data-model
 
-A versioned `FrozenTraceBundle` wrapping existing `TraceSession` + `TraceEntry[]`
-+ `RunTraceEvent[]` + logs + screenshot blobs/refs. Add a dedicated
-`validateFrozenTraceBundle` that reuses `validateTraceBundle` for the session /
-entry / run-event core, then validates frozen-only fields such as logs,
-embedded screenshots, blob checksums, and bundle schema version.
+A versioned `FrozenTraceBundle` wrapping existing `TraceSession`,
+`TraceEntry[]`, `RunTraceEvent[]`, logs, and screenshot blobs/refs. Add a
+dedicated `validateFrozenTraceBundle` that reuses `validateTraceBundle` for the
+session / entry / run-event core, then validates frozen-only fields such as
+logs, embedded screenshots, blob checksums, and bundle schema version.
 
 ## Alternatives
 
@@ -59,3 +64,40 @@ embedded screenshots, blob checksums, and bundle schema version.
 
 Medium-high (largest of the set). Independent of the others; ship when
 reproducibility is prioritized. No change to live tracing.
+
+## Decision
+
+Status: Parked
+
+Chosen path:
+
+- Keep the implemented frozen-bundle export and validation plus SQLite/archive
+  retention. Do not build import/load until portable bundle exchange becomes a
+  concrete user or debugging workflow.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- If the work is reconsidered, first define the exchange workflow, trust
+  boundary, schema-migration policy, and value beyond the existing archive.
+
+Do not do:
+
+- Do not add a local import endpoint or read-only bundle mode opportunistically,
+  and do not treat ordinary local retention as justification for reopening this
+  RFC.
+
+Evidence required before merge:
+
+- A demonstrated workflow that requires moving a frozen bundle between
+  environments.
+- A round-trip test preserving entries, events, logs, screenshots, and
+  redaction guarantees.
+- Component coverage proving imported bundles are visibly read-only.
+
+Next action:
+
+- Archive

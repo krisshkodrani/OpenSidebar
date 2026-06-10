@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenSidebar — System Flow: Prompt → Done</title>
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0d1117;
+    color: #c9d1d9;
+    padding: 24px;
+    min-width: 1200px;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #f0f6fc;
+    text-align: center;
+    margin-bottom: 4px;
+    letter-spacing: -0.3px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+  .subtitle span { color: #58a6ff; }
+
+  /* ── Global Flow ── */
+  .global-flow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+  }
+  .phase-pill {
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .phase-input { background: #1a2332; color: #79c0ff; border: 1px solid #1f6feb; }
+  .phase-plan { background: #1a201f; color: #7ee787; border: 1px solid #238636; }
+  .phase-exec { background: #1f1a24; color: #d2a8ff; border: 1px solid #8250df; }
+  .phase-verify { background: #201c16; color: #d29922; border: 1px solid #9e6a03; }
+  .phase-done { background: #1a1a1a; color: #f0f6fc; border: 1px solid #484f58; }
+  .phase-arrow { color: #484f58; font-size: 16px; padding-top: 6px; }
+
+  /* ── Diagram Container ── */
+  .diagram {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Section Rows ── */
+  .section {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: #1c2128;
+    border-bottom: 1px solid #21262d;
+  }
+  .section-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding: 3px 10px;
+    border-radius: 10px;
+  }
+  .badge-orchestrator { background: #1f6feb22; color: #79c0ff; border: 1px solid #1f6feb44; }
+  .badge-agentloop  { background: #8250df22; color: #d2a8ff; border: 1px solid #8250df44; }
+  .badge-tools      { background: #23863622; color: #7ee787; border: 1px solid #23863644; }
+  .badge-perception { background: #9e6a0322; color: #d29922; border: 1px solid #9e6a0344; }
+  .badge-infra      { background: #484f5822; color: #8b949e; border: 1px solid #484f5844; }
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f0f6fc;
+  }
+  .section-file {
+    font-size: 11px;
+    color: #8b949e;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    margin-left: auto;
+  }
+
+  /* ── Flow Boxes ── */
+  .flow-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    flex-wrap: wrap;
+  }
+  .box {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 160px;
+    flex: 1 1 auto;
+    max-width: 280px;
+    position: relative;
+  }
+  .box.wide { max-width: 380px; }
+  .box.xwide { max-width: 520px; flex: 2 1 auto; }
+  .box-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 4px;
+  }
+  .box-label.orch { color: #79c0ff; }
+  .box-label.loop { color: #d2a8ff; }
+  .box-label.tool { color: #7ee787; }
+  .box-label.perc { color: #d29922; }
+  .box-label.data { color: #f0f6fc; }
+  .box-label.gate { color: #f85149; }
+
+  .box-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f0f6fc;
+    margin-bottom: 6px;
+  }
+  .box-detail {
+    font-size: 11px;
+    color: #8b949e;
+    line-height: 1.5;
+  }
+  .box-detail .mono { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 10px; color: #c9d1d9; }
+  .box-detail .hl { color: #d2a8ff; }
+  .box-detail .hlg { color: #7ee787; }
+  .box-detail .hlb { color: #79c0ff; }
+  .box-detail .hly { color: #d29922; }
+
+  /* ── Connectors ── */
+  .connector-h {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    flex-shrink: 0;
+    padding-top: 10px;
+  }
+  .connector-v {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 4px 0;
+  }
+  .conn-arrow { color: #484f58; font-size: 16px; }
+  .conn-arrow.active { color: #58a6ff; }
+  .conn-label {
+    font-size: 9px;
+    color: #58a6ff;
+    font-weight: 600;
+    text-align: center;
+    margin-top: 2px;
+  }
+
+  /* ── Decision Diamond ── */
+  .decision {
+    background: #1c1a14;
+    border: 1px solid #9e6a03;
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 140px;
+    transform: skewX(-3deg);
+  }
+  .decision > * { transform: skewX(3deg); }
+  .decision-label { font-size: 9px; font-weight: 700; color: #d29922; text-transform: uppercase; letter-spacing: 0.6px; }
+  .decision-title { font-size: 12px; font-weight: 600; color: #f0f6fc; margin: 4px 0; }
+  .decision-branches { font-size: 10px; color: #8b949e; margin-top: 4px; }
+  .decision-branches .yes { color: #7ee787; font-weight: 600; }
+  .decision-branches .no  { color: #f85149; font-weight: 600; }
+
+  /* ── Side-By-Side Panels ── */
+  .split-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+  }
+  .split-row > * { flex: 1; }
+
+  /* ── Tool Grid ── */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .tool-chip {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 10px;
+    font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+    color: #7ee787;
+    text-align: center;
+  }
+  .tool-chip.mutate { color: #d29922; border-color: #9e6a0344; }
+  .tool-chip.nav    { color: #f85149; border-color: #f8514944; }
+  .tool-chip.spec   { color: #d2a8ff; border-color: #8250df44; }
+
+  /* ── Trace Lines (vertical flow indicators) ── */
+  .trace-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding-top: 8px;
+    min-width: 28px;
+  }
+  .trace-line {
+    width: 2px;
+    flex: 1;
+    min-height: 20px;
+    background: linear-gradient(to bottom, #30363d, #21262d);
+  }
+  .trace-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #30363d;
+    flex-shrink: 0;
+  }
+  .trace-dot.active { background: #58a6ff; box-shadow: 0 0 6px #58a6ff88; }
+
+  /* ── Stats Bar ── */
+  .stats-bar {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    background: #1c2128;
+    border-radius: 8px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .stat { display: flex; align-items: center; gap: 6px; }
+  .stat-val { font-weight: 700; color: #f0f6fc; font-size: 13px; }
+  .stat-label { text-transform: uppercase; letter-spacing: 0.3px; }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 32px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: #8b949e;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .sw-orch { background: #1f6feb; }
+  .sw-loop { background: #8250df; }
+  .sw-tool { background: #238636; }
+  .sw-perc { background: #9e6a03; }
+  .sw-gate { background: #f85149; }
+
+  /* ── Annotations ── */
+  .annotation {
+    font-size: 10px;
+    color: #8b949e;
+    font-style: italic;
+    padding: 4px 0;
+    border-left: 2px solid #21262d;
+    padding-left: 10px;
+    margin-top: 6px;
+  }
+  .annotation strong { color: #c9d1d9; font-style: normal; }
+
+  /* ── Completions Kernel Detail ── */
+  .contract-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .contract-item {
+    font-size: 10px;
+    font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+    color: #8b949e;
+    padding: 2px 6px;
+    background: #0d1117;
+    border-radius: 3px;
+    border: 1px solid #21262d;
+  }
+</style>
+</head>
+<body>
+
+<h1>OpenSidebar — System Flow</h1>
+<p class="subtitle">From <span>user prompt</span> through <span>plan → execute → verify</span> to <span>done</span> &middot; Architecture as of 2026-06-08</p>
+
+<!-- ── GLOBAL PHASES ── -->
+<div class="global-flow">
+  <div class="phase-pill phase-input">1. Input</div>
+  <span class="phase-arrow">→</span>
+  <div class="phase-pill phase-plan">2. Plan</div>
+  <span class="phase-arrow">→</span>
+  <div class="phase-pill phase-plan">3. Confirm</div>
+  <span class="phase-arrow">→</span>
+  <div class="phase-pill phase-exec">4. Execute</div>
+  <span class="phase-arrow">→</span>
+  <div class="phase-pill phase-verify">5. Verify</div>
+  <span class="phase-arrow">→</span>
+  <div class="phase-pill phase-done">6. Done</div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><span class="stat-val">38</span><span class="stat-label">Tools</span></div>
+  <div class="stat"><span class="stat-val">3</span><span class="stat-label">Lanes (planner / executor / verifier)</span></div>
+  <div class="stat"><span class="stat-val">2</span><span class="stat-label">Tiers (executor → planner escalation)</span></div>
+  <div class="stat"><span class="stat-val">14</span><span class="stat-label">Contract types in completion kernel</span></div>
+  <div class="stat"><span class="stat-val">25</span><span class="stat-label">Default max turns</span></div>
+  <div class="stat"><span class="stat-val">~10K</span><span class="stat-label">LOC in orchestrator</span></div>
+</div>
+
+<div class="diagram">
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 1: INPUT & TRIAGE -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 1 — Input &amp; Triage</span>
+    <span class="section-file">orchestrator/index.ts :: startTask()</span>
+  </div>
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label orch">User Input</div>
+      <div class="box-title">Query + Tab + Settings</div>
+      <div class="box-detail">
+        User types <em>"Add Trabuco Max 3 to my cart and check out"</em><br>
+        <span class="mono">OrchestratorStartInput { query, tabId, workspaceId, settings, openRouterApiKey }</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide">
+      <div class="box-label orch">Skill Routing</div>
+      <div class="box-title">resolveEligibleSkillCandidates()</div>
+      <div class="box-detail">
+        3-layer routing:<br>
+        <span class="hlg">✓</span> Core workflow skills (always eligible)<br>
+        <span class="hlg">✓</span> Enterprise packs (if business workflow shape)<br>
+        <span class="hly">?</span> Platform packs (only on concrete signals)
+      </div>
+      <div class="annotation"><strong>Guard:</strong> No WorkArena task IDs or benchmark-only facts as routing inputs</div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="decision">
+      <div class="decision-label">Triage</div>
+      <div class="decision-title">Decomposition needed?</div>
+      <div class="decision-branches">
+        <span class="yes">YES</span> — multi-step, multi-target, round-trip<br>
+        <span class="no">NO</span> — single action (run loop directly)
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 2: PLAN & DECOMPOSE -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 2 — Planning &amp; Decomposition</span>
+    <span class="section-file">orchestrator/planner.ts &nbsp;|&nbsp; orchestrator/parallel-contract.ts &nbsp;|&nbsp; agent/task-contract.ts</span>
+  </div>
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label orch">Planner Lane</div>
+      <div class="box-title">TaskPlanner.decompose(query)</div>
+      <div class="box-detail">
+        <span class="mono">LLM call → <span class="hlb">PlannerAssignment[]</span></span><br>
+        Each assignment: <span class="mono">{ role: "executor", objective, successCriteria, allowedTools, dependencies, assumptions }</span><br><br>
+        <span class="hl">Sanitized + validated:</span> <span class="mono">sanitizePlannerAssignment()</span> rejects hallucinated tools, empty objectives, bad dependencies
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Plan Repair</div>
+      <div class="box-title">repairPlanCoverage()</div>
+      <div class="box-detail">
+        Patches common planner gaps:<br>
+        <span class="hlg">+</span> Missing return legs<br>
+        <span class="hlg">+</span> Missing report targets<br>
+        <span class="hlg">+</span> Read-before-report nodes<br>
+        <span class="annotation"><strong>Semantic matching</strong> — not bare string inclusion</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Contract Annotations</div>
+      <div class="box-title">annotateParallelContracts()</div>
+      <div class="box-detail">
+        <span class="mono">NodeParallelContract {</span><br>
+        <span class="mono">  parallelism: "independent" | "resource_bound" | "serialized"</span><br>
+        <span class="mono">  resourceHints: { kind, key, access }[]</span><br>
+        <span class="mono">  dependencyReason?: string</span><br>
+        <span class="mono">}</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide">
+      <div class="box-label orch">TaskNode[]</div>
+      <div class="box-title">Finalized Task Graph</div>
+      <div class="box-detail">
+        <span class="mono">TaskNode { id, description, successCriteria,</span><br>
+        <span class="mono">  allowedTools, dependencies[], assumptions[],</span><br>
+        <span class="mono">  parallelContract?, selectedSkillId?,</span><br>
+        <span class="mono">  verificationGate?, handoffArtifacts[] }</span>
+      </div>
+    </div>
+  </div>
+  <div class="annotation" style="margin: 0 20px 12px;">
+    <strong>Skill selection:</strong> <span class="mono">selectPrimarySkill()</span> selects from eligible candidates based on task text + page signals. Only the winner's body reaches the executor prompt — not the full catalog.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 3: CONFIRMATION -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 3 — User Confirmation Gate</span>
+    <span class="section-file">orchestrator/index.ts &nbsp;|&nbsp; sidepanel/bridge.ts</span>
+  </div>
+  <div class="flow-row">
+    <div class="box">
+      <div class="box-label gate">Gate</div>
+      <div class="box-title">Plan Confirmation</div>
+      <div class="box-detail">
+        Multi-step tasks (≥2 nodes) pause here. User sees:
+        <br>• Node descriptions
+        <br>• Success criteria
+        <br>• Dependencies visualized
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="decision">
+      <div class="decision-label">User Action</div>
+      <div class="decision-title">Approve / Cancel / Feedback</div>
+      <div class="decision-branches">
+        <span class="yes">APPROVE</span> → proceed<br>
+        <span style="color:#d29922;font-weight:600">FEEDBACK</span> → replan with guidance<br>
+        <span class="no">CANCEL</span> → stop task
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">PlanState</div>
+      <div class="box-title">buildInitialPlanState()</div>
+      <div class="box-detail">
+        <span class="mono">{ subtasks[], currentIndex }</span><br>
+        Broadcast to side panel as <span class="mono">TASK_PROGRESS</span><br>
+        Side panel renders timeline view
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 4: SCHEDULER + PARALLEL LANES -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 4 — Lane Scheduling &amp; Parallel Execution</span>
+    <span class="section-file">orchestrator/scheduling.ts &nbsp;|&nbsp; orchestrator/lane-supervisor.ts &nbsp;|&nbsp; orchestrator/lane-topology.ts</span>
+  </div>
+
+  <!-- Lane Topology -->
+  <div class="flow-row">
+    <div class="box">
+      <div class="box-label orch">Topology</div>
+      <div class="box-title">Lane Resolution</div>
+      <div class="box-detail">
+        <span class="mono">resolveLaneTopologyFromSettings()</span><br>
+        Modes: <span class="hlb">simple</span> | <span class="hlb">standard</span> | <span class="hlb">full</span><br>
+        Controls: max workers, concurrency, parallel node execution
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide">
+      <div class="box-label orch">Scheduler</div>
+      <div class="box-title">getRunnablePendingNodes() + getResourceBlockedPendingNodes()</div>
+      <div class="box-detail">
+        <span class="mono">1. getDependencyState(node, nodesById)</span><br>
+        <span class="mono">   → { ready, waitingOn[], failedDeps[], missingDeps[] }</span><br>
+        <span class="mono">2. Filter ready nodes for resource conflicts</span><br>
+        <span class="mono">   → getNodeResourceConflicts(node, runningNodes)</span><br>
+        Resources: <span class="hl">tab, origin, url, form, record, cart, table, account, external</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box xwide">
+      <div class="box-label orch">3-Lane Runtime</div>
+      <div class="box-title">Per-Workspace Lane Isolation</div>
+      <div class="box-detail">
+        <table style="width:100%;font-size:10px;color:#c9d1d9;margin-top:4px;">
+          <tr style="color:#8b949e;"><th>Lane</th><th>Max Concurrent</th><th>Failures → Isolate</th><th>Cooldown</th><th>Max Call</th></tr>
+          <tr style="color:#d2a8ff;"><td class="mono">planner</td><td>1</td><td>2</td><td>20s</td><td>20s</td></tr>
+          <tr style="color:#7ee787;"><td class="mono">executor</td><td>8</td><td>6</td><td>10s</td><td>5 min</td></tr>
+          <tr style="color:#d29922;"><td class="mono">verifier</td><td>8</td><td>3</td><td>15s</td><td>20s</td></tr>
+        </table>
+        Each lane has: circuit breaker, queue draining, crash restart counter, telemetry
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 5: THE AGENT LOOP (DEEP DIVE) -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-agentloop">Agent Loop</span>
+    <span class="section-title">Phase 5 — The Agent Loop (Think → Act → Observe)</span>
+    <span class="section-file">background/agent/loop.ts (~10K LOC)</span>
+  </div>
+
+  <!-- Loop Overview -->
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label loop">Worker Spawn</div>
+      <div class="box-title">new AgentLoop(apiKey, callbacks, options)</div>
+      <div class="box-detail">
+        <span class="mono">nodeId</span> set → sub-node mode active<br>
+        <span class="hl">Sub-node mode skips:</span><br>
+        • <span class="mono">validateDone</span> (orchestrator handles)<br>
+        • <span class="mono">countExplicitSteps</span><br>
+        • <span class="mono">taskContractGuard</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide">
+      <div class="box-label loop">Context Setup</div>
+      <div class="box-title">ContextManager.buildPrompt()</div>
+      <div class="box-detail">
+        <span class="hlb">System prompt:</span> agent capabilities, rules (read_page first!), vision instructions<br>
+        <span class="hlb">Original query</span> (pinned index 1 — prevents goal amnesia)<br>
+        <span class="hlb">Handoff context</span> from prior nodes (completed steps, reflexion, assumptions)<br>
+        <span class="hlb">Skill body</span> — only the selected skill, not full catalog<br>
+        <span class="hlb">Recent messages</span> — N most recent, oldest middle dropped first
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label loop">Token Budget</div>
+      <div class="box-title">Dynamic Compression</div>
+      <div class="box-detail">
+        Levels:<br>
+        <span class="hlg">NONE</span> → <span class="hly">LIGHT</span> → <span class="hly">MEDIUM</span> → <span style="color:#f85149">HEAVY</span><br>
+        Sliding window drops oldest non-protected messages first
+      </div>
+    </div>
+  </div>
+
+  <!-- Think → Act → Observe -->
+  <div class="flow-row">
+    <div class="box" style="border-color: #8250df66;">
+      <div class="box-label loop">1. Observe</div>
+      <div class="box-title">DOM Snapshot + Perception</div>
+      <div class="box-detail">
+        <span class="mono">read_page</span> → <span class="mono">DomSnapshot { url, title, elements[], lang, dir }</span><br><br>
+        <span class="hly">Perception mode resolved per-turn:</span><br>
+        • <span class="hlb">unified_vl</span> (default): screenshot injected as <span class="mono">image_url</span> into executor turn<br>
+        • <span class="hlb">structured</span> (fallback): separate <span class="mono">PerceptionAgent.observe()</span> → VLM<br>
+        <br>Output: 5-section contract —
+        <span class="mono">LOCATION | CHANGES | BLOCKERS | VISUAL-ONLY | AFFORDANCES</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide" style="border-color: #8250df66;">
+      <div class="box-label loop">2. Think</div>
+      <div class="box-title">LLM Call — completeStream()</div>
+      <div class="box-detail">
+        <span class="mono">ProviderPool → executor or planner tier</span><br>
+        <span class="mono">SSE streaming → parseSSEStream()</span><br>
+        <span class="mono">Text deltas → STREAM_CHUNK to side panel (real-time)</span><br>
+        <span class="mono">Tool call deltas → accumulated across SSE chunks</span><br><br>
+        <span class="hl">Think-tag handling:</span><br>
+        • <span class="mono">completeStream()</span> returns raw content (think blocks preserved)<br>
+        • <span class="mono">complete()</span> strips via <span class="mono">stripThinkTags()</span> (planner needs clean JSON)<br>
+        • History stores raw — reasoning chain continuity<br>
+        • Loop derives <span class="mono">cleanContent</span> for logic/logging
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide" style="border-color: #8250df66;">
+      <div class="box-label loop">3. Act</div>
+      <div class="box-title">Tool Execution — executeTurns()</div>
+      <div class="box-detail">
+        <span class="hl">Parallel batch</span> — all non-sequential tools via <span class="mono">Promise.all</span><br>
+        <span class="hl">Sequential</span> — navigate, done, escalate, go_back (one at a time)<br>
+        <span class="hl">Batch snapshot refresh</span> — one <span class="mono">read_page</span> after all tools (not per-tool)<br><br>
+        <span class="hlb">Pre-execution checks:</span><br>
+        • Workspace isolation — is tab in active workspace?<br>
+        • Discovered tag IDs — validate dynamically-created tags<br>
+        • Approval gate — if <span class="mono">requireApprovals</span> and HIGH risk tool<br>
+        • Stagnation check — snapshot fingerprint change since last turn?
+      </div>
+    </div>
+  </div>
+
+  <!-- Loop internals: what happens per turn -->
+  <div class="flow-row">
+    <div class="box xwide">
+      <div class="box-label loop">Turn Lifecycle (per iteration)</div>
+      <div class="box-title"><span class="mono">while (isRunning && turns < MAX_TURNS) {</span></div>
+      <div class="box-detail" style="font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 10px; line-height: 1.6;">
+        <span style="color:#484f58;">// 1</span> <span style="color:#c9d1d9;">messages</span> = <span style="color:#d2a8ff;">context</span>.<span style="color:#79c0ff;">buildPrompt</span>()<br>
+        <span style="color:#484f58;">// 2</span> <span style="color:#c9d1d9;">status</span> = <span style="color:#7ee787;">THINKING</span>; <span style="color:#d29922;">broadcast AGENT_STATUS</span><br>
+        <span style="color:#484f58;">// 3</span> <span style="color:#c9d1d9;">response</span> = <span style="color:#d2a8ff;">await</span> <span style="color:#c9d1d9;">llm</span>.<span style="color:#79c0ff;">completeStream</span>({ messages, tools }, delta => <span style="color:#d29922;">sendStreamChunkToUI</span>(delta))<br>
+        <span style="color:#484f58;">// 4</span> <span style="color:#c9d1d9;">rawContent</span> → history; <span style="color:#c9d1d9;">cleanContent</span> → logic<br>
+        <span style="color:#484f58;">// 5</span> <span style="color:#f0883e;">if</span> (<span style="color:#c9d1d9;">response.tool_calls</span>) {<br>
+        <span style="color:#484f58;">// 6</span>   <span style="color:#c9d1d9;">status</span> = <span style="color:#7ee787;">ACTING</span>; <span style="color:#d29922;">broadcast AGENT_STATUS</span><br>
+        <span style="color:#484f58;">// 7</span>   <span style="color:#d2a8ff;">await</span> <span style="color:#d29922;">executeTurn</span>(<span style="color:#c9d1d9;">response.tool_calls</span>)  <span style="color:#484f58;">// parallel or serial based on SEQUENTIAL_TOOLS</span><br>
+        <span style="color:#484f58;">// 8</span>   <span style="color:#d29922;">validateElementIds</span>(<span style="color:#c9d1d9;">toolCalls</span>, <span style="color:#c9d1d9;">currentSnapshot</span>)  <span style="color:#484f58;">// grounding_mismatch</span> detection<br>
+        <span style="color:#484f58;">// 9</span>   <span style="color:#d2a8ff;">await</span> <span style="color:#d29922;">refreshSnapshot</span>()  <span style="color:#484f58;">// single batch after all tools</span><br>
+        <span style="color:#484f58;">// 10</span>  <span style="color:#f0883e;">if</span> (<span style="color:#c9d1d9;">toolName</span> === <span style="color:#7ee787;">'done'</span>) → <span style="color:#d29922;">handleDone</span>() → completion kernel<br>
+        <span style="color:#484f58;">// 11</span>  <span style="color:#d29922;">checkStagnation</span>(<span style="color:#c9d1d9;">snapshotFingerprint</span>)  <span style="color:#484f58;">// nudge→escalate→give-up</span><br>
+        <span style="color:#484f58;">// 12</span> } <span style="color:#f0883e;">else</span> { <span style="color:#484f58;">/* text-only: escalate or finish */</span> }<br>
+        <span style="color:#484f58;">// 13</span> <span style="color:#c9d1d9;">sessionMetrics</span> updated; broadcast every 3 turns
+      </div>
+    </div>
+  </div>
+
+  <!-- Tool Categories -->
+  <div class="flow-row">
+    <div class="box xwide">
+      <div class="box-label tool">38 Registered Tools (4 categories + special)</div>
+      <div class="tool-grid">
+        <div class="tool-chip">click_element</div>
+        <div class="tool-chip">type_text</div>
+        <div class="tool-chip">scroll_page</div>
+        <div class="tool-chip">read_page</div>
+        <div class="tool-chip">hover_element</div>
+        <div class="tool-chip">find_element</div>
+        <div class="tool-chip">select_option</div>
+        <div class="tool-chip">press_key</div>
+        <div class="tool-chip">drag_and_drop</div>
+        <div class="tool-chip">hide_element</div>
+        <div class="tool-chip">read_element</div>
+        <div class="tool-chip">execute_js</div>
+        <div class="tool-chip">upload_file</div>
+        <div class="tool-chip">right_click</div>
+        <div class="tool-chip">set_checkbox</div>
+        <div class="tool-chip">click_coordinates</div>
+        <div class="tool-chip">inspect_hidden</div>
+        <div class="tool-chip mutate">inspect_chart</div>
+        <div class="tool-chip mutate">inspect_table</div>
+        <div class="tool-chip mutate">inspect_filter_state</div>
+        <div class="tool-chip mutate">apply_list_filter</div>
+        <div class="tool-chip mutate">apply_list_sort</div>
+        <div class="tool-chip mutate">apply_list_action</div>
+        <div class="tool-chip mutate">inspect_catalog_item</div>
+        <div class="tool-chip mutate">configure_catalog_item</div>
+        <div class="tool-chip mutate">configure_servicenow_form</div>
+        <div class="tool-chip mutate">xray_page</div>
+        <div class="tool-chip mutate">get_profile_fields</div>
+        <div class="tool-chip mutate">dismiss_overlays</div>
+        <div class="tool-chip nav">navigate</div>
+        <div class="tool-chip nav">create_tab</div>
+        <div class="tool-chip nav">close_tab</div>
+        <div class="tool-chip nav">switch_tab</div>
+        <div class="tool-chip nav">list_tabs</div>
+        <div class="tool-chip nav">go_back</div>
+        <div class="tool-chip nav">wait</div>
+        <div class="tool-chip spec">done</div>
+        <div class="tool-chip spec">escalate</div>
+      </div>
+      <div class="annotation" style="margin-top:8px;">
+        <strong>DOM-modifying tools:</strong> auto-trigger snapshot refresh. &nbsp;
+        <strong>Sequential tools:</strong> navigate, done, escalate, go_back — always serialized. &nbsp;
+        <strong>Risk:</strong> LOW (read-only), MEDIUM (mutate), HIGH (navigation/submit).
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- COMPLETION KERNEL DEEP DIVE -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-tools">Completion</span>
+    <span class="section-title">The Completion Kernel — Deterministic Evidence-Based Verification</span>
+    <span class="section-file">background/agent/completion-kernel.ts (~14K LOC) &nbsp;|&nbsp; background/agent/completion/envelope.ts</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box xwide">
+      <div class="box-label data">When executor calls done()</div>
+      <div class="box-title">buildCompletionEnvelope() → CompletionEnvelope</div>
+      <div class="box-detail">
+        <span class="mono">CompletionEnvelope {</span><br>
+        <span class="mono">  status: "completed" | "failed" | "needs_clarification"</span><br>
+        <span class="mono">  contractKind: "navigation" | "form_fill" | "read_answer" | "workflow_confirmation"</span><br>
+        <span class="mono">                | "draft_only" | "quiz_selection" | "generated"</span><br>
+        <span class="mono">  decisionReason: string</span><br>
+        <span class="mono">  evidenceEpoch: number,  evidenceKeys: string[],  resultId: string</span><br>
+        <span class="mono">}</span>
+      </div>
+      <div class="annotation"><strong>Key insight:</strong> The envelope is deterministic — it requires typed evidence, not just the LLM saying "I'm done."</div>
+    </div>
+  </div>
+
+  <div class="flow-row">
+    <div class="box">
+      <div class="box-label data">Preflight Checks</div>
+      <div class="box-title">9 Preflight Evaluators</div>
+      <div class="box-detail">
+        <span class="mono">evaluateCompletion<span class="hlb">TaskContract</span>Preflight</span> — entity coverage<br>
+        <span class="mono">evaluateCompletion<span class="hlb">RequiredEvidence</span>Preflight</span> — mandatory proof<br>
+        <span class="mono">evaluateCompletion<span class="hlb">WorkflowContract</span>Preflight</span> — workflow state<br>
+        <span class="mono">evaluateCompletion<span class="hlb">FormFill</span>...</span> — field completeness<br>
+        <span class="mono">evaluateCompletion<span class="hlb">ReadAnswer</span>...</span> — answer presence<br>
+        <span class="mono">evaluateCompletion<span class="hlb">GroundingRead</span>...</span> — tag validity<br>
+        <span class="mono">evaluateCompletion<span class="hlb">Summary</span>...</span> — summary quality<br>
+        <span class="mono">evaluateCompletion<span class="hlb">ListDetailReview</span>...</span> — item coverage<br>
+        <span class="mono">evaluateCompletion<span class="hlb">MoneyTableAggregate</span>...</span> — aggregate correctness
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide">
+      <div class="box-label data">Contract Types</div>
+      <div class="box-title">Typed Completion Contracts</div>
+      <div class="contract-list">
+        <div class="contract-item">NavigationContract</div>
+        <div class="contract-item">FormFillContract</div>
+        <div class="contract-item">ReadAnswerContract</div>
+        <div class="contract-item">WorkflowConfirmationContract</div>
+        <div class="contract-item">DraftOnlyContract</div>
+        <div class="contract-item">QuizSelectionContract</div>
+        <div class="contract-item">GeneratedCompletionContract</div>
+      </div>
+      <div class="box-detail" style="margin-top:6px;">
+        <span class="hl">Evidence types:</span><br>
+        <span class="mono">EvidenceEventType</span> — <span class="mono">url_change | title_change | form_submitted</span><br>
+        <span class="mono">  | order_confirmed | text_found | element_visible | ...</span><br>
+        <span class="mono">isTrustedEvidence()</span> gates evidence provenance
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label data">Envelope Gate</div>
+      <div class="box-title">verifyDeterministicCompletionEnvelope()</div>
+      <div class="box-detail">
+        Rejects envelopes lacking:<br>
+        • <span class="mono">resultId</span><br>
+        • <span class="mono">contractKind</span><br>
+        • <span class="mono">decisionReason</span><br>
+        • <span class="mono">evidenceEpoch</span><br>
+        • <span class="mono">evidenceKeys[]</span> (non-empty)<br><br>
+        <span style="color:#f85149;">Missing → reroute with repair objective</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 6: VERIFICATION -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 6 — Node Verification &amp; Decision</span>
+    <span class="section-file">orchestrator/verifier.ts &nbsp;|&nbsp; orchestrator/retry-policy.ts &nbsp;|&nbsp; orchestrator/handoff.ts</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label orch">Stage 1: Programmatic Verification</div>
+      <div class="box-title">programmaticVerify() — no LLM cost</div>
+      <div class="box-detail">
+        <span class="hlg">Fast checks:</span><br>
+        • <span class="mono">BLOCKED_MARKERS</span> — captcha, forbidden, access denied, timeout<br>
+        • <span class="mono">SUCCESS_MARKERS</span> — completed, success, done, verified<br>
+        • <span class="mono">ERROR_MARKERS</span> — error, failed, exception, unable to, could not<br>
+        • <span class="mono">NEGATIVE_COMPLETION_PATTERNS</span> — regex patterns for "not complete" etc.<br>
+        • <span class="mono">hasGoalTokenSupport()</span> — do output tokens overlap with criteria tokens?<br>
+        • URL/title change detection<br>
+        • Evidence-sensitive objective classification (submit/checkout vs. read/report)
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="decision">
+      <div class="decision-label">Programmatic</div>
+      <div class="decision-title">Result clear?</div>
+      <div class="decision-branches">
+        <span class="yes">CLEAR</span> → accept or retry<br>
+        <span style="color:#d29922;font-weight:600">AMBIGUOUS</span> → escalate to LLM verifier
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Stage 2: LLM Verifier</div>
+      <div class="box-title">OrchestratorVerifier.verifyNode()</div>
+      <div class="box-detail">
+        Receives: objective, criteria, output, handoff context, evidence[], URL/title changes<br><br>
+        Prompt: <span class="hl">"Judge ONLY the node objective — NOT the overall task"</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="decision">
+      <div class="decision-label">Verdict</div>
+      <div class="decision-title">NodeVerificationResult</div>
+      <div class="decision-branches">
+        <span class="yes">accept</span> — advance to next node<br>
+        <span style="color:#d29922;font-weight:600">retry</span> — re-run with reflexion<br>
+        <span style="color:#f85149;font-weight:600">reroute</span> — new node with revised objective
+      </div>
+    </div>
+  </div>
+
+  <!-- Retry Policy -->
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label orch">Retry Policy</div>
+      <div class="box-title">decideRetryPolicy(input, retriesUsed)</div>
+      <div class="box-detail">
+        <span class="mono">classifyRetry()</span> → <span class="mono">RetryClass</span>:<br>
+        <span class="mono">blocked</span> (captcha, forbidden) → <span style="color:#f85149;">0 retries</span><br>
+        <span class="mono">state_mismatch</span> (drift) → <span style="color:#f85149;">0 retries</span><br>
+        <span class="mono">transient</span> (timeout, rate limit) → <span style="color:#d29922;">2 retries</span><br>
+        <span class="mono">inconclusive</span> (verifier unsure) → <span style="color:#7ee787;">1 retry</span><br>
+        <span class="mono">unknown</span> → <span style="color:#7ee787;">1 retry</span> (+1 if confidence ≤ 0.35)
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Reflexion</div>
+      <div class="box-title">Handoff Context for Retries</div>
+      <div class="box-detail">
+        <span class="mono">NodeHandoffArtifact</span> records:<br>
+        • <span class="mono">role</span>: planner | executor | verifier<br>
+        • <span class="mono">phase</span>: planned | retry | reroute | advisory<br>
+        • <span class="mono">note</span>: what went wrong, what to try<br><br>
+        Stored in <span class="mono">node.handoffArtifacts[]</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Global Goal Gate</div>
+      <div class="box-title">Shortcut Optimization</div>
+      <div class="box-detail">
+        When <span class="hlg">exactly 1 node remains</span> and its success criteria are already satisfied:<br>
+        • Skip execution<br>
+        • Mark as completed<br>
+        • Blocked for round-trip tasks<br>
+        • Must pass task contract coverage check
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- PHASE 7: HANDOFF & AGGREGATION -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-orchestrator">Orchestrator</span>
+    <span class="section-title">Phase 7 — Cross-Node Handoff &amp; Final Aggregation</span>
+    <span class="section-file">orchestrator/handoff.ts &nbsp;|&nbsp; orchestrator/index.ts :: sendTerminationCompletion()</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box wide">
+      <div class="box-label orch">Between Nodes</div>
+      <div class="box-title">buildExecutorInstruction() — Next Node Context</div>
+      <div class="box-detail">
+        Each node receives:<br>
+        <span class="mono">1. buildCompletedStepsSummary(completedNodes)</span> — what prior nodes achieved<br>
+        <span class="mono">2. formatPlannerReflexionContext(reflexionLog)</span> — failures + lessons<br>
+        <span class="mono">3. buildAssumptionDriftSignal(assumptions, currentPage)</span> — planner assumptions vs. reality<br>
+        <span class="mono">4. compactExecutorSummaryForNode()</span> — compact prior node results<br>
+        <span class="mono">5. buildVerifierContext()</span> — verifier findings for retried nodes<br>
+        <span class="mono">6. buildExecutorParallelContext()</span> — sibling worker summaries (parallel mode)<br>
+        <span class="mono">7. Structured progress</span> — reviewed items, extracted facts, outstanding questions
+      </div>
+      <div class="annotation"><strong>Max handoff depth:</strong> 2 (prevents infinite reroute chains). Artifacts capped at 4 per node.</div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Task Completion</div>
+      <div class="box-title">sendTerminationCompletion()</div>
+      <div class="box-detail">
+        <span class="mono">buildSubtaskResults(task)</span> → all node results<br>
+        <span class="mono">TASK_COMPLETION</span> message to side panel:<br>
+        <span class="mono">{ taskId, status, totalTurnsUsed,</span><br>
+        <span class="mono">  totalTimeMs, summary, subtaskResults[],</span><br>
+        <span class="mono">  urlHistory[], metrics, terminationReason? }</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label orch">Cleanup</div>
+      <div class="box-title">Post-Task Teardown</div>
+      <div class="box-detail">
+        • <span class="mono">clearTaskCheckpoint(workspaceId)</span><br>
+        • <span class="mono">cleanupWorkspaceRuntime()</span><br>
+        • <span class="mono">tasksByWorkspace.delete()</span><br>
+        • Emit <span class="mono">AGENT_STATUS(IDLE)</span><br>
+        • Persist completion to backend
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- INFRASTRUCTURE: DURABLE PERSISTENCE -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-infra">Infra</span>
+    <span class="section-title">Infrastructure — Durable Persistence, Telemetry &amp; Trace</span>
+    <span class="section-file">orchestrator/checkpoint-store.ts &nbsp;|&nbsp; agent/trace.ts &nbsp;|&nbsp; infrastructure/backend-client.ts</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box">
+      <div class="box-label infra">Checkpoint Store</div>
+      <div class="box-title">chrome.storage.local</div>
+      <div class="box-detail">
+        <span class="mono">saveOrchestratorCheckpoints()</span><br>
+        Survives service worker restarts (~30s inactivity timeout).<br>
+        <span class="mono">TurnCheckpoint</span> per node for mid-turn recovery
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label infra">Backend Sync</div>
+      <div class="box-title">Backend Client (port 7590)</div>
+      <div class="box-detail">
+        <span class="mono">upsertTaskRun()</span> — durable run record<br>
+        <span class="mono">upsertTaskRunNode()</span> — per-node state<br>
+        <span class="mono">upsertTaskRunProgress()</span> — structured progress<br>
+        <span class="mono">listTaskRuns()</span> — cross-session resume discovery
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label infra">Run Traces</div>
+      <div class="box-title">TraceRecorder + RunTraceWriter</div>
+      <div class="box-detail">
+        <span class="mono">TraceEntry { sessionId, turnNumber, snapshot,</span><br>
+        <span class="mono">  elements, llmRequest, llmResponse,</span><br>
+        <span class="mono">  toolExecutions[], events[], progressState }</span><br><br>
+        Run traces: <span class="mono">traces/runs/*.jsonl</span><br>
+        Agent traces: full per-turn fidelity
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label infra">Session Metrics</div>
+      <div class="box-title">Real-Time Token + Cost Tracking</div>
+      <div class="box-detail">
+        <span class="mono">SessionMetrics { totalPromptTokens,</span><br>
+        <span class="mono">  totalCompletionTokens, totalTokens,</span><br>
+        <span class="mono">  totalCost, totalLlmTimeMs,</span><br>
+        <span class="mono">  llmCallCount, modelBreakdown{} }</span><br>
+        Broadcast every 3 turns + on completion
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- RUNTIME SAFETY NETS -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-badge badge-infra">Safety</span>
+    <span class="section-title">Runtime Safety Nets — Stagnation, Escalation, Clarification, Workspace Isolation</span>
+    <span class="section-file">agent/stagnation.ts &nbsp;|&nbsp; agent/loop.ts &nbsp;|&nbsp; workspaces/</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box">
+      <div class="box-label gate">Stagnation Monitor</div>
+      <div class="box-title">Snapshot Fingerprinting</div>
+      <div class="box-detail">
+        Hash: <span class="mono">url + element count + sorted(element signatures)</span><br><br>
+        <span style="color:#f85149;">6 stagnant turns</span> → inject user reflection<br>
+        <span style="color:#f85149;">9 stagnant turns</span> → aggressive pivot<br>
+        <span style="color:#f85149;">12 stagnant turns</span> → escalate (once)<br>
+        <span style="color:#d29922;">Every 6 after</span> → repeat reflections
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label loop">Escalation</div>
+      <div class="box-title">Two-Tier: Executor → Planner</div>
+      <div class="box-detail">
+        <span class="mono">escalate</span> tool — voluntary upgrade<br>
+        <span class="mono">Text-only nudge → escalate → give-up</span><br>
+        <span class="hl">On escalation:</span> <span class="mono">summarizeTrajectory()</span> compresses history to ~1K token timeline. Planner gets cleaner signal.
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label loop">Clarification</div>
+      <div class="box-title">Mid-Execution User Help</div>
+      <div class="box-detail">
+        <span class="mono">clarify</span> tool: LLM asks when ambiguous<br>
+        <span class="mono">CLARIFICATION_REQUEST</span> → side panel<br>
+        <span class="mono">120s timeout</span>, suggestion chips<br>
+        Answer routed back → <span class="mono">resolveClarification()</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box">
+      <div class="box-label gate">Isolation</div>
+      <div class="box-title">Workspace + Tab Isolation</div>
+      <div class="box-detail">
+        <span class="mono">isTabInActiveWorkspace(tabId)</span> — checked every turn<br>
+        Tab coordination: bind/claim/release per node<br>
+        Modal auto-dismiss before first turn<br>
+        Pause/resume gate — Promise-based
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- WORKARENA INTEGRATION -->
+<!-- ════════════════════════════════════════════════════ -->
+<div class="section" style="border-color: #d2992266;">
+  <div class="section-header" style="background: #1c1812;">
+    <span class="section-badge badge-perception" style="background:#d2992222;color:#d29922;border:1px solid #d2992244;">Eval</span>
+    <span class="section-title">WorkArena Integration — Evaluation Harness</span>
+    <span class="section-file">scripts/workarena-*.ts (28 files) &nbsp;|&nbsp; scripts/workarena-session-bridge.py &nbsp;|&nbsp; orchestrator/skills.ts</span>
+  </div>
+
+  <div class="flow-row">
+    <div class="box" style="border-color:#d2992244;">
+      <div class="box-label perc">Problem</div>
+      <div class="box-title">Why WorkArena?</div>
+      <div class="box-detail">
+        WorkArena is a benchmark of 1000+ ServiceNow enterprise tasks.<br>
+        <strong>Stable, seeded, scored</strong> — real ServiceNow instance, not mock.<br>
+        Tests: forms, lists, dashboards, knowledge, catalog, menus.<br>
+        <span class="hly">OpenSidebar target: atomic seed 0 → 33/33 pass@1</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide" style="border-color:#d2992244;">
+      <div class="box-label perc">Two Worlds Bridged</div>
+      <div class="box-title">Python (BrowserGym) ↔ TypeScript (OpenSidebar)</div>
+      <div class="box-detail">
+        <table style="width:100%;font-size:10px;color:#c9d1d9;margin-top:4px;">
+          <tr style="color:#d29922;"><th style="text-align:left;">BrowserGym / Python</th><th>&nbsp;</th><th style="text-align:left;">OpenSidebar / TypeScript</th></tr>
+          <tr><td class="mono">workarena-session-bridge.py</td><td style="font-size:14px;">⇄</td><td class="mono">workarena-handoff.ts</td></tr>
+          <tr style="color:#8b949e;"><td>Creates task, keeps env alive</td><td>&nbsp;</td><td>Sends task to extension browser</td></tr>
+          <tr><td class="mono">reset → export_session</td><td style="font-size:14px;">⇄</td><td class="mono">importPlaywrightStorageState()</td></tr>
+          <tr style="color:#8b949e;"><td>Exports cookies + localStorage</td><td>&nbsp;</td><td>Injects into extension Chrome</td></tr>
+          <tr><td class="mono">validate → teardown</td><td style="font-size:14px;">⇄</td><td class="mono">TASK_COMPLETION → grade</td></tr>
+          <tr style="color:#8b949e;"><td>WorkArena scorer, then destroy</td><td>&nbsp;</td><td>Agent result → validation verdict</td></tr>
+        </table>
+        Protocol: <span class="mono">JSONL</span> over stdin/stdout to a long-lived Python child process
+      </div>
+    </div>
+  </div>
+
+  <!-- Skill/Pack Catalog -->
+  <div class="flow-row">
+    <div class="box xwide">
+      <div class="box-label data">The "Plugin" — 31 Skills × 3 Packs</div>
+      <div class="box-title">Skill Catalog + Execution Contracts</div>
+      <div class="box-detail">
+        Each skill is a self-contained workflow with procedure steps, tool discipline, evidence requirements, and common failure recovery. Packs gate activation based on evidence strength.
+      </div>
+      <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;">
+        <!-- Core Workflow Skills -->
+        <div style="flex:1;min-width:280px;background:#0d1117;border:1px solid #23863644;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;font-weight:700;color:#7ee787;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Core Workflow (always eligible)</div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px;">
+            <span class="tool-chip">hover-reveal-navigation</span>
+            <span class="tool-chip">budget-aware-execution</span>
+            <span class="tool-chip">transactional-act-check-act</span>
+            <span class="tool-chip">cart-modify-checkout</span>
+            <span class="tool-chip">structured-form-fill</span>
+            <span class="tool-chip">progressive-repeatable-form</span>
+            <span class="tool-chip">multi-step-form-wizard</span>
+            <span class="tool-chip">modal-overlay-recovery</span>
+            <span class="tool-chip">list-detail-review-loop</span>
+            <span class="tool-chip">cross-tab-compare</span>
+            <span class="tool-chip">navigate-read-return</span>
+            <span class="tool-chip">paginated-table-scan</span>
+            <span class="tool-chip">paginated-record-lookup</span>
+            <span class="tool-chip">inline-edit-surface</span>
+            <span class="tool-chip">continuation-edit</span>
+            <span class="tool-chip">consequential-action-consent</span>
+          </div>
+        </div>
+        <!-- Enterprise Packs -->
+        <div style="flex:1;min-width:260px;background:#0d1117;border:1px solid #8250df44;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;font-weight:700;color:#d2a8ff;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Enterprise Packs</div>
+          <div style="margin-bottom:6px;">
+            <span style="font-size:9px;color:#8b949e;">communication-workflows: </span>
+            <span class="tool-chip spec">email-reply-careful</span>
+            <span class="tool-chip spec">thread-message-careful</span>
+          </div>
+          <div style="margin-bottom:6px;">
+            <span style="font-size:9px;color:#8b949e;">procurement-workflows: </span>
+            <span class="tool-chip spec">multi-tab-checklist-workflow</span>
+          </div>
+          <div>
+            <span style="font-size:9px;color:#8b949e;">enterprise-workflows (auto): </span>
+            <span class="tool-chip spec">crm-ticket-update</span>
+            <span class="tool-chip spec">job-application-assistant</span>
+            <span class="tool-chip spec">ashby-job-application-assistant</span>
+          </div>
+        </div>
+        <!-- Platform Packs -->
+        <div style="flex:1;min-width:260px;background:#0d1117;border:1px solid #d2992244;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;font-weight:700;color:#d29922;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">servicenow-platform (strong signal only)</div>
+          <div style="display:flex;flex-wrap:wrap;gap:3px;">
+            <span class="tool-chip mutate">servicenow-module-navigation</span>
+            <span class="tool-chip mutate">servicenow-record-form</span>
+            <span class="tool-chip mutate">chart-value-extraction</span>
+            <span class="tool-chip mutate">search-answer-extraction</span>
+            <span class="tool-chip mutate">list-filter-workflow</span>
+            <span class="tool-chip mutate">list-sort-workflow</span>
+            <span class="tool-chip mutate">list-row-action-workflow</span>
+            <span class="tool-chip mutate">catalog-order-workflow</span>
+          </div>
+          <div class="annotation" style="margin-top:6px;border-color:#d2992244;">
+            <strong>Activation:</strong> URL host pattern, page DOM markers, or user says "ServiceNow." Task words alone ("incident", "catalog item") are <strong>insufficient</strong> without concrete platform signals.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What each skill contains -->
+  <div class="flow-row">
+    <div class="box wide" style="border-color:#d2992244;">
+      <div class="box-label perc">Skill Anatomy</div>
+      <div class="box-title">LoadedSkillContract = Descriptor + Body</div>
+      <div class="box-detail">
+        <span class="mono">SkillDescriptor { id, name, description, tags, triggers, maturity,</span><br>
+        <span class="mono">  preferredTools[], discouragedTools[], verifierMode, requiredEvidenceTypes[] }</span><br><br>
+        <span class="mono">+ LoadedSkillContract { procedureMarkdown, requiredEvidence[], </span><br>
+        <span class="mono">  commonFailures[{ signal, recovery }], executionContract{ sequencing[], toolDiscipline[] } }</span>
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box wide" style="border-color:#d2992244;">
+      <div class="box-label perc">Example: list-filter-workflow</div>
+      <div class="box-title">Procedure (9 steps)</div>
+      <div class="box-detail" style="font-size:10px;line-height:1.5;">
+        <span style="color:#484f58;">1.</span> Use <span class="mono">apply_list_filter</span> for explicit field/operator/value conditions<br>
+        <span style="color:#484f58;">2.</span> Only open manual filter builder if structured helper reports unsupported<br>
+        <span style="color:#484f58;">3.</span> Verify through query state, filter chips, or changed rows<br>
+        <span style="color:#484f58;">4.</span> Completion = filter applied + evidence visible<br><br>
+        <span style="color:#f85149;">Failure signal:</span> "opening filter builder for explicit conditions"<br>
+        <span style="color:#7ee787;">Recovery:</span> "use apply_list_filter before manual clicks"
+      </div>
+    </div>
+    <div class="connector-h"><span class="conn-arrow">→</span></div>
+    <div class="box" style="border-color:#d2992244;">
+      <div class="box-label perc">Only Winner Reaches Prompt</div>
+      <div class="box-title">No Prompt Bloat</div>
+      <div class="box-detail">
+        <span class="mono">selectPrimarySkill()</span> picks ONE skill.<br>
+        Only the selected skill's <span class="hl">body</span> reaches the executor.<br><br>
+        Planner sees descriptors (compact).<br>
+        Verifier sees verification summary (compact).<br>
+        <span class="hlg">Full catalog never enters the LLM context.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Harness Suite -->
+  <div class="flow-row">
+    <div class="box xwide" style="border-color:#d2992244;">
+      <div class="box-label perc">28 Script Harness Suite</div>
+      <div class="box-title">Scripts/ — Evaluation &amp; Operations</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px;margin-top:6px;">
+        <div class="contract-item" style="color:#7ee787;">workarena-doctor.ts — readiness check</div>
+        <div class="contract-item" style="color:#7ee787;">workarena-list.ts — task discovery</div>
+        <div class="contract-item" style="color:#7ee787;">workarena-dry.ts — no-reset preview</div>
+        <div class="contract-item" style="color:#7ee787;">workarena-adapter.ts — contract plan</div>
+        <div class="contract-item" style="color:#d29922;">workarena-run.ts — guarded reset</div>
+        <div class="contract-item" style="color:#d29922;">workarena-handoff.ts — full execution</div>
+        <div class="contract-item" style="color:#d29922;">workarena-suite.ts — batch runner</div>
+        <div class="contract-item" style="color:#d29922;">workarena-grade.ts — scorecard generator</div>
+        <div class="contract-item" style="color:#d2a8ff;">workarena-trace-learning.ts — failure classifier</div>
+        <div class="contract-item" style="color:#d2a8ff;">workarena-validate-reports.ts — schema validator</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-first-task.ts — recommended first run</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-category-coverage.ts — gap analysis</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-browser-strategy.ts — attach plan</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-held-session.ts — bridge protocol</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-demo-server.ts — filming server</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-local-execution.ts — local fixture</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-safety.ts — reset approval text</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-smoke-summary.ts — smoke report</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-validation-url.ts — URL selector</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-handoff-metrics.ts — trace parsing</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-suite-lib.ts — shared suite logic</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-adapter-lib.ts — shared types/utils</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-grading-lib.ts — scoring logic</div>
+        <div class="contract-item" style="color:#8b949e;">workarena-report-schema.ts — schema defs</div>
+        <div class="contract-item" style="color:#79c0ff;">workarena-session-bridge.py — held session</div>
+        <div class="contract-item" style="color:#79c0ff;">workarena-bridge.py — general bridge</div>
+        <div class="contract-item" style="color:#79c0ff;">workarena-setup.ts — Python venv boot</div>
+        <div class="contract-item" style="color:#79c0ff;">workarena-copy-suite.ts — legacy wrapper</div>
+      </div>
+      <div class="annotation" style="margin-top:8px;">
+        <strong>Principle:</strong> Harness code may observe, seed minimal state, collect diagnostics, and assert results. Harness code <strong>must not become product behavior.</strong> No task-id branches, seed branches, hidden expected values, or benchmark-specific shortcuts.
+      </div>
+    </div>
+  </div>
+
+  <!-- How it all connects -->
+  <div class="flow-row">
+    <div class="box" style="border-color:#d2992244;">
+      <div class="box-label perc">The Full Loop</div>
+      <div class="box-title">A WorkArena Run</div>
+      <div class="box-detail" style="font-size:10px;line-height:1.6;">
+        <span style="color:#484f58;">1.</span> <span class="mono">workarena-doctor</span> — verify Python, HF token, dependencies<br>
+        <span style="color:#484f58;">2.</span> <span class="mono">workarena-suite</span> — select tasks, seeds, categories<br>
+        <span style="color:#484f58;">3.</span> <span class="mono">workarena-handoff</span> (per task):<br>
+        <span style="color:#484f58;">4.</span> &nbsp;&nbsp;Start <span class="mono">session-bridge.py</span> (long-lived Python process)<br>
+        <span style="color:#484f58;">5.</span> &nbsp;&nbsp;<span class="mono">reset</span> → BrowserGym creates task, keeps env alive<br>
+        <span style="color:#484f58;">6.</span> &nbsp;&nbsp;<span class="mono">export_session</span> → cookies + storage → JSON<br>
+        <span style="color:#484f58;">7.</span> &nbsp;&nbsp;<span class="mono">importPlaywrightStorageState()</span> → inject into extension Chrome<br>
+        <span style="color:#484f58;">8.</span> &nbsp;&nbsp;<span class="mono">sendUserChat(goal)</span> → orchestrator runs full pipeline<br>
+        <span style="color:#484f58;">9.</span> &nbsp;&nbsp;Orchestrator: plan → <span class="hly">skill selected from catalog</span> → execute → verify → done<br>
+        <span style="color:#484f58;">10.</span> &nbsp;&nbsp;<span class="mono">validate</span> → WorkArena scorer checks task state<br>
+        <span style="color:#484f58;">11.</span> &nbsp;&nbsp;<span class="mono">teardown</span> → destroy BrowserGym env<br>
+        <span style="color:#484f58;">12.</span> <span class="mono">workarena-grade</span> — aggregate JSON reports → pass@1 scorecard
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- .diagram -->
+
+<!-- ── LEGEND ── -->
+<div class="legend">
+  <span class="legend-item"><span class="legend-swatch sw-orch"></span> Orchestrator</span>
+  <span class="legend-item"><span class="legend-swatch sw-loop"></span> Agent Loop</span>
+  <span class="legend-item"><span class="legend-swatch sw-tool"></span> Tools / Completion</span>
+  <span class="legend-item"><span class="legend-swatch sw-perc"></span> Perception</span>
+  <span class="legend-item"><span class="legend-swatch sw-gate"></span> Gates / Decisions</span>
+</div>
+
+<p style="text-align:center;margin-top:32px;font-size:11px;color:#484f58;">
+  OpenSidebar &middot; Architecture as of 2026-06-08 &middot; <code style="color:#8b949e;">docs/engineering/system-flow-depiction.html</code>
+</p>
+
+</body>
+</html>
