@@ -6403,6 +6403,27 @@ Showing 6-10 of 50`,
     expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
   });
 
+  test("re-opens the tab-management gate when the plan later requires tabs (no session latch)", () => {
+    const agent = new AgentLoop(
+      "test-key",
+      {
+        onStatusUpdate: vi.fn(),
+        onMessage: vi.fn(),
+        onStep: vi.fn(),
+      },
+      {},
+    );
+    // A generic query with no explicit tab phrasing and no skill: gate is closed.
+    (agent as any).originalQuery = "Look at this page and tell me what it says.";
+    expect((agent as any).shouldBlockTabManagementTools()).toBe(true);
+
+    // Once the planner declares multi-tab intent mid-run, the gate must re-open.
+    // Blocking an earlier call must not have permanently disabled the tab tools.
+    (agent as any).planRequiresTabManagement = true;
+    expect((agent as any).shouldBlockTabManagementTools()).toBe(false);
+    expect((agent as any).disabledTools.size).toBe(0);
+  });
+
   test("extracts ServiceNow missing field labels from form helper mismatches", () => {
     const result = [
       "ServiceNow form configuration incomplete.",
