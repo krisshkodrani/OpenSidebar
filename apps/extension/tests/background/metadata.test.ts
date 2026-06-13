@@ -68,8 +68,12 @@ describe("Tool Metadata", () => {
       expect(SEQUENTIAL_TOOLS.has(ToolName.WAIT)).toBe(true);
     });
 
-    test("has exactly 21 entries", () => {
-      expect(SEQUENTIAL_TOOLS.size).toBe(21);
+    test("contains compose_text", () => {
+      expect(SEQUENTIAL_TOOLS.has(ToolName.COMPOSE_TEXT)).toBe(true);
+    });
+
+    test("has exactly 22 entries", () => {
+      expect(SEQUENTIAL_TOOLS.size).toBe(22);
     });
   });
 

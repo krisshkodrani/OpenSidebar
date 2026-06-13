@@ -251,6 +251,7 @@ export function applyToolProfile(
     allowedSet.add(ToolName.ESCALATE);
     allowedSet.add(ToolName.CLARIFY);
     allowedSet.add(ToolName.UPDATE_NOTES);
+    allowedSet.add(ToolName.COMPOSE_TEXT);
 
     const filtered = tools.filter((t) => allowedSet.has(t.function.name));
     loop.log.info("agent", "Tool profile applied", {

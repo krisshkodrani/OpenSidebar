@@ -932,6 +932,7 @@ export class AgentLoop {
       approvalTimeoutMs?: number;
       executorModel?: string;
       plannerModel?: string;
+      writerModel?: string;
       useNitro?: boolean;
       providerMode?:
         | "openrouter"
@@ -1004,6 +1005,7 @@ export class AgentLoop {
     const modelOverrides: import("../llm").LLMClientOptions = {
       executorModel: options?.executorModel,
       plannerModel: options?.plannerModel,
+      writerModel: options?.writerModel,
       useNitro: options?.useNitro,
       providerMode: options?.providerMode,
       provider: options?.provider,
@@ -1047,6 +1049,8 @@ export class AgentLoop {
       this.workspaceId,
       this.workerId,
     );
+    // Enable compose_text steering when a dedicated Writer specialist is configured.
+    this.context.setWriterAvailable(this.llm.hasWriterModel?.() ?? false);
     this.statusHandler = callbacks.onStatusUpdate;
     this.messageHandler = callbacks.onMessage;
     this.stepHandler = callbacks.onStep ?? (() => {});

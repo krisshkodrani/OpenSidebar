@@ -96,6 +96,20 @@ export interface TypeTextArgs {
   pressEnter?: boolean;
 }
 
+/** Arguments for compose_text — delegate prose to the Writer specialist */
+export interface ComposeTextArgs {
+  /** The numeric tag ID of the target free-text field */
+  id: number;
+  /** What to write and any framing the Writer needs */
+  instructions: string;
+  /** Optional source material the answer should draw on */
+  context?: string;
+  /** Optional desired tone/register */
+  tone?: string;
+  /** Optional soft word limit */
+  maxWords?: number;
+}
+
 /** Arguments for scroll_page */
 export interface ScrollPageArgs {
   /** Direction to scroll */
@@ -538,4 +552,5 @@ export type ToolArgsMap = {
   [ToolName.GET_PROFILE_FIELDS]: GetProfileFieldsArgs;
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
+  [ToolName.COMPOSE_TEXT]: ComposeTextArgs;
 };

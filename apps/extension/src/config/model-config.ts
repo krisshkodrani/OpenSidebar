@@ -4,6 +4,8 @@ export interface LLMModelDefaults {
   executor: string;
   executorEmptyResponseFallback: string;
   planner: string;
+  /** Optional specialist writer model default (falls back to planner default). */
+  writer: string;
   openai: {
     executor: string;
     planner: string;
@@ -38,6 +40,7 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   executorEmptyResponseFallback:
     DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
   planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
+  writer: "accounts/fireworks/routers/kimi-k2p6-turbo",
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
     planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
@@ -118,6 +121,7 @@ export function resolveLLMModelConfig(
       DEFAULT_LLM_MODEL_CONFIG.executorEmptyResponseFallback,
     ),
     planner: readString(record, "planner", DEFAULT_LLM_MODEL_CONFIG.planner),
+    writer: readString(record, "writer", DEFAULT_LLM_MODEL_CONFIG.writer),
     openai: readGroup(record, "openai", DEFAULT_LLM_MODEL_CONFIG.openai),
     groq: readGroup(record, "groq", DEFAULT_LLM_MODEL_CONFIG.groq),
     fireworks: readGroup(
