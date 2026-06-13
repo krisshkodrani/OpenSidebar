@@ -56,7 +56,11 @@ executor:
 
 - `BENCH_JUDGE_BASE_URL` (default `https://openrouter.ai/api/v1`)
 - `BENCH_JUDGE_MODEL` (default `openai/gpt-5.4-mini`)
-- `BENCH_JUDGE_API_KEY` (falls back to `OPENROUTER_API_KEY`)
+- `BENCH_JUDGE_API_KEY` (falls back to `OPENROUTER_API_KEY`, then `OPENAI_API_KEY`)
+
+Key lookup checks the environment first, then the repo `.env`. When only an
+OpenAI key is found, the judge defaults switch to OpenAI direct
+(`https://api.openai.com/v1`, model `gpt-5.4-mini`) automatically.
 
 Unparseable or uncertain verdicts count as **non-successes** — a judge that
 can't be read never inflates the score. `--judge-only --run-dir <dir>` re-scores

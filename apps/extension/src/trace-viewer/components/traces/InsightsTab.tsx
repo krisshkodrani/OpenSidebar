@@ -143,6 +143,7 @@ export default function InsightsTab({
             onChange={setTool}
             options={insights.facets.tools}
             emptyLabel="All tools"
+            emptyValue=""
           />
           <SelectFilter
             label="Tool status"
@@ -245,18 +246,23 @@ function KpiCard({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function SelectFilter({
+export function SelectFilter({
   label,
   value,
   onChange,
   options,
   emptyLabel,
+  emptyValue = "all",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: string[];
   emptyLabel: string;
+  /** The sentinel this filter uses for "no selection" ("all" or ""). The reset
+   *  option always emits exactly this, so reset is idempotent regardless of the
+   *  current selection. */
+  emptyValue?: string;
 }) {
   return (
     <label className="min-w-0">
@@ -267,7 +273,7 @@ function SelectFilter({
         onChange={(event) => onChange(event.target.value)}
         className="w-full px-2 py-1.5 text-sm bg-trace-surface border border-trace-border rounded text-trace-text focus:outline-none focus:border-trace-accent"
       >
-        <option value={value === "" ? "" : "all"}>{emptyLabel}</option>
+        <option value={emptyValue}>{emptyLabel}</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}

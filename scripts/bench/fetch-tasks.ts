@@ -17,7 +17,7 @@
  * dataset-shape assumption.
  */
 
-import { writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { validateTaskFile } from "./loader";
@@ -97,11 +97,34 @@ async function fetchFirstAvailable(
   );
 }
 
+const TOKEN_NAMES = ["HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGING_FACE_HUB_TOKEN"];
+
+function resolveToken(): string | undefined {
+  for (const name of TOKEN_NAMES) {
+    const value = process.env[name];
+    if (value?.trim()) return value.trim();
+  }
+  const here = dirname(fileURLToPath(import.meta.url));
+  const envPath = join(here, "..", "..", ".env");
+  if (!existsSync(envPath)) return undefined;
+  const values: Record<string, string> = {};
+  for (const line of readFileSync(envPath, "utf-8").split(/\r?\n/)) {
+    const match = line.trim().match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (match) values[match[1]] = match[2].trim();
+  }
+  for (const name of TOKEN_NAMES) {
+    if (values[name]?.trim()) return values[name].trim();
+  }
+  return undefined;
+}
+
 async function main(): Promise<void> {
-  const token = process.env.HF_TOKEN ?? process.env.HUGGINGFACE_TOKEN;
+  const token = resolveToken();
   if (!token) {
     console.error(
-      "[bench:fetch] HF_TOKEN is not set. Accept the dataset terms at\n" +
+      "[bench:fetch] No Hugging Face token found (checked HF_TOKEN, " +
+        "HUGGINGFACE_TOKEN, HUGGING_FACE_HUB_TOKEN in the environment and the " +
+        "repo .env). Accept the dataset terms at\n" +
         `  https://huggingface.co/datasets/${DATASET}\n` +
         "then: export HF_TOKEN=hf_xxx",
     );

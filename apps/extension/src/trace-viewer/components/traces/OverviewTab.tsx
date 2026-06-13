@@ -3,6 +3,7 @@ import type { TraceSession } from "../../../types/traces";
 import type { PartialProgressHandoff } from "../../../types";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
+import { useStore } from "../../store";
 import {
   formatDuration,
   formatCost,
@@ -15,10 +16,29 @@ import InvestigationSummary from "./InvestigationSummary";
 import EvidenceTimeline from "./EvidenceTimeline";
 import SessionComparisonPanel from "./SessionComparisonPanel";
 import TimelineDiffPanel from "./TimelineDiffPanel";
+import { buildStepStatuses } from "./PlanTab";
 
 interface OverviewTabProps {
   session: TraceSession;
 }
+
+// Status glyphs/colors mirror PlanTab's execution timeline so the Overview
+// progress summary and the Plan tab tell the same story for a given trace.
+const PLAN_STATUS_ICON: Record<string, string> = {
+  completed: "✓",
+  "in-progress": "→",
+  pending: "○",
+  deviated: "↻",
+  blocked: "✗",
+};
+
+const PLAN_STATUS_TEXT: Record<string, string> = {
+  completed: "text-state-success",
+  "in-progress": "text-trace-accent",
+  pending: "text-trace-muted",
+  deviated: "text-state-warning",
+  blocked: "text-state-error",
+};
 
 // ── Partial Handoff Full Panel ─────────────────────────────────────────────
 
@@ -133,13 +153,18 @@ export default function OverviewTab({ session }: OverviewTabProps) {
   );
 
   const plan = session.planDecomposition;
-  const completedSteps =
-    plan?.steps?.filter(
-      (s) =>
-        s.dependencies?.length === 0 ||
-        s.dependencies?.every((d) => d < (plan?.steps?.indexOf(s) || 0)),
-    ).length || 0;
-  const totalSteps = plan?.steps?.length || 0;
+  const entries = useStore((s) => s.currentEntries);
+  // Real step completion comes from plan_monitor events (same source the Plan
+  // tab uses), not from dependency ordering — so the bar tracks execution and
+  // agrees with the outcome badge above it.
+  const stepStatuses = useMemo(
+    () => buildStepStatuses(plan?.steps ?? [], entries),
+    [plan, entries],
+  );
+  const totalSteps = stepStatuses.length;
+  const completedSteps = stepStatuses.filter(
+    (s) => s.status === "completed",
+  ).length;
 
   const metrics = session.metrics;
   const skillIds = useMemo(() => getAllSkillIds(session), [session]);
@@ -171,7 +196,7 @@ export default function OverviewTab({ session }: OverviewTabProps) {
           </span>
           {metrics?.totalCost != null && (
             <span className="text-[11px] text-trace-muted">
-              {formatCost(metrics.totalCost)}
+              {formatCost(metrics.totalCost) || "$0"}
             </span>
           )}
           {metrics?.totalTokens != null && (
@@ -225,27 +250,55 @@ export default function OverviewTab({ session }: OverviewTabProps) {
       )}
 
       {/* 6. Plan Progress */}
-      {plan && (
+      {plan && (totalSteps > 0 || (plan.subtasks?.length ?? 0) > 0) && (
         <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[11px] text-trace-muted uppercase tracking-wide">
               Plan Progress
             </div>
-            <span className="text-[11px] text-trace-subtle">
-              {completedSteps}/{totalSteps} steps
-            </span>
+            {totalSteps > 0 && (
+              <span className="text-[11px] text-trace-subtle">
+                {completedSteps}/{totalSteps} steps
+              </span>
+            )}
           </div>
-          <div className="w-full h-2 bg-trace-border/50 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-trace-accent rounded-full transition-all"
-              style={{
-                width: `${totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0}%`,
-              }}
-            />
-          </div>
-          {plan.subtasks?.length > 0 && (
-            <ol className="mt-3 space-y-1">
-              {plan.subtasks.map((subtask, i) => {
+          {totalSteps > 0 ? (
+            <>
+              <div className="w-full h-2 bg-trace-border/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-trace-accent rounded-full transition-all"
+                  style={{ width: `${(completedSteps / totalSteps) * 100}%` }}
+                />
+              </div>
+              {/* List the same steps the count is derived from, with their real
+                  execution status — count and rows can never disagree. */}
+              <ol className="mt-3 space-y-1">
+                {stepStatuses.map((step) => {
+                  const label =
+                    compactTraceTaskLabel(step.objective) || step.objective;
+                  return (
+                    <li
+                      key={step.index}
+                      className="text-[12px] text-trace-muted flex items-start gap-2"
+                      title={
+                        label === step.objective ? undefined : step.objective
+                      }
+                    >
+                      <span
+                        className={`mt-0.5 shrink-0 ${PLAN_STATUS_TEXT[step.status] ?? "text-trace-muted"}`}
+                        title={step.status}
+                      >
+                        {PLAN_STATUS_ICON[step.status] ?? "○"}
+                      </span>
+                      {label}
+                    </li>
+                  );
+                })}
+              </ol>
+            </>
+          ) : (
+            <ol className="space-y-1">
+              {(plan.subtasks ?? []).map((subtask, i) => {
                 const label = compactTraceTaskLabel(subtask) || subtask;
                 return (
                   <li

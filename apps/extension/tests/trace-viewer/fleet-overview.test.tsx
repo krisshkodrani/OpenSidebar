@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import FleetOverview from "../../src/trace-viewer/components/traces/FleetOverview";
 import { useStore } from "../../src/trace-viewer/store";
+import { isoDayOffset } from "../../src/trace-viewer/utils";
 
 function resetStore() {
   useStore.setState((useStore as any).getInitialState(), true);
@@ -90,5 +91,21 @@ describe("FleetOverview", () => {
 
     expect(useStore.getState().filters.outcome).toBe("all");
     expect(onFiltersChanged).toHaveBeenCalled();
+  });
+
+  test("surfaces Clear filters when only the date window changed", async () => {
+    // Regression: FleetOverview's active-filter check ignored from/to, so a date
+    // preset left its Clear button hidden while the FilterBar showed one. Both
+    // now share hasActiveTraceFilters.
+    useStore.getState().setFilter("from", isoDayOffset(0));
+
+    await act(async () => {
+      root.render(<FleetOverview onFiltersChanged={vi.fn()} />);
+    });
+
+    const clearButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Clear filters"),
+    );
+    expect(clearButton).toBeTruthy();
   });
 });

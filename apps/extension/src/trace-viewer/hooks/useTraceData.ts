@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import * as api from "../api";
 import { useStore } from "../store";
+import { isDefaultTraceWindow } from "../utils";
 
 export function useTraceData() {
   const filters = useStore((s) => s.filters);
@@ -18,6 +19,9 @@ export function useTraceData() {
   const detailRequestSeq = useRef(0);
   const didInitLoading = useRef(false);
   const didInitialRefresh = useRef(false);
+  // Guards the one-shot auto-relax: if the default 7-day window returns nothing,
+  // widen to all-time once so the viewer never opens to a confusing empty list.
+  const didAutoRelax = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const detailAbortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,6 +68,18 @@ export function useTraceData() {
       setSessions(sessionsData || []);
       setAvailableDays(daysData || []);
       setAvailableModels(modelsData || []);
+
+      // First load with the default window empty? Widen to all-time once. The
+      // filter change re-triggers refreshSessions through the debounced effect.
+      if (
+        (sessionsData?.length ?? 0) === 0 &&
+        !didAutoRelax.current &&
+        isDefaultTraceWindow(filtersRef.current)
+      ) {
+        didAutoRelax.current = true;
+        useStore.getState().setFilter("from", "");
+        return;
+      }
 
       if (currentSessionId) {
         const stillExists = (sessionsData || []).some(

@@ -176,9 +176,19 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
+  const toggleBackend = useCallback(() => {
+    setBackendView((prev) => {
+      const next = !prev;
+      // Leaving a skill detail when entering the backend view, so the toggle
+      // always lands somewhere visible (App renders SkillDetail ahead of it).
+      if (next) setCurrentSkillId(null);
+      return next;
+    });
+  }, []);
+
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
-      <ViewerHeader />
+      <ViewerHeader backendActive={backendView} onToggleBackend={toggleBackend} />
       <ViewerErrorBoundary>
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />

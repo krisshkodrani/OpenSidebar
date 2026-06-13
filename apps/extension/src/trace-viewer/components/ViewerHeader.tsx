@@ -1,7 +1,17 @@
 import React from "react";
 import { useStore } from "../store";
 
-export default function ViewerHeader() {
+interface ViewerHeaderProps {
+  /** Whether the backend (memory + scheduling) panel is currently shown. */
+  backendActive?: boolean;
+  /** Toggle the backend panel on/off. When omitted, the toggle is hidden. */
+  onToggleBackend?: () => void;
+}
+
+export default function ViewerHeader({
+  backendActive = false,
+  onToggleBackend,
+}: ViewerHeaderProps) {
   const viewerTheme = useStore((s) => s.viewerTheme);
   const setViewerTheme = useStore((s) => s.setViewerTheme);
 
@@ -33,6 +43,20 @@ export default function ViewerHeader() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-3">
+          {onToggleBackend && (
+            <button
+              onClick={onToggleBackend}
+              aria-pressed={backendActive}
+              className={`text-[11px] border rounded px-2 py-0.5 transition-colors ${
+                backendActive
+                  ? "border-trace-accent/40 bg-trace-accent/15 text-trace-accent-light"
+                  : "border-trace-border text-trace-muted hover:text-trace-text"
+              }`}
+              title="Backend memory & scheduling panel"
+            >
+              {backendActive ? "← Traces" : "Backend"}
+            </button>
+          )}
           <button
             onClick={cycleTheme}
             className="text-[11px] text-trace-muted hover:text-trace-text border border-trace-border rounded px-2 py-0.5 transition-colors"
