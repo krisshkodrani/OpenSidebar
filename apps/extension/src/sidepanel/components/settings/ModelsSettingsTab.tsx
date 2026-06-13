@@ -30,6 +30,11 @@ function defaultPlannerModel(providerMode: UserSettings["providerMode"]) {
   return LLM_MODEL_CONFIG.planner;
 }
 
+function defaultWriterModel(providerMode: UserSettings["providerMode"]) {
+  // Writer defaults track the planner catalog (strong text models).
+  return defaultPlannerModel(providerMode);
+}
+
 export function ModelsSettingsTab({
   formState,
   models,
@@ -51,6 +56,11 @@ export function ModelsSettingsTab({
   const plannerModels = getProviderModelOptions({
     providerMode,
     role: "planner",
+    openRouterModels: models,
+  });
+  const writerModels = getProviderModelOptions({
+    providerMode,
+    role: "writer",
     openRouterModels: models,
   });
   const openRouterCatalogActive =
@@ -197,6 +207,34 @@ export function ModelsSettingsTab({
             onChange={(value) => onChange("plannerModel", value || undefined)}
             defaultModel={defaultPlannerModel(providerMode)}
             models={plannerModels}
+            loading={providerMode === "openrouter" ? modelsLoading : false}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-sm font-medium dark:text-warm-300">
+            Writer{" "}
+            <span className="text-warm-400 dark:text-warm-500 font-normal">
+              (optional)
+            </span>
+          </label>
+          <p className="text-xs text-warm-400 dark:text-warm-500">
+            Specialist for free-text answers and prose (e.g. job-application
+            questions, message bodies). Preferred automatically when set; leave
+            empty to use the executor.
+          </p>
+          <p className="text-xs text-warm-500 dark:text-warm-400">
+            {getProviderModelCatalogNote({
+              providerMode,
+              role: "writer",
+              hasOpenRouterKey,
+            })}
+          </p>
+          <ModelSelector
+            value={formState.writerModel || ""}
+            onChange={(value) => onChange("writerModel", value || undefined)}
+            defaultModel={defaultWriterModel(providerMode)}
+            models={writerModels}
             loading={providerMode === "openrouter" ? modelsLoading : false}
           />
         </div>

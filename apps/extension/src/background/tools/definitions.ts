@@ -51,6 +51,45 @@ export const TYPE_TEXT_DEF: ToolDefinition = {
   },
 };
 
+export const COMPOSE_TEXT_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.COMPOSE_TEXT,
+    description:
+      "Delegate authored prose to the specialist Writer, which composes the text and enters it into the target field for you. Use this — not type_text — for any free-text answer or prose: job-application questions, essays, cover letters, message/email/comment bodies, 'describe/explain/why' fields. Do NOT use it for short structured values (names, emails, dates, numbers); type those directly. Do not retype the field afterwards.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description: "Tag ID of the target free-text field.",
+        },
+        instructions: {
+          type: "string",
+          description:
+            "What to write and any framing the Writer needs (the question being answered, requested angle, key points to include).",
+        },
+        context: {
+          type: "string",
+          description:
+            "Optional source material you already read that the answer should draw on (e.g. the job description, the email being replied to).",
+        },
+        tone: {
+          type: "string",
+          description:
+            "Optional desired tone/register (e.g. professional, enthusiastic, concise).",
+        },
+        maxWords: {
+          type: "integer",
+          description:
+            "Optional soft word limit for the composed text.",
+        },
+      },
+      required: ["id", "instructions"],
+    },
+  },
+};
+
 export const SCROLL_PAGE_DEF: ToolDefinition = {
   type: "function",
   function: {

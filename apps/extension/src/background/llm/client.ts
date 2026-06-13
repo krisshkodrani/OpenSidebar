@@ -49,6 +49,8 @@ export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK =
   LLM_MODEL_CONFIG.executorEmptyResponseFallback;
 /** Planner model tier — used after escalation (Fireworks Kimi K2.5 Turbo) */
 export const MODEL_PLANNER = LLM_MODEL_CONFIG.planner;
+/** Writer specialist model — used for one-shot prose composition (compose_text) */
+export const MODEL_WRITER = LLM_MODEL_CONFIG.writer;
 
 /** OpenAI direct API — redirected to Fireworks */
 const OPENAI_BASE_URL =
@@ -289,6 +291,11 @@ export interface LLMClientOptions {
   executorModel?: string;
   executorFallbackModel?: string;
   plannerModel?: string;
+  /**
+   * Optional specialist Writer model for one-shot prose composition. When unset,
+   * the writer pool transparently reuses the executor pool.
+   */
+  writerModel?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
@@ -669,8 +676,13 @@ export class LLMClient {
   private executorPool: ProviderPool;
   /** Configured provider pool for planner model failover */
   private plannerPool: ProviderPool;
-  /** Whether the client is currently in planner model tier */
-  private _isPlannerTier = false;
+  /**
+   * Configured provider pool for the optional Writer specialist. Defaults to the
+   * executor pool when no writer model is configured (transparent fallback).
+   */
+  private writerPool: ProviderPool;
+  /** Which model role is currently active for completion routing */
+  private _activeTier: "executor" | "planner" | "writer" = "executor";
   private executorModelOverride: string | null = null;
   private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
@@ -833,15 +845,42 @@ export class LLMClient {
       );
     }
 
+    // --- Build writer pool ---
+    // The optional Writer specialist runs on the executor's provider with its
+    // own model. When unconfigured it transparently reuses the executor pool so
+    // compose_text still works (just without a dedicated prose model).
+    if (!options?.writerModel) {
+      this.writerPool = this.executorPool;
+    } else {
+      const execSlot = this.executorPool.getActive();
+      const writerModel =
+        execSlot.provider.providerId === "openrouter"
+          ? applyNitro(options.writerModel, nitro)
+          : options.writerModel;
+      this.writerPool = singleProviderPool(execSlot.provider, writerModel);
+    }
+
     // Initialize from executor pool's top priority
     const initialSlot = this.executorPool.getActive();
     this.model = initialSlot.model;
     this.provider = initialSlot.provider;
   }
 
+  /** Select the provider pool for the currently active model role. */
+  private activePool(): ProviderPool {
+    switch (this._activeTier) {
+      case "planner":
+        return this.plannerPool;
+      case "writer":
+        return this.writerPool;
+      default:
+        return this.executorPool;
+    }
+  }
+
   /** Whether the client is currently using the planner model tier */
   public isPlannerTier(): boolean {
-    return this._isPlannerTier;
+    return this._activeTier === "planner";
   }
 
   /** Get the currently active model ID */
@@ -859,12 +898,12 @@ export class LLMClient {
     providerId: ProviderConfig["providerId"];
     model: string;
   } {
-    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
+    const pool = this.activePool();
     const slot = pool.getActive();
     return {
       providerId: slot.provider.providerId,
       model:
-        !this._isPlannerTier && this.executorModelOverride
+        this._activeTier === "executor" && this.executorModelOverride
           ? this.executorModelOverride
           : slot.model,
     };
@@ -873,7 +912,7 @@ export class LLMClient {
   public activateExecutorFallback(
     reason: "empty_response" = "empty_response",
   ): boolean {
-    if (this._isPlannerTier) return false;
+    if (this._activeTier !== "executor") return false;
     if (!this.executorFallbackModel) return false;
     if (this.executorModelOverride === this.executorFallbackModel) return false;
 
@@ -925,7 +964,7 @@ export class LLMClient {
     });
     this.model = slot.model;
     this.provider = slot.provider;
-    this._isPlannerTier = true;
+    this._activeTier = "planner";
   }
 
   /**
@@ -943,7 +982,49 @@ export class LLMClient {
     });
     this.model = slot.model;
     this.provider = slot.provider;
-    this._isPlannerTier = false;
+    this._activeTier = "executor";
+  }
+
+  /**
+   * One-shot prose composition against the Writer pool. Temporarily routes
+   * completion through the writer model (falling back to the executor model when
+   * none is configured), then restores the prior tier. Does not mutate the
+   * active model/provider — `complete()` selects the pool per call via the tier
+   * flag — so this is safe to call mid-loop without disturbing escalation state.
+   */
+  public async composeText(args: {
+    systemPrompt: string;
+    userPrompt: string;
+    maxTokens?: number;
+    temperature?: number;
+    signal?: AbortSignal;
+  }): Promise<{ text: string; model: string; providerId: string }> {
+    const prevTier = this._activeTier;
+    this._activeTier = "writer";
+    try {
+      const { providerId, model } = this.getActiveProviderInfo();
+      const resp = await this.complete({
+        messages: [
+          { role: "system", content: args.systemPrompt },
+          { role: "user", content: args.userPrompt },
+        ],
+        max_tokens: args.maxTokens ?? 1024,
+        temperature: args.temperature ?? 0.5,
+        signal: args.signal,
+      });
+      return {
+        text: stripThinkTags(resp.content ?? "").trim(),
+        model: resp.actualModel ?? model,
+        providerId: resp.actualProviderId ?? providerId,
+      };
+    } finally {
+      this._activeTier = prevTier;
+    }
+  }
+
+  /** Whether a dedicated Writer model is configured (distinct from the executor pool). */
+  public hasWriterModel(): boolean {
+    return this.writerPool !== this.executorPool;
   }
 
   /** Rebuild request for a different provider (swaps URL, headers, AND model in body) */
@@ -992,9 +1073,7 @@ export class LLMClient {
 
         // Immediate provider failover on 429 (rate limit)
         if (response.status === 429 && providerId) {
-          const pool = this._isPlannerTier
-            ? this.plannerPool
-            : this.executorPool;
+          const pool = this.activePool();
           pool.cooldown(providerId);
           const fallback = pool.getNextFallback(providerId);
           if (fallback) {
@@ -1027,9 +1106,7 @@ export class LLMClient {
 
         // Permanent provider disable on 402 (credit exhaustion)
         if (response.status === 402 && providerId) {
-          const pool = this._isPlannerTier
-            ? this.plannerPool
-            : this.executorPool;
+          const pool = this.activePool();
           pool.disableForSession(providerId);
           logger.warn(
             "agent",
@@ -1076,11 +1153,11 @@ export class LLMClient {
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
-    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
+    const pool = this.activePool();
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
     let activeModel =
-      !this._isPlannerTier && this.executorModelOverride
+      this._activeTier === "executor" && this.executorModelOverride
         ? this.executorModelOverride
         : activeSlot.model;
 
@@ -1341,11 +1418,11 @@ export class LLMClient {
     onTextDelta: (delta: string) => void,
   ): Promise<CompletionResponse> {
     // Use the appropriate pool based on current tier
-    const pool = this._isPlannerTier ? this.plannerPool : this.executorPool;
+    const pool = this.activePool();
     const activeSlot = pool.getActive();
     let provider = activeSlot.provider;
     let activeModel =
-      !this._isPlannerTier && this.executorModelOverride
+      this._activeTier === "executor" && this.executorModelOverride
         ? this.executorModelOverride
         : activeSlot.model;
 

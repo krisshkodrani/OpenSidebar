@@ -3717,6 +3717,7 @@ export class Orchestrator {
         const modelOverrides = {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
           provider: input.settings.provider,
@@ -4048,6 +4049,7 @@ export class Orchestrator {
     const loopModelOverrides = {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
+      writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
       providerMode: input.settings.providerMode,
       provider: input.settings.provider,
@@ -4537,6 +4539,7 @@ export class Orchestrator {
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
           provider: input.settings.provider,

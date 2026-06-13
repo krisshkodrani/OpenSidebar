@@ -109,6 +109,8 @@ export class ContextManager {
   private planStatus: PlanStatus | null = null;
   private storageKey: string;
   private modelTier: "executor" | "planner" = "executor";
+  /** Whether an optional Writer specialist is configured (enables compose_text steering). */
+  private writerAvailable = false;
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
   /** Screenshot data URL for unified VL executor mode */
@@ -124,6 +126,11 @@ export class ContextManager {
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
+  }
+
+  /** Enable compose_text steering when a dedicated Writer specialist is configured. */
+  public setWriterAvailable(available: boolean): void {
+    this.writerAvailable = available;
   }
 
   /** Pin the user's original query so it appears in every system prompt. */
@@ -614,9 +621,17 @@ export class ContextManager {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
     // Persona: executor vs planner model framing (in static prefix for caching)
+    const personaBody = this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA;
+    const writerSteer = this.writerAvailable
+      ? "\n\nA specialist Writer is available. For any free-text answer or prose — " +
+        "job-application questions, essays, cover letters, message/email/comment bodies, " +
+        "or any 'describe/explain/why' field — you MUST delegate via compose_text(id, instructions) " +
+        "instead of writing it yourself with type_text. Type short structured values " +
+        "(names, emails, dates, numbers, single options) directly. Never retype a field the Writer already filled."
+      : "";
     content = content.replace(
       "{{persona}}",
-      `## Persona\n${this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA}`,
+      `## Persona\n${personaBody}${writerSteer}`,
     );
 
     // Remove demo catalog placeholder (demos removed)

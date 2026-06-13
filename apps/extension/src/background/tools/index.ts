@@ -25,6 +25,7 @@ import {
 import {
   CLICK_DEF,
   TYPE_TEXT_DEF,
+  COMPOSE_TEXT_DEF,
   SCROLL_PAGE_DEF,
   READ_PAGE_DEF,
   NAVIGATE_DEF,
@@ -4122,6 +4123,11 @@ export function registerTools() {
   toolRegistry.register(ToolName.CLARIFY, CLARIFY_DEF, async (args) => {
     // This executor is a fallback — the loop intercepts clarify before reaching here
     return `Clarification requested: ${(args.question as string) || "no question given"}`;
+  });
+
+  toolRegistry.register(ToolName.COMPOSE_TEXT, COMPOSE_TEXT_DEF, async (args) => {
+    // This executor is a fallback — the loop intercepts compose_text (writer handoff) before reaching here
+    return `Compose requested for field ${(args.id as number) ?? "?"}.`;
   });
 
   // Service Worker Tools (chrome.* APIs)

@@ -215,7 +215,7 @@ type ProviderMode =
   | "fireworks-deepseek"
   | "moonshot"
   | "xiaomi";
-type ModelRole = "executor" | "planner" | "perception";
+type ModelRole = "executor" | "planner" | "perception" | "writer";
 
 export function getProviderModelOptions(args: {
   providerMode: ProviderMode;
@@ -276,6 +276,10 @@ export function getProviderModelCatalogNote(args: {
       : "Scoped to curated Xiaomi MiMo planner models. Pricing is unknown until Xiaomi publishes official rates.";
   }
   if (providerMode === "openrouter") {
+    if (role === "writer")
+      return hasOpenRouterKey
+        ? "Optional. Live OpenRouter catalog — pick a prose-strong model (e.g. a GPT/Claude writer). Leave empty to reuse the executor."
+        : "Optional. Add an OpenRouter key to choose a dedicated Writer model.";
     return hasOpenRouterKey
       ? role === "executor"
         ? "Live OpenRouter catalog filtered to multimodal executor models."

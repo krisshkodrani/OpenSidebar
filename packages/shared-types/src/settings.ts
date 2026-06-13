@@ -75,6 +75,12 @@ export interface UserSettings {
   executorModel?: string;
   /** Override planner model. */
   plannerModel?: string;
+  /**
+   * Optional specialist Writer model for composing free-text/prose answers
+   * (e.g. job-application questions, message bodies). When set, the agent
+   * prefers it within that scope; when empty it falls back to the executor.
+   */
+  writerModel?: string;
   /** Override perception model for the internal structured fallback path. */
   perceptionModel?: string;
   /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */

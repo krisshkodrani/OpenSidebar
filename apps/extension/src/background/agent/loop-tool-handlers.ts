@@ -18,6 +18,7 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import { runWriterHandoff } from "./writer-handoff";
 import {
   buildTrustedReadAnswerCompletionCandidate,
   type TrustedCompletionCandidate,
@@ -454,6 +455,53 @@ export async function handleEscalateToolCall(
     orientationPhase,
     prevElementCount,
   };
+}
+
+/**
+ * COMPOSE_TEXT — delegate prose to the Writer specialist, which composes and
+ * enters it into the target field. Intercepted in the loop (the registry
+ * executor is only a fallback). Returns the (possibly refreshed) element count
+ * since entering text modifies the DOM.
+ */
+export async function handleComposeTextToolCall(
+  loop: AgentLoopToolHandlerHost,
+  toolCallId: string,
+  args: Record<string, unknown>,
+  tabId: number,
+  prevElementCount: number,
+): Promise<number> {
+  const fieldId = Number(args.id);
+  if (!Number.isFinite(fieldId)) {
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        "Error: compose_text requires a numeric field id. Use type_text to enter text yourself, or call compose_text with a valid field id.",
+    });
+    return prevElementCount;
+  }
+
+  const result = await runWriterHandoff(loop, tabId, {
+    id: fieldId,
+    instructions:
+      typeof args.instructions === "string" ? args.instructions : undefined,
+    context: typeof args.context === "string" ? args.context : undefined,
+    tone: typeof args.tone === "string" ? args.tone : undefined,
+    maxWords: typeof args.maxWords === "number" ? args.maxWords : undefined,
+    executorDraft:
+      typeof args.executorDraft === "string" ? args.executorDraft : undefined,
+  });
+
+  loop.context.addMessage({
+    role: "tool",
+    tool_call_id: toolCallId,
+    content: result,
+  });
+
+  // Entering text modifies the DOM — refresh snapshot/perception for next turn.
+  const newCount = await loop.refreshSnapshotWithRetry(tabId, prevElementCount);
+  await loop.refreshPerceptionAndTriage(tabId);
+  return newCount;
 }
 
 export function handleUpdateNotesToolCall(
