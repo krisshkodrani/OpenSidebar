@@ -465,6 +465,65 @@ describe("useTraceData", () => {
     ]);
   });
 
+  test("auto-relaxes the default window to all-time when it returns nothing", async () => {
+    // Regression: the default 7-day window meant a viewer opened against older
+    // (or seeded) traces showed an empty "No traces found" first screen.
+    const session = {
+      sessionId: "s1",
+      startTime: 100,
+      endTime: 200,
+      query: "Objective: old trace",
+      startUrl: "https://example.com",
+      outcome: "completed",
+      turnCount: 1,
+      summary: "done",
+      metrics: null,
+    };
+    vi.mocked(api.fetchTraceSessions).mockImplementation(
+      async (filters: any) => (filters?.from === "" ? [session] : []) as any,
+    );
+
+    await act(async () => {
+      root.render(<HookHarness />);
+    });
+    await flushAsyncWork();
+
+    // The empty default-window result widened the window to all-time.
+    expect(useStore.getState().filters.from).toBe("");
+
+    // The debounced refetch (200ms) with the widened window loads the traces.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 260));
+    });
+    await flushAsyncWork();
+
+    expect(useStore.getState().sessions).toHaveLength(1);
+  });
+
+  test("does not auto-relax when the default window already has traces", async () => {
+    const session = {
+      sessionId: "s1",
+      startTime: 100,
+      endTime: 200,
+      query: "Objective: recent trace",
+      startUrl: "https://example.com",
+      outcome: "completed",
+      turnCount: 1,
+      summary: "done",
+      metrics: null,
+    };
+    vi.mocked(api.fetchTraceSessions).mockResolvedValue([session] as any);
+    const fromBefore = useStore.getState().filters.from;
+
+    await act(async () => {
+      root.render(<HookHarness />);
+    });
+    await flushAsyncWork();
+
+    expect(useStore.getState().sessions).toHaveLength(1);
+    expect(useStore.getState().filters.from).toBe(fromBefore);
+  });
+
   test("refetches the open trace when a session refresh changes its runId", async () => {
     useStore.setState({ currentSessionId: "session-1" });
     let currentRunId = "run-1";

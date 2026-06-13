@@ -39,7 +39,10 @@ import {
 } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { loadApiKey } from "../apps/extension/tests/e2e/helpers/e2e-provider-config";
+import {
+  loadApiKey,
+  loadOpenAiApiKey,
+} from "../apps/extension/tests/e2e/helpers/e2e-provider-config";
 import { judgeTask, type JudgeClientConfig } from "./bench/webjudge";
 import { aggregateResults, formatBenchReport } from "./bench/aggregate";
 import type {
@@ -140,13 +143,22 @@ function readEvidence(runDir: string): BenchRunEvidence[] {
 }
 
 function resolveJudgeConfig(): JudgeClientConfig | null {
-  const apiKey =
-    process.env.BENCH_JUDGE_API_KEY ?? loadApiKey() ?? process.env.OPENROUTER_API_KEY;
+  const explicitKey = process.env.BENCH_JUDGE_API_KEY;
+  const openRouterKey = loadApiKey() ?? process.env.OPENROUTER_API_KEY;
+  const openAiKey = loadOpenAiApiKey();
+  const apiKey = explicitKey ?? openRouterKey ?? openAiKey;
   if (!apiKey) return null;
+  // Without an explicit judge key or an OpenRouter key, judge via OpenAI
+  // direct (different base URL and un-prefixed model id).
+  const viaOpenAi = !explicitKey && !openRouterKey;
   return {
-    baseUrl: process.env.BENCH_JUDGE_BASE_URL ?? "https://openrouter.ai/api/v1",
+    baseUrl:
+      process.env.BENCH_JUDGE_BASE_URL ??
+      (viaOpenAi ? "https://api.openai.com/v1" : "https://openrouter.ai/api/v1"),
     apiKey,
-    model: process.env.BENCH_JUDGE_MODEL ?? "openai/gpt-5.4-mini",
+    model:
+      process.env.BENCH_JUDGE_MODEL ??
+      (viaOpenAi ? "gpt-5.4-mini" : "openai/gpt-5.4-mini"),
     headers: {
       "HTTP-Referer": "https://github.com/krisshkodrani/OpenSidebar",
       "X-Title": "OpenSidebar Bench WebJudge",
@@ -183,7 +195,7 @@ async function judgeAndScore(options: CliOptions): Promise<void> {
   const judgeConfig = options.judge ? resolveJudgeConfig() : null;
   if (options.judge && !judgeConfig) {
     console.warn(
-      "[bench] No judge key (BENCH_JUDGE_API_KEY / OPENROUTER_API_KEY). Recording evidence without verdicts.",
+      "[bench] No judge key (BENCH_JUDGE_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY). Recording evidence without verdicts.",
     );
   }
 

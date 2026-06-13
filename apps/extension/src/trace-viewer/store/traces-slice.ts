@@ -6,25 +6,11 @@ import type {
   ScrollPositions,
 } from "./types";
 import type { TraceSession } from "../../types/traces";
-import { isoDayOffset } from "../utils";
+import { defaultTraceFilters } from "../utils";
 
 const MAX_SCROLL_POSITIONS = 100;
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-const DEFAULT_FILTERS: TraceFilters = {
-  outcome: "all",
-  day: "all",
-  from: isoDayOffset(6),
-  to: todayIso(),
-  domain: "",
-  model: "all",
-  skill: "all",
-  runId: "",
-};
+const DEFAULT_FILTERS: TraceFilters = defaultTraceFilters();
 
 const OUTCOME_PRIORITY: Record<string, number> = {
   completed: 0,
@@ -165,7 +151,9 @@ export const createTracesSlice: SliceCreator<TracesSlice> = (set) => ({
     }),
   resetFilters: () =>
     set((s) => {
-      s.filters = { ...DEFAULT_FILTERS, from: isoDayOffset(6), to: todayIso() };
+      // Recompute the window fresh so a long-open viewer resets to "today",
+      // not the day it was first loaded.
+      s.filters = defaultTraceFilters();
     }),
   setCurrentSessionId: (id) =>
     set((s) => {

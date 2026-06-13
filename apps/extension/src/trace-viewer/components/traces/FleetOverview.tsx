@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useStore } from "../../store";
 import { TRACE_SESSION_SEARCH_LIMIT } from "../../api";
-import { formatCost, formatCount } from "../../utils";
+import { formatCost, formatCount, hasActiveTraceFilters } from "../../utils";
 import Tooltip from "../Tooltip";
 
 interface FleetOverviewProps {
@@ -65,13 +65,7 @@ export default function FleetOverview({
     };
   }, [sessions, runGroups]);
 
-  const hasActiveFilters =
-    filters.outcome !== "all" ||
-    filters.day !== "all" ||
-    filters.domain !== "" ||
-    filters.model !== "all" ||
-    filters.skill !== "all" ||
-    filters.runId !== "";
+  const hasActiveFilters = hasActiveTraceFilters(filters);
 
   const clearFilters = () => {
     resetFilters();
