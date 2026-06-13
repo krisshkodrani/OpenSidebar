@@ -742,6 +742,26 @@ export function inferToolProfileForStep(
   return undefined;
 }
 
+/**
+ * Read the planner LLM's optional multi-tab-intent flag. Accepts both the
+ * snake_case wire form (`requires_tab_management`) and a camelCase variant for
+ * robustness. Returns `undefined` when the model omitted it, so the caller can
+ * fall back to query/step heuristics rather than treating absence as `false`.
+ */
+function parseTabManagementSignal(parsed: unknown): boolean | undefined {
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const record = parsed as Record<string, unknown>;
+  const raw =
+    record.requires_tab_management ?? record.requiresTabManagement ?? undefined;
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
+}
+
 export class TaskPlanner {
   private llm: LLMClient;
   private openRouterApiKey: string;
@@ -750,6 +770,13 @@ export class TaskPlanner {
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
+  /**
+   * Transient holder for the LLM's structured multi-tab-intent signal, captured
+   * during the most recent {@link decomposeInternal} parse and injected into the
+   * returned decomposition by the public {@link decompose} wrapper. Reset at the
+   * start of every decompose call so a prior task's signal never leaks forward.
+   */
+  private parsedTabManagementSignal: boolean | undefined = undefined;
 
   constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
@@ -777,7 +804,35 @@ export class TaskPlanner {
     this.usageCallback = cb;
   }
 
+  /**
+   * Public entry point. Delegates to {@link decomposeInternal} and injects the
+   * LLM's structured multi-tab-intent signal (captured during parse) onto the
+   * result when the internal paths didn't already set one. Keeping the signal
+   * threading here means the many fallback return paths inside the core method
+   * stay untouched and every decomposition surfaces the flag uniformly.
+   */
   async decompose(
+    query: string,
+    pageTitle: string,
+    pageUrl: string,
+    signal?: AbortSignal,
+    perception?: string,
+  ): Promise<PlanDecomposition | null> {
+    this.parsedTabManagementSignal = undefined;
+    const decomposition = await this.decomposeInternal(
+      query,
+      pageTitle,
+      pageUrl,
+      signal,
+      perception,
+    );
+    if (decomposition && decomposition.requiresTabManagement === undefined) {
+      decomposition.requiresTabManagement = this.parsedTabManagementSignal;
+    }
+    return decomposition;
+  }
+
+  private async decomposeInternal(
     query: string,
     pageTitle: string,
     pageUrl: string,
@@ -840,6 +895,10 @@ export class TaskPlanner {
         VALID_DIFFICULTIES.has(parsed.difficulty as Difficulty)
           ? (parsed.difficulty as Difficulty)
           : "moderate";
+
+      // Capture the model's structured multi-tab-intent signal so the public
+      // decompose() wrapper can surface it regardless of which return path runs.
+      this.parsedTabManagementSignal = parseTabManagementSignal(parsed);
 
       // Extract optional limit overrides
       let limitOverrides: Partial<RuntimeLimits> | null = null;

@@ -109,6 +109,47 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("surfaces the planner's requires_tab_management signal onto the decomposition", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                requires_tab_management: true,
+                subtasks: ["Open product A", "Open product B", "Compare them"],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Compare these two products side by side",
+            "Catalog",
+            "https://shop.com/catalog",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.requiresTabManagement).toBe(true);
+    });
+
+    test("leaves requiresTabManagement undefined when the planner omits it", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": true, "subtasks": ["Add to cart", "Checkout"]}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose("Buy this item", "Product", "https://shop.com/item");
+
+        // Absence must stay undefined so the caller's query/step fallback governs
+        // rather than being forced to a hard false.
+        expect(result).not.toBeNull();
+        expect(result!.requiresTabManagement).toBeUndefined();
+    });
+
     test("stops review-first message drafts after the unsent copy is visible", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

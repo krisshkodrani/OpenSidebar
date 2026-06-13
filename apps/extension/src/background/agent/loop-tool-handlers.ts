@@ -650,29 +650,19 @@ export async function handleSwitchTabToolCall(
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
       "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
-      "Stay on the current tab unless the user asks for tab switching. " +
-      "Tab management tools disabled for this session.";
+      "Stay on the current tab unless the user asks for tab switching.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "switch_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call. The tab-management gate is re-evaluated every turn,
+    // so a plan that later legitimately requires tabs can still recover — we do
+    // not latch the tools off for the rest of the session.
+    loop.log.warn("agent", "switch_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return { tabId, prevElementCount };
   }
 
@@ -773,29 +763,17 @@ export async function handleCloseTabToolCall(
   }
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
-      "Blocked: close_tab requires explicit user instruction to manage tabs. " +
-      "Tab management tools disabled for this session.";
+      "Blocked: close_tab requires explicit user instruction to manage tabs.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "close_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call; the gate re-evaluates each turn (see switch_tab).
+    loop.log.warn("agent", "close_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return;
   }
 
@@ -868,29 +846,17 @@ export async function handleCreateTabToolCall(
   }
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
-      "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
-      "Tab management tools disabled for this session.";
+      "Blocked: create_tab requires explicit user instruction to open additional tabs.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "create_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call; the gate re-evaluates each turn (see switch_tab).
+    loop.log.warn("agent", "create_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return;
   }
 
