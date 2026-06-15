@@ -155,31 +155,56 @@ export function generateCompletionContract(params: {
   activeObjective?: string;
   successCriteria?: string;
 }): GeneratedCompletionContract | null {
-  const draftOnlyContract = generateDraftOnlyContract(params);
-  if (draftOnlyContract) return draftOnlyContract;
+  const candidate = ((): GeneratedCompletionContract | null => {
+    const draftOnlyContract = generateDraftOnlyContract(params);
+    if (draftOnlyContract) return draftOnlyContract;
 
-  const snapshot = params.snapshot;
-  if (!snapshot) return null;
+    const snapshot = params.snapshot;
+    if (!snapshot) return null;
 
-  const quizContract = generateQuizSelectionContract(params, snapshot);
-  if (quizContract) return quizContract;
+    const quizContract = generateQuizSelectionContract(params, snapshot);
+    if (quizContract) return quizContract;
 
-  const formContract = generateFormFillContract(params, snapshot);
-  if (formContract) return formContract;
+    const formContract = generateFormFillContract(params, snapshot);
+    if (formContract) return formContract;
 
-  const navigationContract = generateNavigationContract(params, snapshot);
-  if (navigationContract) return navigationContract;
+    const navigationContract = generateNavigationContract(params, snapshot);
+    if (navigationContract) return navigationContract;
 
-  const readAnswerContract = generateReadAnswerContract(params, snapshot);
-  if (readAnswerContract) return readAnswerContract;
+    const readAnswerContract = generateReadAnswerContract(params, snapshot);
+    if (readAnswerContract) return readAnswerContract;
 
-  const workflowConfirmationContract = generateWorkflowConfirmationContract(
-    params,
-    snapshot,
-  );
-  if (workflowConfirmationContract) return workflowConfirmationContract;
+    const workflowConfirmationContract = generateWorkflowConfirmationContract(
+      params,
+      snapshot,
+    );
+    if (workflowConfirmationContract) return workflowConfirmationContract;
 
-  return null;
+    return null;
+  })();
+
+  if (candidate && !isContractRelevantToObjective(candidate, params)) {
+    return null;
+  }
+  return candidate;
+}
+
+function isContractRelevantToObjective(
+  generated: GeneratedCompletionContract,
+  params: { activeObjective?: string; userRequest: string },
+): boolean {
+  const objective = params.activeObjective ?? params.userRequest;
+
+  switch (generated.contract.kind) {
+    case "quiz_selection":
+      return /\b(?:quiz|exam|test|question\s*\d|answer\s+(?:the|this)\s+question)\b/i.test(objective);
+
+    case "form_fill":
+      return /\b(?:fill|enter|type|input|log\s*in|sign\s*in|register|create\s+account)\b/i.test(objective);
+
+    default:
+      return true;
+  }
 }
 
 function generateDraftOnlyContract(params: {
