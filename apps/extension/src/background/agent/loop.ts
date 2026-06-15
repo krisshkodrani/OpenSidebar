@@ -665,6 +665,10 @@ export class AgentLoop {
   private planner: TaskPlanner;
   /** Number of times done() has been rejected by the planner */
   private doneRejections = 0;
+  /** Last contract kind that rejected done() */
+  private lastContractRejectionKind: string | undefined = undefined;
+  /** Number of times the same contract kind rejected done() consecutively */
+  private consecutiveSameKindRejections = 0;
   /** Set when a done() rejection mid-point is reached and escalation should fire on the next main-loop tick. */
   private pendingDoneRejectionEscalation = false;
   /** Whether read_page or xray_page has been called at least once this session */
@@ -2720,6 +2724,12 @@ export class AgentLoop {
     summary: string,
     decision: CompletionRejectionDecision,
   ): void {
+    if (this.lastContractRejectionKind === decision.contract.kind) {
+      this.consecutiveSameKindRejections++;
+    } else {
+      this.lastContractRejectionKind = decision.contract.kind;
+      this.consecutiveSameKindRejections = 1;
+    }
     this.doneRejections++;
     this.checkAndSetDoneRejectionEscalation();
     this.lastCompletionRejection = decision;
@@ -2832,12 +2842,23 @@ export class AgentLoop {
         deterministicDone.status === "rejected" ||
         deterministicDone.status === "needs_verification"
       ) {
-        this.rejectDoneFromCompletionDecision(
-          toolCallId,
-          summary,
-          deterministicDone,
-        );
-        return false;
+        if (
+          this.lastContractRejectionKind === deterministicDone.contract.kind &&
+          this.consecutiveSameKindRejections >= 2
+        ) {
+          this.traceRecorder?.recordEvent("completion_contract_bypassed", {
+            kind: this.lastContractRejectionKind,
+            consecutiveRejections: this.consecutiveSameKindRejections,
+          } as any);
+          // Fall through to legacy guards
+        } else {
+          this.rejectDoneFromCompletionDecision(
+            toolCallId,
+            summary,
+            deterministicDone,
+          );
+          return false;
+        }
       }
     } else {
       this.recordShadowCompletionDecision(deterministicDone, summary);
@@ -5476,6 +5497,9 @@ export class AgentLoop {
     // Reset step tracking for the new step
     this.turnsOnCurrentStep = 0;
     this.escalationsOnCurrentStep = 0;
+    this.doneRejections = 0;
+    this.lastContractRejectionKind = undefined;
+    this.consecutiveSameKindRejections = 0;
     this.lastPlanIndex = runningIdx;
 
     // Broadcast updated progress
