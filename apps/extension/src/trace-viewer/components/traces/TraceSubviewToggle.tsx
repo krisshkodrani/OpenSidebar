@@ -14,7 +14,7 @@ export default function TraceSubviewToggle() {
   const views: { key: Subview; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "plan", label: "Plan" },
-    { key: "turns", label: `Turns (${turnCount})` },
+    { key: "turns", label: `Trajectory (${turnCount})` },
     { key: "perception", label: `Perception (${perceptionCount})` },
     { key: "prompts", label: "Prompts" },
     { key: "skills", label: "Skills" },

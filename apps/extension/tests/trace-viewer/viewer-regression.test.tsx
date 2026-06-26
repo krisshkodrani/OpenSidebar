@@ -272,7 +272,7 @@ describe("trace-viewer App regression flows", () => {
     });
 
     const turnsTab = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.startsWith("Turns"),
+      (button) => button.textContent?.startsWith("Trajectory"),
     );
     expect(turnsTab).toBeTruthy();
 

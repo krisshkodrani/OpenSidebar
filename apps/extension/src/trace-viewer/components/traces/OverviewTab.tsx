@@ -3,6 +3,7 @@ import type { TraceSession } from "../../../types/traces";
 import type { PartialProgressHandoff } from "../../../types";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
+import SectionCard, { Eyebrow } from "../SectionCard";
 import { useStore } from "../../store";
 import {
   formatDuration,
@@ -59,23 +60,19 @@ function PartialHandoffPanel({ handoff }: { handoff: PartialProgressHandoff }) {
         : "text-state-error";
 
   return (
-    <div className="bg-trace-panel border border-state-warning/30 rounded-lg p-4">
-      <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-3 flex items-center gap-2">
-        Partial Handoff Details
+    <SectionCard tone="warning">
+      <div className="mb-3 flex items-center gap-2">
+        <Eyebrow>Partial Handoff Details</Eyebrow>
         <Badge variant="max_turns">
           {handoff.turnsUsed}/{handoff.maxTurns} turns
         </Badge>
-        <span className="text-[10px] normal-case text-trace-dim">
-          {handoff.reason}
-        </span>
+        <span className="text-[10px] text-trace-dim">{handoff.reason}</span>
       </div>
 
       {/* Uncertainty */}
       {handoff.uncertainty.length > 0 && (
         <div className="mb-3">
-          <div className="text-[10px] uppercase tracking-wider text-trace-subtle mb-1.5 font-semibold">
-            Uncertainty
-          </div>
+          <Eyebrow className="mb-1.5">Uncertainty</Eyebrow>
           <ul className="space-y-1">
             {handoff.uncertainty.map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-[12px]">
@@ -111,9 +108,7 @@ function PartialHandoffPanel({ handoff }: { handoff: PartialProgressHandoff }) {
       {handoff.suggestedContinuationPrompt && (
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-trace-subtle font-semibold">
-              Continuation Prompt
-            </div>
+            <Eyebrow>Continuation Prompt</Eyebrow>
             <button
               type="button"
               onClick={handleCopyPrompt}
@@ -127,7 +122,7 @@ function PartialHandoffPanel({ handoff }: { handoff: PartialProgressHandoff }) {
           </pre>
         </div>
       )}
-    </div>
+    </SectionCard>
   );
 }
 
@@ -176,7 +171,7 @@ export default function OverviewTab({ session }: OverviewTabProps) {
       <InvestigationSummary session={session} />
 
       {/* 2. Outcome & Metrics compact card */}
-      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
+      <SectionCard>
         <div className="flex items-center gap-3 flex-wrap">
           <Badge
             variant={
@@ -205,7 +200,7 @@ export default function OverviewTab({ session }: OverviewTabProps) {
             </span>
           )}
         </div>
-      </div>
+      </SectionCard>
 
       {/* 3. Evidence timeline */}
       <EvidenceTimeline session={session} />
@@ -217,10 +212,7 @@ export default function OverviewTab({ session }: OverviewTabProps) {
 
       {/* 5. Skills */}
       {skillIds.length > 0 && (
-        <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-2">
-            Skills Used
-          </div>
+        <SectionCard title="Skills Used">
           <div className="flex flex-wrap gap-2">
             {skillIds.map((skillId) => (
               <Tooltip
@@ -246,22 +238,21 @@ export default function OverviewTab({ session }: OverviewTabProps) {
               </Tooltip>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {/* 6. Plan Progress */}
       {plan && (totalSteps > 0 || (plan.subtasks?.length ?? 0) > 0) && (
-        <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-[11px] text-trace-muted uppercase tracking-wide">
-              Plan Progress
-            </div>
-            {totalSteps > 0 && (
+        <SectionCard
+          title="Plan Progress"
+          actions={
+            totalSteps > 0 ? (
               <span className="text-[11px] text-trace-subtle">
                 {completedSteps}/{totalSteps} steps
               </span>
-            )}
-          </div>
+            ) : undefined
+          }
+        >
           {totalSteps > 0 ? (
             <>
               <div className="w-full h-2 bg-trace-border/50 rounded-full overflow-hidden">
@@ -313,7 +304,7 @@ export default function OverviewTab({ session }: OverviewTabProps) {
               })}
             </ol>
           )}
-        </div>
+        </SectionCard>
       )}
 
       {/* 7. Session comparison */}
@@ -323,12 +314,9 @@ export default function OverviewTab({ session }: OverviewTabProps) {
       <TimelineDiffPanel session={session} />
 
       {/* 9. Query (context reference, not diagnostic) */}
-      <div className="bg-trace-panel border border-trace-border rounded-lg p-4">
-        <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
-          Query
-        </div>
+      <SectionCard title="Query">
         <div className="text-sm text-trace-text font-medium">{title}</div>
-      </div>
+      </SectionCard>
     </div>
   );
 }

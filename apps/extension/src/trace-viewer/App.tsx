@@ -21,6 +21,7 @@ import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
 import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
+import TrajectoryScorecard from "./components/traces/TrajectoryScorecard";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
 import OverviewTab from "./components/traces/OverviewTab";
@@ -486,6 +487,7 @@ function ViewerBody({
         >
           {activeSubview === "turns" ? (
             <div className="flex flex-col px-5 py-4">
+              <TrajectoryScorecard session={currentSession} />
               <TurnSearchBar />
               {currentEntries.length === 0 && !tracesError ? (
                 <LoadingSpinner message="Loading turns..." />
