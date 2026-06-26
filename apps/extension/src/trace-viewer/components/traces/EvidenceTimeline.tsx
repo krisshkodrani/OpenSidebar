@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import type { TraceSession } from "../../../types/traces";
 import {
   buildTraceEvidenceTimeline,
@@ -8,6 +8,9 @@ import {
 import { useStore } from "../../store";
 import { truncate } from "../../utils";
 import Badge from "../Badge";
+import SectionCard, { Eyebrow } from "../SectionCard";
+
+const DEFAULT_EVIDENCE_LIMIT = 8;
 
 interface EvidenceTimelineProps {
   session: TraceSession;
@@ -44,6 +47,7 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const navigateToPerception = useStore((s) => s.navigateToPerception);
   const setActiveSubview = useStore((s) => s.setActiveSubview);
+  const [showAll, setShowAll] = useState(false);
 
   const evidenceTurns = useMemo(
     () =>
@@ -68,13 +72,15 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
     }
   };
 
+  const visibleTurns = showAll
+    ? evidenceTurns
+    : evidenceTurns.slice(0, DEFAULT_EVIDENCE_LIMIT);
+
   return (
-    <section className="bg-trace-panel border border-trace-border rounded-lg p-4">
+    <SectionCard>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
-            Evidence Trail
-          </div>
+          <Eyebrow className="mb-1">Evidence Trail</Eyebrow>
           <div className="text-sm text-trace-text font-semibold">
             {evidenceTurns.length} high-signal turn
             {evidenceTurns.length === 1 ? "" : "s"}
@@ -91,7 +97,7 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
       </div>
 
       <div className="mt-3 space-y-2">
-        {evidenceTurns.slice(0, 8).map((turn) => (
+        {visibleTurns.map((turn) => (
           <div
             key={`${turn.sessionId}-${turn.turnNumber}`}
             className={`rounded border px-3 py-2 ${SEVERITY_CLASS[turn.severity]}`}
@@ -141,11 +147,17 @@ export default function EvidenceTimeline({ session }: EvidenceTimelineProps) {
           </div>
         ))}
       </div>
-      {evidenceTurns.length > 8 && (
-        <div className="mt-2 text-[11px] text-trace-muted">
-          Showing first 8 evidence turns.
-        </div>
+      {evidenceTurns.length > DEFAULT_EVIDENCE_LIMIT && (
+        <button
+          type="button"
+          onClick={() => setShowAll((prev) => !prev)}
+          className="mt-2 text-[11px] text-trace-accent hover:underline"
+        >
+          {showAll
+            ? "Show fewer evidence turns"
+            : `Show all ${evidenceTurns.length} evidence turns`}
+        </button>
       )}
-    </section>
+    </SectionCard>
   );
 }

@@ -15,6 +15,8 @@ import { computeSessionDiagnostics } from "../../diagnostics";
 import Badge from "../Badge";
 import Tooltip from "../Tooltip";
 import CollapsibleSection from "../CollapsibleSection";
+import { Eyebrow } from "../SectionCard";
+import StatTile from "../StatTile";
 import {
   outcomeClass,
   formatDuration,
@@ -30,6 +32,39 @@ import type { PartialProgressHandoff } from "../../../types";
 interface TraceDetailHeaderProps {
   session: TraceSession;
 }
+
+// Diagnostic chips — one calm severity palette in place of the old wall of
+// 7 differently-coloured Badge variants. Colour now means "something to look
+// at" (warning/error) or "good" (success); plain counts stay neutral.
+type DiagTone = "neutral" | "success" | "warning" | "error";
+
+const DIAG_TONE_CLASS: Record<DiagTone, string> = {
+  neutral: "border-trace-border/70 bg-trace-bg text-trace-subtle",
+  success: "border-state-success/25 bg-state-success/10 text-state-success",
+  warning: "border-state-warning/25 bg-state-warning/10 text-state-warning",
+  error: "border-state-error/25 bg-state-error/10 text-state-error",
+};
+
+interface DiagChipData {
+  key: string;
+  label: string;
+  tone: DiagTone;
+  hint: string;
+}
+
+function DiagChip({ label, tone, hint }: Omit<DiagChipData, "key">) {
+  return (
+    <Tooltip content={hint}>
+      <span
+        className={`inline-flex cursor-help items-center rounded border px-1.5 py-0.5 text-[10px] font-medium tabular-nums ${DIAG_TONE_CLASS[tone]}`}
+      >
+        {label}
+      </span>
+    </Tooltip>
+  );
+}
+
+const DIAG_CHIP_LIMIT = 8;
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
@@ -105,6 +140,7 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [frozenExported, setFrozenExported] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [showAllDiag, setShowAllDiag] = useState(false);
   const outcome = session.outcome;
   const metrics = session.metrics;
   const duration = formatDuration(
@@ -139,6 +175,79 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
     [session, currentEntries],
   );
   const models = getSessionModels(session);
+
+  const diagChips = useMemo<DiagChipData[]>(() => {
+    const d = diagnostics;
+    const chips: (DiagChipData | false)[] = [
+      {
+        key: "productive",
+        label: `${d.productiveTurns} productive`,
+        tone: "neutral",
+        hint: "Turns that resulted in meaningful progress toward the goal",
+      },
+      d.wastedTurns > 0 && {
+        key: "wasted",
+        label: `${d.wastedTurns} wasted`,
+        tone: "warning",
+        hint: "Turns that did not advance the task (stuck signal or loop detected)",
+      },
+      d.loopTurns > 0 && {
+        key: "loop",
+        label: `${d.loopTurns} loop turns`,
+        tone: "error",
+        hint: "Turns where the agent repeated the same action pattern",
+      },
+      d.escalations > 0 && {
+        key: "escalations",
+        label: `${d.escalations} escalations`,
+        tone: "warning",
+        hint: "Times the agent escalated (replan or planner-tier swap)",
+      },
+      d.escalationOutcomes.rescued > 0 && {
+        key: "rescued",
+        label: `${d.escalationOutcomes.rescued} rescued`,
+        tone: "success",
+        hint: "Escalations followed by verified progress (plan advance, successful mutation, trusted evidence, or new page)",
+      },
+      d.escalationOutcomes.failedFast > 0 && {
+        key: "failed-fast",
+        label: `${d.escalationOutcomes.failedFast} failed fast`,
+        tone: "error",
+        hint: "Runs ended early because an escalation produced no verified progress within the efficacy window",
+      },
+      d.escalationOutcomes.budgetExhausted > 0 && {
+        key: "budget",
+        label: `${d.escalationOutcomes.budgetExhausted} budget exhausted`,
+        tone: "error",
+        hint: "Escalations still unresolved when the turn budget ran out",
+      },
+      d.failovers > 0 && {
+        key: "failovers",
+        label: `${d.failovers} failovers`,
+        tone: "neutral",
+        hint: "Times the agent failed over to a backup provider",
+      },
+      d.contextHotTurns > 0 && {
+        key: "context-hot",
+        label: `${d.contextHotTurns} context hot`,
+        tone: "warning",
+        hint: "Turns where context window utilization exceeded 85%, triggering compression",
+      },
+      d.perceptionCalls > 0 && {
+        key: "perception",
+        label: `${d.perceptionCacheHits}/${d.perceptionCalls} cached perception`,
+        tone: "neutral",
+        hint: "Perception cache hit rate - lower numbers mean more API calls",
+      },
+      d.elementOnlyTurns > 0 && {
+        key: "element-only",
+        label: `${d.elementOnlyTurns} element-only`,
+        tone: "warning",
+        hint: "Turns that only used element-level DOM access without full page perception",
+      },
+    ];
+    return chips.filter((chip): chip is DiagChipData => chip !== false);
+  }, [diagnostics]);
 
   useEffect(() => {
     setDetailsExpanded(false);
@@ -342,104 +451,27 @@ export default function TraceDetailHeader({ session }: TraceDetailHeaderProps) {
           )}
 
           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            <Tooltip content="Turns that resulted in meaningful progress toward the goal">
-              <div>
-                <Badge variant="type">
-                  {diagnostics.productiveTurns} productive
-                </Badge>
-              </div>
-            </Tooltip>
-            {diagnostics.wastedTurns > 0 && (
-              <Tooltip content="Turns that did not advance the task (stuck signal or loop detected)">
-                <div>
-                  <Badge variant="event-stuck_signal">
-                    {diagnostics.wastedTurns} wasted
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.loopTurns > 0 && (
-              <Tooltip content="Turns where the agent repeated the same action pattern">
-                <div>
-                  <Badge variant="event-circuit_breaker">
-                    {diagnostics.loopTurns} loop turns
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.escalations > 0 && (
-              <Tooltip content="Times the agent escalated (replan or planner-tier swap)">
-                <div>
-                  <Badge variant="event-escalation">
-                    {diagnostics.escalations} escalations
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.escalationOutcomes.rescued > 0 && (
-              <Tooltip content="Escalations followed by verified progress (plan advance, successful mutation, trusted evidence, or new page)">
-                <div>
-                  <Badge variant="completed">
-                    {diagnostics.escalationOutcomes.rescued} rescued
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.escalationOutcomes.failedFast > 0 && (
-              <Tooltip content="Runs ended early because an escalation produced no verified progress within the efficacy window">
-                <div>
-                  <Badge variant="error">
-                    {diagnostics.escalationOutcomes.failedFast} failed fast
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.escalationOutcomes.budgetExhausted > 0 && (
-              <Tooltip content="Escalations still unresolved when the turn budget ran out">
-                <div>
-                  <Badge variant="error">
-                    {diagnostics.escalationOutcomes.budgetExhausted} budget
-                    exhausted
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.failovers > 0 && (
-              <Tooltip content="Times the agent failed over to a backup provider">
-                <div>
-                  <Badge variant="category">
-                    {diagnostics.failovers} failovers
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.contextHotTurns > 0 && (
-              <Tooltip content="Turns where context window utilization exceeded 85%, triggering compression">
-                <div>
-                  <Badge variant="tier-planner">
-                    {diagnostics.contextHotTurns} context hot
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.perceptionCalls > 0 && (
-              <Tooltip content="Perception cache hit rate - lower numbers mean more API calls">
-                <div>
-                  <Badge variant="cached">
-                    {diagnostics.perceptionCacheHits}/
-                    {diagnostics.perceptionCalls} cached perception
-                  </Badge>
-                </div>
-              </Tooltip>
-            )}
-            {diagnostics.elementOnlyTurns > 0 && (
-              <Tooltip content="Turns that only used element-level DOM access without full page perception">
-                <div>
-                  <Badge variant="event-stuck_signal">
-                    {diagnostics.elementOnlyTurns} element-only
-                  </Badge>
-                </div>
-              </Tooltip>
+            {(showAllDiag
+              ? diagChips
+              : diagChips.slice(0, DIAG_CHIP_LIMIT)
+            ).map((chip) => (
+              <DiagChip
+                key={chip.key}
+                label={chip.label}
+                tone={chip.tone}
+                hint={chip.hint}
+              />
+            ))}
+            {diagChips.length > DIAG_CHIP_LIMIT && (
+              <button
+                type="button"
+                onClick={() => setShowAllDiag((value) => !value)}
+                className="text-[10px] text-trace-accent hover:underline"
+              >
+                {showAllDiag
+                  ? "show fewer"
+                  : `+${diagChips.length - DIAG_CHIP_LIMIT} more`}
+              </button>
             )}
           </div>
 
@@ -503,9 +535,7 @@ function SkillPolicySection({ session }: { session: TraceSession }) {
   return (
     <div className="border-t border-trace-border mt-2.5 pt-2.5">
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
-          Skill Policy
-        </span>
+        <Eyebrow>Skill Policy</Eyebrow>
         {skillIds.map((skillId) => (
           <span
             key={skillId}
@@ -523,43 +553,23 @@ function SkillPolicySection({ session }: { session: TraceSession }) {
       </div>
       {metrics && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-          <MetricCard
+          <StatTile
             label="Preferred"
             value={`${Math.round(metrics.preferredSelectionRate * 100)}%`}
-            hint={`${metrics.preferredSelections} selections`}
+            sub={`${metrics.preferredSelections} selections`}
           />
-          <MetricCard
+          <StatTile
             label="Neutral"
             value={`${metrics.neutralSelections}`}
-            hint="middle-path picks"
+            sub="middle-path picks"
           />
-          <MetricCard
+          <StatTile
             label="Discouraged"
             value={`${Math.round(metrics.discouragedSelectionRate * 100)}%`}
-            hint={`${metrics.discouragedSelections} selections`}
+            sub={`${metrics.discouragedSelections} selections`}
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded border border-trace-border/70 bg-trace-bg px-2.5 py-2">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-trace-muted">
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-semibold text-trace-text">{value}</div>
-      <div className="mt-1 text-[10px] text-trace-muted">{hint}</div>
     </div>
   );
 }
@@ -647,9 +657,7 @@ function CoordinationSection({
   return (
     <div className="border-t border-trace-border mt-2.5 pt-2.5">
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
-          Coordination
-        </span>
+        <Eyebrow>Coordination</Eyebrow>
         {stateEvents.length > 0 && (
           <Badge variant="type">{stateEvents.length} state events</Badge>
         )}
@@ -666,25 +674,25 @@ function CoordinationSection({
       </div>
       {latestState && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-[11px] mb-2">
-          <MetricCard
+          <StatTile
             label="Primary"
             value={primaryTabId == null ? "-" : String(primaryTabId)}
-            hint={latestAction ?? "latest state"}
+            sub={latestAction ?? "latest state"}
           />
-          <MetricCard
+          <StatTile
             label="Owned Tabs"
             value={ownedTabCount == null ? "0" : String(ownedTabCount)}
-            hint={tabRoleCounts(latestState.ownedTabs)}
+            sub={tabRoleCounts(latestState.ownedTabs)}
           />
-          <MetricCard
+          <StatTile
             label="Bindings"
             value={nodeBindingCount == null ? "0" : String(nodeBindingCount)}
-            hint="node-tab bindings"
+            sub="node-tab bindings"
           />
-          <MetricCard
+          <StatTile
             label="Previous"
             value={previousTabId == null ? "-" : String(previousTabId)}
-            hint={latestReason ?? "previous task tab"}
+            sub={latestReason ?? "previous task tab"}
           />
         </div>
       )}
@@ -738,9 +746,7 @@ function PlanSection({ session }: { session: TraceSession }) {
   return (
     <div className="border-t border-trace-border mt-2.5 pt-2.5">
       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-        <span className="text-[11px] text-trace-subtle font-medium uppercase tracking-wide">
-          Plan
-        </span>
+        <Eyebrow>Plan</Eyebrow>
         {difficultyVariant && (
           <Badge variant={difficultyVariant}>{difficulty}</Badge>
         )}

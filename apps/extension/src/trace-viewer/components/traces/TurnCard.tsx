@@ -10,7 +10,11 @@ import TurnToolResultsSection from "./TurnToolResultsSection";
 import TurnSnapshotSection from "./TurnSnapshotSection";
 import TurnProgressState from "./TurnProgressState";
 import type { TraceEvidenceSignal } from "../../analysis";
-import { buildTraceEvidenceSignalsForTurn } from "../../analysis";
+import {
+  buildTraceEvidenceSignalsForTurn,
+  buildTurnActionProfile,
+} from "../../analysis";
+import { ActionTierChip } from "./TrajectoryScorecard";
 import {
   shortModel,
   formatDuration,
@@ -58,6 +62,7 @@ export default function TurnCard({
     entry,
     previousEntry,
   );
+  const actionProfile = buildTurnActionProfile(entry);
 
   return (
     <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
@@ -66,6 +71,21 @@ export default function TurnCard({
         <span className="text-[13px] font-bold text-trace-accent-light shrink-0">
           Turn {turnNum}
         </span>
+        {actionProfile.tools.length > 0 && (
+          <ActionTierChip
+            tier={actionProfile.maxTier}
+            title={
+              actionProfile.unescalatedHighTier
+                ? "Highest action tier this turn — ran without an approval/escalation"
+                : "Highest action tier this turn"
+            }
+            className={
+              actionProfile.unescalatedHighTier
+                ? "ring-1 ring-state-error/40"
+                : ""
+            }
+          />
+        )}
         {model && (
           <Badge
             variant={
