@@ -16,31 +16,9 @@ export interface PersonalProfileDocument {
   profile: Record<string, unknown>;
 }
 
-export interface ProfileResolveInput {
-  fields: string[];
-}
-
-export interface ProfileResolveResult {
-  profilePath: string;
-  values: Record<string, ProfileValue>;
-  missing: string[];
-  sensitiveFields: string[];
-}
-
-export interface ProfileSafeContextInput {
-  query: string;
-}
-
-export interface ProfileSafeContextEntry {
-  path: string;
-  value: ProfileValue;
-}
-
-export interface ProfileSafeContextResult {
-  profilePath: string;
-  entries: ProfileSafeContextEntry[];
-  rendered: string;
-}
+// `/profile/resolve` and `/profile/context` (and their result types) were
+// removed in RFC LP-8, M1 — no extension callers. Only file-alias resolution
+// remains.
 
 export interface ProfileFileResolveInput {
   alias: string;
