@@ -173,10 +173,13 @@ The initiative is complete when **all** of these are true:
 - **Stage 1 — DONE** (`1c8f7119`): the pure last-writer-wins sync engine
   (`utils/knowledge-sync.ts`) — `SyncedItem`/`SyncMap`/`KnowledgeStore`, `reconcile`
   (merged + push/pull sets, tombstones), `liveValues`/`stamp`/`tombstone`. 8 tests.
-- **Stage 2 — remaining:** wrap `utils/personal-profile.ts` and `utils/website-skills.ts`
-  as read-through caches over the OpenClaw `KnowledgeStore` (hydrate on connect,
-  write-through when present, local-only + reconcile when absent). Sensitive items stay
-  encrypted end-to-end. Needs the daemon + edits live storage paths.
+- **Store client — DONE** (`HttpKnowledgeStore`, `utils/openclaw-client.ts`): GET/PUT
+  `/api/knowledge/{namespace}` as a last-writer-wins `SyncMap`; drives `reconcile`. 7 tests.
+- **Stage 2b wiring — remaining:** back `utils/personal-profile.ts` /
+  `utils/website-skills.ts` with `ReadThroughCache(ChromeStorageLocalSnapshot,
+  HttpKnowledgeStore)` (namespaces `profile` / `website-skills`); map their state ↔
+  `SyncMap`, keeping M1 encryption on sensitive items. Deep edit to live storage — validate
+  with the daemon present.
 - **Learning loop (head-start from LP-7):** the long-dead site-learning loop now has a
   real signal — OpenSidebar already exports **OpenClaw-format graded `(state, action,
   reward)` trajectories** (`scripts/obs/export-trajectories.ts`). Feed these to the brain
@@ -192,9 +195,13 @@ The initiative is complete when **all** of these are true:
 - **Core — DONE** (`b3068d14`): `utils/llm-routing.ts` — `resolveLlmRoute` (executor
   always direct; planner prefers gateway) + `routePlannerCompletion` (gateway when
   present+healthy, graceful fallback to direct on absence OR error). 7 tests.
-- **Stage 2 — remaining:** wire it into `TaskPlanner` / the planner pool in
-  `background/llm/client.ts`; implement the `PlannerGateway` over OpenClaw. Needs the
-  daemon.
+- **Gateway client — DONE** (`HttpPlannerGateway`, `utils/openclaw-client.ts`): `/health`
+  probe + `POST /api/planner` over a defined contract; integrates with
+  `routePlannerCompletion`. 7 tests.
+- **Stage 2 wiring — remaining:** route the planner's `decompose` LLM call
+  (`background/agent/planner.ts`) through `routePlannerCompletion` + the gateway, behind a
+  configured gateway URL (no-op/fallback when unset). Deep edit to a core path — validate
+  with the daemon present.
 - **DoD:** with daemon up, planner prompts carry OpenClaw memory; with daemon down,
   planner falls back and tasks still run; executor latency unchanged.
 
