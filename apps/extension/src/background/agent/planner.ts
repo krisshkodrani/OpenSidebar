@@ -1,5 +1,16 @@
 import { LLMClient, LLMClientOptions } from "../llm";
 import { TokenUsage } from "../llm/types";
+import type { CompletionResponse } from "../llm/types";
+import { routePlannerCompletion } from "../../utils/llm-routing";
+import { HttpPlannerGateway } from "../../utils/openclaw-client";
+
+/**
+ * Optional OpenClaw planner-gateway URL (RFC LP-8, M4). When set in
+ * chrome.storage.local, planner decomposition routes through the gateway for
+ * memory/skill injection, falling back to the direct provider call when the
+ * gateway is absent or errors. Default: unset → direct (unchanged behaviour).
+ */
+const OPENCLAW_GATEWAY_URL_KEY = "opensidebar:openClawGatewayUrl";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
@@ -786,6 +797,35 @@ export class TaskPlanner {
     this.llm.switchToPlanner();
   }
 
+  /**
+   * Resolved once: an OpenClaw planner gateway, or null when none is configured.
+   * `undefined` = not yet resolved.
+   */
+  private plannerGateway: HttpPlannerGateway | null | undefined;
+
+  /** Lazily resolve the optional OpenClaw planner gateway from storage. */
+  private async resolvePlannerGateway(): Promise<HttpPlannerGateway | null> {
+    if (this.plannerGateway !== undefined) return this.plannerGateway;
+    let url: string | undefined;
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+        const value = stored[OPENCLAW_GATEWAY_URL_KEY];
+        if (typeof value === "string" && value.trim()) url = value.trim();
+      }
+    } catch {
+      // No storage access → no gateway.
+    }
+    if (!url) {
+      this.plannerGateway = null;
+      return null;
+    }
+    const gateway = new HttpPlannerGateway({ baseUrl: url });
+    await gateway.probe();
+    this.plannerGateway = gateway;
+    return gateway;
+  }
+
   /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
   private getExecutorLlm(): LLMClient {
     if (!this.executorLlm) {
@@ -846,19 +886,35 @@ export class TaskPlanner {
         userContent += `\nPage state:\n${perception}`;
       }
       userContent += `\n\nTask: ${query}`;
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: DECOMPOSE_SYSTEM },
-          {
-            role: "user",
-            content: userContent,
+      // M4 hybrid routing: prefer the OpenClaw gateway (memory/skill injection)
+      // when configured + healthy; otherwise the direct planner-tier call. The
+      // fallback makes this a no-op when no gateway is set.
+      const gateway = await this.resolvePlannerGateway();
+      const { route, result: response } =
+        await routePlannerCompletion<CompletionResponse>(
+          gateway,
+          async (gw) => {
+            const plan = await (gw as HttpPlannerGateway).completePlan({
+              query: userContent,
+              context: DECOMPOSE_SYSTEM,
+            });
+            return { content: plan.content } as CompletionResponse;
           },
-        ],
-        max_tokens: 4096,
-        temperature: 0,
-        signal,
-        response_format: { type: "json_object" },
-      });
+          () =>
+            this.llm.complete({
+              messages: [
+                { role: "system", content: DECOMPOSE_SYSTEM },
+                { role: "user", content: userContent },
+              ],
+              max_tokens: 4096,
+              temperature: 0,
+              signal,
+              response_format: { type: "json_object" },
+            }),
+        );
+      if (route === "openclaw-gateway") {
+        logger.info("orchestrator", "Planner routed through OpenClaw gateway");
+      }
       const llmMs = Date.now() - start;
       if (response.usage)
         this.usageCallback?.(
