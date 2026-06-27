@@ -34,6 +34,21 @@ Then set your model API key and run `openclaw start`. Optionally add a Telegram
 - **Standalone still works.** This backend is additive — the extension keeps
   working without OpenClaw running (it falls back to a local cache).
 
+## Gateway HTTP contract (OpenSidebar → OpenClaw)
+
+The extension's OpenClaw client (`apps/extension/src/utils/openclaw-client.ts`)
+expects the loopback gateway (or a thin adapter shipped here) to serve:
+
+| Method + path | Body | Returns | Used by |
+| --- | --- | --- | --- |
+| `GET /health` | — | `200` when up | gateway availability probe (M4) |
+| `POST /api/planner` | `{ query, context? }` | `{ content, injectedContext? }` | hybrid planner routing (M4) |
+| `GET /api/knowledge/{namespace}` | — | `SyncMap` | knowledge pull (M3) |
+| `PUT /api/knowledge/{namespace}` | `{ items: SyncMap }` | `200` | knowledge push (M3) |
+
+`SyncMap` is `Record<string, { value, updatedAt, deleted? }>` (last-writer-wins).
+OpenSidebar *defines* this contract; OpenClaw (or this adapter) conforms to it.
+
 ## Status / caveat
 
 This is the **opinionated scaffold** from the integration spec. The exact OpenClaw
