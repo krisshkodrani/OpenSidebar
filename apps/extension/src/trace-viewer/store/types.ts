@@ -118,6 +118,7 @@ export type Subview =
   | "overview"
   | "plan"
   | "turns"
+  | "trajectory"
   | "perception"
   | "prompts"
   | "skills"

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "opensidebar-observability": {
+      "command": "node",
+      "args": ["--import", "tsx", "scripts/obs/mcp-server.ts"],
+      "env": {}
+    }
+  }
+}

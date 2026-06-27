@@ -65,6 +65,15 @@ import {
   upsertRunTraceManifestToSqlite,
   upsertTraceSessionToSqlite,
 } from "./trace-sqlite-store";
+import { createDiskStore, getRlTrajectory } from "./obs/core";
+import {
+  readSessionEntries,
+  readSpineRunEvents,
+  readSpineSessions,
+  recordEntrySpansSafe,
+  recordRunEventSafe,
+  recordSessionSafe,
+} from "./obs/span-store";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const HOST = "127.0.0.1";
@@ -228,6 +237,13 @@ function sendFile(
 /* ── Normalization helpers ─────────────────────────────────── */
 
 async function loadAllTraceSessions(): Promise<TraceSessionLike[]> {
+  if (process.env.OBS_SPINE_READS === "1") {
+    const spineSessions = readSpineSessions();
+    if (spineSessions.length > 0) {
+      return spineSessions as unknown as TraceSessionLike[];
+    }
+  }
+
   const sqliteSessions = readTraceSessionsFromSqlite(PROJECT_ROOT);
   if (sqliteSessions && sqliteSessions.length > 0) return sqliteSessions;
 
@@ -317,6 +333,16 @@ async function readAllTraceSessions(): Promise<TraceSessionLike[]> {
 }
 
 async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
+  // RFC LP-7 Stage B1: the span spine is the AUTHORITATIVE source for per-turn
+  // records. The spine stores each TraceEntry verbatim (byte-identical to the
+  // legacy JSONL entry — parity-verified, 0 mismatches), so reading from it is
+  // not a lossy projection: it returns the same bytes. The legacy JSONL/SQLite
+  // store is kept as a derived fallback. Set OBS_DISABLE_SPINE_READS=1 to revert.
+  if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
+    const spineEntries = readSessionEntries(sessionId);
+    if (spineEntries.length > 0) return spineEntries as unknown as TraceEntryLike[];
+  }
+
   const sqliteEntries = readTraceEntriesFromSqlite(PROJECT_ROOT, sessionId);
   if (sqliteEntries && sqliteEntries.length > 0) return sqliteEntries;
 
@@ -338,6 +364,13 @@ async function readTraceEntries(sessionId: string): Promise<TraceEntryLike[]> {
 }
 
 async function readRunTraceEvents(runId: string): Promise<TraceEntryLike[]> {
+  // Spine is authoritative for run events too (stored verbatim). Reversible via
+  // OBS_DISABLE_SPINE_READS=1; legacy store is the derived fallback.
+  if (process.env.OBS_DISABLE_SPINE_READS !== "1") {
+    const spineEvents = readSpineRunEvents(runId);
+    if (spineEvents.length > 0) return spineEvents as unknown as TraceEntryLike[];
+  }
+
   const sqliteEvents = readRunTraceEventsFromSqlite(PROJECT_ROOT, runId);
   if (sqliteEvents && sqliteEvents.length > 0) return sqliteEvents;
 
@@ -641,6 +674,9 @@ const server = createServer(
           await appendFile(traceFile, JSON.stringify(entry) + "\n");
         }
         insertTraceTurnToSqlite(PROJECT_ROOT, entry as TraceEntryLike);
+        // RFC LP-7 Stage B1: additive span-spine dual-write (fully guarded —
+        // can never break trace recording).
+        recordEntrySpansSafe(entry);
         invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
@@ -659,6 +695,7 @@ const server = createServer(
         upsertTraceSessionToSqlite(PROJECT_ROOT, session, {
           traceFile: sessionId ? join(TRACE_DIR, `${sessionId}.jsonl`) : undefined,
         });
+        recordSessionSafe(session); // RFC LP-7 B1: guarded spine dual-write
         invalidateTraceViewerCaches();
         sendEmpty(res, 204);
       } catch (err) {
@@ -716,6 +753,7 @@ const server = createServer(
         const traceFile = join(RUN_TRACE_DIR, `${runId}.jsonl`);
         await appendFile(traceFile, JSON.stringify(event) + "\n");
         insertRunTraceEventToSqlite(PROJECT_ROOT, event as TraceEntryLike);
+        recordRunEventSafe(event); // RFC LP-7 B1: guarded spine dual-write
         invalidateInsightsCache();
         sendEmpty(res, 204);
       } catch (err) {
@@ -862,20 +900,23 @@ const server = createServer(
         const filters = traceInsightsFilters(url.searchParams);
         let sqliteInsights = null;
         const indexStatus = getTraceIndexStatus(PROJECT_ROOT);
-        try {
-          sqliteInsights = buildTraceInsightsFromSqlite(PROJECT_ROOT, filters);
-        } catch (err) {
-          console.warn(
-            "SQLite trace insights failed:",
-            err,
-          );
-          if (indexStatus.available) {
-            sendText(
-              res,
-              "SQLite trace index failed while building insights. Rebuild the trace index instead of falling back to the slow JSONL scan.",
-              500,
-            );
-            return;
+        // Aggregates use the SQLite index — a DERIVED projection of the spine
+        // (rebuildable from it; parity-verified), which keeps insights fast. The
+        // opt-in OBS_SPINE_READS=1 forces the slow spine-direct JS path below
+        // (for when the index is unavailable). Default = fast derived index.
+        if (process.env.OBS_SPINE_READS !== "1") {
+          try {
+            sqliteInsights = buildTraceInsightsFromSqlite(PROJECT_ROOT, filters);
+          } catch (err) {
+            console.warn("SQLite trace insights failed:", err);
+            if (indexStatus.available) {
+              sendText(
+                res,
+                "SQLite trace index failed while building insights. Rebuild the trace index instead of falling back to the slow JSONL scan.",
+                500,
+              );
+              return;
+            }
           }
         }
         if (sqliteInsights) {
@@ -1131,6 +1172,25 @@ const server = createServer(
       return;
     }
 
+    // GET /api/traces/:sessionId/rl-trajectory — OpenClaw (state,action,reward) projection
+    const rlTrajectoryMatch = url.pathname.match(
+      /^\/api\/traces\/([a-zA-Z0-9_-]+)\/rl-trajectory$/,
+    );
+    if (rlTrajectoryMatch && req.method === "GET") {
+      try {
+        const sessionId = rlTrajectoryMatch[1];
+        const trajectory = getRlTrajectory(createDiskStore(), sessionId);
+        if (!trajectory) {
+          sendText(res, `No trajectory for session ${sessionId}`, 404);
+          return;
+        }
+        sendJson(res, trajectory);
+      } catch (err) {
+        sendText(res, `Error building RL trajectory: ${err}`, 500);
+      }
+      return;
+    }
+
     // GET /api/traces/:sessionId/screenshots/:turn — serve screenshot image
     // Supports both primary (T3) and panoramic (T3-pan0) filenames
     const screenshotMatch = url.pathname.match(
@@ -1326,9 +1386,11 @@ server.listen(PORT, HOST, () => {
   console.log(`Trace viewer: http://${HOST}:${PORT}/viewer`);
   console.log(`Backend API: http://${HOST}:${PORT}/api/backend/health`);
   console.log(`Press Ctrl+C to stop\n`);
-  readAllTraceSessions().catch((err) => {
-    console.warn("Trace viewer session cache warmup failed:", err);
-  });
+  if (process.env.LOG_SERVER_SKIP_TRACE_WARMUP !== "1") {
+    readAllTraceSessions().catch((err) => {
+      console.warn("Trace viewer session cache warmup failed:", err);
+    });
+  }
 });
 
 function hasTraceTurn(
