@@ -30,7 +30,8 @@
     "apps/extension",
     "apps/extension/tests/e2e/fixtures/online-shop-pro",
     "packages/prompts",
-    "packages/shared-types"
+    "packages/shared-types",
+    "packages/observability-schema"
   ],
   "scripts": {
     "dev": "nx run tools:dev-stack",
@@ -50,6 +51,12 @@
     "traces:delete-old": "tsx scripts/trace-delete-old.ts",
     "traces:compact": "tsx scripts/trace-sqlite-index.ts && tsx scripts/trace-delete-old.ts --apply",
     "traces:index": "tsx scripts/trace-sqlite-index.ts",
+    "mcp": "tsx scripts/obs/mcp-server.ts",
+    "mcp:smoke": "tsx scripts/obs/smoke.ts",
+    "obs:test": "vitest run --config scripts/obs/vitest.config.ts",
+    "obs:export-trajectories": "tsx scripts/obs/export-trajectories.ts",
+    "obs:backfill-spans": "tsx scripts/obs/backfill-spans.ts",
+    "obs:verify-parity": "tsx scripts/obs/verify-parity.ts",
     "ci:lint": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint",
     "ci:test": "nx run-many -t test --projects=extension,backend",
     "ci:build": "nx run extension:build",

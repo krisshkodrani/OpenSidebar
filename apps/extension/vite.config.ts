@@ -25,6 +25,10 @@ export default defineConfig(({ mode }) => {
           __dirname,
           "../../packages/shared-types/src",
         ),
+        "@observability-schema": path.resolve(
+          __dirname,
+          "../../packages/observability-schema/src",
+        ),
         "@prompts": path.resolve(__dirname, "../../packages/prompts/src"),
       },
     },

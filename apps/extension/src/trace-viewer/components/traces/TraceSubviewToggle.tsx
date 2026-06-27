@@ -15,6 +15,7 @@ export default function TraceSubviewToggle() {
     { key: "overview", label: "Overview" },
     { key: "plan", label: "Plan" },
     { key: "turns", label: `Trajectory (${turnCount})` },
+    { key: "trajectory", label: "RL Trajectory" },
     { key: "perception", label: `Perception (${perceptionCount})` },
     { key: "prompts", label: "Prompts" },
     { key: "skills", label: "Skills" },

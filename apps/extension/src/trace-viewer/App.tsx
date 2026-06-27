@@ -28,6 +28,7 @@ import OverviewTab from "./components/traces/OverviewTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
+import TrajectoryTab from "./components/traces/TrajectoryTab";
 import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
 import RunsTableView from "./components/traces/RunsTableView";
 import InsightsTab from "./components/traces/InsightsTab";
@@ -530,6 +531,10 @@ function ViewerBody({
           ) : activeSubview === "prompts" ? (
             <div className="px-5 py-4">
               <PromptsTab session={currentSession} entries={currentEntries} />
+            </div>
+          ) : activeSubview === "trajectory" ? (
+            <div className="px-5 py-4">
+              <TrajectoryTab session={currentSession} />
             </div>
           ) : (
             <div className="px-5 py-4">

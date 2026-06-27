@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "observability-schema",
+  "projectType": "library",
+  "sourceRoot": "packages/observability-schema/src",
+  "tags": ["scope:shared", "type:types"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "eslint \"packages/observability-schema/src/**/*.ts\""
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/.tsbuild/packages/observability-schema"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsc -b packages/observability-schema/tsconfig.json"
+      }
+    }
+  }
+}
