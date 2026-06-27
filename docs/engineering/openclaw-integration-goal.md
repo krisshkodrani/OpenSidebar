@@ -157,9 +157,12 @@ The initiative is complete when **all** of these are true:
   (one source of truth); extension translation handler
   (`background/browser-bridge/handler.ts`) — `toAgentTask` + `handleBrowserToolRequest`
   over an injected `AgentRunner` (`needs_human` passthrough). 7 tests.
-- **Stage 2b — remaining:** the loopback WebSocket transport (`ws` dep) + the
-  **orchestrator hookup** providing the real `AgentRunner` (runs an `AgentLoop`) — touches
-  the WIP. Emit a span per call into the LP-7 spine.
+- **Stage 2b transport — DONE** (`WebSocketBridge`, `scripts/browser-mcp/ws-bridge.ts`):
+  loopback ws server, correlation-id request/response, timeout, not-connected error;
+  entrypoint uses it via `BROWSER_MCP_WS_PORT`. Real loopback tests (11 total).
+- **Stage 2b remaining:** only the **extension side** — a WS client in the SW + the
+  `AgentRunner` impl that runs a real `AgentLoop` and emits a span per call. Touches the
+  in-flight orchestrator WIP, so deferred.
 - **DoD:** `browser_ping` round-trips from an MCP client to the live extension; a thick
   tool runs end-to-end; CAPTCHA/auth pauses surface as `needs_human`; calls appear as
   spans in the trace viewer.
