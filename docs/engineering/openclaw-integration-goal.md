@@ -198,10 +198,10 @@ The initiative is complete when **all** of these are true:
 - **Gateway client — DONE** (`HttpPlannerGateway`, `utils/openclaw-client.ts`): `/health`
   probe + `POST /api/planner` over a defined contract; integrates with
   `routePlannerCompletion`. 7 tests.
-- **Stage 2 wiring — remaining:** route the planner's `decompose` LLM call
-  (`background/agent/planner.ts`) through `routePlannerCompletion` + the gateway, behind a
-  configured gateway URL (no-op/fallback when unset). Deep edit to a core path — validate
-  with the daemon present.
+- **Stage 2 wiring — DONE**: `agent/planner.ts` `decompose()` routes through
+  `routePlannerCompletion` + the gateway (URL from `opensidebar:openClawGatewayUrl`),
+  fallback to direct when unset/unhealthy. 143 planner tests pass (default path intact).
+  **Only the daemon serving `POST /api/planner` remains** (the defined contract).
 - **DoD:** with daemon up, planner prompts carry OpenClaw memory; with daemon down,
   planner falls back and tasks still run; executor latency unchanged.
 
