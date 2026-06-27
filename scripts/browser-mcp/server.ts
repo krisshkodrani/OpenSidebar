@@ -106,7 +106,11 @@ const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
   const wsPort = process.env.BROWSER_MCP_WS_PORT;
   const bridge: BrowserBridge = wsPort
-    ? new WebSocketBridge({ port: Number(wsPort) })
+    ? new WebSocketBridge({
+        port: Number(wsPort),
+        // In Docker, bind 0.0.0.0 so the published (host-loopback) port routes in.
+        host: process.env.BROWSER_MCP_WS_HOST,
+      })
     : new NotConnectedBridge();
   startBrowserMcpServer(bridge).catch((error) => {
     console.error("[browser-mcp] fatal:", error);

@@ -76,7 +76,8 @@ import {
 } from "./obs/span-store";
 
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
-const HOST = "127.0.0.1";
+// In Docker, set LOG_SERVER_HOST=0.0.0.0 so the published (host-loopback) port routes in.
+const HOST = process.env.LOG_SERVER_HOST || "127.0.0.1";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
 const LOG_DIR = join(PROJECT_ROOT, "logs");

@@ -1,0 +1,59 @@
+# One command: `docker compose up`
+#
+# Brings up the OpenSidebar server-side stack, all published to YOUR machine's
+# loopback (127.0.0.1) only — the containers bind 0.0.0.0 internally so Docker
+# can route the published loopback ports while keeping nothing exposed to the LAN.
+#
+# The OpenSidebar extension runs in your real Chrome (it can't be containerized —
+# its whole point is your authenticated browser). Load it unpacked, then set in
+# its chrome.storage.local:
+#   opensidebar:openClawGatewayUrl = http://127.0.0.1:18789
+#   opensidebar:browserMcpWsPort   = 8787
+# Trace viewer: http://127.0.0.1:7589/viewer
+name: opensidebar
+
+services:
+  openclaw-adapter:
+    build: .
+    command: ["pnpm", "exec", "tsx", "openclaw/adapter/server.ts"]
+    environment:
+      OPENCLAW_ADAPTER_PORT: "18789"
+      OPENCLAW_ADAPTER_HOST: "0.0.0.0"
+    ports:
+      - "127.0.0.1:18789:18789"
+    restart: unless-stopped
+
+  browser-mcp:
+    build: .
+    command: ["pnpm", "exec", "tsx", "scripts/browser-mcp/server.ts"]
+    environment:
+      BROWSER_MCP_WS_PORT: "8787"
+      BROWSER_MCP_WS_HOST: "0.0.0.0"
+    ports:
+      - "127.0.0.1:8787:8787"
+    restart: unless-stopped
+
+  # The viewer serves the built React UI (dist/src/trace-viewer) + the backend
+  # API. It builds the UI on first start (cached in the `dist` volume) since that
+  # is the one heavy step; the two services above start instantly.
+  viewer:
+    build: .
+    command:
+      - sh
+      - -c
+      - '[ -d dist/src/trace-viewer ] || pnpm run build; pnpm exec tsx scripts/log-server.ts'
+    environment:
+      LOG_SERVER_HOST: "0.0.0.0"
+      LOG_SERVER_PORT: "7589"
+    ports:
+      - "127.0.0.1:7589:7589"
+    volumes:
+      - dist:/app/dist
+      - traces:/app/traces
+      - artifacts:/app/.artifacts
+    restart: unless-stopped
+
+volumes:
+  dist:
+  traces:
+  artifacts:
