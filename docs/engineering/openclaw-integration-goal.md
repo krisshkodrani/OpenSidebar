@@ -153,10 +153,13 @@ The initiative is complete when **all** of these are true:
   `apply_to_job`/`run_task`), the `BrowserBridge` contract (`ok | needs_human | error`),
   the stdio MCP server, validate-then-forward `dispatch`, `NotConnectedBridge` default.
   7 tests; `pnpm run mcp:browser`.
-- **Stage 2 — remaining:** the loopback WebSocket transport (`ws` dep) + the
-  **extension-side handler** mapping a bridge request to an `AgentLoop` run and returning
-  `needs_human` (touches orchestrator/SW — deferred until the completion-kernel WIP
-  settles). Emit a span per call into the LP-7 spine.
+- **Stage 2a — DONE** (`45c286f9`): wire contract moved to `@shared-types/browser-bridge`
+  (one source of truth); extension translation handler
+  (`background/browser-bridge/handler.ts`) — `toAgentTask` + `handleBrowserToolRequest`
+  over an injected `AgentRunner` (`needs_human` passthrough). 7 tests.
+- **Stage 2b — remaining:** the loopback WebSocket transport (`ws` dep) + the
+  **orchestrator hookup** providing the real `AgentRunner` (runs an `AgentLoop`) — touches
+  the WIP. Emit a span per call into the LP-7 spine.
 - **DoD:** `browser_ping` round-trips from an MCP client to the live extension; a thick
   tool runs end-to-end; CAPTCHA/auth pauses surface as `needs_human`; calls appear as
   spans in the trace viewer.
