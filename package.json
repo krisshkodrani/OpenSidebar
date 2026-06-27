@@ -56,6 +56,8 @@
     "mcp:smoke": "tsx scripts/obs/smoke.ts",
     "mcp:browser": "tsx scripts/browser-mcp/server.ts",
     "mcp:browser:test": "vitest run --config scripts/browser-mcp/vitest.config.ts",
+    "openclaw:adapter": "tsx openclaw/adapter/server.ts",
+    "openclaw:adapter:test": "vitest run --config openclaw/adapter/vitest.config.ts",
     "obs:test": "vitest run --config scripts/obs/vitest.config.ts",
     "obs:export-trajectories": "tsx scripts/obs/export-trajectories.ts",
     "obs:backfill-spans": "tsx scripts/obs/backfill-spans.ts",
