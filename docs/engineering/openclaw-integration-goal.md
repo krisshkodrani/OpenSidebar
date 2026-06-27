@@ -11,19 +11,24 @@ This document defines the full end-state and the phased path to it, with an expl
 `~/.claude/plans/also-the-feature-that-cozy-waterfall.md`; this is the durable goal it
 serves.
 
-## Current status (2026-06-27) — 29 commits, all tested
+## Current status (2026-06-27) — 32 commits, all tested
 
-- **M1** ✅ merged. **M2** ✅ full chain built (host `WebSocketBridge` ↔ SW
-  `BrowserBridgeClient` ↔ handler ↔ `OrchestratorAgentRunner`). **M3** ✅ engine +
-  cache + clients + **live sync wired** (`syncUserWebsiteSkills`,
+**M1–M5 functionally complete, default-off, no regressions** (full suite 4386 pass;
+the only 9 failures are pre-existing completion-kernel WIP, untouched by this work).
+
+- **M1** ✅ merged. **M2** ✅ **complete end-to-end** — OpenClaw → host
+  `WebSocketBridge` → SW `BrowserBridgeClient` → handler → orchestrator task (new
+  background tab, workspaceId-correlated completion) → response; wired from
+  `background.ts` startup, default-off via `opensidebar:browserMcpWsPort`. **M3** ✅
+  engine + cache + clients + **live sync wired** (`syncUserWebsiteSkills`,
   `syncPersonalProfileDigest` — sensitive values sync as ciphertext, default-off).
   **M4** ✅ planner routes through the gateway. **M5** ✅ scaffold + a **runnable stub
   adapter** (`pnpm run openclaw:adapter`).
-- **To validate end-to-end now:** `pnpm run openclaw:adapter` + `pnpm run mcp:browser`,
-  then set `opensidebar:openClawGatewayUrl` to the adapter URL.
-- **Remaining:** the SW-startup glue (construct the WS client with a real
-  orchestrator `AgentTaskDriver` — touches the in-flight WIP); swap the stub
-  adapter's `/api/planner` for real OpenClaw LLM+memory; M6/M7 (post-v1).
+- **Validate end-to-end now:** run `pnpm run openclaw:adapter` and
+  `BROWSER_MCP_WS_PORT=8787 pnpm run mcp:browser`, then set
+  `opensidebar:openClawGatewayUrl` (gateway) + `opensidebar:browserMcpWsPort` (8787).
+- **Remaining:** swap the stub adapter's `/api/planner` for real OpenClaw LLM+memory;
+  **M6 / M7 are explicitly post-v1** in the approved plan.
 
 ---
 
