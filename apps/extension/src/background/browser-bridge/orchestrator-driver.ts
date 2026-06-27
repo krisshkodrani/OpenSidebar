@@ -10,6 +10,9 @@
  * wires the real singletons.
  */
 
+import type { UserSettings } from "../../types";
+import { loadApiKey, loadSettings } from "../../utils/settings-storage";
+import { orchestrator } from "../orchestrator";
 import type { AgentRunOutcome, AgentRunner, AgentTask } from "./handler";
 
 export interface CompletionPayload {
@@ -65,4 +68,45 @@ export function createBrowserAgentRunner(deps: BrowserTaskDeps): AgentRunner {
       });
     },
   };
+}
+
+/** Wire the real chrome + orchestrator + settings singletons (RFC LP-8, M2). */
+export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
+  return {
+    async createTab(url) {
+      const tab = await chrome.tabs.create({ url, active: false });
+      if (typeof tab.id !== "number") throw new Error("Failed to open a tab.");
+      return tab.id;
+    },
+    async startTask({ query, tabId, workspaceId }) {
+      const settings = (await loadSettings()) ?? ({} as UserSettings);
+      const apiKey = await loadApiKey();
+      await orchestrator.startTask({
+        query,
+        tabId,
+        workspaceId,
+        settings,
+        openRouterApiKey: apiKey || settings.openRouterApiKey || "",
+      });
+    },
+    addCompletionListener(fn) {
+      const handler = (message: unknown): void => {
+        const m = message as {
+          type?: string;
+          workspaceId?: string;
+          payload?: CompletionPayload;
+        };
+        if (m?.type === "TASK_COMPLETION" && typeof m.workspaceId === "string") {
+          fn(m.workspaceId, m.payload ?? {});
+        }
+      };
+      chrome.runtime.onMessage.addListener(handler);
+      return () => chrome.runtime.onMessage.removeListener(handler);
+    },
+  };
+}
+
+/** Start the browser bridge: connect to the host and serve thick tools. */
+export function createDefaultBrowserAgentRunner(): AgentRunner {
+  return createBrowserAgentRunner(createDefaultBrowserTaskDeps());
 }
