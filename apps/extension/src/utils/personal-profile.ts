@@ -1,4 +1,9 @@
 import type { UserSettings } from "../types";
+import {
+  PROFILE_CEK_STORAGE_KEY,
+  decryptStoredState,
+  encryptStateForStorage,
+} from "./profile-crypto";
 
 export const PERSONAL_PROFILE_STORAGE_KEY = "opensidebar:personalProfile";
 
@@ -488,7 +493,13 @@ export async function loadPersonalizationState(
   storage: PersonalProfileStorage = defaultStorage(),
 ): Promise<PersonalizationState> {
   const stored = await storage.local.get(PERSONAL_PROFILE_STORAGE_KEY);
-  return normalizeState(stored[PERSONAL_PROFILE_STORAGE_KEY]);
+  // Decrypt sensitive fields before normalization so length truncation applies
+  // to plaintext, never to ciphertext.
+  const decrypted = await decryptStoredState(
+    stored[PERSONAL_PROFILE_STORAGE_KEY],
+    storage,
+  );
+  return normalizeState(decrypted);
 }
 
 export async function savePersonalizationState(
@@ -523,7 +534,10 @@ export async function savePersonalizationState(
         ? normalizeAnalyzerMetadata(state.analyzer)
         : current.analyzer,
   };
-  await storage.local.set({ [PERSONAL_PROFILE_STORAGE_KEY]: next });
+  // Encrypt sensitive-kind item fields at rest; the in-memory return value stays
+  // plaintext for callers.
+  const persisted = await encryptStateForStorage(next, storage);
+  await storage.local.set({ [PERSONAL_PROFILE_STORAGE_KEY]: persisted });
   return next;
 }
 
@@ -634,7 +648,10 @@ export async function clearProfileDigest(
 export async function deletePersonalProfile(
   storage: PersonalProfileStorage = defaultStorage(),
 ): Promise<PersonalizationState> {
-  await storage.local.remove(PERSONAL_PROFILE_STORAGE_KEY);
+  await storage.local.remove([
+    PERSONAL_PROFILE_STORAGE_KEY,
+    PROFILE_CEK_STORAGE_KEY,
+  ]);
   return { ...EMPTY_PERSONALIZATION_STATE };
 }
 
@@ -741,8 +758,27 @@ export interface RelevantDigestItem extends DigestItem {
   relevanceScore: number;
 }
 
-function scoreDigestItem(item: DigestItem, corpusTokens: Set<string>): number {
-  if (item.kind === "sensitive") return Number.NEGATIVE_INFINITY;
+/**
+ * Per-task options for surfacing profile context. `allowSensitive` is an
+ * explicit, opt-in consent flag — without it, `sensitive`-kind items are never
+ * included in any runtime context (planner, writer). Callers must pass it
+ * deliberately for the single task the user authorized.
+ */
+export interface ProfileContextOptions {
+  allowSensitive?: boolean;
+}
+
+function scoreDigestItem(
+  item: DigestItem,
+  corpusTokens: Set<string>,
+  allowSensitive: boolean,
+): number {
+  // Explicit access control: sensitive items are gated out of all runtime
+  // context unless the caller passes per-task consent. (Replaces the previous
+  // implicit -Infinity sentinel with a named, testable gate.)
+  if (item.kind === "sensitive" && !allowSensitive) {
+    return Number.NEGATIVE_INFINITY;
+  }
   const itemTokens = tokenize(`${item.label} ${item.value} ${item.kind}`);
   let score = 0;
   for (const token of itemTokens) {
@@ -758,13 +794,15 @@ function scoreDigestItem(item: DigestItem, corpusTokens: Set<string>): number {
 export function selectRelevantProfileDigestItems(
   query: string,
   state: PersonalizationState,
+  options: ProfileContextOptions = {},
 ): RelevantDigestItem[] {
   if (!hasReadyProfileDigest(state) || !state.digest) return [];
+  const allowSensitive = options.allowSensitive ?? false;
   const corpusTokens = tokenize(query);
   const isProfileTask = PROFILE_TASK_PATTERN.test(query);
   return state.digest.items
     .map((item) => {
-      let relevanceScore = scoreDigestItem(item, corpusTokens);
+      let relevanceScore = scoreDigestItem(item, corpusTokens, allowSensitive);
       if (
         isProfileTask &&
         (item.kind === "fact" ||
@@ -798,8 +836,9 @@ function renderDigestItemForPrompt(item: DigestItem): string {
 export function buildPersonalProfilePlannerContext(
   query: string,
   state: PersonalizationState,
+  options: ProfileContextOptions = {},
 ): string {
-  const selected = selectRelevantProfileDigestItems(query, state);
+  const selected = selectRelevantProfileDigestItems(query, state, options);
   if (selected.length === 0) return "";
 
   const contextLines = selected.map(renderDigestItemForPrompt);
@@ -813,7 +852,9 @@ export function buildPersonalProfilePlannerContext(
     "- Treat constraints as hard boundaries.",
     "- Use themes only for drafting, not exact fields.",
     "- Do not infer open questions.",
-    "- Do not use sensitive profile items unless the user explicitly asks for them.",
+    options.allowSensitive
+      ? "- Sensitive items are user-authorized for THIS task only: use them solely for the exact field requested, and never echo them elsewhere."
+      : "- Do not use sensitive profile items unless the user explicitly asks for them.",
     "- Report unresolved fields at the end instead of guessing.",
   ].join("\n");
 }
