@@ -122,10 +122,10 @@ describe("local API origin policy", () => {
   });
 
   test("rejects arbitrary browser origins", async () => {
-    const { status, data, headers } = await api("/profile/resolve", {
+    const { status, data, headers } = await api("/profile/file", {
       method: "POST",
       headers: { Origin: "https://evil.example" },
-      body: JSON.stringify({ fields: ["identity.first_name"] }),
+      body: JSON.stringify({ alias: "cv" }),
     });
 
     expect(status).toBe(403);
@@ -142,29 +142,6 @@ describe("local API origin policy", () => {
     expect(status).toBe(403);
     expect(data.error).toBe("Origin not allowed");
     expect(headers.get("access-control-allow-origin")).toBeNull();
-  });
-});
-
-describe("POST /profile/resolve", () => {
-  test("returns exact requested fields and marks sensitive ones", async () => {
-    const { status, data } = await api("/profile/resolve", {
-      method: "POST",
-      body: JSON.stringify({
-        fields: [
-          "identity.first_name",
-          "sensitive.date_of_birth",
-          "identity.email",
-        ],
-      }),
-    });
-
-    expect(status).toBe(200);
-    expect(data.values).toEqual({
-      "identity.first_name": "John",
-      "sensitive.date_of_birth": "1990-01-01",
-    });
-    expect(data.missing).toEqual(["identity.email"]);
-    expect(data.sensitiveFields).toEqual(["sensitive.date_of_birth"]);
   });
 });
 

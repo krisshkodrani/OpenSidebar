@@ -13,11 +13,13 @@ import { parse as parseYaml } from "yaml";
 import type {
   PersonalProfileDocument,
   ProfileFileResolveResult,
-  ProfileResolveResult,
-  ProfileSafeContextEntry,
-  ProfileSafeContextResult,
   ProfileValue,
 } from "../types.js";
+
+// Note: `resolveProfileFields` and `resolveSafeProfileContext` (the
+// `/profile/resolve` and `/profile/context` handlers) were removed in RFC LP-8,
+// M1 — they had no callers in the extension. Only file-alias resolution
+// (`/profile/file`, e.g. the CV) remains in use.
 
 const DEFAULT_PROFILE_PATH = join(
   homedir(),
@@ -27,18 +29,6 @@ const DEFAULT_PROFILE_PATH = join(
 );
 const MAX_PROFILE_FILE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_FILE_ALIASES = new Set(["cv"]);
-const JOB_CONTEXT_KEYWORDS = new Set([
-  "authorization",
-  "career",
-  "job",
-  "location",
-  "professional",
-  "remote",
-  "role",
-  "salary",
-  "summary",
-  "work",
-]);
 const PROFILE_FIELD_ALIASES = new Map<string, string>([
   ["description", "summary"],
   ["endDate", "end_date"],
@@ -47,10 +37,6 @@ const PROFILE_FIELD_ALIASES = new Map<string, string>([
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isProfilePathSegment(segment: string): boolean {
-  return /^[a-zA-Z0-9_-]+$/.test(segment);
 }
 
 function toSnakeCase(segment: string): string {
@@ -108,29 +94,6 @@ export function loadProfile(profilePath = resolveProfilePath()): PersonalProfile
   return parseProfileDocument(raw);
 }
 
-export function isSensitiveProfileField(field: string): boolean {
-  return field === "sensitive" || field.startsWith("sensitive.");
-}
-
-export function normalizeRequestedFields(fields: string[]): string[] {
-  const normalized = new Set<string>();
-  for (const rawField of fields) {
-    if (typeof rawField !== "string") continue;
-    const field = rawField
-      .trim()
-      .replace(/^profile\./, "")
-      .replace(/\[(\d+)\]/g, ".$1")
-      .replace(/\.+/g, ".");
-    if (!field) continue;
-    const segments = field.split(".");
-    if (segments.some((segment) => !isProfilePathSegment(segment))) {
-      throw new Error(`Invalid profile field path: ${rawField}`);
-    }
-    normalized.add(field);
-  }
-  return Array.from(normalized);
-}
-
 function readProfileValue(
   profile: Record<string, unknown>,
   field: string,
@@ -183,156 +146,8 @@ function readProfileValue(
   return undefined;
 }
 
-export function resolveProfileFields(
-  fields: string[],
-  profilePath = resolveProfilePath(),
-): ProfileResolveResult {
-  const normalizedFields = normalizeRequestedFields(fields);
-  if (normalizedFields.length === 0) {
-    throw new Error("At least one profile field is required.");
-  }
-
-  const document = loadProfile(profilePath);
-  const values: Record<string, ProfileValue> = {};
-  const missing: string[] = [];
-  const sensitiveFields: string[] = [];
-
-  for (const field of normalizedFields) {
-    const value = readProfileValue(document.profile, field);
-    if (value === undefined) {
-      missing.push(field);
-      continue;
-    }
-    values[field] = value;
-    if (isSensitiveProfileField(field)) {
-      sensitiveFields.push(field);
-    }
-  }
-
-  return {
-    profilePath,
-    values,
-    missing,
-    sensitiveFields,
-  };
-}
-
 export function getProfileDirectory(profilePath = resolveProfilePath()): string {
   return dirname(profilePath);
-}
-
-function renderProfileValue(value: ProfileValue): string {
-  if (value === null) return "null";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
-}
-
-function flattenProfileContext(
-  value: unknown,
-  prefix: string,
-  entries: ProfileSafeContextEntry[],
-): void {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    entries.push({ path: prefix, value });
-    return;
-  }
-
-  if (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        item === null ||
-        typeof item === "string" ||
-        typeof item === "number" ||
-        typeof item === "boolean",
-    )
-  ) {
-    entries.push({ path: prefix, value: value as ProfileValue });
-    return;
-  }
-
-  if (!isPlainObject(value)) return;
-  for (const [key, child] of Object.entries(value)) {
-    if (!isProfilePathSegment(key)) continue;
-    flattenProfileContext(child, prefix ? `${prefix}.${key}` : key, entries);
-  }
-}
-
-function tokenizeForContext(text: string): Set<string> {
-  return new Set(
-    text
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((token) => token.length >= 3),
-  );
-}
-
-function isJobContextQuery(query: string): boolean {
-  return /\b(job|jobs|role|roles|career|apply|application|cv|resume|hiring|salary|remote)\b/i.test(
-    query,
-  );
-}
-
-function rankSafeContextEntry(
-  entry: ProfileSafeContextEntry,
-  queryTokens: Set<string>,
-  jobContext: boolean,
-): number {
-  const haystack = `${entry.path} ${renderProfileValue(entry.value)}`.toLowerCase();
-  let score = 0;
-  for (const token of queryTokens) {
-    if (haystack.includes(token)) score += 1;
-  }
-  if (jobContext) {
-    const segments = entry.path.toLowerCase().split(".");
-    if (segments.some((segment) => JOB_CONTEXT_KEYWORDS.has(segment))) score += 3;
-    if (JOB_CONTEXT_KEYWORDS.has(segments[0])) score += 1;
-  }
-  return score;
-}
-
-export function resolveSafeProfileContext(
-  query: string,
-  profilePath = resolveProfilePath(),
-): ProfileSafeContextResult {
-  const document = loadProfile(profilePath);
-  const safeRoot = readProfileValue(document.profile, "context.safe");
-  if (!isPlainObject(safeRoot)) {
-    return { profilePath, entries: [], rendered: "" };
-  }
-
-  const allEntries: ProfileSafeContextEntry[] = [];
-  flattenProfileContext(safeRoot, "", allEntries);
-
-  const queryTokens = tokenizeForContext(query);
-  const jobContext = isJobContextQuery(query);
-  const ranked = allEntries
-    .map((entry, index) => ({
-      entry,
-      index,
-      score: rankSafeContextEntry(entry, queryTokens, jobContext),
-    }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, 8)
-    .map((item) => item.entry);
-
-  const lines = ranked.map((entry) => {
-    const raw = renderProfileValue(entry.value);
-    const value = raw.length > 400 ? `${raw.slice(0, 400).trimEnd()}...` : raw;
-    return `- ${entry.path}: ${value}`;
-  });
-
-  return {
-    profilePath,
-    entries: ranked,
-    rendered: lines.length > 0 ? `PERSONAL CONTEXT:\n${lines.join("\n")}` : "",
-  };
 }
 
 function inferMimeType(filename: string): string {
