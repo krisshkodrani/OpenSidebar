@@ -96,3 +96,49 @@ export function stamp<T>(value: T, clock: number = Date.now()): SyncedItem<T> {
 export function tombstone(clock: number = Date.now()): SyncedItem<never> {
   return { value: undefined as never, updatedAt: clock, deleted: true };
 }
+
+/** Local cache I/O (e.g. chrome.storage), namespaced per knowledge type. */
+export interface LocalSnapshot {
+  read(namespace: string): Promise<SyncMap>;
+  write(namespace: string, map: SyncMap): Promise<void>;
+}
+
+function subset(map: SyncMap, keys: string[]): SyncMap {
+  const out: SyncMap = {};
+  for (const key of keys) if (map[key]) out[key] = map[key];
+  return out;
+}
+
+/**
+ * Read-through cache over a canonical `KnowledgeStore`. Preserves standalone
+ * operation: with `store === null` (daemon absent) it reads/writes the local
+ * snapshot only, so the extension keeps working; the next connected `sync`
+ * reconciles. This is the M3 orchestration layer over the `reconcile` engine —
+ * still store-agnostic, so the OpenClaw-backed `KnowledgeStore` and the live
+ * wiring of profile/website-skills drop in without touching this logic.
+ */
+export class ReadThroughCache {
+  constructor(
+    private readonly local: LocalSnapshot,
+    private readonly store: KnowledgeStore | null,
+  ) {}
+
+  /** Reconcile local with canonical and persist both directions. */
+  async sync(namespace: string): Promise<SyncMap> {
+    const localMap = await this.local.read(namespace);
+    if (!this.store) return localMap;
+    const remoteMap = await this.store.getAll(namespace);
+    const { merged, push, pull } = reconcile(localMap, remoteMap);
+    if (pull.length > 0) await this.local.write(namespace, merged);
+    if (push.length > 0) await this.store.putItems(namespace, subset(merged, push));
+    return merged;
+  }
+
+  /** Write-through: update local, and the canonical store when connected. */
+  async put(namespace: string, key: string, item: SyncedItem): Promise<void> {
+    const localMap = await this.local.read(namespace);
+    localMap[key] = item;
+    await this.local.write(namespace, localMap);
+    if (this.store) await this.store.putItems(namespace, { [key]: item });
+  }
+}
