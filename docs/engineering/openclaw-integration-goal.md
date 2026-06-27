@@ -11,6 +11,20 @@ This document defines the full end-state and the phased path to it, with an expl
 `~/.claude/plans/also-the-feature-that-cozy-waterfall.md`; this is the durable goal it
 serves.
 
+## Current status (2026-06-27) — 29 commits, all tested
+
+- **M1** ✅ merged. **M2** ✅ full chain built (host `WebSocketBridge` ↔ SW
+  `BrowserBridgeClient` ↔ handler ↔ `OrchestratorAgentRunner`). **M3** ✅ engine +
+  cache + clients + **live sync wired** (`syncUserWebsiteSkills`,
+  `syncPersonalProfileDigest` — sensitive values sync as ciphertext, default-off).
+  **M4** ✅ planner routes through the gateway. **M5** ✅ scaffold + a **runnable stub
+  adapter** (`pnpm run openclaw:adapter`).
+- **To validate end-to-end now:** `pnpm run openclaw:adapter` + `pnpm run mcp:browser`,
+  then set `opensidebar:openClawGatewayUrl` to the adapter URL.
+- **Remaining:** the SW-startup glue (construct the WS client with a real
+  orchestrator `AgentTaskDriver` — touches the in-flight WIP); swap the stub
+  adapter's `/api/planner` for real OpenClaw LLM+memory; M6/M7 (post-v1).
+
 ---
 
 ## Why
