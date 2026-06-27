@@ -44,7 +44,7 @@ function bufToB64(buf: ArrayBuffer | Uint8Array): string {
   return btoa(bin);
 }
 
-function b64ToBytes(b64: string): Uint8Array {
+function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -83,7 +83,7 @@ export async function encryptField(
   const ct = await subtle().encrypt(
     { name: "AES-GCM", iv },
     key,
-    new TextEncoder().encode(plaintext),
+    new Uint8Array(new TextEncoder().encode(plaintext)),
   );
   return `${ENC_PREFIX}${bufToB64(iv)}.${bufToB64(ct)}`;
 }
