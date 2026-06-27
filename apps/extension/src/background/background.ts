@@ -9,6 +9,7 @@ import {
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
+import { startBrowserBridge } from "./browser-bridge";
 import {
   formatMissingProviderKeys,
   getProviderKeyStatus,
@@ -295,6 +296,8 @@ void (async () => {
   if (orchestrator.hasActiveTasks()) {
     await startKeepalive();
   }
+  // RFC LP-8 M2: connect to the browser MCP host when configured (default-off).
+  await startBrowserBridge();
 })();
 
 // 7. Listeners
