@@ -4,6 +4,16 @@ import {
   decryptStoredState,
   encryptStateForStorage,
 } from "./profile-crypto";
+import {
+  reconcile,
+  type KnowledgeStore,
+  type SyncMap,
+} from "./knowledge-sync";
+import { HttpKnowledgeStore } from "./openclaw-client";
+
+const PROFILE_KNOWLEDGE_NAMESPACE = "profile";
+const PROFILE_DIGEST_SYNC_KEY = "digest";
+const OPENCLAW_GATEWAY_URL_KEY = "opensidebar:openClawGatewayUrl";
 
 export const PERSONAL_PROFILE_STORAGE_KEY = "opensidebar:personalProfile";
 
@@ -653,6 +663,77 @@ export async function deletePersonalProfile(
     PROFILE_CEK_STORAGE_KEY,
   ]);
   return { ...EMPTY_PERSONALIZATION_STATE };
+}
+
+/** Resolve the OpenClaw knowledge store from the configured gateway URL, or null. */
+async function resolveProfileKnowledgeStore(): Promise<KnowledgeStore | null> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+      const url = stored[OPENCLAW_GATEWAY_URL_KEY];
+      if (typeof url === "string" && url.trim()) {
+        return new HttpKnowledgeStore({ baseUrl: url.trim() });
+      }
+    }
+  } catch {
+    // No storage / gateway → local-only.
+  }
+  return null;
+}
+
+/**
+ * Reconcile the profile digest with OpenClaw's canonical store (RFC LP-8, M3).
+ * Additive + default-off: with no gateway configured it returns the local state
+ * unchanged (no network). Sensitive item values sync as **ciphertext** — the
+ * digest is run through the M1 at-rest encryption (`encryptStateForStorage`)
+ * before it leaves the device, and decrypted on pull — so the loopback-only
+ * invariant and at-rest encryption hold end to end. Whole-digest last-writer-wins
+ * keyed on `state.updatedAt`.
+ */
+export async function syncPersonalProfileDigest(
+  storage: PersonalProfileStorage = defaultStorage(),
+  store?: KnowledgeStore | null,
+): Promise<PersonalizationState> {
+  const state = await loadPersonalizationState(storage);
+  const knowledgeStore =
+    store !== undefined ? store : await resolveProfileKnowledgeStore();
+  if (!knowledgeStore) return state;
+
+  const localMap: SyncMap = {};
+  if (state.digest) {
+    const encrypted = (await encryptStateForStorage(
+      { digest: state.digest },
+      storage,
+    )) as { digest: unknown };
+    localMap[PROFILE_DIGEST_SYNC_KEY] = {
+      value: encrypted.digest,
+      updatedAt: state.updatedAt,
+    };
+  }
+
+  const remoteMap = await knowledgeStore.getAll(PROFILE_KNOWLEDGE_NAMESPACE);
+  const { merged, push, pull } = reconcile(localMap, remoteMap);
+
+  if (push.includes(PROFILE_DIGEST_SYNC_KEY)) {
+    await knowledgeStore.putItems(PROFILE_KNOWLEDGE_NAMESPACE, {
+      [PROFILE_DIGEST_SYNC_KEY]: merged[PROFILE_DIGEST_SYNC_KEY],
+    });
+  }
+
+  if (pull.includes(PROFILE_DIGEST_SYNC_KEY)) {
+    const remoteDigest = merged[PROFILE_DIGEST_SYNC_KEY];
+    if (remoteDigest && !remoteDigest.deleted) {
+      const decrypted = (await decryptStoredState(
+        { digest: remoteDigest.value },
+        storage,
+      )) as { digest: unknown };
+      return savePersonalizationState(
+        { digest: decrypted.digest as ProfileDigest },
+        storage,
+      );
+    }
+  }
+  return state;
 }
 
 export function hasUsablePersonalProfile(state: PersonalizationState): boolean {
