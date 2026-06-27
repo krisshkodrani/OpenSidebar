@@ -30,6 +30,7 @@ import {
   type BrowserToolResponse,
 } from "./bridge.js";
 import { BROWSER_TOOLS } from "./tools.js";
+import { WebSocketBridge } from "./ws-bridge.js";
 
 type Args = Record<string, unknown>;
 
@@ -98,10 +99,16 @@ export async function startBrowserMcpServer(
   await server.connect(transport);
 }
 
-// Auto-start only when run directly (not when imported by tests).
+// Auto-start only when run directly (not when imported by tests). Uses the
+// loopback WebSocket transport when BROWSER_MCP_WS_PORT is set; otherwise the
+// NotConnectedBridge (extension transport not configured).
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : "";
 if (entryPath && entryPath === fileURLToPath(import.meta.url)) {
-  startBrowserMcpServer().catch((error) => {
+  const wsPort = process.env.BROWSER_MCP_WS_PORT;
+  const bridge: BrowserBridge = wsPort
+    ? new WebSocketBridge({ port: Number(wsPort) })
+    : new NotConnectedBridge();
+  startBrowserMcpServer(bridge).catch((error) => {
     console.error("[browser-mcp] fatal:", error);
     process.exit(1);
   });
