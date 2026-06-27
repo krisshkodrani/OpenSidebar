@@ -164,10 +164,13 @@ The initiative is complete when **all** of these are true:
 ### Phase 3 — Knowledge cache + sync + learning signal
 - **Objective:** OpenClaw canonical for profile + website skills; extension is a cache;
   the brain learns from graded runs.
-- **Key work:** define per-item sync (`{ value, updatedAt, source }`, last-writer-wins);
-  wrap `utils/personal-profile.ts` and `utils/website-skills.ts` as read-through caches
-  (hydrate on connect, write-through when present, local-only + reconcile when absent).
-  Sensitive items stay encrypted end-to-end.
+- **Stage 1 — DONE** (`1c8f7119`): the pure last-writer-wins sync engine
+  (`utils/knowledge-sync.ts`) — `SyncedItem`/`SyncMap`/`KnowledgeStore`, `reconcile`
+  (merged + push/pull sets, tombstones), `liveValues`/`stamp`/`tombstone`. 8 tests.
+- **Stage 2 — remaining:** wrap `utils/personal-profile.ts` and `utils/website-skills.ts`
+  as read-through caches over the OpenClaw `KnowledgeStore` (hydrate on connect,
+  write-through when present, local-only + reconcile when absent). Sensitive items stay
+  encrypted end-to-end. Needs the daemon + edits live storage paths.
 - **Learning loop (head-start from LP-7):** the long-dead site-learning loop now has a
   real signal — OpenSidebar already exports **OpenClaw-format graded `(state, action,
   reward)` trajectories** (`scripts/obs/export-trajectories.ts`). Feed these to the brain
