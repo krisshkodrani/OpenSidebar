@@ -12,28 +12,17 @@
  * in without touching tool logic.
  */
 
-/**
- * Terminal status of a thick tool call.
- * - `ok`          — the agent finished the intent; `result` holds the payload.
- * - `needs_human` — the agent paused (CAPTCHA, auth, ambiguous step); `reason`
- *                   says why. The orchestrator surfaces this (e.g. via Telegram)
- *                   and may resume later. This is NOT an error.
- * - `error`       — the call failed; `reason` holds the message.
- */
-export type BrowserToolStatus = "ok" | "needs_human" | "error";
-
-export interface BrowserToolRequest {
-  tool: string;
-  args: Record<string, unknown>;
-}
-
-export interface BrowserToolResponse {
-  status: BrowserToolStatus;
-  /** Tool-specific payload when `status === "ok"`. */
-  result?: unknown;
-  /** Why the agent paused (`needs_human`) or failed (`error`). */
-  reason?: string;
-}
+// The wire contract is shared with the extension via shared-types (one source of
+// truth). The transport interface + default bridge stay host-local.
+export type {
+  BrowserToolStatus,
+  BrowserToolRequest,
+  BrowserToolResponse,
+} from "@shared-types/browser-bridge";
+import type {
+  BrowserToolRequest,
+  BrowserToolResponse,
+} from "@shared-types/browser-bridge";
 
 export interface BrowserBridge {
   call(request: BrowserToolRequest): Promise<BrowserToolResponse>;
