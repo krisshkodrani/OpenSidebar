@@ -183,17 +183,23 @@ The initiative is complete when **all** of these are true:
 
 ### Phase 4 — Hybrid LLM routing
 - **Objective:** strategic plans get OpenClaw memory; the hot loop stays fast.
-- **Key work:** executor keeps calling the provider directly; route planner calls
-  (`TaskPlanner` / planner pool in `background/llm/client.ts`) through OpenClaw's
-  gateway when present; fall back to direct provider when absent.
+- **Core — DONE** (`b3068d14`): `utils/llm-routing.ts` — `resolveLlmRoute` (executor
+  always direct; planner prefers gateway) + `routePlannerCompletion` (gateway when
+  present+healthy, graceful fallback to direct on absence OR error). 7 tests.
+- **Stage 2 — remaining:** wire it into `TaskPlanner` / the planner pool in
+  `background/llm/client.ts`; implement the `PlannerGateway` over OpenClaw. Needs the
+  daemon.
 - **DoD:** with daemon up, planner prompts carry OpenClaw memory; with daemon down,
   planner falls back and tasks still run; executor latency unchanged.
 
 ### Phase 5 — Opinionated in-repo OpenClaw backend
 - **Objective:** one-command, batteries-included setup.
-- **Key work:** `backend/openclaw.config.yaml` (loopback bind; browser/exec tools off),
-  `backend/SOUL.md`, `backend/skills/`, `backend/install.sh`. Bake the loopback-only
-  privacy invariant as an enforced default.
+- **Scaffold — DONE** (`a3894b56`): `openclaw/` (not `backend/`, to avoid colliding
+  with `apps/backend`) — `openclaw.config.yaml` (loopback bind; browser/exec off;
+  registers the M2 MCP host), `SOUL.md`, `skills/opensidebar.md`, `install.sh`, README.
+  Bakes the loopback-only invariant.
+- **Remaining:** validate the exact OpenClaw config schema / CLI flags against the
+  installed release; end-to-end `install.sh` run. Needs OpenClaw present.
 - **DoD:** `install.sh` brings up a loopback OpenClaw pre-wired to the extension,
   prompting only for an API key + optional channel; defaults enforce the invariants.
 
