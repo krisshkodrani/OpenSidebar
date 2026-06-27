@@ -138,8 +138,9 @@ The active product surface:
   progress. (Must not import `chrome.*` directly — route through
   `sidepanel/runtime.ts`.)
 - `apps/extension/src/trace-viewer/` — trace inspection and analytics UI.
-- `apps/backend/src/` — local Node backend (port 7590): long-term memory and
-  durable task scheduling (SQLite).
+- `apps/backend/src/` — local task-run durability + scheduling library (SQLite),
+  mounted in-process by the dev log-server at `127.0.0.1:7589/api/backend`
+  (standalone `server.ts` on 7590 is legacy/unstarted).
 - `packages/shared-types/` — the cross-context contract, including the
   `RuntimeMessage` union.
 - `packages/prompts/` — prompt runtime and generated prompt assets.

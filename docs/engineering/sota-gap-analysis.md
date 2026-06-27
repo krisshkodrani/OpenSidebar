@@ -210,7 +210,7 @@ interface PackPlugin {
 ### 3.1 Critical Gaps (User-Visible Impact)
 
 #### GAP-1: No Cross-Session Learning Loop
-**Current state:** Site-specific tips are stored in GBrain and injected as planner/executor context. This is feed-forward only — there's no automatic extraction of patterns from execution traces.
+**Current state:** No durable cross-session learning. The earlier GBrain-backed site-tip pipeline was removed; what remains is user-recorded website skills and the personal profile (both in `chrome.storage.local`), injected as executor/planner context. Task-run "extracted facts" are persisted to SQLite but never re-injected, so there's no automatic extraction of patterns from execution traces.
 
 **SOTA comparison:** Agent S stores experience in a global workspace and retrieves relevant past interactions. Anthropic's computer use (via API) can be wrapped with persistent memory stores (Mem0, Chroma).
 

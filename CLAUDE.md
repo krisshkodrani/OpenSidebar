@@ -26,7 +26,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 - `apps/extension/src/trace-viewer` — trace/analytics UI.
 - `packages/shared-types/src/messages.ts` — the cross-context contract: a ~62-variant
   `RuntimeMessage` union, handled with an exhaustive `never` check in `sidepanel/bridge.ts`.
-- `apps/backend` — Node service (port 7590): long-term memory + task scheduling (SQLite).
+- `apps/backend` — task-run durability + scheduling library (SQLite). Mounted in-process by the dev log-server at `127.0.0.1:7589/api/backend`; the standalone `server.ts` (7590) is legacy/unstarted.
 - `docs/architecture/` — per-subsystem docs (agent-loop, orchestrator, perception-layer, runtime-boundaries, …).
 
 ### Landmines (read before editing)
