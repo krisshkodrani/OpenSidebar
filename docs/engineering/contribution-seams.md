@@ -41,8 +41,8 @@ fit in the machine."
           │
           ▼
    ┌─────────────┐      ┌───────────────────────────────────────┐
-   │  THE PAGE   │      │ BACKEND (port 7590): memory + durable  │
-   └─────────────┘      │ task scheduling (SQLite)               │
+   │  THE PAGE   │      │ BACKEND (7589 /api/backend): durable   │
+   └─────────────┘      │ task runs + scheduling (SQLite)        │
                         └───────────────────────────────────────┘
 ```
 
