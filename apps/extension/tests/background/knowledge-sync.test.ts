@@ -1,11 +1,44 @@
 import { describe, expect, test } from "vitest";
 import {
+  ReadThroughCache,
   liveValues,
   reconcile,
   stamp,
   tombstone,
+  type KnowledgeStore,
+  type LocalSnapshot,
   type SyncMap,
 } from "../../src/utils/knowledge-sync";
+
+function memLocal(seed: Record<string, SyncMap> = {}): LocalSnapshot & {
+  data: Record<string, SyncMap>;
+} {
+  const data: Record<string, SyncMap> = { ...seed };
+  return {
+    data,
+    async read(ns) {
+      return { ...(data[ns] ?? {}) };
+    },
+    async write(ns, map) {
+      data[ns] = { ...map };
+    },
+  };
+}
+
+function memStore(seed: Record<string, SyncMap> = {}): KnowledgeStore & {
+  data: Record<string, SyncMap>;
+} {
+  const data: Record<string, SyncMap> = { ...seed };
+  return {
+    data,
+    async getAll(ns) {
+      return { ...(data[ns] ?? {}) };
+    },
+    async putItems(ns, items) {
+      data[ns] = { ...(data[ns] ?? {}), ...items };
+    },
+  };
+}
 
 describe("reconcile (last-writer-wins)", () => {
   test("local newer than remote → local wins and is pushed", () => {
@@ -79,5 +112,53 @@ describe("reconcile is order-independent", () => {
     const b = reconcile(y, x).merged;
     expect(a.k.value).toBe(b.k.value);
     expect(a.k.value).toBe("newer");
+  });
+});
+
+describe("ReadThroughCache", () => {
+  test("offline (no store) reads local only and never throws", async () => {
+    const local = memLocal({ profile: { a: stamp("L", 1) } });
+    const cache = new ReadThroughCache(local, null);
+    const merged = await cache.sync("profile");
+    expect(liveValues(merged)).toEqual({ a: "L" });
+  });
+
+  test("sync pulls remote-wins to local and pushes local-wins to the store", async () => {
+    const local = memLocal({
+      profile: { a: stamp("L-old", 1), c: stamp("L-only", 5) },
+    });
+    const store = memStore({
+      profile: { a: stamp("R-new", 9), b: stamp("R-only", 5) },
+    });
+    const cache = new ReadThroughCache(local, store);
+
+    const merged = await cache.sync("profile");
+
+    // a: remote newer wins; b: remote-only pulled; c: local-only pushed.
+    expect(liveValues(merged)).toEqual({ a: "R-new", b: "R-only", c: "L-only" });
+    // Local cache now reflects the merged view.
+    expect(liveValues(local.data.profile)).toEqual({
+      a: "R-new",
+      b: "R-only",
+      c: "L-only",
+    });
+    // Store received the local-authoritative key only.
+    expect(store.data.profile.c.value).toBe("L-only");
+  });
+
+  test("write-through updates local and the store when connected", async () => {
+    const local = memLocal();
+    const store = memStore();
+    const cache = new ReadThroughCache(local, store);
+    await cache.put("skills", "s1", stamp({ name: "Login flow" }, 10));
+    expect(local.data.skills.s1.value).toEqual({ name: "Login flow" });
+    expect(store.data.skills.s1.value).toEqual({ name: "Login flow" });
+  });
+
+  test("write-through offline updates local only", async () => {
+    const local = memLocal();
+    const cache = new ReadThroughCache(local, null);
+    await cache.put("skills", "s1", stamp({ name: "Offline edit" }, 10));
+    expect(local.data.skills.s1.value).toEqual({ name: "Offline edit" });
   });
 });
