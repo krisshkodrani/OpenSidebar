@@ -35,6 +35,7 @@ import {
   queryInsights,
   searchTraces,
 } from "./core";
+import { redactPii } from "./redact";
 
 const store = createDiskStore();
 
@@ -168,7 +169,7 @@ const num = (args: Args, key: string): number => {
   return value;
 };
 
-export function dispatch(name: string, args: Args): unknown {
+function runTool(name: string, args: Args): unknown {
   switch (name) {
     case "search_traces":
       return searchTraces(store, args);
@@ -197,6 +198,17 @@ export function dispatch(name: string, args: Args): unknown {
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+/**
+ * Public tool entrypoint. Redacts PII from every agent-facing result at the MCP
+ * boundary (RFC LP-8, M1). `get_blob` is exempt: it returns a base64 screenshot
+ * that must not be regex-scrubbed.
+ */
+export function dispatch(name: string, args: Args): unknown {
+  const result = runTool(name, args);
+  if (name === "get_blob") return result;
+  return redactPii(result);
 }
 
 async function main(): Promise<void> {
