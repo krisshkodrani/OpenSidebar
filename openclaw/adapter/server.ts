@@ -112,7 +112,9 @@ export function createOpenClawAdapter(): Server {
 const isMain = process.argv[1]?.endsWith("server.ts");
 if (isMain) {
   const port = Number(process.env.OPENCLAW_ADAPTER_PORT) || 18789;
-  createOpenClawAdapter().listen(port, "127.0.0.1", () => {
-    console.log(`[openclaw-adapter] loopback gateway on http://127.0.0.1:${port}`);
+  // In Docker, bind 0.0.0.0 so the published (host-loopback) port routes in.
+  const host = process.env.OPENCLAW_ADAPTER_HOST || "127.0.0.1";
+  createOpenClawAdapter().listen(port, host, () => {
+    console.log(`[openclaw-adapter] gateway on http://${host}:${port}`);
   });
 }
