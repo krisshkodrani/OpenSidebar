@@ -1,4 +1,6 @@
-# One command: `docker compose up`
+# One command: `docker compose up`   (validated 2026-06-28: all 3 services build
+# and run — adapter /health+KV+planner, browser-mcp WS accepts connections, viewer
+# serves the built UI on 7589.)
 #
 # Brings up the OpenSidebar server-side stack, all published to YOUR machine's
 # loopback (127.0.0.1) only — the containers bind 0.0.0.0 internally so Docker
