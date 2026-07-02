@@ -162,6 +162,22 @@ export function generateCompletionContract(params: {
     const snapshot = params.snapshot;
     if (!snapshot) return null;
 
+    if (activeScopeSuggestsPageStateCompletion(params)) {
+      const navigationContract = generateNavigationContract(params, snapshot);
+      if (navigationContract) return navigationContract;
+
+      const readAnswerContract = generateReadAnswerContract(params, snapshot);
+      if (readAnswerContract) return readAnswerContract;
+
+      const workflowConfirmationContract = generateWorkflowConfirmationContract(
+        params,
+        snapshot,
+      );
+      if (workflowConfirmationContract) return workflowConfirmationContract;
+
+      return null;
+    }
+
     const quizContract = generateQuizSelectionContract(params, snapshot);
     if (quizContract) return quizContract;
 
@@ -189,18 +205,57 @@ export function generateCompletionContract(params: {
   return candidate;
 }
 
+function activeScopeSuggestsPageStateCompletion(params: {
+  activeObjective?: string;
+  successCriteria?: string;
+}): boolean {
+  const activeScopeText = [params.activeObjective, params.successCriteria]
+    .filter(Boolean)
+    .join("\n");
+  if (!activeScopeText.trim()) return false;
+
+  const pageStateIntent =
+    /\b(?:go\s+to|open|opened|navigate|navigated|visit|visited|load|loaded|arrive|arrived|page|search\s+results|results\s+page|listings?\s+load|visible|displays?|shows?|heading|breadcrumb|url\s+contains)\b/i.test(
+      activeScopeText,
+    );
+  if (!pageStateIntent) return false;
+
+  const directMutationIntent =
+    /\b(?:fill|filled|type|typed|enter|entered|set|update|change|submit|send|save|create|register|checkout|place\s+order|order)\b/i.test(
+      activeScopeText,
+    );
+  if (directMutationIntent) return false;
+
+  const choiceOrFilterMutation =
+    /\b(?:select|choose|pick|check|uncheck|apply)\b.{0,60}\b(?:answer|option|choice|checkbox|radio|field|filter|box)\b/i.test(
+      activeScopeText,
+    ) ||
+    /\b(?:apply|filter)\s+(?:the\s+)?(?:filter|filters|results|list|listings)\b/i.test(
+      activeScopeText,
+    );
+  return !choiceOrFilterMutation;
+}
+
 function isContractRelevantToObjective(
   generated: GeneratedCompletionContract,
   params: { activeObjective?: string; userRequest: string },
 ): boolean {
-  const objective = params.activeObjective ?? params.userRequest;
+  const objective =
+    params.activeObjective ?? extractCanonicalUserRequest(params.userRequest);
 
   switch (generated.contract.kind) {
     case "quiz_selection":
-      return /\b(?:quiz|exam|test|question\s*\d|answer\s+(?:the|this)\s+question)\b/i.test(objective);
+      return (
+        hasQuizSelectionIntent(objective) ||
+        /\b(?:quiz|exam|test|question\s*\d|answer\s+(?:the|this)\s+question)\b/i.test(
+          objective,
+        )
+      );
 
     case "form_fill":
-      return /\b(?:fill|enter|type|input|log\s*in|sign\s*in|register|create\s+account)\b/i.test(objective);
+      return /\b(?:fill|enter|type|input|log\s*in|sign\s*in|register|create\s+account)\b/i.test(
+        objective,
+      );
 
     default:
       return true;
@@ -249,7 +304,7 @@ function generateQuizSelectionContract(
   const canonicalUserRequest = extractCanonicalUserRequest(params.userRequest);
   const requestText = normalizeText(canonicalUserRequest);
   const combinedText = normalizeText(
-    [params.userRequest, params.activeObjective, params.successCriteria]
+    [canonicalUserRequest, params.activeObjective, params.successCriteria]
       .filter(Boolean)
       .join("\n"),
   );

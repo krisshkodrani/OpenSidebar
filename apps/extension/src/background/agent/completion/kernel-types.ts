@@ -249,7 +249,10 @@ export type CompletionSummaryPreflight =
   | {
       status: "rejected";
       reason: string;
-      kind: "incomplete_summary" | "missing_multi_return_coverage";
+      kind:
+        | "incomplete_summary"
+        | "missing_multi_return_coverage"
+        | "missing_requested_attribute";
     };
 
 export type CompletionPendingAutocompletePreflight =

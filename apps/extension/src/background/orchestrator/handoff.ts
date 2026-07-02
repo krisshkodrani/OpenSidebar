@@ -449,7 +449,7 @@ export function buildTaskStateBrief(
     if (remainingCount > 0) {
       sections.push(
         `Remaining future steps: ${remainingCount}`,
-        "Do NOT execute them until the current objective is verified complete.",
+        "Complete and verify the current objective first; the orchestrator will schedule later steps after this node is done.",
       );
     }
 
@@ -508,6 +508,8 @@ export interface ExecutorParallelContext {
   siblingWorkers: ExecutorParallelSiblingBrief[];
 }
 
+export type ExecutorCompletionScope = "root" | "node";
+
 function formatResourceHint(hint: ResourceHint): string {
   return `${hint.kind}:${hint.key} (${hint.access}, confidence=${hint.confidence.toFixed(2)})`;
 }
@@ -552,7 +554,7 @@ function buildExecutorParallelContextSection(
 
   const lines = [
     "Parallel work context:",
-    `- This worker is node ${context.nodeId} at worker index ${context.workerIndex}.`,
+    `- This worker is responsible for the current Objective only at worker index ${context.workerIndex}.`,
     `- Node parallelism contract: ${context.parallelism}.`,
     `- Assigned resources: ${formatResourceHints(context.assignedResources)}.`,
     "- Sibling summaries are informational only. Use your own page and tool evidence before acting, and do not depend on hidden mutable state from another worker.",
@@ -562,7 +564,7 @@ function buildExecutorParallelContextSection(
     lines.push("- Sibling workers:");
     for (const sibling of context.siblingWorkers) {
       lines.push(
-        `  - ${sibling.nodeId} [${sibling.status}]: ${sibling.objective}; resources: ${formatResourceHints(sibling.resources)}.`,
+        `  - [${sibling.status}] ${sibling.objective}; resources: ${formatResourceHints(sibling.resources)}.`,
       );
     }
   } else {
@@ -581,6 +583,7 @@ export function buildExecutorInstruction(
   verificationTurnMode = false,
   personalContextBrief?: string,
   parallelContext?: ExecutorParallelContext,
+  completionScope: ExecutorCompletionScope = "root",
 ): string {
   const handoffBrief = formatHandoffBrief(node.handoffArtifacts);
   const reflexionContext = formatReflexionContext(node.reflexionLog);
@@ -593,6 +596,36 @@ export function buildExecutorInstruction(
     `Success criteria: ${node.successCriteria}`,
     "",
   ];
+  const executionPolicy =
+    completionScope === "node"
+      ? [
+          "Execution policy:",
+          "- This is a node-scoped executor run: done() completes only this current Objective, not the full original user request.",
+          "- Call done() as soon as the current Objective and Success criteria are satisfied with current page evidence, even if sibling or future planner steps remain.",
+          "- Treat later planner steps as sequencing context only; execute them only when they are required to satisfy this current node.",
+          "- Validate planner assumptions against the current page before acting.",
+          "- Use prior context only to avoid duplicate work or preserve requested literals.",
+          "- If verifier requested reroute or retry, adapt strategy before acting.",
+          ...(node.reflexionLog.length > 0
+            ? [
+                "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
+              ]
+            : []),
+        ]
+      : [
+          "Execution policy:",
+          "- Prioritize the current step objective, but complete every requirement stated in the Objective and Success criteria before calling done().",
+          "- Treat later planner steps as sequencing context; do not call done() while an explicit requested step remains unfinished.",
+          "- Validate planner assumptions against the current page before acting.",
+          "- Use prior context only to avoid duplicate work or preserve requested literals.",
+          "- If verifier requested reroute or retry, adapt strategy before acting.",
+          ...(node.reflexionLog.length > 0
+            ? [
+                "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
+                "- Call done() only when success criteria are satisfied.",
+              ]
+            : ["- Call done() only when success criteria are satisfied."]),
+        ];
   if (reflexionContext) {
     sections.push(
       "Prior attempt analysis (DO NOT repeat these failures):",
@@ -608,18 +641,7 @@ export function buildExecutorInstruction(
     "Handoff context:",
     handoffBrief,
     "",
-    "Execution policy:",
-    "- Prioritize the current step objective, but complete every requirement stated in the Objective and Success criteria before calling done().",
-    "- Treat later planner steps as sequencing context; do not call done() while an explicit requested step remains unfinished.",
-    "- Validate planner assumptions against the current page before acting.",
-    "- Use prior context only to avoid duplicate work or preserve requested literals.",
-    "- If verifier requested reroute or retry, adapt strategy before acting.",
-    ...(node.reflexionLog.length > 0
-      ? [
-          "- CRITICAL: Prior attempts failed. Study the failure analysis above and use a fundamentally different strategy.",
-          "- Call done() only when success criteria are satisfied.",
-        ]
-      : ["- Call done() only when success criteria are satisfied."]),
+    ...executionPolicy,
   );
 
   sections.push(...buildExecutorParallelContextSection(parallelContext));

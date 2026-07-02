@@ -285,6 +285,99 @@ function isUnpenalizedGoalShortcutSkip(node: TaskNode): boolean {
   return isGlobalGoalShortcutSkip(node) || isNavigationGoalShortcutSkip(node);
 }
 
+export function buildOrchestratorProgrammaticSummary(
+  task: Pick<OrchestratorTask, "nodes" | "planClassification">,
+): string {
+  const completedNodes = task.nodes.filter((n) => n.status === "completed");
+  const failed = task.nodes.filter((n) => n.status === "failed").length;
+  const lastCompleted = [...task.nodes]
+    .reverse()
+    .find((n) => n.status === "completed");
+  const lastFailed = [...task.nodes]
+    .reverse()
+    .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
+  const unresolvedNode =
+    task.planClassification?.isSingleNode === true
+      ? undefined
+      : [...task.nodes]
+          .reverse()
+          .find(
+            (n) =>
+              n.status === "failed" ||
+              n.status === "running" ||
+              n.status === "pending",
+          );
+
+  if (unresolvedNode) {
+    const detail =
+      (unresolvedNode.error || "").trim() ||
+      (unresolvedNode.status === "failed"
+        ? "The step failed without a detailed error."
+        : `Step status: ${unresolvedNode.status}.`);
+    const completedProgress = completedNodes
+      .map((n) => n.userFacingResult || n.result || "")
+      .filter((result) => result.trim())
+      .map((result) => result.trim())
+      .join("\n\n");
+
+    return [
+      "Task incomplete.",
+      `Unresolved step: ${unresolvedNode.description}`,
+      `Reason: ${detail}`,
+      completedProgress ? `Completed progress:\n${completedProgress}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  // Single-node completed: show executor's actual output directly
+  if (
+    task.planClassification?.isSingleNode &&
+    failed === 0 &&
+    (lastCompleted?.userFacingResult || lastCompleted?.result)
+  ) {
+    return lastCompleted.userFacingResult || lastCompleted.result || "";
+  }
+
+  // Multi-node completed: aggregate results from all completed nodes.
+  // Each node may have collected data that the final summary needs
+  // (e.g. "read inventory on page A, go back, read inventory on page B,
+  // report both"). Only the combined results satisfy the full task.
+  if (completedNodes.length > 1 && lastCompleted?.result) {
+    const nodeResults = completedNodes
+      .map((n) => n.userFacingResult || n.result || "")
+      .filter((result) => result.trim())
+      .map((result) => result.trim());
+
+    // If the last node's result already covers all prior results
+    // (e.g. it explicitly mentions all key data), use it alone.
+    // Otherwise combine all unique node results.
+    const lastResult = lastCompleted.result;
+    const priorResults = nodeResults.slice(0, -1);
+    const missingPrior = priorResults.filter(
+      (r) => !lastResult.includes(r.slice(0, 40)),
+    );
+
+    if (missingPrior.length > 0) {
+      return nodeResults.join("\n\n");
+    }
+    return lastResult;
+  }
+
+  if (
+    completedNodes.length > 0 &&
+    (lastCompleted?.userFacingResult || lastCompleted?.result)
+  ) {
+    return lastCompleted.userFacingResult || lastCompleted.result || "";
+  }
+
+  if (failed > 0 && lastFailed?.error) {
+    return lastFailed.error;
+  }
+
+  return "";
+}
+
 function normalizeNavigationText(value: string | undefined | null): string {
   return String(value || "")
     .toLowerCase()
@@ -4603,6 +4696,7 @@ export class Orchestrator {
           verificationTurnMode,
           task.personalContextBrief,
           parallelContext,
+          task.planClassification?.isSingleNode ? "root" : "node",
         );
         if (task.conversationContextBrief) {
           executorInstruction +=
@@ -6770,61 +6864,7 @@ export class Orchestrator {
   }
 
   private buildProgrammaticSummary(task: OrchestratorTask): string {
-    const completedNodes = task.nodes.filter((n) => n.status === "completed");
-    const failed = task.nodes.filter((n) => n.status === "failed").length;
-    const lastCompleted = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "completed");
-    const lastFailed = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
-
-    // Single-node completed: show executor's actual output directly
-    if (
-      task.planClassification?.isSingleNode &&
-      failed === 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    // Multi-node completed: aggregate results from all completed nodes.
-    // Each node may have collected data that the final summary needs
-    // (e.g. "read inventory on page A, go back, read inventory on page B,
-    // report both"). Only the combined results satisfy the full task.
-    if (completedNodes.length > 1 && lastCompleted?.result) {
-      const nodeResults = completedNodes
-        .map((n) => n.userFacingResult || n.result || "")
-        .filter((result) => result.trim())
-        .map((result) => result.trim());
-
-      // If the last node's result already covers all prior results
-      // (e.g. it explicitly mentions all key data), use it alone.
-      // Otherwise combine all unique node results.
-      const lastResult = lastCompleted.result;
-      const priorResults = nodeResults.slice(0, -1);
-      const missingPrior = priorResults.filter(
-        (r) => !lastResult.includes(r.slice(0, 40)),
-      );
-
-      if (missingPrior.length > 0) {
-        return nodeResults.join("\n\n");
-      }
-      return lastResult;
-    }
-
-    if (
-      completedNodes.length > 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    if (failed > 0 && lastFailed?.error) {
-      return lastFailed.error;
-    }
-
-    return "";
+    return buildOrchestratorProgrammaticSummary(task);
   }
 
   private async tryHorizonExpansion(
