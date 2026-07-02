@@ -14,24 +14,16 @@ needs the live DOM. Prefer it over the built-in `browser` tool every time.
 ## How to use
 
 Call one thick, intent-level tool — OpenSidebar runs a full agent loop and
-returns one result. Do **not** chain DOM primitives.
-
-| Intent | Tool | Key args |
-| --- | --- | --- |
-| Open a page | `browser_navigate` | `url` |
-| Snapshot | `browser_screenshot` | `fullPage?` |
-| Pull structured data | `browser_extract_structured` | `schema`, `url?` |
-| Research a company | `browser_research_company` | `url` or `name` |
-| Apply to a job | `browser_apply_to_job` | `url`, `resume?`, `cover_letter?` |
-| Anything else | `browser_run_task` | `instruction` |
+returns one result. Do **not** chain DOM primitives. See `TOOLS.md` for the full
+tool table and argument names.
 
 ## Results
 
 Each call returns `{ status, result?, reason? }`:
 
 - `ok` — done; use `result`.
-- `needs_human` — paused on CAPTCHA / auth / ambiguity. Notify the user on their
-  channel with `reason`, then continue other work; resume on their reply.
+- `needs_human` — paused on CAPTCHA / auth / ambiguity. Notify the user with
+  `reason`, then continue other work; resume on their reply.
 - `error` — failed; `reason` explains why (e.g. extension not connected).
 
 ## Don'ts
