@@ -60,11 +60,21 @@ export async function setup(): Promise<void> {
     return;
   }
 
+  let stderr = "";
   logServerProcess = spawn(process.execPath, [TSX_CLI, LOG_SERVER_SCRIPT], {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     shell: false,
     windowsHide: true,
+    env: {
+      ...process.env,
+      LOG_SERVER_PORT: String(LOG_SERVER_PORT),
+      LOG_SERVER_SKIP_TRACE_WARMUP: "1",
+    },
+  });
+  logServerProcess.stdout?.resume();
+  logServerProcess.stderr?.on("data", (chunk) => {
+    stderr += String(chunk);
   });
 
   const started = await waitForServer(
@@ -74,8 +84,11 @@ export async function setup(): Promise<void> {
   if (!started) {
     logServerProcess.kill();
     logServerProcess = null;
+    const detail = stderr.trim();
     throw new Error(
-      `[global-setup] Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms`,
+      detail
+        ? `[global-setup] Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms: ${detail}`
+        : `[global-setup] Log server failed to start within ${LOG_SERVER_START_TIMEOUT_MS}ms`,
     );
   }
   console.log("[global-setup] Log server started on port", LOG_SERVER_PORT);

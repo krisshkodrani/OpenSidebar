@@ -66,6 +66,25 @@ Every successCriteria MUST contain concrete, DOM-observable tokens — product n
 - GOOD: "Form shows Step 2 heading, category dropdown visible"
 - GOOD: "Order confirmation page with order ID visible"
 Extract key nouns and values from the objective to build the criteria.
+
+REQUESTED ATTRIBUTE / FACT COMPLETION:
+When the user asks for a specific attribute, fact, status, availability, date,
+price, spec, rating, count, filter result, amenity, nearby item, activity, or
+calculator output about an entity, plan until that requested attribute itself is
+directly observed or derived from page/tool evidence.
+- Seeing the entity name, search result, listing card, category page, or detail
+  page title is only intermediate evidence unless it also contains the requested
+  attribute.
+- If the attribute is likely behind another view, detail page, expanded section,
+  filter panel, calendar, modal, tab, or result page, add an explicit step to
+  open or expand that view and inspect it.
+- The final step must report the requested attribute itself, or state it was not
+  found only after inspecting the most specific available page/view for the
+  entity or filtered result set.
+- BAD: "Search for the target entity and verify it appears in results."
+- GOOD: "Open the target result/detail page and read the requested availability
+  date/spec/amenity/filter result; final answer includes that value or a grounded
+  not-found statement."
 - STOP CONDITIONS: If the user specifies a stop condition ("stop at X", "report when Y"), the LAST subtask must be the stop/report action. Do NOT add subtasks beyond the user's stop point. Add a verifyAfter gate with action "call_done" on the final stop subtask.
 - SUBTASK INDEPENDENCE: Each subtask description must be self-contained.
   - A subtask should be completable using the DOM state and its own description.

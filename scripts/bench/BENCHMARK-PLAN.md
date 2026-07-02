@@ -7,7 +7,7 @@ on top of two companions and does not duplicate them:
 - Architecture, flags, judging, safety → [README.md](./README.md)
 - Per-phase operator mechanics & honesty gates → [RUN-CHECKLIST.md](./RUN-CHECKLIST.md)
 
-Authored 2026-06-14. Owner: Kris. Status: **blocked on one live executor key** (see §2).
+Authored 2026-06-14. Updated 2026-06-15. Owner: Kris. Status: **ready for paired Fireworks smoke**.
 
 ---
 
@@ -31,38 +31,19 @@ outside a sanctioned sandbox; publishing a single cherry-picked config.
 
 ---
 
-## 2. Current-state assessment (2026-06-14) — the one blocker
+## 2. Current-state assessment (2026-06-15)
 
 | Gate | State |
 | --- | --- |
-| Build / `dist/` | ✅ green (built 2026-06-14) |
+| Build / `dist/` | Preflight rebuilds before paid inference |
 | Task set (300) | ✅ `tasks/online-mind2web.json` (80 easy / 141 medium / 79 hard) |
 | Judge key | ✅ `OPENAI_API_KEY` → auto-fallback to OpenAI direct, `gpt-5.4-mini` |
 | HF token | ✅ present (only needed to re-fetch tasks) |
-| **Executor key** | ❌ **none live — this is the only blocker** |
+| **Executor key** | ✅ `FIREWORKS_API_KEY` available |
 
-**Why there is no live executor today.** `.env` holds `DEEPSEEK_API_KEY`,
-`FIREWORKS_API_KEY`, `OPENAI_API_KEY`. But:
-
-- `FIREWORKS_API_KEY` is **dead** (401 on a real completion, verified 2026-06-11).
-- `E2E_PROVIDER=deepseek` is **not** a standalone DeepSeek executor. It resolves
-  to the `fireworks-deepseek` **hybrid** (`detectProviderMode`), and the hybrid's
-  active completion key is the **Fireworks** key
-  (`loadActiveProviderApiKey`: `fireworksKey && deepseekKey ? fireworksKey : undefined`).
-  Dead Fireworks key ⇒ hybrid is dead too.
-- No `OPENROUTER_API_KEY` / Groq / Moonshot / Xiaomi key is present, so every
-  other provider mode is also unkeyed.
-
-**Decision — pick ONE to unblock (cheapest first):**
-
-| Option | Effort | Unlocks | Recommendation |
-| --- | --- | --- | --- |
-| **A. Replace `FIREWORKS_API_KEY`** | new key at app.fireworks.ai | `fireworks` flagship **and** the `deepseek` hybrid (1 key → 2 configs) | **Primary** — best config coverage for one action |
-| B. Add `OPENROUTER_API_KEY` | new key at openrouter.ai | `openrouter / openai/gpt-5.4-mini` (pure single-provider) | Good standalone/extra config |
-| C. Add a Groq/Moonshot key | new key | speed-focused single config | Optional |
-
-The 6-task smoke (§5 Phase 1) is the **go/no-go** that confirms whichever key is
-provisioned actually completes.
+The paid Kimi K2.7 probe and paired six-task smoke (§5 Phase 1) are still the
+go/no-go checks for exact model routing, multimodal function calling, credits,
+browser execution, judging, and receipt generation.
 
 ---
 
@@ -82,14 +63,14 @@ Any change to these = a new campaign, not a comparable config.
 
 | Slot | `E2E_PROVIDER` | `E2E_MODEL` | `--config-label` | Key needed | Status |
 | --- | --- | --- | --- | --- | --- |
-| **A — flagship** | `fireworks` | `kimi-k2p6-turbo` | `fireworks / kimi-k2p6-turbo` | replaced Fireworks key | gated on §2-A |
-| **B — second** | `deepseek` | `deepseek-v3.2` | `deepseek / v3.2` | Fireworks **and** DeepSeek keys (hybrid) | gated on §2-A |
-| **C — optional third** | `openrouter` | `openai/gpt-5.4-mini` | `openrouter / gpt-5.4-mini` | `OPENROUTER_API_KEY` | gated on §2-B |
+| **A — flagship** | `fireworks` | `kimi-k2p6-turbo` | `fireworks / kimi-k2p6-turbo` | Fireworks key | ready |
+| **Candidate smoke** | `fireworks` | `accounts/fireworks/models/kimi-k2p7-code` | `fireworks / kimi-k2p7-code (smoke)` | Fireworks key | compatibility candidate only |
+| **B — second** | `deepseek` | `deepseek-v3.2` | `deepseek / v3.2` | Fireworks **and** DeepSeek keys (hybrid) | ready after smoke |
+| **C — optional third** | `openrouter` | `openai/gpt-5.4-mini` | `openrouter / gpt-5.4-mini` | `OPENROUTER_API_KEY` | optional key not present |
 
-Publish **2 minimum** (A + B once the Fireworks key is replaced). Add C if a
-third, independent executor is wanted for credibility. (Model id `deepseek-v3.2`
-is the working label; confirm it resolves in the Phase-1 smoke and correct here
-if the provider expects a different string.)
+Publish **2 minimum** from the launch matrix. K2.7 is not promoted or published
+as a headline config from a six-task smoke; it needs a larger comparable sweep
+and the normal honesty gates first.
 
 ---
 
@@ -98,20 +79,18 @@ if the provider expects a different string.)
 Operator detail for each phase is in [RUN-CHECKLIST.md](./RUN-CHECKLIST.md); the
 exact commands for *this* campaign are below. Run from repo root.
 
-### Phase 0 — Unblock + freeze (minutes)
-- Provision one executor key per §2. `git status` clean; `dist/` current (it is).
+### Phase 0 — Preflight + freeze (minutes)
+- Run focused tests, typecheck, and build before paid inference.
 - Confirm `.env` judge key present. Do **not** start with uncommitted runtime changes.
 
-### Phase 1 — Pipeline smoke, ~pennies — **GO/NO-GO on the key**
+### Phase 1 — Paired K2.6/K2.7 smoke, ~pennies — **GO/NO-GO**
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
-  pnpm run bench -- --tasks scripts/bench/tasks/sample.json \
-  --config-label "fireworks / kimi-k2p6-turbo (smoke)"
+pnpm run bench:smoke:kimi-k2p7
 ```
-GO if: artifacts written (`report.md`, `summary.json`, `results.json`,
-`receipts/<task>/*.jsonl`), **every** task got a judge verdict (no "evidence
-without verdicts" warning), and one receipt + one trace read sensibly.
-NO-GO ⇒ the key is dead/misrouted; fix before spending on browser time.
+GO if: the exact K2.7 model passes the red-image required-tool probe; both
+configs produce six evidence files, judge verdicts, and trace receipts; and
+`comparison.json` / `comparison.md` are written. This establishes compatibility
+only and does not change the K2.6 production default.
 
 ### Phase 2 — Calibration, ~30–60 min, small spend
 ```bash
@@ -172,8 +151,8 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 | Risk | Mitigation |
 | --- | --- |
-| Executor key dead/misrouted | Phase-1 smoke is the gate; never sweep before it passes |
-| `deepseek` hybrid silently uses dead Fireworks key | §2 documents the dependency; replacing the Fireworks key fixes both A and B |
+| Executor key invalid/misrouted | Phase-1 smoke is the gate; never sweep before it passes |
+| `deepseek` hybrid depends on Fireworks executor routing | Keep both Fireworks and DeepSeek keys healthy before Config B |
 | Headed Chrome instability / machine sleep | Disable sleep; one config at a time; partial runs recoverable via `--judge-only` |
 | Judge miscalibration | Hand-check in Phase 2; re-score free with `--judge-only`; swap `BENCH_JUDGE_MODEL` if needed |
 | High write-skip rate shrinks denominator | Report skips separately; carry the scored-n and a small-n caveat |
@@ -183,8 +162,8 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 ## 8. Order of operations (today)
 
-1. Provision one executor key (§2-A preferred).
-2. Phase 1 smoke → GO/NO-GO.
+1. Phase 0 preflight.
+2. Phase 1 paired K2.6/K2.7 smoke → GO/NO-GO.
 3. Phase 2 calibration → fill §6 budget; sanity-check the judge.
 4. Phase 3 sweep Config A, then Config B (n=100, seed 0).
 5. Phase 5 verify 20% sample each → publish A + B.

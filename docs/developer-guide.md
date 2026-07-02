@@ -95,6 +95,7 @@ The supported public E2E environment surface is intentionally small:
 | `E2E_PROFILE` | Selects defaults: `local`, `ci`, `debug`, `video`, or `headed`. |
 | `E2E_PROVIDER` | Selects the agent provider. Default is `fireworks`. |
 | `E2E_MODEL` | Overrides the executor model for focused runs. |
+| `E2E_PLANNER_MODEL` | Overrides the planner model for focused runs. |
 | `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`. |
 | `E2E_SUITE_FLAGS` | Comma-separated optional gates such as `backend-durable`, `backend-profile`, `memory-long`, `diagnostic`, or `single-process`. |
 | `E2E_ARTIFACTS` | Comma-separated artifact/browser flags such as `video`, `screenshots`, `panel`, `detached-panel`, `no-panel`, `headed`, or `headless`. |

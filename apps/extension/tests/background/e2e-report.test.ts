@@ -214,6 +214,7 @@ describe("e2e report helper", () => {
         provider: "fireworks",
         lane: "dev",
         configuredExecutorModel: "openai/gpt-5.4-mini",
+        configuredPlannerModel: "accounts/fireworks/models/kimi-k2p7-code",
         diagnosticMode: false,
       },
       new Date("2026-04-18T12:34:56.000Z"),
@@ -222,7 +223,7 @@ describe("e2e report helper", () => {
     expect(markdown).toContain("# E2E Final Report");
     expect(markdown).toContain("Date: 2026-04-18 12:34:56 UTC");
     expect(markdown).toContain(
-      "Scope: 1 case(s); lane=dev; provider=fireworks; executor=openai/gpt-5.4-mini; diagnostic=off",
+      "Scope: 1 case(s); lane=dev; provider=fireworks; executor=openai/gpt-5.4-mini; planner=accounts/fireworks/models/kimi-k2p7-code; diagnostic=off",
     );
     expect(markdown).toContain("Overall result: 1/1 passed");
     expect(markdown).toContain(

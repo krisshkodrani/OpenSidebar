@@ -28,6 +28,7 @@ export interface ExtensionContext {
   serviceWorker: WebWorker;
   serviceWorkerTarget: Target;
   serviceWorkerUrl: string;
+  webgl: WebGLPreflightResult;
   helperPage?: Page | null;
   detachedPanelPage?: Page | null;
   detachedPanelWindowId?: number | null;
@@ -35,6 +36,19 @@ export interface ExtensionContext {
   detachedPanelWorkspaceId?: string | null;
   inPagePanelTargetTabId?: number | null;
   inPagePanelWorkspaceId?: string | null;
+}
+
+export interface ChromeLaunchArgsOptions {
+  headless: boolean;
+  singleProcess?: boolean;
+  extensionPath?: string;
+}
+
+export interface WebGLPreflightResult {
+  available: boolean;
+  renderer?: string;
+  vendor?: string;
+  error?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -54,6 +68,7 @@ const DEFAULT_EXTENSION_PAGE_LOAD_TIMEOUT_MS = 15_000;
 const DEFAULT_CONTENT_SCRIPT_READY_TIMEOUT_MS = 15_000;
 const DEFAULT_PAGE_CLOSE_TIMEOUT_MS = 2_000;
 const DEFAULT_PANEL_CLOSE_TIMEOUT_MS = 1_500;
+const DEFAULT_WEBGL_PREFLIGHT_TIMEOUT_MS = 5_000;
 const REUSED_OVERLAY_READY_TIMEOUT_MS = 1_500;
 const SERVICE_WORKER_TARGET_TIMEOUT_MS = 30_000;
 const execFileAsync = promisify(execFile);
@@ -72,6 +87,12 @@ function shouldRunHeadless(): boolean {
 
 function shouldUseSingleProcessChrome(): boolean {
   return readE2EConfig().browser.singleProcess;
+}
+
+function shouldRequireWebGLPreflight(): boolean {
+  const config = readE2EConfig();
+  if (config.suiteFlags.has("no-webgl-preflight")) return false;
+  return Boolean(process.env.BENCH_TASKS_FILE);
 }
 
 export function getE2EPanelMode(): E2EPanelMode {
@@ -164,6 +185,108 @@ async function createBrowserPage(browser: Browser): Promise<Page> {
   }
 }
 
+export function buildChromeLaunchArgs({
+  headless,
+  singleProcess = false,
+  extensionPath = DIST_PATH,
+}: ChromeLaunchArgsOptions): string[] {
+  return [
+    `--disable-extensions-except=${extensionPath}`,
+    `--load-extension=${extensionPath}`,
+    "--no-first-run",
+    "--no-sandbox",
+    "--disable-search-engine-choice-screen",
+    ...(singleProcess ? ["--single-process"] : []),
+    ...(headless
+      ? [
+          "--use-angle=swiftshader",
+          "--enable-unsafe-swiftshader",
+          `--window-size=${HEADLESS_VIEWPORT.width},${HEADLESS_VIEWPORT.height}`,
+        ]
+      : ["--start-maximized"]),
+  ];
+}
+
+export async function checkWebGLSupport(
+  page: Page,
+): Promise<WebGLPreflightResult> {
+  return page.evaluate(() => {
+    try {
+      const canvas = document.createElement("canvas");
+      const getContext = canvas.getContext.bind(canvas) as (
+        contextId: string,
+        options?: WebGLContextAttributes,
+      ) => RenderingContext | null;
+      const contextOptions: WebGLContextAttributes = {
+        failIfMajorPerformanceCaveat: false,
+      };
+      const context =
+        getContext("webgl2", contextOptions) ??
+        getContext("webgl", contextOptions) ??
+        getContext("experimental-webgl", contextOptions);
+
+      if (!context || !("getParameter" in context)) {
+        return {
+          available: false,
+          error: "canvas.getContext('webgl') returned null",
+        };
+      }
+
+      const gl = context as WebGLRenderingContext | WebGL2RenderingContext;
+      const debugInfo = gl.getExtension("WEBGL_debug_renderer_info") as
+        | {
+            UNMASKED_VENDOR_WEBGL: number;
+            UNMASKED_RENDERER_WEBGL: number;
+          }
+        | null;
+      const vendor =
+        debugInfo != null
+          ? String(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL))
+          : String(gl.getParameter(gl.VENDOR));
+      const renderer =
+        debugInfo != null
+          ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL))
+          : String(gl.getParameter(gl.RENDERER));
+
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return { available: true, vendor, renderer };
+    } catch (error) {
+      return {
+        available: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+}
+
+export function formatWebGLPreflightFailure(
+  result: WebGLPreflightResult,
+): string {
+  const detail = result.error ? ` Detail: ${result.error}` : "";
+  const renderer = result.renderer ? ` Renderer: ${result.renderer}.` : "";
+  const vendor = result.vendor ? ` Vendor: ${result.vendor}.` : "";
+  return (
+    "E2E browser WebGL preflight failed. Live benchmark pages such as " +
+    "Recreation.gov require WebGL, so continuing would turn an environment " +
+    `problem into a task failure.${detail}${vendor}${renderer}`
+  );
+}
+
+async function runWebGLPreflight(
+  browser: Browser,
+): Promise<WebGLPreflightResult> {
+  const page = await createBrowserPage(browser);
+  try {
+    return await withTimeout(
+      checkWebGLSupport(page),
+      DEFAULT_WEBGL_PREFLIGHT_TIMEOUT_MS,
+      "WebGL preflight",
+    );
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
 async function waitForLiveServiceWorker(
   browser: Browser,
   extensionId: string,
@@ -221,25 +344,13 @@ async function waitForLiveServiceWorker(
  */
 export async function launchWithExtension(): Promise<ExtensionContext> {
   const headless = shouldRunHeadless();
+  const singleProcess = shouldUseSingleProcessChrome();
   const browser = await puppeteer.launch({
     headless,
     enableExtensions: true,
     waitForInitialPage: false,
     defaultViewport: headless ? HEADLESS_VIEWPORT : null,
-    args: [
-      `--disable-extensions-except=${DIST_PATH}`,
-      `--load-extension=${DIST_PATH}`,
-      "--no-first-run",
-      "--no-sandbox",
-      "--disable-gpu",
-      "--disable-gpu-sandbox",
-      "--in-process-gpu",
-      "--disable-search-engine-choice-screen",
-      ...(shouldUseSingleProcessChrome() ? ["--single-process"] : []),
-      headless
-        ? `--window-size=${HEADLESS_VIEWPORT.width},${HEADLESS_VIEWPORT.height}`
-        : "--start-maximized",
-    ],
+    args: buildChromeLaunchArgs({ headless, singleProcess }),
   });
 
   let swTarget: Target;
@@ -269,12 +380,23 @@ export async function launchWithExtension(): Promise<ExtensionContext> {
   }
   const extensionId = match[1];
 
+  const webgl = await runWebGLPreflight(browser);
+  if (!webgl.available) {
+    const detail = formatWebGLPreflightFailure(webgl);
+    if (shouldRequireWebGLPreflight()) {
+      await closeExtension({ browser } as ExtensionContext);
+      throw new Error(detail);
+    }
+    console.warn(`[e2e] ${detail}`);
+  }
+
   return {
     browser,
     extensionId,
     serviceWorker,
     serviceWorkerTarget: swTarget,
     serviceWorkerUrl: swUrl,
+    webgl,
     helperPage: null,
     detachedPanelPage: null,
     detachedPanelWindowId: null,

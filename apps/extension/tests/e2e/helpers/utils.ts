@@ -666,6 +666,66 @@ export async function getActiveTabId(worker: WebWorker): Promise<number> {
 }
 
 /**
+ * Resolve the live Chrome tab that backs a specific Puppeteer page.
+ *
+ * Headed runs can briefly leave a blank helper tab active even after
+ * Page.bringToFront(), so matching the navigated URL is more reliable than
+ * trusting chrome.tabs.query({ active: true }).
+ */
+export async function getTabIdForPage(
+  worker: WebWorker,
+  page: Page,
+  timeoutMs: number = 10_000,
+): Promise<number> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (page.isClosed()) {
+      throw new Error("Cannot resolve a Chrome tab for a closed page.");
+    }
+    const expectedUrl = page.url();
+    const tabId = await worker.evaluate(async (targetUrl: string) => {
+      const normalize = (value: unknown): string | null => {
+        if (typeof value !== "string" || value.length === 0) return null;
+        try {
+          const url = new URL(value);
+          url.hash = "";
+          return url.toString();
+        } catch {
+          return value;
+        }
+      };
+      const normalizedTarget = normalize(targetUrl);
+      const tabs = await (globalThis as any).chrome.tabs.query({});
+      const exactMatches = tabs.filter((tab: any) =>
+        [tab?.url, tab?.pendingUrl].some((candidate) => candidate === targetUrl),
+      );
+      const normalizedMatches = tabs.filter((tab: any) =>
+        [tab?.url, tab?.pendingUrl].some(
+          (candidate) => normalize(candidate) === normalizedTarget,
+        ),
+      );
+      const matches =
+        exactMatches.length > 0 ? exactMatches : normalizedMatches;
+      const selected =
+        matches.find((tab: any) => tab?.active === true) ?? matches[0];
+      if (typeof selected?.id !== "number") return -1;
+      try {
+        const liveTab = await (globalThis as any).chrome.tabs.get(selected.id);
+        return typeof liveTab?.id === "number" ? liveTab.id : -1;
+      } catch {
+        return -1;
+      }
+    }, expectedUrl);
+    if (tabId > 0) return tabId;
+    await page.bringToFront().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs}ms resolving Chrome tab for ${page.url()}`,
+  );
+}
+
+/**
  * Send a DOM_SNAPSHOT_REQUEST to a tab via the service worker and return the snapshot.
  * Retries up to `maxRetries` times if the content script isn't ready yet.
  */
