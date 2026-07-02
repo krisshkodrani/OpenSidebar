@@ -11,6 +11,9 @@ score with re-openable receipts. No product-runtime code lives here.
 # Smoke the whole pipeline on the bundled read-only sample (needs a provider key):
 pnpm run bench
 
+# Preflight, probe Kimi K2.7 Code, then compare K2.6 and K2.7 on the same sample:
+pnpm run bench:smoke:kimi-k2p7
+
 # Vendor the official task set (gated dataset — accept its terms first):
 export HF_TOKEN=hf_xxx
 pnpm run bench:fetch
@@ -44,10 +47,17 @@ only via `pnpm run bench`.
 
 ## Model configs
 
-A "config" is just the executor pairing the runner injects:
-`E2E_PROVIDER` + `E2E_MODEL`. Run the sweep once per config you want to publish
-(this is a BYOK scaffold — the scaffold is the product, so publish 2–3 configs
-rather than one cherry-picked pairing).
+A "config" is the provider plus executor/planner pairing the runner injects:
+`E2E_PROVIDER` + `E2E_MODEL` + optional `E2E_PLANNER_MODEL`. The writer remains
+unset by the harness and therefore inherits the executor. Run the sweep once per
+config you want to publish (this is a BYOK scaffold — the scaffold is the
+product, so publish 2–3 configs rather than one cherry-picked pairing).
+
+Fireworks Kimi K2.6 Turbo remains the production default. Kimi K2.7 Code
+(`accounts/fireworks/models/kimi-k2p7-code`) is a manually selectable candidate.
+The paired six-task smoke writes `probe.json`, per-config receipts, and
+`comparison.json` / `comparison.md` under one timestamped artifact directory.
+Treat that smoke as compatibility evidence only, not headline performance.
 
 ## Judging (WebJudge)
 
@@ -86,6 +96,7 @@ sanctions the mutation.
 
 ```
 pnpm run bench [--tasks <file>] [--size <n>] [--levels easy,medium,hard]
+               [--task-ids <id,id,...>]
                [--seed <n>] [--max-turns <n>] [--config-label <s>]
                [--run-dir <dir>] [--no-build] [--no-judge] [--judge-only]
                [--allow-writes]

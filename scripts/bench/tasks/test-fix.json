@@ -1,0 +1,22 @@
+{
+  "source": "osunlp/Online-Mind2Web",
+  "revision": "main",
+  "license": "CC-BY-4.0",
+  "note": "Fetched 2026-06-11T13:42:52.754Z from Hugging Face. Normalized to BenchTask schema.",
+  "tasks": [
+    {
+      "task_id": "0a0fa834ce41b5297c6474293383759d_110325",
+      "confirmed_task": "What are the onboard activities of the cheapest cruise, departing from Los Angeles that lasts at least 8 days?",
+      "website": "https://www.carnival.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "1223b07536a87e0170ff87cbbebd1d3c",
+      "confirmed_task": "Complete a multiplication quiz on https://www.coolmath4kids.com/, covering multiplication facts for 11-12. The quiz should consist of 10 questions, with unlimited time allowed for each. The goal is to achieve a perfect score of 10 out of 10.",
+      "website": "https://www.coolmath4kids.com/",
+      "level": "hard",
+      "reference_length": 24
+    }
+  ]
+}

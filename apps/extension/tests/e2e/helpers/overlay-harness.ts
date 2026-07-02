@@ -612,7 +612,8 @@ export async function createOverlayHarnessRunner(
       args: [
         "--no-first-run",
         "--disable-search-engine-choice-screen",
-        "--disable-gpu",
+        "--use-angle=swiftshader",
+        "--enable-unsafe-swiftshader",
         "--no-sandbox",
         "--disable-setuid-sandbox",
       ],

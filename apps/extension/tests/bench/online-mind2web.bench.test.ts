@@ -23,12 +23,13 @@
  */
 
 import { describe, it, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { basename, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { createE2EHarness } from "../e2e/helpers/harness";
+import { readE2EConfig } from "../e2e/helpers/e2e-config";
 import {
-  getActiveTabId,
+  getTabIdForPage,
   navigateAndWait,
   sendUserChat,
   updateUserSettings,
@@ -61,6 +62,7 @@ const TASKS_OUT_DIR = join(RUN_DIR, "tasks");
 const MAX_TURNS = envInt("BENCH_MAX_TURNS", 25);
 const TASK_TIMEOUT_MS = envInt("BENCH_TASK_TIMEOUT_MS", 300_000);
 const ALLOW_WRITES = process.env.BENCH_ALLOW_WRITES === "1";
+const E2E_CONFIG = readE2EConfig();
 
 function resolveSubset(): BenchTask[] {
   const file = loadTaskFile(TASKS_FILE);
@@ -70,11 +72,20 @@ function resolveSubset(): BenchTask[] {
     .filter((s): s is BenchDifficulty =>
       ["easy", "medium", "hard"].includes(s),
     );
-  return selectStratifiedSubset(file.tasks, {
+  const selected = selectStratifiedSubset(file.tasks, {
     size: process.env.BENCH_SIZE ? envInt("BENCH_SIZE", 0) : undefined,
     levels: levels.length > 0 ? levels : undefined,
     seed: envInt("BENCH_SEED", 0),
   });
+  const taskIds = new Set(
+    (process.env.BENCH_TASK_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  return taskIds.size > 0
+    ? selected.filter((task) => taskIds.has(task.task_id))
+    : selected;
 }
 
 const tasks = resolveSubset();
@@ -187,7 +198,7 @@ describe.skipIf(!h.apiKey || tasks.length === 0)(
           const startedAt = Date.now();
           await navigateAndWait(h.page, task.website, { timeoutMs: 60_000 });
           await h.page.bringToFront();
-          const tabId = await getActiveTabId(h.ctx.serviceWorker);
+          const tabId = await getTabIdForPage(h.ctx.serviceWorker, h.page);
 
           const workspaceId = await sendUserChat(
             h.ctx,
@@ -237,16 +248,39 @@ describe.skipIf(!h.apiKey || tasks.length === 0)(
 if (tasks.length > 0) {
   mkdirSync(RUN_DIR, { recursive: true });
   const file = loadTaskFile(TASKS_FILE);
+  const manifestPath = join(RUN_DIR, "manifest.json");
+  let previousTaskIds: string[] = [];
+  if (existsSync(manifestPath)) {
+    try {
+      const previous = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+        taskIds?: unknown;
+      };
+      if (Array.isArray(previous.taskIds)) {
+        previousTaskIds = previous.taskIds.filter(
+          (value): value is string => typeof value === "string",
+        );
+      }
+    } catch {
+      previousTaskIds = [];
+    }
+  }
   writeFileSync(
-    join(RUN_DIR, "manifest.json"),
+    manifestPath,
     `${JSON.stringify(
       {
         source: file.source,
         revision: file.revision,
         license: file.license,
         tasksFile: TASKS_FILE,
-        taskIds: tasks.map((t) => t.task_id),
+        taskIds: [
+          ...new Set([
+            ...previousTaskIds,
+            ...tasks.map((task) => task.task_id),
+          ]),
+        ],
         maxTurns: MAX_TURNS,
+        executorModel: E2E_CONFIG.model ?? null,
+        plannerModel: E2E_CONFIG.plannerModel ?? null,
         generatedAt: new Date().toISOString(),
       },
       null,

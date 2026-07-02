@@ -19,6 +19,7 @@
  *     --tasks <file>     task file (default: online-mind2web.json if present, else sample.json)
  *     --size <n>         stratified subset size (default: all)
  *     --levels <list>    comma list: easy,medium,hard (default: all)
+ *     --task-ids <list>  comma list of exact task IDs (default: all selected)
  *     --seed <n>         subset seed (default: 0)
  *     --max-turns <n>    per-task max turns (default: 25)
  *     --config-label <s> label for the report (default: provider/model)
@@ -60,6 +61,7 @@ interface CliOptions {
   tasksFile: string;
   size?: number;
   levels?: string;
+  taskIds?: string;
   seed: number;
   maxTurns: number;
   configLabel: string;
@@ -85,15 +87,19 @@ function parseArgs(): CliOptions {
   const args = process.argv.slice(2);
   const provider = process.env.E2E_PROVIDER ?? "fireworks";
   const model = process.env.E2E_MODEL ?? "(default)";
+  const plannerModel = process.env.E2E_PLANNER_MODEL ?? "(default)";
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const tasksArg = flagValue(args, "--tasks");
   return {
     tasksFile: tasksArg ? resolve(process.cwd(), tasksArg) : defaultTasksFile(),
     size: flagValue(args, "--size") ? Number(flagValue(args, "--size")) : undefined,
     levels: flagValue(args, "--levels"),
+    taskIds: flagValue(args, "--task-ids"),
     seed: Number(flagValue(args, "--seed") ?? "0"),
     maxTurns: Number(flagValue(args, "--max-turns") ?? "25"),
-    configLabel: flagValue(args, "--config-label") ?? `${provider} / ${model}`,
+    configLabel:
+      flagValue(args, "--config-label") ??
+      `${provider} / executor=${model} / planner=${plannerModel}`,
     runDir:
       flagValue(args, "--run-dir") ??
       resolve(PROJECT_ROOT, ".artifacts/bench", stamp),
@@ -119,6 +125,7 @@ function runVitestBench(options: CliOptions): Promise<number> {
         BENCH_MAX_TURNS: String(options.maxTurns),
         ...(options.size != null ? { BENCH_SIZE: String(options.size) } : {}),
         ...(options.levels ? { BENCH_LEVELS: options.levels } : {}),
+        ...(options.taskIds ? { BENCH_TASK_IDS: options.taskIds } : {}),
         ...(options.allowWrites ? { BENCH_ALLOW_WRITES: "1" } : {}),
       },
     });
@@ -242,11 +249,16 @@ async function judgeAndScore(options: CliOptions): Promise<void> {
 
 async function main(): Promise<void> {
   const options = parseArgs();
+  const executorModel = process.env.E2E_MODEL ?? "(default)";
+  const plannerModel = process.env.E2E_PLANNER_MODEL ?? "(default)";
   mkdirSync(options.runDir, { recursive: true });
   console.log(`[bench] Run dir: ${options.runDir}`);
   console.log(`[bench] Tasks:   ${options.tasksFile}`);
   console.log(`[bench] Config:  ${options.configLabel}`);
+  console.log(`[bench] Executor: ${executorModel}`);
+  console.log(`[bench] Planner:  ${plannerModel}`);
 
+  let runnerFailed = false;
   if (!options.judgeOnly) {
     if (options.build) {
       console.log("[bench] Building extension…");
@@ -258,6 +270,7 @@ async function main(): Promise<void> {
     }
     const exitCode = await runVitestBench(options);
     if (exitCode !== 0) {
+      runnerFailed = true;
       console.warn(
         `[bench] Runner exited ${exitCode}; scoring whatever evidence was produced.`,
       );
@@ -265,6 +278,7 @@ async function main(): Promise<void> {
   }
 
   await judgeAndScore(options);
+  if (runnerFailed) process.exitCode = 1;
 }
 
 main().catch((error) => {

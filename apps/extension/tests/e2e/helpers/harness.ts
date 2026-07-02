@@ -933,12 +933,14 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       } = providerConfig.keys;
       const e2eConfig = readE2EConfig();
       const executorModel = e2eConfig.model;
+      const plannerModel = e2eConfig.plannerModel;
       const temperature = e2eConfig.runtime.temperature;
       const perceptionMode = e2eConfig.perceptionMode;
       suiteReport.setRunMetadata({
         provider: providerMode,
         lane,
         configuredExecutorModel: executorModel ?? null,
+        configuredPlannerModel: plannerModel ?? null,
         diagnosticMode,
       });
       await helper.evaluate(
@@ -953,6 +955,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           kimiKey: string | null,
           xiaomiKey: string | null,
           execModel: string | null,
+          plannerModel: string | null,
           temp: number | null,
           perceptionMode: string | null,
         ) => {
@@ -974,6 +977,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
             providerMode: mode,
           };
           if (execModel) settings.executorModel = execModel;
+          if (plannerModel) settings.plannerModel = plannerModel;
           if (temp !== null) settings.temperature = temp;
           if (perceptionMode) settings.perceptionMode = perceptionMode;
           await chrome.storage.sync.set({ userSettings: settings });
@@ -988,6 +992,7 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         kimiKey ?? null,
         xiaomiKey ?? null,
         executorModel ?? null,
+        plannerModel ?? null,
         temperature ?? null,
         perceptionMode ?? null,
       );

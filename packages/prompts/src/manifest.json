@@ -128,7 +128,7 @@
   {
     "id": "planner.decompose.system",
     "version": "v4",
-    "hash": "d6098a46",
+    "hash": "df97a9c4",
     "description": "Planner decomposition system prompt for the task planner. v4: add requires_tab_management intent flag.",
     "sourcePath": "prompts/runtime/planner/decompose_system.md"
   },

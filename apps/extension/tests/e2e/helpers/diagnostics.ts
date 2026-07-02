@@ -52,6 +52,11 @@ export async function startLogServer(): Promise<void> {
     cwd: PROJECT_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
+    env: {
+      ...process.env,
+      LOG_SERVER_PORT: String(LOG_SERVER_PORT),
+      LOG_SERVER_SKIP_TRACE_WARMUP: "1",
+    },
   });
   logServerProcess.stdout?.resume();
   logServerProcess.stderr?.on("data", (chunk) => {

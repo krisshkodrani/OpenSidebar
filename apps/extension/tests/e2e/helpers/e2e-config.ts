@@ -2,6 +2,7 @@ export const PUBLIC_E2E_ENV_VARS = [
   "E2E_PROFILE",
   "E2E_PROVIDER",
   "E2E_MODEL",
+  "E2E_PLANNER_MODEL",
   "E2E_PERCEPTION_MODE",
   "E2E_SUITE_FLAGS",
   "E2E_ARTIFACTS",
@@ -15,6 +16,7 @@ export interface E2EConfig {
   profile: E2EProfileName;
   provider: string;
   model: string | undefined;
+  plannerModel: string | undefined;
   perceptionMode: string | undefined;
   suiteFlags: Set<string>;
   diagnostic: boolean;
@@ -283,6 +285,7 @@ function buildConfigFromDefaults(profile: E2EProfileName): E2EConfig {
     profile,
     provider: defaults.provider,
     model: undefined,
+    plannerModel: undefined,
     perceptionMode: undefined,
     suiteFlags: new Set(),
     diagnostic: defaults.diagnostic,
@@ -321,6 +324,7 @@ export function readE2EConfig(
   config.model =
     envValue(env, "E2E_MODEL") ??
     warnDeprecated(warnings, env, "E2E_EXECUTOR_MODEL");
+  config.plannerModel = envValue(env, "E2E_PLANNER_MODEL");
   config.perceptionMode = envValue(env, "E2E_PERCEPTION_MODE");
 
   const suiteFlags = parseFlagSet(envValue(env, "E2E_SUITE_FLAGS"));
@@ -477,6 +481,7 @@ export function withE2EConfigEnv(
     E2E_PROFILE: config.profile,
     E2E_PROVIDER: config.provider,
     ...(config.model ? { E2E_MODEL: config.model } : {}),
+    ...(config.plannerModel ? { E2E_PLANNER_MODEL: config.plannerModel } : {}),
     ...(config.perceptionMode
       ? { E2E_PERCEPTION_MODE: config.perceptionMode }
       : {}),

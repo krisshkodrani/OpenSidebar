@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   __testOnly as e2eUtilsTestOnly,
+  getTabIdForPage,
   waitForMonitoredEvent,
   waitForTabCount,
 } from "../e2e/helpers/utils";
@@ -166,6 +167,23 @@ describe("e2e helper semantics", () => {
     await expect(
       waitForTabCount(worker as any, 2, 10_000, "ws-1"),
     ).rejects.toThrow(/Wait for 2 user tabs.*agent_idle_failed:Failed to fetch/);
+    expect(worker.evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves the Chrome tab backing a Puppeteer page after an active-tab race", async () => {
+    const worker = {
+      evaluate: vi.fn().mockResolvedValueOnce(-1).mockResolvedValueOnce(42),
+    };
+    const page = {
+      isClosed: vi.fn(() => false),
+      url: vi.fn(() => "https://example.test/article"),
+      bringToFront: vi.fn(async () => {}),
+    };
+
+    await expect(
+      getTabIdForPage(worker as any, page as any, 1_000),
+    ).resolves.toBe(42);
+    expect(page.bringToFront).toHaveBeenCalledOnce();
     expect(worker.evaluate).toHaveBeenCalledTimes(2);
   });
 

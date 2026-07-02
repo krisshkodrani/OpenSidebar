@@ -6,9 +6,8 @@ failure costs the cheapest possible amount of money and time.
 
 ## Phase 0 — Prerequisites (one-time)
 
-- [ ] **Executor key live.** Default provider is Fireworks; `FIREWORKS_API_KEY`
-      in `.env` must pass a real completion (it was dead on 2026-06-11 — replace
-      at app.fireworks.ai and confirm credits).
+- [x] **Executor key live.** `FIREWORKS_API_KEY` is available in `.env`; the
+      paid probe remains the go/no-go check for model routing and credits.
 - [x] **Judge key.** Falls back to `OPENAI_API_KEY` in `.env` automatically
       (OpenAI direct, `gpt-5.4-mini`). Override via `BENCH_JUDGE_*` if needed.
 - [x] **Task set vendored.** `tasks/online-mind2web.json` (300 tasks: 80 easy /
@@ -21,6 +20,10 @@ failure costs the cheapest possible amount of money and time.
 
 ## Phase 1 — Pipeline smoke (~minutes, pennies)
 
+- [ ] Run the paired K2.6/K2.7 compatibility smoke:
+      `pnpm run bench:smoke:kimi-k2p7`
+- [ ] Confirm the K2.7 probe recognized the red PNG, returned streaming usage,
+      resolved the exact model ID, and emitted a valid required `done` call.
 - [ ] Run the bundled 6-task read-only sample:
       `pnpm run bench -- --tasks scripts/bench/tasks/sample.json --config-label "<provider> / <model> (smoke)"`
 - [ ] Confirm artifacts exist: `report.md`, `summary.json`, `results.json`,
@@ -59,7 +62,8 @@ Provider modes the harness supports: `fireworks` (default), `deepseek`,
 
 | Config (E2E_PROVIDER / E2E_MODEL) | Key in `.env`? | Notes |
 | --- | --- | --- |
-| `fireworks` / kimi-k2p6-turbo (default) | ⚠️ dead — replace first | The flagship config |
+| `fireworks` / kimi-k2p6-turbo (default) | ✅ `FIREWORKS_API_KEY` | Production default and baseline |
+| `fireworks` / kimi-k2p7-code (candidate) | ✅ `FIREWORKS_API_KEY` | Candidate only; set executor and planner together |
 | `deepseek` / DeepSeek V3.2 | ✅ `DEEPSEEK_API_KEY` | 84% on internal E2E; honest second config |
 | `openrouter` / gpt-5.4-mini | ❌ no `OPENROUTER_API_KEY` | Add key if a third config is wanted |
 | `groq` variants | ❌ no Groq key | Optional speed-focused config |

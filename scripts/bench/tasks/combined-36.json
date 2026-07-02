@@ -1,0 +1,254 @@
+{
+  "source": "osunlp/Online-Mind2Web + smoke",
+  "revision": "main",
+  "license": "CC-BY-4.0",
+  "note": "6 smoke tasks combined with 30 stratified subset tasks",
+  "tasks": [
+    {
+      "task_id": "sample-wikipedia-eiffel",
+      "confirmed_task": "Find the year the Eiffel Tower was completed and report it.",
+      "website": "https://en.wikipedia.org/wiki/Eiffel_Tower",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-hn-top-story",
+      "confirmed_task": "Report the title of the current number one story on the Hacker News front page.",
+      "website": "https://news.ycombinator.com",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-mdn-css-gap",
+      "confirmed_task": "On MDN Web Docs, find what the CSS 'gap' property does and report a one-sentence summary.",
+      "website": "https://developer.mozilla.org/en-US/docs/Web/CSS/gap",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-python-enumerate",
+      "confirmed_task": "In the Python 3 documentation, find what the built-in function enumerate() returns and report it.",
+      "website": "https://docs.python.org/3/library/functions.html",
+      "level": "medium"
+    },
+    {
+      "task_id": "sample-arxiv-recent-csai",
+      "confirmed_task": "Report the title of the first paper listed in the arXiv cs.AI recent listing.",
+      "website": "https://arxiv.org/list/cs.AI/recent",
+      "level": "medium"
+    },
+    {
+      "task_id": "sample-github-vscode-language",
+      "confirmed_task": "On the GitHub page for the microsoft/vscode repository, report the primary programming language shown for the repo.",
+      "website": "https://github.com/microsoft/vscode",
+      "level": "medium"
+    },
+    {
+      "task_id": "2207bb4f21786690cfed20b37253fb8b",
+      "confirmed_task": "Check the current wind speed in Calgary, Alberta.",
+      "website": "https://www.theweathernetwork.com/",
+      "level": "easy",
+      "reference_length": 2
+    },
+    {
+      "task_id": "95cad96f2e43f3c0d8efad1331c77c8c",
+      "confirmed_task": "View the list of the Most Popular TV on rotten tomatoes.",
+      "website": "https://www.rottentomatoes.com/",
+      "level": "easy",
+      "reference_length": 3
+    },
+    {
+      "task_id": "bd1e3770b7181f6fce9c35e18caa9785",
+      "confirmed_task": "Browse service listings for a solar panel installer and hide duplicates.",
+      "website": "https://craigslist.org/",
+      "level": "easy",
+      "reference_length": 3
+    },
+    {
+      "task_id": "c09721cc937d4dcfb391a0bc2c574b28",
+      "confirmed_task": "Find the next available date for Albion Basin.",
+      "website": "https://www.recreation.gov/",
+      "level": "easy",
+      "reference_length": 3
+    },
+    {
+      "task_id": "c2153fc053112e89c2f103869c4d6890",
+      "confirmed_task": "Find a house cleaning service in 10001 on a weekly basis.",
+      "website": "https://www.thumbtack.com/",
+      "level": "easy",
+      "reference_length": 5
+    },
+    {
+      "task_id": "c8d7f2aa7eb5dd074c48c9f76f8659ad",
+      "confirmed_task": "Show Teen Driver Safety program information.",
+      "website": "https://www.dmv.virginia.gov/",
+      "level": "easy",
+      "reference_length": 2
+    },
+    {
+      "task_id": "d7c955b47af68e01766fa86d0bee08a7",
+      "confirmed_task": "Add Elevate at Chicago, IL, to favorites and show a virtual tour.",
+      "website": "https://www.apartments.com/",
+      "level": "easy",
+      "reference_length": 4
+    },
+    {
+      "task_id": "e7f6cca9a8875f98fee3b711ead3a444_110325",
+      "confirmed_task": "Find the posts liked by the user Taylor Swift on Tumblr.",
+      "website": "https://www.tumblr.com/",
+      "level": "easy",
+      "reference_length": 4
+    },
+    {
+      "task_id": "0a0fa834ce41b5297c6474293383759d_110325",
+      "confirmed_task": "What are the onboard activities of the cheapest cruise, departing from Los Angeles that lasts at least 8 days?",
+      "website": "https://www.carnival.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "123e8c2fc453f55fadd1d0b9aaf94df4",
+      "confirmed_task": "Browse used Audi cars made before 2015 and sort by lowest price on KBB.",
+      "website": "https://www.kbb.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "15be05973fba714e490cd9c884e4f072",
+      "confirmed_task": "Find the procedure to get the license for Athletic Trainer.",
+      "website": "https://ohio.gov/",
+      "level": "medium",
+      "reference_length": 6
+    },
+    {
+      "task_id": "207e933d1bba815bcb58664b5d82c085",
+      "confirmed_task": "Find Ohio City apartments with parking, a fitness center, and an elevator.",
+      "website": "https://www.apartments.com/",
+      "level": "medium",
+      "reference_length": 6
+    },
+    {
+      "task_id": "2d5a7f95f951a26838289dfd629ae850_110325",
+      "confirmed_task": "Find a list of houses for sale in zip code 85747 with a pool and a private outdoor space.",
+      "website": "https://www.compass.com/",
+      "level": "medium",
+      "reference_length": 9
+    },
+    {
+      "task_id": "39c388cdc468688c8139cc2bb5157c13",
+      "confirmed_task": "Calculate the estimated car loan payment amount for an average credit-rated person for a 15,000-dollar car with a down payment of 2000 dollars and loan tenure of 48 months in zip 65215 and shop for the lowest-priced car.",
+      "website": "https://www.cars.com/",
+      "level": "medium",
+      "reference_length": 9
+    },
+    {
+      "task_id": "4c186c6ed888d0c8d4cf4adb39443080",
+      "confirmed_task": "Find a medium Devin Booker jersey and add it to the shopping cart.",
+      "website": "https://www.nba.com/",
+      "level": "medium",
+      "reference_length": 6
+    },
+    {
+      "task_id": "5e4e89c9b6fdaee7a41aca5601b82e04",
+      "confirmed_task": "Identify a pill with a pink color and oval shape with 894 5 number on it.",
+      "website": "https://www.drugs.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "63d6866fc000fcb1f153e07604bd1395",
+      "confirmed_task": "What are the Nearby Attractions from the most popular attraction in Hong Kong?",
+      "website": "https://us.trip.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "6b2cfae0ef25c73d1224b6ab74cb8b63",
+      "confirmed_task": "Find Devin Booker's highest-scoring points per game playoff run.",
+      "website": "https://www.nba.com/",
+      "level": "medium",
+      "reference_length": 7
+    },
+    {
+      "task_id": "7fff82864f21ddeccf4104a220892824",
+      "confirmed_task": "Find the lowest 27\"-32\" Samsung or LG computer monitors nearby which have 4k, IPS display.",
+      "website": "https://www.google.com/shopping?udm=28",
+      "level": "medium",
+      "reference_length": 10
+    },
+    {
+      "task_id": "9b5dfe54a1c14c5c6336bae7374c3bb5",
+      "confirmed_task": "Find a UPS Access Point near SPRING, TX and services provided by them.",
+      "website": "https://www.ups.com/",
+      "level": "medium",
+      "reference_length": 8
+    },
+    {
+      "task_id": "d392e154c1c6ffbb26e2331c3afafc67",
+      "confirmed_task": "Add a $100 Best Buy gift card for a birthday to my cart.",
+      "website": "https://www.bestbuy.com/",
+      "level": "medium",
+      "reference_length": 6
+    },
+    {
+      "task_id": "e4e19e04286f644d747d8c5a79d17fac",
+      "confirmed_task": "Find the Drug Interaction Report for Viagra and alcohol.",
+      "website": "https://www.drugs.com/",
+      "level": "medium",
+      "reference_length": 6
+    },
+    {
+      "task_id": "1223b07536a87e0170ff87cbbebd1d3c",
+      "confirmed_task": "Complete a multiplication quiz on https://www.coolmath4kids.com/, covering multiplication facts for 11-12. The quiz should consist of 10 questions, with unlimited time allowed for each. The goal is to achieve a perfect score of 10 out of 10.",
+      "website": "https://www.coolmath4kids.com/",
+      "level": "hard",
+      "reference_length": 24
+    },
+    {
+      "task_id": "1bc154377120ec15b18dbabdba49c741_051526",
+      "confirmed_task": "Book 4 tickets in the upper for any BTS show near New York in the next six months and view ticket prices with estimated fees.",
+      "website": "https://www.stubhub.com/",
+      "level": "hard",
+      "reference_length": 24
+    },
+    {
+      "task_id": "4464a8421f8bc8786524a499258dfad3",
+      "confirmed_task": "Check the specifications of the best-selling HP FHD laptop with 16 GB RAM and core i7 running on Windows 11.",
+      "website": "https://www.bestbuy.com/",
+      "level": "hard",
+      "reference_length": 12
+    },
+    {
+      "task_id": "50d91eabde542906937ab4c5b6f8f23a_121425",
+      "confirmed_task": "My baby boy was born on Dec 1, 2025. His weight is 7 lb 8 oz, height is 20 inches, and head circumference is 35 cm. The measurement date is Dec 1, 2025. Can you calculate his growth percentiles using a calculator?",
+      "website": "https://www.babycenter.com/",
+      "level": "hard",
+      "reference_length": 13
+    },
+    {
+      "task_id": "9ed3827266b3b804f485859c3d00401e",
+      "confirmed_task": "If I'm 30, plan to retire at 65, and can save $300/month, with a 3% annual return, 13% current tax rate, and 24% retirement tax rate, show the comparison chart between Traditional and Roth IRA.",
+      "website": "https://www.chase.com/",
+      "level": "hard",
+      "reference_length": 12
+    },
+    {
+      "task_id": "c39d6c245f8243993e707d54d2f4acec",
+      "confirmed_task": "Browse the final skin in the list for the champion Ahri.",
+      "website": "https://www.leagueoflegends.com/",
+      "level": "hard",
+      "reference_length": 18
+    },
+    {
+      "task_id": "eb323dc584156d0eb3a2b90bb8c4b791_110325",
+      "confirmed_task": "Find the cheapest 2 bed and 3+ bath apartment listing for rent in New York.",
+      "website": "https://www.compass.com/",
+      "level": "hard",
+      "reference_length": 15
+    },
+    {
+      "task_id": "f27c0a7b8b0bb33d37698dff227fc8d7",
+      "confirmed_task": "Browse used Mercedes-Benz cars from model years 2004 to 2012 on KBB and sort by highest price.",
+      "website": "https://www.kbb.com/",
+      "level": "hard",
+      "reference_length": 11
+    }
+  ]
+}

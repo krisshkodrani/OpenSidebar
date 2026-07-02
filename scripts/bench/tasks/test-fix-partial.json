@@ -1,0 +1,15 @@
+{
+  "source": "osunlp/Online-Mind2Web",
+  "revision": "main",
+  "license": "CC-BY-4.0",
+  "note": "Fetched 2026-06-11T13:42:52.754Z from Hugging Face. Normalized to BenchTask schema.",
+  "tasks": [
+    {
+      "task_id": "15be05973fba714e490cd9c884e4f072",
+      "confirmed_task": "Find the procedure to get the license for Athletic Trainer.",
+      "website": "https://ohio.gov/",
+      "level": "medium",
+      "reference_length": 6
+    }
+  ]
+}

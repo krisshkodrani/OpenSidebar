@@ -50,6 +50,7 @@ interface RunMetadata {
   provider: string;
   lane: string;
   configuredExecutorModel?: string | null;
+  configuredPlannerModel?: string | null;
   diagnosticMode?: boolean;
 }
 
@@ -592,6 +593,7 @@ function buildMarkdownReport(
   const provider = runMetadata?.provider ?? "unknown";
   const lane = runMetadata?.lane ?? "unknown";
   const executorModel = runMetadata?.configuredExecutorModel ?? "default";
+  const plannerModel = runMetadata?.configuredPlannerModel ?? "default";
   const diagnosticMode = runMetadata?.diagnosticMode === true ? "on" : "off";
 
   const lines: string[] = [];
@@ -599,7 +601,7 @@ function buildMarkdownReport(
   lines.push("");
   lines.push(`Date: ${dateStr} ${timeStr}`);
   lines.push(
-    `Scope: ${analyses.length} case(s); lane=${lane}; provider=${provider}; executor=${executorModel}; diagnostic=${diagnosticMode}`,
+    `Scope: ${analyses.length} case(s); lane=${lane}; provider=${provider}; executor=${executorModel}; planner=${plannerModel}; diagnostic=${diagnosticMode}`,
   );
   lines.push(
     `Overall result: ${passedCount}/${analyses.length} passed${failedCount > 0 ? `, ${failedCount} failed` : ""}`,
