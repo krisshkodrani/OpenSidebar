@@ -77,6 +77,16 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
   },
   {
     providerId: "fireworks",
+    model: "accounts/fireworks/models/kimi-k2p7-code",
+    inputUsdPerMillion: 0.95,
+    outputUsdPerMillion: 4.0,
+    cachedInputUsdPerMillion: 0.19,
+    effectiveDate: "2026-06-12",
+    sourceUrl: "https://fireworks.ai/models/fireworks/kimi-k2p7-code",
+    confidence: "official",
+  },
+  {
+    providerId: "fireworks",
     model: "accounts/fireworks/routers/kimi-k2p6-turbo",
     inputUsdPerMillion: 2.0,
     outputUsdPerMillion: 8.0,
@@ -114,6 +124,17 @@ export const DEFAULT_MODEL_PRICING: ModelPricing[] = [
     effectiveDate: "2026-04-19",
     sourceUrl: "https://fireworks.ai/pricing",
     confidence: "official",
+  },
+  {
+    providerId: "fireworks",
+    // GLM 5.2 as planner/orchestrator candidate. Pricing is a placeholder
+    // estimate — verify against Fireworks' published rate before trusting cost.
+    model: "accounts/fireworks/models/glm-5p2",
+    inputUsdPerMillion: 0.55,
+    outputUsdPerMillion: 2.19,
+    effectiveDate: "2026-06-24",
+    sourceUrl: "https://fireworks.ai/pricing",
+    confidence: "best_effort",
   },
   {
     providerId: "moonshot",

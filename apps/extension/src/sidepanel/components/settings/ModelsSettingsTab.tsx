@@ -144,7 +144,7 @@ export function ModelsSettingsTab({
           }
           className={inputClassName}
         >
-          <option value="fireworks">Fireworks AI (Kimi K2.6)</option>
+          <option value="fireworks">Fireworks AI (curated Kimi models)</option>
           <option value="fireworks-deepseek">Fireworks + DeepSeek</option>
           <option value="moonshot">Moonshot AI (Kimi 2.6)</option>
           <option value="xiaomi">Xiaomi MiMo</option>

@@ -12,6 +12,7 @@ import {
 import {
   getDefaultExecutorModel,
   isExecutorModelAllowed,
+  isVLCapable,
 } from "../../src/utils/executor-model-policy";
 
 describe("provider-scoped model catalogs", () => {
@@ -46,10 +47,38 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(
       FIREWORKS_MODELS.filter(
         (model) =>
+          model.id === "accounts/fireworks/models/kimi-k2p7-code" ||
           model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
           model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
           model.id === "qwen/qwen3-vl-30b-a3b-instruct",
       ),
+    );
+  });
+
+  test("fireworks Kimi K2.7 Code is an optional vision-capable executor with official pricing", () => {
+    const model = FIREWORKS_MODELS.find(
+      (candidate) =>
+        candidate.id === "accounts/fireworks/models/kimi-k2p7-code",
+    );
+
+    expect(model).toMatchObject({
+      name: "Kimi K2.7 Code",
+      promptPrice: 0.95 / 1_000_000,
+      completionPrice: 4.0 / 1_000_000,
+      supportsVision: true,
+      effectiveDate: "2026-06-12",
+      source: "curated",
+      provider: "fireworks",
+    });
+    expect(
+      isExecutorModelAllowed(
+        "accounts/fireworks/models/kimi-k2p7-code",
+        "fireworks",
+      ),
+    ).toBe(true);
+    expect(isVLCapable("accounts/fireworks/models/kimi-k2p7-code")).toBe(true);
+    expect(getDefaultExecutorModel("fireworks")).toBe(
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
     );
   });
 
@@ -88,6 +117,7 @@ describe("provider-scoped model catalogs", () => {
     ).toEqual(
       FIREWORKS_MODELS.filter(
         (model) =>
+          model.id === "accounts/fireworks/models/kimi-k2p7-code" ||
           model.id === "accounts/fireworks/routers/kimi-k2p6-turbo" ||
           model.id === "accounts/fireworks/routers/kimi-k2p5-turbo" ||
           model.id === "qwen/qwen3-vl-30b-a3b-instruct",
