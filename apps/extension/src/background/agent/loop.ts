@@ -2998,6 +2998,29 @@ export class AgentLoop {
       return true;
     }
 
+    if (decision.kind === "missing_requested_attribute") {
+      this.log.warn("agent", "DONE rejected: missing requested attribute", {
+        turn: this.turnCount,
+        rejections: this.doneRejections,
+        reason: decision.reason,
+      });
+      this.traceRecorder?.recordEvent("done_rejected_missing_requested_attribute", {
+        rejections: this.doneRejections,
+        reason: decision.reason,
+      });
+      this.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: this.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason: decision.reason,
+          fallbackInstruction:
+            "YOUR NEXT ACTION: continue from the current page until the requested fact, attribute, value, date, spec, filter result, or calculator result is directly visible in page evidence. Open the most specific result/detail page, tab, modal, calendar, filter panel, or expanded section if needed. Only call done() after reporting the requested attribute itself, or after explicitly reporting that the attribute was not found after inspecting the most specific available view.",
+        }),
+      });
+      return true;
+    }
+
     this.log.warn("agent", "DONE rejected: incomplete summary", {
       turn: this.turnCount,
       rejections: this.doneRejections,

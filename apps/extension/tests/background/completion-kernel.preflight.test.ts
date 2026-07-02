@@ -156,6 +156,81 @@ describe("completion kernel preflights", () => {
     expect(decision).toEqual({ status: "valid" });
   });
 
+  test("rejects entity-only completion for requested availability date", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary:
+        "Successfully searched for Albion Basin on Recreation.gov. The search results page displays Albion Basin as the first listing.",
+      taskContext: "Find the next available date for Albion Basin.",
+      rootUserRequest: "Find the next available date for Albion Basin.",
+      turnCount: 5,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "missing_requested_attribute",
+      reason: expect.stringContaining("next available date"),
+    });
+  });
+
+  test("accepts completion that includes requested availability date", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "Albion Basin's next available date is June 21, 2026.",
+      taskContext: "Find the next available date for Albion Basin.",
+      rootUserRequest: "Find the next available date for Albion Basin.",
+      turnCount: 5,
+    });
+
+    expect(decision).toEqual({ status: "valid" });
+  });
+
+  test("rejects product-page-only completion for requested technical specs", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "I found and opened the MacBook Pro product page.",
+      taskContext:
+        "Find the tech specs of the MacBook Pro 16-inch introduced in November 2023.",
+      rootUserRequest:
+        "Find the tech specs of the MacBook Pro 16-inch introduced in November 2023.",
+      turnCount: 5,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "missing_requested_attribute",
+      reason: expect.stringContaining("technical specifications"),
+    });
+  });
+
+  test("accepts completion that includes requested technical spec values", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary:
+        "The MacBook Pro 16-inch specs include M3 Pro or M3 Max chips, a 16.2-inch display, up to 128GB memory, and up to 8TB storage.",
+      taskContext:
+        "Find the tech specs of the MacBook Pro 16-inch introduced in November 2023.",
+      rootUserRequest:
+        "Find the tech specs of the MacBook Pro 16-inch introduced in November 2023.",
+      turnCount: 5,
+    });
+
+    expect(decision).toEqual({ status: "valid" });
+  });
+
+  test("rejects list completion that omits requested property filters", () => {
+    const decision = evaluateCompletionSummaryPreflight({
+      summary: "Found houses for sale in zip code 85747 on Compass.",
+      taskContext:
+        "Find a list of houses for sale in zip code 85747 with a pool and a private outdoor space.",
+      rootUserRequest:
+        "Find a list of houses for sale in zip code 85747 with a pool and a private outdoor space.",
+      turnCount: 5,
+    });
+
+    expect(decision).toMatchObject({
+      status: "rejected",
+      kind: "missing_requested_attribute",
+      reason: expect.stringContaining("private outdoor space"),
+    });
+  });
+
   test("rejects pending autocomplete completion through kernel preflight", () => {
     const snap = formSnapshot({
       visibleContent: "Product autocomplete suggestions Laptop Stand",

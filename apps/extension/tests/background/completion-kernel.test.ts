@@ -65,6 +65,48 @@ function navigationSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function inputField(tag: number, label: string, value = ""): TaggedElement {
+  return {
+    tag,
+    tagName: "input",
+    role: "textbox",
+    text: value,
+    attributes: {
+      id: `field-${tag}`,
+      name: label.toLowerCase().replace(/\s+/g, "-"),
+      type: "text",
+      label,
+      value,
+    },
+    rect: { x: 0, y: tag * 20, width: 240, height: 32 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
+function radioChoice(
+  tag: number,
+  label: string,
+  checked = false,
+): TaggedElement {
+  return {
+    tag,
+    tagName: "input",
+    role: "radio",
+    text: label,
+    attributes: {
+      id: `radio-${tag}`,
+      name: "sex",
+      type: "radio",
+      checked: String(checked),
+      label,
+    },
+    rect: { x: 0, y: tag * 20, width: 16, height: 16 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 describe("completion kernel", () => {
   test("repairs stale planner quiz target to the current visible question", () => {
     const generated = generateCompletionContract({
@@ -298,5 +340,87 @@ describe("completion kernel", () => {
     });
 
     expect(generated?.contract.kind).not.toBe("navigation");
+  });
+
+  test("does not infer quiz or form completion for a page-state search-results node", () => {
+    const generated = generateCompletionContract({
+      userRequest: [
+        "Objective: Search for homes in zip code 85747.",
+        "Selected workflow skill:",
+        "- search-answer-extraction: Read result snippets and choose the result that answers the request.",
+        "Original user request: Find listings in 85747 with pool/private outdoor space.",
+      ].join("\n"),
+      activeObjective: "Search for homes in zip code 85747",
+      successCriteria:
+        "Search results page shows 85747 in the search field or page heading, and listings load.",
+      snapshot: navigationSnapshot({
+        title: "85747 Homes for Sale",
+        url: "https://www.example-realestate.test/search/85747",
+        visibleContent:
+          "85747 Homes for Sale Pool Private outdoor space Save search",
+        pageContent:
+          "85747 Homes for Sale Pool Private outdoor space Save search",
+        elements: [
+          inputField(21, "Search", "85747"),
+          choice(22, "Pool", false),
+          choice(23, "Private outdoor space", false),
+        ],
+      }),
+    });
+
+    expect(generated?.contract.kind).not.toBe("quiz_selection");
+    expect(generated?.contract.kind).not.toBe("form_fill");
+  });
+
+  test("does not infer quiz completion from calculator radio controls on an open-page node", () => {
+    const generated = generateCompletionContract({
+      userRequest:
+        "Find and open the BabyCenter child growth percentile calculator.",
+      activeObjective: "Find and open the child growth percentile calculator",
+      successCriteria:
+        "The calculator page is loaded and input fields are visible.",
+      snapshot: navigationSnapshot({
+        title: "Child Growth Percentile Calculator",
+        url: "https://www.example-parenting.test/child-growth-percentile-calculator",
+        visibleContent:
+          "Child growth percentile calculator Sex Boy Girl Age Height Weight",
+        pageContent:
+          "Child growth percentile calculator Sex Boy Girl Age Height Weight",
+        elements: [
+          radioChoice(31, "Boy"),
+          radioChoice(32, "Girl"),
+          inputField(33, "Age"),
+          inputField(34, "Height"),
+          inputField(35, "Weight"),
+        ],
+      }),
+    });
+
+    expect(generated?.contract.kind).not.toBe("quiz_selection");
+    expect(generated?.contract.kind).not.toBe("form_fill");
+  });
+
+  test("does not infer form completion for search-results page verification", () => {
+    const generated = generateCompletionContract({
+      userRequest: "Find the next available date for Albion Basin.",
+      activeObjective: "Search for Albion Basin availability",
+      successCriteria:
+        "Search results page displays Albion Basin and available-date content.",
+      snapshot: navigationSnapshot({
+        title: "Search results",
+        url: "https://www.example-parks.test/search?q=Albion%20Basin",
+        visibleContent:
+          "Search results for Albion Basin Please enter a destination Next available date",
+        pageContent:
+          "Search results for Albion Basin Please enter a destination Next available date",
+        elements: [
+          inputField(41, "Search", "Albion Basin"),
+          inputField(42, "Destination"),
+        ],
+      }),
+    });
+
+    expect(generated?.contract.kind).not.toBe("form_fill");
+    expect(generated?.contract.kind).not.toBe("quiz_selection");
   });
 });

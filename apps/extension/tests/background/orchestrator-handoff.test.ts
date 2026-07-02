@@ -84,6 +84,32 @@ describe("Orchestrator handoff briefing", () => {
     );
   });
 
+  test("uses node-scoped completion policy for decomposed workers", () => {
+    const node = makeNode([]);
+    const instruction = buildExecutorInstruction(
+      node,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      undefined,
+      "node",
+    );
+
+    expect(instruction).toContain("node-scoped executor run");
+    expect(instruction).toContain(
+      "done() completes only this current Objective",
+    );
+    expect(instruction).toContain(
+      "even if sibling or future planner steps remain",
+    );
+    expect(instruction).not.toContain(
+      "do not call done() while an explicit requested step remains unfinished",
+    );
+  });
+
   test("omits empty task-state and reality sections from executor instruction", () => {
     const node = makeNode([]);
     const instruction = buildExecutorInstruction(node);
@@ -159,7 +185,8 @@ describe("Orchestrator handoff briefing", () => {
     expect(instruction).toContain("Parallel work context:");
     expect(instruction).toContain("worker index 1");
     expect(instruction).toContain("url:alpha.example/dashboard");
-    expect(instruction).toContain("node-2 [running]: Read beta dashboard");
+    expect(instruction).toContain("[running] Read beta dashboard");
+    expect(instruction).not.toContain("node-2 [running]");
     expect(instruction).toContain("origin:beta.example");
     expect(instruction).not.toContain("tabId");
   });
@@ -510,9 +537,7 @@ describe("Orchestrator handoff briefing", () => {
     expect(brief).toContain("Completed / prior steps:");
     expect(brief).toContain("[completed] Add the item to the cart");
     expect(brief).toContain("Remaining future steps: 2");
-    expect(brief).toContain(
-      "Do NOT execute them until the current objective is verified complete.",
-    );
+    expect(brief).toContain("Complete and verify the current objective first");
     expect(brief).not.toContain("Apply SAVE10 and choose Express shipping");
     expect(brief).not.toContain("Fill checkout name and email");
   });
