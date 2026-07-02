@@ -34,6 +34,26 @@ export function formatPricingBadge(model: ProviderModelOption): string {
 
 export const FIREWORKS_MODELS: ProviderModelOption[] = [
   {
+    id: "accounts/fireworks/models/glm-5p2",
+    name: "GLM 5.2",
+    promptPrice: 0.55 / 1_000_000,
+    completionPrice: 2.19 / 1_000_000,
+    supportsVision: false,
+    provider: "fireworks",
+    source: "curated",
+    effectiveDate: "2026-06-24",
+  },
+  {
+    id: "accounts/fireworks/models/kimi-k2p7-code",
+    name: "Kimi K2.7 Code",
+    promptPrice: 0.95 / 1_000_000,
+    completionPrice: 4.0 / 1_000_000,
+    supportsVision: true,
+    provider: "fireworks",
+    source: "curated",
+    effectiveDate: "2026-06-12",
+  },
+  {
     id: "accounts/fireworks/routers/kimi-k2p6-turbo",
     name: "Kimi K2.6 Turbo",
     promptPrice: 2.0 / 1_000_000,

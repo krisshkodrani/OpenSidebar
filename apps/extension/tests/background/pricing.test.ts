@@ -36,6 +36,21 @@ describe("LLM pricing table", () => {
     });
   });
 
+  test("includes official Fireworks Kimi K2.7 Code pricing", () => {
+    const pricing = findModelPricing(
+      "fireworks",
+      "accounts/fireworks/models/kimi-k2p7-code",
+    );
+    expect(pricing).toMatchObject({
+      inputUsdPerMillion: 0.95,
+      outputUsdPerMillion: 4.0,
+      cachedInputUsdPerMillion: 0.19,
+      effectiveDate: "2026-06-12",
+      sourceUrl: "https://fireworks.ai/models/fireworks/kimi-k2p7-code",
+      confidence: "official",
+    });
+  });
+
   test("includes Groq pricing for GPT-OSS 120B", () => {
     const pricing = findModelPricing("groq", "openai/gpt-oss-120b");
     expect(pricing).toMatchObject({
