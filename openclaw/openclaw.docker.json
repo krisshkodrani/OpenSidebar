@@ -1,0 +1,42 @@
+{
+  // OpenSidebar × OpenClaw — Docker variant of openclaw.json.
+  //
+  // Identical to ../openclaw.json EXCEPT the MCP url points at the `browser-mcp`
+  // compose service by name (inside the compose network) instead of 127.0.0.1.
+  // Mounted read-only into the openclaw container at /home/node/.openclaw.
+  //
+  // The model API key comes from the environment (ANTHROPIC_API_KEY), set via the
+  // compose `.env` file — never hard-code it here.
+
+  agents: {
+    defaults: {
+      workspace: "/home/node/.openclaw/workspace",
+      model: {
+        primary: "anthropic/claude-sonnet-4-6",
+        fallbacks: ["anthropic/claude-haiku-4-5-20251001"],
+      },
+    },
+  },
+
+  gateway: {
+    // Bind 0.0.0.0 in-container so Docker can route the published host-loopback
+    // port (127.0.0.1:18789) in. Nothing is exposed to the LAN.
+    port: 18789,
+    bind: "0.0.0.0",
+  },
+
+  channels: {
+    webchat: { enabled: true },
+  },
+
+  mcp: {
+    servers: {
+      opensidebar: {
+        url: "http://browser-mcp:8788/mcp",
+        transport: "streamable-http",
+      },
+    },
+  },
+
+  env: {},
+}

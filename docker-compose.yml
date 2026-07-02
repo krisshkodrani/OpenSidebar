@@ -1,43 +1,72 @@
-# One command: `docker compose up`   (validated 2026-06-28: all 3 services build
-# and run — adapter /health+KV+planner, browser-mcp WS accepts connections, viewer
-# serves the built UI on 7589.)
+# One command: `docker compose up`
 #
 # Brings up the OpenSidebar server-side stack, all published to YOUR machine's
 # loopback (127.0.0.1) only — the containers bind 0.0.0.0 internally so Docker
 # can route the published loopback ports while keeping nothing exposed to the LAN.
 #
+# Services:
+#   openclaw     the brain — real OpenClaw gateway (memory, planning, WebChat).
+#                Chat in/out at http://127.0.0.1:18789  (no Telegram needed).
+#   browser-mcp  the bridge — exposes thick browser tools to OpenClaw over MCP
+#                (streamable-http :8788, compose-internal) and bridges to your
+#                Chrome over a loopback WebSocket (:8787).
+#   viewer       trace/analytics UI + backend API on :7589.
+#
 # The OpenSidebar extension runs in your real Chrome (it can't be containerized —
 # its whole point is your authenticated browser). Load it unpacked, then set in
 # its chrome.storage.local:
-#   opensidebar:openClawGatewayUrl = http://127.0.0.1:18789
-#   opensidebar:browserMcpWsPort   = 8787
+#   opensidebar:browserMcpWsPort = 8787
 # Trace viewer: http://127.0.0.1:7589/viewer
+#
+# Set ANTHROPIC_API_KEY in a local .env file (next to this compose) before `up`.
+#
+# Offline / no real OpenClaw? Use the stub adapter instead of the real brain:
+#   docker compose --profile dev up browser-mcp viewer openclaw-adapter
 name: opensidebar
 
 services:
-  openclaw-adapter:
-    build: .
-    command: ["pnpm", "exec", "tsx", "openclaw/adapter/server.ts"]
+  # The brain. Real OpenClaw gateway. Config + workspace are mounted from this
+  # repo's openclaw/ scaffold; the MCP url points at the browser-mcp service.
+  # NOTE: image entrypoint/onboarding behaviour should be validated against the
+  # pinned OpenClaw version — see openclaw/README.md.
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
     environment:
-      OPENCLAW_ADAPTER_PORT: "18789"
-      OPENCLAW_ADAPTER_HOST: "0.0.0.0"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENCLAW_SKIP_ONBOARDING: "1"
+    volumes:
+      - ./openclaw/openclaw.docker.json:/home/node/.openclaw/openclaw.json:ro
+      - ./openclaw/workspace:/home/node/.openclaw/workspace:ro
+      - openclaw-data:/home/node/.openclaw/data
     ports:
       - "127.0.0.1:18789:18789"
+    depends_on:
+      - browser-mcp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   browser-mcp:
     build: .
     command: ["pnpm", "exec", "tsx", "scripts/browser-mcp/server.ts"]
     environment:
+      # MCP transport to OpenClaw (compose-internal network).
+      BROWSER_MCP_HTTP_PORT: "8788"
+      BROWSER_MCP_HTTP_HOST: "0.0.0.0"
+      # WebSocket bridge to the extension in your host Chrome.
       BROWSER_MCP_WS_PORT: "8787"
       BROWSER_MCP_WS_HOST: "0.0.0.0"
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:8787:8787" # extension ↔ host
+      - "127.0.0.1:8788:8788" # MCP (also handy for local debugging)
     restart: unless-stopped
 
   # The viewer serves the built React UI (dist/src/trace-viewer) + the backend
   # API. It builds the UI on first start (cached in the `dist` volume) since that
-  # is the one heavy step; the two services above start instantly.
+  # is the one heavy step.
   viewer:
     build: .
     command:
@@ -55,7 +84,22 @@ services:
       - artifacts:/app/.artifacts
     restart: unless-stopped
 
+  # Offline stub gateway (in-memory). Only with `--profile dev`. Implements the
+  # legacy LP-8 client contract so the extension's hybrid/knowledge paths can be
+  # exercised without a real OpenClaw. Not started by default.
+  openclaw-adapter:
+    profiles: ["dev"]
+    build: .
+    command: ["pnpm", "exec", "tsx", "openclaw/adapter/server.ts"]
+    environment:
+      OPENCLAW_ADAPTER_PORT: "18789"
+      OPENCLAW_ADAPTER_HOST: "0.0.0.0"
+    ports:
+      - "127.0.0.1:18789:18789"
+    restart: unless-stopped
+
 volumes:
   dist:
   traces:
   artifacts:
+  openclaw-data:
