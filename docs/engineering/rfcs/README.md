@@ -23,6 +23,27 @@ Suggested sequencing: LP-3 (cheap, unblocks collaborators) in parallel with
 LP-2 (biggest live-performance lever), then LP-1 (largest; benefits from LP-2
 landing first so published numbers reflect the rescued agent).
 
+## Eval-Methodology RFC Drafts (P1)
+
+Draft RFCs inspired by the **OpenClaw RL Guidelines v5** (2026-06-11,
+`.artifacts/`) — a single-model data-generation/eval spec whose core ideas
+(grade the final *state* not the trajectory narration; treat LLM judges as
+assistive not authoritative; capture a corrected "silver" trajectory as the data
+unit; enforce disciplined, citeable failure justifications; cover adversarial
+Scenario Types) map directly onto OpenSidebar's harness, bench, and trace-viewer.
+Same status rules as above: **not stamped**, each ends with a "Recommended
+Decision" (agent recommendation, not an owner Decision Stamp). No implementation
+until the owner records a Decision Stamp.
+
+| # | RFC | Item it implements | Depends on |
+| --- | --- | --- | --- |
+| LP-4 | [Deterministic state verifiers & advisory judge](lp-0004-deterministic-state-verifiers.md) | Grade bench on final state; demote WebJudge to advisory; add `finalStateSnapshot` | None |
+| LP-5 | [Adversarial & safety E2E suite](lp-0005-adversarial-safety-e2e-suite.md) | Prompt-injection / destructive-action / credential-leak coverage | None |
+| LP-6 | [Silver-trajectory repair & failure justifications](lp-0006-silver-trajectory-repair.md) | Golden model↔silver pairs + 3-area citeable failure notes | LP-4 (`finalStateSnapshot`) |
+
+Suggested sequencing: LP-4 first (its `finalStateSnapshot` is the shared
+substrate LP-6 reuses), LP-5 in parallel (independent, harness-only), then LP-6.
+
 ## Observability RFC Drafts (P1)
 
 Draft RFC for the trace/trajectory data layer — making it serve **both** the
