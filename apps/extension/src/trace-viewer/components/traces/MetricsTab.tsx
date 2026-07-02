@@ -6,6 +6,8 @@ import {
 } from "../../api";
 import { useStore } from "../../store";
 import { useInsightsData } from "../../hooks/useInsightsData";
+import { useTrendData } from "../../hooks/useTrendData";
+import TrendChart from "./TrendChart";
 import {
   formatCount,
   formatCost,
@@ -105,6 +107,8 @@ export default function MetricsTab() {
   );
 
   const { insights, loading, error } = useInsightsData(requestFilters);
+  const { points: trendPoints, loading: trendLoading } =
+    useTrendData(requestFilters);
   const [indexStatus, setIndexStatus] = useState<TraceIndexStatus | null>(null);
 
   useEffect(() => {
@@ -208,6 +212,22 @@ export default function MetricsTab() {
                 tone={summary.toolFailures > 0 ? "warning" : "success"}
               />
             </div>
+          </section>
+
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-trace-muted">
+                Trends Over Time
+              </div>
+              <div className="text-[11px] text-trace-muted">
+                Success rate and estimated cost per day
+              </div>
+            </div>
+            {trendLoading && trendPoints.length === 0 ? (
+              <LoadingSpinner message="Loading trends..." />
+            ) : (
+              <TrendChart points={trendPoints} />
+            )}
           </section>
 
           <section>
