@@ -2,12 +2,13 @@
 
 Use this checklist when preparing a new OpenSidebar release.
 
-## Current RC Status - 2026-05-25
+## Current RC Status - 2026-07-02
 
-> Note: the version of record is `0.2.3`. The packaging artifact (zip + sha256)
-> has not been regenerated for `0.2.3` yet — run `release:package` →
-> `release:preflight` to produce `opensidebar-v0.2.3.zip` and its checksum before
-> publishing.
+> Note: the version of record is `0.3.0` (launch-hardening release; `0.2.3`
+> status rows below are historical evidence from its RC pass). The packaging
+> artifact (zip + sha256) has not been generated for `0.3.0` yet — run
+> `release:package` → `release:preflight` to produce `opensidebar-v0.3.0.zip`
+> and its checksum before publishing.
 
 Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 
@@ -16,7 +17,7 @@ Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 | Working tree checkpoint | Pass | Completion-kernel, loop, loop-helper, and skill-ranking hardening fixes are committed. Verify `git status --short` is clean immediately before tagging the final RC. |
 | BYOK setup docs | Pass | README, Getting Started, Privacy Policy, Security Policy, and OSS BYOK Launch Roadmap document local keys, provider traffic, and supported provider modes. |
 | Runtime default docs | Pass | Fireworks is the default provider mode; default executor/planner model is `accounts/fireworks/routers/kimi-k2p6-turbo`. |
-| Manifest/version alignment | Pass | `package.json`, `apps/extension/manifest.json`, and `dist/manifest.json` all declare `0.2.3`. |
+| Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` declare `0.3.0`; confirm `dist/manifest.json` matches after the release build. |
 | Permission/privacy alignment | Pass | Broad host access plus tabs, cookies, history, downloads, and tab capture are documented in `PRIVACY_POLICY.md`, `SECURITY.md`, `docs/features/security.md`, and `docs/known-limitations.md`. |
 | Focused unit regression | Pass | `corepack pnpm exec vitest run --config vitest.config.ts --reporter=basic --silent=true tests/background/agent.test.ts` passed: 168 tests. |
 | Focused UI/overlay regression | Pass | Sidepanel/overlay Doing Now HUD test group passed before this checklist update. |
@@ -25,12 +26,12 @@ Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 | Full release verification | Re-run pending | Lint, typecheck, tests, build, and dist-check were re-run green on the `0.2.3` tree on 2026-06-05. Run the full `corepack pnpm run release:verify` (incl. production audit) before tagging. Existing lint warnings remain in `apps/extension/tests/e2e/multi-turn-workflows.test.ts`. |
 | Staged E2E release gate | Pass | `corepack pnpm run test:e2e:smoke` passed on 2026-05-25: 8 files, 9 tests. The run logged browser-close timeout warnings after several completed files and final-screenshot timeout warnings in mutation-dedupe recovery; the suite exited green. See `.artifacts/e2e/e2e-report-2026-05-25.md`. |
 | Native side-panel smoke | Pass | `corepack pnpm run release:smoke:native-panel --timeoutMs=30000 --holdMs=1000` passed on 2026-05-25 for the release-candidate commit. The smoke opened the actual Chrome side panel through an extension helper-page user gesture, verified `src/sidepanel/index.html` was enabled for the tab, and verified workspace creation. Evidence is recorded under `.artifacts/e2e/native-sidepanel/2026-05-25/`. |
-| Release package/preflight | Pending | Run `corepack pnpm run release:package` to generate `.artifacts/releases/opensidebar-v0.2.3.zip` + checksum + notes, then `corepack pnpm run release:preflight --require-native-smoke` to verify artifact consistency, clean-tree, local-tag, and native-smoke evidence for `0.2.3`. |
+| Release package/preflight | Pending | Run `corepack pnpm run release:package` to generate `.artifacts/releases/opensidebar-v0.3.0.zip` + checksum + notes, then `corepack pnpm run release:preflight --require-native-smoke` to verify artifact consistency, clean-tree, local-tag, and native-smoke evidence for `0.3.0`. |
 
 Open cleanup before publishing the RC:
 
-- Attach the generated `opensidebar-v0.2.3` zip, checksum, and release notes to a draft release.
-- Push tag `v0.2.3` after the final local spot-check.
+- Attach the generated `opensidebar-v0.3.0` zip, checksum, and release notes to a draft release.
+- Push tag `v0.3.0` after the final local spot-check.
 
 ## 1. Freeze The Release Candidate
 
@@ -116,12 +117,12 @@ For a broad GitHub-first BYOK release, also confirm:
 GitHub CLI draft command after final manual spot-check:
 
 ```bash
-gh release create v0.2.3 \
+gh release create v0.3.0 \
   --draft \
-  --title "OpenSidebar v0.2.3 OSS BYOK Preview" \
-  --notes-file .artifacts/releases/opensidebar-v0.2.3-release-notes.md \
-  .artifacts/releases/opensidebar-v0.2.3.zip \
-  .artifacts/releases/opensidebar-v0.2.3.zip.sha256
+  --title "OpenSidebar v0.3.0 OSS BYOK Preview" \
+  --notes-file .artifacts/releases/opensidebar-v0.3.0-release-notes.md \
+  .artifacts/releases/opensidebar-v0.3.0.zip \
+  .artifacts/releases/opensidebar-v0.3.0.zip.sha256
 ```
 
 ## Current Known Caveat
