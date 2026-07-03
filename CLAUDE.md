@@ -31,9 +31,14 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 
 ### Landmines (read before editing)
 
-- `background/agent/loop.ts` (~10K lines; `AgentLoop` ≈ 261 methods) and
+- `background/agent/loop.ts` (~11K lines; `AgentLoop` ≈ 290 methods) and
   `background/agent/completion-kernel.ts` (~14K lines) are the giants and the
-  most-churned files in the repo.
+  most-churned files in the repo. `background/tools/index.ts` (~7K lines after
+  the ServiceNow adapter extraction) and `background/orchestrator/index.ts`
+  (~7.5K lines) are the next tier — same care applies.
+- ServiceNow-specific tool logic lives in `background/tools/servicenow/`
+  (records/references/navigation/register). Modules there must never import
+  `tools/index.ts` or the tools barrel — the dependency points one way.
 - Completion/"is the task done?" logic is **split** between those two files (a
   deterministic contract kernel + a legacy guard chain in the loop). Reason about
   both when you touch completion behavior.
