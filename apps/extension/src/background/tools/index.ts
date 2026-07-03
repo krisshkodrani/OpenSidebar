@@ -79,15 +79,16 @@ import {
   executeContentTool,
   waitForNavigation,
 } from "./bridge";
+import {
+  getTabUrl,
+  withTimeout,
+  getFrameIdsForMainWorldBridge,
+} from "./helpers";
 
 // Re-export submodules for barrel compatibility
 export * from "./registry";
 export * from "./definitions";
 export * from "./bridge";
-
-function getTabUrl(tab: chrome.tabs.Tab): string {
-  return tab.url || tab.pendingUrl || "";
-}
 
 const DOWNLOAD_COMPLETION_WAIT_MS = 2500;
 
@@ -306,28 +307,6 @@ async function waitForTabUrlChange(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return fallbackUrl;
-}
-
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }
 
 const CONFIGURE_SERVICENOW_FORM_SCRIPT_TIMEOUT_MS = 25_000;
@@ -974,27 +953,6 @@ async function collectServiceNowSubmitDiagnostics(
       .slice(0, 8);
   } catch {
     return [];
-  }
-}
-
-async function getFrameIdsForMainWorldBridge(tabId: number): Promise<number[]> {
-  try {
-    if (!chrome.webNavigation?.getAllFrames) return [0];
-    const frames = await new Promise<any[]>((resolve) => {
-      chrome.webNavigation.getAllFrames({ tabId }, (details) => {
-        if (chrome.runtime.lastError) {
-          resolve([]);
-          return;
-        }
-        resolve(Array.isArray(details) ? details : []);
-      });
-    });
-    const frameIds = frames
-      .map((frame) => frame?.frameId)
-      .filter((frameId): frameId is number => Number.isInteger(frameId));
-    return [...new Set([0, ...frameIds])];
-  } catch {
-    return [0];
   }
 }
 
