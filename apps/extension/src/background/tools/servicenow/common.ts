@@ -33,3 +33,15 @@ export function normalizeServiceNowReferenceKey(value: string): string {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 }
+
+export function cleanServiceNowQueryValue(value: string): string {
+  return value.replace(/\^/g, "").trim();
+}
+
+export function shouldRetryServiceNowLookupInPage(reason: string): boolean {
+  return (
+    reason === "lookup_http_401" ||
+    reason === "lookup_http_403" ||
+    /failed|network|abort|timeout/i.test(reason)
+  );
+}
