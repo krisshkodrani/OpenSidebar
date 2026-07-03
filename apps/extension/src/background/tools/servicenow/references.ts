@@ -17,8 +17,6 @@ import { getFrameIdsForMainWorldBridge } from "../helpers";
 import {
   unwrapServiceNowFieldValue,
   normalizeServiceNowReferenceKey,
-  cleanServiceNowQueryValue,
-  shouldRetryServiceNowLookupInPage,
 } from "./common";
 
 export const SERVICENOW_REFERENCE_CANDIDATE_PREFIX = "servicenow_reference_candidate:";
