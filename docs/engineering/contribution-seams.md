@@ -90,7 +90,11 @@ interface PackPlugin {
 ```
 
 Extracting the existing `servicenow-platform` pack into the **first conforming
-implementation** is the proof the interface works. This is P1-sized engineering
+implementation** is the proof the interface works. A first step has landed:
+ServiceNow tool logic is now quarantined in
+`apps/extension/src/background/tools/servicenow/` (records / references /
+navigation / register, with a one-way dependency rule), which is the natural
+body of a future `ServiceNowPlatformPack`. This is P1-sized engineering
 with real core-runtime surface area — it is **recruited for, not yet built**, and
 will land under its own RFC decision. The full analysis is in
 [`sota-gap-analysis.md`](sota-gap-analysis.md) (§3.4, GAP-12). If this is the
