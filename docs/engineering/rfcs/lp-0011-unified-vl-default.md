@@ -1,7 +1,8 @@
 # RFC LP-11 — unified_vl as the Default Perception Mode
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: `utils/perception-mode.ts` (decision default), `loop.ts` mode integration, settings default + migration, perception-cache telemetry, e2e + bench measurement
 Related: Perception SOTA audit (2026-07-04); LP-9 (cheaper screenshots make this cheaper); perception architecture docs
 
@@ -69,10 +70,38 @@ radius to the structured fallback path only.
 - `pnpm run verify` green; e2e easy/medium suites green under the new
   default before merging.
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Approved with edits
 
-Chosen path: Implement telemetry (item 3) and the A/B (item 4) first;
-invert the default (item 1) only after the measurement supports it. LP-9
-should land before the A/B so image costs reflect the engineered pipeline.
+Chosen path:
+
+- Telemetry first (per-run mode/vision-token/outcome comparison and
+  structured-turn cache-efficacy counters), then the A/B after LP-9 lands,
+  then invert the auto-heuristic default to unified_vl only on non-inferior
+  task success with acceptable cost. Structured mode remains as fallback,
+  explicit override, and popup-triage provider.
+
+Required edits before implementation:
+
+- Run the A/B strictly after LP-9's default profile is decided, so image
+  economics reflect the engineered pipeline.
+
+Non-blocking follow-ups:
+
+- Revisit the structured-path stale-cache thresholds using the new
+  cache-efficacy telemetry.
+
+Do not do:
+
+- Do not delete or bypass the PerceptionAgent; do not send images to
+  executors absent from VL_CAPABLE_MODELS.
+
+Evidence required before merge:
+
+- Updated mode-decision unit tests; A/B report (≥30 staged e2e tasks +
+  bench sample) in docs/evals/; e2e easy/medium green under the new default.
+
+Next action:
+
+- Implement

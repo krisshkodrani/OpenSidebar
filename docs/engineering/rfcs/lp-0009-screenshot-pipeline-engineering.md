@@ -1,7 +1,8 @@
 # RFC LP-9 — Screenshot Pipeline Engineering: Owned Resolution, Format, and Scale Factor
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: `background/agent/loop.ts` (capture paths `refreshPerception` / `captureScreenshotForVLExecutor`), a new small `background/perception/screenshot-transform.ts`, `perception-agent.ts` dead panoramic path, e2e A/B harness
 Related: Perception SOTA audit (2026-07-04); LP-1 benchmark harness (measurement vehicle); Anthropic computer-use best practices; OpenAI/Gemini computer-use docs
 
@@ -71,10 +72,39 @@ cropping, no owned scale factor (`loop.ts` capture sites). Three problems:
   tasks; decision recorded in this RFC before flipping the default.
 - `pnpm run verify` green; no `PanoramicShot` references remain.
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Approved
 
-Chosen path: Implement the transform + dead-code deletion immediately
-(items 1–3), run the A/B (item 4), and adopt 1280-wide/q85 as default only
-if it is non-inferior on task success while cheaper on vision tokens.
+Chosen path:
+
+- Implement screenshot-transform.ts (downscale to 1280-wide default profile,
+  JPEG q85, owned scale factor recorded on the trace turn), apply it in both
+  capture paths, and delete the dead PanoramicShot pipeline.
+- Run the three-profile A/B (native-q70 / 1280-q85 / 1280-PNG) on the e2e
+  medium suite + bench sample; adopt 1280-q85 as default only if
+  non-inferior on task success and cheaper on vision tokens.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- Model-specific screenshot profiles via a dev setting; PNG-for-text-dense
+  heuristics if the A/B shows a split result.
+
+Do not do:
+
+- No full-page stitching; scrolling remains the off-viewport strategy.
+- Do not flip the default profile before the A/B result is recorded in this
+  RFC.
+
+Evidence required before merge:
+
+- Unit tests for transform dimensions/quality/scaleFactor; A/B report in
+  docs/evals/; verify green; zero PanoramicShot references.
+
+Next action:
+
+- Implement

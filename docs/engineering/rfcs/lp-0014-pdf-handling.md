@@ -1,7 +1,8 @@
 # RFC LP-14 — In-Browser PDF Handling
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: PDF detection in snapshot/loop, a `read_pdf` capability (fetch + extract in the service worker or offscreen document), prompt guidance, fixtures
 Related: Perception SOTA audit (2026-07-04); browser-use PDF auto-download strategy; existing `pageContent` distillation (Readability→Turndown)
 
@@ -56,10 +57,32 @@ scrolling; coordinate-native agents page through the viewer visually.
 - dist-check: pdfjs chunk present, lazily referenced, no localhost/dev
   leakage; `pnpm run verify` green.
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Parked
 
-Chosen path: Correct design, but lowest urgency of the perception series —
-no current e2e or bench task involves PDFs. Recommend parking until after
-LP-9/LP-10/LP-11 land and a real user scenario or bench task motivates it.
+Chosen path:
+
+- Design accepted as written (detect → fetch → pdfjs text-layer extraction
+  into pageContent → visual fallback), but deliberately not scheduled.
+
+Required edits before implementation:
+
+- Re-stamp required before any implementation begins.
+
+Non-blocking follow-ups:
+
+- Reconsider when a real user scenario or bench task involves PDFs, after
+  LP-9/LP-10/LP-11 land.
+
+Do not do:
+
+- No OCR dependency; no eager pdfjs in the base bundle when implemented.
+
+Evidence required before merge:
+
+- None (parked).
+
+Next action:
+
+- Archive
