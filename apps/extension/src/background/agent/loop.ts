@@ -41,6 +41,7 @@ import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { createResultPageProgressState } from "./result-page-progress-policy";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
+import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
 import {
@@ -655,6 +656,8 @@ export class AgentLoop {
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
   private perception = new PerceptionAgent();
+  /** LP-9: capturedWidth / sentWidth of the most recent screenshot (1 = untouched). */
+  private lastScreenshotScaleFactor = 1;
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
   /** Promise-based gate for pause/resume */
@@ -4797,7 +4800,7 @@ export class AgentLoop {
         | "missing"
         | "capture_failed"
         | "not_requested" = "not_requested";
-      const isFirstPerception = !this.perception.panoramicDone;
+      const isFirstPerception = !this.perception.firstPerceptionDone;
 
       // Ensure the agent's tab is the visible one before capturing —
       // captureVisibleTab captures whatever tab is active in the window.
@@ -4812,9 +4815,19 @@ export class AgentLoop {
 
       try {
         const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
-        dataUrl = await this.captureVisibleTabWithRetry(refreshedTab.windowId, {
-          format: "jpeg",
-          quality: 70,
+        const captured = await this.captureVisibleTabWithRetry(
+          refreshedTab.windowId,
+          { format: "jpeg", quality: 70 },
+        );
+        // LP-9: own resolution/format/scale before anything downstream sees it.
+        const transformed = await transformScreenshot(captured);
+        dataUrl = transformed.dataUrl;
+        this.lastScreenshotScaleFactor = transformed.scaleFactor;
+        this.traceRecorder?.recordEvent("screenshot_transform", {
+          scaleFactor: transformed.scaleFactor,
+          width: transformed.width,
+          height: transformed.height,
+          path: "structured_perception",
         });
         setCachedScreenshot(tabId, dataUrl);
         screenshotStatus = "captured";
@@ -4836,7 +4849,7 @@ export class AgentLoop {
       // instead of calling VLM with an invalid image URL.
       if (!dataUrl || !primaryImageBudgetAllowed) {
         if (isFirstPerception) {
-          this.perception.markPanoramicDone();
+          this.perception.markFirstPerceptionDone();
         }
         const result = await this.perception.observe(
           {
@@ -4885,7 +4898,7 @@ export class AgentLoop {
         );
       } else {
         if (isFirstPerception) {
-          this.perception.markPanoramicDone();
+          this.perception.markFirstPerceptionDone();
         }
 
         const result = await this.perception.observe(
@@ -5120,9 +5133,19 @@ export class AgentLoop {
           /* tab may be closed */
         }
       }
-      const dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
+      const captured = await this.captureVisibleTabWithRetry(tab.windowId, {
         format: "jpeg",
         quality: 70,
+      });
+      // LP-9: own resolution/format/scale before anything downstream sees it.
+      const transformed = await transformScreenshot(captured);
+      const dataUrl = transformed.dataUrl;
+      this.lastScreenshotScaleFactor = transformed.scaleFactor;
+      this.traceRecorder?.recordEvent("screenshot_transform", {
+        scaleFactor: transformed.scaleFactor,
+        width: transformed.width,
+        height: transformed.height,
+        path: "vl_executor",
       });
       setCachedScreenshot(tabId, dataUrl);
       this.context.setScreenshotForExecutor(dataUrl);

@@ -13,7 +13,6 @@ import {
   TraceSession,
   TraceLLMMessage,
   TraceContextMetrics,
-  TracePanoramicShot,
   TracePerceptionFallbackReason,
   TracePerceptionFreshnessReason,
   TracePerceptionMode,
@@ -398,7 +397,6 @@ export class TraceRecorder {
     },
     screenshotDataUrl?: string,
     elementSummary?: string,
-    panoramicShots?: TracePanoramicShot[],
   ): Promise<void> {
     if (!this.currentTurn) return;
     const sessionId = this.currentTurn.sessionId;
@@ -406,15 +404,6 @@ export class TraceRecorder {
     const pageStateRef = this.currentTurn.postToolSnapshot
       ? "postTool"
       : "preDecision";
-    const enrichedPanoramicShots =
-      sessionId && typeof turnNumber === "number" && panoramicShots?.length
-        ? panoramicShots.map((shot, index) => ({
-            screenshotId: `${sessionId}:turn:${turnNumber}:panorama:${index}`,
-            sessionId,
-            turnNumber,
-            ...shot,
-          }))
-        : panoramicShots;
     const pageState = this.currentTurn.pageState;
     const capture = pageState?.[pageStateRef];
     const redactedElementSummary = this.redactSensitiveTraceValue(elementSummary);
@@ -435,19 +424,6 @@ export class TraceRecorder {
           dataUrl: screenshotDataUrl,
           scrollY: capture.scrollY,
           label: "viewport",
-          status: perception.screenshotStatus,
-          source: perception.source,
-        });
-      }
-      for (const shot of enrichedPanoramicShots ?? []) {
-        screenshots.push({
-          screenshotId: shot.screenshotId,
-          sessionId: shot.sessionId,
-          turnNumber: shot.turnNumber,
-          kind: "panorama",
-          dataUrl: shot.dataUrl,
-          scrollY: shot.scrollY,
-          label: shot.label,
           status: perception.screenshotStatus,
           source: perception.source,
         });
@@ -478,9 +454,6 @@ export class TraceRecorder {
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
       ...(redactedElementSummary
         ? { elementSummary: redactedElementSummary }
-        : {}),
-      ...(enrichedPanoramicShots?.length
-        ? { panoramicShots: enrichedPanoramicShots }
         : {}),
       pageStateRef,
     };

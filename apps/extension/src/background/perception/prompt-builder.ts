@@ -217,23 +217,6 @@ export function buildProductionPerceptionPrompt(
     input.elements.length,
   );
 
-  let panoramicNote = "";
-  if (input.panoramicScreenshots?.length) {
-    const imageLabels = input.panoramicScreenshots
-      .map(
-        (shot, index) =>
-          `Image ${index + 2}: ${shot.label} view at scroll Y=${shot.scrollY}.`,
-      )
-      .join("\n");
-    panoramicNote = [
-      "",
-      "NOTE: Multiple screenshots are provided showing different scroll positions.",
-      `Image 1: current viewport at scroll Y=${input.scroll.y}.`,
-      imageLabels,
-      'Report CHANGES and AFFORDANCES covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., "logo visible in Image 2 (top)").',
-    ].join("\n");
-  }
-
   const changesHint = options.isFirstObservation
     ? "\n(First observation - describe the current page layout and state instead of changes.)"
     : "";
@@ -250,7 +233,6 @@ export function buildProductionPerceptionPrompt(
     taskContextNote,
     scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " - more content below" : ""}`,
     elementSummary,
-    panoramicNote,
     changesHint,
   });
 }
