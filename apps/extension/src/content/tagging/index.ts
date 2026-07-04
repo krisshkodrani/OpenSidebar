@@ -19,6 +19,7 @@ import {
   idToHash,
   previousIds,
   resetStableIdMaps,
+  swapLastRunHashes,
 } from "./stable-ids";
 import {
   querySelectorAllDeep,
@@ -87,6 +88,7 @@ export function addDynamicTag(el: Element): number {
 /** Reset all stable ID state (call on full page navigation) */
 export function resetStableIds(): void {
   resetStableIdMaps();
+  lastRunWasCapped = false;
   tagMap.clear();
   dynamicTagEntries.clear();
 }
@@ -104,6 +106,13 @@ let lastOverflow: {
 export function getOverflowMetadata(): typeof lastOverflow {
   return lastOverflow;
 }
+
+/**
+ * LP-10: whether the previous tagging run hit the element cap. When either
+ * run is capped, the stable-hash set difference is unreliable (truncation
+ * shuffles which elements make the cut), so new-element marks are suppressed.
+ */
+let lastRunWasCapped = false;
 
 export function tagElements(): TaggedElement[] {
   // 1. Remove old visual labels and MAIN-world bridge attributes
@@ -168,6 +177,7 @@ export function tagElements(): TaggedElement[] {
   );
 
   const results: TaggedElement[] = [];
+  const resultHashes: string[] = [];
   const activeHashes = new Set<string>();
   for (const el of allCandidates) {
     if (results.length >= MAX_TAGGED_ELEMENTS) break;
@@ -210,6 +220,7 @@ export function tagElements(): TaggedElement[] {
       isVisible: true,
       isDisabled: isDisabled(el),
     });
+    resultHashes.push(finalHash);
   }
 
   // 8. Restore dynamic tags — pinned entries survive cap + refresh for cyclesRemaining
@@ -256,6 +267,7 @@ export function tagElements(): TaggedElement[] {
       isVisible: true,
       isDisabled: isDisabled(entry.el),
     });
+    resultHashes.push(hash ?? "");
   }
 
   // 9. Set overflow metadata
@@ -268,6 +280,27 @@ export function tagElements(): TaggedElement[] {
   } else {
     lastOverflow = null;
   }
+
+  // 9b. LP-10: mark elements new since the previous snapshot (stable-hash
+  // set difference). Suppressed when the diff is unreliable or uninformative:
+  // first run (no baseline), navigation-scale change (>50% new), or a capped
+  // run on either side (truncation shuffles which elements make the cut).
+  const isCapped = results.length >= MAX_TAGGED_ELEMENTS;
+  const previousRunHashes = swapLastRunHashes(new Set(activeHashes));
+  if (previousRunHashes.size > 0 && !isCapped && !lastRunWasCapped) {
+    let newCount = 0;
+    for (let i = 0; i < results.length; i++) {
+      const hash = resultHashes[i];
+      if (hash && !previousRunHashes.has(hash)) {
+        results[i].isNew = true;
+        newCount++;
+      }
+    }
+    if (newCount > results.length / 2) {
+      for (const result of results) delete result.isNew;
+    }
+  }
+  lastRunWasCapped = isCapped;
 
   // 10. Clean up hashes for elements gone for 2+ refreshes
   // previousIds now contains IDs that existed before but weren't seen this refresh.

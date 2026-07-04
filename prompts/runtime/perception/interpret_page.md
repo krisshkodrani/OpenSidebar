@@ -38,7 +38,7 @@ Interactive elements: {{elementSummary}}
 Report (use exact numbered format - no bold, no markdown):
 
 1. LOCATION: Page identity - read the page title, heading, and URL. Report step/page number if visible (for example, "Step 4 of 30"). Always state where the agent is.
-2. CHANGES: What changed since the last observation. Note new/removed elements, state transitions, content updates, navigation.{{changesHint}}
+2. CHANGES: What changed since the last observation. Note new/removed elements, state transitions, content updates, navigation. Elements prefixed `*` in the element list appeared since the last action — treat them as its likely result.{{changesHint}}
 3. BLOCKERS: Anything preventing interaction, especially blockers to the current step objective. Classify each on its own line:
    NUISANCE [tagId] "element text" -> click [dismissTagId]
    RELEVANT [tagId] "element text" -> reason to keep
