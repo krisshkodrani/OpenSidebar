@@ -33,7 +33,6 @@ import type {
   ObserveInput,
   PerceptionState,
   PerceptionResult,
-  PanoramicShot,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -448,7 +447,7 @@ export class PerceptionAgent {
   private _lastRenderHash = "";
   private fingerprintAge = 0;
   private _lastScreenshotUrl: string | null = null;
-  private _hasRunPanoramicPerception = false;
+  private _hasRunFirstPerception = false;
   private _turnCounter = 0;
   private _lastInterpretation: string | null = null;
   private _lastObservedUrl = "";
@@ -463,8 +462,6 @@ export class PerceptionAgent {
     durationMs: 0,
     cached: false,
   };
-  /** Stored panoramic shots from first-turn capture (for retroactive T1 trace recording) */
-  private _lastPanoramicShots: PanoramicShot[] | null = null;
 
   // -------------------------------------------------------------------------
   // Public API — state accessors
@@ -482,16 +479,13 @@ export class PerceptionAgent {
     return this.lastFingerprint;
   }
 
-  get panoramicDone(): boolean {
-    return this._hasRunPanoramicPerception;
+  /** Whether the first perception of this session has already run. */
+  get firstPerceptionDone(): boolean {
+    return this._hasRunFirstPerception;
   }
 
-  markPanoramicDone(): void {
-    this._hasRunPanoramicPerception = true;
-  }
-
-  getPanoramicShots(): PanoramicShot[] | null {
-    return this._lastPanoramicShots;
+  markFirstPerceptionDone(): void {
+    this._hasRunFirstPerception = true;
   }
 
   getLastTraceMeta(): PerceptionTraceMeta {
@@ -500,10 +494,6 @@ export class PerceptionAgent {
 
   getLastTraceStats(): PerceptionTraceStats {
     return { ...this._lastTraceStats };
-  }
-
-  setPanoramicShots(shots: PanoramicShot[] | null): void {
-    this._lastPanoramicShots = shots;
   }
 
   /** Force next observe() to re-interpret even if fingerprint matches. */
@@ -571,7 +561,7 @@ export class PerceptionAgent {
     this._lastRenderHash = "";
     this.fingerprintAge = 0;
     this._lastScreenshotUrl = null;
-    this._hasRunPanoramicPerception = false;
+    this._hasRunFirstPerception = false;
     this._turnCounter = 0;
     this._lastInterpretation = null;
     this._lastObservedUrl = "";
@@ -586,7 +576,6 @@ export class PerceptionAgent {
       durationMs: 0,
       cached: false,
     };
-    this._lastPanoramicShots = null;
   }
 
   /** Serialize state for cross-navigation persistence. */
@@ -764,7 +753,6 @@ export class PerceptionAgent {
       providers,
       promptText,
       input.screenshotDataUrl,
-      input.panoramicScreenshots,
       freshnessReason,
       callStart,
       signal,
@@ -840,23 +828,6 @@ export class PerceptionAgent {
       viewport,
     );
 
-    // Build panoramic note
-    let panoramicNote = "";
-    if (input.panoramicScreenshots?.length) {
-      const imageLabels = input.panoramicScreenshots
-        .map(
-          (s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`,
-        )
-        .join("\n");
-      panoramicNote = [
-        "",
-        "NOTE: Multiple screenshots are provided showing different scroll positions.",
-        `Image 1: current viewport at scroll Y=${input.scroll.y}.`,
-        imageLabels,
-        'Report CHANGES and AFFORDANCES covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., "logo visible in Image 2 (top)").',
-      ].join("\n");
-    }
-
     // Build changes hint for first turn
     const changesHint =
       this.observationLog.length === 0
@@ -875,7 +846,6 @@ export class PerceptionAgent {
       langNote,
       scrollPosition: `${input.scroll.y}/${input.scroll.maxY}px (${scrollPct}%)${moreBelow ? " — more content below" : ""}`,
       elementSummary,
-      panoramicNote,
       changesHint,
     });
   }
@@ -921,7 +891,6 @@ export class PerceptionAgent {
     providers: PerceptionProvider[],
     promptText: string,
     screenshotDataUrl: string,
-    panoramicScreenshots: PanoramicShot[] | undefined,
     freshnessReason: TracePerceptionFreshnessReason,
     callStart: number,
     signal?: AbortSignal,
@@ -950,7 +919,7 @@ export class PerceptionAgent {
               ])
             : AbortSignal.timeout(PERCEPTION_TIMEOUT_MS);
 
-          // Build content parts: text + primary screenshot + optional panoramic
+          // Build content parts: text + primary screenshot
           const contentParts: Array<
             | { type: "text"; text: string }
             | { type: "image_url"; image_url: { url: string } }
@@ -958,26 +927,16 @@ export class PerceptionAgent {
             { type: "text", text: promptText },
             { type: "image_url", image_url: { url: screenshotDataUrl } },
           ];
-          if (panoramicScreenshots?.length) {
-            for (const shot of panoramicScreenshots) {
-              contentParts.push({
-                type: "image_url",
-                image_url: { url: shot.dataUrl },
-              });
-            }
-          }
 
           const payload: Record<string, unknown> = {
             model: provider.model,
             messages: [{ role: "user", content: contentParts }],
           };
           if (provider.providerId === "moonshot") {
-            payload.max_completion_tokens = panoramicScreenshots?.length
-              ? 800
-              : 600;
+            payload.max_completion_tokens = 600;
             payload.thinking = { type: "disabled" };
           } else {
-            payload.max_tokens = panoramicScreenshots?.length ? 800 : 600;
+            payload.max_tokens = 600;
             payload.temperature = 0.1;
           }
 
