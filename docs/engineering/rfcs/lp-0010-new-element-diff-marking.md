@@ -1,7 +1,8 @@
 # RFC LP-10 — New-Element Diff Marking in the Element List
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: `content/tagging/` (stable-ids already track cross-refresh identity), element-list formatting in `background/perception/perception.ts` grounding lines + agent context, one prompt-line addition, unit tests
 Related: Perception SOTA audit (2026-07-04); browser-use serializer (`*[` convention); stable FNV-1a ID system (already shipped)
 
@@ -55,9 +56,36 @@ backendNodeId tracking to get the same signal.
   trace shows sane new-element counts.
 - `pnpm run verify` green.
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Approved
 
-Chosen path: As proposed — smallest-effort, highest-certainty item of the
-perception series; ship ahead of LP-9's A/B since it is orthogonal.
+Chosen path:
+
+- Set-diff stable hashes across snapshots after DOM-modifying actions; mark
+  new elements with a `*` prefix in the element list; suppress marking when
+  >50% of elements are new or overflow metadata changed; one explanatory
+  line in the agent and perception prompts; per-turn new-element count in
+  traces.
+
+Required edits before implementation:
+
+- None.
+
+Non-blocking follow-ups:
+
+- Feeding the new-element count to the completion kernel as evidence.
+
+Do not do:
+
+- No marking on pure re-reads; no diffing across navigation boundaries.
+
+Evidence required before merge:
+
+- Unit tests (dropdown fixture marks, navigation suppression, truncation
+  stability); e2e spot-check on multi-step-form and online-shop suites;
+  verify green.
+
+Next action:
+
+- Implement

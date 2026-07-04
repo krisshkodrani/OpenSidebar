@@ -1,7 +1,8 @@
 # RFC LP-12 — Extension-Native Reach: Closed Shadow Roots and Cross-Origin Iframes
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: `content/tagging/dom-traversal.ts` (traversal roots), manifest content-script `all_frames` wiring + per-frame snapshot merge in `content/` and `background/tools/bridge.ts`, permissions review
 Related: Perception SOTA audit (2026-07-04); Chrome `chrome.dom.openOrClosedShadowRoot` (Chrome 88+); browser-use `cross_origin_iframes` (off by default, CDP OOPIF complexity)
 
@@ -74,10 +75,38 @@ Phase B — cross-origin iframes (medium):
 - E2E: iframe checkout task completes tag-based (no click_coordinates);
   `pnpm run verify` green.
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Approved with edits
 
-Chosen path: Phase A immediately (small, zero permission change). Phase B
-behind a setting default-on for dev, default-off for the first CWS release
-until the listing review clears, then flip.
+Chosen path:
+
+- Phase A (closed shadow roots via chrome.dom.openOrClosedShadowRoot under
+  the existing depth cap) lands immediately.
+- Phase B (all_frames per-frame snapshots, frame-namespaced tags,
+  frame-routed actions) lands behind a setting: default-on for dev builds,
+  default-off in the shipped build until the first CWS review clears, then
+  flipped.
+
+Required edits before implementation:
+
+- Phase B ships with the per-frame element bound (~200), hidden/zero-size
+  frame skipping, and the 150 ms partial-merge timeout as specified.
+
+Non-blocking follow-ups:
+
+- PRIVACY_POLICY wording for frame reads; CWS listing note.
+
+Do not do:
+
+- No new host permissions; no writes into closed shadow roots beyond normal
+  event dispatch on real elements.
+
+Evidence required before merge:
+
+- Closed-shadow-root and cross-origin-iframe fixtures with tag-based e2e
+  completion (no click_coordinates); merge-race unit tests; verify green.
+
+Next action:
+
+- Implement

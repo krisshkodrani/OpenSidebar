@@ -1,7 +1,8 @@
 # RFC LP-13 — Region Zoom: an inspect_region Tool for Small Targets
 
-Lifecycle status: Draft (recommendation only — needs owner Decision Stamp)
+Lifecycle status: Decision stamped
 Date: 2026-07-04
+Decision date: 2026-07-04 (owner accepted the recommended decisions for the LP-9…LP-14 series in session)
 Scope: new tool (`ToolDefinition` + args type + executor in `background/tools/`), `screenshot-transform.ts` crop path (depends on LP-9), tool metadata/caps, prompt guidance line
 Related: Perception SOTA audit (2026-07-04); LP-9 (scale factor prerequisite); Anthropic computer-use `zoom` action (`computer_20251124`); Ferret-UI/AnyRes sub-image literature
 
@@ -52,9 +53,35 @@ with small labels," the executor is stuck.
   it cannot read from the base screenshot.
 - `pnpm run verify` green; tool-count assertions updated (38→39).
 
-## Recommended Decision (agent recommendation, not an owner stamp)
+## Decision
 
 Status: Approved with edits
 
-Chosen path: As proposed, sequenced strictly after LP-9 (needs the owned
-scale factor). Land the fixture first so the improvement is measurable.
+Chosen path:
+
+- New inspect_region tool (viewport-coordinate rect + tag-id sugar), crop
+  via LP-9's owned scale factor, ≤2 zooms/turn, high-detail budget
+  charging, canvas-chart fixture landing first.
+
+Required edits before implementation:
+
+- Sequenced strictly after LP-9 merges (scale factor is a hard dependency).
+
+Non-blocking follow-ups:
+
+- Auto-zoom suggestions from perception VISUAL-ONLY findings.
+
+Do not do:
+
+- No full-screenshot upscaling; no zoom results persisted into history
+  beyond the turn.
+
+Evidence required before merge:
+
+- Crop-math unit tests across HiDPI/downscaled profiles; the canvas fixture
+  e2e task reads a value unreadable in the base screenshot; tool-count
+  assertions updated; verify green.
+
+Next action:
+
+- Implement
