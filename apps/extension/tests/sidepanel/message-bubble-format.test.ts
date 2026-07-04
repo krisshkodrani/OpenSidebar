@@ -1,5 +1,14 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import "../setup";
+
+// This suite tests markdown normalization/formatting, not sanitization.
+// DOMPurify >=3.4.8 strips list containers (<dl>, <ul>) under happy-dom's
+// DOM implementation — a test-environment artifact that does not occur in
+// real browsers — so the sanitizer is stubbed to identity here.
+vi.mock("../../src/utils/sanitize-html", () => ({
+  sanitizeHtml: (html: string) => html,
+}));
+
 import {
   normalizeCompletionMarkdown,
   renderAssistantMarkdown,
