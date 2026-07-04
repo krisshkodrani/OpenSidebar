@@ -292,7 +292,6 @@ async function removeUserOpenedPanel(tabId: number): Promise<void> {
 void (async () => {
   await restoreWorkspacesFromExistingGroups();
   await orchestrator.restoreFromCheckpoints();
-  await orchestrator.processDurableRunControlRequests();
   if (orchestrator.hasActiveTasks()) {
     await startKeepalive();
   }

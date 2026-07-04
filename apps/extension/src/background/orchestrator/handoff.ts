@@ -653,7 +653,6 @@ export function buildExecutorInstruction(
       "PROFILE DATA POLICY:",
       "- The user's Profile Digest facts are available through get_profile_fields when notes are enabled and analyzed.",
       "- If the current step needs name, email, or other exact profile facts, call get_profile_fields for those labels before typing or navigating away.",
-      '- If the current step needs the saved CV/resume file, upload it with upload_file using profileFile: "cv".',
       "- Treat returned profile facts as the source of truth; do not invent replacements when the profile is expected to provide them.",
       "- If a requested profile value is missing, leave the field unresolved and report it instead of guessing.",
       "- Do not leave the current checkout or form page to search for a login/profile page unless the page explicitly shows authentication is required.",
@@ -673,7 +672,6 @@ export function buildExecutorInstruction(
     sections.push(
       "",
       "JOB APPLICATION POLICY:",
-      '- Use profileFile: "cv" for saved CV/resume uploads.',
       "- Fill the application and verify required fields, but do not click the final submit/apply control until explicit approval is granted.",
       "- Treat user-supplied application field values as literals. For long textarea answers, preserve paragraph breaks and wording exactly; do not summarize, rewrite, bulletize, or put one sentence on each line.",
       '- Verify long textarea answers with read_element(attribute="value") before calling done().',

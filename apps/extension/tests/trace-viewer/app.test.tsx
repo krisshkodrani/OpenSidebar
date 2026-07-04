@@ -71,10 +71,6 @@ vi.mock("../../src/trace-viewer/components/traces/PerceptionList", () => ({
 vi.mock("../../src/trace-viewer/components/traces/LogList", () => ({
   default: () => <div>LogList</div>,
 }));
-vi.mock("../../src/trace-viewer/components/BackendPanel", () => ({
-  default: () => <div>BackendPanel</div>,
-}));
-
 function resetStore() {
   useStore.setState((useStore as any).getInitialState(), true);
 }
@@ -155,20 +151,6 @@ describe("trace-viewer App", () => {
       expect(useStore.getState().activeSubview).toBe("logs");
       expect(container.textContent).toContain("TraceDetailHeader:session-1");
       expect(container.textContent).toContain("LogList");
-    });
-  });
-
-  test("renders backend panel from backend hash route", async () => {
-    window.location.hash = "#view=backend";
-
-    await act(async () => {
-      root.render(<App />);
-    });
-
-    await waitFor(() => {
-      expect(useStore.getState().activeSubview).toBe("overview");
-      expect(container.textContent).toContain("BackendPanel");
-      expect(container.textContent).not.toContain("UnifiedSessionsTableView");
     });
   });
 

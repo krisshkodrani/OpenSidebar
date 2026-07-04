@@ -9,7 +9,7 @@ file is the fast operational orientation.
 | Task | Command |
 | --- | --- |
 | Build | `pnpm run build` (nx → vite, outputs `dist/`) |
-| Test (all) | `pnpm test` (extension + backend, vitest) |
+| Test (all) | `pnpm test` (vitest) |
 | One test file | `pnpm exec vitest run --config apps/extension/vitest.config.ts <path>` |
 | Lint | `pnpm run lint` |
 | Typecheck | `pnpm run typecheck` (tsc `-b`, project refs) |
@@ -26,7 +26,6 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 - `apps/extension/src/trace-viewer` — trace/analytics UI.
 - `packages/shared-types/src/messages.ts` — the cross-context contract: a ~62-variant
   `RuntimeMessage` union, handled with an exhaustive `never` check in `sidepanel/bridge.ts`.
-- `apps/backend` — task-run durability + scheduling library (SQLite). Mounted in-process by the dev log-server at `127.0.0.1:7589/api/backend`; the standalone `server.ts` (7590) is legacy/unstarted.
 - `docs/architecture/` — per-subsystem docs (agent-loop, orchestrator, perception-layer, runtime-boundaries, …).
 
 ### Landmines (read before editing)

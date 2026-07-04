@@ -302,7 +302,6 @@ describe("Orchestrator handoff briefing", () => {
 
     expect(instruction).toContain("PROFILE DATA POLICY:");
     expect(instruction).toContain("get_profile_fields");
-    expect(instruction).toContain('profileFile: "cv"');
     expect(instruction).toContain("Do not leave the current checkout or form page");
   });
 

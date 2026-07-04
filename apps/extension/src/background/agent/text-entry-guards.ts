@@ -152,7 +152,7 @@ export function validateTextEntryTarget(
   if (isFileInputElement(element)) {
     return (
       `Error: [${element.tag}] is a file input. Use upload_file with ` +
-      `{"id":${element.tag}} and either a url or profileFile instead of typing text into it.`
+      `{"id":${element.tag}} and a url instead of typing text into it.`
     );
   }
   if (!isTextLikeInputElement(element)) {
@@ -200,7 +200,7 @@ export function assessTextEntryClickGuard(params: {
       explicitValue: null,
       blockReason:
         `Error: [${params.targetId}] is a file input. Use upload_file with ` +
-        `{"id":${params.targetId}} and either a url or profileFile instead of clicking it.`,
+        `{"id":${params.targetId}} and a url instead of clicking it.`,
     };
   }
 

@@ -2,7 +2,6 @@ import { toolRegistry } from "./registry";
 import { ToolName, MessageSource, UserSettings } from "../../types";
 import { logger } from "../../utils";
 import { sanitizeUrl } from "../security";
-import { resolveProfileFile } from "../infrastructure/backend-client";
 import {
   formatProfileFieldsForToolResult,
   resolveProfileFields,
@@ -2434,28 +2433,8 @@ export function registerTools() {
     ToolName.UPLOAD_FILE,
     UPLOAD_FILE_DEF,
     async (args, tabId) => {
-      const profileFile =
-        typeof args.profileFile === "string" ? args.profileFile.trim() : "";
-      if (profileFile) {
-        const result = await resolveProfileFile(profileFile);
-        if (!result) {
-          return `Error: Could not read profile file "${profileFile}". Ensure the backend is running and the file is configured in the local profile.`;
-        }
-
-        return executeContentTool(
-          ToolName.UPLOAD_FILE,
-          {
-            id: args.id,
-            data: result.data,
-            filename: result.filename,
-            mimeType: result.mimeType,
-          },
-          tabId,
-        );
-      }
-
       const url = typeof args.url === "string" ? args.url : "";
-      if (!url) return "Error: provide either url or profileFile.";
+      if (!url) return "Error: provide a url for the file to upload.";
       const urlResult = sanitizeUrl(url);
       if (!urlResult.ok) return `Error: ${urlResult.error}`;
 

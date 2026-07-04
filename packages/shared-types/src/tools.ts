@@ -263,8 +263,6 @@ export interface UploadFileArgs {
   id: number;
   /** URL of the file to upload (fetched by the service worker) */
   url?: string;
-  /** Named file from the local personal profile, e.g. "cv" */
-  profileFile?: string;
 }
 
 /** Arguments for go_back */

@@ -9,7 +9,6 @@ import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
-import BackendPanel from "./components/BackendPanel";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
 import FleetInsights from "./components/traces/FleetInsights";
@@ -89,7 +88,6 @@ export default function App() {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
-  const [backendView, setBackendView] = useState<boolean>(false);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
 
   // Apply viewer theme
@@ -116,14 +114,11 @@ export default function App() {
   useEffect(() => {
     const { session, view, top, turn, skill } = parseHash();
     if (skill) setCurrentSkillId(skill);
-    if (view === "backend") setBackendView(true);
     if (session) setCurrentSessionId(session);
     if (view && VALID_SUBVIEWS.has(view)) {
-      setBackendView(false);
       setActiveSubview(view as Subview);
     }
     if (top && VALID_TOP_LEVEL_VIEWS.has(top)) {
-      setBackendView(false);
       setActiveTopLevelView(top as TopLevelView);
     }
     if (turn && !isNaN(turn)) {
@@ -143,9 +138,7 @@ export default function App() {
 
   useEffect(() => {
     const parts: string[] = [];
-    if (backendView) {
-      parts.push("view=backend");
-    } else if (currentSkillId) {
+    if (currentSkillId) {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
@@ -162,13 +155,7 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [
-    backendView,
-    currentSessionId,
-    activeSubview,
-    activeTopLevelView,
-    currentSkillId,
-  ]);
+  }, [currentSessionId, activeSubview, activeTopLevelView, currentSkillId]);
 
   const navigateToSkill = useCallback((skillId: string) => {
     setCurrentSkillId(skillId);
@@ -178,24 +165,12 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
-  const toggleBackend = useCallback(() => {
-    setBackendView((prev) => {
-      const next = !prev;
-      // Leaving a skill detail when entering the backend view, so the toggle
-      // always lands somewhere visible (App renders SkillDetail ahead of it).
-      if (next) setCurrentSkillId(null);
-      return next;
-    });
-  }, []);
-
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
-      <ViewerHeader backendActive={backendView} onToggleBackend={toggleBackend} />
+      <ViewerHeader />
       <ViewerErrorBoundary>
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
-        ) : backendView ? (
-          <BackendPanel />
         ) : (
           <ViewerBody
             navigateToSkill={navigateToSkill}

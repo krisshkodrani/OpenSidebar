@@ -2,7 +2,7 @@
  * Dev stack runner:
  * 1) Clear stale processes on dev ports
  * 2) Clean Vite artifacts
- * 3) Start local server (captures logs/traces and serves backend APIs)
+ * 3) Start local server (captures logs/traces)
  * 4) Start Vite dev server directly
  *
  * Stops long-running processes on Ctrl+C.
@@ -19,7 +19,6 @@ import {
 
 const LOCAL_SERVER_PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 const VITE_PORT = 5173;
-const LEGACY_BACKEND_PORT = 7590;
 const LOCAL_SERVER_HEALTH_URL = `http://127.0.0.1:${LOCAL_SERVER_PORT}/health`;
 
 const VITE_CONFIG_ARTIFACT = /^vite\.config\.ts\.timestamp-.*\.mjs$/;
@@ -76,7 +75,6 @@ async function main(): Promise<void> {
   await Promise.all([
     clearPort(VITE_PORT),
     clearPort(LOCAL_SERVER_PORT),
-    clearPort(LEGACY_BACKEND_PORT),
   ]);
 
   const cleaned = await cleanViteArtifacts(process.cwd());
@@ -132,9 +130,6 @@ async function main(): Promise<void> {
 
   console.log(
     `[dev:stack] Trace viewer: http://127.0.0.1:${LOCAL_SERVER_PORT}/viewer`,
-  );
-  console.log(
-    `[dev:stack] Backend API: http://127.0.0.1:${LOCAL_SERVER_PORT}/api/backend/health`,
   );
   console.log(
     "[dev:stack] Extension: load dist-dev/ as unpacked in chrome://extensions" +

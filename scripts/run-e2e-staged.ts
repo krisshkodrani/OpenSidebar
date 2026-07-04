@@ -20,16 +20,7 @@ const E2E_DIR = path.resolve(PROJECT_ROOT, "apps/extension/tests/e2e");
 const CONFIG = path.resolve(E2E_DIR, "vitest.e2e.config.ts");
 const VITEST_CLI = path.resolve(PROJECT_ROOT, "node_modules/vitest/vitest.mjs");
 
-const OPTIONAL_E2E_GATES = [
-  {
-    flag: "backend-durable",
-    files: [
-      "backend-durable-resume.test.ts",
-      "structured-progress-resume.test.ts",
-    ],
-    description: "backend durable-run E2Es",
-  },
-] as const;
+const OPTIONAL_E2E_GATES = [] as const;
 
 function listTestFiles(): string[] {
   return fs

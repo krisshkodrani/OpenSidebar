@@ -13,7 +13,7 @@
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
   Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows with configurable safety gates.<br />
-  Bring your own provider key. No subscription, no telemetry, and an optional local backend for profile data and durable task state.
+  Bring your own provider key. No subscription, no telemetry, no backend — the extension is fully self-contained.
 </p>
 
 ---
@@ -75,7 +75,7 @@ Use package scripts through Corepack-managed pnpm for day-to-day work. Nx is the
 ```bash
 pnpm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
 pnpm run dist     # Standalone production/manual extension build into dist/
-pnpm test         # Extension and backend unit/integration tests
+pnpm test         # Extension unit/integration tests
 pnpm run verify   # Local confidence gate before commit or push
 pnpm run release:verify # Release confidence gate with production audit
 pnpm run release:package # Build dist/ and write release artifacts
@@ -88,7 +88,7 @@ Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `di
 
 Use `pnpm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
 
-`pnpm run dev` includes the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
+`pnpm run dev` includes the local log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
 
 ## Development
 
@@ -97,7 +97,7 @@ Main commands:
 ```bash
 pnpm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
 pnpm run dist                 # Standalone production/manual extension build into dist/
-pnpm test                     # Extension and backend unit/integration tests
+pnpm test                     # Extension unit/integration tests
 pnpm run verify               # Lint, typecheck, tests, build, and dist check
 pnpm run release:verify       # Release gate plus production dependency audit
 pnpm run release:package      # Build dist/ and create zip, checksum, notes, manifest
@@ -123,7 +123,6 @@ The package scripts are thin entry points over Nx targets. Use Nx directly when 
 pnpm exec nx run extension:dev
 pnpm exec nx run extension:build
 pnpm exec nx run extension:test
-pnpm exec nx run backend:test
 pnpm exec nx run-many -t lint
 pnpm exec nx run-many -t typecheck
 ```
@@ -173,7 +172,6 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 ## Repo Layout
 
 - `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
-- `apps/backend/` - local backend routes for profile data and durable task state
 - `packages/shared-types/` - shared runtime and domain types
 - `packages/prompts/` - compiled prompt runtime and generated prompt registry
 - `prompts/` - prompt source templates
