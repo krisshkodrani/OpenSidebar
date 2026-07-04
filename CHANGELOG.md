@@ -37,6 +37,18 @@ unified observability engine, and an experimental OpenClaw "brain" integration
 - RFC decision governance: decision stamps validated in `verify`/`release:verify`.
 - Model catalog: Kimi K2.7 Code and GLM 5.2 added to the curated Fireworks list.
 
+### Removed
+
+- The local backend service (task-run durability ledger + profile file
+  service) is removed entirely. The extension is now fully self-contained:
+  tasks recover from in-browser checkpoints across service-worker restarts,
+  and end when the browser closes. The `upload_file` tool takes a URL only
+  (the backend-served `profileFile: "cv"` alias is gone); Profile Notes in
+  extension storage are unaffected.
+- Dev/test surface no longer ships in the production build: the trace viewer,
+  e2e helper pages, and all localhost log/trace/backend calls are dev-only,
+  enforced by a dist check.
+
 ### Security & Privacy
 
 - Sensitive profile data is now gated behind explicit per-task consent and

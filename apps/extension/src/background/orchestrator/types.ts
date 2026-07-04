@@ -211,16 +211,6 @@ export interface OrchestratorTask {
     selectedOption?: EscalationDecisionMessage["payload"];
   };
   pendingInteraction?: PendingUserInteraction;
-  durableMeta?: {
-    lastResumeSource?: "local" | "backend" | null;
-    lastKnownResumeSafe?: boolean | null;
-    lastResumeSafetyCheckedAt?: number | null;
-    lastKnownResumeReason?: string | null;
-    resumeRequestedAt?: number | null;
-    resumeRequestedReason?: string | null;
-    stopRequestedAt?: number | null;
-    stopRequestedReason?: string | null;
-  };
   planClassification?: {
     isSingleNode: boolean;
     difficulty: Difficulty;

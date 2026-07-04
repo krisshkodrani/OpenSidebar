@@ -35,7 +35,6 @@ Xiaomi MiMo is available as an agent provider mode. Configure it with `XIAOMI_AP
 - `apps/extension/src/overlay/`: draggable in-page overlay harness that mounts the shared side panel app
 - `apps/extension/src/background/environment/`: partial page, content bridge, and persistence ports for reusable background I/O
 - `apps/extension/src/trace-viewer/`: trace inspection UI
-- `apps/backend/src/`: local backend service for scheduled tasks and durable run state
 - `packages/prompts/src/`: compiled prompt registry and render helpers
 - `packages/shared-types/src/`: shared runtime and domain contracts
 

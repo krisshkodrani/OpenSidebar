@@ -932,8 +932,7 @@
         • <span class="mono">clearTaskCheckpoint(workspaceId)</span><br>
         • <span class="mono">cleanupWorkspaceRuntime()</span><br>
         • <span class="mono">tasksByWorkspace.delete()</span><br>
-        • Emit <span class="mono">AGENT_STATUS(IDLE)</span><br>
-        • Persist completion to backend
+        • Emit <span class="mono">AGENT_STATUS(IDLE)</span>
       </div>
     </div>
   </div>
@@ -946,7 +945,7 @@
   <div class="section-header">
     <span class="section-badge badge-infra">Infra</span>
     <span class="section-title">Infrastructure — Durable Persistence, Telemetry &amp; Trace</span>
-    <span class="section-file">orchestrator/checkpoint-store.ts &nbsp;|&nbsp; agent/trace.ts &nbsp;|&nbsp; infrastructure/backend-client.ts</span>
+    <span class="section-file">orchestrator/checkpoint-store.ts &nbsp;|&nbsp; agent/trace.ts</span>
   </div>
 
   <div class="flow-row">
@@ -957,17 +956,6 @@
         <span class="mono">saveOrchestratorCheckpoints()</span><br>
         Survives service worker restarts (~30s inactivity timeout).<br>
         <span class="mono">TurnCheckpoint</span> per node for mid-turn recovery
-      </div>
-    </div>
-    <div class="connector-h"><span class="conn-arrow">→</span></div>
-    <div class="box">
-      <div class="box-label infra">Backend Sync</div>
-      <div class="box-title">Backend Client (port 7590)</div>
-      <div class="box-detail">
-        <span class="mono">upsertTaskRun()</span> — durable run record<br>
-        <span class="mono">upsertTaskRunNode()</span> — per-node state<br>
-        <span class="mono">upsertTaskRunProgress()</span> — structured progress<br>
-        <span class="mono">listTaskRuns()</span> — cross-session resume discovery
       </div>
     </div>
     <div class="connector-h"><span class="conn-arrow">→</span></div>

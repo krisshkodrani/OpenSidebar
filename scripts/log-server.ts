@@ -40,16 +40,11 @@ import {
   listSkillDescriptors,
   getLoadedSkillContract,
 } from "../apps/extension/src/background/orchestrator/skills";
-import { initDatabase, closeDatabase } from "../apps/backend/src/db";
-import {
-  handleBackendRequest,
-  isAllowedLocalRequestOrigin,
-  loadBackendConfig,
-} from "../apps/backend/src/server";
 import {
   buildTraceInsights,
   type TraceInsightsFilters,
 } from "./trace-insights";
+
 import {
   buildHarnessRatchetCandidates,
   buildTraceInsightsFromSqlite,
@@ -75,6 +70,33 @@ import {
   recordSessionSafe,
 } from "./obs/span-store";
 
+const EXTENSION_ORIGIN = /^(chrome|moz)-extension:\/\/[a-z0-9_-]+$/i;
+const LOCAL_BROWSER_ORIGINS = new Set([
+  "http://127.0.0.1:7589",
+  "http://localhost:7589",
+]);
+
+function firstAllowedOriginValue(
+  value: string | string[] | undefined,
+): string | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function isAllowedLocalRequestOrigin(
+  origin: string | string[] | undefined,
+): boolean {
+  const value = firstAllowedOriginValue(origin);
+  if (!value) return true;
+  if (EXTENSION_ORIGIN.test(value)) return true;
+  if (LOCAL_BROWSER_ORIGINS.has(value)) return true;
+  return new Set(
+    (process.env.OPENSIDEBAR_LOCAL_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  ).has(value);
+}
 const PORT = Number(process.env.LOG_SERVER_PORT) || 7589;
 // In Docker, set LOG_SERVER_HOST=0.0.0.0 so the published (host-loopback) port routes in.
 const HOST = process.env.LOG_SERVER_HOST || "127.0.0.1";
@@ -439,20 +461,6 @@ if (!existsSync(GOLDEN_DIR)) {
   mkdirSync(GOLDEN_DIR, { recursive: true });
 }
 
-const backendConfig = loadBackendConfig();
-initDatabase(backendConfig.storage.databasePath);
-
-function toBackendRoute(url: URL): {
-  pathname: string;
-  searchParams: URLSearchParams;
-} {
-  const path = url.pathname.slice("/api/backend".length);
-  return {
-    pathname: path.length > 0 ? path : "/health",
-    searchParams: url.searchParams,
-  };
-}
-
 /** Rotate log file when it exceeds MAX_FILE_SIZE */
 function rotateIfNeeded(): void {
   try {
@@ -528,14 +536,6 @@ const server = createServer(
     // CORS preflight
     if (req.method === "OPTIONS") {
       sendEmpty(res, 204);
-      return;
-    }
-
-    if (
-      url.pathname === "/api/backend" ||
-      url.pathname.startsWith("/api/backend/")
-    ) {
-      await handleBackendRequest(req, res, toBackendRoute(url));
       return;
     }
 
@@ -1385,7 +1385,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Writing to ${LOG_FILE}`);
   console.log(`Traces to ${TRACE_DIR}`);
   console.log(`Trace viewer: http://${HOST}:${PORT}/viewer`);
-  console.log(`Backend API: http://${HOST}:${PORT}/api/backend/health`);
   console.log(`Press Ctrl+C to stop\n`);
   if (process.env.LOG_SERVER_SKIP_TRACE_WARMUP !== "1") {
     readAllTraceSessions().catch((err) => {
@@ -1429,7 +1428,6 @@ function hasTraceTurn(
 
 const shutdown = (signal: string) => {
   console.log(`\n[local-server] Received ${signal}. Shutting down...`);
-  closeDatabase();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
 };

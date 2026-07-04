@@ -138,9 +138,6 @@ The active product surface:
   progress. (Must not import `chrome.*` directly — route through
   `sidepanel/runtime.ts`.)
 - `apps/extension/src/trace-viewer/` — trace inspection and analytics UI.
-- `apps/backend/src/` — local task-run durability + scheduling library (SQLite),
-  mounted in-process by the dev log-server at `127.0.0.1:7589/api/backend`
-  (standalone `server.ts` on 7590 is legacy/unstarted).
 - `packages/shared-types/` — the cross-context contract, including the
   `RuntimeMessage` union.
 - `packages/prompts/` — prompt runtime and generated prompt assets.
@@ -183,10 +180,10 @@ before attaching any diagnostics.
 
 | Command | Description |
 | --- | --- |
-| `pnpm run dev` | Extension dev stack + local backend/logs + trace viewer |
+| `pnpm run dev` | Extension dev stack + local logs + trace viewer |
 | `pnpm run build` | Production build (outputs `dist/`) |
 | `pnpm test` | Extension unit and integration suite (Vitest) |
-| `pnpm run lint` | ESLint for extension, backend, packages, scripts |
+| `pnpm run lint` | ESLint for extension, packages, scripts |
 | `pnpm run typecheck` | TypeScript project-reference typecheck |
 | `pnpm run verify` | **Pre-PR gate:** rfcs + lint + typecheck + test + build + dist-check |
 | `pnpm run fmt` | Prettier for extension source and packages |

@@ -43,7 +43,6 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   "runtime-regression": [
     "approval-recovery.test.ts",
     "ashby-job-application.test.ts",
-    "backend-durable-resume.test.ts",
     "continuation-abandon-restart.test.ts",
     "continuation-act-check-act.test.ts",
     "continuation-cart-swap.test.ts",
@@ -53,12 +52,8 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation.test.ts",
     "lane-topology.test.ts",
     "partner-registration-validation.test.ts",
-    "profile-checkout.test.ts",
-    "profile-experience-application.test.ts",
-    "profile-job-application.test.ts",
     "sequential-tasks.test.ts",
     "stop-drain-recovery.test.ts",
-    "structured-progress-resume.test.ts",
     "vendor-onboarding-wizard.test.ts",
   ],
   "nightly-legacy": [
