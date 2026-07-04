@@ -829,3 +829,74 @@ describe("task-relevance element scoring (WI-3)", () => {
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
   });
 });
+
+describe("LP-10 new-element diff marking", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    resetStableIds();
+  });
+
+  function addButton(label: string): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.id = label.toLowerCase().replace(/\s+/g, "-");
+    document.body.appendChild(btn);
+    return btn;
+  }
+
+  test("no marks on the first snapshot", () => {
+    addButton("Alpha");
+    addButton("Beta");
+    const tagged = tagElements();
+    expect(tagged.every((el) => !el.isNew)).toBe(true);
+  });
+
+  test("marks only elements that appeared since the previous snapshot", () => {
+    addButton("Alpha");
+    addButton("Beta");
+    addButton("Gamma");
+    tagElements();
+
+    addButton("Dropdown Option");
+    const tagged = tagElements();
+
+    const fresh = tagged.filter((el) => el.isNew);
+    expect(fresh.length).toBe(1);
+    expect(fresh[0].text).toBe("Dropdown Option");
+    const alpha = tagged.find((el) => el.text === "Alpha");
+    expect(alpha?.isNew).toBeFalsy();
+  });
+
+  test("no marks on an identical re-read", () => {
+    addButton("Alpha");
+    addButton("Beta");
+    tagElements();
+    const tagged = tagElements();
+    expect(tagged.every((el) => !el.isNew)).toBe(true);
+  });
+
+  test("suppresses marking on navigation-scale change (>50% new)", () => {
+    addButton("Alpha");
+    addButton("Beta");
+    tagElements();
+
+    document.body.innerHTML = "";
+    for (const label of ["One", "Two", "Three", "Four", "Five"]) {
+      addButton(label);
+    }
+    const tagged = tagElements();
+    expect(tagged.length).toBe(5);
+    expect(tagged.every((el) => !el.isNew)).toBe(true);
+  });
+
+  test("resetStableIds clears the diff baseline (fresh navigation start)", () => {
+    addButton("Alpha");
+    tagElements();
+    resetStableIds();
+
+    addButton("Beta");
+    const tagged = tagElements();
+    // First snapshot after reset — no baseline, no marks.
+    expect(tagged.every((el) => !el.isNew)).toBe(true);
+  });
+});

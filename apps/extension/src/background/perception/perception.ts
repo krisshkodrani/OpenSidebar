@@ -222,7 +222,8 @@ function formatElementForGrounding(
     }
   }
 
-  return `[${el.tag}] ${tag}${role}${type}${text}${position}${disabled}`;
+  // LP-10: `*` marks elements that appeared since the previous snapshot.
+  return `${el.isNew ? "*" : ""}[${el.tag}] ${tag}${role}${type}${text}${position}${disabled}`;
 }
 
 /**
