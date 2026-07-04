@@ -17,7 +17,7 @@ disciplined, grounded explanation of *why* it failed. Two specific gaps:
   same task. OpenClaw's core data unit is exactly this pair — the model
   trajectory plus a **Silver trajectory** that reaches the fully-correct end
   state. That pairing is what makes a trace a regression asset and a teaching
-  example (and it feeds naturally into GBrain site-specific learning / AWM-style
+  example (and it feeds naturally into site-specific learning (GBrain itself was removed; see openclaw-integration-goal) / AWM-style
   workflow memory).
 - **Failure analysis is ad-hoc and speculative.** The viewer surfaces a
   heuristic `failureClass` and there's an orchestrator `NodeVerificationResult`

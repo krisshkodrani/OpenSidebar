@@ -47,7 +47,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 ## Conventions
 
 - **Tool param names must match across three layers**: the `ToolDefinition`
-  (LLM-facing schema), the TypeScript args type, and `content/actions.ts`. Use `id`
+  (LLM-facing schema), the TypeScript args type, and `content/actions/`. Use `id`
   (integer) for element tag IDs — never `tag`.
 - **UI must not import `chrome.*`** — route through `sidepanel/runtime.ts`.
 - **Trajectory entries must be environment-agnostic** — no `tabId` / `chrome.storage`
@@ -62,7 +62,7 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 - Edit generated files — `apps/extension/src/prompts/generated.ts` is built by
   `pnpm run prompts:build`; change the source, not the output.
 - Commit `dist/`, `traces/`, or `.artifacts/` output (all git-ignored).
-- Reintroduce Bun — it was removed; scripts run on `tsx`.
+- Do not reintroduce Bun — it was removed; scripts run on `tsx`.
 
 ## When a feature changes direction
 
