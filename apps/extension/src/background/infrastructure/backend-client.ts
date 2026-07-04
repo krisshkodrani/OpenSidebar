@@ -199,6 +199,11 @@ async function backendFetch(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
+  // Compiled out of production builds — the shipped extension must never
+  // call localhost. Every caller catches, so this degrades to a no-op.
+  if (typeof __DEV__ !== "undefined" && !__DEV__) {
+    throw new Error("backend disabled in production builds");
+  }
   return fetch(`${BACKEND_URL}${path}`, {
     ...options,
     signal: AbortSignal.timeout(TIMEOUT_MS),
