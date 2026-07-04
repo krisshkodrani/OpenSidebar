@@ -58,3 +58,19 @@ Decision". No implementation until the owner records a Decision Stamp.
 Suggested sequencing: ship Stage A (the MCP server over the existing store)
 independently for immediate agent-search value; the storage-rearchitecture
 B-stages land additively underneath the stable MCP/HTTP contract.
+
+## Perception series (post-v0.3.0, from the 2026-07-04 SOTA audit)
+
+All drafts pending owner Decision Stamps. Sequencing: LP-10 (smallest,
+orthogonal) and LP-9 items 1–3 first; LP-11's default flip gates on an A/B
+that should run after LP-9; LP-13 depends on LP-9's scale factor; LP-12
+Phase A anytime, Phase B behind a flag until CWS clears; LP-14 parked.
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-9 | [Screenshot pipeline engineering](lp-0009-screenshot-pipeline-engineering.md) | Unowned native-res JPEG q70 screenshots; no scale factor; dead panoramic code | None |
+| LP-10 | [New-element diff marking](lp-0010-new-element-diff-marking.md) | Executor can't see what changed since its last action | None (stable IDs shipped) |
+| LP-11 | [unified_vl as default perception mode](lp-0011-unified-vl-default.md) | Separate observation model is non-standard; field grounds vision in the executor | LP-9 (for fair A/B) |
+| LP-12 | [Extension-native reach](lp-0012-extension-native-reach.md) | Closed shadow roots + cross-origin iframes invisible; extension APIs unused | None |
+| LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md) | Small text/canvas targets unreadable; no zoom action | LP-9 (scale factor) |
+| LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md) | PDF tabs are opaque; no text extraction | None (recommend parked) |

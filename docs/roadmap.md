@@ -31,6 +31,14 @@ behavior-preserving moves (the ServiceNow adapter extraction from
 - **`any` burndown** — `no-explicit-any` is now a lint warning; burn down the
   ~240 occurrences starting with typed shims for chrome-API gaps.
 
+## Perception (RFC series LP-9…LP-14, from the 2026-07-04 SOTA audit)
+
+The perception layer [matches the converged SOTA hybrid pattern](./engineering/rfcs/README.md#perception-series-post-v030-from-the-2026-07-04-sota-audit);
+these RFCs close the remaining gaps: screenshot pipeline engineering (LP-9),
+new-element diff marking (LP-10), unified_vl default (LP-11),
+closed-shadow-root/cross-origin-iframe reach (LP-12), region zoom (LP-13),
+PDF handling (LP-14, parked).
+
 ## Observability
 
 - **DuckDB analytics tier** ([RFC LP-7](./engineering/rfcs/lp-0007-unified-observability-engine.md),
