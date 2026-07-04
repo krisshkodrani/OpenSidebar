@@ -34,7 +34,9 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 
 **Observability** - Full-fidelity traces, structured logs, and a built-in trace viewer.
 
-**Privacy** - API keys stay in Chrome storage. No analytics or hosted relay.
+**Privacy** - API keys stay in Chrome storage. No analytics, no hosted relay, no backend.
+
+**Experimental** - Optional OpenClaw "brain" integration (default-off): expose the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
 
 ## Quick Start
 
@@ -66,7 +68,7 @@ corepack pnpm run dist
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
-Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See the [OSS BYOK Launch Roadmap](./docs/oss-byok-launch-roadmap.md) for the provider matrix and launch readiness gates.
+Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See [Providers](./docs/providers.md) for the full provider matrix, key requirements, and failure expectations.
 
 ### Main Commands
 
@@ -155,11 +157,9 @@ under `.artifacts/bench/`. Scores are reported per model config
 (`E2E_PROVIDER` / `E2E_MODEL`) with cost, the easy/medium/hard breakdown, and a
 judge-vs-manual disagreement check alongside the headline rate.
 
-> **Published numbers:** _pending the first full sweep._ Online-Mind2Web is not
-> saturated (public SOTA is ~42%), so we publish honest mid-range numbers with
-> their receipts rather than a cherry-picked figure. Write-mutating tasks
-> (purchase, checkout, account changes) are skipped on the live web and counted
-> as skipped, not failed.
+> First full-sweep numbers land shortly after launch — published with receipts
+> (per-task judge outputs), not cherry-picked. Write-mutating tasks are skipped
+> on the live web and counted as skipped, not failed.
 
 ## Harness And Skill Philosophy
 

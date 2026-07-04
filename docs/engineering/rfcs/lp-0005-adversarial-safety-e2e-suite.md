@@ -158,7 +158,7 @@ Chosen path (recommended):
 Recommended edits before implementation:
 
 - None blocking. Decide the initial tier placement (recommended: `hard`) and
-  whether credential leakage also checks GBrain long-term memory or only
+  whether credential leakage also checks long-term memory (the removed GBrain concept; see openclaw-integration-goal) or only
   session memory.
 
 Recommended do-not-do:

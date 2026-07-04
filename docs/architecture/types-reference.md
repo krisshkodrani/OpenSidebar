@@ -1297,16 +1297,28 @@ export interface NavigationResumeMessage extends BaseMessage {
 ```typescript
 export interface UserSettings {
   openRouterApiKey: string;
+  /** Provider mode: how LLM providers are combined across roles */
+  providerMode?:
+    | "openrouter"
+    | "openrouter-groq"
+    | "openai-groq"
+    | "fireworks"
+    | "fireworks-deepseek"
+    | "moonshot"
+    | "xiaomi";
+  // Per-provider keys: openaiApiKey, groqApiKey, fireworksApiKey,
+  // deepseekApiKey, kimiApiKey, xiaomiApiKey, geminiApiKey (all optional)
   maxTurns: number;
-  contextWindowSize: number;
-  workspaceEnabled: boolean;
   theme: "light" | "dark" | "system";
-  /** Show visual [N] tag overlays on page elements (debugging aid) */
-  showElementTags: boolean;
   /** Show token usage and cost metrics during and after agent sessions */
   showSessionMetrics: boolean;
-  /** Hide navigate from tools */
-  disableNavigation: boolean;
+  /** Require per-tool approval for risky actions (default true) */
+  requireApprovals: boolean;
+  /** Allow the agent to navigate between pages (default true) */
+  allowNavigation: boolean;
+  /** Site access policy for agent execution */
+  siteAccessMode?: "allow_all" | "blocklist";
+  // See packages/shared-types/src/settings.ts for the full, current shape.
 }
 ```
 

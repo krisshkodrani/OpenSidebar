@@ -19,7 +19,8 @@ work doesn't fail review for a reason no document told you about.
 5. Run `pnpm run dev` — starts the extension dev build, the unified local
    server, and the trace viewer.
 6. Load the unpacked extension: `chrome://extensions` → Developer mode → **Load
-   unpacked** → select `dist/`.
+   unpacked** → select `dist-dev/` (the dev build, labeled "OpenSidebar (dev)").
+   For a standalone production build, run `pnpm run dist` and load `dist/`.
 
 ## The One Gate Before Every PR
 
@@ -71,7 +72,7 @@ three**:
 
 - the `ToolDefinition` (LLM-facing schema),
 - the TypeScript args type,
-- `apps/extension/src/content/actions.ts` (the executor).
+- `apps/extension/src/content/actions/` (the executor layer; interaction.ts et al).
 
 Use `id` (an integer) for element tag IDs — never `tag`. Mismatches here are
 the most common avoidable tool bug. Label `tooling`.
@@ -100,7 +101,7 @@ specific reason:
   logic is deliberately split between them. A change that looks local often
   isn't. Behavior changes here need an RFC decision first. See `CLAUDE.md`
   → *Landmines* and `AGENTS.md` → *Default Change Placement*.
-- **`background/agent/skills.ts`** — a large file with hardcoded activation
+- **`background/orchestrator/skills.ts`** — a large file with hardcoded activation
   dispatch. Formalizing it into a plugin interface is a *flagship* project
   (GAP-12, see below), not a drive-by edit.
 - **Generated files** — e.g. `apps/extension/src/prompts/generated.ts` is built
@@ -181,7 +182,8 @@ before attaching any diagnostics.
 | Command | Description |
 | --- | --- |
 | `pnpm run dev` | Extension dev stack + local logs + trace viewer |
-| `pnpm run build` | Production build (outputs `dist/`) |
+| `pnpm run doctor` | Diagnose local setup (Node/pnpm/Chrome/env) |
+| `pnpm run build` | Production build (outputs `dist/`; `pnpm run dist` is the same target) |
 | `pnpm test` | Extension unit and integration suite (Vitest) |
 | `pnpm run lint` | ESLint for extension, packages, scripts |
 | `pnpm run typecheck` | TypeScript project-reference typecheck |

@@ -22,6 +22,9 @@ Examples of unacceptable behavior:
 
 ## Enforcement
 
+Report violations privately to the maintainer at kshkodrani@gmail.com or via
+[GitHub private vulnerability reporting](../../security/advisories/new) for
+sensitive cases. Reports are reviewed promptly and kept confidential.
 Violations may result in temporary or permanent ban from the project.
 
 ## Attribution
