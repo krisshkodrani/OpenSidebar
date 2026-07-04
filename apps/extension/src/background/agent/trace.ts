@@ -687,6 +687,7 @@ export class TraceRecorder {
       timeoutMs?: number;
     } = {},
   ): Promise<void> {
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     const attempts = Math.max(1, options.attempts ?? 1);
     const delayMs = Math.max(0, options.delayMs ?? 0);
     const timeoutMs = Math.max(1, options.timeoutMs ?? FLUSH_TIMEOUT_MS);
@@ -725,8 +726,11 @@ export class TraceRecorder {
     }
   }
 
-  /** POST to trace server with retry queue for resilience */
+  /** POST to trace server with retry queue for resilience.
+   * Compiled out of production builds — the shipped extension must never
+   * call localhost (dev observability only). */
   private async flush(path: string, data: unknown): Promise<void> {
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     // Drain any previously queued items first
     await this.drainPending();
 

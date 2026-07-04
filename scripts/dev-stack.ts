@@ -136,6 +136,10 @@ async function main(): Promise<void> {
   console.log(
     `[dev:stack] Backend API: http://127.0.0.1:${LOCAL_SERVER_PORT}/api/backend/health`,
   );
+  console.log(
+    "[dev:stack] Extension: load dist-dev/ as unpacked in chrome://extensions" +
+      " (dist/ is the production build — run `pnpm run dist` for that)",
+  );
 
   let intentionalShutdown = false;
   const shutdown = (signal: string) => {

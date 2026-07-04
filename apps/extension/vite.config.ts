@@ -11,13 +11,18 @@ export default defineConfig(({ mode }) => {
     isProduction
       ? path.resolve(__dirname, "../../dist")
       : path.resolve(__dirname, "../../dist-dev");
+  // Dev builds are HMR-tethered to the local Vite server and load from
+  // dist-dev/. Suffix the name so the build is identifiable in Chrome.
+  const buildManifest = isProduction
+    ? manifest
+    : { ...manifest, name: `${manifest.name} (dev)` };
 
   return {
     root: __dirname,
     define: {
       __DEV__: JSON.stringify(mode !== "production"),
     },
-    plugins: [react(), crx({ manifest })],
+    plugins: [react(), crx({ manifest: buildManifest })],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
@@ -52,11 +57,13 @@ export default defineConfig(({ mode }) => {
                   "src/overlay/index.tsx",
                 ),
               }
-            : {}),
-          "trace-viewer": path.resolve(
-            __dirname,
-            "src/trace-viewer/index.html",
-          ),
+            : {
+                // Dev-only observability page; must never ship in dist/.
+                "trace-viewer": path.resolve(
+                  __dirname,
+                  "src/trace-viewer/index.html",
+                ),
+              }),
         },
         external: [],
       },
