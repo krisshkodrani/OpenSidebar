@@ -22,7 +22,7 @@ OpenSidebar is a browser-agent Chrome extension with a small monorepo around it.
 Repo policy:
 
 - Keep stable product docs in `docs/`; runtime artifacts local under `.artifacts/`.
-- RFCs, investigations, and research notes live outside the repo (send to Notion if available).
+- Active RFCs live in `docs/engineering/rfcs/`; investigations and scratch research notes stay out of the repo.
 - If a real product bug or follow-up is found but not fixed now, create a GitHub issue when GitHub tools are available.
 
 ## Harness Architecture Direction
@@ -124,8 +124,8 @@ Next action:
 ```
 
 The canonical process and copy-ready review prompt are in
-`docs/engineering/rfc-decision-process.md`. RFCs still live in Notion; do not add
-new RFC drafts to the repo. If an RFC Markdown file must be validated locally, run
+`docs/engineering/rfc-decision-process.md`. Active RFC drafts live in `docs/engineering/rfcs/` and require an owner
+Decision Stamp before implementation. Validate stamps locally with
 `pnpm rfcs:check -- <path>`.
 
 ### Feature direction changes
