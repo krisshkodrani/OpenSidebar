@@ -2,9 +2,8 @@
 
 Draft RFCs for the three P0 launch blockers identified in
 [SOTA Gap Analysis](../sota-gap-analysis.md) (2026-06-08) and the follow-up
-orchestration review (2026-06-10). Per repo policy the canonical home for
-active RFCs is Notion; these are local Markdown drafts pending transfer and an
-owner decision.
+orchestration review (2026-06-10). This directory is the canonical
+in-repo home for active RFC drafts.
 
 These drafts are **not stamped**. Each ends with a "Recommended Decision"
 section that is an agent recommendation, not an owner Decision Stamp. Per

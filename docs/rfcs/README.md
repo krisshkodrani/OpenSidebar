@@ -6,8 +6,8 @@ set are fixes that serve both lenses, because research rigor and engineering
 trust are the same underlying problem.
 
 These legacy RFCs are closed and retained as historical decision records. New
-RFCs belong in Notion and must follow
-[RFC Decision Process](../engineering/rfc-decision-process.md).
+RFCs belong in [docs/engineering/rfcs/](../engineering/rfcs/README.md) and must
+follow the [RFC Decision Process](../engineering/rfc-decision-process.md).
 
 See also: [Viewer Coverage Plan](../testing/viewer-coverage-plan.md),
 [Trace Viewer Observability](../architecture/trace-viewer-observability.md),

@@ -22,7 +22,11 @@
 
 OpenSidebar runs an autonomous agent loop inside a Chrome side panel. You describe what you want done, and the agent perceives the page through vision and DOM snapshots, reasons about the next action, executes browser tools, and verifies progress until the task is complete.
 
-For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on.
+<p align="center">
+  <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar side panel running a task" width="800" />
+</p>
+
+For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on. The full run flow is diagrammed in [docs/run-flow.svg](docs/run-flow.svg).
 
 ## Capabilities
 
@@ -171,7 +175,7 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 
 ## Repo Layout
 
-- `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
+- [`apps/extension/`](apps/extension/README.md) - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
 - `packages/shared-types/` - shared runtime and domain types
 - `packages/prompts/` - compiled prompt runtime and generated prompt registry
 - `prompts/` - prompt source templates
@@ -181,6 +185,10 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 - `traces/` - local generated trace workspace used by debugging tools and the trace viewer
 
 ## Trace Viewer
+
+<p align="center">
+  <img src="docs/assets/trace-viewer-1.png" alt="Trace viewer session analysis" width="800" />
+</p>
 
 Every agent session can be inspected in the built-in trace viewer.
 
@@ -223,6 +231,9 @@ pnpm run traces:compact              # index, then delete old raw files
 - [Personal Profile](./docs/personal-profile.md)
 - [Release Checklist](./docs/release-checklist.md)
 - [Known Limitations](./docs/known-limitations.md)
+- [Roadmap](./docs/roadmap.md)
+- [Engineering RFCs](./docs/engineering/rfcs/README.md) — active design docs (LP series)
+- [Providers](./docs/providers.md)
 
 ## Security & Privacy
 
