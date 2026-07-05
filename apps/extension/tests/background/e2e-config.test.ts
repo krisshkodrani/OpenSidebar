@@ -9,14 +9,12 @@ import {
 } from "../e2e/helpers/e2e-config";
 
 describe("E2E config", () => {
-  test("keeps the supported public env surface at seven vars", () => {
+  test("keeps the supported public env surface at six vars", () => {
     expect(PUBLIC_E2E_ENV_VARS).toEqual([
       "E2E_PROFILE",
       "E2E_PROVIDER",
       "E2E_MODEL",
       "E2E_PERCEPTION_MODE",
-      // TEMPORARY (LP-11 A/B): removed with the flip.
-      "E2E_PERCEPTION_AUTO_DEFAULT",
       "E2E_SUITE_FLAGS",
       "E2E_ARTIFACTS",
     ]);

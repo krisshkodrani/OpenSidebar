@@ -105,3 +105,37 @@ Evidence required before merge:
 Next action:
 
 - Implement
+
+## Implementation note (2026-07-05)
+
+Executed in the decided sequence — telemetry, then the A/B, then the flip:
+
+- **Telemetry** (feat/lp-0011-perception-telemetry): typed
+  `perception_mode_decision` / `screenshot_transform` /
+  `image_prompt_budget_exhausted` trace events; per-turn
+  structured/unified VL counters and stale-reinterpret cache-efficacy
+  counters in SessionMetrics.
+- **Owner-approved scope extension — executor policy** (2026-07-05,
+  feat/lp-0011-executor-policy): the executor seat requires VL capability
+  AND a reliability floor (`EXECUTOR_ELIGIBLE_MODELS`, ≈ Kimi K2.7 Code
+  tier); default executor flipped `kimi-k2p6-turbo` → `kimi-k2p7-code`
+  (smoke 9/9); ineligible stored executors migrate to the default;
+  text-only models remain for planner/writer/perception seats. The
+  RFC-required capability gate landed as `executor_not_vl_capable`,
+  outranking the explicit unified_vl override.
+- **A/B** (docs/evals/lp-0011-perception-default-ab-2026-07.md): 18 arena
+  tasks × 2 repeats per arm on kimi-k2p7-code. Arm B (unified_vl default)
+  83.3% vs 77.8%, −31% wall clock, −1.2 turns/run; 418 separate perception
+  VLM calls eliminated. The pre-registered image-attachment-ratio clause
+  proved ill-posed (arm A median is 0 → infinite ratio) and is recorded as
+  a criterion-design error; the RFC's stated cost intent passes clearly.
+  Staged easy + medium suites green under the unified_vl default.
+- **Flip**: `PERCEPTION_AUTO_DEFAULT_MODE = "unified_vl"` with
+  `dense_text_dom` (≥ 40 elements AND ≥ 2000 chars, no visual signal) and
+  budget exhaustion as the signal-less structured outcomes. The temporary
+  A/B arm plumbing (hidden `perceptionAutoDefault` setting,
+  `E2E_PERCEPTION_AUTO_DEFAULT`, `run-perception-ab.ts`) was removed; the
+  pure `autoDefaultMode` parameter remains as test surface. PerceptionAgent
+  kept intact per the guardrail (fallback, override, popup triage).
+- Non-blocking follow-up now unblocked: revisit structured-path stale-cache
+  thresholds using the new cache-efficacy counters.

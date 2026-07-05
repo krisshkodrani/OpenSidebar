@@ -3628,7 +3628,6 @@ export class Orchestrator {
           xiaomiApiKey: input.settings.xiaomiApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
-          perceptionAutoDefault: input.settings.perceptionAutoDefault,
           maxImagePromptTokenEstimate:
             input.settings.maxImagePromptTokenEstimate,
           useVLExecutor: input.settings.useVLExecutor,

@@ -59,7 +59,6 @@ function parseArgs(): {
   runAll: boolean;
   build: boolean;
   listOnly: boolean;
-  perceptionAutoDefault: string | undefined;
   reportLabel: string | undefined;
 } {
   const args = process.argv.slice(2);
@@ -67,7 +66,6 @@ function parseArgs(): {
   const tags: string[] = [];
   const taskIds: string[] = [];
   let repeat = 1;
-  let perceptionAutoDefault: string | undefined;
   let reportLabel: string | undefined;
 
   for (let index = 0; index < args.length; index++) {
@@ -96,18 +94,6 @@ function parseArgs(): {
       }
       continue;
     }
-    if (arg === "--perception-auto-default") {
-      const value = args[index + 1];
-      if (value === "structured" || value === "unified_vl") {
-        perceptionAutoDefault = value;
-        index++;
-      } else {
-        throw new Error(
-          "--perception-auto-default expects structured or unified_vl",
-        );
-      }
-      continue;
-    }
     if (arg === "--report-label") {
       const value = args[index + 1];
       if (value && !value.startsWith("--")) {
@@ -128,7 +114,6 @@ function parseArgs(): {
     runAll: args.includes("--all"),
     build: !args.includes("--no-build"),
     listOnly: args.includes("--list"),
-    perceptionAutoDefault,
     reportLabel,
   };
 }
@@ -290,7 +275,7 @@ function summarizeByTask(records: readonly ArenaRunRecord[]): Array<{
 
 function buildReport(
   records: ArenaRunRecord[],
-  runConfig?: { perceptionAutoDefault?: string; model?: string },
+  runConfig?: { model?: string },
   now = new Date(),
 ): string {
   const date = now.toISOString().split("T")[0];
@@ -307,11 +292,6 @@ function buildReport(
   );
   lines.push(`Overall result: ${passed}/${records.length} attempts passed`);
   if (runConfig?.model) lines.push(`Executor model: \`${runConfig.model}\``);
-  if (runConfig?.perceptionAutoDefault) {
-    lines.push(
-      `Perception auto-default arm (LP-11 A/B): \`${runConfig.perceptionAutoDefault}\``,
-    );
-  }
   lines.push("");
   lines.push("## Pass-Rate Summary");
   lines.push("");
@@ -369,7 +349,6 @@ function writeReport(
   records: ArenaRunRecord[],
   options: {
     reportLabel?: string;
-    perceptionAutoDefault?: string;
     model?: string;
   } = {},
 ): string {
@@ -379,20 +358,16 @@ function writeReport(
   const reportPath = resolve(REPORTS_DIR, `arena-score-${today}${suffix}.md`);
   writeFileSync(
     reportPath,
-    buildReport(records, {
-      perceptionAutoDefault: options.perceptionAutoDefault,
-      model: options.model,
-    }),
+    buildReport(records, { model: options.model }),
     "utf-8",
   );
-  // Machine-readable twin for cross-arm comparison (LP-11 A/B).
+  // Machine-readable twin for cross-run comparison.
   const jsonPath = resolve(REPORTS_DIR, `arena-score-${today}${suffix}.json`);
   writeFileSync(
     jsonPath,
     JSON.stringify(
       {
         date: today,
-        perceptionAutoDefault: options.perceptionAutoDefault ?? null,
         model: options.model ?? null,
         records: records.map((record) => ({
           taskId: record.task.id,
@@ -534,26 +509,9 @@ async function runTask(
 }
 
 async function main(): Promise<void> {
-  const {
-    taskIds,
-    tiers,
-    tags,
-    repeat,
-    runAll,
-    build,
-    listOnly,
-    perceptionAutoDefault,
-    reportLabel,
-  } = parseArgs();
+  const { taskIds, tiers, tags, repeat, runAll, build, listOnly, reportLabel } =
+    parseArgs();
   const tasks = resolveTasks(taskIds, tiers, tags, runAll);
-
-  if (perceptionAutoDefault) {
-    // The harness reads this at beforeAllHook via readE2EConfig().
-    process.env.E2E_PERCEPTION_AUTO_DEFAULT = perceptionAutoDefault;
-    console.log(
-      `[e2e:arena:run] LP-11 A/B arm: perception auto-default = ${perceptionAutoDefault}`,
-    );
-  }
 
   if (listOnly) {
     printList(tasks.length > 0 ? tasks : ARENA_TASKS);
@@ -599,7 +557,6 @@ async function main(): Promise<void> {
 
   const reportPath = writeReport(records, {
     reportLabel,
-    perceptionAutoDefault,
     model: process.env.E2E_MODEL,
   });
   const passed = records.filter((record) => record.success).length;

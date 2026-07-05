@@ -6,18 +6,33 @@ import {
 } from "../../src/utils/perception-mode";
 
 describe("perception mode resolution", () => {
-  test("auto uses structured text mode when DOM signals are sufficient", () => {
+  test("auto defaults to unified VL when no signal decides (post LP-11 flip)", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
         providerMode: "fireworks",
         elementCount: 20,
-        pageTextLength: 2000,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "default_unified_vl",
+      signals: [],
+    });
+  });
+
+  test("auto keeps structured for dense text-heavy DOM (post LP-11 flip)", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        providerMode: "fireworks",
+        elementCount: 60,
+        pageTextLength: 5000,
       }),
     ).toMatchObject({
       mode: "structured",
-      reason: "dom_signals_sufficient",
-      signals: [],
+      reason: "dense_text_dom",
+      signals: ["dense_text_dom"],
     });
   });
 
@@ -310,8 +325,11 @@ describe("perception mode resolution", () => {
       resolvePerceptionRuntimeMode({
         useVLExecutor: false,
         providerMode: "fireworks",
-        elementCount: 20,
-        pageTextLength: 2000,
+        // Dense text-heavy page: the auto path it falls through to picks
+        // structured (post LP-11 flip, that is the only signal-less
+        // structured outcome).
+        elementCount: 60,
+        pageTextLength: 5000,
       }),
     ).toBe("structured");
   });

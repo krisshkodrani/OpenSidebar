@@ -21,8 +21,22 @@ This contract is shared between production and the corrected perception eval har
 
 ## Current Runtime Decision
 
-- settings field: `perceptionMode`
-- `auto` resolves to `unified_vl`
+- settings field: `perceptionMode` (`auto` | `unified_vl` | `structured`)
+- decision core: `resolvePerceptionRuntimeModeDecision()` in
+  `apps/extension/src/utils/perception-mode.ts`, re-evaluated per snapshot
+- order of precedence:
+  1. explicit `structured` override → structured
+  2. non-VL executor (`isVLCapable` check) → structured — images never
+     reach a model that cannot see them, over any override
+  3. explicit `unified_vl` override → unified_vl
+  4. visual signals (task text, canvas/svg, image-heavy, sparse DOM/SPA)
+     → unified_vl unless the session image budget is exhausted
+  5. no signal → **unified_vl by default** (RFC LP-11, measured flip:
+     `docs/evals/lp-0011-perception-default-ab-2026-07.md`), except
+     dense text-heavy DOM (≥ 40 elements AND ≥ 2000 chars page text)
+     or exhausted image budget → structured
+- structured mode remains three things: the capture-failure/budget/non-VL
+  fallback, the explicit override, and the popup-triage (BLOCKERS) provider
 - legacy `useVLExecutor` is migration-only and should not be used for new code
 
 ## Structured Path Model
