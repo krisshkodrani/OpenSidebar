@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all tools available in Open
 
 ## Overview
 
-OpenSidebar provides **42 tools** organized into categories such as DOM interaction, navigation, browser management, page analysis, and control flow.
+OpenSidebar provides **51 tools** organized into categories such as DOM interaction, navigation, browser management, page analysis, and control flow.
 
 ---
 
@@ -536,6 +536,23 @@ Extract read-only chart and dashboard evidence from DOM, SVG, canvas, and common
 
 ---
 
+### inspect_region
+
+Zoom into a screen region and return a magnified view (RFC LP-13). The pixel-path complement to `inspect_chart` — use it when a value exists only in pixels (a `<canvas>` chart, tiny text, dense map labels). Max 2 calls per turn; each zoom charges the high-detail image budget.
+
+| Parameter | Type    | Required | Description                                                        |
+| --------- | ------- | -------- | ------------------------------------------------------------------ |
+| id        | integer | No       | Tag ID to zoom onto (20px padding). Use this OR the rect.          |
+| x         | number  | No       | Region left edge in viewport pixels (the `@box` coordinate space)  |
+| y         | number  | No       | Region top edge in viewport pixels                                 |
+| width     | number  | No       | Region width in viewport pixels                                    |
+| height    | number  | No       | Region height in viewport pixels                                   |
+| purpose   | string  | No       | What the agent is trying to read (recorded in the trace)           |
+
+**Use for:** canvas fine print, small chart labels, favicon-sized icons, dense tables — after `inspect_chart` and DOM reads come up empty. On vision turns the magnified image is attached to the executor's next view; on structured turns the perception model describes the crop.
+
+---
+
 ### inspect_table
 
 Summarize visible table/list structure, headers, sampled rows, sort indicators, and useful URL query state.
@@ -652,7 +669,7 @@ Transcribe speech from an `<audio>` or `<video>` element.
 | **DOM Interaction**    | click_element, type_text, scroll_page, read_page, hover_element, find_element, select_option, press_key, drag_and_drop, draw_stroke, hide_element, read_element, right_click, set_checkbox, click_coordinates, upload_file, execute_js |
 | **Navigation**         | navigate, create_tab, close_tab, switch_tab, go_back, go_forward, list_tabs, create_window                                                                                                                                             |
 | **Browser Management** | wait, done, group_tabs, ungroup_tabs, get_cookies, set_cookie, delete_cookie, copy_to_clipboard, search_history, create_bookmark, get_bookmarks, download_file                                                                            |
-| **Page Analysis**      | inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item, xray_page, fast_forward, read_pdf                                                                                                             |
+| **Page Analysis**      | inspect_hidden, inspect_chart, inspect_region, inspect_table, inspect_filter_state, inspect_catalog_item, xray_page, fast_forward, read_pdf                                                                                                             |
 | **Control Flow**       | escalate                                                                                                                                                                                                                               |
 | **Audio/Video**        | transcribe_audio                                                                                                                                                                                                                       |
 | **Utilities**          |                                                                                                                                                                                                                                        |
@@ -665,7 +682,7 @@ Tools are classified by risk level:
 
 | Level      | Description                     | Tools                                                                                        |
 | ---------- | ------------------------------- | -------------------------------------------------------------------------------------------- |
-| **LOW**    | Read-only page inspection       | read_page, scroll_page, list_tabs, get_bookmarks, inspect_hidden, inspect_chart, inspect_table, inspect_filter_state, inspect_catalog_item |
+| **LOW**    | Read-only page inspection       | read_page, scroll_page, list_tabs, get_bookmarks, inspect_hidden, inspect_chart, inspect_region, inspect_table, inspect_filter_state, inspect_catalog_item |
 | **MEDIUM** | Mutates page or browser state   | click_element, type_text, hover_element, select_option, set_checkbox, copy_to_clipboard, download_file |
 | **HIGH**   | Navigation, tabs, browser data, or code execution | navigate, close_tab, create_tab, go_back, go_forward, execute_js, get_cookies, set_cookie, delete_cookie, search_history |
 

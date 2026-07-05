@@ -39,6 +39,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "navigation-challenge.test.ts",
     "online-shop.test.ts",
     "perception-auto-vision.test.ts",
+    "perception-region-zoom.test.ts",
     "web-components.test.ts",
   ],
   "runtime-regression": [
