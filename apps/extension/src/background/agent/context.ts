@@ -115,6 +115,8 @@ export class ContextManager {
   private pageInterpretation: string | null = null;
   /** Screenshot data URL for unified VL executor mode */
   private screenshotDataUrl: string | null = null;
+  /** Magnified inspect_region crop staged for the executor's next prompt (LP-13). */
+  private regionZoomShot: { dataUrl: string; label: string } | null = null;
   private pageContent: string | null = null;
   private isFirstTurn = true;
   private contradictionDetails: string | null = null;
@@ -146,6 +148,17 @@ export class ContextManager {
   /** Set screenshot for unified VL executor mode (screenshot sent directly to executor). */
   public setScreenshotForExecutor(dataUrl: string | null): void {
     this.screenshotDataUrl = dataUrl;
+  }
+
+  /**
+   * Stage (or clear) an inspect_region crop for the executor's next prompt.
+   * Lives outside history like the screenshot: it survives intra-turn LLM
+   * retries but never crosses the turn (cleared on perception refresh).
+   */
+  public setRegionZoomForExecutor(
+    zoom: { dataUrl: string; label: string } | null,
+  ): void {
+    this.regionZoomShot = zoom;
   }
 
   /** Mark that the first turn is complete (grounding check only fires on turn 1). */
@@ -550,6 +563,24 @@ export class ContextManager {
             },
           },
           { type: "text", text: "Current page screenshot." },
+        ],
+      });
+    }
+
+    // LP-13: magnified inspect_region crop — always high detail (a zoom at
+    // low detail would defeat its purpose).
+    if (this.regionZoomShot) {
+      finalMessages.push({
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: this.regionZoomShot.dataUrl, detail: "high" },
+          },
+          {
+            type: "text",
+            text: `Magnified region ${this.regionZoomShot.label} from inspect_region. Read the fine text from this zoomed image; do not derive click coordinates from it.`,
+          },
         ],
       });
     }

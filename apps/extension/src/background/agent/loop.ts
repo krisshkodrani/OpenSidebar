@@ -20,6 +20,11 @@ import {
   normalizeExecutorModel,
 } from "../../utils/executor-model-policy";
 import {
+  emptyRegionZoomState,
+  executeInspectRegion,
+  type RegionZoomHost,
+} from "./region-zoom";
+import {
   extractPerceptionPageSignals,
   resolvePerceptionRuntimeMode,
   resolvePerceptionRuntimeModeDecision,
@@ -666,6 +671,8 @@ export class AgentLoop {
   private lastScreenshotScaleFactor = 1;
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
+  /** inspect_region per-turn cap state (LP-13). */
+  private regionZoomState = emptyRegionZoomState();
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
   /** Promise-based gate for pause/resume */
@@ -5117,6 +5124,8 @@ export class AgentLoop {
   }
 
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
+    // LP-13 guardrail: a staged zoom never crosses the turn boundary.
+    this.context.setRegionZoomForExecutor(null);
     this.updatePerceptionRuntimeModeFromSnapshot(this.context.getSnapshot());
     recordPerceptionTurnMode(
       this.metrics,
@@ -5935,11 +5944,96 @@ export class AgentLoop {
     return true;
   }
 
+  /** Build the narrow host inspect_region runs against (LP-13). */
+  private buildRegionZoomHost(tabId: number): RegionZoomHost {
+    return {
+      turnCount: this.turnCount,
+      useVLExecutor: this.useVLExecutor,
+      getSnapshot: () => this.context.getSnapshot(),
+      imagePromptBudgetAllows: (imageCount) =>
+        this.imagePromptBudgetAllows(imageCount),
+      recordImagePromptBudgetExhausted: (imageCount, source) =>
+        this.recordImagePromptBudgetExhausted(imageCount, source),
+      captureVisibleTab: async (options) => {
+        const tab = await chrome.tabs.get(tabId);
+        return this.captureVisibleTabWithRetry(tab.windowId, options);
+      },
+      resolveTagRect: async (id) => {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: (tagId: number) => {
+              const el = document.querySelector(`[data-os-tag="${tagId}"]`);
+              if (!el) return null;
+              const r = el.getBoundingClientRect();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            },
+            args: [id],
+          });
+          const live = results?.[0]?.result;
+          if (live) return live;
+        } catch {
+          // Fall through to the snapshot rect (may be stale after scroll).
+        }
+        const el = this.context
+          .getSnapshot()
+          ?.elements.find((element) => element.tag === id);
+        return el
+          ? {
+              x: el.rect.x,
+              y: el.rect.y,
+              width: el.rect.width,
+              height: el.rect.height,
+            }
+          : null;
+      },
+      recordInspectRegionEvent: (data) =>
+        this.traceRecorder?.recordEvent("inspect_region", data),
+      setRegionZoomForExecutor: (zoom) =>
+        this.context.setRegionZoomForExecutor(zoom),
+      describeRegion: async ({ dataUrl, label, purpose }) => {
+        const result = await this.perception.describeRegion({
+          cropDataUrl: dataUrl,
+          regionLabel: label,
+          purpose,
+          signal: this.abortController?.signal,
+        });
+        if (result.usage) {
+          this.recordVisionUsage(
+            result.usage,
+            result.durationMs,
+            result.model,
+            result.providerId as ProviderConfig["providerId"] | undefined,
+            1,
+          );
+        }
+        return result.interpretation;
+      },
+    };
+  }
+
   /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
     tabId: number,
   ): Promise<string> {
+    // LP-13: inspect_region needs loop-owned state (screenshot cache
+    // metadata, zoom cap, budget, delivery) — intercept before the registry
+    // so both the sequential and parallel dispatch paths are covered.
+    if (toolCall.function.name === ToolName.INSPECT_REGION) {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        // Empty args fail validation inside with a bad_args refusal.
+      }
+      return executeInspectRegion(
+        this.buildRegionZoomHost(tabId),
+        this.regionZoomState,
+        args,
+        tabId,
+      );
+    }
     const execution = await toolRegistry.executeDetailed(
       toolCall,
       tabId,

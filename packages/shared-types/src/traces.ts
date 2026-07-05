@@ -465,6 +465,25 @@ export interface TraceEventPayloadByType {
     maxTokenEstimate: number;
     remainingTokenEstimate: number;
   };
+  inspect_region: {
+    turn: number;
+    /** Resolved viewport-CSS rect that was cropped (absent on refusals). */
+    rect?: { x: number; y: number; width: number; height: number };
+    /** Tag id the rect was resolved from, when id sugar was used. */
+    requestedId?: number;
+    purpose?: string;
+    /** Which delivery path served the zoom. */
+    mode: "unified_vl" | "structured";
+    outputWidth?: number;
+    outputHeight?: number;
+    upscale?: number;
+    refusedReason?:
+      | "turn_cap"
+      | "budget"
+      | "bad_args"
+      | "capture_failed"
+      | "crop_failed";
+  };
 }
 
 type KnownTraceEvent = {

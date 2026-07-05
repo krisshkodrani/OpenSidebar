@@ -329,6 +329,19 @@ export interface SearchHistoryArgs {
   maxResults?: number;
 }
 
+/** Arguments for inspect_region (RFC LP-13): magnify a screen region. */
+export interface InspectRegionArgs {
+  /** Sugar: zoom onto tag N's live bounding box with 20px padding. */
+  id?: number;
+  /** Rect in viewport CSS pixels — the same space as @box(x,y WxH) hints. */
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  /** Why the zoom is needed — recorded in the trace. */
+  purpose?: string;
+}
+
 /** Arguments for inspect_hidden */
 export interface InspectHiddenArgs {
   /** Case-insensitive text filter */
@@ -551,4 +564,5 @@ export type ToolArgsMap = {
   [ToolName.CREATE_WINDOW]: Record<string, unknown>;
   [ToolName.UPDATE_PLAN]: Record<string, unknown>;
   [ToolName.COMPOSE_TEXT]: ComposeTextArgs;
+  [ToolName.INSPECT_REGION]: InspectRegionArgs;
 };
