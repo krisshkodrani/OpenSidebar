@@ -665,6 +665,8 @@ export function sanitizeSessionMetrics(
     "cachedVisionCallCount",
     "totalImagePromptTokenEstimate",
     "imagePromptCount",
+    "structuredTurnCount",
+    "unifiedVlTurnCount",
   ] as const) {
     const value = raw[key];
     if (
@@ -812,6 +814,18 @@ export function sanitizeSessionMetrics(
     raw.imagePromptCount >= 0
       ? raw.imagePromptCount
       : 0;
+  const structuredTurnCount =
+    typeof raw.structuredTurnCount === "number" &&
+    !Number.isNaN(raw.structuredTurnCount) &&
+    raw.structuredTurnCount >= 0
+      ? raw.structuredTurnCount
+      : 0;
+  const unifiedVlTurnCount =
+    typeof raw.unifiedVlTurnCount === "number" &&
+    !Number.isNaN(raw.unifiedVlTurnCount) &&
+    raw.unifiedVlTurnCount >= 0
+      ? raw.unifiedVlTurnCount
+      : 0;
   let perceptionModeDecision: SessionMetrics["perceptionModeDecision"];
   if (raw.perceptionModeDecision !== undefined) {
     if (!isRecord(raw.perceptionModeDecision)) return null;
@@ -826,10 +840,15 @@ export function sanitizeSessionMetrics(
     ) {
       return null;
     }
+    const autoDefault = raw.perceptionModeDecision.autoDefault;
     perceptionModeDecision = {
       mode,
       reason,
       signals: [...signals],
+      // Unknown values are dropped rather than failing the whole payload.
+      ...(autoDefault === "structured" || autoDefault === "unified_vl"
+        ? { autoDefault }
+        : {}),
     };
   }
 
@@ -848,6 +867,8 @@ export function sanitizeSessionMetrics(
     cachedVisionCallCount,
     totalImagePromptTokenEstimate,
     imagePromptCount,
+    structuredTurnCount,
+    unifiedVlTurnCount,
     perceptionModeDecision,
     totalCachedTokens: raw.totalCachedTokens as number,
     modelBreakdown,

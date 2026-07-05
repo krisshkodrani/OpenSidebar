@@ -145,6 +145,7 @@ import {
   recordCompletionUsage,
   recordImagePromptUsage,
   recordPerceptionModeDecision,
+  recordPerceptionTurnMode,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
   resolveImagePromptTokenBudget,
@@ -5083,6 +5084,10 @@ export class AgentLoop {
 
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
     this.updatePerceptionRuntimeModeFromSnapshot(this.context.getSnapshot());
+    recordPerceptionTurnMode(
+      this.metrics,
+      this.useVLExecutor ? "unified_vl" : "structured",
+    );
     if (this.useVLExecutor) {
       // Unified VL mode: capture screenshot for the executor, skip perception VLM call.
       // The executor LLM receives the screenshot directly as an image content block.
