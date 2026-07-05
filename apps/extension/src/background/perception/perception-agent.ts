@@ -110,6 +110,13 @@ interface PerceptionTraceMeta {
   screenshotStatus: TracePerceptionScreenshotStatus;
 }
 
+interface PerceptionTraceStats {
+  model: string;
+  providerId?: string;
+  durationMs: number;
+  cached: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -451,6 +458,11 @@ export class PerceptionAgent {
     freshnessReason: "new_fingerprint",
     screenshotStatus: "not_requested",
   };
+  private _lastTraceStats: PerceptionTraceStats = {
+    model: "unknown",
+    durationMs: 0,
+    cached: false,
+  };
   /** Stored panoramic shots from first-turn capture (for retroactive T1 trace recording) */
   private _lastPanoramicShots: PanoramicShot[] | null = null;
 
@@ -486,6 +498,10 @@ export class PerceptionAgent {
     return { ...this._lastTraceMeta };
   }
 
+  getLastTraceStats(): PerceptionTraceStats {
+    return { ...this._lastTraceStats };
+  }
+
   setPanoramicShots(shots: PanoramicShot[] | null): void {
     this._lastPanoramicShots = shots;
   }
@@ -510,6 +526,7 @@ export class PerceptionAgent {
     fingerprint: string,
     screenshotUrl: string | null,
     url?: string,
+    stats?: Partial<PerceptionTraceStats>,
   ): void {
     this._lastInterpretation = interpretation;
     this.lastFingerprint = fingerprint;
@@ -524,6 +541,16 @@ export class PerceptionAgent {
       source: "warmup",
       freshnessReason: "warmup_cache",
       screenshotStatus: screenshotUrl ? "cached" : "not_requested",
+    };
+    this._lastTraceStats = {
+      model:
+        stats?.model ??
+        (interpretation.startsWith("[VL mode]")
+          ? "none (unified VL, warmup)"
+          : "warmup perception"),
+      ...(stats?.providerId ? { providerId: stats.providerId } : {}),
+      durationMs: stats?.durationMs ?? 0,
+      cached: stats?.cached ?? true,
     };
     this._turnCounter++;
 
@@ -553,6 +580,11 @@ export class PerceptionAgent {
       source: "fresh",
       freshnessReason: "new_fingerprint",
       screenshotStatus: "not_requested",
+    };
+    this._lastTraceStats = {
+      model: "unknown",
+      durationMs: 0,
+      cached: false,
     };
     this._lastPanoramicShots = null;
   }
@@ -628,12 +660,17 @@ export class PerceptionAgent {
             source: "cached",
             freshnessReason: "fingerprint_cache_hit",
           };
+          const stats: PerceptionTraceStats = {
+            ...this._lastTraceStats,
+            durationMs: 0,
+            cached: true,
+          };
+          this._lastTraceMeta = meta;
+          this._lastTraceStats = stats;
           return makeResult(
             {
               interpretation: this._lastInterpretation,
-              model: OPENROUTER_PERCEPTION_MODEL,
-              durationMs: 0,
-              cached: true,
+              ...stats,
             },
             meta,
           );
@@ -669,12 +706,15 @@ export class PerceptionAgent {
       this._lastRenderHash = renderHash;
       this._lastScreenshotUrl = null;
       this._lastTraceMeta = meta;
+      this._lastTraceStats = {
+        model: "dom-fallback",
+        durationMs: 0,
+        cached: false,
+      };
       return makeResult(
         {
           interpretation,
-          model: "dom-fallback",
-          durationMs: 0,
-          cached: false,
+          ...this._lastTraceStats,
         },
         meta,
       );
@@ -700,12 +740,15 @@ export class PerceptionAgent {
       this.lastFingerprint = fingerprint;
       this._lastRenderHash = renderHash;
       this._lastTraceMeta = meta;
+      this._lastTraceStats = {
+        model: "none (no API key)",
+        durationMs: 0,
+        cached: false,
+      };
       return makeResult(
         {
           interpretation,
-          model: OPENROUTER_PERCEPTION_MODEL,
-          durationMs: 0,
-          cached: false,
+          ...this._lastTraceStats,
         },
         meta,
       );
@@ -758,6 +801,12 @@ export class PerceptionAgent {
         ? { fallbackReason: result.fallbackReason }
         : {}),
       screenshotStatus: result.screenshotStatus,
+    };
+    this._lastTraceStats = {
+      model: result.model,
+      ...(result.providerId ? { providerId: result.providerId } : {}),
+      durationMs: result.durationMs,
+      cached: result.cached,
     };
 
     return result;

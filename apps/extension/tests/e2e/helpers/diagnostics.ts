@@ -150,6 +150,14 @@ export function findAllNewTraceFiles(before: Set<string>): string[] {
     .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
 }
 
+function sortTraceFilesChronologically(traceFiles: string[]): string[] {
+  return [...traceFiles].sort((a, b) => {
+    const aMtime = existsSync(a) ? statSync(a).mtimeMs : Number.MAX_SAFE_INTEGER;
+    const bMtime = existsSync(b) ? statSync(b).mtimeMs : Number.MAX_SAFE_INTEGER;
+    return aMtime - bMtime || a.localeCompare(b);
+  });
+}
+
 export function filterTraceFilesByWorkspace(
   traceFiles: string[],
   workspaceId?: string | null,

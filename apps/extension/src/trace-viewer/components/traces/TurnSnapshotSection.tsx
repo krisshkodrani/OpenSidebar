@@ -3,6 +3,7 @@ import type {
   TraceEntry,
   TracePageStateCapture,
   TracePanoramicShot,
+  TracePerceptionScreenshotStatus,
 } from "../../../types/traces";
 import CollapsibleSection from "../CollapsibleSection";
 import PanoramicThumbnails from "./PanoramicThumbnails";
@@ -44,6 +45,17 @@ function panoramicFromCapture(
     }));
 }
 
+function screenshotUnavailableMessage(
+  status: TracePerceptionScreenshotStatus | undefined,
+  imgError: boolean,
+): string {
+  if (status === "pruned") return "Screenshot pruned (hot window elapsed)";
+  if (status === "missing") return "No screenshot captured";
+  if (status === "capture_failed") return "Screenshot capture failed";
+  if (status === "load_failed" || imgError) return "Screenshot failed to load";
+  return "Screenshot unavailable";
+}
+
 export default function TurnSnapshotSection({
   snapshot,
   pageState,
@@ -83,20 +95,31 @@ export default function TurnSnapshotSection({
           {displayState!.scrollY ? ` (scroll: ${displayState!.scrollY}px)` : ""}
         </div>
       )}
-      {screenshotSrc && !imgError && (
+      {screenshotSrc && (
         <CollapsibleSection label="Screenshot" className="mt-1">
           <div className="p-2">
-            <img
-              src={screenshotSrc}
-              alt="Turn screenshot"
-              className="max-w-full rounded border border-trace-border"
-              loading="lazy"
-              onError={() => setImgError(true)}
-            />
-            {panoramicShots.length > 0 ? (
-              <PanoramicThumbnails shots={panoramicShots} />
-            ) : legacyPanoramicShots.length > 0 ? (
-              <PanoramicThumbnails shots={legacyPanoramicShots} />
+            {imgError || perception?.screenshotStatus === "pruned" ? (
+              <div className="rounded border border-dashed border-trace-border bg-trace-bg px-3 py-6 text-center text-xs text-trace-muted">
+                {screenshotUnavailableMessage(
+                  perception?.screenshotStatus,
+                  imgError,
+                )}
+              </div>
+            ) : (
+              <img
+                src={screenshotSrc}
+                alt="Turn screenshot"
+                className="max-w-full rounded border border-trace-border"
+                loading="lazy"
+                onError={() => setImgError(true)}
+              />
+            )}
+            {!imgError && perception?.screenshotStatus !== "pruned" ? (
+              panoramicShots.length > 0 ? (
+                <PanoramicThumbnails shots={panoramicShots} />
+              ) : legacyPanoramicShots.length > 0 ? (
+                <PanoramicThumbnails shots={legacyPanoramicShots} />
+              ) : null
             ) : null}
             {capture?.domDistillation && (
               <CollapsibleSection label="DOM distillation" className="mt-2">

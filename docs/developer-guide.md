@@ -36,7 +36,7 @@ pnpm run dev
 
 What it starts:
 
-- local server/backend/log server
+- local log server
 - trace viewer at `http://127.0.0.1:7589/viewer`
 - Vite/CRXJS dev process
 - loadable dev extension output in `dist-dev/`
@@ -96,7 +96,7 @@ The supported public E2E environment surface is intentionally small:
 | `E2E_PROVIDER` | Selects the agent provider. Default is `fireworks`. |
 | `E2E_MODEL` | Overrides the executor model for focused runs. |
 | `E2E_PERCEPTION_MODE` | Selects perception mode, for example `unified_vl`. |
-| `E2E_SUITE_FLAGS` | Comma-separated optional gates such as `backend-durable`, `backend-profile`, `memory-long`, `diagnostic`, or `single-process`. |
+| `E2E_SUITE_FLAGS` | Comma-separated optional gates such as `memory-long`, `diagnostic`, or `single-process`. |
 | `E2E_ARTIFACTS` | Comma-separated artifact/browser flags such as `video`, `screenshots`, `panel`, `detached-panel`, `no-panel`, `headed`, or `headless`. |
 
 Older `E2E_*` names are temporary compatibility aliases and should not be used in new commands.
@@ -182,9 +182,6 @@ apps/
       trace-viewer/ Trace inspection UI
       utils/        Logging, storage, support utilities
     tests/          Extension unit, integration, and E2E tests
-  backend/
-    src/            Backend service, routes, persistence
-    tests/          Backend tests
 
 packages/
   shared-types/     Shared runtime and domain contracts
@@ -205,7 +202,6 @@ scripts/            Build, prompts, logs, and maintenance scripts
 - `apps/extension/src/content/tagging/index.ts`: stable tag generation and candidate filtering
 - `apps/extension/src/content/actions/`: DOM action implementations
 - `apps/extension/src/sidepanel/components/SettingsDrawer.tsx`: model override UI
-- `apps/backend/src/server.ts`: backend runtime entrypoint
 
 ## Tooling
 
@@ -237,7 +233,6 @@ Structured perception uses the unified v6 contract:
 - side panel UI: user interaction and settings
 - service worker: agent loop, orchestration, tool routing, tracing
 - content script: DOM tagging, snapshots, page actions
-- backend service: scheduled task and durable run support
 
 ### E2E harness
 
@@ -261,7 +256,7 @@ Structured perception uses the unified v6 contract:
 | --------------- | ------------------------------------- | -------------------------------------------- |
 | `pnpm run dev`   | you want the main local stack running | starts local services, trace viewer, Vite/CRXJS, and writes `dist-dev/` |
 | `pnpm run dist`  | you need standalone extension assets | writes `dist/` for Chrome Load unpacked    |
-| `pnpm test`      | you want fast local tests             | extension + backend unit/integration tests   |
+| `pnpm test`      | you want fast local tests             | extension unit/integration tests             |
 | `pnpm run verify` | you want pre-commit confidence       | lint + typecheck + tests + build + dist check |
 | `pnpm run doctor` | you want setup diagnosis             | checks deps, builds, local server, and trace DB |
 
@@ -281,7 +276,6 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 | `pnpm exec nx run extension:dev` | you only want the extension dev target     |
 | `pnpm exec nx run extension:build` | you only want the extension production build |
 | `pnpm exec nx run extension:test` | you only want extension unit/integration tests |
-| `pnpm exec nx run backend:test`  | you only want backend tests                |
 | `pnpm exec nx run-many -t lint`  | you want all lint targets                  |
 | `pnpm exec nx run-many -t typecheck` | you want all typecheck targets          |
 
@@ -289,8 +283,7 @@ The pnpm package scripts are the stable day-to-day entry points. Use direct Nx c
 
 | Command                      | Use this when                             | Notes                                          |
 | ---------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| `pnpm test`                   | you want the normal fast test suite       | extension and backend tests; excludes browser E2E |
-| `pnpm run test:backend`       | you changed backend routes or persistence | backend-only Vitest run                        |
+| `pnpm test`                   | you want the normal fast test suite       | extension tests; excludes browser E2E             |
 | `pnpm run test:e2e`           | you need the normal budgeted E2E sequence | alias for staged E2E                           |
 | `pnpm run test:e2e:smoke`     | you need cheap real-browser confidence    | uses Fireworks by default                      |
 | `pnpm run test:e2e:staged`    | you need the normal budgeted E2E sequence | smoke + interactions + runtime                 |

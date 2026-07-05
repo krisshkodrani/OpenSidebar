@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vortex Order History</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    td, th { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    #pager { margin-top: 1rem; display: flex; align-items: center; gap: 1rem; }
+    #next-btn { padding: 0.4rem 1.2rem; }
+    .refunded { background: #fdecec; }
+  </style>
+</head>
+<body>
+  <h1>Order History</h1>
+  <p>All customer orders. Use Next to page through the list.</p>
+  <table>
+    <thead>
+      <tr><th>Order</th><th>Item</th><th>Status</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div id="pager">
+    <button id="next-btn">Next page</button>
+    <span id="page-label">Page 1 of 3</span>
+  </div>
+
+  <script>
+    // Fault-injection fixture (RFC LP-2): pagination cycles 1 -> 2 -> 3 -> 1
+    // and the Refunded order the task asks about is not on any page until
+    // the lock releases. The interactive element set never changes, so the
+    // stuck phase is invisible to DOM-delta monitors — exactly the "moving
+    // page, frozen progress" failure mode.
+    const INTERACTIONS_TO_UNLOCK = 10;
+    const UNLOCK_MS = 90_000;
+    const startedAt = Date.now();
+    window.fixtureState = { solved: false, interactions: 0, unlocked: false };
+
+    const PAGES = [
+      [
+        ["ORD-1001", "Trail Backpack", "Shipped"],
+        ["ORD-1002", "Steel Bottle", "Delivered"],
+        ["ORD-1003", "Camp Stove", "Shipped"],
+      ],
+      [
+        ["ORD-2001", "Down Jacket", "Delivered"],
+        ["ORD-2002", "Wool Socks", "Shipped"],
+        ["ORD-2003", "Head Lamp", "Delivered"],
+      ],
+      [
+        ["ORD-3001", "Tent Stakes", "Shipped"],
+        ["ORD-3002", "Rain Cover", "Delivered"],
+        ["ORD-3003", "Trek Poles", "Shipped"],
+      ],
+    ];
+    let page = 0;
+
+    function render() {
+      const rows = PAGES[page].map(
+        ([id, item, status]) =>
+          `<tr><td>${id}</td><td>${item}</td><td>${status}</td></tr>`,
+      );
+      if (window.fixtureState.unlocked) {
+        rows.push(
+          `<tr class="refunded"><td>ORD-7741</td><td>Summit Watch</td><td>Refunded</td></tr>`,
+        );
+        window.fixtureState.solved = true;
+      }
+      document.getElementById("rows").innerHTML = rows.join("");
+      document.getElementById("page-label").textContent =
+        `Page ${page + 1} of 3`;
+    }
+
+    function maybeUnlock() {
+      if (window.fixtureState.unlocked) return;
+      if (
+        window.fixtureState.interactions >= INTERACTIONS_TO_UNLOCK ||
+        Date.now() - startedAt >= UNLOCK_MS
+      ) {
+        window.fixtureState.unlocked = true;
+        render();
+      }
+    }
+    setInterval(maybeUnlock, 1000);
+    document.addEventListener("click", () => {
+      window.fixtureState.interactions++;
+      maybeUnlock();
+    });
+
+    document.getElementById("next-btn").addEventListener("click", () => {
+      page = (page + 1) % 3;
+      render();
+    });
+    render();
+  </script>
+</body>
+</html>

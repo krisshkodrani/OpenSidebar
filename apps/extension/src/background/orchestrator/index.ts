@@ -25,23 +25,6 @@ import {
 } from "../../utils/provider-keys";
 import { listPromptDescriptors } from "../../prompts";
 import {
-  appendTaskRunSideEffects,
-  deleteTaskRunProgress,
-  fetchTaskRunResume,
-  listTaskRuns,
-  patchTaskRun,
-  updateTaskRunCheckpoint,
-  upsertTaskRun,
-  upsertTaskRunNode,
-  upsertTaskRunPendingInteraction,
-  upsertTaskRunProgress,
-  type DurablePendingInteractionRecord,
-  type DurableTaskRunProgress,
-  type DurableTaskRun,
-  type DurableTaskRunSummary,
-  type DurableTaskRunResumeResponse,
-} from "../infrastructure/backend-client";
-import {
   buildPersonalProfilePlannerContext,
   EMPTY_PERSONALIZATION_STATE,
   loadPersonalizationState,
@@ -162,9 +145,7 @@ import {
   DEFAULT_MAX_TOTAL_COST_USD,
   DEFAULT_MAX_TOTAL_TOKENS,
   emptySessionMetrics,
-  isRecord,
   mergeSessionMetrics,
-  sanitizeSessionMetrics,
 } from "./sanitizers";
 import {
   loadOrchestratorCheckpoints,
@@ -192,6 +173,7 @@ import type {
 } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
+import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
 
 function isTurnCheckpointCompatible(
   checkpoint: TurnCheckpoint,
@@ -524,12 +506,6 @@ function appendRecentSideEffects(
   return `${message}\nRecent side effects: ${sideEffects}`;
 }
 
-function cloneTaskForDurableSync(task: OrchestratorTask): OrchestratorTask {
-  const cloned = JSON.parse(JSON.stringify(task)) as OrchestratorTask;
-  cloned.structuredProgress = cloneStructuredProgress(task.structuredProgress);
-  return cloned;
-}
-
 function getNodeToolProfile(
   node: Pick<TaskNode, "description" | "successCriteria" | "toolProfile">,
 ): ToolProfile | undefined {
@@ -767,7 +743,6 @@ export class Orchestrator {
     { resumeRequestedAt?: number; stopRequestedAt?: number }
   >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
-  private durableRunSyncs = new Map<string, Promise<void>>();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       logger.debug("trace", "Run trace manifest", {
@@ -1517,69 +1492,6 @@ export class Orchestrator {
     });
   }
 
-  private buildDurableCheckpointSummary(task: OrchestratorTask): {
-    currentIndex: number;
-    nodeCount: number;
-    turnNumber: number | null;
-    activeNodeId?: string | null;
-    pendingInteractionKind?: "approval" | "clarification" | null;
-  } {
-    const activeNode =
-      task.nodes.find((node) => node.status === "running") ??
-      task.nodes[task.currentIndex];
-    return {
-      currentIndex: task.currentIndex,
-      nodeCount: task.nodes.length,
-      turnNumber: task.turnNumber ?? null,
-      activeNodeId: activeNode?.id ?? null,
-      pendingInteractionKind: task.pendingInteraction?.kind ?? null,
-    };
-  }
-
-  private buildStructuredProgressFromDurableEntries(
-    progress: DurableTaskRunProgress[],
-  ): Record<string, TaskRunProgressInput> | undefined {
-    const entries: Array<[string, TaskRunProgressInput]> = [];
-    for (const entry of progress) {
-      if (
-        entry.kind === "reviewed-item-list" ||
-        entry.kind === "completed-phase-list" ||
-        entry.kind === "outstanding-question-list"
-      ) {
-        if (
-          Array.isArray(entry.payload) &&
-          entry.payload.every((value) => typeof value === "string")
-        ) {
-          entries.push([
-            entry.key,
-            {
-              key: entry.key,
-              kind: entry.kind,
-              payload: entry.payload,
-            },
-          ]);
-        }
-        continue;
-      }
-      if (
-        entry.kind === "extracted-fact-map" &&
-        entry.payload &&
-        typeof entry.payload === "object" &&
-        !Array.isArray(entry.payload)
-      ) {
-        entries.push([
-          entry.key,
-          {
-            key: entry.key,
-            kind: entry.kind,
-            payload: entry.payload,
-          },
-        ]);
-      }
-    }
-    return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-  }
-
   private setStructuredProgressEntry(
     task: OrchestratorTask,
     entry: TaskRunProgressInput,
@@ -1589,10 +1501,6 @@ export class Orchestrator {
       JSON.stringify(entry),
     ) as TaskRunProgressInput;
     task.structuredProgress = current;
-    if (!task.runId) return;
-    this.queueDurableRunSync(task.runId, async () => {
-      await upsertTaskRunProgress(task.runId!, entry);
-    });
   }
 
   private deleteStructuredProgressEntry(
@@ -1604,10 +1512,6 @@ export class Orchestrator {
       delete next[key];
       task.structuredProgress = Object.keys(next).length > 0 ? next : undefined;
     }
-    if (!task.runId) return;
-    this.queueDurableRunSync(task.runId, async () => {
-      await deleteTaskRunProgress(task.runId!, key);
-    });
   }
 
   private recordCompletedPhase(task: OrchestratorTask, phase: string): void {
@@ -1664,717 +1568,6 @@ export class Orchestrator {
     });
   }
 
-  private isDurableResumeStructurallyValid(
-    resume: DurableTaskRunResumeResponse | null,
-  ): resume is DurableTaskRunResumeResponse {
-    if (!resume) return false;
-    if (
-      !resume.run ||
-      !Array.isArray(resume.nodes) ||
-      resume.nodes.length === 0
-    ) {
-      return false;
-    }
-    const nodeIds = new Set<string>();
-    for (const node of resume.nodes) {
-      if (
-        typeof node.nodeId !== "string" ||
-        node.nodeId.length === 0 ||
-        typeof node.description !== "string" ||
-        node.description.length === 0 ||
-        typeof node.successCriteria !== "string" ||
-        node.successCriteria.length === 0 ||
-        typeof node.status !== "string" ||
-        typeof node.retries !== "number"
-      ) {
-        return false;
-      }
-      nodeIds.add(node.nodeId);
-    }
-    for (const node of resume.nodes) {
-      if (
-        Array.isArray(node.dependencies) &&
-        node.dependencies.some((dependency) => !nodeIds.has(dependency))
-      ) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  private buildBudgetFromDurableRun(
-    run: DurableTaskRun,
-  ): OrchestratorTask["budget"] {
-    const raw = run.budget;
-    if (isRecord(raw)) {
-      const maxSessionTimeMs = raw.maxSessionTimeMs;
-      const maxTotalTokens = raw.maxTotalTokens;
-      const maxTotalCostUsd = raw.maxTotalCostUsd;
-      if (
-        typeof maxSessionTimeMs === "number" &&
-        typeof maxTotalTokens === "number" &&
-        typeof maxTotalCostUsd === "number"
-      ) {
-        return {
-          maxSessionTimeMs,
-          maxTotalTokens,
-          maxTotalCostUsd,
-        };
-      }
-    }
-    return {
-      maxSessionTimeMs: DEFAULT_MAX_SESSION_TIME_MS,
-      maxTotalTokens: clampInteger(DEFAULT_MAX_TOTAL_TOKENS, 1),
-      maxTotalCostUsd: DEFAULT_MAX_TOTAL_COST_USD,
-    };
-  }
-
-  private buildPendingInteractionFromDurableRecord(
-    interaction: DurablePendingInteractionRecord | null,
-    task:
-      | { runId?: string; id?: string; workspaceId?: string }
-      | null
-      | undefined,
-  ): PendingUserInteraction | undefined {
-    if (!interaction || interaction.status !== "active") return undefined;
-    const payload = interaction.payload;
-    const now = Date.now();
-    const timeoutAt = interaction.timeoutAt ?? null;
-    const remainingMs = timeoutAt == null ? 0 : timeoutAt - now;
-    if (remainingMs <= 0) {
-      this.emitTraceEvent(
-        task,
-        "pending_interaction_backend_conflict",
-        {
-          nodeId: interaction.nodeId ?? null,
-          kind: interaction.kind,
-          reason: "timeout_expired_before_restore",
-        },
-        "system",
-      );
-      return undefined;
-    }
-
-    if (interaction.kind === "approval") {
-      const approvalId = payload.approvalId;
-      const toolName = payload.toolName;
-      const args = payload.args;
-      const context = payload.context;
-      if (
-        typeof approvalId !== "string" ||
-        typeof toolName !== "string" ||
-        !isRecord(args) ||
-        typeof context !== "string"
-      ) {
-        return undefined;
-      }
-      return {
-        kind: "approval",
-        nodeId: interaction.nodeId ?? null,
-        requestedAt: now,
-        approvalId,
-        toolName: toolName as ToolName,
-        args,
-        context,
-        timeoutMs: remainingMs,
-      };
-    }
-
-    const clarificationId = payload.clarificationId;
-    const question = payload.question;
-    const suggestions = payload.suggestions;
-    if (
-      typeof clarificationId !== "string" ||
-      typeof question !== "string" ||
-      (suggestions !== undefined &&
-        (!Array.isArray(suggestions) ||
-          suggestions.some((item) => typeof item !== "string")))
-    ) {
-      return undefined;
-    }
-    return {
-      kind: "clarification",
-      nodeId: interaction.nodeId ?? null,
-      requestedAt: now,
-      clarificationId,
-      question,
-      suggestions: Array.isArray(suggestions)
-        ? (suggestions as string[])
-        : undefined,
-      timeoutMs: remainingMs,
-    };
-  }
-
-  private async buildTaskFromDurableResume(
-    resume: DurableTaskRunResumeResponse,
-    resumeTabId: number,
-  ): Promise<OrchestratorTask | null> {
-    if (!this.isDurableResumeStructurallyValid(resume)) {
-      return null;
-    }
-
-    const metrics =
-      resume.run.sessionMetrics && isRecord(resume.run.sessionMetrics)
-        ? (sanitizeSessionMetrics(resume.run.sessionMetrics) ??
-          emptySessionMetrics())
-        : emptySessionMetrics();
-
-    const nodes: TaskNode[] = [];
-    for (const node of resume.nodes) {
-      const allowedTools = node.allowedTools.filter(
-        (tool): tool is ToolName => typeof tool === "string",
-      );
-      if (allowedTools.length === 0) return null;
-      nodes.push({
-        id: node.nodeId,
-        role: "executor",
-        description: node.description,
-        successCriteria: node.successCriteria,
-        selectedSkillId: node.selectedSkillId ?? undefined,
-        selectedSkillReason: node.selectedSkillReason ?? undefined,
-        allowedTools,
-        dependencies: [...(node.dependencies ?? [])],
-        assumptions: [...(node.assumptions ?? [])],
-        handoffArtifacts: [
-          ...(node.handoffArtifacts ?? []),
-        ] as NodeHandoffArtifact[],
-        reflexionLog: [...(node.reflexionLog ?? [])] as any,
-        handoffDepth: node.handoffDepth ?? 0,
-        handoffFromNodeId: node.handoffFromNodeId ?? undefined,
-        verificationGate: (node.verificationGate as any) ?? undefined,
-        status: node.status as TaskNode["status"],
-        retries: node.retries,
-        result: node.result ?? undefined,
-        error: node.error ?? undefined,
-        trajectory: node.trajectory ?? undefined,
-      });
-    }
-
-    const pendingInteraction = this.buildPendingInteractionFromDurableRecord(
-      resume.pendingInteraction,
-      {
-        runId: resume.run.id,
-        id: resume.run.clientRunId ?? undefined,
-        workspaceId: resume.run.workspaceId,
-      },
-    );
-
-    return {
-      runId: resume.run.id,
-      id: resume.run.clientRunId ?? crypto.randomUUID(),
-      workspaceId: resume.run.workspaceId,
-      rootTabId: resumeTabId,
-      rootTabUrl: resume.run.rootTabUrl ?? undefined,
-      query: resume.run.query,
-      turnNumber: resume.run.turnNumber ?? undefined,
-      status: resume.run.status,
-      createdAt: resume.run.createdAt,
-      startedAt: resume.run.startedAt ?? undefined,
-      finishedAt: resume.run.finishedAt ?? undefined,
-      nodes,
-      plannerReflexionLog: [],
-      maxWorkers: Math.max(1, Math.min(8, DEFAULT_MAX_WORKERS)),
-      maxReplans: DEFAULT_MAX_REPLANS,
-      replansUsed: 0,
-      horizonExpansions: 0,
-      currentIndex:
-        resume.run.checkpointSummary?.currentIndex ?? currentIndex(nodes),
-      sessionMetrics: metrics,
-      budget: this.buildBudgetFromDurableRun(resume.run),
-      terminationReason: resume.run.terminationReason ?? undefined,
-      pendingInteraction,
-      structuredProgress: this.buildStructuredProgressFromDurableEntries(
-        resume.progress,
-      ),
-      tabCoordination: createTaskTabCoordination(resumeTabId, {
-        primaryTabUrl: resume.run.rootTabUrl ?? null,
-        lastReboundTabId: resumeTabId,
-      }),
-      durableMeta: {
-        lastResumeSource: resume.run.lastResumeSource,
-        lastKnownResumeSafe: resume.run.lastKnownResumeSafe,
-        lastResumeSafetyCheckedAt: resume.run.lastResumeSafetyCheckedAt,
-        lastKnownResumeReason: resume.run.lastKnownResumeReason,
-        resumeRequestedAt: resume.run.resumeRequestedAt,
-        resumeRequestedReason: resume.run.resumeRequestedReason,
-        stopRequestedAt: resume.run.stopRequestedAt,
-        stopRequestedReason: resume.run.stopRequestedReason,
-      },
-    };
-  }
-
-  private async discoverBackendRunCandidates(): Promise<DurableTaskRun[]> {
-    const workspaces = await this.deps.workspaceManager.getWorkspaces();
-    const discovered: DurableTaskRun[] = [];
-    const seenRunIds = new Set<string>();
-
-    for (const workspace of workspaces) {
-      const localTask = this.tasksByWorkspace.get(workspace.id);
-      if (localTask?.status === "running" || localTask?.status === "planning") {
-        continue;
-      }
-      for (const status of ["running", "planning"] as const) {
-        const runs = await listTaskRuns({
-          workspaceId: workspace.id,
-          status,
-          limit: 5,
-        });
-        for (const run of runs) {
-          if (seenRunIds.has(run.id)) continue;
-          seenRunIds.add(run.id);
-          discovered.push(run);
-        }
-      }
-    }
-
-    return discovered.sort((a, b) => b.updatedAt - a.updatedAt);
-  }
-
-  private async recoverWorkspaceFromDurableState(
-    workspaceId: string,
-  ): Promise<boolean> {
-    if (this.tasksByWorkspace.has(workspaceId)) return true;
-
-    const candidates = (
-      await Promise.all(
-        (["running", "planning"] as const).map((status) =>
-          listTaskRuns({
-            workspaceId,
-            status,
-            limit: 5,
-          }),
-        ),
-      )
-    )
-      .flat()
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-
-    for (const run of candidates) {
-      const resume = await fetchTaskRunResume(run.id);
-      if (!this.isDurableResumeStructurallyValid(resume)) {
-        this.emitTraceEvent(
-          {
-            runId: run.id,
-            id: run.clientRunId ?? undefined,
-            workspaceId,
-          },
-          "task_resume_backend_invalid",
-          {
-            workspaceId,
-            reason: "missing_or_invalid_resume_payload",
-          },
-          "system",
-        );
-        continue;
-      }
-
-      const resumeSelection = await this.resolveResumeTabId(
-        {
-          workspaceId,
-          rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
-          rootTabUrl: resume.run.rootTabUrl ?? null,
-          tabCoordination: undefined,
-        },
-        resume.run.rootTabId ?? run.rootTabId ?? 0,
-      );
-      if (resumeSelection.status !== "safe") {
-        await patchTaskRun(run.id, {
-          lastKnownResumeSafe: false,
-          lastResumeSafetyCheckedAt: Date.now(),
-          lastKnownResumeReason: resumeSelection.reason,
-        });
-        continue;
-      }
-      const resumeTabId = resumeSelection.tabId;
-
-      const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
-      const resumeInput =
-        task && (await this.buildResumeInput(task, resumeTabId));
-      if (!task || !resumeInput) {
-        await patchTaskRun(run.id, {
-          lastKnownResumeSafe: false,
-          lastResumeSafetyCheckedAt: Date.now(),
-          lastKnownResumeReason: "Unable to rebuild runtime state for resume.",
-        });
-        continue;
-      }
-
-      await this.activateRecoveredTask(
-        task,
-        resumeInput,
-        resumeTabId,
-        "backend",
-      );
-      return true;
-    }
-
-    return false;
-  }
-
-  private pickDurableControlAction(
-    run: DurableTaskRunSummary,
-  ): { action: "resume" | "stop"; requestedAt: number } | null {
-    const resumeRequestedAt = run.resumeRequestedAt ?? null;
-    const stopRequestedAt = run.stopRequestedAt ?? null;
-    if (resumeRequestedAt == null && stopRequestedAt == null) return null;
-    if (
-      stopRequestedAt != null &&
-      (resumeRequestedAt == null || stopRequestedAt >= resumeRequestedAt)
-    ) {
-      return { action: "stop", requestedAt: stopRequestedAt };
-    }
-    if (resumeRequestedAt != null) {
-      return { action: "resume", requestedAt: resumeRequestedAt };
-    }
-    return null;
-  }
-
-  private canDurableRunResume(run: DurableTaskRunSummary): boolean {
-    if (run.status === "completed" || run.status === "stopped") return false;
-    if (run.stopRequestedAt) return false;
-    return run.lastKnownResumeSafe !== false;
-  }
-
-  private sendDurableRunStatus(
-    workspaceId: string,
-    run: DurableTaskRunSummary | null,
-  ): void {
-    this.sendMessage({
-      type: "DURABLE_RUN_STATUS",
-      workspaceId,
-      payload: run
-        ? {
-            runId: run.id,
-            query: run.query,
-            status: run.status,
-            canResume: this.canDurableRunResume(run),
-            lastKnownResumeSafe: run.lastKnownResumeSafe,
-            lastKnownResumeReason: run.lastKnownResumeReason,
-            stopRequestedAt: run.stopRequestedAt,
-            resumeRequestedAt: run.resumeRequestedAt,
-          }
-        : null,
-    });
-  }
-
-  private async syncDurableRunStatus(workspaceId: string): Promise<void> {
-    const runs = await listTaskRuns({
-      workspaceId,
-      includeCompleted: true,
-      includeProgressSummary: true,
-      limit: 10,
-    });
-    const candidate =
-      runs.find((run) => run.stopRequestedAt != null) ??
-      runs.find((run) => this.canDurableRunResume(run)) ??
-      null;
-    this.sendDurableRunStatus(workspaceId, candidate);
-  }
-
-  private async applyDurableStopRequest(
-    run: DurableTaskRunSummary,
-    requestedAt: number,
-  ): Promise<void> {
-    const localTask = this.tasksByWorkspace.get(run.workspaceId);
-    this.sendDurableRunStatus(run.workspaceId, run);
-    if (
-      localTask &&
-      localTask.runId === run.id &&
-      (localTask.status === "running" || localTask.status === "planning")
-    ) {
-      this.emitTraceEvent(
-        localTask,
-        "durable_run_stop_requested",
-        {
-          runId: run.id,
-          workspaceId: run.workspaceId,
-          requestedAt,
-        },
-        "system",
-      );
-      localTask.durableMeta = {
-        ...(localTask.durableMeta ?? {}),
-        stopRequestedAt: null,
-        stopRequestedReason: null,
-      };
-      await this.stopWorkspace(run.workspaceId);
-      return;
-    }
-
-    await patchTaskRun(run.id, {
-      stopRequestedAt: null,
-      stopRequestedReason: null,
-      status: "stopped",
-      finishedAt: Date.now(),
-      terminationReason:
-        run.stopRequestedReason ?? "Stopped from durable control plane",
-    });
-    this.sendDurableRunStatus(run.workspaceId, null);
-  }
-
-  private async applyDurableResumeRequest(
-    run: DurableTaskRunSummary,
-    requestedAt: number,
-  ): Promise<void> {
-    if (this.tasksByWorkspace.has(run.workspaceId)) {
-      await patchTaskRun(run.id, {
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "Workspace already has an active task.",
-      });
-      this.sendDurableRunStatus(run.workspaceId, run);
-      return;
-    }
-
-    const resume = await fetchTaskRunResume(run.id);
-    if (!this.isDurableResumeStructurallyValid(resume)) {
-      await patchTaskRun(run.id, {
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "Missing or invalid durable resume payload.",
-      });
-      this.sendDurableRunStatus(run.workspaceId, {
-        ...run,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "Missing or invalid durable resume payload.",
-      });
-      return;
-    }
-
-    const resumeSelection = await this.resolveResumeTabId(
-      {
-        workspaceId: run.workspaceId,
-        rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
-        rootTabUrl: resume.run.rootTabUrl ?? null,
-        tabCoordination: undefined,
-      },
-      resume.run.rootTabId ?? run.rootTabId ?? 0,
-    );
-    if (resumeSelection.status !== "safe") {
-      await patchTaskRun(run.id, {
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: resumeSelection.reason,
-      });
-      this.sendDurableRunStatus(run.workspaceId, {
-        ...run,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: resumeSelection.reason,
-      });
-      return;
-    }
-    const resumeTabId = resumeSelection.tabId;
-
-    const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
-    const resumeInput =
-      task && (await this.buildResumeInput(task, resumeTabId));
-    if (!task || !resumeInput) {
-      await patchTaskRun(run.id, {
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-        lastKnownResumeSafe: false,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "Unable to rebuild runtime state for resume.",
-      });
-      return;
-    }
-
-    await patchTaskRun(run.id, {
-      resumeRequestedAt: null,
-      resumeRequestedReason: null,
-      lastKnownResumeSafe: true,
-      lastResumeSafetyCheckedAt: Date.now(),
-      lastKnownResumeReason: "Live workspace tab rebound successfully.",
-      lastResumeSource: "backend",
-    });
-    if (task) {
-      task.durableMeta = {
-        ...(task.durableMeta ?? {}),
-        lastResumeSource: "backend",
-        lastKnownResumeSafe: true,
-        lastResumeSafetyCheckedAt: Date.now(),
-        lastKnownResumeReason: "Live workspace tab rebound successfully.",
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-      };
-    }
-    await this.activateRecoveredTask(task, resumeInput, resumeTabId, "backend");
-    this.emitTraceEvent(
-      task,
-      "durable_run_resume_applied",
-      {
-        runId: run.id,
-        workspaceId: run.workspaceId,
-        requestedAt,
-      },
-      "system",
-    );
-    this.sendDurableRunStatus(run.workspaceId, null);
-  }
-
-  public async processDurableRunControlRequests(): Promise<void> {
-    const runs = await listTaskRuns({
-      includeCompleted: true,
-      controlRequested: true,
-      limit: 20,
-    });
-    for (const run of runs) {
-      const control = this.pickDurableControlAction(run);
-      if (!control) continue;
-      const watermark = this.durableControlWatermarks.get(run.id) ?? {};
-      if (
-        (control.action === "resume" &&
-          (watermark.resumeRequestedAt ?? 0) >= control.requestedAt) ||
-        (control.action === "stop" &&
-          (watermark.stopRequestedAt ?? 0) >= control.requestedAt)
-      ) {
-        continue;
-      }
-      this.durableControlWatermarks.set(run.id, {
-        ...watermark,
-        ...(control.action === "resume"
-          ? { resumeRequestedAt: control.requestedAt }
-          : { stopRequestedAt: control.requestedAt }),
-      });
-
-      if (control.action === "stop") {
-        await this.applyDurableStopRequest(run, control.requestedAt);
-      } else {
-        await this.applyDurableResumeRequest(run, control.requestedAt);
-      }
-    }
-  }
-
-  private queueDurableRunSync(runId: string, op: () => Promise<void>): void {
-    const previous = this.durableRunSyncs.get(runId) ?? Promise.resolve();
-    const next = previous
-      .catch(() => {})
-      .then(op)
-      .catch((error) => {
-        logger.debug("orchestrator", "Durable run sync failed", {
-          runId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      })
-      .finally(() => {
-        if (this.durableRunSyncs.get(runId) === next) {
-          this.durableRunSyncs.delete(runId);
-        }
-      });
-    this.durableRunSyncs.set(runId, next);
-  }
-
-  private scheduleDurableTaskSync(task: OrchestratorTask): void {
-    if (!task.runId) return;
-    const taskSnapshot = cloneTaskForDurableSync(task);
-    this.queueDurableRunSync(task.runId, async () => {
-      await upsertTaskRun({
-        id: taskSnapshot.runId!,
-        clientRunId: taskSnapshot.id,
-        workspaceId: taskSnapshot.workspaceId,
-        query: taskSnapshot.query,
-        rootTabId: taskSnapshot.rootTabId ?? null,
-        rootTabUrl: taskSnapshot.rootTabUrl ?? null,
-        turnNumber: taskSnapshot.turnNumber ?? null,
-        status:
-          taskSnapshot.status === "stopping" ? "running" : taskSnapshot.status,
-        startedAt: taskSnapshot.startedAt ?? null,
-        finishedAt: taskSnapshot.finishedAt ?? null,
-        terminationReason: taskSnapshot.terminationReason ?? null,
-        checkpointSummary: this.buildDurableCheckpointSummary(taskSnapshot),
-        sessionMetrics: taskSnapshot.sessionMetrics as unknown as Record<
-          string,
-          unknown
-        >,
-        budget: taskSnapshot.budget as Record<string, unknown>,
-        resumeStateVersion: 1,
-        resumeRequestedAt: taskSnapshot.durableMeta?.resumeRequestedAt ?? null,
-        resumeRequestedReason:
-          taskSnapshot.durableMeta?.resumeRequestedReason ?? null,
-        stopRequestedAt: taskSnapshot.durableMeta?.stopRequestedAt ?? null,
-        stopRequestedReason:
-          taskSnapshot.durableMeta?.stopRequestedReason ?? null,
-        lastResumeSource: taskSnapshot.durableMeta?.lastResumeSource ?? null,
-        lastKnownResumeSafe:
-          taskSnapshot.durableMeta?.lastKnownResumeSafe ?? null,
-        lastResumeSafetyCheckedAt:
-          taskSnapshot.durableMeta?.lastResumeSafetyCheckedAt ?? null,
-        lastKnownResumeReason:
-          taskSnapshot.durableMeta?.lastKnownResumeReason ?? null,
-      });
-
-      await updateTaskRunCheckpoint(
-        taskSnapshot.runId!,
-        this.buildDurableCheckpointSummary(taskSnapshot),
-      );
-
-      for (const node of taskSnapshot.nodes) {
-        await upsertTaskRunNode(taskSnapshot.runId!, {
-          nodeId: node.id,
-          description: node.description,
-          successCriteria: node.successCriteria,
-          selectedSkillId: node.selectedSkillId ?? null,
-          selectedSkillReason: node.selectedSkillReason ?? null,
-          allowedTools: [...node.allowedTools],
-          dependencies: [...node.dependencies],
-          assumptions: [...node.assumptions],
-          verificationGate: node.verificationGate
-            ? (node.verificationGate as unknown as Record<string, unknown>)
-            : null,
-          handoffArtifacts: [...node.handoffArtifacts],
-          reflexionLog: [...node.reflexionLog],
-          handoffDepth: node.handoffDepth,
-          handoffFromNodeId: node.handoffFromNodeId ?? null,
-          trajectory: node.trajectory ? [...node.trajectory] : null,
-          status: node.status,
-          retries: node.retries,
-          result: node.result ?? null,
-          error: node.error ?? null,
-        });
-      }
-
-      const pendingInteraction = taskSnapshot.pendingInteraction;
-      await upsertTaskRunPendingInteraction(
-        taskSnapshot.runId!,
-        pendingInteraction
-          ? {
-              nodeId: pendingInteraction.nodeId ?? null,
-              kind: pendingInteraction.kind,
-              payload: pendingInteraction as unknown as Record<string, unknown>,
-              requestedAt: pendingInteraction.requestedAt,
-              timeoutAt:
-                pendingInteraction.timeoutMs != null
-                  ? pendingInteraction.requestedAt +
-                    pendingInteraction.timeoutMs
-                  : null,
-              status:
-                pendingInteraction.kind === "approval"
-                  ? pendingInteraction.approved !== undefined
-                    ? "resolved"
-                    : "active"
-                  : pendingInteraction.answer !== undefined
-                    ? "resolved"
-                    : "active",
-            }
-          : null,
-      );
-
-      for (const progress of Object.values(
-        taskSnapshot.structuredProgress ?? {},
-      )) {
-        await upsertTaskRunProgress(taskSnapshot.runId!, progress);
-      }
-    });
-  }
-
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await loadOrchestratorCheckpoints();
     const pendingFeedback = this.pendingFeedbackQueue.get(task.workspaceId);
@@ -2390,7 +1583,7 @@ export class Orchestrator {
         : {}),
     };
     await saveOrchestratorCheckpoints(checkpoints);
-    this.scheduleDurableTaskSync(task);
+
   }
 
   private async clearTaskCheckpoint(workspaceId: string): Promise<void> {
@@ -2678,9 +1871,6 @@ export class Orchestrator {
 
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     await this.persistTaskCheckpoint(task);
-    if (task.runId) {
-      await (this.durableRunSyncs.get(task.runId) ?? Promise.resolve());
-    }
     this.sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
@@ -2914,21 +2104,11 @@ export class Orchestrator {
         url: task.rootTabUrl ?? null,
       });
     }
-    task.durableMeta = {
-      ...(task.durableMeta ?? {}),
-      lastResumeSource: source === "backend" ? "backend" : "local",
-      lastKnownResumeSafe: true,
-      lastResumeSafetyCheckedAt: Date.now(),
-      lastKnownResumeReason: "Recovered onto a live workspace tab.",
-      resumeRequestedAt: null,
-      resumeRequestedReason: null,
-    };
     task.status = "running";
     task.currentIndex = currentIndex(task.nodes);
     this.tasksByWorkspace.set(task.workspaceId, task);
     this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    this.sendDurableRunStatus(task.workspaceId, null);
     await this.emitTraceManifest({
       ...this.buildTaskManifest(task, resumeInput),
       source:
@@ -2937,9 +2117,9 @@ export class Orchestrator {
           : "background.orchestrator.recovery",
     });
     this.emitTabCoordinationState(task, "rebound", {
-      resumeSource: source === "backend" ? "backend" : "local",
+      resumeSource: "local",
       reboundTabId: resumeTabId,
-      reason: task.durableMeta.lastKnownResumeReason ?? null,
+      reason: "Recovered onto a live workspace tab.",
     });
     this.emitTraceEvent(
       task,
@@ -3052,9 +2232,6 @@ export class Orchestrator {
       await loadOrchestratorCheckpoints(),
     );
     const entries = Object.values(checkpoints);
-    const seenWorkspaceIds = new Set<string>(
-      entries.map((cp) => cp.task.workspaceId),
-    );
 
     if (entries.length > 0) {
       logger.info("orchestrator", "Found orchestrator checkpoints", {
@@ -3110,44 +2287,6 @@ export class Orchestrator {
       }
       const resumeTabId = resumeSelection.tabId;
 
-      const backendResume =
-        task.runId != null ? await fetchTaskRunResume(task.runId) : null;
-      const preferBackend =
-        backendResume &&
-        this.isDurableResumeStructurallyValid(backendResume) &&
-        backendResume.run.updatedAt > cp.savedAt &&
-        JSON.stringify(backendResume.pendingInteraction) !==
-          JSON.stringify(task.pendingInteraction);
-
-      if (preferBackend) {
-        const restoredTask = await this.buildTaskFromDurableResume(
-          backendResume!,
-          resumeTabId,
-        );
-        const backendResumeInput =
-          restoredTask &&
-          (await this.buildResumeInput(restoredTask, resumeTabId));
-        if (restoredTask && backendResumeInput) {
-          this.emitTraceEvent(
-            task,
-            "task_resume_local_rejected",
-            {
-              taskId: task.id,
-              workspaceId: task.workspaceId,
-              reason: "backend_newer_conflicting_pending_interaction",
-            },
-            "system",
-          );
-          await this.activateRecoveredTask(
-            restoredTask,
-            backendResumeInput,
-            resumeTabId,
-            "backend",
-          );
-          continue;
-        }
-      }
-
       const resumeInput = await this.buildResumeInput(task, resumeTabId);
       if (!resumeInput) {
         await this.clearTaskCheckpoint(task.workspaceId);
@@ -3161,59 +2300,6 @@ export class Orchestrator {
         "checkpoint",
         { loadTurnCheckpoints: true },
       );
-    }
-
-    const discoveredRuns = await this.discoverBackendRunCandidates();
-    for (const run of discoveredRuns) {
-      if (seenWorkspaceIds.has(run.workspaceId)) continue;
-      const resume = await fetchTaskRunResume(run.id);
-      if (!this.isDurableResumeStructurallyValid(resume)) {
-        this.emitTraceEvent(
-          {
-            runId: run.id,
-            id: run.clientRunId ?? undefined,
-            workspaceId: run.workspaceId,
-          },
-          "task_resume_backend_invalid",
-          {
-            workspaceId: run.workspaceId,
-            reason: "missing_or_invalid_resume_payload",
-          },
-          "system",
-        );
-        continue;
-      }
-      const resumeSelection = await this.resolveResumeTabId(
-        {
-          workspaceId: run.workspaceId,
-          rootTabId: resume.run.rootTabId ?? run.rootTabId ?? 0,
-          rootTabUrl: resume.run.rootTabUrl ?? null,
-          tabCoordination: undefined,
-        },
-        resume.run.rootTabId ?? run.rootTabId ?? 0,
-      );
-      if (resumeSelection.status !== "safe") {
-        await patchTaskRun(run.id, {
-          lastKnownResumeSafe: false,
-          lastResumeSafetyCheckedAt: Date.now(),
-          lastKnownResumeReason: resumeSelection.reason,
-        });
-        continue;
-      }
-      const resumeTabId = resumeSelection.tabId;
-
-      const task = await this.buildTaskFromDurableResume(resume, resumeTabId);
-      const resumeInput =
-        task && (await this.buildResumeInput(task, resumeTabId));
-      if (!task || !resumeInput) continue;
-
-      await this.activateRecoveredTask(
-        task,
-        resumeInput,
-        resumeTabId,
-        "backend",
-      );
-      seenWorkspaceIds.add(run.workspaceId);
     }
   }
 
@@ -3321,7 +2407,6 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
-    this.sendDurableRunStatus(task.workspaceId, null);
     this.sendStatus(
       input.workspaceId,
       AgentStatus.PAUSED,
@@ -3381,10 +2466,6 @@ export class Orchestrator {
     const task = this.tasksByWorkspace.get(workspaceId);
 
     if (!task) {
-      const recovered =
-        await this.recoverWorkspaceFromDurableState(workspaceId);
-      if (recovered) return;
-
       // Check for a recent completion that the panel may have missed
       const cached = this.recentCompletion.get(workspaceId);
       if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
@@ -3395,11 +2476,9 @@ export class Orchestrator {
         });
       }
       this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
-      void this.syncDurableRunStatus(workspaceId);
       return;
     }
 
-    this.sendDurableRunStatus(workspaceId, null);
 
     if (task.status === "running" || task.status === "planning") {
       // Task is in-flight — re-send current status + progress
@@ -3443,7 +2522,9 @@ export class Orchestrator {
           status:
             task.status === "stopped"
               ? "stopped"
-              : task.status === "completed"
+              : hasUsefulPartialProgressHandoff(task.partialHandoff)
+                ? "partial"
+                : task.status === "completed"
                 ? completed === subtaskResults.length
                   ? "completed"
                   : "partial"
@@ -3460,6 +2541,9 @@ export class Orchestrator {
           urlHistory: [],
           metrics: task.sessionMetrics,
           terminationReason: task.terminationReason,
+          ...(task.partialHandoff
+            ? { partialHandoff: task.partialHandoff }
+            : {}),
         },
       });
       if (task.sessionMetrics) {
@@ -3615,7 +2699,6 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    this.sendDurableRunStatus(task.workspaceId, null);
     await this.emitTraceManifest(this.buildTaskManifest(task, input));
     this.emitTraceEvent(
       task,
@@ -3711,6 +2794,7 @@ export class Orchestrator {
         const modelOverrides = {
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
           provider: input.settings.provider,
@@ -4042,6 +3126,7 @@ export class Orchestrator {
     const loopModelOverrides = {
       executorModel: input.settings.executorModel,
       plannerModel: input.settings.plannerModel,
+      writerModel: input.settings.writerModel,
       useNitro: input.settings.useNitro,
       providerMode: input.settings.providerMode,
       provider: input.settings.provider,
@@ -4531,6 +3616,7 @@ export class Orchestrator {
           bypassApprovals: !(input.settings.requireApprovals ?? true),
           executorModel: input.settings.executorModel,
           plannerModel: input.settings.plannerModel,
+          writerModel: input.settings.writerModel,
           useNitro: input.settings.useNitro,
           providerMode: input.settings.providerMode,
           provider: input.settings.provider,
@@ -4704,24 +3790,6 @@ export class Orchestrator {
             nodeId: node.id,
           },
         );
-        if (
-          task.runId &&
-          result.sideEffectsLog &&
-          result.sideEffectsLog.length > 0
-        ) {
-          void appendTaskRunSideEffects(
-            task.runId,
-            result.sideEffectsLog.map((entry) => ({
-              id: entry.id,
-              nodeId: node.id,
-              toolName: entry.toolName,
-              args: entry.args,
-              result: entry.result,
-              timestamp: entry.timestamp,
-              snapshotFingerprint: entry.snapshotFingerprint,
-            })),
-          );
-        }
         task.sessionMetrics = mergeSessionMetrics(
           task.sessionMetrics,
           result.metrics,
@@ -4746,6 +3814,10 @@ export class Orchestrator {
         // Store condensed action trajectory for same-tab handoff
         if (result.trajectory && result.trajectory.length > 0) {
           node.trajectory = result.trajectory;
+        }
+        if (result.partialHandoff) {
+          node.partialHandoff = result.partialHandoff;
+          task.partialHandoff = result.partialHandoff;
         }
 
         if (node.status !== "running") {
@@ -5448,6 +4520,27 @@ export class Orchestrator {
               );
             }
           } // end verification pipeline
+        } else if (result.outcome === "max_turns" && result.partialHandoff) {
+          node.status = "failed";
+          node.error = result.summary;
+          task.partialHandoff = result.partialHandoff;
+          task.terminationReason =
+            task.terminationReason ||
+            `Turn limit reached (${result.turnCount}/${result.partialHandoff.maxTurns})`;
+          this.emitTraceEvent(
+            task,
+            "partial_handoff_created",
+            {
+              nodeId: node.id,
+              reason: result.partialHandoff.reason,
+              turnsUsed: result.partialHandoff.turnsUsed,
+              maxTurns: result.partialHandoff.maxTurns,
+              completedCount: result.partialHandoff.completed.length,
+              evidenceCount: result.partialHandoff.evidence.length,
+              remainingCount: result.partialHandoff.remaining.length,
+            },
+            "executor",
+          );
         } else {
           const retryDecision = decideRetryPolicy(
             {
@@ -6206,8 +5299,13 @@ export class Orchestrator {
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
     ).length;
 
+    const hasUsefulHandoff = hasUsefulPartialProgressHandoff(
+      task.partialHandoff,
+    );
     let completionStatus: "completed" | "partial" | "failed" =
-      failed > 0
+      hasUsefulHandoff
+        ? "partial"
+        : failed > 0
         ? completed > 0 || penalizedSkipped > 0
           ? "partial"
           : "failed"
@@ -6293,6 +5391,7 @@ export class Orchestrator {
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason: task.terminationReason,
+      ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     this.sendMessage({
@@ -6522,18 +5621,6 @@ export class Orchestrator {
     if (task.nodes.length > 0) {
       await this.sendTerminationCompletion(task, detail);
     }
-    if (task.runId) {
-      await patchTaskRun(task.runId, {
-        status: "stopped",
-        finishedAt: task.finishedAt,
-        terminationReason: detail,
-        stopRequestedAt: null,
-        stopRequestedReason: null,
-        resumeRequestedAt: null,
-        resumeRequestedReason: null,
-      });
-    }
-    this.sendDurableRunStatus(task.workspaceId, null);
     await this.closeWorkerTabs(task);
     this.tasksByWorkspace.delete(task.workspaceId);
     this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -7011,7 +6098,11 @@ export class Orchestrator {
 
     const completionPayload: TaskCompletionMessage["payload"] = {
       taskId: task.id,
-      status: stopped ? "stopped" : completed > 0 ? "partial" : "failed",
+      status: stopped
+        ? "stopped"
+        : hasUsefulPartialProgressHandoff(task.partialHandoff) || completed > 0
+          ? "partial"
+          : "failed",
       totalTurnsUsed: 0,
       totalTimeMs:
         (task.finishedAt || Date.now()) - (task.startedAt || task.createdAt),
@@ -7020,6 +6111,7 @@ export class Orchestrator {
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason,
+      ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     this.sendMessage({

@@ -66,6 +66,12 @@ function makePerception(overrides = {}) {
       freshnessReason: "new_fingerprint",
       screenshotStatus: "captured",
     })),
+    getLastTraceStats: vi.fn(() => ({
+      model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+      providerId: "fireworks",
+      durationMs: 1234,
+      cached: false,
+    })),
     getLastScreenshot: vi.fn(() => null),
     getPanoramicShots: vi.fn(() => null),
     ...overrides,
@@ -176,7 +182,9 @@ describe("prepareLlmTurnRequest", () => {
     expect(traceRecorder.recordPerception).toHaveBeenCalledWith(
       expect.objectContaining({
         interpretation: "The page is ready.",
-        model: "google/gemini-2.5-flash",
+        model: "accounts/fireworks/routers/kimi-k2p6-turbo",
+        providerId: "fireworks",
+        durationMs: 1234,
         cached: false,
         mode: "structured",
       }),

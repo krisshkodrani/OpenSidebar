@@ -1,10 +1,10 @@
 import React from "react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import "../setup";
 import { useStore } from "../../src/trace-viewer/store";
-import SessionsTableView from "../../src/trace-viewer/components/traces/SessionsTableView";
+import UnifiedSessionsTableView from "../../src/trace-viewer/components/traces/UnifiedSessionsTableView";
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -22,7 +22,7 @@ function resetStore() {
   useStore.setState((useStore as any).getInitialState(), true);
 }
 
-describe("SessionsTableView", () => {
+describe("UnifiedSessionsTableView", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -31,6 +31,13 @@ describe("SessionsTableView", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   test("renders models from metrics.modelBreakdown fallback and selects a row", async () => {
@@ -59,13 +66,13 @@ describe("SessionsTableView", () => {
 
     const onSelect = vi.fn();
     await act(async () => {
-      root.render(<SessionsTableView onSelect={onSelect} />);
+      root.render(<UnifiedSessionsTableView onSelect={onSelect} />);
     });
 
     expect(container.textContent).toContain("Verify model fallback");
     expect(container.textContent).toContain("gpt-5.4-mini:nitro");
 
-    const row = container.querySelector('[data-index="0"] > button');
+    const row = container.querySelector('[data-index="0"]');
     expect(row).not.toBeNull();
 
     await act(async () => {

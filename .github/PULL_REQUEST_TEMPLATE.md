@@ -1,28 +1,38 @@
-## Description
+<!--
+Thanks for contributing to OpenSidebar! Please skim CONTRIBUTING.md first —
+especially the seam map (where changes land cleanly) and the do-not-enter map
+(owner-gated surfaces). PRs into loop.ts / completion-kernel.ts / skills.ts
+without a stamped RFC will be asked to step back to an issue first.
+-->
 
-Brief description of what this PR does.
+## What this changes
 
-## Type of Change
+<!-- One or two sentences. Link the issue this closes, if any (e.g. Closes #123). -->
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
+## Surface (per the CONTRIBUTING seam map)
+
+- [ ] E2E fixture / test
+- [ ] Policy module (`background/agent/*-policy.ts`)
+- [ ] Tool (definition + args type + `content/actions.ts`)
+- [ ] Trace-viewer panel / analysis
+- [ ] Provider adapter
+- [ ] Docs / templates
+- [ ] Other (please describe)
+- [ ] Touches `loop.ts` / `completion-kernel.ts` / `skills.ts` — **owner-gated; link the stamped RFC:** <!-- RFC link -->
 
 ## Checklist
 
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
+- [ ] `pnpm run verify` passes locally (rfcs + lint + typecheck + test + build + dist-check)
+- [ ] Added or updated the narrowest test that proves this change (a failing E2E fixture counts)
+- [ ] For a tool change: parameter names match across all three layers (schema, args type, `actions.ts`)
+- [ ] No benchmark-specific / task-id / seed branches; no domain logic outside adapters
+- [ ] Did not edit generated files (e.g. `prompts/generated.ts`); changed the source instead
+- [ ] Docs/copy updated if behavior or settings changed
 
-## Testing
+## How to test
 
-Describe the tests you ran and how to reproduce them.
+<!-- Commands you ran, fixtures touched, or manual steps to reproduce the result. -->
 
-## Screenshots (if applicable)
+## Notes for the reviewer
 
-Add screenshots to help explain your changes.
+<!-- Anything non-obvious: trade-offs, follow-ups deliberately left out, screenshots (redacted). -->

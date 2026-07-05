@@ -1,5 +1,16 @@
 import { LLMClient, LLMClientOptions } from "../llm";
 import { TokenUsage } from "../llm/types";
+import type { CompletionResponse } from "../llm/types";
+import { routePlannerCompletion } from "../../utils/llm-routing";
+import { HttpPlannerGateway } from "../../utils/openclaw-client";
+
+/**
+ * Optional OpenClaw planner-gateway URL (RFC LP-8, M4). When set in
+ * chrome.storage.local, planner decomposition routes through the gateway for
+ * memory/skill injection, falling back to the direct provider call when the
+ * gateway is absent or errors. Default: unset → direct (unchanged behaviour).
+ */
+const OPENCLAW_GATEWAY_URL_KEY = "opensidebar:openClawGatewayUrl";
 import { SubtaskSummary } from "../../types";
 import { logger } from "../../utils";
 import { renderPrompt } from "../../prompts";
@@ -12,6 +23,7 @@ import {
   synthesizeBatchedExhaustivePlan,
   synthesizePlanFromTaskContract,
 } from "./task-contract";
+import { isDraftOnlyCommunicationTask } from "./consequential-action-policy";
 
 /** Generic criteria patterns that have no DOM-observable tokens */
 const GENERIC_CRITERIA = [
@@ -166,6 +178,180 @@ function sanitizeUnsupportedFieldSubmitStep(query: string, step: PlanStep): Plan
     successCriteria,
     ...(toolProfile ? { toolProfile } : {}),
   };
+}
+
+function hasCommunicationCompositionIntent(text: string): boolean {
+  return (
+    /\b(?:draft|compose|write|prepare|create|type|fill)\b[^.!?\n]{0,100}\b(?:reply|response|email|e-mail|message|comment|post|copy|text|composer|editor)\b/i.test(
+      text,
+    ) ||
+    /\b(?:reply|response|email|e-mail|message|comment|post|copy|text)\s+draft\b/i.test(
+      text,
+    ) ||
+    /\bdraft\s+(?:reply|response|email|e-mail|message|comment|post|copy|text)\b/i.test(
+      text,
+    ) ||
+    /\b(?:composer|editor)\b[\s\S]{0,80}\b(?:contains|shows|has|includes|visible)\b/i.test(
+      text,
+    )
+  );
+}
+
+function hasCommunicationTerm(text: string): boolean {
+  return /\b(?:reply|response|email|e-mail|message|comment|post|copy|text|composer|editor|thread)\b/i.test(
+    text,
+  );
+}
+
+function hasNegatedCommunicationSendEvidence(text: string): boolean {
+  return (
+    /\b(?:do not|don't|dont|never|without|not|has not|have not)\s+(?:been\s+)?(?:send|sent|post|posted|reply|submit|submitted|publish|published)\b/i.test(
+      text,
+    ) ||
+    /\b(?:unsent|not sent|not posted|not submitted|not published)\b/i.test(text)
+  );
+}
+
+function isCommunicationFinalActionStep(step: PlanStep): boolean {
+  const text = `${step.objective}\n${step.successCriteria}`;
+  if (!hasCommunicationTerm(text)) return false;
+  if (hasNegatedCommunicationSendEvidence(text)) return false;
+
+  return (
+    /\b(?:click|press|select|use|activate|hit)?\s*(?:the\s+)?(?:send|post|reply|submit|publish)\b/i.test(
+      text,
+    ) ||
+    /\b(?:message|reply|response|email|e-mail|comment|post|copy|text)\b[\s\S]{0,80}\b(?:is\s+|was\s+|has\s+been\s+)?(?:sent|posted|submitted|published)\b/i.test(
+      text,
+    ) ||
+    /\b(?:sent|posted|submitted|published)\b[\s\S]{0,80}\b(?:message|reply|response|email|e-mail|comment|post)\b/i.test(
+      text,
+    )
+  );
+}
+
+function stripCommunicationSendTail(value: string): string {
+  const stripped = value
+    .replace(
+      /\s+(?:and|then)\s+(?:click\s+|press\s+|select\s+|use\s+|activate\s+)?(?:send|post|reply|submit|publish)\b[\s\S]*$/i,
+      "",
+    )
+    .replace(
+      /,\s*(?:then\s+)?(?:click\s+|press\s+|select\s+|use\s+|activate\s+)?(?:send|post|reply|submit|publish)\b[\s\S]*$/i,
+      "",
+    )
+    .trim();
+  if (!stripped) return value;
+  return /[.!?]$/.test(stripped) ? stripped : `${stripped}.`;
+}
+
+function draftOnlyCommunicationCriteria(criteria: string): string {
+  if (
+    /\b(?:unsent|not sent|not posted|not submitted|not published|has not been sent|has not been posted|draft remains)\b/i.test(
+      criteria,
+    )
+  ) {
+    return criteria;
+  }
+
+  const base = stripCommunicationSendTail(criteria)
+    .replace(
+      /\s+(?:and|then)\s+(?:is\s+)?(?:sent|posted|submitted|published)\b[\s\S]*$/i,
+      "",
+    )
+    .trim();
+  const prefix = base && base !== criteria ? base.replace(/[.:\s]+$/, "") : "";
+  const draftEvidence =
+    "the requested message draft is visible in the composer/editor and has not been sent or posted.";
+  return prefix ? `${prefix}; ${draftEvidence}` : draftEvidence;
+}
+
+function sanitizeDraftOnlyCommunicationStep(step: PlanStep): PlanStep | null {
+  if (!isCommunicationFinalActionStep(step)) return step;
+
+  const text = `${step.objective}\n${step.successCriteria}`;
+  if (!hasCommunicationCompositionIntent(text)) {
+    return null;
+  }
+
+  const objective = stripCommunicationSendTail(step.objective);
+  return {
+    ...step,
+    objective:
+      objective === step.objective &&
+      /^\s*(?:send|post|reply|submit|publish)\b/i.test(objective)
+        ? "Create the requested message draft and leave it visible for user review."
+        : objective,
+    successCriteria:
+      "The requested message draft is visible in the composer/editor and has not been sent or posted.",
+    verifyAfter: {
+      trigger:
+        "The requested message draft is visible in the composer/editor and has not been sent or posted.",
+      action: "call_done",
+    },
+    toolProfile: "form_fill",
+  };
+}
+
+function enforceDraftOnlyCommunicationStop(
+  query: string,
+  steps: PlanStep[],
+): PlanStep[] {
+  if (!isDraftOnlyCommunicationTask(query)) return steps;
+
+  const sanitized: Array<{ originalIndex: number; step: PlanStep }> = [];
+  for (let i = 0; i < steps.length; i++) {
+    const step = sanitizeDraftOnlyCommunicationStep(steps[i]);
+    if (step) sanitized.push({ originalIndex: i, step });
+  }
+
+  if (sanitized.length === 0) return steps;
+
+  const indexMap = new Map<number, number>();
+  sanitized.forEach(({ originalIndex }, newIndex) => {
+    indexMap.set(originalIndex, newIndex);
+  });
+
+  const remapped = sanitized.map(({ step }, newIndex) => ({
+    ...step,
+    dependencies: step.dependencies
+      .map((dep) => indexMap.get(dep))
+      .filter(
+        (dep): dep is number =>
+          typeof dep === "number" && dep >= 0 && dep < newIndex,
+      ),
+  }));
+
+  const finalIndex = remapped.length - 1;
+  return remapped.map((step, index) => {
+    if (index !== finalIndex) return step;
+
+    const successCriteria = draftOnlyCommunicationCriteria(
+      step.successCriteria,
+    );
+    const toolProfile =
+      step.toolProfile === "submit_form" ||
+      hasCommunicationCompositionIntent(step.objective)
+        ? "form_fill"
+        : step.toolProfile;
+    return {
+      ...step,
+      successCriteria,
+      verifyAfter: {
+        ...(step.verifyAfter ?? {}),
+        trigger: step.verifyAfter?.trigger || successCriteria,
+        action: "call_done",
+      },
+      ...(toolProfile ? { toolProfile } : {}),
+    };
+  });
+}
+
+function postProcessPlanSteps(query: string, steps: PlanStep[]): PlanStep[] {
+  return enforceDraftOnlyCommunicationStop(
+    query,
+    mergeAdjacentRoundTripReadSteps(repairPlanCoverage({ query, steps })),
+  );
 }
 
 function looksLikeNavigationOnlyStep(step: PlanStep): boolean {
@@ -567,6 +753,26 @@ export function inferToolProfileForStep(
   return undefined;
 }
 
+/**
+ * Read the planner LLM's optional multi-tab-intent flag. Accepts both the
+ * snake_case wire form (`requires_tab_management`) and a camelCase variant for
+ * robustness. Returns `undefined` when the model omitted it, so the caller can
+ * fall back to query/step heuristics rather than treating absence as `false`.
+ */
+function parseTabManagementSignal(parsed: unknown): boolean | undefined {
+  if (!parsed || typeof parsed !== "object") return undefined;
+  const record = parsed as Record<string, unknown>;
+  const raw =
+    record.requires_tab_management ?? record.requiresTabManagement ?? undefined;
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
+}
+
 export class TaskPlanner {
   private llm: LLMClient;
   private openRouterApiKey: string;
@@ -575,6 +781,13 @@ export class TaskPlanner {
   private usageCallback:
     | ((usage: TokenUsage, llmMs: number, model: string) => void)
     | null = null;
+  /**
+   * Transient holder for the LLM's structured multi-tab-intent signal, captured
+   * during the most recent {@link decomposeInternal} parse and injected into the
+   * returned decomposition by the public {@link decompose} wrapper. Reset at the
+   * start of every decompose call so a prior task's signal never leaks forward.
+   */
+  private parsedTabManagementSignal: boolean | undefined = undefined;
 
   constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
     this.openRouterApiKey = openRouterApiKey;
@@ -582,6 +795,35 @@ export class TaskPlanner {
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     // Planner always uses the planner model tier
     this.llm.switchToPlanner();
+  }
+
+  /**
+   * Resolved once: an OpenClaw planner gateway, or null when none is configured.
+   * `undefined` = not yet resolved.
+   */
+  private plannerGateway: HttpPlannerGateway | null | undefined;
+
+  /** Lazily resolve the optional OpenClaw planner gateway from storage. */
+  private async resolvePlannerGateway(): Promise<HttpPlannerGateway | null> {
+    if (this.plannerGateway !== undefined) return this.plannerGateway;
+    let url: string | undefined;
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+        const value = stored[OPENCLAW_GATEWAY_URL_KEY];
+        if (typeof value === "string" && value.trim()) url = value.trim();
+      }
+    } catch {
+      // No storage access → no gateway.
+    }
+    if (!url) {
+      this.plannerGateway = null;
+      return null;
+    }
+    const gateway = new HttpPlannerGateway({ baseUrl: url });
+    await gateway.probe();
+    this.plannerGateway = gateway;
+    return gateway;
   }
 
   /** Lazy-initialized executor-tier LLM client for lightweight monitoring calls */
@@ -602,7 +844,35 @@ export class TaskPlanner {
     this.usageCallback = cb;
   }
 
+  /**
+   * Public entry point. Delegates to {@link decomposeInternal} and injects the
+   * LLM's structured multi-tab-intent signal (captured during parse) onto the
+   * result when the internal paths didn't already set one. Keeping the signal
+   * threading here means the many fallback return paths inside the core method
+   * stay untouched and every decomposition surfaces the flag uniformly.
+   */
   async decompose(
+    query: string,
+    pageTitle: string,
+    pageUrl: string,
+    signal?: AbortSignal,
+    perception?: string,
+  ): Promise<PlanDecomposition | null> {
+    this.parsedTabManagementSignal = undefined;
+    const decomposition = await this.decomposeInternal(
+      query,
+      pageTitle,
+      pageUrl,
+      signal,
+      perception,
+    );
+    if (decomposition && decomposition.requiresTabManagement === undefined) {
+      decomposition.requiresTabManagement = this.parsedTabManagementSignal;
+    }
+    return decomposition;
+  }
+
+  private async decomposeInternal(
     query: string,
     pageTitle: string,
     pageUrl: string,
@@ -616,19 +886,35 @@ export class TaskPlanner {
         userContent += `\nPage state:\n${perception}`;
       }
       userContent += `\n\nTask: ${query}`;
-      const response = await this.llm.complete({
-        messages: [
-          { role: "system", content: DECOMPOSE_SYSTEM },
-          {
-            role: "user",
-            content: userContent,
+      // M4 hybrid routing: prefer the OpenClaw gateway (memory/skill injection)
+      // when configured + healthy; otherwise the direct planner-tier call. The
+      // fallback makes this a no-op when no gateway is set.
+      const gateway = await this.resolvePlannerGateway();
+      const { route, result: response } =
+        await routePlannerCompletion<CompletionResponse>(
+          gateway,
+          async (gw) => {
+            const plan = await (gw as HttpPlannerGateway).completePlan({
+              query: userContent,
+              context: DECOMPOSE_SYSTEM,
+            });
+            return { content: plan.content } as CompletionResponse;
           },
-        ],
-        max_tokens: 4096,
-        temperature: 0,
-        signal,
-        response_format: { type: "json_object" },
-      });
+          () =>
+            this.llm.complete({
+              messages: [
+                { role: "system", content: DECOMPOSE_SYSTEM },
+                { role: "user", content: userContent },
+              ],
+              max_tokens: 4096,
+              temperature: 0,
+              signal,
+              response_format: { type: "json_object" },
+            }),
+        );
+      if (route === "openclaw-gateway") {
+        logger.info("orchestrator", "Planner routed through OpenClaw gateway");
+      }
       const llmMs = Date.now() - start;
       if (response.usage)
         this.usageCallback?.(
@@ -665,6 +951,10 @@ export class TaskPlanner {
         VALID_DIFFICULTIES.has(parsed.difficulty as Difficulty)
           ? (parsed.difficulty as Difficulty)
           : "moderate";
+
+      // Capture the model's structured multi-tab-intent signal so the public
+      // decompose() wrapper can surface it regardless of which return path runs.
+      this.parsedTabManagementSignal = parseTabManagementSignal(parsed);
 
       // Extract optional limit overrides
       let limitOverrides: Partial<RuntimeLimits> | null = null;
@@ -777,9 +1067,7 @@ export class TaskPlanner {
             dependencies: [] as number[],
             assumptions: [] as string[],
           }));
-          const repairedSteps = mergeAdjacentRoundTripReadSteps(
-            repairPlanCoverage({ query, steps: simpleSteps }),
-          );
+          const repairedSteps = postProcessPlanSteps(query, simpleSteps);
           if (repairedSteps.length >= 2) {
             logger.info(
               "agent",
@@ -953,9 +1241,7 @@ export class TaskPlanner {
 
       const parsedSteps = parseSteps(parsed.steps);
       const steps = parsedSteps
-        ? mergeAdjacentRoundTripReadSteps(
-            repairPlanCoverage({ query, steps: parsedSteps }),
-          )
+        ? postProcessPlanSteps(query, parsedSteps)
         : null;
       if (
         synthesizedFallback &&
@@ -1044,7 +1330,9 @@ export class TaskPlanner {
       const subtasks =
         steps?.map((step) => step.objective) ||
         (legacySubtasks.length >= 2 ? legacySubtasks : []);
-      if (subtasks.length < 2) {
+      const acceptsSingleStructuredPlan =
+        !!steps && steps.length === 1 && isDraftOnlyCommunicationTask(query);
+      if (subtasks.length < 2 && !acceptsSingleStructuredPlan) {
         // Only fall back to synthesis when the planner returned NO parsed
         // steps at all, or when the task requires a round-trip and the planner
         // missed the return leg. For normal tasks, the planner's steps preserve

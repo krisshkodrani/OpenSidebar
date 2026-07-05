@@ -204,7 +204,10 @@ export type WorkArenaExecutionResult = {
     className: string;
   };
   prompt: {
-    source: "workarena_goal_after_reset" | "local_fixture_prompt";
+    source:
+      | "workarena_goal_after_reset"
+      | "local_fixture_prompt"
+      | "prompt_override";
     value: string;
     goalObject: Array<Record<string, unknown>>;
   };

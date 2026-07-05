@@ -7,31 +7,18 @@ import type {
   TraceEvidenceSignal,
   TraceEvidenceTurn,
 } from "./types";
+import {
+  STAGNANT_PROGRESS_TURN_THRESHOLD,
+  isContextHotTurn,
+  isDegradedPerceptionTurn,
+} from "./analyze";
+import { compareToolSequence, sameSnapshot } from "./repeat-actions";
 
 const SEVERITY_RANK: Record<InvestigationSeverity, number> = {
   error: 0,
   warning: 1,
   info: 2,
 };
-
-function toolNames(entry: TraceEntry): string[] {
-  return (entry.toolExecutions ?? []).map((tool) => String(tool.toolName));
-}
-
-function sameSnapshot(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  return Boolean(
-    a &&
-    a.snapshot?.url === b.snapshot?.url &&
-    a.snapshot?.title === b.snapshot?.title,
-  );
-}
-
-function sameToolSequence(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  if (!a) return false;
-  const prev = toolNames(a);
-  const next = toolNames(b);
-  return prev.length > 0 && prev.join("|") === next.join("|");
-}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -124,20 +111,28 @@ export function buildTraceEvidenceSignalsForTurn(
     }
   }
 
-  if (sameToolSequence(previous, entry) && sameSnapshot(previous, entry)) {
+  const repeatKind = compareToolSequence(previous, entry);
+  if (repeatKind && sameSnapshot(previous, entry)) {
     pushSignal(signals, {
       id: "repeat-loop",
       source: "progress",
       category: "loop",
       severity: "warning",
-      label: "Repeated action loop",
-      detail: `Same tool sequence as turn ${previous?.turnNumber}`,
+      label:
+        repeatKind === "exact"
+          ? "Repeated action loop"
+          : "Near repeated action loop",
+      detail:
+        repeatKind === "exact"
+          ? `Same tool sequence and arguments as turn ${previous?.turnNumber}`
+          : `Near-identical tool sequence as turn ${previous?.turnNumber}`,
       target: "turns",
     });
   }
 
   if (
-    (entry.progressState?.stagnantTurns ?? 0) >= 3 ||
+    (entry.progressState?.stagnantTurns ?? 0) >=
+      STAGNANT_PROGRESS_TURN_THRESHOLD ||
     Boolean(entry.progressState?.signal)
   ) {
     pushSignal(signals, {
@@ -208,11 +203,7 @@ export function buildTraceEvidenceSignalsForTurn(
 
   if (
     entry.perception &&
-    (entry.perception.mode === "element_only" ||
-      entry.perception.source === "fallback" ||
-      Boolean(entry.perception.fallbackReason) ||
-      entry.perception.screenshotStatus === "capture_failed" ||
-      entry.perception.screenshotStatus === "missing")
+    isDegradedPerceptionTurn(entry)
   ) {
     pushSignal(signals, {
       id: "degraded-perception",
@@ -228,10 +219,7 @@ export function buildTraceEvidenceSignalsForTurn(
     });
   }
 
-  if (
-    (entry.llmRequest?.contextMetrics?.utilization ?? 0) >= 0.85 ||
-    (entry.llmRequest?.contextMetrics?.droppedMessageCount ?? 0) > 0
-  ) {
+  if (isContextHotTurn(entry)) {
     const metrics = entry.llmRequest.contextMetrics;
     pushSignal(signals, {
       id: "context-pressure",

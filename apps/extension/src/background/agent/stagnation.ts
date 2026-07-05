@@ -38,6 +38,16 @@ const STATE_ATTRS = [
 /** Minimum fraction of element signatures that must differ to count as progress */
 const PROGRESS_DELTA_THRESHOLD = 0.1;
 
+/** Repeat escalation cadence after the first stagnant signal. */
+const REPEAT_ESCALATION_INTERVAL = 6;
+
+const TRANSIENT_SIGNATURE_RE =
+  /\b(spinner|loading|busy|pending|progress|progressbar|skeleton|toast|snackbar|tooltip|notification|badge|alert)\b/i;
+
+function isTransientSignature(signature: string): boolean {
+  return TRANSIENT_SIGNATURE_RE.test(signature);
+}
+
 /** Build a set of element signatures from a snapshot */
 export function computeElementSignatures(snap: DomSnapshot): Set<string> {
   const sigs = new Set<string>();
@@ -116,16 +126,28 @@ export class StagnationMonitor {
     // Compute action effect from symmetric diff (cheap — sets are already built)
     let added = 0;
     let removed = 0;
+    let changed = 0;
+    let nonTransientChanged = false;
     const addedSigs: string[] = [];
     for (const sig of currSigs) {
       if (!this.lastSignatures.has(sig)) {
         added++;
+        changed++;
+        if (!isTransientSignature(sig)) nonTransientChanged = true;
         if (addedSigs.length < 15) addedSigs.push(sig);
       }
     }
     for (const sig of this.lastSignatures) {
-      if (!currSigs.has(sig)) removed++;
+      if (!currSigs.has(sig)) {
+        removed++;
+        changed++;
+        if (!isTransientSignature(sig)) nonTransientChanged = true;
+      }
     }
+    const transientOnlyChange =
+      delta >= PROGRESS_DELTA_THRESHOLD && changed > 0 && !nonTransientChanged;
+    const meaningfulDelta =
+      delta >= PROGRESS_DELTA_THRESHOLD && !transientOnlyChange;
     this._lastActionEffect = {
       deltaPercent: delta,
       urlChanged,
@@ -144,7 +166,7 @@ export class StagnationMonitor {
     // Reset when the DOM changes significantly (SPA form steps, tab switches, etc.)
     // to avoid false-positive escalations on single-page apps.
     if (url === this.lastUrl) {
-      if (delta >= PROGRESS_DELTA_THRESHOLD) {
+      if (meaningfulDelta) {
         this._sameUrlTurns = 0; // real DOM change on same URL → not stuck
       } else {
         this._sameUrlTurns++;
@@ -155,7 +177,7 @@ export class StagnationMonitor {
     this.lastUrl = url;
 
     // Meaningful content change — above noise threshold
-    if (delta >= PROGRESS_DELTA_THRESHOLD) {
+    if (meaningfulDelta) {
       this.stagnantTurns = 0;
       return null;
     }
@@ -169,10 +191,14 @@ export class StagnationMonitor {
     // Same content, same URL — stagnant
     this.stagnantTurns++;
 
-    if (
+    const repeatTurns = this.stagnantTurns - STUCK_THRESHOLDS.ESCALATE;
+    const shouldEscalate =
       this.stagnantTurns >= STUCK_THRESHOLDS.ESCALATE &&
-      !this.escalationFired
-    ) {
+      (!this.escalationFired ||
+        (repeatTurns > 0 &&
+          repeatTurns % REPEAT_ESCALATION_INTERVAL === 0));
+
+    if (shouldEscalate) {
       this.escalationFired = true;
       return {
         type: "escalate",

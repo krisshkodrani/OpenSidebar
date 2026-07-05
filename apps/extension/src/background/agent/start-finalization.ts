@@ -20,6 +20,7 @@ export type FinalizeStartResultDeps = {
   broadcastPlanTermination: (
     outcome: "stopped" | "max_turns" | "error",
     summary: string,
+    partialHandoff?: LoopResult["partialHandoff"],
   ) => void;
   setRunning: (isRunning: boolean) => void;
   clearTraceRecorder: () => void;
@@ -54,6 +55,7 @@ export async function finalizeStartResult(
     deps.broadcastPlanTermination(
       result.outcome as "stopped" | "max_turns" | "error",
       result.summary,
+      result.partialHandoff,
     );
   }
 
@@ -78,6 +80,7 @@ export async function finalizeStartResult(
       result.turnCount,
       result.failure ?? null,
       result.metrics ?? null,
+      result.partialHandoff ?? null,
     );
     deps.clearTraceRecorder();
   }

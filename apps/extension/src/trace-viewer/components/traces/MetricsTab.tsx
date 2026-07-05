@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   fetchTraceIndexStatus,
-  fetchTraceInsights,
   type TraceIndexStatus,
   type TraceInsightsQuery,
-  type TraceInsightsResponse,
 } from "../../api";
 import { useStore } from "../../store";
+import { useInsightsData } from "../../hooks/useInsightsData";
+import { useTrendData } from "../../hooks/useTrendData";
+import TrendChart from "./TrendChart";
 import {
   formatCount,
   formatCost,
@@ -16,66 +17,34 @@ import {
 } from "../../utils";
 import LoadingSpinner from "../LoadingSpinner";
 
-const METRICS_TIMEOUT_MS = 30_000;
-
-function emptyInsights(): TraceInsightsResponse {
-  return {
-    summary: {
-      totalSessions: 0,
-      totalRuns: 0,
-      completedSessions: 0,
-      failedSessions: 0,
-      successRate: 0,
-      failureRate: 0,
-      totalTurns: 0,
-      averageTurns: 0,
-      totalCost: 0,
-      averageDurationMs: 0,
-      toolCalls: 0,
-      toolFailures: 0,
-      toolFailureRate: 0,
-      llmRequests: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      cachedTokens: 0,
-      nonCachedInputTokens: 0,
-      totalTokens: 0,
-      requestCost: 0,
-      estimatedInputCost: 0,
-      estimatedCachedInputCost: 0,
-      estimatedOutputCost: 0,
-      estimatedRequestCost: 0,
-      outputTokenShare: 0,
-      outputCostShare: 0,
-      unpricedRequests: 0,
-      averagePromptTokens: 0,
-      averageCompletionTokens: 0,
-      averageTotalTokens: 0,
-      totalLlmDurationMs: 0,
-      averageLlmDurationMs: 0,
-    },
-    facets: {
-      runs: [],
-      sessions: [],
-      domains: [],
-      models: [],
-      skills: [],
-      tools: [],
-      failures: [],
-      eventTypes: [],
-    },
-    tools: [],
-    skills: [],
-    models: [],
-    failures: [],
-    events: [],
-    runs: [],
-  };
-}
 
 function formatIndexedAt(value: number | null): string {
   if (!value) return "Never";
   return new Date(value).toLocaleString();
+}
+
+function rateConfidenceInterval(
+  successes: number,
+  total: number,
+): { low: number; high: number } {
+  if (total <= 0) return { low: 0, high: 0 };
+  const z = 1.96;
+  const phat = successes / total;
+  const z2 = z * z;
+  const denominator = 1 + z2 / total;
+  const center = phat + z2 / (2 * total);
+  const margin =
+    z *
+    Math.sqrt((phat * (1 - phat) + z2 / (4 * total)) / total);
+  return {
+    low: Math.max(0, (center - margin) / denominator),
+    high: Math.min(1, (center + margin) / denominator),
+  };
+}
+
+function formatRateRange(successes: number, total: number): string {
+  const ci = rateConfidenceInterval(successes, total);
+  return `${formatPercent(ci.low)}-${formatPercent(ci.high)}`;
 }
 
 function MetricCard({
@@ -136,44 +105,11 @@ export default function MetricsTab() {
       filters.to,
     ],
   );
-  const [insights, setInsights] = useState<TraceInsightsResponse>(emptyInsights);
-  const [indexStatus, setIndexStatus] = useState<TraceIndexStatus | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let timedOut = false;
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, METRICS_TIMEOUT_MS);
-    setLoading(true);
-    setError(null);
-    fetchTraceInsights(requestFilters, controller.signal)
-      .then((result) => {
-        if (!cancelled) setInsights(result);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(
-            timedOut
-              ? "Timed out loading trace metrics. Try narrowing the filters or rebuilding the trace index."
-              : String(err),
-          );
-        }
-      })
-      .finally(() => {
-        window.clearTimeout(timeoutId);
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [requestFilters]);
+  const { insights, loading, error } = useInsightsData(requestFilters);
+  const { points: trendPoints, loading: trendLoading } =
+    useTrendData(requestFilters);
+  const [indexStatus, setIndexStatus] = useState<TraceIndexStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,7 +155,7 @@ export default function MetricsTab() {
               </div>
               <div className="grid grid-cols-2 xl:grid-cols-5 gap-2">
                 <MetricCard
-                  label="Indexed Sessions"
+                  label="Indexed Traces"
                   value={formatCount(indexStatus.sessions)}
                   detail={`${formatCount(indexStatus.hotSessions)} hot, ${formatCount(indexStatus.archivedSessions)} archived`}
                   tone={indexStatus.available ? "success" : "warning"}
@@ -256,26 +192,42 @@ export default function MetricsTab() {
               <MetricCard
                 label="LLM Requests"
                 value={formatCount(summary.llmRequests)}
-                detail={`${formatCount(summary.totalSessions)} sessions, ${formatCount(summary.totalRuns)} runs`}
+                detail={`${formatCount(summary.totalSessions)} traces, ${formatCount(summary.totalRuns)} runs`}
               />
               <MetricCard
                 label="Total Turns"
                 value={formatCount(summary.totalTurns)}
-                detail={`${summary.averageTurns.toFixed(1)} avg turns/session`}
+                detail={`${summary.averageTurns.toFixed(1)} avg turns/trace, n=${formatCount(summary.totalSessions)}`}
               />
               <MetricCard
                 label="Success Rate"
                 value={formatPercent(summary.successRate)}
-                detail={`${formatCount(summary.completedSessions)} completed, ${formatCount(summary.failedSessions)} failed`}
+                detail={`n=${formatCount(summary.totalSessions)}, ${formatRateRange(summary.completedSessions, summary.totalSessions)}`}
                 tone={summary.failedSessions > 0 ? "warning" : "success"}
               />
               <MetricCard
                 label="Tool Failure Rate"
                 value={formatPercent(summary.toolFailureRate)}
-                detail={`${formatCount(summary.toolFailures)} failed of ${formatCount(summary.toolCalls)} calls`}
+                detail={`n=${formatCount(summary.toolCalls)}, ${formatRateRange(summary.toolFailures, summary.toolCalls)}`}
                 tone={summary.toolFailures > 0 ? "warning" : "success"}
               />
             </div>
+          </section>
+
+          <section>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-trace-muted">
+                Trends Over Time
+              </div>
+              <div className="text-[11px] text-trace-muted">
+                Success rate and estimated cost per day
+              </div>
+            </div>
+            {trendLoading && trendPoints.length === 0 ? (
+              <LoadingSpinner message="Loading trends..." />
+            ) : (
+              <TrendChart points={trendPoints} />
+            )}
           </section>
 
           <section>
@@ -350,14 +302,14 @@ export default function MetricsTab() {
               </div>
             </div>
             <div className="overflow-hidden rounded border border-trace-border bg-trace-bg">
-              <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
+              <div className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_110px] gap-3 border-b border-trace-border px-3 py-2 text-[10px] uppercase tracking-wider text-trace-muted">
                 <span>Model</span>
-                <span>Sessions</span>
+                <span>Traces</span>
                 <span>Runs</span>
                 <span>Requests</span>
                 <span>Est. Cost</span>
                 <span>Output Share</span>
-                <span>Fail Rate</span>
+                <span>Fail Rate (n)</span>
               </div>
               {insights.models.length === 0 ? (
                 <div className="px-3 py-8 text-center text-sm text-trace-muted">
@@ -367,7 +319,7 @@ export default function MetricsTab() {
                 insights.models.slice(0, 12).map((row) => (
                   <div
                     key={row.id}
-                    className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_80px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
+                    className="grid grid-cols-[minmax(180px,1.6fr)_70px_70px_80px_90px_90px_110px] gap-3 border-b border-trace-border/50 px-3 py-2 text-[12px] last:border-b-0"
                   >
                     <span className="min-w-0 truncate text-trace-text">
                       {row.label}
@@ -394,7 +346,8 @@ export default function MetricsTab() {
                         : formatPercent(row.outputCostShare)}
                     </span>
                     <span className="text-trace-subtle">
-                      {formatPercent(row.failureRate)}
+                      {formatPercent(row.failureRate)} (
+                      {formatCount(row.calls ?? row.requests ?? row.sessions)})
                     </span>
                   </div>
                 ))

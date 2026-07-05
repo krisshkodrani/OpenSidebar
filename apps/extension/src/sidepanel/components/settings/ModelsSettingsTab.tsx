@@ -1,14 +1,7 @@
 import React from "react";
 import type { PerceptionRuntimeMode, UserSettings } from "../../../types";
 import { DEFAULT_MAX_IMAGE_PROMPT_TOKEN_ESTIMATE } from "../../../types";
-import {
-  DEEPSEEK_MODEL_PLANNER,
-  FIREWORKS_MODEL_PLANNER,
-  GROQ_MODEL_PLANNER,
-  MODEL_PLANNER,
-  MOONSHOT_MODEL_PLANNER,
-  XIAOMI_MODEL_PLANNER,
-} from "../../../background/llm/client";
+import { LLM_MODEL_CONFIG } from "../../../config/model-config";
 import { getDefaultExecutorModel } from "../../../utils/executor-model-policy";
 import type { ProviderModelOption } from "../../hooks/useOpenRouterModels";
 import {
@@ -28,12 +21,18 @@ const inputClassName =
 const hintClassName = "mt-0.5 text-[11px] text-warm-400 dark:text-warm-500";
 
 function defaultPlannerModel(providerMode: UserSettings["providerMode"]) {
-  if (providerMode === "moonshot") return MOONSHOT_MODEL_PLANNER;
-  if (providerMode === "xiaomi") return XIAOMI_MODEL_PLANNER;
-  if (providerMode === "fireworks-deepseek") return DEEPSEEK_MODEL_PLANNER;
-  if (providerMode === "fireworks") return FIREWORKS_MODEL_PLANNER;
-  if (providerMode !== "openrouter") return GROQ_MODEL_PLANNER;
-  return MODEL_PLANNER;
+  if (providerMode === "moonshot") return LLM_MODEL_CONFIG.moonshot.planner;
+  if (providerMode === "xiaomi") return LLM_MODEL_CONFIG.xiaomi.planner;
+  if (providerMode === "fireworks-deepseek")
+    return LLM_MODEL_CONFIG.deepseek.planner;
+  if (providerMode === "fireworks") return LLM_MODEL_CONFIG.fireworks.planner;
+  if (providerMode !== "openrouter") return LLM_MODEL_CONFIG.groq.planner;
+  return LLM_MODEL_CONFIG.planner;
+}
+
+function defaultWriterModel(providerMode: UserSettings["providerMode"]) {
+  // Writer defaults track the planner catalog (strong text models).
+  return defaultPlannerModel(providerMode);
 }
 
 export function ModelsSettingsTab({
@@ -57,6 +56,11 @@ export function ModelsSettingsTab({
   const plannerModels = getProviderModelOptions({
     providerMode,
     role: "planner",
+    openRouterModels: models,
+  });
+  const writerModels = getProviderModelOptions({
+    providerMode,
+    role: "writer",
     openRouterModels: models,
   });
   const openRouterCatalogActive =
@@ -140,7 +144,7 @@ export function ModelsSettingsTab({
           }
           className={inputClassName}
         >
-          <option value="fireworks">Fireworks AI (Kimi K2.6)</option>
+          <option value="fireworks">Fireworks AI (curated Kimi models)</option>
           <option value="fireworks-deepseek">Fireworks + DeepSeek</option>
           <option value="moonshot">Moonshot AI (Kimi 2.6)</option>
           <option value="xiaomi">Xiaomi MiMo</option>
@@ -203,6 +207,34 @@ export function ModelsSettingsTab({
             onChange={(value) => onChange("plannerModel", value || undefined)}
             defaultModel={defaultPlannerModel(providerMode)}
             models={plannerModels}
+            loading={providerMode === "openrouter" ? modelsLoading : false}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-sm font-medium dark:text-warm-300">
+            Writer{" "}
+            <span className="text-warm-400 dark:text-warm-500 font-normal">
+              (optional)
+            </span>
+          </label>
+          <p className="text-xs text-warm-400 dark:text-warm-500">
+            Specialist for free-text answers and prose (e.g. job-application
+            questions, message bodies). Preferred automatically when set; leave
+            empty to use the executor.
+          </p>
+          <p className="text-xs text-warm-500 dark:text-warm-400">
+            {getProviderModelCatalogNote({
+              providerMode,
+              role: "writer",
+              hasOpenRouterKey,
+            })}
+          </p>
+          <ModelSelector
+            value={formState.writerModel || ""}
+            onChange={(value) => onChange("writerModel", value || undefined)}
+            defaultModel={defaultWriterModel(providerMode)}
+            models={writerModels}
             loading={providerMode === "openrouter" ? modelsLoading : false}
           />
         </div>

@@ -24,14 +24,14 @@ export default function TraceListModeToggle() {
             disabled={runGroups.length === 0}
             className="rounded-none px-3 py-1.5 text-[11px] font-semibold text-trace-muted shadow-none data-[state=active]:bg-trace-accent/15 data-[state=active]:text-trace-accent-light data-[state=active]:shadow-none disabled:cursor-not-allowed disabled:opacity-40"
           >
-          Trace Runs ({runGroups.length})
+          Runs ({runGroups.length})
           </TabsTrigger>
           <TabsTrigger
             value="sessions"
             onClick={() => setTraceListMode("sessions")}
             className="rounded-none px-3 py-1.5 text-[11px] font-semibold text-trace-muted shadow-none data-[state=active]:bg-trace-accent/15 data-[state=active]:text-trace-accent-light data-[state=active]:shadow-none"
           >
-          Sessions ({sessions.length})
+          Traces ({sessions.length})
           </TabsTrigger>
         </TabsList>
       </Tabs>

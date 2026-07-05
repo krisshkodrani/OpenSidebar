@@ -64,8 +64,93 @@ describe("trace-viewer prompt and skill tabs", () => {
     });
 
     expect(container.textContent).toContain("System instructions");
+    expect(container.textContent).toContain("Initial Request");
     expect(container.textContent).toContain("1 of 2 turns include prompt messages");
     expect(container.textContent).not.toContain("coming soon");
+  });
+
+  test("PromptsTab groups repeated system prompts and keeps details available", async () => {
+    await act(async () => {
+      root.render(
+        <PromptsTab
+          session={session}
+          entries={
+            [
+              {
+                sessionId: "session-1",
+                turnNumber: 1,
+                timestamp: 10,
+                llmRequest: {
+                  model: "model-a",
+                  modelTier: "executor",
+                  messages: [
+                    { role: "system", content: "System instructions ".repeat(20) },
+                    { role: "user", content: "Do the thing" },
+                  ],
+                },
+              },
+              {
+                sessionId: "session-1",
+                turnNumber: 2,
+                timestamp: 20,
+                llmRequest: {
+                  model: "model-a",
+                  modelTier: "executor",
+                  messages: [
+                    { role: "system", content: "System instructions ".repeat(20) },
+                    { role: "user", content: "Do the thing" },
+                  ],
+                },
+              },
+            ] as any
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("T1-T2");
+    expect(container.textContent).toContain("2 turns");
+    expect(container.textContent).toContain("Full message data");
+  });
+
+  test("PromptsTab renders tokenized think blocks as readable content", async () => {
+    await act(async () => {
+      root.render(
+        <PromptsTab
+          session={session}
+          entries={
+            [
+              {
+                sessionId: "session-1",
+                turnNumber: 1,
+                timestamp: 10,
+                llmRequest: {
+                  model: "model-a",
+                  modelTier: "executor",
+                  messages: [
+                    {
+                      role: "assistant",
+                      content:
+                        "<think>The</think><think> user</think><think> wants</think> me to click.",
+                    },
+                  ],
+                },
+              },
+            ] as any
+          }
+        />,
+      );
+    });
+
+    await act(async () => {
+      const allButton = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "All",
+      ) as HTMLButtonElement | undefined;
+      allButton?.click();
+    });
+
+    expect(container.textContent).toContain("Thinking: The user wants");
+    expect(container.textContent).not.toContain("<think>");
   });
 
   test("SkillsTab does not synthesize events from aggregate metrics", async () => {

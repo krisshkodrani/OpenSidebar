@@ -8,6 +8,8 @@ import type { InvestigationFinding } from "../../analysis";
 import { useStore } from "../../store";
 import { formatCost, formatTokens } from "../../utils";
 import Badge from "../Badge";
+import SectionCard, { Eyebrow } from "../SectionCard";
+import StatTile from "../StatTile";
 
 interface InvestigationSummaryProps {
   session: TraceSession;
@@ -25,34 +27,16 @@ const SEVERITY_DOT: Record<InvestigationFinding["severity"], string> = {
   info: "bg-trace-accent",
 };
 
+const SOURCE_LABEL: Record<NonNullable<InvestigationFinding["source"]>, string> =
+  {
+    deterministic: "deterministic",
+    heuristic: "heuristic",
+    llm_verifier: "LLM verifier",
+  };
+
 function formatClass(value: string): string {
   if (value === "none") return "none";
   return value.replace(/_/g, " ");
-}
-
-function SummaryMetric({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string | number;
-  tone?: "neutral" | "warning" | "error";
-}) {
-  const toneClass =
-    tone === "error"
-      ? "text-state-error"
-      : tone === "warning"
-        ? "text-state-warning"
-        : "text-trace-text";
-  return (
-    <div className="rounded border border-trace-border/70 bg-trace-bg px-2.5 py-2 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-trace-muted">
-        {label}
-      </div>
-      <div className={`mt-1 text-sm font-semibold ${toneClass}`}>{value}</div>
-    </div>
-  );
 }
 
 export default function InvestigationSummary({
@@ -88,7 +72,11 @@ export default function InvestigationSummary({
     [analysisInput],
   );
 
-  const topFindings = investigation.findings.slice(0, 4);
+  const [showAllFindings, setShowAllFindings] = useState(false);
+  const topFindings = showAllFindings
+    ? investigation.findings
+    : investigation.findings.slice(0, 4);
+  const hiddenFindingCount = investigation.findings.length - topFindings.length;
   const handleCopyReport = async () => {
     await navigator.clipboard?.writeText(report);
     setCopied(true);
@@ -108,16 +96,14 @@ export default function InvestigationSummary({
   };
 
   return (
-    <section className="bg-trace-panel border border-trace-border rounded-lg p-4">
+    <SectionCard>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
-            Investigation
-          </div>
+          <Eyebrow className="mb-1">Investigation</Eyebrow>
           <div className="text-sm text-trace-text font-semibold">
             {investigation.headline}
           </div>
-          <div className="mt-1 text-[12px] text-trace-muted leading-relaxed">
+          <div className="mt-1 text-[12px] text-trace-subtle leading-relaxed">
             {investigation.recommendedAction}
           </div>
         </div>
@@ -160,18 +146,18 @@ export default function InvestigationSummary({
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-        <SummaryMetric
+        <StatTile
           label="Productive"
           value={`${investigation.metrics.productiveTurns}/${investigation.metrics.turnCount}`}
         />
-        <SummaryMetric
+        <StatTile
           label="Tool Failures"
           value={investigation.metrics.toolFailureTurns}
           tone={
             investigation.metrics.toolFailureTurns > 0 ? "error" : "neutral"
           }
         />
-        <SummaryMetric
+        <StatTile
           label="Perception"
           value={`${investigation.metrics.degradedPerceptionTurns}/${investigation.metrics.perceptionTurns}`}
           tone={
@@ -180,7 +166,7 @@ export default function InvestigationSummary({
               : "neutral"
           }
         />
-        <SummaryMetric
+        <StatTile
           label="Context Hot"
           value={investigation.metrics.contextHotTurns}
           tone={
@@ -228,12 +214,29 @@ export default function InvestigationSummary({
                   {finding.title}
                 </div>
                 <div className="ml-auto text-[10px] text-trace-muted shrink-0">
+                  {finding.source ? SOURCE_LABEL[finding.source] : "unknown"} -{" "}
                   {Math.round(finding.confidence * 100)}%
                 </div>
               </div>
               <div className="mt-1 text-[11px] text-trace-muted leading-relaxed">
                 {finding.summary}
               </div>
+              {finding.evidence.some(
+                (evidence) => evidence.resolved === false,
+              ) && (
+                <div className="mt-1 text-[11px] text-state-warning">
+                  Evidence unavailable:{" "}
+                  {finding.evidence
+                    .filter((evidence) => evidence.resolved === false)
+                    .map(
+                      (evidence) =>
+                        evidence.resolutionDetail ??
+                        evidence.resolutionStatus ??
+                        evidence.label,
+                    )
+                    .join("; ")}
+                </div>
+              )}
               {finding.firstTurn != null && (
                 <button
                   type="button"
@@ -245,8 +248,20 @@ export default function InvestigationSummary({
               )}
             </div>
           ))}
+          {(hiddenFindingCount > 0 || showAllFindings) &&
+            investigation.findings.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setShowAllFindings((prev) => !prev)}
+                className="text-[11px] text-trace-accent hover:underline"
+              >
+                {showAllFindings
+                  ? "Show fewer findings"
+                  : `Show all ${investigation.findings.length} findings`}
+              </button>
+            )}
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }

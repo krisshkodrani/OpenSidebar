@@ -33,7 +33,15 @@ export interface TraceEvidencePointer {
   eventType?: string;
   logIndex?: number;
   label: string;
+  resolved?: boolean;
+  resolutionStatus?: "resolved" | "unresolved" | "pruned" | "load_failed";
+  resolutionDetail?: string;
 }
+
+export type InvestigationLabelSource =
+  | "deterministic"
+  | "heuristic"
+  | "llm_verifier";
 
 export interface InvestigationFinding {
   id: string;
@@ -42,6 +50,8 @@ export interface InvestigationFinding {
   title: string;
   summary: string;
   confidence: number;
+  source?: InvestigationLabelSource;
+  derivation?: string;
   firstTurn?: number;
   evidence: TraceEvidencePointer[];
 }
@@ -112,8 +122,11 @@ export interface TraceFleetCluster {
   count: number;
   failedCount: number;
   failureRate: number;
+  failureRateCI?: { low: number; high: number };
+  successRateCI?: { low: number; high: number };
   totalCost: number;
   averageTurns: number;
+  turnsStdDev?: number;
   sampleSessionId: string;
   sessionIds: string[];
   recommendation: string;
@@ -123,8 +136,12 @@ export interface TraceFleetAnalysis {
   totalSessions: number;
   failedSessions: number;
   successRate: number;
+  failureRate: number;
+  successRateCI?: { low: number; high: number };
+  failureRateCI?: { low: number; high: number };
   totalCost: number;
   averageTurns: number;
+  turnsStdDev?: number;
   topFailureClusters: TraceFleetCluster[];
   topDomainClusters: TraceFleetCluster[];
   topModelClusters: TraceFleetCluster[];
@@ -244,4 +261,24 @@ export interface TraceBundleValidationInput {
   runEventsByRun?: Map<string, RunTraceEvent[]>;
   screenshotFiles?: Set<string>;
   sessionFiles?: Set<string>;
+}
+
+export interface FrozenTraceScreenshot {
+  sessionId: string;
+  turnNumber: number;
+  fileName?: string;
+  dataUrl?: string;
+  sha256?: string;
+}
+
+export interface FrozenTraceBundle {
+  schemaVersion: "2026-05-30";
+  traceKind: "trace.viewer.frozen_bundle";
+  frozenAt: string;
+  session: TraceSession;
+  entries: TraceEntry[];
+  runEvents?: RunTraceEvent[];
+  logs?: SessionLogEntry[];
+  screenshots?: FrozenTraceScreenshot[];
+  report?: string;
 }

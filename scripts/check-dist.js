@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
 const distPath = resolve(process.cwd(), "dist");
@@ -204,12 +204,56 @@ function checkManifest() {
   return manifest;
 }
 
+/**
+ * The shipped artifact must not contain dev/test surface: the trace
+ * viewer (dev observability page), the e2e helper fixtures, or any code
+ * path that calls the local log-server. See docs: log-server + trace
+ * viewer are development/local-only tools.
+ */
+function checkNoDevSurface() {
+  const forbiddenPaths = [
+    "src/trace-viewer",
+    "e2e-helper.html",
+    "e2e-overlay-loader.js",
+  ];
+  for (const relativePath of forbiddenPaths) {
+    if (existsSync(resolve(distPath, relativePath))) {
+      fail(`dev/test surface must not ship: dist/${relativePath}`);
+    } else {
+      checked.push(`!${relativePath}`);
+    }
+  }
+
+  const forbiddenStrings = ["127.0.0.1:7589"];
+  const stack = [distPath];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const entryPath = resolve(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (!/\.(js|mjs|css|html|json)$/.test(entry.name)) continue;
+      const content = readFileSync(entryPath, "utf-8");
+      for (const needle of forbiddenStrings) {
+        if (content.includes(needle)) {
+          fail(
+            `dev-server reference "${needle}" leaked into ${asPosix(relative(distPath, entryPath))}`,
+          );
+        }
+      }
+    }
+  }
+  checked.push("!127.0.0.1:7589");
+}
+
 if (!existsSync(distPath) || !statSync(distPath).isDirectory()) {
   fail("dist folder not found");
 } else {
   packageJson = readRootJson("package.json");
   checkManifest();
-  checkHtmlAssets("src/trace-viewer/index.html");
+  checkNoDevSurface();
   existsFile(".vite/manifest.json", "Vite manifest");
 }
 

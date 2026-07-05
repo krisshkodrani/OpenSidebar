@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useStore } from "../../store";
 import { useDebounce } from "../../hooks/useDebounce";
-import { isoDayOffset, shortModel } from "../../utils";
+import { hasActiveTraceFilters, isoDayOffset, shortModel } from "../../utils";
 import Tooltip from "../Tooltip";
 
 interface FilterBarProps {
@@ -59,7 +59,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   }
   const availableOutcomes = outcomeSnapshot.current ?? computedOutcomes;
 
-  // Compute available skills from sessions
+  // Compute available skills from traces
   const skillSnapshot = useRef<OptionItem[] | null>(null);
 
   const computedSkills = useMemo(() => {
@@ -116,14 +116,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
     [setFilter, onFiltersChanged],
   );
 
-  const hasActiveFilters =
-    filters.outcome !== "all" ||
-    filters.day !== "all" ||
-    filters.from !== isoDayOffset(6) ||
-    filters.domain !== "" ||
-    filters.model !== "all" ||
-    filters.skill !== "all" ||
-    filters.runId !== "";
+  const hasActiveFilters = hasActiveTraceFilters(filters);
 
   const handleClearAll = () => {
     resetFilters();
@@ -132,12 +125,12 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
   };
 
   const selectClass =
-    "bg-white text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent shadow-sm";
+    "bg-trace-surface text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent shadow-sm";
 
   return (
     <div className="flex items-center gap-2 px-5 py-2 border-b border-trace-border/40 shrink-0 flex-wrap">
       {/* Filters */}
-      <Tooltip content="Filter by session outcome (completed, error, etc.)">
+      <Tooltip content="Filter by trace outcome (completed, error, etc.)">
         <select
           aria-label="Filter by outcome"
           value={filters.outcome}
@@ -192,7 +185,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
       </Tooltip>
 
       {availableSkills.length > 0 && (
-        <Tooltip content="Filter by skill used in this session">
+        <Tooltip content="Filter by skill used in this trace">
           <select
             aria-label="Filter by skill"
             value={filters.skill}
@@ -216,7 +209,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
           value={localDomain}
           onChange={(e) => setLocalDomain(e.target.value)}
           placeholder="Website"
-          className="bg-white text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim w-28 shadow-sm"
+          className="bg-trace-surface text-trace-text border border-trace-border rounded px-2 py-1.5 text-[11px] outline-none transition-colors focus:border-trace-accent placeholder:text-trace-dim w-28 shadow-sm"
         />
       </Tooltip>
 
@@ -233,7 +226,7 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
             key={label}
             type="button"
             onClick={() => handleDatePreset(days, 0)}
-            className="bg-white text-trace-subtle border border-trace-border rounded px-1.5 py-1.5 text-[10px] cursor-pointer hover:border-trace-accent hover:text-trace-text transition-colors shadow-sm"
+            className="bg-trace-surface text-trace-subtle border border-trace-border rounded px-1.5 py-1.5 text-[10px] cursor-pointer hover:border-trace-accent hover:text-trace-text transition-colors shadow-sm"
           >
             {label}
           </button>
@@ -250,9 +243,6 @@ export default function FilterBar({ onFiltersChanged }: FilterBarProps) {
         </button>
       )}
 
-      <span className="ml-auto text-[10px] text-trace-muted">
-        {sessions.length} session{sessions.length === 1 ? "" : "s"}
-      </span>
     </div>
   );
 }

@@ -51,12 +51,7 @@ import {
   type AgentBorderVisualState,
 } from "./in-page-ui/agent-border";
 import {
-  createFloatingActionHud,
-  DIVIDER_ID,
   FLOATING_WRAP_ID,
-  resetFloatingActionHudForActiveRun,
-  STEP_LABEL_ID,
-  STOP_BTN_ID,
 } from "./in-page-ui/floating-action-hud";
 import {
   removeE2ERail,
@@ -1038,9 +1033,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           pageActivity: message.payload.pageActivity,
         });
         applyAgentActivitySignalState(reduction.state);
-        if (message.payload.active && !previousSignalState.sessionActive) {
-          currentFloatingStep = null;
-        }
         if (reduction.accepted) {
           e2eRailState = {
             ...e2eRailState,
@@ -1080,12 +1072,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         const subtasks = Array.isArray(message.payload?.subtasks)
           ? message.payload.subtasks
           : [];
-        const currentIndex =
-          typeof message.payload?.currentIndex === "number"
-            ? message.payload.currentIndex
-            : 0;
-        currentPlanProgress =
-          subtasks.length > 0 ? { currentIndex, total: subtasks.length } : null;
         e2eRailState = {
           ...e2eRailState,
           planItems: subtasks
@@ -1100,12 +1086,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
           updatedAt: Date.now(),
         };
         void renderE2ERail();
-        if (currentFloatingStep) {
-          updateFloatingStepLabel(
-            currentFloatingStep.label,
-            currentFloatingStep.status,
-          );
-        }
         return;
       }
 
@@ -1133,12 +1113,6 @@ if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
         });
         if (transition.showCue && transition.borderState) {
           setAgentBorder(true, undefined, transition.borderState);
-          updateFloatingStepLabel(
-            message.payload.label,
-            message.payload.status,
-          );
-        } else {
-          currentFloatingStep = null;
         }
         if (transition.hideAfterMs != null) {
           scheduleAgentCueHide(transition.hideAfterMs);
@@ -1637,11 +1611,6 @@ let agentCueTimer: ReturnType<typeof setTimeout> | null = null;
 let floatingCueRemoveTimer: ReturnType<typeof setTimeout> | null = null;
 let agentCueFadeTimer: ReturnType<typeof setTimeout> | null = null;
 let e2eRailEnabled: boolean | null = null;
-let currentPlanProgress: { currentIndex: number; total: number } | null = null;
-let currentFloatingStep: {
-  label: string;
-  status: "running" | "done" | "error";
-} | null = null;
 let e2eRailState: E2ERailState = {
   active: false,
   status: "Idle",
@@ -1713,8 +1682,6 @@ function resetFloatingCueForActiveRun() {
   const existing = document.getElementById(AGENT_BORDER_ID);
   existing?.getAnimations?.().forEach((animation) => animation.cancel());
   if (existing) existing.style.opacity = "1";
-
-  resetFloatingActionHudForActiveRun();
 }
 
 function scheduleAgentCueHide(delayMs: number) {
@@ -1792,47 +1759,6 @@ function applyWatchPageActivity(active: boolean): void {
   }
 }
 
-/** Update the step label text above the floating stop button */
-function updateFloatingStepLabel(
-  label: string,
-  status: "running" | "done" | "error",
-) {
-  currentFloatingStep = { label, status };
-  const el = document.getElementById(STEP_LABEL_ID);
-  if (!el) return;
-  const dot = el.querySelector("span") as HTMLSpanElement | null;
-  const text = el.querySelector("[data-label]") as HTMLSpanElement | null;
-  if (text) {
-    text.textContent = formatFloatingStepLabel(label);
-    text.style.color = "";
-  }
-  if (dot) {
-    if (status === "error") {
-      el.setAttribute("data-status", "failed");
-      dot.style.background = "#ef4444";
-      dot.style.animation = "none";
-    } else if (status === "done") {
-      el.setAttribute("data-status", "completed");
-      dot.style.background = "#22c55e";
-      dot.style.animation = "none";
-    } else {
-      el.removeAttribute("data-status");
-      dot.style.background = "rgba(37,99,235,0.95)";
-      dot.style.animation = "opensidebar-pulse 1.5s ease-in-out infinite";
-    }
-  }
-}
-
-function formatFloatingStepLabel(label: string): string {
-  if (!currentPlanProgress || currentPlanProgress.total <= 0) return label;
-  const stepNumber =
-    Math.min(
-      Math.max(currentPlanProgress.currentIndex, 0),
-      currentPlanProgress.total - 1,
-    ) + 1;
-  return `Step ${stepNumber} of ${currentPlanProgress.total}: ${label}`;
-}
-
 function setAgentBorder(
   active: boolean,
   outcome?: { status: "completed" | "failed" | "stopped"; label?: string },
@@ -1841,76 +1767,14 @@ function setAgentBorder(
   const existing = document.getElementById(AGENT_BORDER_ID);
   const existingBtn = document.getElementById(FLOATING_WRAP_ID);
 
-  const overlayMounted = isE2EOverlayPanelMounted();
-
   if (active) {
     resetFloatingCueForActiveRun();
     // No animation — just a persistent "agent is active" indicator.
     ensureAgentBorderElementVisible(visualState);
 
-    if (overlayMounted) {
-      removeFloatingHudOnly();
-      return;
-    }
-
-    // --- Floating HUD bar: [ ● Step label…  ⏹ Stop ] ---
-    if (!existingBtn) {
-      createFloatingActionHud(() => {
-        chrome.runtime
-          .sendMessage({
-            type: "STOP_AGENT",
-            requestId: crypto.randomUUID(),
-            source: "content",
-            payload: {},
-          })
-          .catch(() => {});
-      });
-    }
+    removeFloatingHudOnly();
   } else {
-    const fadeDelay = outcome && existingBtn ? 1500 : 0;
-
-    // --- Show outcome flash before fading ---
-    if (outcome && existingBtn) {
-      // Hide stop button + divider
-      const stopBtn = document.getElementById(STOP_BTN_ID);
-      const divider = document.getElementById(DIVIDER_ID);
-      if (stopBtn) {
-        stopBtn.style.opacity = "0";
-        stopBtn.style.pointerEvents = "none";
-      }
-      if (divider) divider.style.opacity = "0";
-
-      // Update label to show outcome
-      const labelEl = document.getElementById(STEP_LABEL_ID);
-      if (labelEl) {
-        const dot = labelEl.querySelector("span") as HTMLSpanElement | null;
-        const text = labelEl.querySelector(
-          "[data-label]",
-        ) as HTMLSpanElement | null;
-        labelEl.setAttribute("data-status", outcome.status);
-        if (dot) {
-          dot.style.animation = "none";
-          dot.style.background =
-            outcome.status === "completed"
-              ? "#22c55e"
-              : outcome.status === "failed"
-                ? "#ef4444"
-                : "#f59e0b";
-        }
-        if (text) {
-          text.textContent =
-            outcome.label ||
-            (outcome.status === "completed"
-              ? "Done"
-              : outcome.status === "failed"
-                ? "Failed"
-                : "Stopped");
-          text.style.color = "";
-        }
-      }
-    }
-
-    // --- Remove border + bar (delayed if showing outcome flash) ---
+    // --- Remove border + any stale HUD from older content-script versions. ---
     clearAgentCueFadeTimer();
     agentCueFadeTimer = setTimeout(() => {
       agentCueFadeTimer = null;
@@ -1928,6 +1792,6 @@ function setAgentBorder(
       if (existingBtn) {
         hideFloatingCue();
       }
-    }, fadeDelay);
+    }, 0);
   }
 }

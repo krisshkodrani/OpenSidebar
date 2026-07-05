@@ -13,7 +13,7 @@
 <p align="center">
   Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
   Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows with configurable safety gates.<br />
-  Bring your own provider key. No subscription, no telemetry, and an optional local backend for profile data and durable task state.
+  Bring your own provider key. No subscription, no telemetry, no backend — the extension is fully self-contained.
 </p>
 
 ---
@@ -22,7 +22,11 @@
 
 OpenSidebar runs an autonomous agent loop inside a Chrome side panel. You describe what you want done, and the agent perceives the page through vision and DOM snapshots, reasons about the next action, executes browser tools, and verifies progress until the task is complete.
 
-For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on.
+<p align="center">
+  <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar side panel running a task" width="800" />
+</p>
+
+For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on. The full run flow is diagrammed in [docs/run-flow.svg](docs/run-flow.svg).
 
 ## Capabilities
 
@@ -34,7 +38,9 @@ For harder tasks, a planner decomposes the goal into subtasks, an executor handl
 
 **Observability** - Full-fidelity traces, structured logs, and a built-in trace viewer.
 
-**Privacy** - API keys stay in Chrome storage. No analytics or hosted relay.
+**Privacy** - API keys stay in Chrome storage. No analytics, no hosted relay, no backend.
+
+**Experimental** - Optional OpenClaw "brain" integration (default-off): expose the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
 
 ## Quick Start
 
@@ -66,7 +72,7 @@ corepack pnpm run dist
 2. Open **Settings**.
 3. Add the provider key you want to use.
 
-Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See the [OSS BYOK Launch Roadmap](./docs/oss-byok-launch-roadmap.md) for the provider matrix and launch readiness gates.
+Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See [Providers](./docs/providers.md) for the full provider matrix, key requirements, and failure expectations.
 
 ### Main Commands
 
@@ -75,7 +81,7 @@ Use package scripts through Corepack-managed pnpm for day-to-day work. Nx is the
 ```bash
 pnpm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
 pnpm run dist     # Standalone production/manual extension build into dist/
-pnpm test         # Extension and backend unit/integration tests
+pnpm test         # Extension unit/integration tests
 pnpm run verify   # Local confidence gate before commit or push
 pnpm run release:verify # Release confidence gate with production audit
 pnpm run release:package # Build dist/ and write release artifacts
@@ -88,7 +94,7 @@ Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `di
 
 Use `pnpm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
 
-`pnpm run dev` includes the local server/backend/log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
+`pnpm run dev` includes the local log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
 
 ## Development
 
@@ -97,7 +103,7 @@ Main commands:
 ```bash
 pnpm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
 pnpm run dist                 # Standalone production/manual extension build into dist/
-pnpm test                     # Extension and backend unit/integration tests
+pnpm test                     # Extension unit/integration tests
 pnpm run verify               # Lint, typecheck, tests, build, and dist check
 pnpm run release:verify       # Release gate plus production dependency audit
 pnpm run release:package      # Build dist/ and create zip, checksum, notes, manifest
@@ -123,7 +129,6 @@ The package scripts are thin entry points over Nx targets. Use Nx directly when 
 pnpm exec nx run extension:dev
 pnpm exec nx run extension:build
 pnpm exec nx run extension:test
-pnpm exec nx run backend:test
 pnpm exec nx run-many -t lint
 pnpm exec nx run-many -t typecheck
 ```
@@ -138,6 +143,28 @@ pnpm exec nx run-many -t typecheck
 - Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
+## Measured Performance
+
+We benchmark on a neutral public set — [Online-Mind2Web](https://huggingface.co/datasets/osunlp/Online-Mind2Web)
+(verified live-web tasks, WebJudge auto-eval) — rather than only internal
+fixtures, so the number means something outside this repo. The adapter is in
+`scripts/bench/` (see [`scripts/bench/README.md`](scripts/bench/README.md)).
+
+```bash
+pnpm run bench               # headed sweep on the bundled read-only sample → prints a score
+pnpm run bench:fetch         # vendor the official task set (needs HF_TOKEN; dataset is gated)
+pnpm run bench -- --size 100 # a 100-task stratified sweep once the official set is vendored
+```
+
+Each sweep writes a re-openable receipt per task plus `report.md` / `summary.json`
+under `.artifacts/bench/`. Scores are reported per model config
+(`E2E_PROVIDER` / `E2E_MODEL`) with cost, the easy/medium/hard breakdown, and a
+judge-vs-manual disagreement check alongside the headline rate.
+
+> First full-sweep numbers land shortly after launch — published with receipts
+> (per-task judge outputs), not cherry-picked. Write-mutating tasks are skipped
+> on the live web and counted as skipped, not failed.
+
 ## Harness And Skill Philosophy
 
 OpenSidebar uses benchmarks and fixtures to expose missing general browser-agent capabilities, not as targets for one-off shortcuts. The harness should stay thin: it can reset state, transfer sessions, collect traces, and validate outcomes, but product behavior belongs in the runtime, tools, controllers, prompts, or reusable skills.
@@ -148,8 +175,7 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 
 ## Repo Layout
 
-- `apps/extension/` - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
-- `apps/backend/` - local backend routes for profile data and durable task state
+- [`apps/extension/`](apps/extension/README.md) - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
 - `packages/shared-types/` - shared runtime and domain types
 - `packages/prompts/` - compiled prompt runtime and generated prompt registry
 - `prompts/` - prompt source templates
@@ -159,6 +185,10 @@ When a workflow is stable enough to teach, prefer a generic skill with sequencin
 - `traces/` - local generated trace workspace used by debugging tools and the trace viewer
 
 ## Trace Viewer
+
+<p align="center">
+  <img src="docs/assets/trace-viewer-1.png" alt="Trace viewer session analysis" width="800" />
+</p>
 
 Every agent session can be inspected in the built-in trace viewer.
 
@@ -201,6 +231,9 @@ pnpm run traces:compact              # index, then delete old raw files
 - [Personal Profile](./docs/personal-profile.md)
 - [Release Checklist](./docs/release-checklist.md)
 - [Known Limitations](./docs/known-limitations.md)
+- [Roadmap](./docs/roadmap.md)
+- [Engineering RFCs](./docs/engineering/rfcs/README.md) — active design docs (LP series)
+- [Providers](./docs/providers.md)
 
 ## Security & Privacy
 

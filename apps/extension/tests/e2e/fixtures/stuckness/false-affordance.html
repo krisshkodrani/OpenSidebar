@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vortex Cloud Console</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    .tile { display: inline-block; margin: 0.5rem; padding: 1.25rem 1.5rem; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; user-select: none; }
+    .tile:hover { background: #f3f6ff; }
+    #settings-panel { display: none; margin-top: 2rem; padding: 1rem; border: 2px solid #1453b8; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Cloud Console</h1>
+  <p>Manage your Vortex deployment from this dashboard.</p>
+
+  <div>
+    <div class="tile" id="tile-settings">⚙️ Open Settings</div>
+    <div class="tile" id="tile-config">🛠 Configuration</div>
+    <div class="tile" id="tile-prefs">📋 Preferences</div>
+    <div class="tile" id="tile-admin">🔐 Admin Panel</div>
+  </div>
+
+  <div id="settings-panel">
+    <h2>Settings</h2>
+    <p>API endpoint: <code id="endpoint">https://api.vortex.example/v2</code></p>
+  </div>
+
+  <script>
+    // Fault-injection fixture (RFC LP-2): every tile looks clickable
+    // (cursor: pointer) but none of them do anything until the lock
+    // releases. Clicks "succeed" while the page never changes — the
+    // false-affordance stall shape.
+    const INTERACTIONS_TO_UNLOCK = 10;
+    const UNLOCK_MS = 90_000;
+    const startedAt = Date.now();
+    window.fixtureState = { solved: false, interactions: 0, unlocked: false };
+
+    function maybeUnlock() {
+      if (window.fixtureState.unlocked) return;
+      if (
+        window.fixtureState.interactions >= INTERACTIONS_TO_UNLOCK ||
+        Date.now() - startedAt >= UNLOCK_MS
+      ) {
+        window.fixtureState.unlocked = true;
+      }
+    }
+    setInterval(maybeUnlock, 1000);
+    document.addEventListener("click", () => {
+      window.fixtureState.interactions++;
+      maybeUnlock();
+    });
+    document.addEventListener("keydown", () => {
+      window.fixtureState.interactions++;
+      maybeUnlock();
+    });
+
+    function openSettings() {
+      if (!window.fixtureState.unlocked) return;
+      document.getElementById("settings-panel").style.display = "block";
+      window.fixtureState.solved = true;
+    }
+    for (const id of ["tile-settings", "tile-config", "tile-prefs", "tile-admin"]) {
+      document.getElementById(id).addEventListener("click", openSettings);
+    }
+  </script>
+</body>
+</html>

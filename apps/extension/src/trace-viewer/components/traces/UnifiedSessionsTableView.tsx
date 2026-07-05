@@ -182,7 +182,7 @@ function createColumns(
             content={
               hasMultipleModels
                 ? `Models: ${models.map(shortModel).join(", ")}`
-                : "Model used for this session"
+                : "Model used for this trace"
             }
           >
             <span className="text-trace-subtle text-[10px] truncate cursor-help">
@@ -221,7 +221,7 @@ function createColumns(
             content={
               runId
                 ? `Part of run: ${runId}`
-                : "Standalone session (not part of a run)"
+                : "Standalone trace (not part of a run)"
             }
           >
             <button
@@ -310,7 +310,7 @@ export default function UnifiedSessionsTableView({
   if (tracesLoading) {
     return (
       <div className="flex-1 flex items-center justify-center text-trace-muted text-sm">
-        Loading sessions...
+        Loading traces...
       </div>
     );
   }
@@ -318,7 +318,7 @@ export default function UnifiedSessionsTableView({
   if (sessions.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-trace-dim text-sm">
-        No sessions found. Adjust filters to see more results.
+        No traces found. Adjust filters to see more results.
       </div>
     );
   }
@@ -335,7 +335,7 @@ export default function UnifiedSessionsTableView({
       <div className="px-4 py-2 border-b border-trace-border bg-trace-bg shrink-0">
         <input
           type="text"
-          placeholder="Search sessions..."
+          placeholder="Search traces..."
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           className="w-full max-w-md px-3 py-1.5 text-sm bg-trace-surface border border-trace-border rounded text-trace-text placeholder:text-trace-dim focus:outline-none focus:border-trace-accent"
@@ -410,7 +410,7 @@ export default function UnifiedSessionsTableView({
                 }}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open trace session ${row.original.sessionId}`}
+                aria-label={`Open trace ${row.original.sessionId}`}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -438,12 +438,12 @@ export default function UnifiedSessionsTableView({
       </div>
 
       <div className="px-4 py-1.5 text-[10px] text-trace-muted border-t border-trace-border/50 shrink-0">
-        {formatCount(rows.length)} sessions shown
+        {formatCount(rows.length)} traces shown
         {uniqueRuns.size > 0 && ` - ${formatCount(uniqueRuns.size)} runs`}
         {sessionsLimitReached &&
           ` - loaded list capped at ${formatCount(
             TRACE_SESSION_SEARCH_LIMIT,
-          )} sessions`}
+          )} traces`}
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export default function PerceptionList() {
   if (perceptionEntries.length === 0) {
     return (
       <div className="py-10 px-4 text-center text-trace-muted text-[13px]">
-        No perception data in this session.
+        No perception data in this trace.
         <br />
         Perception observations are recorded when page evidence is interpreted
         from screenshots, DOM distillation, or fallback state.

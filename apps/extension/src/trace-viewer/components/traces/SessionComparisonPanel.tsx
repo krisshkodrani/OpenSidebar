@@ -124,7 +124,7 @@ export default function SessionComparisonPanel({
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[11px] text-trace-muted uppercase tracking-wide mb-1">
-            Related Sessions
+            Related Traces
           </div>
           <div className="text-sm font-semibold text-trace-text">
             Compare nearby evidence

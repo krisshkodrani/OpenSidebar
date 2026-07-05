@@ -13,6 +13,7 @@ import puppeteer, {
   type WebWorker,
 } from "puppeteer";
 import { execFile } from "child_process";
+import fs from "fs";
 import { readFile } from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -216,10 +217,24 @@ async function waitForLiveServiceWorker(
 }
 
 /**
+ * Copy the e2e helper pages into the built extension. They are test
+ * fixtures (chrome.runtime/storage access from a page context) and are
+ * deliberately NOT part of the production build — the harness injects
+ * them into the local dist/ before loading it.
+ */
+function injectE2eAssets(): void {
+  const assetsDir = path.resolve(__dirname, "../assets");
+  for (const file of ["e2e-helper.html", OVERLAY_LOADER_FILE]) {
+    fs.copyFileSync(path.join(assetsDir, file), path.join(DIST_PATH, file));
+  }
+}
+
+/**
  * Launch Chrome with the extension from dist/ loaded.
  * Discovers the extension ID dynamically from the service worker URL.
  */
 export async function launchWithExtension(): Promise<ExtensionContext> {
+  injectE2eAssets();
   const headless = shouldRunHeadless();
   const browser = await puppeteer.launch({
     headless,

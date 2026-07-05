@@ -6,9 +6,9 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 
 | Role | Model | Provider | Purpose |
 | --- | --- | --- | --- |
-| Executor | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Default action loop |
-| Executor fallback | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Runtime fallback for empty-response issues |
-| Planner | `accounts/fireworks/routers/kimi-k2p5-turbo` | Fireworks | Planning, rerouting, verification |
+| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Default action loop |
+| Executor fallback | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Runtime fallback for empty-response issues |
+| Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Planning, rerouting, verification |
 | Perception | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Visual grounding |
 
 Xiaomi MiMo can be selected as an agent provider with `XIAOMI_API_KEY`. In that mode, the executor uses `mimo-v2-omni` and planner choices are limited to curated MiMo V2 models.

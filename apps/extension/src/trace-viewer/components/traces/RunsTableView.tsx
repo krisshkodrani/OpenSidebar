@@ -24,7 +24,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
   const runGroups = useStore((s) => s.runGroups);
   const tracesLoading = useStore((s) => s.tracesLoading);
   const sessions = useStore((s) => s.sessions);
-  const setTraceListMode = useStore((s) => s.setTraceListMode);
+  const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const expandAllRunGroups = useStore((s) => s.expandAllRunGroups);
   const collapseAllRunGroups = useStore((s) => s.collapseAllRunGroups);
   const toggleRunGroup = useStore((s) => s.toggleRunGroup);
@@ -44,16 +44,16 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
         <div>
           No trace runs found for the current filters.
           {sessions.length > 0
-            ? " These traces are still available as sessions."
+            ? " These traces are still available individually."
             : ""}
         </div>
         {sessions.length > 0 && (
           <button
             type="button"
-            onClick={() => setTraceListMode("sessions")}
+            onClick={() => setActiveTopLevelView("sessions")}
             className="rounded border border-trace-border px-3 py-1.5 text-xs text-trace-subtle hover:text-trace-text hover:border-trace-accent/50 transition-colors"
           >
-            View sessions
+            View traces
           </button>
         )}
       </div>
@@ -77,7 +77,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
         </button>
         <span className="ml-auto text-[10px] text-trace-dim">
           {formatCount(runGroups.length)}
-          {sessionsLimitReached ? "+" : ""} runs from loaded sessions
+          {sessionsLimitReached ? "+" : ""} runs from loaded traces
         </span>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -119,7 +119,7 @@ export default function RunsTableView({ onSelectSession }: RunsTableViewProps) {
                   {group.overallOutcome}
                 </Badge>
                 <span className="text-[11px] text-trace-muted shrink-0">
-                  {formatCount(group.sessions.length)} sessions
+                  {formatCount(group.sessions.length)} traces
                 </span>
                 <span className="text-[11px] text-trace-muted shrink-0">
                   {formatCount(group.totalTurns)} turns

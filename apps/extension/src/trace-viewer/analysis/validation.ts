@@ -1,4 +1,5 @@
 import type {
+  FrozenTraceBundle,
   TraceBundleValidationInput,
   TraceValidationIssue,
   TraceValidationResult,
@@ -594,6 +595,86 @@ export function validateTraceBundle(
         issues.push(...result.issues);
       }
       validateParallelRunEvents(runId, events, issues);
+    }
+  }
+
+  return issues;
+}
+
+export function validateFrozenTraceBundle(
+  bundle: FrozenTraceBundle,
+): TraceValidationIssue[] {
+  const issues: TraceValidationIssue[] = [];
+  if (bundle.schemaVersion !== "2026-05-30") {
+    push(
+      issues,
+      "error",
+      "unsupported_frozen_bundle_schema",
+      `Unsupported frozen bundle schema ${String(bundle.schemaVersion)}`,
+      { sessionId: bundle.session?.sessionId },
+    );
+  }
+  if (bundle.traceKind !== "trace.viewer.frozen_bundle") {
+    push(
+      issues,
+      "error",
+      "invalid_frozen_bundle_kind",
+      "Frozen bundle traceKind must be trace.viewer.frozen_bundle",
+      { sessionId: bundle.session?.sessionId },
+    );
+  }
+  if (!Number.isFinite(Date.parse(bundle.frozenAt))) {
+    push(
+      issues,
+      "error",
+      "invalid_frozen_at",
+      "Frozen bundle frozenAt must be an ISO timestamp",
+      { sessionId: bundle.session?.sessionId },
+    );
+  }
+
+  const sessionId = bundle.session.sessionId;
+  const screenshotFiles = new Set(
+    (bundle.screenshots ?? [])
+      .map((screenshot) => screenshot.fileName)
+      .filter((fileName): fileName is string => Boolean(fileName)),
+  );
+  issues.push(
+    ...validateTraceBundle({
+      sessions: [bundle.session],
+      entriesBySession: new Map([[sessionId, bundle.entries ?? []]]),
+      runEventsByRun: bundle.session.runId
+        ? new Map([[bundle.session.runId, bundle.runEvents ?? []]])
+        : undefined,
+      screenshotFiles:
+        screenshotFiles.size > 0 ? screenshotFiles : undefined,
+    }),
+  );
+
+  for (const screenshot of bundle.screenshots ?? []) {
+    if (!screenshot.dataUrl && !screenshot.fileName) {
+      push(
+        issues,
+        "error",
+        "frozen_screenshot_missing_blob",
+        "Frozen screenshot must include dataUrl or fileName",
+        {
+          sessionId: screenshot.sessionId,
+          turnNumber: screenshot.turnNumber,
+        },
+      );
+    }
+    if (screenshot.sessionId !== sessionId) {
+      push(
+        issues,
+        "error",
+        "frozen_screenshot_session_mismatch",
+        `Frozen screenshot belongs to ${screenshot.sessionId}, not ${sessionId}`,
+        {
+          sessionId: screenshot.sessionId,
+          turnNumber: screenshot.turnNumber,
+        },
+      );
     }
   }
 

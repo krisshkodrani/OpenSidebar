@@ -17,7 +17,7 @@ module.exports = {
         caughtErrorsIgnorePattern: "^_",
       },
     ],
-    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/explicit-function-return-type": "off",
     "@typescript-eslint/explicit-module-boundary-types": "off",
     "react-hooks/rules-of-hooks": "error",
@@ -31,4 +31,36 @@ module.exports = {
     es2022: true,
     worker: true,
   },
+  overrides: [
+    {
+      // Boundary rule (bulletproof-react unidirectional architecture):
+      // the React UI must not reach into the agent runtime layers.
+      // Share via packages/shared-types or route through sidepanel/runtime.ts.
+      files: [
+        "apps/extension/src/sidepanel/**/*.{ts,tsx}",
+        "apps/extension/src/trace-viewer/**/*.{ts,tsx}",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                group: [
+                  "**/background/**",
+                  "**/content/**",
+                  "**/offscreen/**",
+                  "@/background/**",
+                  "@/content/**",
+                  "@/offscreen/**",
+                ],
+                message:
+                  "UI must not import from runtime layers (background/content/offscreen). Share types via packages/shared-types or route calls through sidepanel/runtime.ts.",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
 };

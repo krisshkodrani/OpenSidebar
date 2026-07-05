@@ -3,26 +3,12 @@ import type {
   TraceAnalysisInput,
   TraceInvestigation,
   InvestigationFinding,
+  TraceEvidencePointer,
 } from "./types";
+import { findRepeatedActionPatterns } from "./repeat-actions";
 
-function toolNames(entry: TraceEntry): string[] {
-  return (entry.toolExecutions ?? []).map((tool) => String(tool.toolName));
-}
-
-function sameSnapshot(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  if (!a) return false;
-  return (
-    a.snapshot?.url === b.snapshot?.url &&
-    a.snapshot?.title === b.snapshot?.title
-  );
-}
-
-function sameToolSequence(a: TraceEntry | undefined, b: TraceEntry): boolean {
-  if (!a) return false;
-  const prev = toolNames(a);
-  const next = toolNames(b);
-  return prev.length > 0 && prev.join("|") === next.join("|");
-}
+export const CONTEXT_HOT_UTILIZATION_THRESHOLD = 0.85;
+export const STAGNANT_PROGRESS_TURN_THRESHOLD = 3;
 
 function countEvents(entries: TraceEntry[], type: string): number {
   return entries.reduce(
@@ -77,7 +63,7 @@ function firstFindingTurn(findings: InvestigationFinding[]): number | null {
   return turns.length > 0 ? Math.min(...turns) : null;
 }
 
-function isProductive(entry: TraceEntry): boolean {
+export function isProductiveTurn(entry: TraceEntry): boolean {
   if ((entry.toolExecutions ?? []).some((tool) => tool.success)) return true;
   return Boolean(
     entry.llmResponse?.content &&
@@ -85,6 +71,110 @@ function isProductive(entry: TraceEntry): boolean {
     (entry.llmResponse?.toolCalls?.length ?? 0) === 0 &&
     (entry.toolExecutions?.length ?? 0) === 0,
   );
+}
+
+export function isDegradedPerceptionTurn(entry: TraceEntry): boolean {
+  return Boolean(
+    entry.perception &&
+      (entry.perception.mode === "element_only" ||
+        entry.perception.source === "fallback" ||
+        Boolean(entry.perception.fallbackReason) ||
+        entry.perception.screenshotStatus === "capture_failed" ||
+        entry.perception.screenshotStatus === "missing" ||
+        entry.perception.screenshotStatus === "pruned" ||
+        entry.perception.screenshotStatus === "load_failed"),
+  );
+}
+
+export function isContextHotTurn(entry: TraceEntry): boolean {
+  return (
+    (entry.llmRequest?.contextMetrics?.utilization ?? 0) >=
+      CONTEXT_HOT_UTILIZATION_THRESHOLD ||
+    (entry.llmRequest?.contextMetrics?.droppedMessageCount ?? 0) > 0
+  );
+}
+
+export function resolveEvidencePointer(
+  pointer: TraceEvidencePointer,
+  input: TraceAnalysisInput,
+): TraceEvidencePointer {
+  const { session, entries, runEvents = [], logs = [] } = input;
+  const turn =
+    typeof pointer.turnNumber === "number"
+      ? entries.find((entry) => entry.turnNumber === pointer.turnNumber)
+      : null;
+  const unresolved = (detail: string): TraceEvidencePointer => ({
+    ...pointer,
+    resolved: false,
+    resolutionStatus: "unresolved",
+    resolutionDetail: detail,
+  });
+  const resolved = (): TraceEvidencePointer => ({
+    ...pointer,
+    resolved: true,
+    resolutionStatus: "resolved",
+  });
+
+  switch (pointer.kind) {
+    case "session":
+      return !pointer.sessionId || pointer.sessionId === session.sessionId
+        ? resolved()
+        : unresolved(`Session ${pointer.sessionId} is not loaded`);
+    case "turn":
+    case "perception":
+      return turn ? resolved() : unresolved(`Turn ${pointer.turnNumber} is not loaded`);
+    case "screenshot": {
+      if (!turn) return unresolved(`Turn ${pointer.turnNumber} is not loaded`);
+      if (turn.perception?.screenshotStatus === "pruned") {
+        return {
+          ...pointer,
+          resolved: false,
+          resolutionStatus: "pruned",
+          resolutionDetail: "Screenshot was pruned after the hot retention window",
+        };
+      }
+      return resolved();
+    }
+    case "tool":
+      if (!turn) return unresolved(`Turn ${pointer.turnNumber} is not loaded`);
+      return !pointer.toolCallId ||
+        (turn.toolExecutions ?? []).some(
+          (tool) => tool.toolCallId === pointer.toolCallId,
+        )
+        ? resolved()
+        : unresolved(`Tool call ${pointer.toolCallId} is not present on turn ${pointer.turnNumber}`);
+    case "event":
+      if (!turn) return unresolved(`Turn ${pointer.turnNumber} is not loaded`);
+      return !pointer.eventType ||
+        (turn.events ?? []).some((event) => event.type === pointer.eventType)
+        ? resolved()
+        : unresolved(`Event ${pointer.eventType} is not present on turn ${pointer.turnNumber}`);
+    case "run_event":
+      return runEvents.some(
+        (event) =>
+          (!pointer.runId || event.runId === pointer.runId) &&
+          (!pointer.eventType || event.type === pointer.eventType) &&
+          (pointer.turnNumber == null || event.turn === pointer.turnNumber),
+      )
+        ? resolved()
+        : unresolved(`Run event ${pointer.eventType ?? pointer.runId ?? "pointer"} is not loaded`);
+    case "log":
+      return typeof pointer.logIndex === "number" && logs[pointer.logIndex]
+        ? resolved()
+        : unresolved(`Log index ${pointer.logIndex ?? "(missing)"} is not loaded`);
+  }
+}
+
+export function resolveFindingEvidence(
+  findings: InvestigationFinding[],
+  input: TraceAnalysisInput,
+): InvestigationFinding[] {
+  return findings.map((finding) => ({
+    ...finding,
+    evidence: finding.evidence.map((pointer) =>
+      resolveEvidencePointer(pointer, input),
+    ),
+  }));
 }
 
 function categoryAction(
@@ -136,6 +226,8 @@ export function analyzeTraceSession(
           failedTool.result ||
           "A tool execution returned an unsuccessful result.",
         confidence: 0.95,
+        source: "deterministic",
+        derivation: "Trace tool execution success flag was false.",
         firstTurn: entry.turnNumber,
         evidence: [
           {
@@ -151,35 +243,38 @@ export function analyzeTraceSession(
     }
   }
 
-  for (let i = 1; i < entries.length; i++) {
-    const entry = entries[i];
-    const previous = entries[i - 1];
-    if (sameToolSequence(previous, entry) && sameSnapshot(previous, entry)) {
-      addFinding(findings, {
-        id: `repeat-loop-t${entry.turnNumber}`,
-        category: "loop",
-        severity: "warning",
-        title: "Repeated action loop",
-        summary: `Turns ${previous.turnNumber} and ${entry.turnNumber} used the same tool sequence without a page-state change.`,
-        confidence: 0.8,
-        firstTurn: entry.turnNumber,
-        evidence: [
-          {
-            kind: "turn",
-            sessionId,
-            turnNumber: previous.turnNumber,
-            label: `Previous repeated turn ${previous.turnNumber}`,
-          },
-          {
-            kind: "turn",
-            sessionId,
-            turnNumber: entry.turnNumber,
-            label: `Repeated turn ${entry.turnNumber}`,
-          },
-        ],
-      });
-      break;
-    }
+  for (const pattern of findRepeatedActionPatterns(entries)) {
+    addFinding(findings, {
+      id: `repeat-loop-t${pattern.current.turnNumber}`,
+      category: "loop",
+      severity: "warning",
+      title:
+        pattern.kind === "exact"
+          ? "Repeated action loop"
+          : "Near repeated action loop",
+      summary:
+        pattern.kind === "exact"
+          ? `Turns ${pattern.previous.turnNumber} and ${pattern.current.turnNumber} used the same tool sequence and arguments without a page-state change.`
+          : `Turns ${pattern.previous.turnNumber} and ${pattern.current.turnNumber} used a near-identical ${pattern.toolSequence.join(", ")} sequence without a page-state change.`,
+      confidence: pattern.kind === "exact" ? 0.85 : 0.7,
+      source: "heuristic",
+      derivation: "Repeat-action heuristic matched page snapshot and tool sequence.",
+      firstTurn: pattern.current.turnNumber,
+      evidence: [
+        {
+          kind: "turn",
+          sessionId,
+          turnNumber: pattern.previous.turnNumber,
+          label: `Previous repeated turn ${pattern.previous.turnNumber}`,
+        },
+        {
+          kind: "turn",
+          sessionId,
+          turnNumber: pattern.current.turnNumber,
+          label: `Repeated turn ${pattern.current.turnNumber}`,
+        },
+      ],
+    });
   }
 
   const doneRejections = findEvents(entries, "done_rejected");
@@ -194,6 +289,8 @@ export function analyzeTraceSession(
         eventDataString(first.event, "reason") ||
         `The runtime rejected done ${doneRejections.length} time(s).`,
       confidence: 0.9,
+      source: "deterministic",
+      derivation: "Trace contains done_rejected runtime gate events.",
       firstTurn: first.entry.turnNumber,
       evidence: doneRejections.slice(0, 3).map(({ entry, event }) => ({
         kind: "event",
@@ -207,7 +304,8 @@ export function analyzeTraceSession(
 
   const stale = entries.find(
     (entry) =>
-      (entry.progressState?.stagnantTurns ?? 0) >= 3 ||
+      (entry.progressState?.stagnantTurns ?? 0) >=
+        STAGNANT_PROGRESS_TURN_THRESHOLD ||
       Boolean(entry.progressState?.signal),
   );
   if (stale) {
@@ -218,6 +316,8 @@ export function analyzeTraceSession(
       title: "Stale progress detected",
       summary: `Progress tracker reported ${stale.progressState?.stagnantTurns ?? 0} stagnant turns${stale.progressState?.signal ? ` (${stale.progressState.signal})` : ""}.`,
       confidence: 0.75,
+      source: "heuristic",
+      derivation: "Progress state crossed the stagnant-turn threshold or emitted a signal.",
       firstTurn: stale.turnNumber,
       evidence: [
         {
@@ -252,6 +352,8 @@ export function analyzeTraceSession(
         eventDataString(first.event, "reason") ||
         "The plan monitor marked the active step as deviated or blocked.",
       confidence: 0.85,
+      source: "deterministic",
+      derivation: "Trace contains a plan_monitor event with blocked/deviated alignment.",
       firstTurn: first.entry.turnNumber,
       evidence: [
         {
@@ -275,6 +377,8 @@ export function analyzeTraceSession(
       title: replanCount >= 3 ? "Repeated replanning" : "Replan occurred",
       summary: `The agent replanned ${replanCount} time(s).`,
       confidence: 0.8,
+      source: "deterministic",
+      derivation: "Trace contains plan_replan events.",
       firstTurn: first?.entry.turnNumber,
       evidence: [
         {
@@ -289,13 +393,7 @@ export function analyzeTraceSession(
   }
 
   const degradedPerception = entries.find(
-    (entry) =>
-      entry.perception &&
-      (entry.perception.mode === "element_only" ||
-        entry.perception.source === "fallback" ||
-        Boolean(entry.perception.fallbackReason) ||
-        entry.perception.screenshotStatus === "capture_failed" ||
-        entry.perception.screenshotStatus === "missing"),
+    (entry) => entry.perception && isDegradedPerceptionTurn(entry),
   );
   if (degradedPerception?.perception) {
     addFinding(findings, {
@@ -309,6 +407,8 @@ export function analyzeTraceSession(
         degradedPerception.perception.mode ||
         "Perception fell back to a degraded mode.",
       confidence: 0.85,
+      source: "deterministic",
+      derivation: "Perception metadata reports fallback, missing screenshot, or capture failure.",
       firstTurn: degradedPerception.turnNumber,
       evidence: [
         {
@@ -321,11 +421,7 @@ export function analyzeTraceSession(
     });
   }
 
-  const contextHot = entries.find(
-    (entry) =>
-      (entry.llmRequest?.contextMetrics?.utilization ?? 0) >= 0.85 ||
-      (entry.llmRequest?.contextMetrics?.droppedMessageCount ?? 0) > 0,
-  );
+  const contextHot = entries.find(isContextHotTurn);
   if (contextHot) {
     addFinding(findings, {
       id: `context-pressure-t${contextHot.turnNumber}`,
@@ -334,6 +430,8 @@ export function analyzeTraceSession(
       title: "Context pressure",
       summary: `Context utilization reached ${Math.round((contextHot.llmRequest.contextMetrics?.utilization ?? 0) * 100)}% with ${contextHot.llmRequest.contextMetrics?.droppedMessageCount ?? 0} dropped messages.`,
       confidence: 0.9,
+      source: "deterministic",
+      derivation: "Context metrics crossed utilization or dropped-message thresholds.",
       firstTurn: contextHot.turnNumber,
       evidence: [
         {
@@ -359,6 +457,8 @@ export function analyzeTraceSession(
       title: "Model/provider failover",
       summary: `Requested ${failover.llmRequest.model}, served ${failover.llmResponse.actualModel}.`,
       confidence: 0.95,
+      source: "deterministic",
+      derivation: "LLM response actualModel differs from requested model.",
       firstTurn: failover.turnNumber,
       evidence: [
         {
@@ -383,6 +483,8 @@ export function analyzeTraceSession(
       title: "Runtime error logged",
       summary: log.msg || "A session-scoped runtime error was logged.",
       confidence: 0.7,
+      source: "deterministic",
+      derivation: "Session log includes error or fatal level.",
       evidence: [
         {
           kind: "log",
@@ -410,6 +512,8 @@ export function analyzeTraceSession(
       title: "Verifier rejected progress",
       summary: String(verifierReject.data?.reason ?? verifierReject.type),
       confidence: 0.75,
+      source: "llm_verifier",
+      derivation: "Run events include a verifier rejection or failure signal.",
       firstTurn: verifierReject.turn,
       evidence: [
         {
@@ -433,6 +537,8 @@ export function analyzeTraceSession(
         session.failureDetail ||
         "The session ended because it reached the maximum turn budget.",
       confidence: 0.95,
+      source: "deterministic",
+      derivation: "Session outcome is max_turns.",
       firstTurn: entries.at(-1)?.turnNumber,
       evidence: [
         {
@@ -444,29 +550,19 @@ export function analyzeTraceSession(
     });
   }
 
-  const orderedFindings = sortFindings(findings);
+  const orderedFindings = sortFindings(resolveFindingEvidence(findings, input));
   const firstBadTurn = firstFindingTurn(orderedFindings);
   const likelyFailureClass =
     orderedFindings.find((finding) => finding.severity !== "info")?.category ??
     (session.outcome === "completed" ? "none" : "trace_integrity");
 
-  const productiveTurns = entries.filter(isProductive).length;
+  const productiveTurns = entries.filter(isProductiveTurn).length;
   const toolFailureTurns = entries.filter((entry) =>
     (entry.toolExecutions ?? []).some((tool) => !tool.success),
   ).length;
   const perceptionTurns = entries.filter((entry) => entry.perception).length;
-  const degradedPerceptionTurns = entries.filter(
-    (entry) =>
-      entry.perception &&
-      (entry.perception.mode === "element_only" ||
-        entry.perception.source === "fallback" ||
-        Boolean(entry.perception.fallbackReason)),
-  ).length;
-  const contextHotTurns = entries.filter(
-    (entry) =>
-      (entry.llmRequest?.contextMetrics?.utilization ?? 0) >= 0.85 ||
-      (entry.llmRequest?.contextMetrics?.droppedMessageCount ?? 0) > 0,
-  ).length;
+  const degradedPerceptionTurns = entries.filter(isDegradedPerceptionTurn).length;
+  const contextHotTurns = entries.filter(isContextHotTurn).length;
 
   const headline =
     orderedFindings[0]?.title ??

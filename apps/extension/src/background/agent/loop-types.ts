@@ -4,6 +4,7 @@
 
 import {
   EvidenceEvent,
+  PartialProgressHandoff,
   SessionMetrics,
   ToolName,
   TraceFailureInfo,
@@ -65,4 +66,6 @@ export interface LoopResult {
   evidence?: EvidenceEvent[];
   /** Structured metadata explaining why completion was accepted. */
   completionEnvelope?: CompletionEnvelope;
+  /** Structured continuation artifact for incomplete-but-useful exits. */
+  partialHandoff?: PartialProgressHandoff;
 }

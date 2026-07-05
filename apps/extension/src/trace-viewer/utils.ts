@@ -1,4 +1,5 @@
 import type { TraceSession } from "../types/traces";
+import type { TraceFilters } from "./store/types";
 
 export function formatTime(ms: number | undefined | null): string {
   if (!ms) return "---";
@@ -217,6 +218,53 @@ export function isoDayOffset(daysBack: number): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Today's date as an ISO `YYYY-MM-DD` string (local time). */
+export function todayIso(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** The default trace window: last 7 days, no other filters applied. */
+export function defaultTraceFilters(): TraceFilters {
+  return {
+    outcome: "all",
+    day: "all",
+    from: isoDayOffset(6),
+    to: todayIso(),
+    domain: "",
+    model: "all",
+    skill: "all",
+    runId: "",
+  };
+}
+
+/**
+ * True when any filter deviates from the default 7-day window. Shared by the
+ * FilterBar and the FleetOverview summary so both surfaces agree on when a
+ * "Clear filters" affordance is warranted — including date-window changes,
+ * which the FleetOverview summary previously ignored.
+ */
+export function hasActiveTraceFilters(filters: TraceFilters): boolean {
+  const def = defaultTraceFilters();
+  return (
+    filters.outcome !== def.outcome ||
+    filters.day !== def.day ||
+    filters.from !== def.from ||
+    filters.to !== def.to ||
+    filters.domain !== def.domain ||
+    filters.model !== def.model ||
+    filters.skill !== def.skill ||
+    filters.runId !== def.runId
+  );
+}
+
+/** True when filters are exactly the default 7-day window. */
+export function isDefaultTraceWindow(filters: TraceFilters): boolean {
+  return !hasActiveTraceFilters(filters);
 }
 
 export function summarizeEventData(ev: {

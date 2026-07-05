@@ -1,0 +1,59 @@
+{
+  // OpenSidebar × OpenClaw — Option A config (RFC LP-8).
+  //
+  // Copied to ~/.openclaw/openclaw.json by openclaw/install.sh.
+  // Format is JSON5 (comments + trailing commas allowed).
+  //
+  // IMPORTANT: OpenClaw refuses to start on UNKNOWN keys. Every key below is from
+  // docs.openclaw.ai/gateway/configuration. After any edit, run:
+  //     openclaw config validate
+  // and validate against your installed version (`openclaw --version`).
+
+  agents: {
+    defaults: {
+      workspace: "~/.openclaw/workspace",
+      model: {
+        primary: "anthropic/claude-sonnet-4-6", // strategic / planning tier
+        fallbacks: ["anthropic/claude-haiku-4-5-20251001"],
+      },
+    },
+  },
+
+  // Loopback only (RFC LP-8 invariant): the brain + profile never bind to a public
+  // interface. Port 18789 matches the OpenSidebar extension's openClawGatewayUrl.
+  gateway: {
+    port: 18789,
+    bind: "127.0.0.1",
+  },
+
+  // Browser in/out from your machine — no Telegram required. WebChat serves a
+  // local chat UI at http://127.0.0.1:18789. Add other channels (telegram, slack,
+  // …) later if you want phone/async access to the same agent.
+  channels: {
+    webchat: { enabled: true },
+  },
+
+  // OpenSidebar browser host (RFC LP-8 M2). OpenClaw connects over the network
+  // (streamable-http), so this is identical whether OpenClaw runs natively or in
+  // its own Docker container. The host bridges to your authenticated Chrome over a
+  // loopback WebSocket.
+  //
+  // PREFER these tools over OpenClaw's built-in browser — they use your real,
+  // logged-in session (see workspace/SOUL.md + workspace/skills/opensidebar). The
+  // built-in headless browser is left at its default; SOUL.md instructs the agent
+  // never to use it for authenticated/live work.
+  mcp: {
+    servers: {
+      opensidebar: {
+        url: "http://127.0.0.1:8788/mcp",
+        transport: "streamable-http",
+      },
+    },
+  },
+
+  // Model API key. Prefer setting ANTHROPIC_API_KEY on the gateway process (or in
+  // the Docker .env); the inline form is shown only for clarity.
+  env: {
+    // ANTHROPIC_API_KEY: "sk-ant-…",
+  },
+}

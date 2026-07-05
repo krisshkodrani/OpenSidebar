@@ -9,11 +9,18 @@ import type {
 
 type CounterMap<T extends string> = Partial<Record<T, number>>;
 
+export type EscalationOutcomeCounts = {
+  rescued: number;
+  failedFast: number;
+  budgetExhausted: number;
+};
+
 export interface SessionDiagnostics {
   productiveTurns: number;
   wastedTurns: number;
   loopTurns: number;
   escalations: number;
+  escalationOutcomes: EscalationOutcomeCounts;
   failovers: number;
   perceptionCalls: number;
   perceptionCacheHits: number;
@@ -75,6 +82,11 @@ export function computeSessionDiagnostics(
   let productiveTurns = 0;
   let loopTurns = 0;
   let escalations = 0;
+  const escalationOutcomes: EscalationOutcomeCounts = {
+    rescued: 0,
+    failedFast: 0,
+    budgetExhausted: 0,
+  };
   let failovers = 0;
   let perceptionCalls = 0;
   let perceptionCacheHits = 0;
@@ -149,15 +161,35 @@ export function computeSessionDiagnostics(
       failovers++;
     }
 
-    for (const event of entry.events || []) {
-      if (event.type === "escalation") {
-        escalations++;
-      } else if (
-        event.type === "stuck_signal" &&
-        (event.data as { type?: string } | undefined)?.type === "escalate"
-      ) {
-        escalations++;
+    // Prefer the canonical escalation_triggered stream (RFC LP-2) when an
+    // entry has it; legacy escalation/stuck_signal events overlap with it
+    // (voluntary escalate emits both) and would double count.
+    const entryEvents = entry.events || [];
+    const canonicalEscalations = entryEvents.filter(
+      (event) => event.type === "escalation_triggered",
+    ).length;
+    if (canonicalEscalations > 0) {
+      escalations += canonicalEscalations;
+    } else {
+      for (const event of entryEvents) {
+        if (event.type === "escalation") {
+          escalations++;
+        } else if (
+          event.type === "stuck_signal" &&
+          (event.data as { type?: string } | undefined)?.type === "escalate"
+        ) {
+          escalations++;
+        }
       }
+    }
+    for (const event of entryEvents) {
+      if (event.type !== "escalation_outcome") continue;
+      const outcome = (event.data as { outcome?: string } | undefined)
+        ?.outcome;
+      if (outcome === "rescued") escalationOutcomes.rescued++;
+      else if (outcome === "failed_fast") escalationOutcomes.failedFast++;
+      else if (outcome === "budget_exhausted")
+        escalationOutcomes.budgetExhausted++;
     }
   }
 
@@ -166,6 +198,7 @@ export function computeSessionDiagnostics(
     wastedTurns: Math.max(0, entries.length - productiveTurns),
     loopTurns,
     escalations,
+    escalationOutcomes,
     failovers,
     perceptionCalls,
     perceptionCacheHits,

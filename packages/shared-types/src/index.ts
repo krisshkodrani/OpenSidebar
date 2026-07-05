@@ -12,3 +12,4 @@ export * from "./traces";
 export * from "./agent";
 export * from "./messages";
 export * from "./progress";
+export * from "./browser-bridge";

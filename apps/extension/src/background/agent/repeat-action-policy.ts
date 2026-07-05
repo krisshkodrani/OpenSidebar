@@ -7,6 +7,8 @@ const REPEAT_ACTION_EXEMPT_TOOLS = new Set<ToolName>([
   ToolName.ESCALATE,
   ToolName.READ_PAGE,
   ToolName.SCROLL_PAGE,
+  // Composing several distinct form answers in a row is legitimate.
+  ToolName.COMPOSE_TEXT,
 ]);
 
 export function shouldTrackRepeatAction(toolName: ToolName): boolean {

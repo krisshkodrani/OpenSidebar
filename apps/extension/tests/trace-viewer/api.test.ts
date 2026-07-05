@@ -92,6 +92,20 @@ describe("trace-viewer api", () => {
     expect(url).not.toContain("model=all");
   });
 
+  test("fetchTraceInsights preserves server error body", async () => {
+    global.fetch = vi.fn(
+      async () =>
+        new Response("Rebuild the trace index.", {
+          status: 500,
+          headers: { "Content-Type": "text/plain" },
+        }),
+    ) as any;
+
+    await expect(fetchTraceInsights({})).rejects.toThrow(
+      "Rebuild the trace index. (HTTP 500)",
+    );
+  });
+
   test("fetchTraceIndexStatus reads index status endpoint", async () => {
     await fetchTraceIndexStatus();
 

@@ -50,16 +50,15 @@ describe("E2E config", () => {
 
   test("maps suite flags to optional gates", () => {
     const env = {
-      E2E_SUITE_FLAGS: "backend-durable,backend-profile,memory-long,diagnostic",
+      E2E_SUITE_FLAGS: "single-process,memory-long,diagnostic",
     };
     const config = readE2EConfig({ env });
 
-    expect(isE2ESuiteFlagEnabled("backend-durable", { env })).toBe(true);
-    expect(isE2ESuiteFlagEnabled("backend-profile", { env })).toBe(true);
+    expect(isE2ESuiteFlagEnabled("single-process", { env })).toBe(true);
     expect(isE2ESuiteFlagEnabled("memory-long", { env })).toBe(true);
     expect(config.diagnostic).toBe(true);
     expect(serializeE2ESuiteFlags(config)).toBe(
-      "backend-durable,backend-profile,diagnostic,memory-long",
+      "diagnostic,memory-long,single-process",
     );
   });
 
@@ -71,7 +70,6 @@ describe("E2E config", () => {
         E2E_RECORD_VIDEO: "true",
         E2E_EXECUTOR_MODEL: "accounts/fireworks/models/custom",
         E2E_USE_VL_EXECUTOR: "true",
-        E2E_BACKEND_DURABLE: "true",
       },
     });
 
@@ -80,8 +78,7 @@ describe("E2E config", () => {
     expect(config.artifacts.recordVideo).toBe(true);
     expect(config.model).toBe("accounts/fireworks/models/custom");
     expect(config.perceptionMode).toBe("unified_vl");
-    expect(config.suiteFlags.has("backend-durable")).toBe(true);
-    expect(config.deprecatedEnvWarnings.length).toBeGreaterThanOrEqual(6);
+    expect(config.deprecatedEnvWarnings.length).toBeGreaterThanOrEqual(5);
   });
 
   test("exports resolved config through public env names for child runs", () => {

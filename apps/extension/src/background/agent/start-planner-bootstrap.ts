@@ -211,9 +211,13 @@ export async function bootstrapRuntimePlan(
     const taskStartTime = now();
     const planSubtasks = buildInitialPlanSubtasks(decomposition.subtasks);
     const planSteps = decomposition.steps || [];
+    // Prefer the planner LLM's structured intent signal; fall back to a keyword
+    // scan over both the user's request and the planned step objectives so a
+    // multi-tab task is still recognized when the model omits the flag.
     const planRequiresTabManagement =
       decomposition.requiresTabManagement ??
-      planSteps.some((s) => TAB_STEP_KEYWORDS.test(s.objective || ""));
+      (TAB_STEP_KEYWORDS.test(deps.initialUserText || "") ||
+        planSteps.some((s) => TAB_STEP_KEYWORDS.test(s.objective || "")));
     state = {
       ...state,
       taskId,

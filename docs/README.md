@@ -1,6 +1,6 @@
 # Documentation
 
-This index lists stable repo documentation. Research reports, RFC drafts, benchmark notes, and temporary investigations belong in Notion.
+This index lists stable repo documentation. Active RFCs live in [docs/engineering/rfcs/](./engineering/rfcs/README.md); archived trace-viewer RFCs in [docs/rfcs/](./rfcs/README.md).
 
 ## Getting Started
 
@@ -66,5 +66,4 @@ This index lists stable repo documentation. Research reports, RFC drafts, benchm
 ## Notes
 
 - E2E reports are generated locally under `.artifacts/e2e/`.
-- RFCs and research notes live outside the repo.
-- Promote only stable conclusions from Notion into this directory.
+- Active RFCs live in [docs/engineering/rfcs/](./engineering/rfcs/README.md) and follow the [RFC Decision Process](./engineering/rfc-decision-process.md).

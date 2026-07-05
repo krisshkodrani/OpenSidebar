@@ -8,6 +8,7 @@ import {
 } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { normalizeTraceModelId } from "./log-server-helpers";
 
 const DEFAULT_DB_PATH = ".artifacts/trace-index.sqlite";
 
@@ -528,7 +529,10 @@ export function indexTracesToSqlite(
           session_id: sessionId,
           turn_number: turnNumber,
           run_id: asString(entry.runId) || asString(session.runId) || null,
-          model: asString(llmRequest?.model) || null,
+          model:
+            normalizeTraceModelId(
+              asString(llmResponse?.actualModel) || asString(llmRequest?.model),
+            ) || null,
           model_tier: asString(llmRequest?.modelTier) || null,
           provider: asString(llmResponse?.actualProviderId) || null,
           prompt_tokens: promptTokens,
