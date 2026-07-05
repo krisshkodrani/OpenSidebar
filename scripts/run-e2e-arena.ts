@@ -569,8 +569,8 @@ async function main(): Promise<void> {
   }
 
   if (build) {
-    console.log("\n[e2e:arena:run] Building extension before arena run...");
-    execSync("corepack pnpm run build", {
+    console.log("\n[e2e:arena:run] Building e2e extension before arena run...");
+    execSync("corepack pnpm run build:e2e", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,

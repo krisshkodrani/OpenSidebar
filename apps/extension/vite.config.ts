@@ -50,20 +50,25 @@ export default defineConfig(({ mode }) => {
             __dirname,
             "src/offscreen/audio.html",
           ),
-          ...(isProduction
+          // The overlay harness drives headed E2E; the e2e-mode build
+          // (dist-dev with __DEV__ surface) needs it just like prod.
+          ...(isProduction || mode === "e2e"
             ? {
                 "overlay-harness": path.resolve(
                   __dirname,
                   "src/overlay/index.tsx",
                 ),
               }
-            : {
+            : {}),
+          ...(!isProduction
+            ? {
                 // Dev-only observability page; must never ship in dist/.
                 "trace-viewer": path.resolve(
                   __dirname,
                   "src/trace-viewer/index.html",
                 ),
-              }),
+              }
+            : {}),
         },
         external: [],
       },
