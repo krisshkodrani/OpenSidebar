@@ -24,6 +24,13 @@ export interface PerceptionRuntimeModeDecisionArgs
   perceptionMode?: PerceptionRuntimeMode;
   useVLExecutor?: boolean;
   providerMode?: ProviderMode;
+  /**
+   * Whether the resolved executor model can accept image input. `false`
+   * forces structured mode over every other signal and override — images
+   * must never be sent to a non-VL executor. `undefined` means unknown and
+   * leaves the decision unchanged.
+   */
+  executorVLCapable?: boolean;
   taskText?: string;
   imagePromptTokensUsed?: number;
   maxImagePromptTokens?: number;
@@ -89,6 +96,16 @@ export function resolvePerceptionRuntimeModeDecision(
     return {
       mode: "structured",
       reason: "explicit_structured_override",
+      signals: [],
+    };
+  }
+
+  // Capability gate: a non-VL executor can never receive screenshots, so it
+  // outranks the explicit unified_vl override and the legacy toggle.
+  if (args.executorVLCapable === false) {
+    return {
+      mode: "structured",
+      reason: "executor_not_vl_capable",
       signals: [],
     };
   }

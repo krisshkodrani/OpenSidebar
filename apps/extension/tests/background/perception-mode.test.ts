@@ -67,6 +67,60 @@ describe("perception mode resolution", () => {
     ).toBe("unified_vl");
   });
 
+  test("non-VL executor forces structured over the explicit unified VL override", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "unified_vl",
+        executorVLCapable: false,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "executor_not_vl_capable",
+      signals: [],
+    });
+  });
+
+  test("non-VL executor forces structured despite visual signals and legacy toggle", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        useVLExecutor: true,
+        executorVLCapable: false,
+        taskText: "Read the chart and tell me the highest value",
+        hasCanvas: true,
+        elementCount: 2,
+        pageTextLength: 100,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "executor_not_vl_capable",
+    });
+  });
+
+  test("VL-capable executor leaves auto decisions unchanged", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        executorVLCapable: true,
+        taskText: "Read the chart and tell me the highest value",
+        elementCount: 20,
+        pageTextLength: 2000,
+      }),
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+    });
+  });
+
+  test("unknown executor capability preserves current behavior", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "unified_vl",
+        executorVLCapable: undefined,
+      }),
+    ).toBe("unified_vl");
+  });
+
   test("auto selects unified VL for sparse DOM", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
