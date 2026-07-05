@@ -126,13 +126,8 @@ export async function saveSettings(
   ) {
     delete normalized.executorModel;
   }
-  if (
-    normalized.perceptionAutoDefault !== undefined &&
-    normalized.perceptionAutoDefault !== "structured" &&
-    normalized.perceptionAutoDefault !== "unified_vl"
-  ) {
-    delete normalized.perceptionAutoDefault;
-  }
+  // Retired LP-11 A/B arm selector — strip if present.
+  delete normalized.perceptionAutoDefault;
   delete normalized.useVLExecutor;
   delete normalized.voiceMode;
   delete normalized.jobAgentMcpEnabled;
@@ -284,13 +279,8 @@ export async function loadSettings(
     shouldCleanRemovedSettings = true;
   }
 
-  if (
-    raw.perceptionAutoDefault !== undefined &&
-    raw.perceptionAutoDefault !== "structured" &&
-    raw.perceptionAutoDefault !== "unified_vl"
-  ) {
-    delete raw.perceptionAutoDefault;
-  }
+  // Retired LP-11 A/B arm selector — strip if it ever synced.
+  delete raw.perceptionAutoDefault;
 
   // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;

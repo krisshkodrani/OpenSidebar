@@ -112,12 +112,33 @@ default profile is confirmed.
 
 ## Staged-suite gate (arm B)
 
-- easy: PENDING
-- medium: PENDING
+- easy (smoke, 8 files): **PASSED** under `unified_vl` default
+- medium (interaction-regression, 15 files incl. the region-zoom test):
+  **PASSED** under `unified_vl` default
 
 ## Decision
 
-- PENDING staged gate
+**FLIP ADOPTED** (2026-07-05): `PERCEPTION_AUTO_DEFAULT_MODE` is now
+`unified_vl`. Signal-less structured outcomes: dense text-heavy DOM
+(≥ 40 elements AND ≥ 2000 chars page text) and image-budget exhaustion;
+plus the non-VL-executor capability gate and the explicit override.
+Structured mode remains the fallback/override/popup-triage provider —
+the PerceptionAgent is unchanged.
+
+The temporary A/B plumbing (hidden `perceptionAutoDefault` setting,
+`E2E_PERCEPTION_AUTO_DEFAULT`, `scripts/run-perception-ab.ts`) was
+removed with the flip; re-running the comparison requires restoring it
+from git history (this branch, commits 879f91bf..5832d82a).
+
+## Follow-on findings (same session)
+
+- A VL executor reads 8px canvas fine print from the first-turn
+  high-detail frame — the LP-13 arena validator became outcome-grounded
+  (zoom usage is telemetry, not a gate).
+- Magnifying the cached post-transform frame cannot recover glyphs the
+  capture already destroyed: `inspect_region` fresh captures now crop
+  from the RAW pre-transform image, and the loop captures at JPEG q90
+  (LP-9 re-encodes at q85; q70 pre-degraded small text at the source).
 
 ## Notes
 

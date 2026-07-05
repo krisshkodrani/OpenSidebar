@@ -935,7 +935,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
       const executorModel = e2eConfig.model;
       const temperature = e2eConfig.runtime.temperature;
       const perceptionMode = e2eConfig.perceptionMode;
-      const perceptionAutoDefault = e2eConfig.perceptionAutoDefault;
       suiteReport.setRunMetadata({
         provider: providerMode,
         lane,
@@ -956,7 +955,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           execModel: string | null,
           temp: number | null,
           perceptionMode: string | null,
-          perceptionAutoDefault: string | null,
         ) => {
           const localData: Record<string, string> = {};
           if (openRouterKey) localData.openRouterApiKey_local = openRouterKey;
@@ -978,8 +976,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
           if (execModel) settings.executorModel = execModel;
           if (temp !== null) settings.temperature = temp;
           if (perceptionMode) settings.perceptionMode = perceptionMode;
-          if (perceptionAutoDefault)
-            settings.perceptionAutoDefault = perceptionAutoDefault;
           await chrome.storage.sync.set({ userSettings: settings });
         },
         openRouterKey ?? null,
@@ -994,7 +990,6 @@ export function createE2EHarness(options: HarnessOptions = {}): E2EHarness {
         executorModel ?? null,
         temperature ?? null,
         perceptionMode ?? null,
-        perceptionAutoDefault ?? null,
       );
 
       await setupEventMonitor(ctx.serviceWorker);

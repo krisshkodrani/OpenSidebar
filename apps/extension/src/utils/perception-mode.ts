@@ -55,12 +55,15 @@ const DENSE_DOM_ELEMENT_THRESHOLD = 40;
 const DENSE_TEXT_LENGTH_THRESHOLD = 2000;
 
 /**
- * What auto mode does when no signal decides (RFC LP-11). "structured" is
- * the measured incumbent; the A/B (docs/evals) gates flipping this constant
- * to "unified_vl".
+ * What auto mode does when no signal decides (RFC LP-11). Flipped to
+ * "unified_vl" on the measured A/B verdict
+ * (docs/evals/lp-0011-perception-default-ab-2026-07.md): +5.6pp task
+ * success, −31% wall clock, and the separate perception call eliminated.
+ * Structured remains the dense-text/budget/capability fallback and the
+ * explicit override.
  */
 export const PERCEPTION_AUTO_DEFAULT_MODE: "structured" | "unified_vl" =
-  "structured";
+  "unified_vl";
 
 function isImageBudgetExhausted(
   args: PerceptionRuntimeModeDecisionArgs,
