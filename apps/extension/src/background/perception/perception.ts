@@ -3,9 +3,8 @@
  *
  * @deprecated The stateless `perceive()` function and dual-mode prompt are superseded
  * by `PerceptionAgent` (perception-agent.ts) which accumulates observations across turns.
- * This file is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
- *
- * Provider: OpenRouter (Grok 4.1 Fast).
+ * Sole remaining production caller: the warmup hot path (warmup.ts). Migrating
+ * warmup onto PerceptionAgent retires this file.
  */
 
 import { TaggedElement, PageSkeletonNode, UserSettings } from "../../types";
@@ -400,8 +399,8 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
 }
 
 /**
- * @deprecated Use `PerceptionAgent.observe()` for new code. This stateless function
- * is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
+ * @deprecated Use `PerceptionAgent.observe()` for new code. Sole remaining
+ * production caller is the warmup hot path (warmup.ts).
  *
  * Perceive the current page state by sending a screenshot + element metadata
  * to a vision model for structured interpretation.

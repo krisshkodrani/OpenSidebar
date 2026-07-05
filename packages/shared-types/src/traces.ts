@@ -295,7 +295,11 @@ export interface TraceEntry {
     cached: boolean;
     /** The element summary text that was sent to the vision model */
     elementSummary?: string;
-    /** Additional viewport screenshots from panoramic capture (first turn only) */
+    /**
+     * LEGACY, read-only: the panoramic capture pipeline was removed by
+     * RFC LP-9 (nothing writes this anymore). Kept so archived traces
+     * still decode — the log server exports these as screenshot artifacts.
+     */
     panoramicShots?: TracePanoramicShot[];
     /** Page-state capture this observation interprets */
     pageStateRef?: "preDecision" | "postTool";
