@@ -541,6 +541,13 @@ async function main(): Promise<void> {
     });
   }
 
+  // Heartbeat guard: arena must drive the dev-surface build too.
+  execSync("node scripts/check-dist-dev.js", {
+    cwd: PROJECT_ROOT,
+    stdio: "inherit",
+    windowsHide: true,
+  });
+
   const records: ArenaRunRecord[] = [];
   for (let attempt = 1; attempt <= repeat; attempt++) {
     for (const task of tasks) {
