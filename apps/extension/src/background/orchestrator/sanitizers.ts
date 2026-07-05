@@ -667,6 +667,8 @@ export function sanitizeSessionMetrics(
     "imagePromptCount",
     "structuredTurnCount",
     "unifiedVlTurnCount",
+    "staleReinterpretCount",
+    "staleReinterpretRevealedCount",
   ] as const) {
     const value = raw[key];
     if (
@@ -826,6 +828,18 @@ export function sanitizeSessionMetrics(
     raw.unifiedVlTurnCount >= 0
       ? raw.unifiedVlTurnCount
       : 0;
+  const staleReinterpretCount =
+    typeof raw.staleReinterpretCount === "number" &&
+    !Number.isNaN(raw.staleReinterpretCount) &&
+    raw.staleReinterpretCount >= 0
+      ? raw.staleReinterpretCount
+      : 0;
+  const staleReinterpretRevealedCount =
+    typeof raw.staleReinterpretRevealedCount === "number" &&
+    !Number.isNaN(raw.staleReinterpretRevealedCount) &&
+    raw.staleReinterpretRevealedCount >= 0
+      ? raw.staleReinterpretRevealedCount
+      : 0;
   let perceptionModeDecision: SessionMetrics["perceptionModeDecision"];
   if (raw.perceptionModeDecision !== undefined) {
     if (!isRecord(raw.perceptionModeDecision)) return null;
@@ -869,6 +883,8 @@ export function sanitizeSessionMetrics(
     imagePromptCount,
     structuredTurnCount,
     unifiedVlTurnCount,
+    staleReinterpretCount,
+    staleReinterpretRevealedCount,
     perceptionModeDecision,
     totalCachedTokens: raw.totalCachedTokens as number,
     modelBreakdown,

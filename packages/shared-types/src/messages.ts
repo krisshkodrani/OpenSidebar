@@ -847,6 +847,10 @@ export interface SessionMetrics {
   structuredTurnCount?: number;
   /** Turns whose perception ran in unified VL mode (LP-11 telemetry) */
   unifiedVlTurnCount?: number;
+  /** Forced stale-fingerprint re-interprets on structured turns (LP-11 cache efficacy) */
+  staleReinterpretCount?: number;
+  /** Stale re-interprets whose fresh interpretation differed from the cached one */
+  staleReinterpretRevealedCount?: number;
   /** Selected perception path and why it was chosen for this run */
   perceptionModeDecision?: {
     mode: "structured" | "unified_vl";

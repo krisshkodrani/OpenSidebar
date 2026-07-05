@@ -146,6 +146,7 @@ import {
   recordImagePromptUsage,
   recordPerceptionModeDecision,
   recordPerceptionTurnMode,
+  recordStaleReinterpretOutcome,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
   resolveImagePromptTokenBudget,
@@ -4931,6 +4932,18 @@ export class AgentLoop {
           dataUrl,
           elSummary,
         );
+
+        // LP-11 cache efficacy: tally forced stale re-interprets and whether
+        // they revealed changes the perception cache had been hiding.
+        if (
+          result.freshnessReason === "stale_fingerprint" &&
+          typeof result.staleReinterpretChanged === "boolean"
+        ) {
+          recordStaleReinterpretOutcome(
+            this.metrics,
+            result.staleReinterpretChanged,
+          );
+        }
 
         // Track usage for non-cached calls
         if (result.usage && !result.cached) {

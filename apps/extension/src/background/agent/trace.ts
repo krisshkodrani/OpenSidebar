@@ -394,6 +394,7 @@ export class TraceRecorder {
       freshnessReason?: TracePerceptionFreshnessReason;
       fallbackReason?: TracePerceptionFallbackReason;
       screenshotStatus?: TracePerceptionScreenshotStatus;
+      staleReinterpretChanged?: boolean;
     },
     screenshotDataUrl?: string,
     elementSummary?: string,
@@ -450,6 +451,9 @@ export class TraceRecorder {
         : {}),
       ...(perception.screenshotStatus
         ? { screenshotStatus: perception.screenshotStatus }
+        : {}),
+      ...(typeof perception.staleReinterpretChanged === "boolean"
+        ? { staleReinterpretChanged: perception.staleReinterpretChanged }
         : {}),
       ...(screenshotDataUrl ? { screenshotDataUrl } : {}),
       ...(redactedElementSummary

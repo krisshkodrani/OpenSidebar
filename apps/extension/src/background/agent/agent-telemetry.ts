@@ -46,6 +46,8 @@ export function emptySessionMetrics(): SessionMetrics {
     imagePromptCount: 0,
     structuredTurnCount: 0,
     unifiedVlTurnCount: 0,
+    staleReinterpretCount: 0,
+    staleReinterpretRevealedCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
@@ -306,6 +308,21 @@ export function recordPerceptionTurnMode(
     metrics.unifiedVlTurnCount = (metrics.unifiedVlTurnCount ?? 0) + 1;
   } else {
     metrics.structuredTurnCount = (metrics.structuredTurnCount ?? 0) + 1;
+  }
+}
+
+/**
+ * Tally a forced stale-fingerprint re-interpret and whether it revealed a
+ * change the perception cache had been hiding (LP-11 cache efficacy).
+ */
+export function recordStaleReinterpretOutcome(
+  metrics: SessionMetrics,
+  revealedChange: boolean,
+): void {
+  metrics.staleReinterpretCount = (metrics.staleReinterpretCount ?? 0) + 1;
+  if (revealedChange) {
+    metrics.staleReinterpretRevealedCount =
+      (metrics.staleReinterpretRevealedCount ?? 0) + 1;
   }
 }
 
