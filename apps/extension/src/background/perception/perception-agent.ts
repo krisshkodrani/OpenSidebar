@@ -394,6 +394,11 @@ export function validatePerceptionTagIds(
   return interpretation.replace(affordancesMatch[0], prefix + correctedBody);
 }
 
+/** Whitespace-insensitive comparison basis for cache-efficacy telemetry. */
+function normalizeInterpretationForComparison(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function makeResult(
   base: Omit<
     PerceptionResult,
@@ -634,6 +639,7 @@ export class PerceptionAgent {
     const screenshotProvided = input.screenshotDataUrl.length > 0;
     const renderHash = resolveRenderHash(input);
     let freshnessReason: TracePerceptionFreshnessReason = "new_fingerprint";
+    let staleCachedInterpretation: string | null = null;
     if (fingerprint === this.lastFingerprint && this._lastInterpretation) {
       if (renderHash !== this._lastRenderHash) {
         freshnessReason = "render_hash_changed";
@@ -665,6 +671,7 @@ export class PerceptionAgent {
           );
         }
         freshnessReason = "stale_fingerprint";
+        staleCachedInterpretation = this._lastInterpretation;
         logger.info(
           "perception",
           "Forced re-interpret after stale fingerprint",
@@ -764,6 +771,20 @@ export class PerceptionAgent {
         result.interpretation,
         input.elements,
       );
+    }
+
+    // LP-11 cache efficacy: did the forced stale re-interpret reveal a change
+    // the cache had been hiding, or merely confirm it? Wording drift can
+    // inflate "changed" — this is directional telemetry, not a gate.
+    if (
+      freshnessReason === "stale_fingerprint" &&
+      staleCachedInterpretation !== null &&
+      result.interpretation &&
+      !result.interpretation.startsWith("[")
+    ) {
+      result.staleReinterpretChanged =
+        normalizeInterpretationForComparison(result.interpretation) !==
+        normalizeInterpretationForComparison(staleCachedInterpretation);
     }
 
     // 7. Parse observation and update state

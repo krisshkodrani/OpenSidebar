@@ -287,6 +287,8 @@ export interface TraceEntry {
     freshnessReason?: TracePerceptionFreshnessReason;
     fallbackReason?: TracePerceptionFallbackReason;
     screenshotStatus?: TracePerceptionScreenshotStatus;
+    /** On stale_fingerprint re-interprets: whether the fresh interpretation differed from the cache */
+    staleReinterpretChanged?: boolean;
     screenshotPath?: string;
     /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
     screenshotDataUrl?: string;

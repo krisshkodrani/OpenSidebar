@@ -80,6 +80,12 @@ export interface PerceptionResult {
   freshnessReason: TracePerceptionFreshnessReason;
   fallbackReason?: TracePerceptionFallbackReason;
   screenshotStatus: TracePerceptionScreenshotStatus;
+  /**
+   * Only on stale_fingerprint re-interprets: true when the fresh
+   * interpretation differs from what the cache had been serving (LP-11
+   * cache-efficacy telemetry; whitespace-insensitive comparison).
+   */
+  staleReinterpretChanged?: boolean;
   /** The parsed observation from this call (undefined on cache hit or fallback) */
   observation?: ObservationEntry;
 }

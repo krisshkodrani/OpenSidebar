@@ -8,6 +8,7 @@ import {
   recordImagePromptUsage,
   recordPerceptionModeDecision,
   recordPerceptionTurnMode,
+  recordStaleReinterpretOutcome,
   recordVisionTelemetryUsage,
 } from "../../src/background/agent/agent-telemetry";
 
@@ -117,6 +118,17 @@ describe("agent telemetry", () => {
 
     expect(metrics.structuredTurnCount).toBe(1);
     expect(metrics.unifiedVlTurnCount).toBe(1);
+  });
+
+  test("tallies stale re-interprets and how many revealed hidden changes", () => {
+    const metrics = emptySessionMetrics();
+
+    recordStaleReinterpretOutcome(metrics, true);
+    recordStaleReinterpretOutcome(metrics, false);
+    recordStaleReinterpretOutcome(metrics, true);
+
+    expect(metrics.staleReinterpretCount).toBe(3);
+    expect(metrics.staleReinterpretRevealedCount).toBe(2);
   });
 
   test("checks image prompt budget against estimated prompt tokens", () => {

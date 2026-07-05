@@ -606,6 +606,50 @@ describe("PerceptionAgent", () => {
     }
   });
 
+  test("stale re-interpret marks staleReinterpretChanged=true when the page moved on", async () => {
+    const cleanup = setKeys({ openRouter: "or-key" });
+    let callCount = 0;
+    globalThis.fetch = mockFetch(() => {
+      callCount++;
+      return jsonResponse(
+        callCount === 1 ? SAMPLE_RESPONSE : SAMPLE_RESPONSE_2,
+      );
+    });
+    try {
+      await agent.observe(makeObserveInput(), "fp1");
+      const cached = await agent.observe(makeObserveInput(), "fp1");
+      expect(cached.staleReinterpretChanged).toBeUndefined();
+
+      const stale = await agent.observe(makeObserveInput(), "fp1");
+      expect(stale.freshnessReason).toBe("stale_fingerprint");
+      expect(stale.staleReinterpretChanged).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("stale re-interpret marks staleReinterpretChanged=false when only whitespace differs", async () => {
+    const cleanup = setKeys({ openRouter: "or-key" });
+    let callCount = 0;
+    globalThis.fetch = mockFetch(() => {
+      callCount++;
+      return jsonResponse(
+        callCount === 1
+          ? SAMPLE_RESPONSE
+          : `  ${SAMPLE_RESPONSE.replace(/\n/g, "\n\n")}  `,
+      );
+    });
+    try {
+      await agent.observe(makeObserveInput(), "fp1");
+      await agent.observe(makeObserveInput(), "fp1"); // cache hit
+      const stale = await agent.observe(makeObserveInput(), "fp1");
+      expect(stale.freshnessReason).toBe("stale_fingerprint");
+      expect(stale.staleReinterpretChanged).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
   test("invalidateCache() forces fresh call", async () => {
     const cleanup = setKeys({ openRouter: "or-key" });
     let callCount = 0;
