@@ -16,6 +16,10 @@ import {
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
 import {
+  isVLCapable,
+  normalizeExecutorModel,
+} from "../../utils/executor-model-policy";
+import {
   extractPerceptionPageSignals,
   resolvePerceptionRuntimeMode,
   resolvePerceptionRuntimeModeDecision,
@@ -660,6 +664,8 @@ export class AgentLoop {
   private perception = new PerceptionAgent();
   /** LP-9: capturedWidth / sentWidth of the most recent screenshot (1 = untouched). */
   private lastScreenshotScaleFactor = 1;
+  /** Whether the resolved executor model accepts images (gates unified_vl). */
+  private executorVLCapable = true;
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
   /** Promise-based gate for pause/resume */
@@ -974,6 +980,14 @@ export class AgentLoop {
     this.useVLExecutorOption = options?.useVLExecutor;
     this.maxImagePromptTokenEstimate = options?.maxImagePromptTokenEstimate;
     this.providerModeOption = options?.providerMode;
+    // Capability gate input: resolve the executor the same way LLMClient
+    // does, so the mode decision and the wire agree on what model acts.
+    this.executorVLCapable = isVLCapable(
+      normalizeExecutorModel({
+        providerMode: this.providerModeOption,
+        executorModel: options?.executorModel,
+      }),
+    );
     // Initial observation path. start() refines auto mode once task/page
     // signals are available from the initial snapshot.
     this.useVLExecutor =
@@ -981,6 +995,7 @@ export class AgentLoop {
         perceptionMode: this.perceptionModeOption,
         useVLExecutor: this.useVLExecutorOption,
         providerMode: this.providerModeOption,
+        executorVLCapable: this.executorVLCapable,
       }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
@@ -4086,6 +4101,7 @@ export class AgentLoop {
       perceptionMode: this.perceptionModeOption,
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
+      executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
@@ -5066,6 +5082,7 @@ export class AgentLoop {
       perceptionMode: this.perceptionModeOption,
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
+      executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
