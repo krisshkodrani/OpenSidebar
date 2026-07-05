@@ -185,6 +185,7 @@ export function ModelsSettingsTab({
             defaultModel={getDefaultExecutorModel(providerMode)}
             models={executorModels}
             loading={openRouterCatalogActive ? modelsLoading : false}
+            filterVisionOnly
           />
         </div>
 

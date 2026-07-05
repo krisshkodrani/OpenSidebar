@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { isExecutorModelAllowed } from "../../utils/executor-model-policy";
+import { isExecutorEligible } from "../../utils/executor-model-policy";
 
 export interface ProviderModelOption {
   id: string;
@@ -245,7 +245,7 @@ export function getProviderModelOptions(args: {
   const { providerMode, role, openRouterModels } = args;
   const filterExecutorModels = (models: ProviderModelOption[]) =>
     role === "executor"
-      ? models.filter((model) => isExecutorModelAllowed(model.id, providerMode))
+      ? models.filter((model) => isExecutorEligible(model.id, providerMode))
       : models;
   if (providerMode === "fireworks")
     return filterExecutorModels(FIREWORKS_MODELS);
@@ -277,12 +277,12 @@ export function getProviderModelCatalogNote(args: {
   const { providerMode, role, hasOpenRouterKey } = args;
   if (providerMode === "fireworks") {
     return role === "executor"
-      ? "Scoped to multimodal Fireworks executor models with curated pricing."
+      ? "Scoped to vision-capable, executor-eligible Fireworks models with curated pricing."
       : "Scoped to Fireworks models with curated pricing.";
   }
   if (providerMode === "fireworks-deepseek") {
     return role === "executor"
-      ? "Executor models come from multimodal Fireworks models with curated pricing."
+      ? "Executor models come from vision-capable, executor-eligible Fireworks models with curated pricing."
       : "Scoped to DeepSeek planner models with curated pricing.";
   }
   if (providerMode === "moonshot") {
