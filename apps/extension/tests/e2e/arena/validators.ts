@@ -6,6 +6,7 @@ import {
   findAllNewTraceFiles,
   readRunCompletionForTraceFiles,
   readTrace,
+  traceFilesContainText,
   type TraceTurn,
 } from "../helpers/diagnostics";
 import {
@@ -1149,6 +1150,59 @@ async function dashboardMetricsAnswered(
   );
 }
 
+async function canvasFinePrintAnswered(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForTaskCompletion(
+    harness.ctx,
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Canvas fine-print task did not complete successfully."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  // The value exists only as 8px canvas pixels; a correct answer plus an
+  // inspect_region trace proves the zoom path rather than a lucky guess.
+  const hasMargin = /4\.7\s*%/.test(summary);
+  const usedRegionZoom = traceFilesContainText(
+    traceFiles,
+    '"type":"inspect_region"',
+  );
+
+  return buildResult(
+    hasMargin && usedRegionZoom,
+    hasMargin && usedRegionZoom
+      ? "validated"
+      : hasMargin
+        ? "answer_without_region_zoom"
+        : "fine_print_answer_incorrect",
+    [
+      `q3Margin47=${String(hasMargin)}`,
+      `usedInspectRegion=${String(usedRegionZoom)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    summary,
+  );
+}
+
 async function firstTwoProcurementItemsComplete(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -1372,6 +1426,7 @@ export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   articleFootnoteSourceAnswered,
   documentFootnoteBriefAnswered,
   dashboardMetricsAnswered,
+  canvasFinePrintAnswered,
   firstTwoProcurementItemsComplete,
   jobRecommendationsGrounded,
   singleOrderPlaced,

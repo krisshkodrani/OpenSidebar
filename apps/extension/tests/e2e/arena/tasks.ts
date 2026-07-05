@@ -351,6 +351,23 @@ export const ARENA_TASKS: readonly ArenaTask[] = [
     description:
       "Covers contextual infeasibility: the correct action is to avoid guessing and ask for missing context.",
   },
+  {
+    id: "visual-canvas-small.fine-print-margin",
+    title: "Read Canvas Fine Print",
+    tier: "medium",
+    sourceFile: "fixtures/online-shop-pro/src/routes/visual-canvas-small.tsx",
+    sourceCase: "agent magnifies 8px canvas fine print to read a metric",
+    startRoute: "/visual-canvas-small",
+    prompt:
+      "Read the fine print under the chart and tell me the Q3 net margin.",
+    maxTurns: 12,
+    timeoutMs: 240_000,
+    tags: ["visual", "canvas", "region-zoom", "lp-13"],
+    validator: "canvasFinePrintAnswered",
+    validatorKind: "final-answer",
+    description:
+      "The value exists only as 8px canvas pixels (no DOM/aria text) — requires inspect_region magnification.",
+  },
 ];
 
 export function getArenaTask(id: string): ArenaTask | undefined {

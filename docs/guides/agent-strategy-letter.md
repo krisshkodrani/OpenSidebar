@@ -99,9 +99,9 @@ Some models emit `<think>...</think>` reasoning blocks inline. These are handled
 
 ---
 
-## 4. The 38-Tool Ecosystem
+## 4. The 51-Tool Ecosystem
 
-The agent has 38 tools organized into categories:
+The agent has 51 tools organized into categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |
