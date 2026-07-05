@@ -275,7 +275,7 @@ function summarizeByTask(records: readonly ArenaRunRecord[]): Array<{
 
 function buildReport(
   records: ArenaRunRecord[],
-  runConfig?: { model?: string },
+  runConfig?: { model?: string; plannerModel?: string },
   now = new Date(),
 ): string {
   const date = now.toISOString().split("T")[0];
@@ -292,6 +292,9 @@ function buildReport(
   );
   lines.push(`Overall result: ${passed}/${records.length} attempts passed`);
   if (runConfig?.model) lines.push(`Executor model: \`${runConfig.model}\``);
+  if (runConfig?.plannerModel) {
+    lines.push(`Planner model: \`${runConfig.plannerModel}\``);
+  }
   lines.push("");
   lines.push("## Pass-Rate Summary");
   lines.push("");
@@ -350,6 +353,7 @@ function writeReport(
   options: {
     reportLabel?: string;
     model?: string;
+    plannerModel?: string;
   } = {},
 ): string {
   if (!existsSync(REPORTS_DIR)) mkdirSync(REPORTS_DIR, { recursive: true });
@@ -358,7 +362,10 @@ function writeReport(
   const reportPath = resolve(REPORTS_DIR, `arena-score-${today}${suffix}.md`);
   writeFileSync(
     reportPath,
-    buildReport(records, { model: options.model }),
+    buildReport(records, {
+      model: options.model,
+      plannerModel: options.plannerModel,
+    }),
     "utf-8",
   );
   // Machine-readable twin for cross-run comparison.
@@ -369,6 +376,7 @@ function writeReport(
       {
         date: today,
         model: options.model ?? null,
+        plannerModel: options.plannerModel ?? null,
         records: records.map((record) => ({
           taskId: record.task.id,
           tier: record.task.tier,
@@ -565,6 +573,7 @@ async function main(): Promise<void> {
   const reportPath = writeReport(records, {
     reportLabel,
     model: process.env.E2E_MODEL,
+    plannerModel: process.env.E2E_PLANNER_MODEL,
   });
   const passed = records.filter((record) => record.success).length;
   console.log(
