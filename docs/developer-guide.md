@@ -153,8 +153,8 @@ pnpm run traces:compact              # index, then delete old raw files
 | Role                  | Default                                      |
 | --------------------- | -------------------------------------------- |
 | Provider stack        | `fireworks`                                  |
-| Executor              | `accounts/fireworks/routers/kimi-k2p6-turbo` |
-| Executor fallback     | `accounts/fireworks/routers/kimi-k2p6-turbo` |
+| Executor              | `accounts/fireworks/models/kimi-k2p7-code`   |
+| Executor fallback     | `accounts/fireworks/models/kimi-k2p7-code`   |
 | Planner               | `accounts/fireworks/routers/kimi-k2p6-turbo` |
 | Perception            | `unified_vl` by default; structured fallback is provider-specific |
 

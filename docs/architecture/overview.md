@@ -19,8 +19,8 @@ The same side panel React app also runs inside the overlay harness for browser-d
 | Role | Current Default |
 | --- | --- |
 | Provider mode | `fireworks` |
-| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` |
-| Executor fallback | `accounts/fireworks/routers/kimi-k2p6-turbo` |
+| Executor | `accounts/fireworks/models/kimi-k2p7-code` |
+| Executor fallback | `accounts/fireworks/models/kimi-k2p7-code` |
 | Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` |
 | Perception | `unified_vl` through the executor by default; structured fallback is provider-specific |
 

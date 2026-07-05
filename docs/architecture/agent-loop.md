@@ -484,7 +484,7 @@ interface TraceEntry {
 The agent uses a two-tier architecture with independent provider pools for each tier:
 
 ### Executor Tier (observe→act cycles)
-- **Fireworks** (`accounts/fireworks/routers/kimi-k2p6-turbo`)
+- **Fireworks** (`accounts/fireworks/models/kimi-k2p7-code`)
 - **Xiaomi MiMo** (`mimo-v2-omni`) when `providerMode` is `xiaomi`
 
 ### Planner Tier (reasoning/escalation)
