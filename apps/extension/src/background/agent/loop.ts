@@ -110,6 +110,17 @@ import {
 } from "./completion-kernel";
 import { evaluateGeneratedCompletionCandidate } from "./completion-evaluation-service";
 import {
+  buildCompletionDecisionRecord,
+  computeSnapshotDigest,
+  projectKernelEvidence,
+  type CompletionDecisionBasis,
+  type CompletionDecisionRecordInput,
+} from "./completion/decision-record";
+import {
+  isCompletionDecisionRecordingEnabled,
+  recordCompletionDecision,
+} from "./completion/decision-recorder";
+import {
   TURN_CHECKPOINT_VERSION,
   turnCheckpointKey,
   buildMutationKey,
@@ -2798,7 +2809,120 @@ export class AgentLoop {
     });
   }
 
+  /**
+   * Golden-harness tap (RFC LP-15, Phase 0). When decision recording is off
+   * (production default) this is a straight pass-through. When on, it captures
+   * the input surface BEFORE the decision runs (counters/evidence are mutated
+   * inside), then records `(input -> outcome)` for the replay corpus. The tap
+   * is the single choke point so completion behaviour has exactly one recorder.
+   */
   private async handleDoneToolCall(
+    toolCallId: string,
+    summary: string,
+    tabId: number,
+  ): Promise<boolean> {
+    if (!isCompletionDecisionRecordingEnabled()) {
+      return this.handleDoneToolCallInner(toolCallId, summary, tabId);
+    }
+    const input = this.captureCompletionDecisionInput(summary);
+    const verdict = await this.handleDoneToolCallInner(toolCallId, summary, tabId);
+    try {
+      this.recordCompletionDecisionOutcome(input, verdict);
+    } catch (err) {
+      this.log.warn("agent", "completion decision recording failed", {
+        turn: this.turnCount,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return verdict;
+  }
+
+  /**
+   * Snapshot the completion decision input surface as the kernel will see it,
+   * without mutating loop state. Evidence is projected (current ledger +
+   * snapshot-derived) to mirror the refresh `handleDoneToolCallInner` performs.
+   */
+  private captureCompletionDecisionInput(
+    summary: string,
+  ): CompletionDecisionRecordInput {
+    const snapshot = this.context.getSnapshot() ?? null;
+    const completionContext = this.getActiveCompletionContext();
+    return {
+      userRequest: this.originalQuery,
+      summary,
+      candidateSource: "model_done",
+      activeObjective: completionContext.activeObjective,
+      successCriteria: completionContext.successCriteria,
+      snapshot,
+      snapshotDigest: computeSnapshotDigest(snapshot),
+      evidence: projectKernelEvidence(
+        this.completionEvidence.toArray(),
+        snapshot,
+        this.turnCount,
+      ),
+      counters: {
+        turnCount: this.turnCount,
+        doneRejections: this.doneRejections,
+        consecutiveSameKindRejections: this.consecutiveSameKindRejections,
+        lastContractRejectionKind: this.lastContractRejectionKind ?? null,
+      },
+      planValidation: {
+        hasPlan: Boolean(this.taskId) && this.planSubtasks.length > 0,
+        planSubtaskCount: this.planSubtasks.length,
+        runningSubtaskIndex: this.planSubtasks.findIndex(
+          (step) => step.status === "running",
+        ),
+      },
+    };
+  }
+
+  /** Build and store a decision record from the captured input and verdict. */
+  private recordCompletionDecisionOutcome(
+    input: CompletionDecisionRecordInput,
+    verdict: boolean,
+  ): void {
+    let basis: CompletionDecisionBasis = "unknown";
+    let contractKind = "unknown";
+    let reason = "";
+    const envelope = this.completedResult?.completionEnvelope;
+    if (verdict && envelope) {
+      contractKind = envelope.contractKind;
+      reason = envelope.decisionReason;
+      basis =
+        envelope.contractKind === "legacy_done_guards"
+          ? "legacy_done_guards"
+          : this.completionEvidence.toArray().length === 0 &&
+              envelope.decisionReason ===
+                "duplicate_done_after_terminal_completion"
+            ? "duplicate_terminal"
+            : "kernel";
+    } else if (!verdict) {
+      const rejection = this.lastCompletionRejection;
+      basis = "kernel_reject";
+      contractKind =
+        rejection && rejection.status !== "accepted"
+          ? (rejection.contract?.kind ?? "unknown")
+          : "unknown";
+      reason =
+        rejection && rejection.status !== "accepted"
+          ? rejection.reason
+          : "rejected_by_legacy_guard";
+    }
+    recordCompletionDecision(
+      buildCompletionDecisionRecord({
+        recordedAtTurn: input.counters.turnCount,
+        input,
+        verdict: verdict ? "accepted" : "rejected",
+        basis,
+        contractKind,
+        guardId: verdict ? null : (contractKind === "unknown" ? null : contractKind),
+        reason,
+        recoveryHint: this.lastCompletionRecoveryHint ?? null,
+      }),
+    );
+  }
+
+  private async handleDoneToolCallInner(
     toolCallId: string,
     summary: string,
     tabId: number,
