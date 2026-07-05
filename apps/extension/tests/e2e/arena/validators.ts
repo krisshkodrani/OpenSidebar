@@ -1262,6 +1262,13 @@ async function jobRecommendationsGrounded(
 ): Promise<ArenaValidatorResult> {
   const { harness, workspaceId } = context;
 
+  // Grounding evidence: the four relevant listings must plausibly have
+  // been inspected (details opened), not all 11 — triaging from excerpts
+  // and skipping obviously-irrelevant roles is correct behavior, not a
+  // failure (measured 2026-07-05: an agent that opened exactly the 4
+  // relevant details + 1 produced a fully grounded answer and was failed
+  // by the old >= 8 quota).
+  const MIN_VIEWED_JOBS = 4;
   const outcome = await waitForOutcome(
     harness.page,
     harness.ctx.serviceWorker,
@@ -1270,7 +1277,10 @@ async function jobRecommendationsGrounded(
         () => (window as any).__jobBoardState ?? null,
       );
       if (!state) return null;
-      if (Array.isArray(state.viewedJobs) && state.viewedJobs.length >= 8) {
+      if (
+        Array.isArray(state.viewedJobs) &&
+        state.viewedJobs.length >= MIN_VIEWED_JOBS
+      ) {
         return state;
       }
       return null;
@@ -1308,7 +1318,7 @@ async function jobRecommendationsGrounded(
   );
   const ok =
     Array.isArray(state?.viewedJobs) &&
-    state.viewedJobs.length >= 8 &&
+    state.viewedJobs.length >= 4 &&
     matchedJobs.length >= 3;
 
   return buildResult(
