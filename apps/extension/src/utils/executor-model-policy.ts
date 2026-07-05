@@ -6,11 +6,11 @@ export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
   ProviderMode,
   string
 > = {
-  openrouter: "accounts/fireworks/routers/kimi-k2p6-turbo",
-  "openrouter-groq": "accounts/fireworks/routers/kimi-k2p6-turbo",
-  "openai-groq": "accounts/fireworks/routers/kimi-k2p6-turbo",
-  fireworks: "accounts/fireworks/routers/kimi-k2p6-turbo",
-  "fireworks-deepseek": "accounts/fireworks/routers/kimi-k2p6-turbo",
+  openrouter: "accounts/fireworks/models/kimi-k2p7-code",
+  "openrouter-groq": "accounts/fireworks/models/kimi-k2p7-code",
+  "openai-groq": "accounts/fireworks/models/kimi-k2p7-code",
+  fireworks: "accounts/fireworks/models/kimi-k2p7-code",
+  "fireworks-deepseek": "accounts/fireworks/models/kimi-k2p7-code",
   moonshot: "kimi-k2.6",
   xiaomi: "mimo-v2-omni",
 };
@@ -35,10 +35,26 @@ const OPENROUTER_EXECUTOR_MODELS = new Set([
   "x-ai/grok-4.1-fast",
 ]);
 
-const VL_CAPABLE_MODELS = new Set([
+/**
+ * Executor eligibility policy (owner decision 2026-07-05): a model may hold
+ * the executor seat only if it is (1) VL-capable — the executor sees the
+ * screenshot on unified_vl turns — and (2) above the reliability floor for
+ * reactive action-taking (≈ Kimi K2.7 Code tier; GPT-OSS-class models are
+ * not eligible). Text-only and cheaper models stay available for the
+ * planner/writer/perception seats. The per-provider sets above are the
+ * provider-scoped views of this policy.
+ */
+export const EXECUTOR_ELIGIBLE_MODELS: ReadonlySet<string> = new Set([
   ...OPENROUTER_EXECUTOR_MODELS,
   ...XIAOMI_EXECUTOR_MODELS,
 ]);
+
+/**
+ * Models that can accept image input. Today identical to the eligible set;
+ * a VL model below the reliability floor would be added here without being
+ * granted the executor seat.
+ */
+const VL_CAPABLE_MODELS: ReadonlySet<string> = EXECUTOR_ELIGIBLE_MODELS;
 
 function stripRoutingSuffix(model: string): string {
   return model.replace(/:nitro$/, "");
@@ -56,7 +72,11 @@ export function isVLCapable(model?: string | null): boolean {
   return VL_CAPABLE_MODELS.has(stripRoutingSuffix(model.trim()));
 }
 
-export function isExecutorModelAllowed(
+/**
+ * Provider-scoped executor eligibility: VL-capable AND above the reliability
+ * floor, restricted to the provider's curated executor set.
+ */
+export function isExecutorEligible(
   model: string | undefined | null,
   providerMode: ProviderMode = "fireworks",
 ): boolean {
@@ -84,7 +104,7 @@ export function normalizeExecutorModel(args: {
 }): string {
   const providerMode = args.providerMode ?? "fireworks";
   const model = args.executorModel?.trim();
-  if (model && isExecutorModelAllowed(model, providerMode)) return model;
+  if (model && isExecutorEligible(model, providerMode)) return model;
   return getDefaultExecutorModel(providerMode);
 }
 
@@ -95,7 +115,7 @@ export function normalizeExecutorFallbackModel(args: {
 }): string {
   const providerMode = args.providerMode ?? "fireworks";
   const fallback = args.executorFallbackModel?.trim();
-  if (fallback && isExecutorModelAllowed(fallback, providerMode)) {
+  if (fallback && isExecutorEligible(fallback, providerMode)) {
     return fallback;
   }
   return args.executorModel;
