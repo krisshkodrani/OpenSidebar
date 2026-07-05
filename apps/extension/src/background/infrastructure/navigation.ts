@@ -6,7 +6,14 @@
  * listens for webNavigation.onCompleted, and resumes the agent loop.
  */
 
-import { chromePersistencePort } from "../environment/chrome";
+import {
+  chromeNavigationEventsPort,
+  chromePersistencePort,
+} from "../environment/chrome";
+import type {
+  NavigationErrorDetails,
+  NavigationEventDetails,
+} from "../environment/types";
 import {
   AgentStatus,
   AgentLoopState,
@@ -147,7 +154,7 @@ export function setNavigationCallbacks(
  * Resumes the agent loop if we have pending navigation state.
  */
 async function handleNavigationComplete(
-  details: chrome.webNavigation.WebNavigationFramedCallbackDetails,
+  details: NavigationEventDetails,
 ): Promise<void> {
   // Only care about main frame (not iframes)
   if (details.frameId !== 0) return;
@@ -224,7 +231,7 @@ async function handleNavigationComplete(
  * Resumes the agent loop with an error message.
  */
 async function handleNavigationError(
-  details: chrome.webNavigation.WebNavigationFramedErrorCallbackDetails,
+  details: NavigationErrorDetails,
 ): Promise<void> {
   // Only care about main frame
   if (details.frameId !== 0) return;
@@ -320,8 +327,8 @@ export async function checkStaleNavigationState(): Promise<void> {
  * Must be called at the top level of the service worker.
  */
 export function registerNavigationListeners(): void {
-  chrome.webNavigation.onCompleted.addListener(handleNavigationComplete);
-  chrome.webNavigation.onErrorOccurred.addListener(handleNavigationError);
+  chromeNavigationEventsPort.onCompleted(handleNavigationComplete);
+  chromeNavigationEventsPort.onErrorOccurred(handleNavigationError);
   chrome.tabs.onRemoved.addListener(handleTabRemoved);
   chrome.runtime.onStartup.addListener(checkStaleNavigationState);
 

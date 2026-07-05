@@ -9,6 +9,7 @@ import {
 import {
   chromeBrowserPagePort,
   chromeContentBridgePort,
+  chromeRuntimeMessagingPort,
   type BrowserPagePort,
   type ContentBridgePort,
 } from "../environment";
@@ -356,9 +357,7 @@ export class PassiveMonitorController {
     this.evaluateFn = deps.evaluate ?? evaluatePassiveSuggestion;
     this.broadcastFn =
       deps.broadcast ??
-      ((message) => {
-        chrome.runtime.sendMessage(message).catch(() => {});
-      });
+      ((message) => chromeRuntimeMessagingPort.broadcast(message));
     this.pageActivityFn = deps.pageActivity ?? (() => {});
     this.isWorkspaceActiveFn = deps.isWorkspaceActive ?? (() => false);
     this.autoSchedule = deps.autoSchedule ?? true;
