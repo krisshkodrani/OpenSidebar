@@ -85,3 +85,32 @@ Evidence required before merge:
 Next action:
 
 - Implement
+
+## Implementation note (2026-07-05)
+
+Shipped on `feat/lp-0013-inspect-region`. Decisions made during
+implementation, within the stamped scope:
+
+- **Placement:** executed in the agent loop (`background/agent/region-zoom.ts`
+  behind a narrow `RegionZoomHost`), intercepted in `loop.executeToolCall`
+  before the registry so both sequential and parallel dispatch are covered;
+  the registry keeps a graceful "requires an active agent turn" fallback.
+- **Coordinate mapping:** no devicePixelRatio capture — the crop maps the
+  viewport-CSS rect via the single ratio `imageWidth / viewportWidth`
+  (= dpr ÷ LP-9 scaleFactor by construction), correct for HiDPI, browser
+  zoom, and degraded-passthrough screenshots.
+- **Crop output:** PNG, long edge ≤ 1024, upscale ≤ 4× (a sliver never
+  becomes 1024px of blur), sub-8px regions rejected; crop-only — the full
+  screenshot is never upscaled.
+- **Delivery:** unified_vl turns attach the crop as a high-detail user
+  image on the executor's next prompt, cleared at the next perception
+  refresh (never persists across turns); structured turns route through a
+  one-shot `PerceptionAgent.describeRegion` that bypasses the fingerprint
+  cache in both directions.
+- **Tag-id sugar:** live rect via `chrome.scripting` querying
+  `[data-os-tag]` in the top frame, snapshot-rect fallback; 20px padding.
+- **Evidence:** crop-geometry unit tests across HiDPI/downscaled profiles;
+  the `visual-canvas-small` fixture (answer only in 8px canvas pixels)
+  passed 2/2 in the LP-11 arena A/B including the trace-verified
+  `inspect_region` call; verify green; tool count 51 (docs' "38" predated
+  this series and was corrected).
