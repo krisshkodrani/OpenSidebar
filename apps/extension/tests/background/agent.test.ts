@@ -306,13 +306,15 @@ describe("AgentLoop", () => {
     (agent as any).refreshPerception = vi.fn();
     (agent as any).triagePopups = vi.fn();
     (agent as any).captureScreenshotForVLExecutor = vi.fn();
-    const text = "Account form ".repeat(60);
+    // Dense text-heavy DOM: post LP-11 flip, this is the signal-less page
+    // shape that still argues FOR structured (>= 40 elements, >= 2000 chars).
+    const text = "Account form ".repeat(200);
     (agent as any).context.setSnapshot({
       title: "Account Form",
       url: "https://example.com/account",
       visibleContent: text,
       pageContent: text,
-      elements: Array.from({ length: 10 }, (_, index) => ({
+      elements: Array.from({ length: 50 }, (_, index) => ({
         tag: index + 1,
         tagName: "input",
         role: "textbox",
@@ -338,7 +340,7 @@ describe("AgentLoop", () => {
         dynamic: true,
         previousMode: "unified_vl",
         mode: "structured",
-        reason: "dom_signals_sufficient",
+        reason: "dense_text_dom",
       }),
     );
   });
