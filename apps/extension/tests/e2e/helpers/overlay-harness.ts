@@ -10,7 +10,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "../../../../..");
-const DIST_PATH = path.join(PROJECT_ROOT, "dist");
+// Must match browser.ts: e2e drives the dev-surface build (dist-dev).
+const DIST_PATH = path.join(PROJECT_ROOT, "dist-dev");
 const DIST_MANIFEST_PATH = path.join(DIST_PATH, ".vite", "manifest.json");
 const OVERLAY_ENTRY = "src/overlay/index.tsx";
 

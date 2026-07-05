@@ -260,8 +260,8 @@ function main(): void {
 
   // Build once up front; both arms then run --no-build on identical bits.
   if (build) {
-    console.log("[perception-ab] Building extension + fixtures once...");
-    execSync("corepack pnpm run build", {
+    console.log("[perception-ab] Building e2e extension + fixtures once...");
+    execSync("corepack pnpm run build:e2e", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
