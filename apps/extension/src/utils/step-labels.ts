@@ -195,6 +195,12 @@ export function formatStepLabel(
         ? `Inspect chart: "${pattern.slice(0, 30)}"`
         : "Inspect chart data";
     }
+    case ToolName.INSPECT_REGION: {
+      const id = args.id as number | undefined;
+      return typeof id === "number"
+        ? `Zoom into region around [${id}]`
+        : "Zoom into region";
+    }
     case ToolName.INSPECT_TABLE:
       return "Inspect table data";
     case ToolName.INSPECT_FILTER_STATE: {

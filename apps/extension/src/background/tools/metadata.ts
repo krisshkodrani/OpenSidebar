@@ -224,6 +224,12 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
     cacheable: "dom",
   },
+  [ToolName.INSPECT_REGION]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+    cacheable: false,
+  },
   [ToolName.INSPECT_TABLE]: {
     risk: RiskLevel.LOW,
     domModifying: false,
@@ -366,6 +372,7 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.SEARCH_HISTORY]: { scope: "same_page", access: "read" },
   [ToolName.INSPECT_HIDDEN]: { scope: "same_page", access: "read" },
   [ToolName.INSPECT_CHART]: { scope: "same_page", access: "read" },
+  [ToolName.INSPECT_REGION]: { scope: "same_page", access: "read" },
   [ToolName.INSPECT_TABLE]: { scope: "same_page", access: "read" },
   [ToolName.INSPECT_FILTER_STATE]: { scope: "same_page", access: "read" },
   [ToolName.APPLY_LIST_FILTER]: { scope: "separate_tab", access: "write" },

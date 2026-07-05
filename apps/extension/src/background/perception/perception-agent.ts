@@ -821,6 +821,48 @@ export class PerceptionAgent {
     return result;
   }
 
+  /**
+   * One-shot description of an inspect_region crop (RFC LP-13, structured
+   * turns). Deliberately bypasses the fingerprint cache in both directions:
+   * no cached interpretation is returned and no cache state is written, so a
+   * zoom can never poison the page-observation cache.
+   */
+  async describeRegion(args: {
+    cropDataUrl: string;
+    regionLabel: string;
+    purpose?: string;
+    signal?: AbortSignal;
+  }): Promise<PerceptionResult> {
+    const settings = (await loadSettings()) ?? ({} as UserSettings);
+    const providers = buildProviders(settings);
+    if (providers.length === 0) {
+      return {
+        interpretation:
+          "[No API key — cannot visually describe the zoomed region.]",
+        model: "none (no API key)",
+        durationMs: 0,
+        cached: false,
+        mode: "element_only",
+        source: "fallback",
+        freshnessReason: "vl_screenshot",
+        fallbackReason: "no_api_key",
+        screenshotStatus: "captured",
+      };
+    }
+    const prompt =
+      `Describe exactly this cropped, magnified page region ${args.regionLabel}.` +
+      (args.purpose ? ` The agent wants to know: ${args.purpose}.` : "") +
+      "\nTranscribe ALL text and numbers verbatim. Describe small visual elements (chart values, axis labels, icons) precisely. Report only what is visible in the crop — do not guess.";
+    return this.callVLM(
+      providers,
+      prompt,
+      args.cropDataUrl,
+      "vl_screenshot",
+      Date.now(),
+      args.signal,
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Internal: prompt building
   // -------------------------------------------------------------------------
