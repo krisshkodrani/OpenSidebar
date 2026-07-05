@@ -17,6 +17,7 @@ describe("resolveRuntimeLimits", () => {
     // Everything else should be default
     expect(result.stuckGiveUp).toBe(DEFAULT_RUNTIME_LIMITS.stuckGiveUp);
     expect(result.toolFailureExit).toBe(DEFAULT_RUNTIME_LIMITS.toolFailureExit);
+    expect(result.maxReplans).toBe(3);
     expect(result.maxConsecutiveAllFail).toBe(DEFAULT_RUNTIME_LIMITS.maxConsecutiveAllFail);
   });
 
@@ -29,6 +30,7 @@ describe("resolveRuntimeLimits", () => {
     expect(result.toolFailureWarn).toBe(2);
     expect(result.toolFailureExit).toBe(3);
     expect(result.maxDoneRejections).toBe(1);
+    expect(result.maxReplans).toBe(2);
     expect(result.maxConsecutiveAllFail).toBe(2);
     expect(result.stagnationReflection).toBe(2);
     expect(result.stagnationPivot).toBe(3);
@@ -46,6 +48,7 @@ describe("resolveRuntimeLimits", () => {
     expect(result.escalationCooldown).toBe(2);
     expect(result.toolFailureExit).toBe(10);
     expect(result.maxDoneRejections).toBe(5);
+    expect(result.maxReplans).toBe(6);
     expect(result.maxFreshStarts).toBe(3);
   });
 
@@ -74,12 +77,14 @@ describe("resolveRuntimeLimits", () => {
       stuckGiveUp: 100,
       toolFailureExit: 0,
       maxDoneRejections: 50,
+      maxReplans: 50,
     };
     const result = resolveRuntimeLimits("moderate", overrides);
     expect(result.stuckEscalate).toBe(2); // floor
     expect(result.stuckGiveUp).toBe(25); // ceiling
     expect(result.toolFailureExit).toBe(3); // floor
     expect(result.maxDoneRejections).toBe(7); // ceiling
+    expect(result.maxReplans).toBe(8); // ceiling
   });
 
   test("null overrides are ignored", () => {
@@ -108,6 +113,11 @@ describe("resolveRuntimeLimits", () => {
     expect(simple.maxDoneRejections).toBeLessThan(moderate.maxDoneRejections);
     expect(moderate.maxDoneRejections).toBeLessThan(complex.maxDoneRejections);
     expect(complex.maxDoneRejections).toBeLessThan(extreme.maxDoneRejections);
+
+    // maxReplans should increase with task complexity
+    expect(simple.maxReplans).toBeLessThan(moderate.maxReplans);
+    expect(moderate.maxReplans).toBeLessThan(complex.maxReplans);
+    expect(complex.maxReplans).toBeLessThan(extreme.maxReplans);
   });
 });
 
@@ -118,11 +128,13 @@ describe("reassessRuntimeLimits", () => {
     const result = reassessRuntimeLimits(base, {
       stuckEscalate: base.stuckEscalate - 1, // try to tighten
       toolFailureExit: base.toolFailureExit + 2, // widen
+      maxReplans: base.maxReplans + 2, // widen
     });
     // stuckEscalate should NOT be tightened
     expect(result.stuckEscalate).toBe(base.stuckEscalate);
     // toolFailureExit should be widened
     expect(result.toolFailureExit).toBe(base.toolFailureExit + 2);
+    expect(result.maxReplans).toBe(base.maxReplans + 2);
   });
 
   test("can tighten maxDoneRejections", () => {

@@ -3,12 +3,15 @@ import "../setup";
 import {
   analyzeTraceSession,
   analyzeTraceFleet,
+  buildFrozenTraceBundle,
   buildTraceEvidenceTimeline,
   buildTraceInvestigationReport,
   compareTraceSessions,
   compareTraceTimelines,
+  resolveEvidencePointer,
 } from "../../src/trace-viewer/analysis";
 import {
+  validateFrozenTraceBundle,
   validateTraceBundle,
   validateTraceRecord,
 } from "../../src/trace-viewer/analysis";
@@ -135,6 +138,34 @@ describe("trace investigation analysis", () => {
     expect(investigation.findings[0]).toMatchObject({
       id: "tool-failure-t1",
       severity: "error",
+      source: "deterministic",
+      derivation: expect.stringContaining("success flag"),
+    });
+    expect(investigation.findings[0].evidence[0]).toMatchObject({
+      resolved: true,
+      resolutionStatus: "resolved",
+    });
+  });
+
+  test("marks dangling evidence pointers instead of dropping them", () => {
+    const pointer = resolveEvidencePointer(
+      {
+        kind: "tool",
+        sessionId: "session-1",
+        turnNumber: 99,
+        toolCallId: "missing-tool",
+        label: "Missing tool",
+      },
+      {
+        session: session(),
+        entries: [entry({ turnNumber: 1 })],
+      },
+    );
+
+    expect(pointer).toMatchObject({
+      resolved: false,
+      resolutionStatus: "unresolved",
+      resolutionDetail: expect.stringContaining("Turn 99"),
     });
   });
 
@@ -177,6 +208,108 @@ describe("trace investigation analysis", () => {
     );
     expect(investigation.metrics.doneRejectionCount).toBe(1);
     expect(investigation.metrics.replanCount).toBe(0);
+  });
+
+  test("detects near-repeat tool loops within a five-turn window", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "max_turns" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          toolExecutions: [
+            {
+              toolCallId: "tc-1",
+              toolName: "click_element",
+              args: { id: 101 },
+              result: "clicked",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 2,
+          toolExecutions: [
+            {
+              toolCallId: "tc-2",
+              toolName: "read_page",
+              args: {},
+              result: "same page",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 3,
+          toolExecutions: [
+            {
+              toolCallId: "tc-3",
+              toolName: "click_element",
+              args: { id: 202 },
+              result: "clicked",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(investigation.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "repeat-loop-t3",
+          title: "Near repeated action loop",
+          firstTurn: 3,
+        }),
+      ]),
+    );
+  });
+
+  test("does not treat changed numeric non-id arguments as near repeats", () => {
+    const investigation = analyzeTraceSession({
+      session: session({ outcome: "max_turns" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          toolExecutions: [
+            {
+              toolCallId: "tc-1",
+              toolName: "type_text",
+              args: { id: 101, text: "100" },
+              result: "typed",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+        entry({
+          turnNumber: 2,
+          toolExecutions: [
+            {
+              toolCallId: "tc-2",
+              toolName: "type_text",
+              args: { id: 202, text: "200" },
+              result: "typed",
+              success: true,
+              durationMs: 20,
+              riskLevel: "low",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(
+      investigation.findings.some(
+        (finding) => finding.id === "repeat-loop-t2",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -256,6 +389,89 @@ describe("trace validation", () => {
       expect.arrayContaining([
         expect.objectContaining({ code: "missing_turn_gap", turnNumber: 3 }),
         expect.objectContaining({ code: "out_of_order_turn", turnNumber: 2 }),
+      ]),
+    );
+  });
+
+  test("validates frozen trace bundle wrapper fields and core trace contents", () => {
+    const issues = validateFrozenTraceBundle({
+      schemaVersion: "2026-05-30",
+      traceKind: "trace.viewer.frozen_bundle",
+      frozenAt: "2026-05-30T12:00:00.000Z",
+      session: session({ outcome: "completed", failureCode: "none" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          perception: {
+            interpretation: "page",
+            model: "vision",
+            durationMs: 1,
+            cached: false,
+            screenshotStatus: "captured",
+          },
+        }),
+      ],
+      screenshots: [
+        {
+          sessionId: "session-1",
+          turnNumber: 1,
+          fileName: "session-1-T1.jpg",
+          sha256: "abc",
+        },
+      ],
+    });
+
+    expect(issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  });
+
+  test("builds a frozen bundle with report, logs, run events, and screenshot references", () => {
+    const bundle = buildFrozenTraceBundle({
+      session: session({ outcome: "completed", failureCode: "none" }),
+      entries: [
+        entry({
+          turnNumber: 1,
+          perception: {
+            interpretation: "page",
+            model: "vision",
+            durationMs: 1,
+            cached: false,
+            screenshotStatus: "captured",
+            screenshotDataUrl: "data:image/jpeg;base64,abc",
+          },
+        }),
+      ],
+      runEvents: [runEvent("verifier_result", { status: "passed" }, 1)],
+      logs: [
+        {
+          ts: "2026-04-28T00:00:00.000Z",
+          lvl: "info",
+          src: "agent",
+          cat: "trace",
+          msg: "loaded",
+          sid: "session-1",
+        },
+      ],
+    });
+
+    expect(bundle).toMatchObject({
+      schemaVersion: "2026-05-30",
+      traceKind: "trace.viewer.frozen_bundle",
+      session: expect.objectContaining({ sessionId: "session-1" }),
+      entries: [expect.objectContaining({ turnNumber: 1 })],
+      runEvents: [expect.objectContaining({ type: "verifier_result" })],
+      logs: [expect.objectContaining({ msg: "loaded" })],
+      screenshots: [
+        expect.objectContaining({
+          sessionId: "session-1",
+          turnNumber: 1,
+          fileName: "session-1-T1.jpg",
+        }),
+      ],
+      report: expect.stringContaining("# Trace Investigation Context"),
+    });
+    expect(validateFrozenTraceBundle(bundle)).toEqual(
+      expect.not.arrayContaining([
+        expect.objectContaining({ severity: "error" }),
       ]),
     );
   });
@@ -574,7 +790,7 @@ describe("trace investigation report", () => {
     "RECENT WORKSPACE CONVERSATION:",
     "- Assistant: long previous answer",
     "PROFILE DIGEST CONTEXT:",
-    "- Fact: Email = kshkodrani@gmail.com",
+    "- Fact: Email = jordan.rivera@example.com",
     "CURRENT REQUEST:",
     "Fill the profile",
     "Planner assumptions:",
@@ -803,6 +1019,11 @@ describe("trace fleet analysis", () => {
       label: "shop.example.com",
       failedCount: 2,
       count: 2,
+      turnsStdDev: expect.any(Number),
+      failureRateCI: expect.objectContaining({
+        low: expect.any(Number),
+        high: expect.any(Number),
+      }),
     });
     expect(analysis.topModelClusters[0]).toMatchObject({
       label: "model-a",
@@ -810,6 +1031,64 @@ describe("trace fleet analysis", () => {
     });
     expect(analysis.topSkillClusters[0]).toMatchObject({
       label: "checkout",
+      failedCount: 2,
+    });
+  });
+
+  test("reports fleet sample dispersion and rate intervals", () => {
+    const analysis = analyzeTraceFleet(
+      [
+        session({ sessionId: "s1", outcome: "completed", turnCount: 2 }),
+        session({ sessionId: "s2", outcome: "error", turnCount: 6 }),
+        session({ sessionId: "s3", outcome: "error", turnCount: 10 }),
+      ],
+      3,
+    );
+
+    expect(analysis).toMatchObject({
+      totalSessions: 3,
+      failedSessions: 2,
+      failureRate: 2 / 3,
+      turnsStdDev: expect.any(Number),
+      successRateCI: expect.objectContaining({
+        low: expect.any(Number),
+        high: expect.any(Number),
+      }),
+      failureRateCI: expect.objectContaining({
+        low: expect.any(Number),
+        high: expect.any(Number),
+      }),
+    });
+    expect(analysis.turnsStdDev).toBeGreaterThan(0);
+    expect(analysis.failureRateCI!.low).toBeLessThan(analysis.failureRateCI!.high);
+  });
+
+  test("normalizes routing prefixes and nitro suffixes in model clusters", () => {
+    const analysis = analyzeTraceFleet(
+      [
+        session({
+          sessionId: "s1",
+          outcome: "error",
+          models: ["accounts/fireworks/routers/kimi-k2p6-turbo:nitro"],
+        }),
+        session({
+          sessionId: "s2",
+          outcome: "max_turns",
+          metrics: {
+            totalTokens: 100,
+            totalCost: 0.02,
+            modelBreakdown: {
+              "kimi-k2p6-turbo": { calls: 1 },
+            },
+          } as any,
+        }),
+      ],
+      3,
+    );
+
+    expect(analysis.topModelClusters[0]).toMatchObject({
+      label: "kimi-k2p6-turbo",
+      count: 2,
       failedCount: 2,
     });
   });
@@ -821,7 +1100,7 @@ describe("trace session comparison", () => {
     "RECENT WORKSPACE CONVERSATION:",
     "- Assistant: long previous answer",
     "PROFILE DIGEST CONTEXT:",
-    "- Fact: Email = kshkodrani@gmail.com",
+    "- Fact: Email = jordan.rivera@example.com",
     "CURRENT REQUEST:",
     "Fill the profile",
     "Planner assumptions:",

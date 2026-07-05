@@ -162,8 +162,11 @@ class StorageLogger {
   /**
    * Fire-and-forget POST to the local log server.
    * Silent fail when server isn't running (connection-refused resolves in <1ms).
+   * Compiled out of production builds — the shipped extension must never
+   * call localhost (dev observability only).
    */
   private drainToServer(entries: StorageLogEntry[]): void {
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     try {
       fetch("http://127.0.0.1:7589/ingest", {
         method: "POST",

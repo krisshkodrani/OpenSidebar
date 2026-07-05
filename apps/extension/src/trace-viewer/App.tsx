@@ -9,7 +9,6 @@ import { useStore } from "./store";
 import { useTraceData } from "./hooks/useTraceData";
 import ViewerHeader from "./components/ViewerHeader";
 import ViewerErrorBoundary from "./components/ViewerErrorBoundary";
-import BackendPanel from "./components/BackendPanel";
 import Tooltip from "./components/Tooltip";
 import FleetOverview from "./components/traces/FleetOverview";
 import FleetInsights from "./components/traces/FleetInsights";
@@ -21,17 +20,18 @@ import TraceSubviewToggle from "./components/traces/TraceSubviewToggle";
 import TurnSearchBar from "./components/traces/TurnSearchBar";
 import TurnList from "./components/traces/TurnList";
 import TurnTimeline from "./components/traces/TurnTimeline";
+import TrajectoryScorecard from "./components/traces/TrajectoryScorecard";
 import PerceptionList from "./components/traces/PerceptionList";
 import LogList from "./components/traces/LogList";
 import OverviewTab from "./components/traces/OverviewTab";
 import PlanTab from "./components/traces/PlanTab";
 import SkillsTab from "./components/traces/SkillsTab";
 import PromptsTab from "./components/traces/PromptsTab";
+import TrajectoryTab from "./components/traces/TrajectoryTab";
 import UnifiedSessionsTableView from "./components/traces/UnifiedSessionsTableView";
 import RunsTableView from "./components/traces/RunsTableView";
 import InsightsTab from "./components/traces/InsightsTab";
 import MetricsTab from "./components/traces/MetricsTab";
-import DocsTab from "./components/traces/DocsTab";
 import SkillDetail from "./components/traces/SkillDetail";
 import { TRACE_SESSION_SEARCH_LIMIT } from "./api";
 import type { Subview, TopLevelView } from "./store/types";
@@ -74,7 +74,6 @@ const VALID_TOP_LEVEL_VIEWS = new Set([
   "runs",
   "insights",
   "metrics",
-  "docs",
 ]);
 
 // App
@@ -87,13 +86,9 @@ export default function App() {
   const setActiveSubview = useStore((s) => s.setActiveSubview);
   const setActiveTopLevelView = useStore((s) => s.setActiveTopLevelView);
   const navigateToTurn = useStore((s) => s.navigateToTurn);
-  const scrollPositions = useStore((s) => s.scrollPositions);
   const viewerTheme = useStore((s) => s.viewerTheme);
   const [currentSkillId, setCurrentSkillId] = useState<string | null>(null);
-  const [backendView, setBackendView] = useState<boolean>(false);
   const [showShortcuts, setShowShortcuts] = useState<boolean>(false);
-
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Apply viewer theme
   useEffect(() => {
@@ -119,14 +114,11 @@ export default function App() {
   useEffect(() => {
     const { session, view, top, turn, skill } = parseHash();
     if (skill) setCurrentSkillId(skill);
-    if (view === "backend") setBackendView(true);
     if (session) setCurrentSessionId(session);
     if (view && VALID_SUBVIEWS.has(view)) {
-      setBackendView(false);
       setActiveSubview(view as Subview);
     }
     if (top && VALID_TOP_LEVEL_VIEWS.has(top)) {
-      setBackendView(false);
       setActiveTopLevelView(top as TopLevelView);
     }
     if (turn && !isNaN(turn)) {
@@ -146,9 +138,7 @@ export default function App() {
 
   useEffect(() => {
     const parts: string[] = [];
-    if (backendView) {
-      parts.push("view=backend");
-    } else if (currentSkillId) {
+    if (currentSkillId) {
       parts.push(`skill=${currentSkillId}`);
     } else {
       if (currentSessionId) parts.push(`session=${currentSessionId}`);
@@ -165,13 +155,7 @@ export default function App() {
         newHash || window.location.pathname,
       );
     }
-  }, [
-    backendView,
-    currentSessionId,
-    activeSubview,
-    activeTopLevelView,
-    currentSkillId,
-  ]);
+  }, [currentSessionId, activeSubview, activeTopLevelView, currentSkillId]);
 
   const navigateToSkill = useCallback((skillId: string) => {
     setCurrentSkillId(skillId);
@@ -181,27 +165,14 @@ export default function App() {
     setCurrentSkillId(null);
   }, []);
 
-  // Restore scroll position when switching tabs or sessions
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-      const key = currentSessionId
-        ? `${currentSessionId}:${activeSubview}`
-        : activeSubview;
-      scrollContainerRef.current.scrollTop = scrollPositions[key] || 0;
-    }
-  }, [activeSubview, scrollPositions, currentSessionId]);
-
   return (
     <div className="viewer-shell flex flex-col h-screen text-trace-text font-sans overflow-hidden">
       <ViewerHeader />
       <ViewerErrorBoundary>
         {currentSkillId ? (
           <SkillDetail skillId={currentSkillId} onBack={closeSkill} />
-        ) : backendView ? (
-          <BackendPanel />
         ) : (
           <ViewerBody
-            scrollContainerRef={scrollContainerRef}
             navigateToSkill={navigateToSkill}
             setShowShortcuts={setShowShortcuts}
           />
@@ -211,8 +182,8 @@ export default function App() {
         <div className="fixed right-4 bottom-4 z-50 rounded-lg border border-trace-border bg-trace-bg/95 px-3 py-2 text-[11px] text-trace-muted shadow-xl">
           <div className="mb-1 font-semibold text-trace-text">Shortcuts</div>
           <div>? toggle help</div>
-          <div>Esc back to sessions</div>
-          <div>[ / ] previous / next session</div>
+          <div>Esc back to traces</div>
+          <div>[ / ] previous / next trace</div>
           <div>1-7 switch detail tabs</div>
         </div>
       )}
@@ -223,11 +194,9 @@ export default function App() {
 // Viewer body
 
 function ViewerBody({
-  scrollContainerRef,
   navigateToSkill,
   setShowShortcuts,
 }: {
-  scrollContainerRef: React.RefObject<HTMLDivElement>;
   navigateToSkill: (skillId: string) => void;
   setShowShortcuts: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
@@ -245,6 +214,14 @@ function ViewerBody({
   const setFilter = useStore((s) => s.setFilter);
   const saveScrollPosition = useStore((s) => s.saveScrollPosition);
   const { sessions, refreshSessions } = useTraceData();
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Live scroll position lives in a ref so scrolling never triggers a render.
+  const liveScrollTopRef = useRef(0);
+  const scrollRafRef = useRef<number | null>(null);
+  // The session the live scroll value belongs to, so a flush that fires after
+  // a session switch does not write the old scrollTop under the new key.
+  const scrollSessionRef = useRef<string | null>(null);
 
   const currentSession = sessions.find((s) => s.sessionId === currentSessionId);
   const sessionsLimitReached = sessions.length >= TRACE_SESSION_SEARCH_LIMIT;
@@ -372,15 +349,66 @@ function ViewerBody({
     setShowShortcuts,
   ]);
 
-  // Save scroll position on scroll
+  // Track the live scroll position in a ref and flush to the store at most
+  // once per animation frame. The store write no longer re-renders anything
+  // (nothing subscribes to scrollPositions reactively), and throttling keeps
+  // the writes off the hot scroll path.
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
-      if (currentSessionId) {
-        saveScrollPosition(activeSubview, e.currentTarget.scrollTop);
-      }
+      liveScrollTopRef.current = e.currentTarget.scrollTop;
+      scrollSessionRef.current = useStore.getState().currentSessionId;
+      if (scrollRafRef.current != null) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        const state = useStore.getState();
+        // Skip if the session changed since this scroll was captured —
+        // saveScrollPosition keys off the live currentSessionId.
+        if (
+          state.currentSessionId &&
+          state.currentSessionId === scrollSessionRef.current
+        ) {
+          state.saveScrollPosition(state.activeSubview, liveScrollTopRef.current);
+        }
+      });
     },
-    [currentSessionId, activeSubview, saveScrollPosition],
+    [],
   );
+
+  // Restore the saved scroll position when the tab/session changes, and flush
+  // the final position for the tab/session we are leaving. Read positions
+  // imperatively so this effect does not subscribe to every scroll write.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const sessionAtMount = currentSessionId;
+    const viewAtMount = activeSubview;
+    const key = sessionAtMount
+      ? `${sessionAtMount}:${viewAtMount}`
+      : viewAtMount;
+    el.scrollTop = useStore.getState().scrollPositions[key] || 0;
+    liveScrollTopRef.current = el.scrollTop;
+    scrollSessionRef.current = sessionAtMount;
+    return () => {
+      // Only flush if we are still on the same session, otherwise the store's
+      // currentSessionId has already advanced and saveScrollPosition would
+      // write under the wrong key.
+      if (
+        sessionAtMount &&
+        useStore.getState().currentSessionId === sessionAtMount
+      ) {
+        saveScrollPosition(viewAtMount, liveScrollTopRef.current);
+      }
+    };
+  }, [activeSubview, currentSessionId, saveScrollPosition]);
+
+  // Cancel any pending flush on unmount.
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
 
   // Session selected: drill-in detail
   if (currentSessionId && currentSession) {
@@ -391,7 +419,7 @@ function ViewerBody({
             onClick={deselectSession}
             className="text-[11px] text-trace-muted hover:text-trace-accent-light transition-colors"
           >
-            &larr; All Sessions
+            &larr; All Traces
           </button>
           <span className="text-trace-muted text-[10px]">&middot;</span>
           <span className="text-[10px] text-trace-muted">
@@ -403,7 +431,7 @@ function ViewerBody({
               onClick={() => navigateSession(-1)}
               disabled={!hasPrev}
               className="w-6 h-6 flex items-center justify-center rounded border border-trace-border text-trace-muted hover:text-trace-accent-light hover:border-trace-accent/40 disabled:opacity-30 disabled:hover:text-trace-muted disabled:hover:border-trace-border transition-colors text-xs"
-              title="Previous session ( [ )"
+              title="Previous trace ( [ )"
             >
               &#8249;
             </button>
@@ -411,12 +439,12 @@ function ViewerBody({
               onClick={() => navigateSession(1)}
               disabled={!hasNext}
               className="w-6 h-6 flex items-center justify-center rounded border border-trace-border text-trace-muted hover:text-trace-accent-light hover:border-trace-accent/40 disabled:opacity-30 disabled:hover:text-trace-muted disabled:hover:border-trace-border transition-colors text-xs"
-              title="Next session ( ] )"
+              title="Next trace ( ] )"
             >
               &#8250;
             </button>
           </div>
-          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=sessions">
+          <Tooltip content="Keyboard: 1-7 tabs, p=plan, t=turns, s=skills, Esc=back, [ ]=traces">
             <span className="ml-auto text-[9px] text-trace-muted font-mono cursor-help">
               Esc · [ ] · 1-7
             </span>
@@ -435,6 +463,7 @@ function ViewerBody({
         >
           {activeSubview === "turns" ? (
             <div className="flex flex-col px-5 py-4">
+              <TrajectoryScorecard session={currentSession} />
               <TurnSearchBar />
               {currentEntries.length === 0 && !tracesError ? (
                 <LoadingSpinner message="Loading turns..." />
@@ -478,6 +507,10 @@ function ViewerBody({
             <div className="px-5 py-4">
               <PromptsTab session={currentSession} entries={currentEntries} />
             </div>
+          ) : activeSubview === "trajectory" ? (
+            <div className="px-5 py-4">
+              <TrajectoryTab session={currentSession} />
+            </div>
           ) : (
             <div className="px-5 py-4">
               <div className="text-sm text-trace-muted">
@@ -490,42 +523,36 @@ function ViewerBody({
     );
   }
 
-  // No session: filter bar + unified sessions table
+  // No selected trace: filter bar + unified traces table
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <TopLevelTabs
         active={activeTopLevelView}
         onChange={setActiveTopLevelView}
       />
-      {activeTopLevelView !== "docs" && (
-        <FilterBar onFiltersChanged={refreshSessions} />
-      )}
+      <FilterBar onFiltersChanged={refreshSessions} />
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" &&
-        activeTopLevelView !== "docs" && (
+        activeTopLevelView !== "metrics" && (
         <FleetOverview onFiltersChanged={refreshSessions} />
       )}
       {activeTopLevelView !== "insights" &&
-        activeTopLevelView !== "metrics" &&
-        activeTopLevelView !== "docs" && (
+        activeTopLevelView !== "metrics" && (
           <FleetInsights onSelectSession={selectSession} />
         )}
-      {tracesError ? (
+      {activeTopLevelView === "insights" ? (
+        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
+      ) : activeTopLevelView === "metrics" ? (
+        <MetricsTab />
+      ) : tracesError ? (
         <div className="px-5 py-4">
           <ErrorBanner
-            message={`Failed to load sessions: ${tracesError}`}
+            message={`Failed to load traces: ${tracesError}`}
             hint="Ensure the local server is running (pnpm run logs)"
             onRetry={refreshSessions}
           />
         </div>
       ) : activeTopLevelView === "runs" ? (
         <RunsTableView onSelectSession={selectSession} />
-      ) : activeTopLevelView === "insights" ? (
-        <InsightsTab onSelectSession={selectSession} onFocusRun={focusRun} />
-      ) : activeTopLevelView === "metrics" ? (
-        <MetricsTab />
-      ) : activeTopLevelView === "docs" ? (
-        <DocsTab />
       ) : (
         <UnifiedSessionsTableView
           onSelect={selectSession}
@@ -554,11 +581,10 @@ function TopLevelTabs({
     sessionsLimitReached ? "+" : ""
   }`;
   const tabs: Array<{ id: TopLevelView; label: string; countLabel?: string }> = [
-    { id: "sessions", label: "Sessions", countLabel: sessionsCountLabel },
     { id: "runs", label: "Runs", countLabel: runsCountLabel },
+    { id: "sessions", label: "Traces", countLabel: sessionsCountLabel },
     { id: "insights", label: "Insights" },
     { id: "metrics", label: "Metrics" },
-    { id: "docs", label: "Docs" },
   ];
 
   return (

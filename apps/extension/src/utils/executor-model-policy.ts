@@ -16,6 +16,7 @@ export const DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER: Record<
 };
 
 const FIREWORKS_EXECUTOR_MODELS = new Set([
+  "accounts/fireworks/models/kimi-k2p7-code",
   "accounts/fireworks/routers/kimi-k2p6-turbo",
   "accounts/fireworks/routers/kimi-k2p5-turbo",
   "qwen/qwen3-vl-30b-a3b-instruct",

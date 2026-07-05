@@ -318,6 +318,14 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: true,
   },
 
+  // Writer handoff (intercepted in loop; composes prose then types it into a field)
+  [ToolName.COMPOSE_TEXT]: {
+    risk: RiskLevel.MEDIUM,
+    domModifying: true,
+    sequential: true,
+    mutationSensitive: true,
+  },
+
 };
 
 const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
@@ -376,6 +384,7 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.GET_PROFILE_FIELDS]: { scope: "same_page", access: "read" },
   [ToolName.CREATE_WINDOW]: { scope: "never", access: "navigate" },
   [ToolName.UPDATE_PLAN]: { scope: "never", access: "external" },
+  [ToolName.COMPOSE_TEXT]: { scope: "separate_tab", access: "write" },
 };
 
 export function getToolMeta(name: ToolName): ToolMeta {
@@ -470,6 +479,7 @@ export const TOOL_PROFILES: Record<ToolProfile, ToolName[]> = {
     // Interact (form-relevant)
     ToolName.CLICK_ELEMENT,
     ToolName.TYPE_TEXT,
+    ToolName.COMPOSE_TEXT,
     ToolName.SELECT_OPTION,
     ToolName.SET_CHECKBOX,
     ToolName.UPLOAD_FILE,
@@ -704,6 +714,7 @@ export function buildDomAwareProfile(
     // Interact
     ToolName.CLICK_ELEMENT,
     ToolName.TYPE_TEXT,
+    ToolName.COMPOSE_TEXT,
     ToolName.PRESS_KEY,
     ToolName.SELECT_OPTION,
     ToolName.SET_CHECKBOX,

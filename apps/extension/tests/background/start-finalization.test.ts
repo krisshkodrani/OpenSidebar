@@ -101,6 +101,7 @@ describe("finalizeStartResult", () => {
       3,
       null,
       { turns: 3 },
+      null,
     );
     expect(deps.clearTraceRecorder).toHaveBeenCalled();
   });
@@ -130,6 +131,7 @@ describe("finalizeStartResult", () => {
       "completed",
       "Done",
       3,
+      null,
       null,
       null,
     );
@@ -228,6 +230,7 @@ describe("finalizeStartResult", () => {
     expect(deps.broadcastPlanTermination).toHaveBeenCalledWith(
       "error",
       "boom",
+      undefined,
     );
   });
 

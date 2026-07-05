@@ -46,9 +46,9 @@ describe.skipIf(!h.apiKey)("E2E: Ashby Job Application Skill", () => {
       "Fill this Ashby application but do not submit using these data.",
       "| Field | Copy This |",
       "|---|---|",
-      "| Name | Kris Shkodrani |",
-      "| Email | kshkodrani@gmail.com |",
-      "| LinkedIn URL | https://www.linkedin.com/in/krisshkodrani |",
+      "| Name | Jordan Rivera |",
+      "| Email | jordan.rivera@example.com |",
+      "| LinkedIn URL | https://www.linkedin.com/in/jordan-rivera |",
       "| Phone | +43 664 99503226 |",
       "| Current Location | Linz, Austria |",
       "| EU Work Permit | Yes |",
@@ -73,9 +73,9 @@ describe.skipIf(!h.apiKey)("E2E: Ashby Job Application Skill", () => {
           }
 
           const matches =
-            draft.name === "Kris Shkodrani" &&
-            draft.email === "kshkodrani@gmail.com" &&
-            draft.linkedIn === "https://www.linkedin.com/in/krisshkodrani" &&
+            draft.name === "Jordan Rivera" &&
+            draft.email === "jordan.rivera@example.com" &&
+            draft.linkedIn === "https://www.linkedin.com/in/jordan-rivera" &&
             draft.phone === "+43 664 99503226" &&
             draft.currentLocation === "Linz, Austria" &&
             draft.euWorkPermit === "Yes" &&
@@ -94,9 +94,9 @@ describe.skipIf(!h.apiKey)("E2E: Ashby Job Application Skill", () => {
 
     expect(outcome.ok, outcome.reason).toBe(true);
     expect(outcome.result).toMatchObject({
-      name: "Kris Shkodrani",
-      email: "kshkodrani@gmail.com",
-      linkedIn: "https://www.linkedin.com/in/krisshkodrani",
+      name: "Jordan Rivera",
+      email: "jordan.rivera@example.com",
+      linkedIn: "https://www.linkedin.com/in/jordan-rivera",
       phone: "+43 664 99503226",
       currentLocation: "Linz, Austria",
       euWorkPermit: "Yes",

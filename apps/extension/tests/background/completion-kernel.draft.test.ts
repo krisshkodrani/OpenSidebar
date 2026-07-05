@@ -62,6 +62,23 @@ function draftSnapshot(overrides: Partial<DomSnapshot> = {}): DomSnapshot {
   };
 }
 
+function emptyMessageComposer(tag: number): TaggedElement {
+  return {
+    tag,
+    tagName: "textarea",
+    role: "textbox",
+    text: "Enter your message",
+    attributes: {
+      id: "react-aria6875732328-rf-",
+      "aria-label": "Enter your message",
+      placeholder: "Enter your message",
+    },
+    rect: { x: 0, y: tag * 20, width: 360, height: 96 },
+    isVisible: true,
+    isDisabled: false,
+  };
+}
+
 function actionButton(tag: number, label: string): TaggedElement {
   const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return {
@@ -213,6 +230,101 @@ describe("completion kernel draft workflows", () => {
       }),
     ]);
     expect(buildCompletionRecoveryHint(decision)).toContain("draft remains");
+  });
+
+  test("accepts draft-only completion from a live composer value read", () => {
+    const snap = draftSnapshot({
+      title: "XING message thread",
+      url: "https://www.xing.com/messaging/thread/123",
+      visibleContent: "XING message thread Enter your message Send",
+      pageContent: "XING message thread Enter your message Send",
+      elements: [emptyMessageComposer(133), actionButton(134, "Send")],
+    });
+    const draftText =
+      "Hallo Elisabeth,\n\nentschuldige bitte die spaete Antwort. Ich bin aktuell auf der Suche nach einer Stelle in meinem Berufsfeld.\n\nViele Gruesse\nKris";
+    const generated = generateCompletionContract({
+      userRequest:
+        "Type a German apology message in the composer explaining sorry for not answering sooner and currently looking for a job in profession. Do NOT send, leave for user review.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.READ_ELEMENT,
+      args: { id: 133, attribute: "value" },
+      result: `[133] <textarea> "Enter your message" value="${draftText}"`,
+      preActionSnapshot: null,
+      currentSnapshot: snap,
+      turn: 9,
+    });
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary:
+        "Drafted the German apology message and left it unsent in the composer for review.",
+    });
+
+    expect(evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "draft_state",
+          confidence: "high",
+          detail: expect.objectContaining({
+            text: expect.stringContaining("Hallo Elisabeth"),
+            submitted: false,
+          }),
+        }),
+      ]),
+    );
+    expect(generated?.contract).toMatchObject({
+      kind: "draft_only",
+      requiresUnsent: true,
+    });
+    expect(decision.status).toBe("accepted");
+  });
+
+  test("accepts draft-only completion from active message field value evidence", () => {
+    const snap = draftSnapshot({
+      elements: [emptyMessageComposer(301), actionButton(302, "Send")],
+    });
+    const generated = generateCompletionContract({
+      userRequest: "Draft a reply in the message composer and do not send it.",
+      snapshot: snap,
+    });
+    const evidence = deriveCompletionEvidenceFromToolOutcome({
+      toolName: ToolName.TYPE_TEXT,
+      args: {
+        id: 301,
+        text: "Hello, thanks for the update. I will review this today.",
+      },
+      result: "Typed text into element [301].",
+      preActionSnapshot: snap,
+      currentSnapshot: snap,
+      turn: 4,
+    }).filter((event) => event.type === "field_value");
+
+    const decision = evaluateCompletionContract({
+      contract: generated?.contract,
+      evidence,
+      snapshot: snap,
+      candidateSource: "model_done",
+      summary: "Drafted the reply and left it unsent.",
+    });
+
+    expect(evidence).toEqual([
+      expect.objectContaining({
+        type: "field_value",
+        detail: expect.objectContaining({
+          value: expect.stringContaining("thanks for the update"),
+        }),
+      }),
+    ]);
+    expect(decision).toMatchObject({
+      status: "accepted",
+      reason:
+        "Draft-only contract is satisfied by active unsent draft field evidence.",
+    });
   });
 
   test("rejects draft-only completion when sent evidence is visible", () => {

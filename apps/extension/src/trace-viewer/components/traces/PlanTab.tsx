@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { TraceSession, TraceEntry } from "../../../types/traces";
 import type { RunTraceEvent } from "../../../utils/run-trace";
 import Badge from "../Badge";
@@ -31,6 +31,22 @@ export default function PlanTab({ session }: PlanTabProps) {
   const currentRunEvents = useStore((s) => s.currentRunEvents);
   const plan = session.planDecomposition;
 
+  // Build step statuses from plan_monitor events (memoized: a single pass over
+  // entries, recomputed only when the plan or entries change).
+  const steps = useMemo(
+    () => buildStepStatuses(plan?.steps ?? [], currentEntries),
+    [plan, currentEntries],
+  );
+
+  // Find replan events
+  const replanEvents = useMemo(
+    () =>
+      currentEntries.flatMap((entry) =>
+        (entry.events || []).filter((e) => e.type === "plan_replan"),
+      ),
+    [currentEntries],
+  );
+
   if (!plan || !plan.steps || plan.steps.length === 0) {
     if (currentRunEvents.length > 0) {
       return <RunPlannerActivity runEvents={currentRunEvents} />;
@@ -38,18 +54,10 @@ export default function PlanTab({ session }: PlanTabProps) {
 
     return (
       <div className="text-sm text-trace-muted p-4">
-        No plan decomposition available for this session.
+        No plan decomposition available for this trace.
       </div>
     );
   }
-
-  // Build step statuses from plan_monitor events
-  const steps = buildStepStatuses(plan.steps || [], currentEntries);
-
-  // Find replan events
-  const replanEvents = currentEntries.flatMap((entry) =>
-    (entry.events || []).filter((e) => e.type === "plan_replan"),
-  );
 
   return (
     <div className="space-y-4">
@@ -81,6 +89,14 @@ export default function PlanTab({ session }: PlanTabProps) {
             </ol>
           )}
         </div>
+
+        {/* Resolved limits + planner overrides */}
+        {session.resolvedLimits && Object.keys(session.resolvedLimits).length > 0 && (
+          <ResolvedLimitsTable
+            resolved={session.resolvedLimits}
+            overrides={session.plannerLimitOverrides ?? null}
+          />
+        )}
       </div>
 
       {/* Plan Timeline */}
@@ -139,6 +155,67 @@ export default function PlanTab({ session }: PlanTabProps) {
           <ParallelWorkerTimeline runEvents={currentRunEvents} />
           <RunEventTimeline runEvents={currentRunEvents} compact />
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Resolved Limits Table ─────────────────────────────────────────────────
+
+function ResolvedLimitsTable({
+  resolved,
+  overrides,
+}: {
+  resolved: Record<string, number>;
+  overrides: Record<string, number> | null;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const overrideKeys = new Set(Object.keys(overrides ?? {}));
+  const entries = Object.entries(resolved).sort(([a], [b]) => {
+    // overridden keys first
+    const aOv = overrideKeys.has(a) ? 0 : 1;
+    const bOv = overrideKeys.has(b) ? 0 : 1;
+    return aOv - bOv || a.localeCompare(b);
+  });
+
+  if (entries.length === 0) return null;
+  const overriddenCount = entries.filter(([k]) => overrideKeys.has(k)).length;
+
+  return (
+    <div className="mt-3 border-t border-trace-border/50 pt-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 text-[10px] text-trace-muted hover:text-trace-subtle transition-colors"
+      >
+        <span className="uppercase tracking-wide">Runtime Limits</span>
+        {overriddenCount > 0 && (
+          <Badge variant="max_turns">{overriddenCount} overrides</Badge>
+        )}
+        <span>{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          {entries.map(([key, value]) => {
+            const isOverridden = overrideKeys.has(key);
+            return (
+              <div
+                key={key}
+                className={`flex justify-between rounded px-2 py-1 text-[10px] border ${
+                  isOverridden
+                    ? "border-state-warning/30 bg-state-warning/5"
+                    : "border-trace-border/60 bg-trace-bg"
+                }`}
+              >
+                <span className="text-trace-muted truncate mr-1">{key}</span>
+                <span className={`font-mono font-semibold shrink-0 ${isOverridden ? "text-state-warning" : "text-trace-subtle"}`}>
+                  {value}
+                  {isOverridden && " ↑"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -804,7 +881,7 @@ function PlanStepCard({ step }: { step: PlanStepWithStatus }) {
   );
 }
 
-function buildStepStatuses(
+export function buildStepStatuses(
   steps: Array<{
     objective: string;
     successCriteria?: string;
@@ -819,8 +896,10 @@ function buildStepStatuses(
     number,
     "aligned" | "progressing" | "deviated" | "blocked"
   >();
+  // stepIndex -> turn range, accumulated in the same pass as alignments.
+  const turnRanges = new Map<number, { start: number; end: number }>();
 
-  // Process plan_monitor events to determine alignment
+  // Process plan_monitor events to determine alignment + turn ranges
   for (const entry of entries) {
     for (const event of entry.events || []) {
       if (event.type === "plan_monitor") {
@@ -831,6 +910,16 @@ function buildStepStatuses(
         stepAlignments.set(data.stepIndex, data.alignment);
         if (data.alignment === "aligned" || data.alignment === "progressing") {
           currentStepIndex = Math.max(currentStepIndex, data.stepIndex);
+        }
+        const turnNum = entry.turnNumber;
+        if (typeof turnNum === "number") {
+          const range = turnRanges.get(data.stepIndex);
+          if (!range) {
+            turnRanges.set(data.stepIndex, { start: turnNum, end: turnNum });
+          } else {
+            if (turnNum < range.start) range.start = turnNum;
+            if (turnNum > range.end) range.end = turnNum;
+          }
         }
       }
     }
@@ -855,9 +944,6 @@ function buildStepStatuses(
       status = "in-progress";
     }
 
-    // Find turn range for this step (heuristic)
-    const turnRange = findTurnRangeForStep(index, entries);
-
     return {
       index,
       objective: step.objective,
@@ -866,30 +952,7 @@ function buildStepStatuses(
       dependencies: step.dependencies,
       status,
       alignment,
-      turnRange,
+      turnRange: turnRanges.get(index),
     };
   });
-}
-
-function findTurnRangeForStep(
-  stepIndex: number,
-  entries: TraceEntry[],
-): { start: number; end: number } | undefined {
-  // Heuristic: find turns where plan_monitor mentions this step
-  const relevantTurns = entries
-    .filter((entry) =>
-      (entry.events || []).some(
-        (e) =>
-          e.type === "plan_monitor" &&
-          (e.data as { stepIndex: number }).stepIndex === stepIndex,
-      ),
-    )
-    .map((e) => e.turnNumber);
-
-  if (relevantTurns.length === 0) return undefined;
-
-  return {
-    start: Math.min(...relevantTurns),
-    end: Math.max(...relevantTurns),
-  };
 }

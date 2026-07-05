@@ -60,6 +60,7 @@ type HandoffArgs = {
   timeoutMs: number;
   resetRetries: number;
   reportSuffix: string | null;
+  promptOverride: string | null;
   json: boolean;
   noReport: boolean;
   noBuild: boolean;
@@ -111,6 +112,7 @@ function parseArgs(): HandoffArgs {
   const timeoutArg = Number.parseInt(argValue("--timeout-ms") ?? "", 10);
   const resetRetriesArg = Number.parseInt(argValue("--reset-retries") ?? "", 10);
   const reportSuffixArg = argValue("--report-suffix");
+  const promptOverrideArg = argValue("--prompt");
   return {
     taskId: taskArg && !taskArg.startsWith("--") ? taskArg : null,
     seed: Number.isFinite(seedArg) ? seedArg : 42,
@@ -122,6 +124,10 @@ function parseArgs(): HandoffArgs {
         : 2,
     reportSuffix:
       reportSuffixArg && !reportSuffixArg.startsWith("--") ? reportSuffixArg : null,
+    promptOverride:
+      promptOverrideArg && !promptOverrideArg.startsWith("--")
+        ? promptOverrideArg
+        : null,
     json: args.includes("--json"),
     noReport: args.includes("--no-report"),
     noBuild: args.includes("--no-build"),
@@ -445,6 +451,19 @@ function promptFromReset(reset: JsonRecord): WorkArenaExecutionResult["prompt"] 
     source: "workarena_goal_after_reset",
     value: stringValue(prompt, "value") ?? "",
     goalObject: arrayValue<Record<string, unknown>>(prompt, "goalObject").filter(isRecord),
+  };
+}
+
+function applyPromptOverride(
+  prompt: WorkArenaExecutionResult["prompt"],
+  override: string | null,
+): WorkArenaExecutionResult["prompt"] {
+  const value = override?.trim();
+  if (!value) return prompt;
+  return {
+    ...prompt,
+    source: "prompt_override",
+    value,
   };
 }
 
@@ -777,7 +796,10 @@ async function runAgentAgainstHeldSession(args: HandoffArgs): Promise<WorkArenaE
     }
 
     const task = taskFromReset(reset);
-    const prompt = promptFromReset(reset);
+    const prompt = applyPromptOverride(
+      promptFromReset(reset),
+      args.promptOverride,
+    );
     const browser = browserFromReset(reset);
     const activeUrl = nestedRecord(exportSession, "browser").activeUrl;
     const targetUrl =

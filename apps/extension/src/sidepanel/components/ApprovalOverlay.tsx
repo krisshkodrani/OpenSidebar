@@ -9,7 +9,7 @@ import React, {
 import { AlertTriangle } from "lucide-react";
 import { useStore } from "../store";
 import { logger } from "../../utils";
-import { formatStepLabel } from "../../background/agent/step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import { uiRuntime } from "../runtime";
 import { Button, Card } from "@/ui";
 

@@ -138,7 +138,7 @@ describe("deriveTaskUiState", () => {
                 "RECENT WORKSPACE CONVERSATION:",
                 "- User: Summarize this page",
                 "PROFILE DIGEST CONTEXT:",
-                "- Fact: Full name = Kris Shkodrani",
+                "- Fact: Full name = Jordan Rivera",
                 "CURRENT REQUEST:",
                 "Fill the profile",
                 "Execution policy:",

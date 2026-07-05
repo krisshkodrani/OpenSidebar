@@ -9,6 +9,7 @@ import {
   SkillRecordingEvent,
 } from "../types";
 import { loadSettings } from "../utils/settings-storage";
+import { startBrowserBridge } from "./browser-bridge";
 import {
   formatMissingProviderKeys,
   getProviderKeyStatus,
@@ -291,10 +292,11 @@ async function removeUserOpenedPanel(tabId: number): Promise<void> {
 void (async () => {
   await restoreWorkspacesFromExistingGroups();
   await orchestrator.restoreFromCheckpoints();
-  await orchestrator.processDurableRunControlRequests();
   if (orchestrator.hasActiveTasks()) {
     await startKeepalive();
   }
+  // RFC LP-8 M2: connect to the browser MCP host when configured (default-off).
+  await startBrowserBridge();
 })();
 
 // 7. Listeners

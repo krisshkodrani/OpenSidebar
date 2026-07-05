@@ -24,6 +24,8 @@ import {
   upsertTraceSessionToSqlite,
 } from "../../../../scripts/trace-sqlite-store";
 
+const TRACE_SQLITE_TEST_TIMEOUT_MS = 30_000;
+
 function writeJsonl(path: string, records: unknown[]) {
   writeFileSync(
     path,
@@ -52,6 +54,11 @@ describe("trace sqlite store", () => {
         outcome: "max_turns",
         turnCount: 1,
         metrics: { totalTokens: 15, totalCost: 0.01 },
+        skillToolMetrics: { skillId: "service-form" },
+        planDecomposition: {
+          steps: [{ selectedSkillId: "record-review" }],
+        },
+        events: [{ type: "session_event", timestamp: Date.UTC(2026, 4, 11) }],
       },
     ]);
     writeJsonl(join(traces, "session-1.jsonl"), [
@@ -75,6 +82,7 @@ describe("trace sqlite store", () => {
           },
         },
         perception: { mode: "degraded", screenshotStatus: "capture_failed" },
+        events: [{ type: "turn_event", timestamp: Date.UTC(2026, 4, 11) }],
         toolExecutions: [
           {
             toolName: "configure_servicenow_form",
@@ -106,7 +114,7 @@ describe("trace sqlite store", () => {
       tools: 1,
       runEvents: 1,
     });
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
   test("builds trace insights from sqlite rows", () => {
     const insights = buildTraceInsightsFromSqlite(root, {}, dbPath);
@@ -122,6 +130,7 @@ describe("trace sqlite store", () => {
       totalTokens: 15,
       toolCalls: 1,
       toolFailures: 1,
+      maxTurnsWithoutUsefulProgressCount: 1,
     });
     expect(insights?.tools[0]).toMatchObject({
       id: "configure_servicenow_form",
@@ -133,7 +142,88 @@ describe("trace sqlite store", () => {
       sessions: 1,
       requests: 1,
     });
-  });
+    expect(insights?.runs[0]).toMatchObject({
+      runId: "run-1",
+      topTools: ["configure_servicenow_form"],
+    });
+    expect(insights?.runs[0].topSkills).toEqual(
+      expect.arrayContaining(["service-form", "record-review"]),
+    );
+    expect(insights?.events.find((row) => row.id === "node.failed")).toMatchObject({
+      calls: 1,
+      runs: 1,
+    });
+    expect(insights?.events.find((row) => row.id === "turn_event")).toMatchObject({
+      calls: 1,
+      sessions: 1,
+    });
+    expect(
+      insights?.events.find((row) => row.id === "session_event"),
+    ).toMatchObject({
+      calls: 1,
+      sessions: 1,
+    });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
+
+  test("matches event filters across turn, session, and run event sources", () => {
+    upsertTraceSessionToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-1",
+        startTime: Date.UTC(2026, 4, 11, 0, 2),
+        endTime: Date.UTC(2026, 4, 11, 0, 3),
+        query: "Second trace in same run",
+        startUrl: "https://example.com/b",
+        outcome: "completed",
+        turnCount: 1,
+        events: [
+          { type: "session_event_two", timestamp: Date.UTC(2026, 4, 11, 0, 2) },
+        ],
+      },
+      { dbPath },
+    );
+    insertTraceTurnToSqlite(
+      root,
+      {
+        sessionId: "session-2",
+        runId: "run-1",
+        turnNumber: 1,
+        llmRequest: { model: "model-b" },
+        llmResponse: {
+          durationMs: 50,
+          usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
+        },
+        events: [
+          { type: "turn_event_two", timestamp: Date.UTC(2026, 4, 11, 0, 2) },
+        ],
+        toolExecutions: [{ toolName: "click", success: true }],
+      },
+      { dbPath },
+    );
+
+    const insights = buildTraceInsightsFromSqlite(root, {}, dbPath);
+
+    expect(insights?.events.find((row) => row.id === "node.failed")).toMatchObject({
+      calls: 1,
+      runs: 1,
+    });
+    expect(
+      buildTraceInsightsFromSqlite(root, { eventType: "turn_event_two" }, dbPath)
+        ?.summary.totalSessions,
+    ).toBe(1);
+    expect(
+      buildTraceInsightsFromSqlite(
+        root,
+        { eventType: "session_event_two" },
+        dbPath,
+      )?.summary.totalSessions,
+    ).toBe(1);
+    expect(
+      buildTraceInsightsFromSqlite(root, { eventType: "node.failed" }, dbPath)
+        ?.summary.totalSessions,
+    ).toBe(2);
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
   test("applies session filters before reading sqlite trace details", () => {
     upsertTraceSessionToSqlite(
@@ -184,7 +274,7 @@ describe("trace sqlite store", () => {
       id: "click",
       sampleSessionId: "session-2",
     });
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
   test("builds harness ratchet candidates", () => {
     const candidates = buildHarnessRatchetCandidates(root, dbPath);
@@ -198,7 +288,7 @@ describe("trace sqlite store", () => {
     expect(candidates.map((candidate) => candidate.id)).toContain(
       "context:pressure",
     );
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 
   test("ingests live trace records and exposes raw JSONL from sqlite", () => {
     upsertTraceSessionToSqlite(
@@ -250,5 +340,5 @@ describe("trace sqlite store", () => {
     expect(readRunTraceEventsFromSqlite(root, "live-run", dbPath)).toHaveLength(1);
     expect(readTraceRawJsonlFromSqlite(root, "live-session", dbPath)).toHaveLength(2);
     expect(readRunRawJsonlFromSqlite(root, "live-run", dbPath)).toHaveLength(2);
-  });
+  }, TRACE_SQLITE_TEST_TIMEOUT_MS);
 });

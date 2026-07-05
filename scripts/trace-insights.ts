@@ -2,6 +2,7 @@ import {
   extractDomain,
   getSessionModels,
   matchesTraceFilters,
+  normalizeTraceModelId,
   type TraceEntryLike,
   type TraceSearchFiltersLike,
   type TraceSessionLike,
@@ -98,6 +99,9 @@ export interface TraceInsightsSummary {
   averageTotalTokens: number;
   totalLlmDurationMs: number;
   averageLlmDurationMs: number;
+  partialHandoffCount: number;
+  maxTurnsWithHandoffCount: number;
+  maxTurnsWithoutUsefulProgressCount: number;
 }
 
 export interface TraceInsightsFacets {
@@ -322,6 +326,40 @@ function getRunEventTypes(events: TraceEntryLike[]): string[] {
   return Array.from(eventTypes);
 }
 
+function getSessionEventTypes(session: TraceSessionLike): string[] {
+  const eventTypes = new Set<string>();
+  const events = Array.isArray(session.events) ? session.events : [];
+  for (const event of events) {
+    if (!event || typeof event !== "object") continue;
+    const type = asString((event as Record<string, unknown>).type);
+    if (type) eventTypes.add(type);
+  }
+  return Array.from(eventTypes);
+}
+
+function getPartialHandoff(
+  session: TraceSessionLike,
+): Record<string, unknown> | null {
+  const handoff = session.partialHandoff;
+  return handoff && typeof handoff === "object"
+    ? (handoff as Record<string, unknown>)
+    : null;
+}
+
+function partialHandoffHasUsefulProgress(handoff: Record<string, unknown>): boolean {
+  const evidence = Array.isArray(handoff.evidence) ? handoff.evidence : [];
+  const completed = Array.isArray(handoff.completed) ? handoff.completed : [];
+  const currentState =
+    handoff.currentState && typeof handoff.currentState === "object"
+      ? (handoff.currentState as Record<string, unknown>)
+      : {};
+  return (
+    evidence.length > 0 ||
+    completed.length > 0 ||
+    Boolean(asString(currentState.url) || asString(currentState.title))
+  );
+}
+
 function matchesExtendedFilters(
   session: TraceSessionLike,
   entries: TraceEntryLike[],
@@ -366,8 +404,9 @@ function matchesExtendedFilters(
   const eventType = asString(filters.eventType).trim();
   if (eventType && eventType !== "all") {
     const turnEventMatch = getEntriesEventTypes(entries).includes(eventType);
+    const sessionEventMatch = getSessionEventTypes(session).includes(eventType);
     const runEventMatch = getRunEventTypes(runEvents).includes(eventType);
-    if (!turnEventMatch && !runEventMatch) return false;
+    if (!turnEventMatch && !sessionEventMatch && !runEventMatch) return false;
   }
 
   return true;
@@ -558,6 +597,9 @@ export function buildTraceInsights({
   let unpricedRequests = 0;
   let totalLlmDurationMs = 0;
   let llmDurationCount = 0;
+  let partialHandoffCount = 0;
+  let maxTurnsWithHandoffCount = 0;
+  let maxTurnsWithoutUsefulProgressCount = 0;
   const processedRunEvents = new Set<string>();
 
   for (const session of selected) {
@@ -572,6 +614,22 @@ export function buildTraceInsights({
     if (domain) facetSets.domains.add(domain);
 
     if (isSuccessOutcome(session.outcome)) completedSessions += 1;
+    const partialHandoff = getPartialHandoff(session);
+    if (partialHandoff) {
+      partialHandoffCount += 1;
+      if (session.outcome === "max_turns") {
+        maxTurnsWithHandoffCount += 1;
+      }
+    } else if (session.outcome === "max_turns") {
+      maxTurnsWithoutUsefulProgressCount += 1;
+    }
+    if (
+      session.outcome === "max_turns" &&
+      partialHandoff &&
+      !partialHandoffHasUsefulProgress(partialHandoff)
+    ) {
+      maxTurnsWithoutUsefulProgressCount += 1;
+    }
     totalTurns += asNumber(session.turnCount);
     totalCost += asNumber(
       (session.metrics as { totalCost?: unknown } | null | undefined)?.totalCost,
@@ -632,7 +690,11 @@ export function buildTraceInsights({
     for (const tool of getEntriesToolNames(entries)) {
       facetSets.tools.add(tool);
     }
-    for (const type of [...getEntriesEventTypes(entries), ...getRunEventTypes(runEvents)]) {
+    for (const type of [
+      ...getEntriesEventTypes(entries),
+      ...getSessionEventTypes(session),
+      ...getRunEventTypes(runEvents),
+    ]) {
       facetSets.eventTypes.add(type);
     }
 
@@ -675,15 +737,15 @@ export function buildTraceInsights({
         totalLlmDurationMs += durationMs;
         llmDurationCount += 1;
       }
-      const requestModel =
-        asString(response?.actualModel) || asString(request?.model);
+      const rawRequestModel = asString(response?.actualModel) || asString(request?.model);
+      const requestModel = normalizeTraceModelId(rawRequestModel);
       const providerId =
         asProviderId(response?.actualProviderId) ??
         asProviderId(request?.provider) ??
-        inferProviderIdFromModel(requestModel);
+        inferProviderIdFromModel(rawRequestModel);
       const costBreakdown = estimateEntryCostBreakdown({
         providerId,
-        model: requestModel,
+        model: rawRequestModel,
         promptTokens: entryPromptTokens,
         completionTokens: entryCompletionTokens,
         totalTokens: entryTotalTokens,
@@ -752,6 +814,16 @@ export function buildTraceInsights({
         recordSessionMetric(row, session);
         row.calls += 1;
       }
+    }
+
+    const sessionEvents = Array.isArray(session.events) ? session.events : [];
+    for (const event of sessionEvents) {
+      if (!event || typeof event !== "object") continue;
+      const type = asString((event as Record<string, unknown>).type);
+      if (!type) continue;
+      const row = metric(events, type);
+      recordSessionMetric(row, session);
+      row.calls += 1;
     }
 
     if (runId && !processedRunEvents.has(runId)) {
@@ -849,6 +921,9 @@ export function buildTraceInsights({
       totalLlmDurationMs,
       averageLlmDurationMs:
         llmDurationCount === 0 ? 0 : totalLlmDurationMs / llmDurationCount,
+      partialHandoffCount,
+      maxTurnsWithHandoffCount,
+      maxTurnsWithoutUsefulProgressCount,
     },
     facets,
     tools: finalizeMetricRows(tools),

@@ -302,7 +302,6 @@ describe("Orchestrator handoff briefing", () => {
 
     expect(instruction).toContain("PROFILE DATA POLICY:");
     expect(instruction).toContain("get_profile_fields");
-    expect(instruction).toContain('profileFile: "cv"');
     expect(instruction).toContain("Do not leave the current checkout or form page");
   });
 
@@ -337,7 +336,7 @@ describe("Orchestrator handoff briefing", () => {
       "Fill the application but dont send using these data",
       "| Field | Copy This |",
       "|---|---|",
-      "| Name | Kris Shkodrani |",
+      "| Name | Jordan Rivera |",
       "| Earliest Start Date | 2026-06-01 |",
       "",
       "## Why Do You Care About Langfuse?",

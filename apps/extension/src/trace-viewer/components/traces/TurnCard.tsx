@@ -10,7 +10,11 @@ import TurnToolResultsSection from "./TurnToolResultsSection";
 import TurnSnapshotSection from "./TurnSnapshotSection";
 import TurnProgressState from "./TurnProgressState";
 import type { TraceEvidenceSignal } from "../../analysis";
-import { buildTraceEvidenceSignalsForTurn } from "../../analysis";
+import {
+  buildTraceEvidenceSignalsForTurn,
+  buildTurnActionProfile,
+} from "../../analysis";
+import { ActionTierChip } from "./TrajectoryScorecard";
 import {
   shortModel,
   formatDuration,
@@ -48,6 +52,9 @@ export default function TurnCard({
   const compressionLevel = llmRequest?.compressionLevel;
   const modelTier = llmRequest?.modelTier;
   const actualProviderId = llmResponse?.actualProviderId;
+  const actualModel = llmResponse?.actualModel;
+  const cacheTelemetry = usage?.cacheTelemetry;
+  const cacheHitPct = cacheTelemetry?.cacheHitPct;
 
   // Generate decision summary from tool calls
   const decisionSummary = generateDecisionSummary(toolCalls, toolExecutions);
@@ -55,6 +62,7 @@ export default function TurnCard({
     entry,
     previousEntry,
   );
+  const actionProfile = buildTurnActionProfile(entry);
 
   return (
     <div className="bg-trace-panel border border-trace-accent/[0.15] rounded-lg mb-3 overflow-hidden transition-colors hover:border-trace-border">
@@ -63,6 +71,21 @@ export default function TurnCard({
         <span className="text-[13px] font-bold text-trace-accent-light shrink-0">
           Turn {turnNum}
         </span>
+        {actionProfile.tools.length > 0 && (
+          <ActionTierChip
+            tier={actionProfile.maxTier}
+            title={
+              actionProfile.unescalatedHighTier
+                ? "Highest action tier this turn — ran without an approval/escalation"
+                : "Highest action tier this turn"
+            }
+            className={
+              actionProfile.unescalatedHighTier
+                ? "ring-1 ring-state-error/40"
+                : ""
+            }
+          />
+        )}
         {model && (
           <Badge
             variant={
@@ -89,6 +112,16 @@ export default function TurnCard({
               via {actualProviderId}
             </span>
           )}
+        {actualModel &&
+          actualModel !== model &&
+          !model.startsWith("manual") &&
+          !model.startsWith("recording") && (
+            <Tooltip content={`Failover: requested ${model}, served ${actualModel}`}>
+              <span className="text-[9px] text-state-warning cursor-help">
+                → {actualModel.split("/").pop()}
+              </span>
+            </Tooltip>
+          )}
         {compressionLevel && compressionLevel !== "NONE" && (
           <Tooltip content="Context compression level applied to reduce token usage">
             <span className="text-[10px] text-trace-muted cursor-help">
@@ -113,6 +146,21 @@ export default function TurnCard({
             <Tooltip content="Estimated API cost">
               <span className="font-mono cursor-help">
                 {formatCost(usage.cost)}
+              </span>
+            </Tooltip>
+          )}
+          {cacheHitPct != null && (
+            <Tooltip content={`Cache hit rate: ${cacheHitPct}% of prompt tokens served from cache`}>
+              <span
+                className={`text-[10px] font-mono cursor-help px-1 py-0.5 rounded ${
+                  cacheHitPct >= 80
+                    ? "text-state-success bg-state-success/10"
+                    : cacheHitPct >= 30
+                      ? "text-state-warning bg-state-warning/10"
+                      : "text-trace-dim bg-trace-border/30"
+                }`}
+              >
+                {cacheHitPct}% cache
               </span>
             </Tooltip>
           )}

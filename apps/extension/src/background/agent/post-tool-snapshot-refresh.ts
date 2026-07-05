@@ -14,6 +14,7 @@ export interface PostToolSnapshotRefreshHost {
   };
   offDomainWarned: boolean;
   recordCitation(url: string, title: string, toolName: ToolName): void;
+  recordVerifiedNewUrl(): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   startingOrigin: string | null;
   toolCache: { invalidateDom(): void };
@@ -145,6 +146,7 @@ export async function refreshPostToolSnapshot(
   if (currentUrl && !host.urlHistory.includes(currentUrl)) {
     host.urlHistory.push(currentUrl);
     params.recentSuccesses.length = 0;
+    host.recordVerifiedNewUrl();
   }
 
   if (currentUrl) {

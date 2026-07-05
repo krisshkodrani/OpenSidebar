@@ -109,6 +109,91 @@ describe("TaskPlanner.decompose", () => {
         expect(result!.subtasks[0]).toBe("Add to cart");
     });
 
+    test("surfaces the planner's requires_tab_management signal onto the decomposition", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                requires_tab_management: true,
+                subtasks: ["Open product A", "Open product B", "Compare them"],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Compare these two products side by side",
+            "Catalog",
+            "https://shop.com/catalog",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.requiresTabManagement).toBe(true);
+    });
+
+    test("leaves requiresTabManagement undefined when the planner omits it", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: '{"isMultiStep": true, "subtasks": ["Add to cart", "Checkout"]}',
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose("Buy this item", "Product", "https://shop.com/item");
+
+        // Absence must stay undefined so the caller's query/step fallback governs
+        // rather than being forced to a hard false.
+        expect(result).not.toBeNull();
+        expect(result!.requiresTabManagement).toBeUndefined();
+    });
+
+    test("stops review-first message drafts after the unsent copy is visible", async () => {
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "moderate",
+                steps: [
+                    {
+                        objective:
+                            "Read the current conversation and create the requested German message draft in the composer.",
+                        successCriteria:
+                            "The German message draft is visible in the composer.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective: "Send the message after verifying the draft.",
+                        successCriteria: "The message is sent in the thread.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new TaskPlanner("test-key");
+        const result = await planner.decompose(
+            "Create a message in german to say that I am sorry for not answering before and that I am currently looking for a job in my proffesion. Let me review the copy first",
+            "XING Messages",
+            "https://www.xing.com/messages",
+        );
+
+        expect(result).not.toBeNull();
+        expect(result!.steps).toHaveLength(1);
+        expect(result!.steps![0].objective).toMatch(/message draft|composer/i);
+        expect(result!.steps![0].successCriteria).toMatch(
+            /visible in the composer\/editor|not been sent|unsent/i,
+        );
+        expect(result!.steps![0].verifyAfter?.action).toBe("call_done");
+        expect(result!.steps![0].toolProfile).toBe("form_fill");
+    });
+
     test("removes unsupported save requirements from field-only update steps", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -2038,14 +2123,14 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
                 difficulty: "moderate",
                 steps: [
                     {
-                        objective: "Fill the Name field with Kris Shkodrani",
-                        successCriteria: "Name input contains Kris Shkodrani",
+                        objective: "Fill the Name field with Jordan Rivera",
+                        successCriteria: "Name input contains Jordan Rivera",
                         dependencies: [],
                         assumptions: [],
                     },
                     {
-                        objective: "Fill the Email field with kshkodrani@gmail.com",
-                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        objective: "Fill the Email field with jordan.rivera@example.com",
+                        successCriteria: "Email input contains jordan.rivera@example.com",
                         dependencies: [0],
                         assumptions: [],
                     },
@@ -2059,8 +2144,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "Fill the application but dont send using these data",
             "| Field | Copy This |",
             "|---|---|",
-            "| Name | Kris Shkodrani |",
-            "| Email | kshkodrani@gmail.com |",
+            "| Name | Jordan Rivera |",
+            "| Email | jordan.rivera@example.com |",
             "| Earliest Start Date | 2026-06-01 |",
             "",
             "## Why Do You Care About Langfuse?",
@@ -2095,14 +2180,14 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
                 difficulty: "moderate",
                 steps: [
                     {
-                        objective: "Fill the Name field with Kris Shkodrani",
-                        successCriteria: "Name input contains Kris Shkodrani",
+                        objective: "Fill the Name field with Jordan Rivera",
+                        successCriteria: "Name input contains Jordan Rivera",
                         dependencies: [],
                         assumptions: [],
                     },
                     {
-                        objective: "Fill the Email field with kshkodrani@gmail.com",
-                        successCriteria: "Email input contains kshkodrani@gmail.com",
+                        objective: "Fill the Email field with jordan.rivera@example.com",
+                        successCriteria: "Email input contains jordan.rivera@example.com",
                         dependencies: [0],
                         assumptions: [],
                     },
@@ -2119,8 +2204,8 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
             "- Assistant: Senior Product Engineer @ Langfuse summary",
             "",
             "PROFILE DIGEST CONTEXT:",
-            "- Fact: Full name = Kris Shkodrani",
-            "- Fact: Email = kshkodrani@gmail.com",
+            "- Fact: Full name = Jordan Rivera",
+            "- Fact: Email = jordan.rivera@example.com",
             "",
             `CURRENT REQUEST:\n${currentRequest}`,
         ].join("\n");
@@ -2142,7 +2227,7 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].description).toContain(
             "Complete the workflow for the original request: Fill the profile",
         );
-        expect(result.nodes[0].description).toContain("Kris Shkodrani");
+        expect(result.nodes[0].description).toContain("Jordan Rivera");
         expect(result.nodes[0].description).not.toContain(
             "RECENT WORKSPACE CONVERSATION",
         );

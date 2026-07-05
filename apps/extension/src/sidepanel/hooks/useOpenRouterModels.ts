@@ -34,14 +34,34 @@ export function formatPricingBadge(model: ProviderModelOption): string {
 
 export const FIREWORKS_MODELS: ProviderModelOption[] = [
   {
-    id: "accounts/fireworks/routers/kimi-k2p6-turbo",
-    name: "Kimi K2.6 Turbo",
-    promptPrice: 0.99 / 1_000_000,
-    completionPrice: 4.94 / 1_000_000,
+    id: "accounts/fireworks/models/glm-5p2",
+    name: "GLM 5.2",
+    promptPrice: 0.55 / 1_000_000,
+    completionPrice: 2.19 / 1_000_000,
+    supportsVision: false,
+    provider: "fireworks",
+    source: "curated",
+    effectiveDate: "2026-06-24",
+  },
+  {
+    id: "accounts/fireworks/models/kimi-k2p7-code",
+    name: "Kimi K2.7 Code",
+    promptPrice: 0.95 / 1_000_000,
+    completionPrice: 4.0 / 1_000_000,
     supportsVision: true,
     provider: "fireworks",
     source: "curated",
-    effectiveDate: "2026-05-09",
+    effectiveDate: "2026-06-12",
+  },
+  {
+    id: "accounts/fireworks/routers/kimi-k2p6-turbo",
+    name: "Kimi K2.6 Turbo",
+    promptPrice: 2.0 / 1_000_000,
+    completionPrice: 8.0 / 1_000_000,
+    supportsVision: true,
+    provider: "fireworks",
+    source: "curated",
+    effectiveDate: "2026-05-29",
   },
   {
     id: "accounts/fireworks/routers/kimi-k2p5-turbo",
@@ -215,7 +235,7 @@ type ProviderMode =
   | "fireworks-deepseek"
   | "moonshot"
   | "xiaomi";
-type ModelRole = "executor" | "planner" | "perception";
+type ModelRole = "executor" | "planner" | "perception" | "writer";
 
 export function getProviderModelOptions(args: {
   providerMode: ProviderMode;
@@ -276,6 +296,10 @@ export function getProviderModelCatalogNote(args: {
       : "Scoped to curated Xiaomi MiMo planner models. Pricing is unknown until Xiaomi publishes official rates.";
   }
   if (providerMode === "openrouter") {
+    if (role === "writer")
+      return hasOpenRouterKey
+        ? "Optional. Live OpenRouter catalog — pick a prose-strong model (e.g. a GPT/Claude writer). Leave empty to reuse the executor."
+        : "Optional. Add an OpenRouter key to choose a dedicated Writer model.";
     return hasOpenRouterKey
       ? role === "executor"
         ? "Live OpenRouter catalog filtered to multimodal executor models."

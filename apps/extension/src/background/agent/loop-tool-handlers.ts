@@ -3,7 +3,7 @@ import { DOM_MODIFYING_TOOLS, CACHEABLE_TOOLS } from "../tools/metadata";
 import { sanitizeUrl } from "../security";
 import { workspaceManager } from "../workspaces/manager";
 import { isUsableTabUrl } from "../infrastructure/tab-resolution";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import { ToolResultCache } from "./tool-cache";
 import type { CacheType } from "./tool-cache";
 import type { PreToolDecision } from "./middleware";
@@ -18,6 +18,7 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import { runWriterHandoff } from "./writer-handoff";
 import {
   buildTrustedReadAnswerCompletionCandidate,
   type TrustedCompletionCandidate,
@@ -125,6 +126,11 @@ export interface AgentLoopToolHandlerHost {
     args: Record<string, unknown>,
     result: string,
     preActionSnapshot?: unknown,
+  ): void;
+  recordPartialProgressToolResult?(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    result: string,
   ): void;
   refreshPerceptionAndTriage(tabId: number): Promise<void>;
   refreshSnapshotWithRetry(
@@ -234,6 +240,11 @@ export function recordSuccessfulToolExecution(
     true,
     toolMs,
     params.preDecision.riskLevel,
+  );
+  loop.recordPartialProgressToolResult?.(
+    params.toolName,
+    params.args,
+    params.result,
   );
   return toolMs;
 }
@@ -446,6 +457,53 @@ export async function handleEscalateToolCall(
   };
 }
 
+/**
+ * COMPOSE_TEXT — delegate prose to the Writer specialist, which composes and
+ * enters it into the target field. Intercepted in the loop (the registry
+ * executor is only a fallback). Returns the (possibly refreshed) element count
+ * since entering text modifies the DOM.
+ */
+export async function handleComposeTextToolCall(
+  loop: AgentLoopToolHandlerHost,
+  toolCallId: string,
+  args: Record<string, unknown>,
+  tabId: number,
+  prevElementCount: number,
+): Promise<number> {
+  const fieldId = Number(args.id);
+  if (!Number.isFinite(fieldId)) {
+    loop.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content:
+        "Error: compose_text requires a numeric field id. Use type_text to enter text yourself, or call compose_text with a valid field id.",
+    });
+    return prevElementCount;
+  }
+
+  const result = await runWriterHandoff(loop, tabId, {
+    id: fieldId,
+    instructions:
+      typeof args.instructions === "string" ? args.instructions : undefined,
+    context: typeof args.context === "string" ? args.context : undefined,
+    tone: typeof args.tone === "string" ? args.tone : undefined,
+    maxWords: typeof args.maxWords === "number" ? args.maxWords : undefined,
+    executorDraft:
+      typeof args.executorDraft === "string" ? args.executorDraft : undefined,
+  });
+
+  loop.context.addMessage({
+    role: "tool",
+    tool_call_id: toolCallId,
+    content: result,
+  });
+
+  // Entering text modifies the DOM — refresh snapshot/perception for next turn.
+  const newCount = await loop.refreshSnapshotWithRetry(tabId, prevElementCount);
+  await loop.refreshPerceptionAndTriage(tabId);
+  return newCount;
+}
+
 export function handleUpdateNotesToolCall(
   loop: AgentLoopToolHandlerHost,
   toolCallId: string,
@@ -640,29 +698,19 @@ export async function handleSwitchTabToolCall(
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
       "Blocked: switch_tab requires explicit user instruction to manage tabs. " +
-      "Stay on the current tab unless the user asks for tab switching. " +
-      "Tab management tools disabled for this session.";
+      "Stay on the current tab unless the user asks for tab switching.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "switch_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call. The tab-management gate is re-evaluated every turn,
+    // so a plan that later legitimately requires tabs can still recover — we do
+    // not latch the tools off for the rest of the session.
+    loop.log.warn("agent", "switch_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return { tabId, prevElementCount };
   }
 
@@ -763,29 +811,17 @@ export async function handleCloseTabToolCall(
   }
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
-      "Blocked: close_tab requires explicit user instruction to manage tabs. " +
-      "Tab management tools disabled for this session.";
+      "Blocked: close_tab requires explicit user instruction to manage tabs.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "close_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call; the gate re-evaluates each turn (see switch_tab).
+    loop.log.warn("agent", "close_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return;
   }
 
@@ -858,29 +894,17 @@ export async function handleCreateTabToolCall(
   }
   if (loop.shouldBlockTabManagementTools()) {
     const blockedMessage =
-      "Blocked: create_tab requires explicit user instruction to open additional tabs. " +
-      "Tab management tools disabled for this session.";
+      "Blocked: create_tab requires explicit user instruction to open additional tabs.";
     loop.context.addMessage({
       role: "tool",
       tool_call_id: toolCallId,
       content: blockedMessage,
     });
-    for (const tabTool of [
-      ToolName.CREATE_TAB,
-      ToolName.SWITCH_TAB,
-      ToolName.CLOSE_TAB,
-      ToolName.CREATE_WINDOW,
-    ]) {
-      loop.disabledTools.add(tabTool);
-    }
-    loop.log.warn(
-      "agent",
-      "create_tab blocked - not explicitly requested, tab tools disabled",
-      {
-        turn: loop.turnCount,
-        originalQuery: loop.originalQuery,
-      },
-    );
+    // Block only this call; the gate re-evaluates each turn (see switch_tab).
+    loop.log.warn("agent", "create_tab blocked - not explicitly requested", {
+      turn: loop.turnCount,
+      originalQuery: loop.originalQuery,
+    });
     return;
   }
 

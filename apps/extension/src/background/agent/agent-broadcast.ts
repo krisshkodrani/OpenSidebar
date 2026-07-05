@@ -4,10 +4,12 @@ import {
   RiskLevel,
   RuntimeMessage,
   SessionMetrics,
+  PartialProgressHandoff,
   SubtaskResult,
   SubtaskSummary,
   ToolName,
 } from "../../types";
+import { hasUsefulPartialProgressHandoff } from "./partial-progress-handoff";
 
 type RuntimeEnvelopeKey = "requestId" | "source" | "workspaceId";
 
@@ -225,6 +227,7 @@ export function planTerminationMessage(args: {
   totalTimeMs: number;
   urlHistory: string[];
   metrics: SessionMetrics;
+  partialHandoff?: PartialProgressHandoff;
 }): BroadcastMessage | null {
   if (!args.taskId || args.subtasks.length === 0) return null;
 
@@ -242,6 +245,9 @@ export function planTerminationMessage(args: {
           result: st.result || "",
         }))
       : buildSubtaskResults(args.subtasks);
+  const hasUsefulHandoff = hasUsefulPartialProgressHandoff(
+    args.partialHandoff,
+  );
   return {
     type: "TASK_COMPLETION",
     payload: {
@@ -249,7 +255,8 @@ export function planTerminationMessage(args: {
       status:
         args.outcome === "stopped"
           ? "stopped"
-          : subtaskResults.some((r) => r.status === "completed")
+          : hasUsefulHandoff ||
+              subtaskResults.some((r) => r.status === "completed")
             ? "partial"
             : "failed",
       totalTurnsUsed: args.turnCount,
@@ -258,6 +265,9 @@ export function planTerminationMessage(args: {
       subtaskResults,
       urlHistory: args.urlHistory,
       metrics: args.metrics,
+      ...(args.partialHandoff
+        ? { partialHandoff: args.partialHandoff }
+        : {}),
       terminationReason:
         args.outcome === "stopped"
           ? "Stopped by user"

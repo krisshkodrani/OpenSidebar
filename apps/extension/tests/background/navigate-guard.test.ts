@@ -72,7 +72,7 @@ describe("Navigate Guard", () => {
         expect(checkGuard(agent, "https://example.com/step1")).toBeNull();
     });
 
-    test("blocks navigation to a completed step URL (exact path match)", () => {
+    test("blocks navigation to a completed step URL (exact query-aware match)", () => {
         const agent = createAgent();
         setPlanSubtasks(agent, [
             {
@@ -85,14 +85,14 @@ describe("Navigate Guard", () => {
             { description: "Do step 2", status: "running", turnsUsed: 0, turnBudget: 0 },
         ]);
 
-        const result = checkGuard(agent, "https://challenge.example.com/step1?version=2");
+        const result = checkGuard(agent, "https://challenge.example.com/step1?version=1");
         expect(result).not.toBeNull();
         expect(result).toContain("BLOCKED");
         expect(result).toContain("step 1");
         expect(result).toContain("Complete step 1");
     });
 
-    test("origin+pathname matching ignores query params and hash", () => {
+    test("query params distinguish SPA views while hash is ignored", () => {
         const agent = createAgent();
         setPlanSubtasks(agent, [
             {
@@ -105,12 +105,28 @@ describe("Navigate Guard", () => {
             { description: "Review", status: "running", turnsUsed: 0, turnBudget: 0 },
         ]);
 
-        // Same origin+pathname, different query → blocked
-        expect(checkGuard(agent, "https://app.test/form?id=xyz")).not.toBeNull();
-        // Same origin+pathname, no query → blocked
-        expect(checkGuard(agent, "https://app.test/form")).not.toBeNull();
-        // Same origin+pathname, different hash → blocked
-        expect(checkGuard(agent, "https://app.test/form#other")).not.toBeNull();
+        // Same origin+pathname+query, different hash -> blocked
+        expect(checkGuard(agent, "https://app.test/form?id=abc#other")).not.toBeNull();
+        // Same origin+pathname, different query -> allowed as a distinct SPA view
+        expect(checkGuard(agent, "https://app.test/form?id=xyz")).toBeNull();
+        // Same origin+pathname, no query -> allowed because the completed view had query state
+        expect(checkGuard(agent, "https://app.test/form")).toBeNull();
+    });
+
+    test("plain path matching still ignores hash when neither side has query params", () => {
+        const agent = createAgent();
+        setPlanSubtasks(agent, [
+            {
+                description: "Review account",
+                status: "completed",
+                turnsUsed: 2,
+                turnBudget: 0,
+                completedAtUrl: "https://app.test/account#details",
+            },
+            { description: "Continue", status: "running", turnsUsed: 0, turnBudget: 0 },
+        ]);
+
+        expect(checkGuard(agent, "https://app.test/account#activity")).not.toBeNull();
     });
 
     test("allows navigation to a different path on the same origin", () => {
@@ -232,7 +248,7 @@ describe("Navigate Guard", () => {
             { description: "Run query", status: "running", turnsUsed: 0, turnBudget: 0 },
         ]);
 
-        const result = checkGuard(agent, "https://site.com/search?q=test");
+        const result = checkGuard(agent, "https://site.com/search");
         expect(result).not.toBeNull();
         expect(result).toContain("step 2");
         expect(result).toContain("Navigate to search");

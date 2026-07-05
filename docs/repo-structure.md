@@ -5,7 +5,6 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
 ## Current Layout
 
 - `apps/extension/`: the browser extension app
-- `apps/backend/`: the local backend service
 - `packages/shared-types/`: shared runtime and domain types
 - `packages/prompts/`: prompt runtime and generated prompt registry
 - `prompts/`: prompt source templates
@@ -22,10 +21,6 @@ OpenSidebar now uses a lightweight app-and-packages layout while keeping root de
   - overlay harness
   - trace viewer
   - extension tests and E2E harness
-- The backend is an app-local service used for:
-  - task scheduling
-  - durable run state
-  - backend health and task APIs
 - Shared packages keep cross-app contracts stable:
   - `packages/shared-types/` for shared types
   - `packages/prompts/` for prompt helpers and generated prompt assets
@@ -44,7 +39,6 @@ From the repo root:
 Advanced aliases remain available for targeted work:
 
 - `pnpm run build`: production extension build
-- `pnpm run test:backend`: backend tests
 - `pnpm run test:e2e`: browser E2E validation
 - `pnpm run ci:local`: CI-equivalent local confidence gate
 - `pnpm run release:verify`: release confidence gate, including production dependency audit
@@ -57,7 +51,6 @@ Use direct Nx commands for project-scoped work:
 - `pnpm exec nx run extension:dev`: extension dev target
 - `pnpm exec nx run extension:build`: extension production build
 - `pnpm exec nx run extension:test`: extension unit and integration tests
-- `pnpm exec nx run backend:test`: backend tests
 - `pnpm exec nx run-many -t lint`: all lint targets
 - `pnpm exec nx run-many -t typecheck`: all typecheck targets
 

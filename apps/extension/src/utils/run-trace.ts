@@ -125,10 +125,15 @@ async function postJson(
   }
 }
 
-export function createHttpRunTraceWriter(
-  serverUrl = DEFAULT_RUN_TRACE_SERVER_URL,
-): RunTraceWriter {
-  const base = serverUrl.replace(/\/+$/, "");
+export function createHttpRunTraceWriter(serverUrl?: string): RunTraceWriter {
+  // Compiled out of production builds — the shipped extension must never
+  // call localhost (dev observability only). Node harnesses (no __DEV__
+  // define) keep the writer. The default URL is resolved inside the dev
+  // branch so the localhost literal is dead-code-eliminated from prod.
+  if (typeof __DEV__ !== "undefined" && !__DEV__) {
+    return new RunTraceWriter(async () => {});
+  }
+  const base = (serverUrl ?? DEFAULT_RUN_TRACE_SERVER_URL).replace(/\/+$/, "");
   return new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
       await postJson(`${base}/run-traces/session`, record.manifest);

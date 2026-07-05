@@ -52,6 +52,10 @@ export function classifyConsequentialActionConsentMode(
     return "forbidden";
   }
 
+  if (isDraftOnlyCommunicationTask(taskText)) {
+    return "prepare_only";
+  }
+
   if (
     /\b(?:submit|send|post|publish|buy|purchase|place order|delete|confirm|approve)\b/i.test(
       taskText,
@@ -165,7 +169,7 @@ function isJobApplicationSubmitAction(
 }
 
 function isCommunicationWorkflow(taskText: string): boolean {
-  return /\b(reply|respond|email|e-mail|message|thread|comment|post|compose|draft)\b/.test(
+  return /\b(reply|respond|email|e-mail|message|thread|comment|post|compose|draft|copy|text)\b/.test(
     taskText,
   );
 }
@@ -197,14 +201,32 @@ export function isDraftOnlyCommunicationTask(taskText: string): boolean {
     return true;
   }
 
+  if (hasReviewBeforeSendIntent(taskText)) {
+    return true;
+  }
+
   return (
-    /\b(?:draft|compose|write|prepare)\b[\s\S]{0,80}\b(?:reply|response|email|e-mail|message|comment|post)\b/i.test(
+    /\b(?:draft|compose|write|prepare|create)\b[\s\S]{0,80}\b(?:reply|response|email|e-mail|message|comment|post|copy|text)\b/i.test(
       taskText,
     ) &&
     !/\b(?:send|post|publish)\b[\s\S]{0,80}\b(?:reply|response|email|e-mail|message|comment|post|it)\b/i.test(
       taskText,
     ) &&
     !/\b(?:reply|response|email|e-mail|message|comment|post)\b[\s\S]{0,80}\b(?:sent|posted|published)\b/i.test(
+      taskText,
+    )
+  );
+}
+
+function hasReviewBeforeSendIntent(taskText: string): boolean {
+  return (
+    /\b(?:let me|allow me|i(?:'ll|'d| will| want to)?|we(?:'ll| will)?)\s+(?:review|approve|check|look over)\b[\s\S]{0,100}\b(?:copy|draft|message|reply|email|e-mail|text|content)\b/i.test(
+      taskText,
+    ) ||
+    /\b(?:review|approve|check|look over)\s+(?:the\s+)?(?:copy|draft|message|reply|email|e-mail|text|content)\s+(?:first|before)\b/i.test(
+      taskText,
+    ) ||
+    /\b(?:copy|draft|message|reply|email|e-mail|text|content)\b[\s\S]{0,100}\b(?:for\s+)?(?:me|the\s+user|user)\s+to\s+(?:review|approve|check|look over)\b/i.test(
       taskText,
     )
   );

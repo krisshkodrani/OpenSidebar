@@ -16,6 +16,34 @@ function isSuccess(session: TraceSession): boolean {
   return outcome === "completed" || outcome === "success";
 }
 
+export function rateConfidenceInterval(
+  successes: number,
+  total: number,
+): { low: number; high: number } {
+  if (total <= 0) return { low: 0, high: 0 };
+  const z = 1.96;
+  const phat = successes / total;
+  const z2 = z * z;
+  const denominator = 1 + z2 / total;
+  const center = phat + z2 / (2 * total);
+  const margin =
+    z *
+    Math.sqrt((phat * (1 - phat) + z2 / (4 * total)) / total);
+  return {
+    low: Math.max(0, (center - margin) / denominator),
+    high: Math.min(1, (center + margin) / denominator),
+  };
+}
+
+function stdDev(values: number[]): number {
+  if (values.length <= 1) return 0;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance =
+    values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
+    values.length;
+  return Math.sqrt(variance);
+}
+
 function failureLabel(session: TraceSession): string | null {
   if (isSuccess(session)) return null;
   if (session.failureCode && session.failureCode !== "none") {
@@ -36,6 +64,13 @@ function domain(session: TraceSession): string | null {
   }
 }
 
+export function normalizeTraceModelId(model: string): string {
+  return model
+    .trim()
+    .replace(/^accounts\/[^/]+\/routers\//, "")
+    .replace(/:nitro$/, "");
+}
+
 function sessionModels(session: TraceSession): string[] {
   const stored = Array.isArray(session.models)
     ? session.models.filter((model): model is string => Boolean(model))
@@ -43,7 +78,13 @@ function sessionModels(session: TraceSession): string[] {
   const breakdown = session.metrics?.modelBreakdown
     ? Object.keys(session.metrics.modelBreakdown)
     : [];
-  return Array.from(new Set([...stored, ...breakdown]));
+  return Array.from(
+    new Set(
+      [...stored, ...breakdown]
+        .map(normalizeTraceModelId)
+        .filter((model) => model.length > 0),
+    ),
+  );
 }
 
 function sessionSkills(session: TraceSession): string[] {
@@ -88,6 +129,7 @@ function addCluster(
 
 function finalizeCluster(cluster: MutableCluster): TraceFleetCluster {
   const failed = cluster.sessions.filter((session) => !isSuccess(session));
+  const turnCounts = cluster.sessions.map((session) => session.turnCount || 0);
   const totalTurns = cluster.sessions.reduce(
     (sum, session) => sum + (session.turnCount || 0),
     0,
@@ -110,9 +152,15 @@ function finalizeCluster(cluster: MutableCluster): TraceFleetCluster {
       cluster.sessions.length === 0
         ? 0
         : failed.length / cluster.sessions.length,
+    failureRateCI: rateConfidenceInterval(failed.length, cluster.sessions.length),
+    successRateCI: rateConfidenceInterval(
+      cluster.sessions.length - failed.length,
+      cluster.sessions.length,
+    ),
     totalCost,
     averageTurns:
       cluster.sessions.length === 0 ? 0 : totalTurns / cluster.sessions.length,
+    turnsStdDev: stdDev(turnCounts),
     sampleSessionId: newest.sessionId,
     sessionIds: cluster.sessions.map((session) => session.sessionId),
     recommendation: recommendation(cluster.kind, cluster.label),
@@ -153,10 +201,13 @@ export function analyzeTraceFleet(
   let totalCost = 0;
   let totalTurns = 0;
   let failedSessions = 0;
+  const turnCounts: number[] = [];
 
   for (const session of sessions) {
     totalCost += session.metrics?.totalCost ?? 0;
-    totalTurns += session.turnCount || 0;
+    const turnCount = session.turnCount || 0;
+    totalTurns += turnCount;
+    turnCounts.push(turnCount);
     if (!isSuccess(session)) failedSessions += 1;
 
     addCluster(clusters, "failure", failureLabel(session), session);
@@ -176,8 +227,15 @@ export function analyzeTraceFleet(
       sessions.length === 0
         ? 0
         : (sessions.length - failedSessions) / sessions.length,
+    failureRate: sessions.length === 0 ? 0 : failedSessions / sessions.length,
+    successRateCI: rateConfidenceInterval(
+      sessions.length - failedSessions,
+      sessions.length,
+    ),
+    failureRateCI: rateConfidenceInterval(failedSessions, sessions.length),
     totalCost,
     averageTurns: sessions.length === 0 ? 0 : totalTurns / sessions.length,
+    turnsStdDev: stdDev(turnCounts),
     topFailureClusters: topClusters(clusters, "failure", limit, false),
     topDomainClusters: topClusters(clusters, "domain", limit),
     topModelClusters: topClusters(clusters, "model", limit),

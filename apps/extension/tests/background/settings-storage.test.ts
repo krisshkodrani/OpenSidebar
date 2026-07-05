@@ -62,6 +62,28 @@ describe("settings storage", () => {
     expect(settings?.xiaomiApiKey).toBe("sk-xiaomi-test");
   });
 
+  test("persists writerModel to sync storage", async () => {
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.set = vi.fn(async () => {}) as any;
+    chrome.storage.session.remove = vi.fn(async () => {}) as any;
+
+    await saveSettings({
+      openRouterApiKey: "sk-or-test",
+      providerMode: "openrouter",
+      writerModel: "openai/gpt-5.5",
+      maxTurns: 30,
+      theme: "system",
+      showSessionMetrics: true,
+      requireApprovals: true,
+      allowNavigation: true,
+    });
+
+    expect(syncSet.mock.calls[0]?.[0]?.userSettings).toMatchObject({
+      writerModel: "openai/gpt-5.5",
+    });
+  });
+
   test("defaults missing providerMode to Fireworks on load", async () => {
     chrome.storage.sync.get = vi.fn(async () => ({
       userSettings: {

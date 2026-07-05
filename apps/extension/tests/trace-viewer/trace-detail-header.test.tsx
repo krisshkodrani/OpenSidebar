@@ -189,4 +189,66 @@ describe("TraceDetailHeader", () => {
       "Multiple live workspace tabs match.",
     );
   });
+
+  test("renders session-level partial handoff summary", async () => {
+    useStore.setState({
+      currentEntries: [],
+    } as any);
+
+    await act(async () => {
+      root.render(
+        <TraceDetailHeader
+          session={
+            {
+              sessionId: "session-partial",
+              query: "Objective: summarize page",
+              startUrl: "https://example.com/article",
+              outcome: "max_turns",
+              startTime: 100,
+              endTime: 300,
+              turnCount: 2,
+              summary: "partial",
+              metrics: null,
+              partialHandoff: {
+                schemaVersion: "2026-05-26",
+                reason: "max_turns",
+                status: "partial_handoff",
+                task: "Summarize page",
+                generatedAt: "2026-05-26T00:00:00.000Z",
+                turnsUsed: 2,
+                maxTurns: 2,
+                completed: [],
+                evidence: [
+                  {
+                    label: "Page evidence",
+                    value: "Attention and positional encoding were observed.",
+                    source: "read_page",
+                    turn: 1,
+                  },
+                ],
+                currentState: {
+                  title: "Transformer Architecture",
+                  url: "https://example.com/article",
+                },
+                remaining: [
+                  {
+                    text: "Finish the summary.",
+                    confidence: "medium",
+                    source: "planner",
+                  },
+                ],
+                uncertainty: [],
+                suggestedContinuationPrompt: "Continue from the handoff.",
+              },
+            } as any
+          }
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("partial_handoff");
+    expect(container.textContent).toContain("max_turns after 2/2 turns");
+    expect(container.textContent).toContain("Page evidence");
+    expect(container.textContent).toContain("Finish the summary");
+  });
 });

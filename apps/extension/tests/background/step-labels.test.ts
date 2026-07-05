@@ -1,6 +1,6 @@
 import { describe, test, expect } from "vitest";
 import "../setup";
-import { formatStepLabel } from "../../src/background/agent/step-labels";
+import { formatStepLabel } from "../../src/utils/step-labels";
 import { ToolName } from "../../src/types";
 
 describe("formatStepLabel", () => {

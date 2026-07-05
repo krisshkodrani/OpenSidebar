@@ -15,7 +15,7 @@ const enrichedObjective = [
   "RECENT WORKSPACE CONVERSATION:",
   "- Assistant: long previous answer",
   "PROFILE DIGEST CONTEXT:",
-  "- Fact: Email = kshkodrani@gmail.com",
+  "- Fact: Email = jordan.rivera@example.com",
   "CURRENT REQUEST:",
   "Fill the profile",
   "Planner assumptions:",
@@ -212,7 +212,7 @@ describe("PlanTab", () => {
     });
 
     expect(container.textContent).toContain(
-      "No plan decomposition available for this session.",
+      "No plan decomposition available for this trace.",
     );
   });
 

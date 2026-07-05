@@ -1,7 +1,7 @@
 import { LLMMessage } from "../llm/types";
 import { DomSnapshot, PageSkeletonNode, TaggedElement } from "../../types";
 import { logger } from "../../utils";
-import { COMPRESSION_TRIGGERS } from "./constants";
+import { AGENT_LIMITS, COMPRESSION_TRIGGERS } from "./constants";
 import { sanitizeForPrompt } from "../security";
 import { getPromptTemplate } from "../../prompts";
 import {
@@ -109,6 +109,8 @@ export class ContextManager {
   private planStatus: PlanStatus | null = null;
   private storageKey: string;
   private modelTier: "executor" | "planner" = "executor";
+  /** Whether an optional Writer specialist is configured (enables compose_text steering). */
+  private writerAvailable = false;
   private originalQuery: string | null = null;
   private pageInterpretation: string | null = null;
   /** Screenshot data URL for unified VL executor mode */
@@ -124,6 +126,11 @@ export class ContextManager {
 
   public setModelTier(tier: "executor" | "planner"): void {
     this.modelTier = tier;
+  }
+
+  /** Enable compose_text steering when a dedicated Writer specialist is configured. */
+  public setWriterAvailable(available: boolean): void {
+    this.writerAvailable = available;
   }
 
   /** Pin the user's original query so it appears in every system prompt. */
@@ -164,6 +171,18 @@ export class ContextManager {
     this.turnCount = turnCount;
     this.turnMax = maxTurns;
     this.startTimeMs = startTimeMs;
+  }
+
+  /**
+   * Return the current turn-budget urgency level.
+   * Used by the agent loop to emit trace events when the level transitions.
+   */
+  public getBudgetUrgencyLevel(): "normal" | "low" | "critical" {
+    if (this.turnMax <= 0) return "normal";
+    const remaining = Math.max(0, this.turnMax - this.turnCount);
+    if (remaining <= AGENT_LIMITS.CRITICAL_BUDGET_TURNS) return "critical";
+    if (remaining <= AGENT_LIMITS.LOW_BUDGET_TURNS) return "low";
+    return "normal";
   }
 
   /** Store the normalized outcome of the most recent DOM-affecting action. */
@@ -602,9 +621,17 @@ export class ContextManager {
     let content = SYSTEM_PROMPT_TEMPLATE;
 
     // Persona: executor vs planner model framing (in static prefix for caching)
+    const personaBody = this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA;
+    const writerSteer = this.writerAvailable
+      ? "\n\nA specialist Writer is available. For any free-text answer or prose — " +
+        "job-application questions, essays, cover letters, message/email/comment bodies, " +
+        "or any 'describe/explain/why' field — you MUST delegate via compose_text(id, instructions) " +
+        "instead of writing it yourself with type_text. Type short structured values " +
+        "(names, emails, dates, numbers, single options) directly. Never retype a field the Writer already filled."
+      : "";
     content = content.replace(
       "{{persona}}",
-      `## Persona\n${this.modelTier === "planner" ? PLANNER_PERSONA : EXECUTOR_PERSONA}`,
+      `## Persona\n${personaBody}${writerSteer}`,
     );
 
     // Remove demo catalog placeholder (demos removed)
@@ -881,10 +908,23 @@ Do NOT call done() until every planned step is complete.
     if (this.turnMax > 0 && this.startTimeMs > 0) {
       const elapsed = Math.round((Date.now() - this.startTimeMs) / 1000);
       const remaining = Math.max(0, this.turnMax - this.turnCount);
-      content = content.replace(
-        "{{turnBudget}}",
-        `Turn ${this.turnCount}/${this.turnMax} | Elapsed: ${elapsed}s | Budget: ${remaining} turns left`,
-      );
+      const positionLine = `Turn ${this.turnCount}/${this.turnMax} | Elapsed: ${elapsed}s`;
+
+      let budgetBlock: string;
+      if (remaining <= AGENT_LIMITS.CRITICAL_BUDGET_TURNS) {
+        budgetBlock =
+          `\u{1F534} BUDGET CRITICAL — ${remaining} turn${remaining === 1 ? "" : "s"} remaining.\n` +
+          `Call done() now if any progress was made, or escalate() to hand off. ` +
+          `Do not start new actions.\n${positionLine}`;
+      } else if (remaining <= AGENT_LIMITS.LOW_BUDGET_TURNS) {
+        budgetBlock =
+          `⚠️ LOW BUDGET — ${remaining} turns remaining.\n` +
+          `Prioritize: complete the current step and call done(), or call escalate() if blocked. ` +
+          `Avoid starting new sub-tasks or navigations.\n${positionLine}`;
+      } else {
+        budgetBlock = `${positionLine} | Budget: ${remaining} turns left`;
+      }
+      content = content.replace("{{turnBudget}}", budgetBlock);
     } else {
       content = content.replace("{{turnBudget}}", "");
     }
@@ -950,23 +990,55 @@ Do NOT call done() until every planned step is complete.
     return this.getPromptMetricsFrom(this.getPrompt());
   }
 
+  /** Numeric ordering for CompressionLevel — used by maxCompressionLevel(). */
+  private static readonly COMPRESSION_ORDER: Record<CompressionLevel, number> =
+    {
+      [CompressionLevel.NONE]: 0,
+      [CompressionLevel.LIGHT]: 1,
+      [CompressionLevel.MEDIUM]: 2,
+      [CompressionLevel.HEAVY]: 3,
+    };
+
+  /** Return the higher (more aggressive) of two compression levels. */
+  private static maxCompressionLevel(
+    a: CompressionLevel,
+    b: CompressionLevel,
+  ): CompressionLevel {
+    return ContextManager.COMPRESSION_ORDER[a] >=
+      ContextManager.COMPRESSION_ORDER[b]
+      ? a
+      : b;
+  }
+
   /**
-   * Determine compression level based on estimated snapshot size.
+   * Compute the compression level for this turn.
+   *
+   * Two independent signals are computed and the higher (more aggressive)
+   * level wins:
+   *   - Turn-count level: a hard floor based on history length — guarantees
+   *     compression grows as the conversation ages, regardless of page size.
+   *   - Utilization level: token-estimate based — catches large pages early
+   *     (e.g. a 90 KB page on turn 3 reaches 70% utilisation → LIGHT).
+   *
    * Uses a lightweight estimate to avoid circular dependency with constructSystemMessage().
    */
   public getCompressionLevel(): CompressionLevel {
     if (!this.snapshot) return CompressionLevel.NONE;
 
-    // Turn-count override: guarantees compression regardless of context window size
+    // Turn-count level: floor based on conversation length
     const historyLen = this.history.length;
-    if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT)
-      return CompressionLevel.HEAVY;
-    if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT)
-      return CompressionLevel.MEDIUM;
-    if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT)
-      return CompressionLevel.LIGHT;
+    let turnLevel: CompressionLevel;
+    if (historyLen >= COMPRESSION_TRIGGERS.HEAVY_TURN_COUNT) {
+      turnLevel = CompressionLevel.HEAVY;
+    } else if (historyLen >= COMPRESSION_TRIGGERS.MEDIUM_TURN_COUNT) {
+      turnLevel = CompressionLevel.MEDIUM;
+    } else if (historyLen >= COMPRESSION_TRIGGERS.LIGHT_TURN_COUNT) {
+      turnLevel = CompressionLevel.LIGHT;
+    } else {
+      turnLevel = CompressionLevel.NONE;
+    }
 
-    // Estimate tokens from elements + viewport text without building the full message
+    // Utilization level: estimate tokens from elements + viewport text without building the full message
     const elemTokens = this.snapshot.elements.reduce((sum, el) => {
       // Compact format estimate: [N] tagName#id attrs "text" (role)
       const hasId = el.attributes.id ? `#${el.attributes.id}` : "";
@@ -999,10 +1071,19 @@ Do NOT call done() until every planned step is complete.
       historyTokens;
     const utilization = totalEstimate / this.maxContextTokens;
 
-    if (utilization < 0.5) return CompressionLevel.NONE;
-    if (utilization < 0.7) return CompressionLevel.LIGHT;
-    if (utilization < 0.85) return CompressionLevel.MEDIUM;
-    return CompressionLevel.HEAVY;
+    let utilizationLevel: CompressionLevel;
+    if (utilization < 0.5) {
+      utilizationLevel = CompressionLevel.NONE;
+    } else if (utilization < 0.7) {
+      utilizationLevel = CompressionLevel.LIGHT;
+    } else if (utilization < 0.85) {
+      utilizationLevel = CompressionLevel.MEDIUM;
+    } else {
+      utilizationLevel = CompressionLevel.HEAVY;
+    }
+
+    // Return whichever signal demands more compression
+    return ContextManager.maxCompressionLevel(turnLevel, utilizationLevel);
   }
 
   /** Maximum items shown per group before collapsing the rest into a summary. */

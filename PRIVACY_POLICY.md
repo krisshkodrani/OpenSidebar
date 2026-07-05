@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **OpenSidebar** - Chrome Browser Extension
-Last updated: 2026-05-22
+Last updated: 2026-06-27
 
 ---
 
@@ -43,6 +43,7 @@ Extension data is stored in your browser using Chrome's built-in storage APIs (`
 | Agent session state | `chrome.storage.session` | Temporary state during active tasks |
 | Workspace data | `chrome.storage.local` | Tab group organization |
 | Saved prompts | `chrome.storage.local` | Quick-access prompt templates you create |
+| Personal profile | `chrome.storage.local` | Optional profile notes and the digested facts/preferences you write, used to personalize tasks. Never synced. Items you mark **sensitive**, and the raw profile notes, are encrypted at rest (AES-GCM) under a key kept only on this device |
 | Diagnostic logs | `chrome.storage.local` | Local ring buffer of structured log entries for debugging |
 
 Chrome encrypts storage data at rest. Synced settings (`chrome.storage.sync`) follow your Chrome profile sync preferences; you can disable Chrome Sync to keep them local to one browser profile.
@@ -63,7 +64,10 @@ Requests may contain:
 - the current page context, such as URL, page title, element list, and visible text;
 - a screenshot of the visible browser area when visual grounding is enabled;
 - your conversation messages and the agent's prior responses;
+- relevant items from your **personal profile**, if you have enabled it, to personalize the task;
 - your configured provider API key as an authentication header.
+
+**Personal profile and sensitive data.** When the personal-profile feature is enabled, the digested facts and preferences relevant to a task are included in the request to your configured model provider as task context. Items you mark **sensitive** are **excluded by default** and are sent only when you give explicit, per-task consent for the specific field that needs them. Sensitive items and your raw profile notes are stored encrypted at rest on your device (see the storage table above).
 
 Requests are sent over HTTPS to the selected provider endpoint. The selected provider's privacy policy governs how that provider handles API traffic.
 
@@ -72,6 +76,8 @@ The extension does **not** send data to any first-party OpenSidebar service. The
 ### Optional Local Log Server
 
 If you run the development stack (`pnpm run dev`) or local log server (`pnpm run logs`), the extension drains diagnostic logs and trace data to `127.0.0.1:7589` on your local machine. This is local, opt-in development infrastructure and does not transmit data over the internet.
+
+If you also expose traces to a local coding agent through the optional observability MCP server (`pnpm run mcp`, stdio/loopback only), common PII shapes (email, phone, SSN, card numbers) are scrubbed from the trace content returned to that agent.
 
 ---
 

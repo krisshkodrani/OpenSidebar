@@ -1,5 +1,4 @@
 packages:
-  - apps/backend
   - apps/extension
   - apps/extension/tests/e2e/fixtures/online-shop-pro
   - packages/prompts

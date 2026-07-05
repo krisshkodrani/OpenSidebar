@@ -139,12 +139,12 @@ describe("trace comparison panels", () => {
     container.remove();
   });
 
-  test("renders related sessions and can navigate to a match", async () => {
+  test("renders related traces and can navigate to a match", async () => {
     await act(async () => {
       root.render(<SessionComparisonPanel session={base} />);
     });
 
-    expect(container.textContent).toContain("Related Sessions");
+    expect(container.textContent).toContain("Related Traces");
     expect(container.textContent).toContain("same failure");
     expect(container.textContent).toContain("Checkout retry");
 

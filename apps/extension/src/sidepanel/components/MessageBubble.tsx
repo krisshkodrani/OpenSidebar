@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { clsx } from "clsx";
 import { Eye, MessageCircle } from "lucide-react";
 import type { ChatEntry, ToolCallSummary } from "../../types";
-import { formatStepLabel } from "../../background/agent/step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import {
   cleanAssistantContent,
   normalizeCompletionMarkdown,
@@ -16,6 +16,7 @@ import {
   CompletionDetails,
   CompletionFrame,
   CompletionStatusHeader,
+  PartialHandoffPanel,
 } from "./message/CompletionSummary";
 
 export { normalizeCompletionMarkdown };
@@ -125,6 +126,9 @@ export const MessageBubble = React.memo(function MessageBubble({
       ) : null}
       {message.completionData ? (
         <CompletionDetails data={message.completionData} />
+      ) : null}
+      {message.completionData?.partialHandoff ? (
+        <PartialHandoffPanel handoff={message.completionData.partialHandoff} />
       ) : null}
     </>
   ) : null;

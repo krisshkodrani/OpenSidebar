@@ -3,8 +3,8 @@
   "files": [],
   "references": [
     { "path": "./packages/shared-types/tsconfig.json" },
+    { "path": "./packages/observability-schema/tsconfig.json" },
     { "path": "./packages/prompts/tsconfig.json" },
-    { "path": "./apps/extension/tsconfig.json" },
-    { "path": "./apps/backend/tsconfig.json" }
+    { "path": "./apps/extension/tsconfig.json" }
   ]
 }

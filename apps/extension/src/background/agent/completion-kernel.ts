@@ -4,10 +4,7 @@ import {
   hasStrongCommunicationSentEvidence,
   isDraftOnlyCommunicationTask,
 } from "./consequential-action-policy";
-import {
-  assessTaskContractCoverage,
-  buildTaskContract,
-} from "./task-contract";
+import { assessTaskContractCoverage, buildTaskContract } from "./task-contract";
 import {
   extractRowScopedMetricAggregateQuestionParts,
   findReadAnswerMetricAggregateFromSnapshotRows,
@@ -158,41 +155,107 @@ export function generateCompletionContract(params: {
   activeObjective?: string;
   successCriteria?: string;
 }): GeneratedCompletionContract | null {
-  const draftOnlyContract = generateDraftOnlyContract(params);
-  if (draftOnlyContract) return draftOnlyContract;
+  const candidate = ((): GeneratedCompletionContract | null => {
+    const draftOnlyContract = generateDraftOnlyContract(params);
+    if (draftOnlyContract) return draftOnlyContract;
 
-  const snapshot = params.snapshot;
-  if (!snapshot) return null;
+    const snapshot = params.snapshot;
+    if (!snapshot) return null;
 
-  const quizContract = generateQuizSelectionContract(params, snapshot);
-  if (quizContract) return quizContract;
+    const quizContract = generateQuizSelectionContract(params, snapshot);
+    if (quizContract) return quizContract;
 
-  const formContract = generateFormFillContract(params, snapshot);
-  if (formContract) return formContract;
+    const formContract = generateFormFillContract(params, snapshot);
+    if (formContract) return formContract;
 
-  const navigationContract = generateNavigationContract(params, snapshot);
-  if (navigationContract) return navigationContract;
+    const navigationContract = generateNavigationContract(params, snapshot);
+    if (navigationContract) return navigationContract;
 
-  const readAnswerContract = generateReadAnswerContract(params, snapshot);
-  if (readAnswerContract) return readAnswerContract;
+    const readAnswerContract = generateReadAnswerContract(params, snapshot);
+    if (readAnswerContract) return readAnswerContract;
 
-  const workflowConfirmationContract = generateWorkflowConfirmationContract(
-    params,
-    snapshot,
-  );
-  if (workflowConfirmationContract) return workflowConfirmationContract;
+    const workflowConfirmationContract = generateWorkflowConfirmationContract(
+      params,
+      snapshot,
+    );
+    if (workflowConfirmationContract) return workflowConfirmationContract;
 
-  return null;
+    return null;
+  })();
+
+  if (candidate && !isContractRelevantToObjective(candidate, params)) {
+    return null;
+  }
+  return candidate;
 }
 
-function generateDraftOnlyContract(
-  params: {
-    userRequest: string;
-    snapshot: DomSnapshot | null | undefined;
-    activeObjective?: string;
-    successCriteria?: string;
-  },
-): GeneratedCompletionContract | null {
+function isContractRelevantToObjective(
+  generated: GeneratedCompletionContract,
+  params: { activeObjective?: string; userRequest: string },
+): boolean {
+  // Judge against the focused objective AND the original request: either may
+  // hold the vocabulary (a distilled objective can drop the verb, the raw
+  // request can hold the field values).
+  const objective = [params.activeObjective, params.userRequest]
+    .filter(Boolean)
+    .join("\n");
+
+  switch (generated.contract.kind) {
+    case "quiz_selection":
+      return /\b(?:quiz|exam|test|question\s*\d?|answers?|select|choose|pick|check|mark|tick)\b/i.test(
+        objective,
+      );
+
+    case "form_fill":
+      if (
+        /\b(?:fill|enter|type|input|set|save|update|change|configure|choose|select|pick|enable|disable|toggle|apply|submit|check\s*out|checkout|log\s*in|sign\s*in|sign\s*up|register|create\s+account)\b/i.test(
+          objective,
+        )
+      ) {
+        return true;
+      }
+      // No data-entry verb — accept only if the contract's fields were clearly
+      // inferred from the request itself (e.g. `Caller = "Joe Employee"`).
+      // Contracts scraped from an incidental page form share no tokens with the
+      // objective, which is the deadlock case this gate exists to block.
+      return formFillFieldsMentionedInObjective(
+        objective,
+        generated.contract.requiredFields,
+      );
+
+    default:
+      return true;
+  }
+}
+
+function formFillFieldsMentionedInObjective(
+  objective: string,
+  requiredFields: FormFillFieldExpectation[],
+): boolean {
+  const haystack = objective.toLowerCase();
+  return requiredFields.some((field) => {
+    const label = field.label.trim().toLowerCase();
+    const value = field.value.trim().toLowerCase();
+    if (label.length >= 3 && haystack.includes(label)) return true;
+    // Skip boolean-ish values: "true"/"false" match nothing meaningful.
+    if (
+      value.length >= 3 &&
+      value !== "true" &&
+      value !== "false" &&
+      haystack.includes(value)
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
+function generateDraftOnlyContract(params: {
+  userRequest: string;
+  snapshot: DomSnapshot | null | undefined;
+  activeObjective?: string;
+  successCriteria?: string;
+}): GeneratedCompletionContract | null {
   const requestText = [
     extractCanonicalUserRequest(params.userRequest),
     params.activeObjective,
@@ -236,9 +299,8 @@ function generateQuizSelectionContract(
   if (!hasQuizSelectionIntent(combinedText)) return null;
 
   const visibleQuestionNumber = extractVisibleQuestionNumber(snapshot);
-  const explicitUserQuestion = extractExplicitQuestionNumber(
-    canonicalUserRequest,
-  );
+  const explicitUserQuestion =
+    extractExplicitQuestionNumber(canonicalUserRequest);
   const explicitPromptQuestion = extractExplicitQuestionNumber(
     params.userRequest,
   );
@@ -327,7 +389,10 @@ function generateFormFillContract(
           canonicalUserRequest,
           fields,
         )
-      : inferExpectedFormFields(activeScopeText || canonicalUserRequest, fields);
+      : inferExpectedFormFields(
+          activeScopeText || canonicalUserRequest,
+          fields,
+        );
   if (expectedFields.length === 0) return null;
 
   const requestText = normalizeText(
@@ -411,8 +476,7 @@ function snapshotHasMatchingFormSubmitControl(
     const isSubmitControl =
       tagName === "button" ||
       role === "button" ||
-      (tagName === "input" &&
-        /^(?:submit|button|image)$/i.test(type));
+      (tagName === "input" && /^(?:submit|button|image)$/i.test(type));
     if (!isSubmitControl) return false;
 
     const label = normalizeText(
@@ -595,7 +659,8 @@ function generateReadAnswerContract(
   const taskContract = buildTaskContract(requestText);
   const hasConcreteMultiReturn =
     (taskContract.multiReturnCount ?? 0) >= 2 &&
-    taskContract.requiredEntities.length >= (taskContract.multiReturnCount ?? 0);
+    taskContract.requiredEntities.length >=
+      (taskContract.multiReturnCount ?? 0);
   const rowScopedAnswer = getGroundedRowScopedLabelValueQuestion(
     requestText,
     _snapshot,
@@ -615,12 +680,11 @@ function generateReadAnswerContract(
     !groundedLabelValueBypassesScopedTargetGate
       ? extractRowScopedLabelValueQuestionParts(requestText)
       : null;
-  const targetSpecificLabelRequiresScopedEvidence =
-    targetSpecificLabelQuestion
-      ? readAnswerLabelRequiresScopedTargetEvidence(
-          targetSpecificLabelQuestion.label,
-        )
-      : false;
+  const targetSpecificLabelRequiresScopedEvidence = targetSpecificLabelQuestion
+    ? readAnswerLabelRequiresScopedTargetEvidence(
+        targetSpecificLabelQuestion.label,
+      )
+    : false;
   if (targetSpecificLabelRequiresScopedEvidence) {
     return null;
   }
@@ -649,16 +713,16 @@ function generateReadAnswerContract(
               expectedAnswerTarget: rowScopedSuperlativeAnswer.target,
               expectedAnswerScope: "sentence" as const,
             }
-        : rowScopedMetricAggregateAnswer
-          ? {
-              expectedAnswerScope: "aggregate" as const,
-            }
-        : sentenceScopedAnswer
-          ? {
-              expectedAnswerTarget: sentenceScopedAnswer.target,
-              expectedAnswerScope: "sentence" as const,
-            }
-        : {}),
+          : rowScopedMetricAggregateAnswer
+            ? {
+                expectedAnswerScope: "aggregate" as const,
+              }
+            : sentenceScopedAnswer
+              ? {
+                  expectedAnswerTarget: sentenceScopedAnswer.target,
+                  expectedAnswerScope: "sentence" as const,
+                }
+              : {}),
     },
     confidence: "medium",
     source: hasConcreteMultiReturn ? "task_contract" : "heuristic",
@@ -675,12 +739,14 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   const normalizedLabel = normalizeText(label);
   if (!normalizedLabel) return false;
   if (normalizedLabel === "definition") return true;
-  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel))
+    return true;
   if (normalizedLabel === "location") return true;
   if (sentenceScopedEventDatePatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedPresenceMetricPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedMetricValuePatternForLabel(normalizedLabel)) return true;
-  if (sentenceScopedSuperlativeMetricPartsForLabel(normalizedLabel)) return true;
+  if (sentenceScopedSuperlativeMetricPartsForLabel(normalizedLabel))
+    return true;
   if (rowScopedMetricAggregatePartsForLabel(normalizedLabel)) return true;
   if (
     normalizedLabel === "status" ||
@@ -696,9 +762,9 @@ function readAnswerLabelRequiresScopedTargetEvidence(label: string): boolean {
   }
   return Boolean(
     sentenceScopedAttributePatternForLabel(normalizedLabel) ||
-      sentenceScopedRelationNounPatternForLabel(normalizedLabel) ||
-      sentenceScopedByRelationPatternForLabel(normalizedLabel) ||
-      sentenceScopedActiveRelationPatternForLabel(normalizedLabel),
+    sentenceScopedRelationNounPatternForLabel(normalizedLabel) ||
+    sentenceScopedByRelationPatternForLabel(normalizedLabel) ||
+    sentenceScopedActiveRelationPatternForLabel(normalizedLabel),
   );
 }
 
@@ -781,9 +847,7 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
     Number.isFinite(id)
   ) {
     const value =
-      params.toolName === "type_text"
-        ? params.args.text
-        : params.args.value;
+      params.toolName === "type_text" ? params.args.text : params.args.value;
     if (typeof value === "string") {
       const field =
         findFormFieldObservationByElementId(params.preActionSnapshot, id) ??
@@ -797,6 +861,49 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
             observedAtTurn: params.turn,
           }),
         );
+        if (
+          params.toolName === "type_text" &&
+          isLikelyDraftEditorField(field) &&
+          cleanLabel(value).length > 0
+        ) {
+          evidence.push(
+            draftStateEvidence({
+              ...field,
+              value,
+              confidence: "high",
+              observedAtTurn: params.turn,
+            }),
+          );
+        }
+      }
+    }
+  }
+
+  if (params.toolName === "read_element" && Number.isFinite(id)) {
+    const value = extractReadElementValueEvidenceText(params);
+    if (value && cleanLabel(value).length > 0) {
+      const field =
+        findFormFieldObservationByElementId(params.currentSnapshot, id) ??
+        findFormFieldObservationByElementId(params.preActionSnapshot, id);
+      if (field) {
+        evidence.push(
+          fieldValueEvidence({
+            ...field,
+            value,
+            confidence: "high",
+            observedAtTurn: params.turn,
+          }),
+        );
+        if (isLikelyDraftEditorField(field)) {
+          evidence.push(
+            draftStateEvidence({
+              ...field,
+              value,
+              confidence: "high",
+              observedAtTurn: params.turn,
+            }),
+          );
+        }
       }
     }
   }
@@ -838,7 +945,9 @@ export function deriveCompletionEvidenceFromToolOutcome(params: {
 
   evidence.push(...extractModalDismissalEvidenceFromToolOutcome(params));
   evidence.push(...extractTargetDisappearanceEvidenceFromToolOutcome(params));
-  evidence.push(...extractCreateFormDisappearanceEvidenceFromToolOutcome(params));
+  evidence.push(
+    ...extractCreateFormDisappearanceEvidenceFromToolOutcome(params),
+  );
   evidence.push(...extractCreateRowAppearanceEvidenceFromToolOutcome(params));
   evidence.push(...extractDuplicateRowStateEvidenceFromToolOutcome(params));
   evidence.push(...extractDownloadFileResultEvidenceFromToolOutcome(params));
@@ -1041,14 +1150,14 @@ function evaluateQuizSelection(params: {
       event.type === "selected_state" &&
       matchesQuizTarget(event, contract, visibleQuestionNumber),
   );
-  const selected = selectedStateEvidence.filter((event) => event.detail.checked);
+  const selected = selectedStateEvidence.filter(
+    (event) => event.detail.checked,
+  );
   const negativeEvidence = params.evidence.find(
-    (event): event is Extract<
-      CompletionEvidence,
-      { type: "validation_error" }
-    > =>
-      event.type === "validation_error" &&
-      event.logicalKey.startsWith("quiz:"),
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "validation_error" }> =>
+      event.type === "validation_error" && event.logicalKey.startsWith("quiz:"),
   );
   if (negativeEvidence) {
     return {
@@ -1062,7 +1171,8 @@ function evaluateQuizSelection(params: {
   if (selected.length === 0) {
     return {
       status: "rejected",
-      reason: "No selected quiz option evidence is active for the current target.",
+      reason:
+        "No selected quiz option evidence is active for the current target.",
       contract,
       evidence: params.evidence,
     };
@@ -1092,7 +1202,8 @@ function evaluateQuizSelection(params: {
   ) {
     return {
       status: "rejected",
-      reason: "Selected options do not match the expected completion selections.",
+      reason:
+        "Selected options do not match the expected completion selections.",
       contract,
       evidence: params.evidence,
     };
@@ -1113,16 +1224,18 @@ function evaluateQuizSelection(params: {
   }
 
   const correctFeedback = params.evidence.find(
-    (event): event is Extract<CompletionEvidence, { type: "correct_feedback" }> =>
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "correct_feedback" }> =>
       event.type === "correct_feedback" &&
       matchesFeedbackTarget(event, contract, visibleQuestionNumber),
   );
   if (contract.requiresCorrectFeedback && !correctFeedback) {
     return {
       status: "needs_verification",
-      reason: "Selected options are applied, but correct-answer feedback is missing.",
-      hint:
-        "The selected quiz options appear applied, but this request requires checking the answer. Click the visible Check answer or Submit control, then call done after correct feedback appears.",
+      reason:
+        "Selected options are applied, but correct-answer feedback is missing.",
+      hint: "The selected quiz options appear applied, but this request requires checking the answer. Click the visible Check answer or Submit control, then call done after correct feedback appears.",
       contract,
       evidence: params.evidence,
     };
@@ -1130,9 +1243,9 @@ function evaluateQuizSelection(params: {
   if (contract.requiresSubmit && !correctFeedback) {
     return {
       status: "needs_verification",
-      reason: "Selected options are applied, but submit/check evidence is missing.",
-      hint:
-        "The selected quiz options appear applied. Verify them with the page's Check answer or Submit control before calling done.",
+      reason:
+        "Selected options are applied, but submit/check evidence is missing.",
+      hint: "The selected quiz options appear applied. Verify them with the page's Check answer or Submit control before calling done.",
       contract,
       evidence: params.evidence,
     };
@@ -1157,12 +1270,10 @@ function evaluateFormFill(params: {
 }): CompletionEvaluation {
   const contract = params.contract;
   const validationError = params.evidence.find(
-    (event): event is Extract<
-      CompletionEvidence,
-      { type: "validation_error" }
-    > =>
-      event.type === "validation_error" &&
-      event.logicalKey.startsWith("form:"),
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "validation_error" }> =>
+      event.type === "validation_error" && event.logicalKey.startsWith("form:"),
   );
 
   const autocompleteRejection = getAutocompleteSuggestionDoneRejection({
@@ -1246,10 +1357,9 @@ function evaluateFormFill(params: {
   }
 
   const confirmation = params.evidence.find(
-    (event): event is Extract<
-      CompletionEvidence,
-      { type: "confirmation_state" }
-    > =>
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
       event.type === "confirmation_state" &&
       event.logicalKey.startsWith("form:"),
   );
@@ -1258,8 +1368,7 @@ function evaluateFormFill(params: {
       status: "needs_verification",
       reason:
         "Requested form fields are filled, but submit/confirmation evidence is missing.",
-      hint:
-        "The requested form fields appear filled. Submit or verify the form, then call done after the page shows confirmation.",
+      hint: "The requested form fields appear filled. Submit or verify the form, then call done after the page shows confirmation.",
       contract,
       evidence: acceptedEvidence,
     };
@@ -1325,7 +1434,27 @@ function evaluateDraftOnly(params: {
   const activeDraft = drafts.find(
     (event) => !event.detail.submitted && cleanLabel(event.detail.text),
   );
+  const activeDraftField = params.evidence
+    .filter(
+      (event): event is Extract<CompletionEvidence, { type: "field_value" }> =>
+        event.type === "field_value",
+    )
+    .filter(
+      (event) =>
+        cleanLabel(event.detail.value).length > 0 &&
+        isLikelyDraftEditorIdentity(event.detail.label, event.detail.stableKey),
+    )
+    .sort(compareEvidenceRecency)[0];
   if (!activeDraft) {
+    if (activeDraftField) {
+      return {
+        status: "accepted",
+        reason:
+          "Draft-only contract is satisfied by active unsent draft field evidence.",
+        contract,
+        evidence: [activeDraftField],
+      };
+    }
     return {
       status: "rejected",
       reason: "No active unsent draft evidence is visible.",
@@ -1336,7 +1465,8 @@ function evaluateDraftOnly(params: {
 
   return {
     status: "accepted",
-    reason: "Draft-only contract is satisfied by visible unsent draft evidence.",
+    reason:
+      "Draft-only contract is satisfied by visible unsent draft evidence.",
     contract,
     evidence: [activeDraft],
   };
@@ -1349,10 +1479,10 @@ function evaluateNavigation(params: {
   const contract = params.contract;
   const navigationEvidence = params.evidence
     .filter(
-      (event): event is Extract<
-        CompletionEvidence,
-        { type: "navigation_state" }
-      > => event.type === "navigation_state",
+      (
+        event,
+      ): event is Extract<CompletionEvidence, { type: "navigation_state" }> =>
+        event.type === "navigation_state",
     )
     .sort(compareEvidenceRecency);
   const current = navigationEvidence[0];
@@ -1426,7 +1556,8 @@ function evaluateReadAnswer(params: {
   );
 
   const snapshotEvidence =
-    params.snapshot && hasSubstantiveReadAnswerEvidence(snapshotPageText(params.snapshot))
+    params.snapshot &&
+    hasSubstantiveReadAnswerEvidence(snapshotPageText(params.snapshot))
       ? readAnswerSnapshotEvidence({
           snapshot: params.snapshot,
           observedAtTurn: latestObservedTurn(params.evidence),
@@ -1438,7 +1569,7 @@ function evaluateReadAnswer(params: {
     contract.expectedAnswerLabel &&
     contract.expectedAnswerTarget &&
     (params.snapshot || pageEvidence.length > 0)
-      ? (params.snapshot
+      ? ((params.snapshot
           ? readAnswerRowScopedSnapshotEvidence({
               snapshot: params.snapshot,
               expectedAnswerLabel: contract.expectedAnswerLabel,
@@ -1450,14 +1581,14 @@ function evaluateReadAnswer(params: {
           evidence: pageEvidence,
           expectedAnswerLabel: contract.expectedAnswerLabel,
           expectedAnswerTarget: contract.expectedAnswerTarget,
-        })
+        }))
       : null;
   const sentenceScopedEvidence =
     contract.expectedAnswerScope === "sentence" &&
     contract.expectedAnswerLabel &&
     contract.expectedAnswerTarget &&
     (params.snapshot || pageEvidence.length > 0)
-      ? (params.snapshot
+      ? ((params.snapshot
           ? readAnswerSentenceScopedSnapshotEvidence({
               snapshot: params.snapshot,
               expectedAnswerLabel: contract.expectedAnswerLabel,
@@ -1469,13 +1600,13 @@ function evaluateReadAnswer(params: {
           evidence: pageEvidence,
           expectedAnswerLabel: contract.expectedAnswerLabel,
           expectedAnswerTarget: contract.expectedAnswerTarget,
-        })
+        }))
       : null;
   const aggregateScopedEvidence =
     contract.expectedAnswerScope === "aggregate" &&
     contract.expectedAnswerLabel &&
     (params.snapshot || pageEvidence.length > 0)
-      ? (params.snapshot
+      ? ((params.snapshot
           ? readAnswerAggregateScopedSnapshotEvidence({
               snapshot: params.snapshot,
               expectedAnswerLabel: contract.expectedAnswerLabel,
@@ -1485,7 +1616,7 @@ function evaluateReadAnswer(params: {
         readAnswerAggregateScopedTextEvidence({
           evidence: pageEvidence,
           expectedAnswerLabel: contract.expectedAnswerLabel,
-        })
+        }))
       : null;
 
   if (
@@ -1498,8 +1629,7 @@ function evaluateReadAnswer(params: {
       status: "needs_verification",
       reason:
         "Requested row-scoped page-answer task has no matching visible row evidence yet.",
-      hint:
-        "Read the visible row for the requested item, then call done with the value from that row.",
+      hint: "Read the visible row for the requested item, then call done with the value from that row.",
       contract,
       evidence: params.evidence,
     };
@@ -1514,8 +1644,7 @@ function evaluateReadAnswer(params: {
       status: "needs_verification",
       reason:
         "Requested sentence-scoped page-answer task has no matching visible sentence evidence yet.",
-      hint:
-        "Read the visible sentence for the requested item, then call done with the value from that sentence.",
+      hint: "Read the visible sentence for the requested item, then call done with the value from that sentence.",
       contract,
       evidence: params.evidence,
     };
@@ -1529,8 +1658,7 @@ function evaluateReadAnswer(params: {
       status: "needs_verification",
       reason:
         "Requested aggregate page-answer task has no matching visible row evidence yet.",
-      hint:
-        "Read the visible rows for the requested metric, then call done with the computed aggregate.",
+      hint: "Read the visible rows for the requested metric, then call done with the computed aggregate.",
       contract,
       evidence: params.evidence,
     };
@@ -1547,8 +1675,7 @@ function evaluateReadAnswer(params: {
       status: "needs_verification",
       reason:
         "Requested page-answer task has no grounded page-read evidence yet.",
-      hint:
-        "Call read_page first to verify the current page content, then call done with the answer from that evidence.",
+      hint: "Call read_page first to verify the current page content, then call done with the answer from that evidence.",
       contract,
       evidence: params.evidence,
     };
@@ -1594,10 +1721,9 @@ function evaluateWorkflowConfirmation(params: {
   const contract = params.contract;
   const confirmations = params.evidence
     .filter(
-      (event): event is Extract<
-        CompletionEvidence,
-        { type: "confirmation_state" }
-      > =>
+      (
+        event,
+      ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
         event.type === "confirmation_state" &&
         event.logicalKey.startsWith("workflow:confirmation:") &&
         event.detail.action === contract.action,
@@ -1629,13 +1755,29 @@ function evaluateWorkflowConfirmation(params: {
     params.summary,
     params.snapshot,
   );
+  const transactionalFormState = findTransactionalFormCompletionConfirmation(
+    params.evidence,
+    contract,
+    params.summary,
+    params.snapshot,
+  );
   if (confirmations.length > 0 && targetMatchedConfirmations.length === 0) {
     if (authenticationState) {
       return {
         status: "accepted",
-        reason: "Workflow contract is satisfied by visible authenticated state.",
+        reason:
+          "Workflow contract is satisfied by visible authenticated state.",
         contract,
         evidence: [authenticationState],
+      };
+    }
+    if (transactionalFormState) {
+      return {
+        status: "accepted",
+        reason:
+          "Workflow contract is satisfied by transactional form confirmation.",
+        contract,
+        evidence: [transactionalFormState],
       };
     }
     if (visibleTargetState) {
@@ -1649,7 +1791,8 @@ function evaluateWorkflowConfirmation(params: {
     if (visibleDismissState) {
       return {
         status: "accepted",
-        reason: "Dismiss contract is satisfied by visible absence of modal controls.",
+        reason:
+          "Dismiss contract is satisfied by visible absence of modal controls.",
         contract,
         evidence: [visibleDismissState],
       };
@@ -1676,9 +1819,19 @@ function evaluateWorkflowConfirmation(params: {
     if (authenticationState) {
       return {
         status: "accepted",
-        reason: "Workflow contract is satisfied by visible authenticated state.",
+        reason:
+          "Workflow contract is satisfied by visible authenticated state.",
         contract,
         evidence: [authenticationState],
+      };
+    }
+    if (transactionalFormState) {
+      return {
+        status: "accepted",
+        reason:
+          "Workflow contract is satisfied by transactional form confirmation.",
+        contract,
+        evidence: [transactionalFormState],
       };
     }
     if (visibleTargetState) {
@@ -1692,7 +1845,8 @@ function evaluateWorkflowConfirmation(params: {
     if (visibleDismissState) {
       return {
         status: "accepted",
-        reason: "Dismiss contract is satisfied by visible absence of modal controls.",
+        reason:
+          "Dismiss contract is satisfied by visible absence of modal controls.",
         contract,
         evidence: [visibleDismissState],
       };
@@ -1711,8 +1865,7 @@ function evaluateWorkflowConfirmation(params: {
       status: "needs_verification",
       reason:
         "Requested action has no matching visible confirmation evidence yet.",
-      hint:
-        "Verify the page shows the action result, such as a success or confirmation message, before calling done.",
+      hint: "Verify the page shows the action result, such as a success or confirmation message, before calling done.",
       contract,
       evidence: params.evidence,
     };
@@ -1744,10 +1897,12 @@ function evaluateWorkflowConfirmation(params: {
   };
 }
 
-function fieldValueEvidence(params: FormFieldObservation & {
-  confidence: CompletionConfidence;
-  observedAtTurn: number;
-}): Extract<CompletionEvidence, { type: "field_value" }> {
+function fieldValueEvidence(
+  params: FormFieldObservation & {
+    confidence: CompletionConfidence;
+    observedAtTurn: number;
+  },
+): Extract<CompletionEvidence, { type: "field_value" }> {
   const key =
     compactKey(params.stableKey) ||
     compactKey(params.label) ||
@@ -1785,10 +1940,12 @@ function formAutocompletePendingEvidence(params: {
   };
 }
 
-function draftStateEvidence(params: FormFieldObservation & {
-  confidence: CompletionConfidence;
-  observedAtTurn: number;
-}): Extract<CompletionEvidence, { type: "draft_state" }> {
+function draftStateEvidence(
+  params: FormFieldObservation & {
+    confidence: CompletionConfidence;
+    observedAtTurn: number;
+  },
+): Extract<CompletionEvidence, { type: "draft_state" }> {
   const target = params.label || params.stableKey || `tag-${params.elementId}`;
   const targetKey = compactKey(target) || `tag-${params.elementId}`;
   const identityKey =
@@ -2000,9 +2157,8 @@ function findReadAnswerRowScopedSuperlativeMetricAnswer(
   expectedTarget: string,
   expectedAnswerLabel: string,
 ): { sentence: string; answer: string } | null {
-  const superlative = sentenceScopedSuperlativeMetricPartsForLabel(
-    expectedAnswerLabel,
-  );
+  const superlative =
+    sentenceScopedSuperlativeMetricPartsForLabel(expectedAnswerLabel);
   if (!superlative) return null;
 
   const winner = findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
@@ -2076,10 +2232,12 @@ function readAnswerToolEvidence(params: {
   ];
 }
 
-function selectedStateEvidence(params: ChoiceObservation & {
-  confidence: CompletionConfidence;
-  observedAtTurn: number;
-}): Extract<CompletionEvidence, { type: "selected_state" }> {
+function selectedStateEvidence(
+  params: ChoiceObservation & {
+    confidence: CompletionConfidence;
+    observedAtTurn: number;
+  },
+): Extract<CompletionEvidence, { type: "selected_state" }> {
   const labelKey = compactKey(params.label);
   const questionKey =
     params.questionNumber == null ? "current" : String(params.questionNumber);
@@ -2222,10 +2380,30 @@ function extractDraftEvidence(
 
 function isLikelyDraftEditorField(field: FormFieldObservation): boolean {
   if (field.kind !== "text") return false;
-  const labelText = normalizeText([field.label, field.stableKey].join(" "));
+  return isLikelyDraftEditorIdentity(field.label, field.stableKey);
+}
+
+function isLikelyDraftEditorIdentity(
+  label: string | undefined,
+  stableKey: string | undefined,
+): boolean {
+  const labelText = normalizeText([label, stableKey].join(" "));
   return /\b(?:reply|response|message|comment|body|compose|draft|editor|post)\b/i.test(
     labelText,
   );
+}
+
+function extractReadElementValueEvidenceText(params: {
+  args: Record<string, unknown>;
+  result: string;
+}): string | null {
+  const attribute = params.args.attribute;
+  if (typeof attribute === "string" && attribute.toLowerCase() !== "value") {
+    return null;
+  }
+  const valueMatch = params.result.match(/\bvalue="([\s\S]*)"\s*$/);
+  if (valueMatch) return valueMatch[1];
+  return null;
 }
 
 function findFormFieldObservationByElementId(
@@ -2238,8 +2416,7 @@ function findFormFieldObservationByElementId(
   const directStableKey = formFieldStableKey(direct);
   return (
     extractFormFieldObservations(snapshot).find(
-      (field) =>
-        field.elementId === id || field.stableKey === directStableKey,
+      (field) => field.elementId === id || field.stableKey === directStableKey,
     ) ?? null
   );
 }
@@ -2256,24 +2433,11 @@ function getFormFieldKind(element: TaggedElement): FormFieldKind | null {
   if (tagName === "select" || role === "combobox" || role === "listbox") {
     return "select";
   }
-  if (
-    tagName === "textarea" ||
-    role === "textbox" ||
-    role === "searchbox"
-  ) {
+  if (tagName === "textarea" || role === "textbox" || role === "searchbox") {
     return "text";
   }
   if (tagName !== "input") return null;
-  if (
-    [
-      "button",
-      "file",
-      "hidden",
-      "image",
-      "reset",
-      "submit",
-    ].includes(type)
-  ) {
+  if (["button", "file", "hidden", "image", "reset", "submit"].includes(type)) {
     return null;
   }
   return "text";
@@ -2327,9 +2491,7 @@ function bestFormFieldLabel(
     element.attributes.id,
     element.text,
   ];
-  return candidates
-    .map((value) => cleanLabel(value ?? ""))
-    .find(Boolean) ?? "";
+  return candidates.map((value) => cleanLabel(value ?? "")).find(Boolean) ?? "";
 }
 
 function inferExpectedFormFields(
@@ -2360,8 +2522,11 @@ function inferExpectedScopedFormFields(
   for (const field of fields) {
     if (!formFieldMentionedInText(activeScopeText, field)) continue;
     const value =
-      inferExpectedFieldValue(scopedValueText || activeScopeText, field, fields) ??
-      inferExpectedFieldValue(canonicalUserRequest, field, fields);
+      inferExpectedFieldValue(
+        scopedValueText || activeScopeText,
+        field,
+        fields,
+      ) ?? inferExpectedFieldValue(canonicalUserRequest, field, fields);
     if (value == null) continue;
     expectedFields.push({
       label: field.label,
@@ -2491,9 +2656,7 @@ function inferExpectedBooleanValue(
     if (/\b(?:uncheck|deselect|clear|disable|turn off)\b/i.test(window)) {
       return "false";
     }
-    if (
-      /\b(?:check|select|tick|enable|turn on|agree|accept)\b/i.test(window)
-    ) {
+    if (/\b(?:check|select|tick|enable|turn on|agree|accept)\b/i.test(window)) {
       return "true";
     }
   }
@@ -2508,8 +2671,9 @@ function trimInferredValue(
   let value = cleanLabel(rawValue);
   if (formFieldValueLooksLikeControlInstruction(value)) return "";
   if (/\be[-\s]?mail\b/i.test(field.label)) {
-    const email = value.match(/[^\s"'<>(),;:]+@[^\s"'<>(),;:]+\.[^\s"'<>(),;:.]+/i)
-      ?.[0];
+    const email = value.match(
+      /[^\s"'<>(),;:]+@[^\s"'<>(),;:]+\.[^\s"'<>(),;:.]+/i,
+    )?.[0];
     if (email) return email.replace(/[.,;:!?]+$/g, "");
   }
   if (isCodeLikeFormField(field)) {
@@ -2570,12 +2734,17 @@ function isCodeLikeFormField(field: FormFieldObservation): boolean {
 }
 
 function extractConciseCodeFormValue(value: string): string | null {
-  const match = /\b([A-Za-z0-9][A-Za-z0-9_-]{2,})\b(?=\s*(?:$|[.,;:!?]|\b(?:for|in|inside|on|under|as|and|then|please|to)\b))/i.exec(
-    value,
-  );
+  const match =
+    /\b([A-Za-z0-9][A-Za-z0-9_-]{2,})\b(?=\s*(?:$|[.,;:!?]|\b(?:for|in|inside|on|under|as|and|then|please|to)\b))/i.exec(
+      value,
+    );
   if (!match) return null;
   const candidate = match[1].replace(/[.,;:!?]+$/g, "");
-  if (/^(?:the|for|and|then|please|input|field|coupon|promo|discount|code)$/i.test(candidate)) {
+  if (
+    /^(?:the|for|and|then|please|input|field|coupon|promo|discount|code)$/i.test(
+      candidate,
+    )
+  ) {
     return null;
   }
   return candidate;
@@ -3227,9 +3396,10 @@ function inferWorkflowConfirmationTargetLabel(
 
   for (const line of lines) {
     if (action === "enable" || action === "disable") {
-      const indirectActionTarget = /\b(?:click|press|select|choose|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:action|button|control|toggle|switch)\b/i.exec(
-        line,
-      )?.[1];
+      const indirectActionTarget =
+        /\b(?:click|press|select|choose|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:action|button|control|toggle|switch)\b/i.exec(
+          line,
+        )?.[1];
       const indirectActionTargetLabel = normalizeWorkflowTargetLabel(
         indirectActionTarget ?? "",
       );
@@ -3246,17 +3416,19 @@ function inferWorkflowConfirmationTargetLabel(
     if (quotedTarget) return quotedTarget;
 
     if (action === "update") {
-      const inlineEditTarget = /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:and|then)\s+(?:change|update|set|edit|replace)\s+(?:its|the)\s+(?:value|text|name|cell|field)\b/i.exec(
-        line,
-      )?.[1];
+      const inlineEditTarget =
+        /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s+(?:and|then)\s+(?:change|update|set|edit|replace)\s+(?:its|the)\s+(?:value|text|name|cell|field)\b/i.exec(
+          line,
+        )?.[1];
       const inlineEditTargetLabel = normalizeWorkflowTargetLabel(
         inlineEditTarget ?? "",
       );
       if (inlineEditTargetLabel) return inlineEditTargetLabel;
 
-      const typeThenCommitTarget = /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s*,?\s+(?:type|enter)\s+[^,.;\n]{1,80}\s*,?\s+(?:and\s+)?(?:press|hit)?\s*(?:enter|tab)\b/i.exec(
-        line,
-      )?.[1];
+      const typeThenCommitTarget =
+        /\b(?:click|select|focus|open)\s+(?:the\s+)?(.{2,120}?)\s*,?\s+(?:type|enter)\s+[^,.;\n]{1,80}\s*,?\s+(?:and\s+)?(?:press|hit)?\s*(?:enter|tab)\b/i.exec(
+          line,
+        )?.[1];
       const typeThenCommitTargetLabel = normalizeWorkflowTargetLabel(
         typeThenCommitTarget ?? "",
       );
@@ -3451,7 +3623,8 @@ function workflowTargetActionPattern(
     case "submit":
       return "(?:submit)";
     case "complete":
-      return "(?:complete|mark|set)";  }
+      return "(?:complete|mark|set)";
+  }
 }
 
 function inferCompleteWorkflowTargetLabel(value: string): string | null {
@@ -3469,12 +3642,12 @@ function inferCompleteWorkflowTargetLabel(value: string): string | null {
     });
     if (quotedTarget) return quotedTarget;
 
-    const markTarget = /\b(?:mark|set)\s+(?:the\s+)?(.{2,120}?)\s+(?:as\s+)?complete(?:d)?\b/i.exec(
-      line,
-    )?.[1];
-    const completeTarget = /\bcomplete(?:d)?\s+(?:the\s+)?(.{2,120}?)(?:[.;,]|$)/i.exec(
-      line,
-    )?.[1];
+    const markTarget =
+      /\b(?:mark|set)\s+(?:the\s+)?(.{2,120}?)\s+(?:as\s+)?complete(?:d)?\b/i.exec(
+        line,
+      )?.[1];
+    const completeTarget =
+      /\bcomplete(?:d)?\s+(?:the\s+)?(.{2,120}?)(?:[.;,]|$)/i.exec(line)?.[1];
     const target = normalizeWorkflowTargetLabel(
       markTarget ?? completeTarget ?? "",
     );
@@ -3564,7 +3737,16 @@ function workflowConfirmationMatchesTarget(
     ) {
       return true;
     }
-    return visibleWorkflowConfirmationMatchesTarget(
+    if (
+      visibleWorkflowConfirmationMatchesTarget(
+        event.detail.text,
+        event.detail.action,
+        targetLabel,
+      )
+    ) {
+      return true;
+    }
+    return visibleTransactionalConfirmationMatchesTarget(
       event.detail.text,
       event.detail.action,
       targetLabel,
@@ -3585,7 +3767,10 @@ function workflowConfirmationMatchesTarget(
       event.detail.source === "upload_file_result") &&
     event.detail.targetText
   ) {
-    return workflowTargetLabelCoveredByText(targetLabel, event.detail.targetText);
+    return workflowTargetLabelCoveredByText(
+      targetLabel,
+      event.detail.targetText,
+    );
   }
   return true;
 }
@@ -3639,20 +3824,84 @@ function findAuthenticationCompletionConfirmation(
       evidence.find(
         (
           event,
-        ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+        ): event is Extract<
+          CompletionEvidence,
+          { type: "confirmation_state" }
+        > =>
           event.type === "confirmation_state" &&
           event.logicalKey === "form:confirmation",
       ) ??
       evidence.find(
         (
           event,
-        ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
-          event.type === "confirmation_state",
+        ): event is Extract<
+          CompletionEvidence,
+          { type: "confirmation_state" }
+        > => event.type === "confirmation_state",
       ) ??
       null
     );
   }
   return null;
+}
+
+function findTransactionalFormCompletionConfirmation(
+  evidence: CompletionEvidence[],
+  contract: WorkflowConfirmationContract,
+  summary?: string,
+  snapshot?: DomSnapshot | null,
+): Extract<CompletionEvidence, { type: "confirmation_state" }> | null {
+  if (!isTransactionalConfirmationAction(contract.action)) return null;
+
+  const formConfirmation = evidence.find(
+    (
+      event,
+    ): event is Extract<CompletionEvidence, { type: "confirmation_state" }> =>
+      event.type === "confirmation_state" &&
+      event.logicalKey === "form:confirmation",
+  );
+  if (!formConfirmation) return null;
+  if (!contract.targetLabel) return formConfirmation;
+
+  const text = [
+    formConfirmation.detail.text,
+    summary,
+    snapshot?.title,
+    snapshot?.visibleContent,
+    snapshot?.pageContent,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  if (transactionalConfirmationTextNegatesTarget(text, contract.targetLabel)) {
+    return null;
+  }
+  if (
+    visibleTransactionalConfirmationMatchesTarget(
+      extractTransactionalConfirmationSnippet(text) ?? text,
+      contract.action,
+      contract.targetLabel,
+    )
+  ) {
+    return formConfirmation;
+  }
+  return null;
+}
+
+function transactionalConfirmationTextNegatesTarget(
+  text: string,
+  targetLabel: string,
+): boolean {
+  const normalizedText = normalizeText(text);
+  const targetTokens = workflowTargetSpecificTransactionalTokens(targetLabel);
+  if (targetTokens.length === 0) return false;
+  return targetTokens.some((token) => {
+    const escaped = escapeRegExp(token);
+    return new RegExp(
+      `\\b${escaped}\\b.{0,80}\\b(?:remains?|draft|incomplete|pending|not\\s+(?:submitted|complete|completed))\\b|\\b(?:remains?|draft|incomplete|pending|not\\s+(?:submitted|complete|completed))\\b.{0,80}\\b${escaped}\\b`,
+      "i",
+    ).test(normalizedText);
+  });
 }
 
 function workflowTargetLabelCoveredByText(
@@ -3729,6 +3978,31 @@ function visibleWorkflowConfirmationMatchesTarget(
   return workflowTargetLabelCoveredByText(targetLabel, candidate);
 }
 
+function visibleTransactionalConfirmationMatchesTarget(
+  text: string,
+  action: TargetAwareVisibleWorkflowAction,
+  targetLabel: string,
+): boolean {
+  if (!isTransactionalConfirmationAction(action)) return false;
+  if (!workflowTargetIsTransactional(targetLabel)) return false;
+
+  const normalizedText = normalizeText(text);
+  if (
+    !/\b(?:submitted|submission|received|registered|registration|complete|completed|confirmed|confirmation|successful|successfully)\b/i.test(
+      normalizedText,
+    )
+  ) {
+    return false;
+  }
+
+  const specificTokens = workflowTargetSpecificTransactionalTokens(targetLabel);
+  if (specificTokens.length === 0) return false;
+  const covered = specificTokens.filter((token) =>
+    workflowTargetTokenCoveredByText(normalizedText, token),
+  );
+  return covered.length >= Math.min(2, specificTokens.length);
+}
+
 function extractVisibleWorkflowConfirmationTarget(
   text: string,
   action: TargetAwareVisibleWorkflowAction,
@@ -3755,7 +4029,10 @@ function extractVisibleWorkflowConfirmationTarget(
       const candidate =
         normalizeWorkflowTargetLabel(match[1] ?? "", { allowShort: true }) ??
         normalizeWorkflowTargetHead(match[1] ?? "", targetTokenCount);
-      if (candidate && workflowTargetLabelCoveredByText(targetLabel, candidate)) {
+      if (
+        candidate &&
+        workflowTargetLabelCoveredByText(targetLabel, candidate)
+      ) {
         return candidate;
       }
     }
@@ -4255,9 +4532,13 @@ function summaryConfirmsWorkflowActionOrSatisfiedState(
   if (
     isTransactionalConfirmationAction(contract.action) &&
     extractTransactionalConfirmationSnippet(confirmation.detail.text) &&
-    (!contract.targetLabel || workflowTargetIsTransactional(contract.targetLabel))
+    (!contract.targetLabel ||
+      workflowTargetIsTransactional(contract.targetLabel))
   ) {
-    return transactionalConfirmationSummaryGrounded(summary, confirmation.detail.text);
+    return transactionalConfirmationSummaryGrounded(
+      summary,
+      confirmation.detail.text,
+    );
   }
   if (summaryConfirmsWorkflowAction(summary, contract.action)) return true;
   if (contract.action !== "create" || !contract.targetLabel) return false;
@@ -4269,8 +4550,6 @@ function summaryConfirmsWorkflowActionOrSatisfiedState(
     summary,
   );
 }
-
-
 
 function inferDismissWorkflowVisibleStateConfirmation(params: {
   contract: WorkflowConfirmationContract;
@@ -4469,7 +4748,13 @@ function inferWorkflowUpdateVisibleStateConfirmation(params: {
       .join("\n"),
   );
   if (!visibleText) return null;
-  if (!workflowUpdateVisibleStateMatches(contract.targetLabel, targetValue, visibleText)) {
+  if (
+    !workflowUpdateVisibleStateMatches(
+      contract.targetLabel,
+      targetValue,
+      visibleText,
+    )
+  ) {
     return null;
   }
   if (
@@ -4552,7 +4837,8 @@ function workflowUpdateVisibleStateMatches(
 ): boolean {
   const normalizedText = normalizeText(visibleText);
   const normalizedValue = normalizeText(targetValue);
-  if (!valueTokenCoveredBySummary(normalizedText, normalizedValue)) return false;
+  if (!valueTokenCoveredBySummary(normalizedText, normalizedValue))
+    return false;
   const targetTokens = workflowUpdateStateTargetTokens(targetLabel);
   if (targetTokens.length === 0) return false;
   if (
@@ -4621,10 +4907,15 @@ function workflowUpdateVisibleStateSnippet(
   targetLabel: string,
   targetValue: string,
 ): string {
-  const valueIndex = normalizeText(visibleText).indexOf(normalizeText(targetValue));
+  const valueIndex = normalizeText(visibleText).indexOf(
+    normalizeText(targetValue),
+  );
   if (valueIndex < 0) return cleanLabel(targetLabel + " " + targetValue);
   const start = Math.max(0, valueIndex - 180);
-  const end = Math.min(visibleText.length, valueIndex + targetValue.length + 180);
+  const end = Math.min(
+    visibleText.length,
+    valueIndex + targetValue.length + 180,
+  );
   return cleanLabel(visibleText.slice(start, end));
 }
 
@@ -4635,7 +4926,9 @@ function inferWorkflowUpdateTargetValue(value: string): string | null {
     /\b(?:type|enter)\s+["']?([^"'\s,.;\n]{1,80})["']?/i,
   ];
   for (const pattern of patterns) {
-    const candidate = normalizeWorkflowUpdateTargetValue(pattern.exec(text)?.[1] ?? "");
+    const candidate = normalizeWorkflowUpdateTargetValue(
+      pattern.exec(text)?.[1] ?? "",
+    );
     if (candidate) return candidate;
   }
   return null;
@@ -5008,9 +5301,7 @@ function textConfirmsWorkflowAction(
           /\b(?:account|profile|user|member|person|customer|client|contact|record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|workflow|rule|integration|connector|service|app|application|device|domain|url)(?:\s+[\w-]+){0,6}\s+linked\b/i.test(
             text,
           ) ||
-          /\b(?:link|linking)\s+(?:complete|completed|successful)\b/i.test(
-            text,
-          )
+          /\b(?:link|linking)\s+(?:complete|completed|successful)\b/i.test(text)
         );
       }
       return /\b(?:linked|linking|link complete|link completed|link successful|linking complete|linking completed|linking successful)\b/i.test(
@@ -5038,9 +5329,7 @@ function textConfirmsWorkflowAction(
           /\b(?:record|item|task|ticket|request|entry|row|case|issue|incident|lead|opportunity|account|contact|customer|project|workspace|repository|repo|branch|file|folder|document|page|report|dashboard|view|list|message|comment|thread|conversation|article|post|user|member|profile)(?:\s+[\w-]+){0,6}\s+tagged\b/i.test(
             text,
           ) ||
-          /\b(?:tag|tagging)\s+(?:complete|completed|successful)\b/i.test(
-            text,
-          )
+          /\b(?:tag|tagging)\s+(?:complete|completed|successful)\b/i.test(text)
         );
       }
       return /\b(?:tagged|tagging|tag complete|tag completed|tag successful|tagging complete|tagging completed|tagging successful)\b/i.test(
@@ -5530,9 +5819,7 @@ function textConfirmsWorkflowAction(
         return (
           /\b(?:posted|published)\s+successfully\b/i.test(text) ||
           /\b(?:comment|reply|post)\s+posted\b/i.test(text) ||
-          /\b(?:post|publish)\s+(?:complete|completed|successful)\b/i.test(
-            text,
-          )
+          /\b(?:post|publish)\s+(?:complete|completed|successful)\b/i.test(text)
         );
       }
       return /\b(?:posted|published|post complete|post completed|post successful|publish complete|publish completed|publish successful)\b/i.test(
@@ -5644,9 +5931,7 @@ function textConfirmsWorkflowAction(
       if (mode === "visible") {
         return (
           /\bescalated\s+successfully\b/i.test(text) ||
-          /\bescalat(?:e|ion)\s+(?:complete|completed|successful)\b/i.test(
-            text,
-          )
+          /\bescalat(?:e|ion)\s+(?:complete|completed|successful)\b/i.test(text)
         );
       }
       return /\b(?:escalated|escalate complete|escalate completed|escalate successful|escalation complete|escalation completed|escalation successful)\b/i.test(
@@ -5800,7 +6085,8 @@ function textConfirmsWorkflowAction(
           text,
         ) ||
         extractTransactionalConfirmationSnippet(text) !== null
-      );  }
+      );
+  }
   return false;
 }
 
@@ -5809,9 +6095,7 @@ function workflowActionTextIsNegated(
   action: WorkflowConfirmationAction,
 ): boolean {
   const actionTerms = workflowActionTermPattern(action);
-  const noAction = new RegExp(
-    `\\bno\\s+(?:successful\\s+)?${actionTerms}\\b`,
-  );
+  const noAction = new RegExp(`\\bno\\s+(?:successful\\s+)?${actionTerms}\\b`);
   if (noAction.test(text)) return true;
 
   const negationBeforeAction = new RegExp(
@@ -6169,9 +6453,10 @@ function workflowConfirmationEvidenceText(
   const source = workflowConfirmationTextCorpus(snapshot, {
     includeTitleAndUrl: false,
   });
-  return (
-    extractWorkflowConfirmationSnippet(source, action) ?? source
-  ).slice(0, 1000);
+  return (extractWorkflowConfirmationSnippet(source, action) ?? source).slice(
+    0,
+    1000,
+  );
 }
 
 function workflowConfirmationTextCorpus(
@@ -6228,7 +6513,9 @@ function extractWorkflowConfirmationSnippet(
   const sentence = text
     .split(/(?<=[.!?])\s+|\n+/g)
     .map((candidate) => cleanLabel(candidate))
-    .find((candidate) => textConfirmsWorkflowAction(candidate, action, "visible"));
+    .find((candidate) =>
+      textConfirmsWorkflowAction(candidate, action, "visible"),
+    );
   if (sentence) return sentence;
 
   if (isTransactionalConfirmationAction(action)) {
@@ -6250,12 +6537,14 @@ function isTransactionalConfirmationAction(
 }
 
 function workflowTargetIsTransactional(targetLabel: string): boolean {
-  return /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(
+  return /\b(?:order|checkout|purchase|payment|transaction|submission|registration|application|form|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(
     normalizeText(targetLabel),
   );
 }
 
-function workflowTargetHasSpecificTransactionalToken(targetLabel: string): boolean {
+function workflowTargetSpecificTransactionalTokens(
+  targetLabel: string,
+): string[] {
   const generic = new Set([
     "order",
     "checkout",
@@ -6263,6 +6552,9 @@ function workflowTargetHasSpecificTransactionalToken(targetLabel: string): boole
     "payment",
     "transaction",
     "submission",
+    "registration",
+    "application",
+    "form",
     "confirmation",
     "receipt",
     "booking",
@@ -6273,10 +6565,33 @@ function workflowTargetHasSpecificTransactionalToken(targetLabel: string): boole
     "authenticated",
     "dashboard",
     "submit",
+    "submitted",
     "complete",
     "completed",
+    "success",
+    "successful",
+    "successfully",
+    "received",
+    "registered",
+    "email",
+    "phone",
+    "role",
+    "team",
+    "terms",
+    "accept",
+    "accepted",
+    "code",
+    "invite",
   ]);
-  return tokenizeCompletionText(targetLabel).some((token) => !generic.has(token));
+  return tokenizeCompletionText(targetLabel).filter(
+    (token) => !generic.has(token),
+  );
+}
+
+function workflowTargetHasSpecificTransactionalToken(
+  targetLabel: string,
+): boolean {
+  return workflowTargetSpecificTransactionalTokens(targetLabel).length > 0;
 }
 
 function transactionalConfirmationSummaryGrounded(
@@ -6284,7 +6599,11 @@ function transactionalConfirmationSummaryGrounded(
   evidenceText: string,
 ): boolean {
   const normalizedSummary = normalizeText(summary);
-  if (!/\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|confirmed|complete|completed|submitted|thank|logged\s*in|signed\s*in|authenticated?|dashboard)\b/i.test(normalizedSummary)) {
+  if (
+    !/\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|confirmed|complete|completed|submitted|thank|logged\s*in|signed\s*in|authenticated?|dashboard)\b/i.test(
+      normalizedSummary,
+    )
+  ) {
     return false;
   }
   const orderId = extractTransactionReference(evidenceText);
@@ -6292,7 +6611,11 @@ function transactionalConfirmationSummaryGrounded(
 }
 
 function extractTransactionReference(value: string): string | null {
-  return cleanLabel(value).match(/\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*([a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i)?.[1] ?? null;
+  return (
+    cleanLabel(value).match(
+      /\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*([a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i,
+    )?.[1] ?? null
+  );
 }
 
 function extractTransactionalConfirmationSnippet(value: string): string | null {
@@ -6300,16 +6623,29 @@ function extractTransactionalConfirmationSnippet(value: string): string | null {
   if (!text) return null;
   if (/\b(?:cart|basket|bag)\s+(?:is\s+)?empty\b/i.test(text)) return null;
 
-  const hasTransactionNoun = /\b(?:order|checkout|purchase|payment|transaction|submission|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(text);
-  const hasCompletionState = /\b(?:confirmed|confirmation|complete|completed|submitted|successful|successfully|received|placed|thank\s+you|receipt|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.test(text);
-  const hasReference = /\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i.test(text);
+  const hasTransactionNoun =
+    /\b(?:order|checkout|purchase|payment|transaction|submission|registration|application|form|confirmation|receipt|booking|reservation|request|log\s*in|login|sign\s*in|signin|authenticated?|dashboard)\b/i.test(
+      text,
+    );
+  const hasCompletionState =
+    /\b(?:confirmed|confirmation|complete|completed|submitted|successful|successfully|received|placed|thank\s+you|receipt|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.test(
+      text,
+    );
+  const hasReference =
+    /\b(?:order|confirmation|receipt|reference|booking|reservation)\s*(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})\b/i.test(
+      text,
+    );
   if (!hasTransactionNoun || (!hasCompletionState && !hasReference)) {
     return null;
   }
 
   const anchor =
-    /\b(?:thank\s+you|order\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|order\s+(?:confirmed|confirmation|complete|completed|submitted|placed)|confirmation\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|receipt|transaction\s+(?:complete|completed|confirmed|successful)|payment\s+(?:complete|completed|confirmed|successful)|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.exec(text) ??
-    /\b(?:confirmed|confirmation|complete|completed|submitted|successful|received|placed)\b/i.exec(text);
+    /\b(?:thank\s+you|order\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|order\s+(?:confirmed|confirmation|complete|completed|submitted|placed)|confirmation\s+(?:#|number|no\.?|id)?\s*[:#-]?\s*(?:[a-z]{1,6}[-_]?\d{3,}|\d{4,})|receipt|transaction\s+(?:complete|completed|confirmed|successful)|payment\s+(?:complete|completed|confirmed|successful)|(?:submission|registration|application|form)\s+(?:complete|completed|confirmed|successful|submitted|received)|logged\s*in|signed\s*in|authenticated?|welcome|log\s*out|logout|sign\s*out)\b/i.exec(
+      text,
+    ) ??
+    /\b(?:confirmed|confirmation|complete|completed|submitted|successful|received|placed)\b/i.exec(
+      text,
+    );
   if (!anchor) return null;
   const start = Math.max(0, anchor.index - 180);
   const end = Math.min(text.length, anchor.index + 1200);
@@ -6383,7 +6719,9 @@ function extractModalDismissalEvidenceFromToolOutcome(params: {
       ? dismissed
           .map((descriptor) => descriptor.key)
           .filter(Boolean)
-          .join("-") || label || "modal"
+          .join("-") ||
+          label ||
+          "modal"
       : label || "dismissal-control",
   );
 
@@ -6642,7 +6980,8 @@ function findNewDuplicateRowStateText(
   const rowText = currentRows.find(
     (text) =>
       duplicateRowTextHasDuplicatedState(text, action) &&
-      (!clickedControlKey || !normalizeText(text).includes(clickedControlKey)) &&
+      (!clickedControlKey ||
+        !normalizeText(text).includes(clickedControlKey)) &&
       !preStateRows.has(rowStateKey(text)),
   );
   return rowText ?? null;
@@ -6734,7 +7073,9 @@ function inferCreatedFormTarget(fields: FormFieldObservation[]): string | null {
       }),
     }))
     .filter(
-      (candidate): candidate is {
+      (
+        candidate,
+      ): candidate is {
         field: FormFieldObservation;
         value: string;
       } =>
@@ -6831,7 +7172,9 @@ type DownloadFileResultDetails = {
   filename?: string;
 };
 
-function parseDownloadFileResult(result: string): DownloadFileResultDetails | null {
+function parseDownloadFileResult(
+  result: string,
+): DownloadFileResultDetails | null {
   const value = result.trim();
   const started = /^Download started\s+\(ID:\s*(\d+)\)$/i.exec(value);
   if (started?.[1]) {
@@ -7557,7 +7900,9 @@ function clickedDismissalControlLabelFromToolOutcome(params: {
 function snapshotHasVisibleDismissalControl(snapshot: DomSnapshot): boolean {
   return snapshot.elements.some(
     (element) =>
-      element.isVisible !== false && !element.isDisabled && isDismissalControl(element),
+      element.isVisible !== false &&
+      !element.isDisabled &&
+      isDismissalControl(element),
   );
 }
 
@@ -7710,7 +8055,11 @@ function inferTargetDisappearanceAction(
     return "backup";
   }
   if (/\bdeploy(?:ed|ing|ment)?\b/i.test(text)) return "deploy";
-  if (/\b(?:rollback|roll\s+back|rolled\s+back|rolling\s+back|revert(?:ed|ing)?|reversion)\b/i.test(text)) {
+  if (
+    /\b(?:rollback|roll\s+back|rolled\s+back|rolling\s+back|revert(?:ed|ing)?|reversion)\b/i.test(
+      text,
+    )
+  ) {
     return "rollback";
   }
   if (/\breset(?:ting)?\b/i.test(text)) return "reset";
@@ -7776,9 +8125,7 @@ function inferTargetDisappearanceAction(
     return "approve";
   }
   if (
-    /\b(?:reject|rejected|rejecting|rejection|deny|denied|denial)\b/i.test(
-      text,
-    )
+    /\b(?:reject|rejected|rejecting|rejection|deny|denied|denial)\b/i.test(text)
   ) {
     return "reject";
   }
@@ -7818,10 +8165,18 @@ function inferTargetDisappearanceAction(
   if (/\bimport(?:ed|ing)?\b/i.test(text)) return "import";
   if (/\b(?:copy|copied|copying)\b/i.test(text)) return "copy";
   if (/\bshare(?:d|ing)?\b/i.test(text)) return "share";
-  if (/\b(?:restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating)\b/i.test(text)) {
+  if (
+    /\b(?:restore|restored|restoring|recover|recovered|recovering|reinstate|reinstated|reinstating)\b/i.test(
+      text,
+    )
+  ) {
     return "restore";
   }
-  if (/\b(?:duplicate|duplicated|duplicating|duplication|clone|cloned|cloning)\b/i.test(text)) {
+  if (
+    /\b(?:duplicate|duplicated|duplicating|duplication|clone|cloned|cloning)\b/i.test(
+      text,
+    )
+  ) {
     return "duplicate";
   }
   if (/\binvit(?:e|ed|ing|ation)\b/i.test(text)) return "invite";
@@ -7946,9 +8301,7 @@ function inferControlStateChangeAction(
   const text = primaryText || normalizeText(elementControlText(element));
   if (!text) return null;
   if (
-    /\b(?:reject|rejected|rejecting|rejection|deny|denied|denial)\b/i.test(
-      text,
-    )
+    /\b(?:reject|rejected|rejecting|rejection|deny|denied|denial)\b/i.test(text)
   ) {
     return "reject";
   }
@@ -8369,10 +8722,7 @@ function findWorkflowStatusChangeText(
       `\\b(?:status|state|stage)\\s*(?::|=|-|is|now)?\\s*${statusWord}\\b`,
       "i",
     ),
-    new RegExp(
-      `\\b${statusWord}\\s+(?:by|on|at|status|state|stage)\\b`,
-      "i",
-    ),
+    new RegExp(`\\b${statusWord}\\s+(?:by|on|at|status|state|stage)\\b`, "i"),
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(text);
@@ -8581,161 +8931,216 @@ function extractDisappearingTargetFromControl(
           ? "tag"
           : action === "flag"
             ? "flag"
-          : action === "delete"
-            ? "(?:delete|remove)"
-            : action === "archive"
-              ? "archive"
-              : action === "attach"
-                ? "attach"
-                : action === "detach"
-                  ? "detach"
-                : action === "disconnect"
-                  ? "disconnect"
-                  : action === "connect"
-                    ? "connect"
-                    : action === "sync"
-                      ? "(?:sync|synchronize)"
-                    : action === "transfer"
-                      ? "transfer"
-                    : action === "move"
-                      ? "move"
-                    : action === "rename"
-                      ? "rename"
-                    : action === "merge"
-                      ? "merge"
-                    : action === "unlink"
-                      ? "unlink"
-                      : action === "untag"
-                        ? "untag"
-                        : action === "unflag"
-                          ? "unflag"
-                      : action === "unsubscribe"
-                        ? "(?:unsubscribe(?:\\s+from)?)"
-                        : action === "subscribe"
-                          ? "(?:subscribe(?:\\s+to)?)"
-                        : action === "unfollow"
-                          ? "unfollow"
-                          : action === "follow"
-                          ? "follow"
-                          : action === "unwatch"
-                            ? "unwatch"
-                            : action === "watch"
-                              ? "watch"
-                            : action === "unstar"
-                              ? "unstar"
-                              : action === "star"
-                                ? "star"
-                                : action === "unbookmark"
-                                  ? "unbookmark"
-                                  : action === "bookmark"
-                                    ? "bookmark"
-                                    : action === "unfavorite"
-                                      ? "unfavorite"
-                                      : action === "favorite"
-                                        ? "favorite"
-                                        : action === "unpin"
-                                          ? "unpin"
-                                          : action === "pin"
-                                            ? "pin"
-                                            : action === "unmute"
-                                              ? "unmute"
-                                              : action === "mute"
-                                                ? "mute"
-                                                : action === "unschedule"
-                                                  ? "unschedule"
-                                                  : action === "schedule"
-                                              ? "schedule"
-                                              : action === "unassign"
-                                                ? "unassign"
-                                                : action === "assign"
-                                              ? "assign"
-                                              : action === "cancel"
-                                                ? "cancel"
-                                                : action === "unlock"
-                                                  ? "unlock"
-                                                  : action === "lock"
-                                                    ? "lock"
-                                                    : action === "enable"
-                                                      ? "(?:enable|activate)"
-                                                      : action === "disable"
-                                                        ? "(?:disable|deactivate)"
-                                                        : action === "pause"
-                                                          ? "pause"
-                                                          : action === "resume"
-                                                            ? "resume"
-                                                              : action === "start"
-                                                                ? "start"
-                                                                : action === "stop"
-                                                                  ? "stop"
-                                                                  : action === "restart"
-                                                                    ? "restart"
-                                                                    : action === "refresh"
-                                                                      ? "refresh"
-                                                                  : action === "approve"
-                                                                    ? "approve"
-                                                                    : action === "reject"
-                                                                      ? "(?:reject|deny)"
-                                                                      : action === "close"
-                                                                        ? "(?:close|resolve)"
-                                                                        : action === "reopen"
-                                                                          ? "(?:re[-\\s]?open)"
-                                                                          : action === "escalate"
-                                                                            ? "escalate"
-                                                                            : action === "deescalate"
-                                                                              ? "(?:de[-\\s]?escalate)"
-                                                                              : action === "complete"
-                                                                                ? "(?:complete|mark|set)"
-                                                                                : action === "submit"
-                                                                                  ? "submit"
-                                                                                  : action === "send"
-                                                                                    ? "(?:send|email)"
-                                                                                    : action === "post"
-                                                                                      ? "(?:post|publish)"
-                                                                                  : action === "update"
-                                                                                    ? "(?:update|apply(?:\\s+changes)?(?:\\s+to)?)"
-                                                                                    : action === "save"
-                                                                                      ? "save"
-                                                                                      : action === "export"
-                                                                                        ? "export"
-                                                                                        : action === "download"
-                                                                                          ? "download"
-                                                                                          : action === "upload"
-                                                                                            ? "upload"
-                                                                                            : action === "import"
-                                                                                              ? "import"
-                                                                                              : action === "copy"
-                                                                                                ? "copy"
-                                                                                                : action === "share"
-                                                                                                  ? "share"
-                                                                                                  : action === "restore"
-                                                                                                    ? "(?:restore|recover|reinstate)"
-                                                                                                    : action === "duplicate"
-                                                                                                      ? "(?:duplicate|clone)"
-                                                                                                      : action === "invite"
-                                                                                                        ? "invite"
-                                                                  : action === "grant"
-                                                                    ? "grant"
-                                                                    : action === "revoke"
-                                                                      ? "(?:revoke|revocation)"
-                                                                      : action === "unblock"
-                                                                        ? "unblock"
-                                                                        : action === "block"
-                                                                          ? "block"
-                                                                          : action === "unsuspend"
-                                                                            ? "unsuspend"
-                                                                            : action === "suspend"
-                                                                              ? "suspend"
-                                                                              : action === "backup"
-                                                                                ? "(?:back\\s+up|backup)"
-                                                                                : action === "deploy"
-                                                                                  ? "deploy"
-                                                                                  : action === "rollback"
-                                                                                    ? "(?:roll\\s+back|rollback|revert|reversion)"
-                                                                                  : action === "reset"
-                                                                                    ? "reset"
-                                                                                    : action === "install"
-                                                                                      ? "install"
-                                                                                      : "uninstall";
+            : action === "delete"
+              ? "(?:delete|remove)"
+              : action === "archive"
+                ? "archive"
+                : action === "attach"
+                  ? "attach"
+                  : action === "detach"
+                    ? "detach"
+                    : action === "disconnect"
+                      ? "disconnect"
+                      : action === "connect"
+                        ? "connect"
+                        : action === "sync"
+                          ? "(?:sync|synchronize)"
+                          : action === "transfer"
+                            ? "transfer"
+                            : action === "move"
+                              ? "move"
+                              : action === "rename"
+                                ? "rename"
+                                : action === "merge"
+                                  ? "merge"
+                                  : action === "unlink"
+                                    ? "unlink"
+                                    : action === "untag"
+                                      ? "untag"
+                                      : action === "unflag"
+                                        ? "unflag"
+                                        : action === "unsubscribe"
+                                          ? "(?:unsubscribe(?:\\s+from)?)"
+                                          : action === "subscribe"
+                                            ? "(?:subscribe(?:\\s+to)?)"
+                                            : action === "unfollow"
+                                              ? "unfollow"
+                                              : action === "follow"
+                                                ? "follow"
+                                                : action === "unwatch"
+                                                  ? "unwatch"
+                                                  : action === "watch"
+                                                    ? "watch"
+                                                    : action === "unstar"
+                                                      ? "unstar"
+                                                      : action === "star"
+                                                        ? "star"
+                                                        : action ===
+                                                            "unbookmark"
+                                                          ? "unbookmark"
+                                                          : action ===
+                                                              "bookmark"
+                                                            ? "bookmark"
+                                                            : action ===
+                                                                "unfavorite"
+                                                              ? "unfavorite"
+                                                              : action ===
+                                                                  "favorite"
+                                                                ? "favorite"
+                                                                : action ===
+                                                                    "unpin"
+                                                                  ? "unpin"
+                                                                  : action ===
+                                                                      "pin"
+                                                                    ? "pin"
+                                                                    : action ===
+                                                                        "unmute"
+                                                                      ? "unmute"
+                                                                      : action ===
+                                                                          "mute"
+                                                                        ? "mute"
+                                                                        : action ===
+                                                                            "unschedule"
+                                                                          ? "unschedule"
+                                                                          : action ===
+                                                                              "schedule"
+                                                                            ? "schedule"
+                                                                            : action ===
+                                                                                "unassign"
+                                                                              ? "unassign"
+                                                                              : action ===
+                                                                                  "assign"
+                                                                                ? "assign"
+                                                                                : action ===
+                                                                                    "cancel"
+                                                                                  ? "cancel"
+                                                                                  : action ===
+                                                                                      "unlock"
+                                                                                    ? "unlock"
+                                                                                    : action ===
+                                                                                        "lock"
+                                                                                      ? "lock"
+                                                                                      : action ===
+                                                                                          "enable"
+                                                                                        ? "(?:enable|activate)"
+                                                                                        : action ===
+                                                                                            "disable"
+                                                                                          ? "(?:disable|deactivate)"
+                                                                                          : action ===
+                                                                                              "pause"
+                                                                                            ? "pause"
+                                                                                            : action ===
+                                                                                                "resume"
+                                                                                              ? "resume"
+                                                                                              : action ===
+                                                                                                  "start"
+                                                                                                ? "start"
+                                                                                                : action ===
+                                                                                                    "stop"
+                                                                                                  ? "stop"
+                                                                                                  : action ===
+                                                                                                      "restart"
+                                                                                                    ? "restart"
+                                                                                                    : action ===
+                                                                                                        "refresh"
+                                                                                                      ? "refresh"
+                                                                                                      : action ===
+                                                                                                          "approve"
+                                                                                                        ? "approve"
+                                                                                                        : action ===
+                                                                                                            "reject"
+                                                                                                          ? "(?:reject|deny)"
+                                                                                                          : action ===
+                                                                                                              "close"
+                                                                                                            ? "(?:close|resolve)"
+                                                                                                            : action ===
+                                                                                                                "reopen"
+                                                                                                              ? "(?:re[-\\s]?open)"
+                                                                                                              : action ===
+                                                                                                                  "escalate"
+                                                                                                                ? "escalate"
+                                                                                                                : action ===
+                                                                                                                    "deescalate"
+                                                                                                                  ? "(?:de[-\\s]?escalate)"
+                                                                                                                  : action ===
+                                                                                                                      "complete"
+                                                                                                                    ? "(?:complete|mark|set)"
+                                                                                                                    : action ===
+                                                                                                                        "submit"
+                                                                                                                      ? "submit"
+                                                                                                                      : action ===
+                                                                                                                          "send"
+                                                                                                                        ? "(?:send|email)"
+                                                                                                                        : action ===
+                                                                                                                            "post"
+                                                                                                                          ? "(?:post|publish)"
+                                                                                                                          : action ===
+                                                                                                                              "update"
+                                                                                                                            ? "(?:update|apply(?:\\s+changes)?(?:\\s+to)?)"
+                                                                                                                            : action ===
+                                                                                                                                "save"
+                                                                                                                              ? "save"
+                                                                                                                              : action ===
+                                                                                                                                  "export"
+                                                                                                                                ? "export"
+                                                                                                                                : action ===
+                                                                                                                                    "download"
+                                                                                                                                  ? "download"
+                                                                                                                                  : action ===
+                                                                                                                                      "upload"
+                                                                                                                                    ? "upload"
+                                                                                                                                    : action ===
+                                                                                                                                        "import"
+                                                                                                                                      ? "import"
+                                                                                                                                      : action ===
+                                                                                                                                          "copy"
+                                                                                                                                        ? "copy"
+                                                                                                                                        : action ===
+                                                                                                                                            "share"
+                                                                                                                                          ? "share"
+                                                                                                                                          : action ===
+                                                                                                                                              "restore"
+                                                                                                                                            ? "(?:restore|recover|reinstate)"
+                                                                                                                                            : action ===
+                                                                                                                                                "duplicate"
+                                                                                                                                              ? "(?:duplicate|clone)"
+                                                                                                                                              : action ===
+                                                                                                                                                  "invite"
+                                                                                                                                                ? "invite"
+                                                                                                                                                : action ===
+                                                                                                                                                    "grant"
+                                                                                                                                                  ? "grant"
+                                                                                                                                                  : action ===
+                                                                                                                                                      "revoke"
+                                                                                                                                                    ? "(?:revoke|revocation)"
+                                                                                                                                                    : action ===
+                                                                                                                                                        "unblock"
+                                                                                                                                                      ? "unblock"
+                                                                                                                                                      : action ===
+                                                                                                                                                          "block"
+                                                                                                                                                        ? "block"
+                                                                                                                                                        : action ===
+                                                                                                                                                            "unsuspend"
+                                                                                                                                                          ? "unsuspend"
+                                                                                                                                                          : action ===
+                                                                                                                                                              "suspend"
+                                                                                                                                                            ? "suspend"
+                                                                                                                                                            : action ===
+                                                                                                                                                                "backup"
+                                                                                                                                                              ? "(?:back\\s+up|backup)"
+                                                                                                                                                              : action ===
+                                                                                                                                                                  "deploy"
+                                                                                                                                                                ? "deploy"
+                                                                                                                                                                : action ===
+                                                                                                                                                                    "rollback"
+                                                                                                                                                                  ? "(?:roll\\s+back|rollback|revert|reversion)"
+                                                                                                                                                                  : action ===
+                                                                                                                                                                      "reset"
+                                                                                                                                                                    ? "reset"
+                                                                                                                                                                    : action ===
+                                                                                                                                                                        "install"
+                                                                                                                                                                      ? "install"
+                                                                                                                                                                      : "uninstall";
     const explicit = new RegExp(
       `\\b${actionPattern}\\b\\s+(?:the\\s+)?(.{3,120})`,
       "i",
@@ -9225,18 +9630,13 @@ function findModalLikeDescriptors(snapshot: DomSnapshot): Array<{
       !isActionControl &&
       /\b(?:modal|dialog|popup|pop-up|overlay|banner|toast|notice|alert)\b/i.test(
         semanticAttrText,
-      ) && (element.rect.width > 0 || element.rect.height > 0);
+      ) &&
+      (element.rect.width > 0 || element.rect.height > 0);
 
     if (!isSemanticDialog && !isKnownOverlay && !isNamedModal) continue;
 
     const label = cleanLabel(
-      [
-        element.text,
-        attrs["aria-label"],
-        attrs.label,
-        attrs.name,
-        attrs.id,
-      ]
+      [element.text, attrs["aria-label"], attrs.label, attrs.name, attrs.id]
         .filter(Boolean)
         .join(" "),
     );
@@ -9336,10 +9736,7 @@ function readControlState(
   return readControlStateValue(state, action);
 }
 
-function bestChoiceLabel(
-  element: TaggedElement,
-  associated?: string,
-): string {
+function bestChoiceLabel(element: TaggedElement, associated?: string): string {
   const candidates = [
     associated,
     element.attributes.label,
@@ -9431,7 +9828,9 @@ function expectedSelectionsMatch(
     selected.map((event) => event.detail.label).join("\n"),
   );
   return expectedSelections.every((expected) =>
-    importantLabelTokens(expected).some((token) => selectedText.includes(token)),
+    importantLabelTokens(expected).some((token) =>
+      selectedText.includes(token),
+    ),
   );
 }
 
@@ -9495,9 +9894,7 @@ function formValueMatches(observed: string, expected: string): boolean {
 function parseBooleanLike(value: string): boolean | null {
   const text = normalizeText(value);
   if (/^(?:true|yes|on|checked|selected|enabled|1)$/.test(text)) return true;
-  if (
-    /^(?:false|no|off|unchecked|unselected|disabled|0|)$/.test(text)
-  ) {
+  if (/^(?:false|no|off|unchecked|unselected|disabled|0|)$/.test(text)) {
     return false;
   }
   return null;
@@ -9670,7 +10067,6 @@ function hasPageReadAnswerIntent(
   return hasGroundedDirectPageQuestion(normalized, snapshot);
 }
 
-
 function hasDecomposedReadAnswerIntent(normalized: string): boolean {
   const requestedResult =
     /\b(?:requested|target|matching|found|located)\s+(?:result|results|answer|answers|value|values|code|token|key|identifier|id)s?\b/;
@@ -9678,8 +10074,7 @@ function hasDecomposedReadAnswerIntent(normalized: string): boolean {
     /\b(?:answer|answers|result|results|value|values|code|token|key|identifier|id)s?\b/;
   const readOrReportVerb =
     /\b(?:read|report|extract|identify|tell me|return|provide|find|locate)\b/;
-  const navigationVerb =
-    /\b(?:navigate to|open|go to|visit|scroll to)\b/;
+  const navigationVerb = /\b(?:navigate to|open|go to|visit|scroll to)\b/;
 
   return (
     readOrReportVerb.test(normalized) &&
@@ -10172,7 +10567,10 @@ function cleanSentenceScopedDefinitionTarget(value: string): string | null {
   return normalizeWorkflowTargetLabel(
     cleanLabel(value)
       .replace(/^(?:the\s+)?term\s+/i, "")
-      .replace(/\s+(?:on|in|from|according to)\s+(?:this|the)\s+(?:page|article|document|post|readme)$/i, ""),
+      .replace(
+        /\s+(?:on|in|from|according to)\s+(?:this|the)\s+(?:page|article|document|post|readme)$/i,
+        "",
+      ),
   );
 }
 
@@ -10260,12 +10658,8 @@ function extractSentenceScopedEventDateQuestionParts(
     "i",
   ).exec(text);
   if (passiveMatch) {
-    const label = canonicalSentenceScopedEventDateLabel(
-      passiveMatch[2] ?? "",
-    );
-    const target = cleanSentenceScopedEventDateTarget(
-      passiveMatch[1] ?? "",
-    );
+    const label = canonicalSentenceScopedEventDateLabel(passiveMatch[2] ?? "");
+    const target = cleanSentenceScopedEventDateTarget(passiveMatch[1] ?? "");
     if (label && target) return { label, target };
   }
 
@@ -10274,12 +10668,8 @@ function extractSentenceScopedEventDateQuestionParts(
     "i",
   ).exec(text);
   if (hasBeenMatch) {
-    const label = canonicalSentenceScopedEventDateLabel(
-      hasBeenMatch[2] ?? "",
-    );
-    const target = cleanSentenceScopedEventDateTarget(
-      hasBeenMatch[1] ?? "",
-    );
+    const label = canonicalSentenceScopedEventDateLabel(hasBeenMatch[2] ?? "");
+    const target = cleanSentenceScopedEventDateTarget(hasBeenMatch[1] ?? "");
     if (label && target) return { label, target };
   }
 
@@ -10288,12 +10678,8 @@ function extractSentenceScopedEventDateQuestionParts(
     "i",
   ).exec(text);
   if (activeMatch) {
-    const label = canonicalSentenceScopedEventDateLabel(
-      activeMatch[2] ?? "",
-    );
-    const target = cleanSentenceScopedEventDateTarget(
-      activeMatch[1] ?? "",
-    );
+    const label = canonicalSentenceScopedEventDateLabel(activeMatch[2] ?? "");
+    const target = cleanSentenceScopedEventDateTarget(activeMatch[1] ?? "");
     if (label && target) return { label, target };
   }
 
@@ -10328,12 +10714,8 @@ function extractSentenceScopedTargetCountQuestionParts(
     "i",
   ).exec(text);
   if (thereAreMatch) {
-    const metric = cleanSentenceScopedTargetCountMetric(
-      thereAreMatch[1] ?? "",
-    );
-    const target = cleanSentenceScopedTargetCountTarget(
-      thereAreMatch[2] ?? "",
-    );
+    const metric = cleanSentenceScopedTargetCountMetric(thereAreMatch[1] ?? "");
+    const target = cleanSentenceScopedTargetCountTarget(thereAreMatch[2] ?? "");
     if (metric && target) return { label: `${metric} count`, target };
   }
 
@@ -10356,12 +10738,8 @@ function extractSentenceScopedTargetCountQuestionParts(
       text,
     );
   if (countOfMatch) {
-    const metric = cleanSentenceScopedTargetCountMetric(
-      countOfMatch[1] ?? "",
-    );
-    const target = cleanSentenceScopedTargetCountTarget(
-      countOfMatch[2] ?? "",
-    );
+    const metric = cleanSentenceScopedTargetCountMetric(countOfMatch[1] ?? "");
+    const target = cleanSentenceScopedTargetCountTarget(countOfMatch[2] ?? "");
     if (metric && target) return { label: `${metric} count`, target };
   }
 
@@ -10392,12 +10770,8 @@ function extractSentenceScopedTargetPresenceQuestionParts(
     "i",
   ).exec(text);
   if (thereAreMatch) {
-    const metric = cleanSentenceScopedTargetCountMetric(
-      thereAreMatch[1] ?? "",
-    );
-    const target = cleanSentenceScopedTargetCountTarget(
-      thereAreMatch[2] ?? "",
-    );
+    const metric = cleanSentenceScopedTargetCountMetric(thereAreMatch[1] ?? "");
+    const target = cleanSentenceScopedTargetCountTarget(thereAreMatch[2] ?? "");
     if (metric && target) return { label: `${metric} presence`, target };
   }
 
@@ -10500,9 +10874,7 @@ function extractSentenceScopedSuperlativeMetricQuestionParts(
   const entityTokens = tokenizeCompletionText(match[1] ?? "");
   if (entityTokens.length < 1 || entityTokens.length > 4) return null;
 
-  const direction = canonicalSentenceScopedSuperlativeDirection(
-    match[2] ?? "",
-  );
+  const direction = canonicalSentenceScopedSuperlativeDirection(match[2] ?? "");
   const metric = cleanSentenceScopedSuperlativeMetric(match[3] ?? "");
   if (!direction || !metric) return null;
 
@@ -10538,9 +10910,7 @@ function sentenceScopedSuperlativeMetricLabel(
   return `${metric} ${direction} target`;
 }
 
-function sentenceScopedSuperlativeMetricPartsForLabel(
-  label: string,
-): {
+function sentenceScopedSuperlativeMetricPartsForLabel(label: string): {
   metric: string;
   direction: SentenceScopedSuperlativeDirection;
 } | null {
@@ -10599,7 +10969,8 @@ function sentenceScopedMetricValueReservedLabel(label: string): boolean {
   if (sentenceScopedRelationNounPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedActiveRelationPatternForLabel(normalizedLabel)) return true;
   if (sentenceScopedAttributePatternForLabel(normalizedLabel)) return true;
-  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel)) return true;
+  if (sentenceScopedReasonPredicatePatternForLabel(normalizedLabel))
+    return true;
   return false;
 }
 
@@ -10626,9 +10997,7 @@ function extractSentenceScopedTargetStateQuestionParts(
     const label = canonicalSentenceScopedTargetStateLabel(
       hasBeenMatch[2] ?? "",
     );
-    const target = cleanSentenceScopedTargetStateTarget(
-      hasBeenMatch[1] ?? "",
-    );
+    const target = cleanSentenceScopedTargetStateTarget(hasBeenMatch[1] ?? "");
     if (label && target) return { label, target };
   }
 
@@ -10666,7 +11035,11 @@ function canonicalSentenceScopedTargetStateLabel(value: string): string | null {
   if (normalized === "disabled") return "disabled state";
   if (normalized === "approved") return "approved state";
   if (normalized === "rejected") return "rejected state";
-  if (normalized === "complete" || normalized === "completed" || normalized === "done") {
+  if (
+    normalized === "complete" ||
+    normalized === "completed" ||
+    normalized === "done"
+  ) {
     return "completed state";
   }
   if (normalized === "failed") return "failed state";
@@ -10773,7 +11146,8 @@ function findGroundedSentenceScopedAnswer(
     }
   }
 
-  const eventDateQuestion = extractSentenceScopedEventDateQuestionParts(question);
+  const eventDateQuestion =
+    extractSentenceScopedEventDateQuestionParts(question);
   if (eventDateQuestion) {
     const target = normalizeWorkflowTargetLabel(eventDateQuestion.target);
     if (
@@ -10839,7 +11213,9 @@ function findGroundedSentenceScopedAnswer(
   const targetMetricValueQuestion =
     extractSentenceScopedTargetMetricValueQuestionParts(question);
   if (targetMetricValueQuestion) {
-    const target = normalizeWorkflowTargetLabel(targetMetricValueQuestion.target);
+    const target = normalizeWorkflowTargetLabel(
+      targetMetricValueQuestion.target,
+    );
     if (
       target &&
       findReadAnswerSentenceScopedAnswer(
@@ -10973,9 +11349,7 @@ function findReadAnswerSuperlativeMetricWinner(
       extractReadAnswerSuperlativeMetricCandidate(sentence, metric),
     )
     .filter(
-      (
-        candidate,
-      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+      (candidate): candidate is ReadAnswerSuperlativeMetricCandidate =>
         candidate !== null,
     );
   return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
@@ -10997,9 +11371,7 @@ function findReadAnswerSuperlativeMetricWinnerFromSnapshotRows(
       extractReadAnswerSuperlativeMetricCandidate(rowText, metric),
     )
     .filter(
-      (
-        candidate,
-      ): candidate is ReadAnswerSuperlativeMetricCandidate =>
+      (candidate): candidate is ReadAnswerSuperlativeMetricCandidate =>
         candidate !== null,
     );
   return selectReadAnswerSuperlativeMetricWinner(candidates, direction);
@@ -11113,7 +11485,9 @@ function cleanSentenceScopedSuperlativeCandidateTarget(
   return target;
 }
 
-function parseSentenceScopedSuperlativeMetricValue(value: string): number | null {
+function parseSentenceScopedSuperlativeMetricValue(
+  value: string,
+): number | null {
   const match = /(?:\$\s*)?(\d[\d,]*(?:\.\d+)?)/.exec(value);
   if (!match) return null;
   const numeric = Number((match[1] ?? "").replace(/,/g, ""));
@@ -11125,9 +11499,8 @@ function findReadAnswerSentenceScopedAnswer(
   target: string,
   expectedAnswerLabel: string,
 ): { sentence: string; answer: string } | null {
-  const superlative = sentenceScopedSuperlativeMetricPartsForLabel(
-    expectedAnswerLabel,
-  );
+  const superlative =
+    sentenceScopedSuperlativeMetricPartsForLabel(expectedAnswerLabel);
   if (superlative) {
     return findReadAnswerSuperlativeMetricAnswer(
       evidenceText,
@@ -11255,7 +11628,9 @@ function cleanReadAnswerEvidenceText(
 }
 
 function hasSubstantiveReadAnswerEvidence(value: string): boolean {
-  return tokenizeCompletionText(value).length >= 12 && cleanLabel(value).length > 100;
+  return (
+    tokenizeCompletionText(value).length >= 12 && cleanLabel(value).length > 100
+  );
 }
 
 function readAnswerSummaryGroundedInEvidence(
@@ -11263,9 +11638,7 @@ function readAnswerSummaryGroundedInEvidence(
   evidence: Extract<CompletionEvidence, { type: "answer_state" }>,
   expectedAnswerLabel?: string,
 ): boolean {
-  if (
-    expectedAnswerLabel
-  ) {
+  if (expectedAnswerLabel) {
     if (
       readAnswerSummaryMatchesExpectedLabelValue(
         summary,
@@ -11689,9 +12062,8 @@ function extractSentenceScopedRelationAnswer(
     return extractSentenceScopedLocationAnswer(sentence, targetPattern);
   }
 
-  const eventDatePattern = sentenceScopedEventDatePatternForLabel(
-    normalizedLabel,
-  );
+  const eventDatePattern =
+    sentenceScopedEventDatePatternForLabel(normalizedLabel);
   if (eventDatePattern) {
     return extractSentenceScopedEventDateAnswer(
       sentence,
@@ -11742,7 +12114,8 @@ function extractSentenceScopedRelationAnswer(
   }
 
   if (normalizedLabel === "priority" || normalizedLabel === "severity") {
-    const labelPattern = normalizedLabel === "severity" ? "severity" : "priority";
+    const labelPattern =
+      normalizedLabel === "severity" ? "severity" : "priority";
     const priorityPatterns = [
       `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${labelPattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})(?:\\b|$)`,
       `^\\s*${targetPattern}\\b.{0,80}\\b(?:is|are|was|were|remains|remain|became|becomes)\\s+(${SENTENCE_SCOPED_PRIORITY_ANSWER_PATTERN})\\s+${labelPattern}(?:\\b|$)`,
@@ -11781,9 +12154,8 @@ function extractSentenceScopedRelationAnswer(
     return null;
   }
 
-  const attributePattern = sentenceScopedAttributePatternForLabel(
-    normalizedLabel,
-  );
+  const attributePattern =
+    sentenceScopedAttributePatternForLabel(normalizedLabel);
   if (attributePattern) {
     const attributePatterns = [
       `^\\s*${targetPattern}\\b(?:\\s*(?:'|\\u2019)s)?\\s+${attributePattern}\\s*(?::|=|\\b(?:is|are|was|were)\\b)\\s*([^.;\\n]{2,120})`,
@@ -11797,15 +12169,12 @@ function extractSentenceScopedRelationAnswer(
     return null;
   }
 
-  const relationPattern = sentenceScopedByRelationPatternForLabel(
-    normalizedLabel,
-  );
-  const activeRelationPattern = sentenceScopedActiveRelationPatternForLabel(
-    normalizedLabel,
-  );
-  const relationNounPattern = sentenceScopedRelationNounPatternForLabel(
-    normalizedLabel,
-  );
+  const relationPattern =
+    sentenceScopedByRelationPatternForLabel(normalizedLabel);
+  const activeRelationPattern =
+    sentenceScopedActiveRelationPatternForLabel(normalizedLabel);
+  const relationNounPattern =
+    sentenceScopedRelationNounPatternForLabel(normalizedLabel);
   if (!relationPattern && !activeRelationPattern && !relationNounPattern) {
     return null;
   }
@@ -12011,7 +12380,8 @@ function sentenceScopedEventDatePatternForLabel(label: string): string | null {
   if (normalizedLabel === "opened date") return "open(?:ed)?";
   if (normalizedLabel === "closed date") return "clos(?:e|ed)";
   if (normalizedLabel === "resolved date") return "resolv(?:e|ed)";
-  if (normalizedLabel === "updated date") return "(?:updat(?:e|ed)|chang(?:e|ed))";
+  if (normalizedLabel === "updated date")
+    return "(?:updat(?:e|ed)|chang(?:e|ed))";
   if (normalizedLabel === "approved date") return "approv(?:e|ed)";
   if (normalizedLabel === "reviewed date") return "review(?:ed)?";
   if (normalizedLabel === "completed date") return "complet(?:e|ed)";
@@ -12033,9 +12403,8 @@ function extractSentenceScopedEventDateAnswer(
   const bePattern =
     "(?:is|are|was|were|has\\s+been|have\\s+been|got|became|becomes)";
   const datePattern = sentenceScopedEventDateAnswerPattern();
-  const eventNounPattern = sentenceScopedEventDateNounPatternForLabel(
-    normalizedLabel,
-  );
+  const eventNounPattern =
+    sentenceScopedEventDateNounPatternForLabel(normalizedLabel);
   const patterns = [
     `^\\s*${targetPattern}\\b\\s+(?:${bePattern}\\s+)?${eventPattern}\\s+(?:on|at)\\s+(${datePattern})\\s*$`,
     `^\\s*${targetPattern}\\b\\s+(?:${bePattern}\\s+)?${eventPattern}\\s+(?:in|during)\\s+(${datePattern})\\s*$`,
@@ -12056,21 +12425,30 @@ function sentenceScopedEventDateNounPatternForLabel(label: string): string {
   const normalizedLabel = normalizeText(label).replace(/\s+date$/, "");
   if (normalizedLabel === "launched") return "(?:launch|launched)\\s+date";
   if (normalizedLabel === "released") return "(?:release|released)\\s+date";
-  if (normalizedLabel === "deployed") return "(?:deploy|deployment|deployed)\\s+date";
-  if (normalizedLabel === "created") return "(?:create|creation|created)\\s+date";
+  if (normalizedLabel === "deployed")
+    return "(?:deploy|deployment|deployed)\\s+date";
+  if (normalizedLabel === "created")
+    return "(?:create|creation|created)\\s+date";
   if (normalizedLabel === "opened") return "(?:open|opened)\\s+date";
   if (normalizedLabel === "closed") return "(?:close|closure|closed)\\s+date";
-  if (normalizedLabel === "resolved") return "(?:resolve|resolution|resolved)\\s+date";
-  if (normalizedLabel === "updated") return "(?:update|change|updated|changed)\\s+date";
-  if (normalizedLabel === "approved") return "(?:approve|approval|approved)\\s+date";
+  if (normalizedLabel === "resolved")
+    return "(?:resolve|resolution|resolved)\\s+date";
+  if (normalizedLabel === "updated")
+    return "(?:update|change|updated|changed)\\s+date";
+  if (normalizedLabel === "approved")
+    return "(?:approve|approval|approved)\\s+date";
   if (normalizedLabel === "reviewed") return "(?:review|reviewed)\\s+date";
-  if (normalizedLabel === "completed") return "(?:complete|completion|completed)\\s+date";
-  if (normalizedLabel === "submitted") return "(?:submit|submission|submitted)\\s+date";
-  if (normalizedLabel === "published") return "(?:publish|publication|published)\\s+date";
+  if (normalizedLabel === "completed")
+    return "(?:complete|completion|completed)\\s+date";
+  if (normalizedLabel === "submitted")
+    return "(?:submit|submission|submitted)\\s+date";
+  if (normalizedLabel === "published")
+    return "(?:publish|publication|published)\\s+date";
   if (normalizedLabel === "started") return "(?:start|started)\\s+date";
   if (normalizedLabel === "stopped") return "(?:stop|stopped)\\s+date";
   if (normalizedLabel === "scheduled") return "(?:schedule|scheduled)\\s+date";
-  if (normalizedLabel === "canceled") return "(?:cancel|cancellation|canceled|cancelled)\\s+date";
+  if (normalizedLabel === "canceled")
+    return "(?:cancel|cancellation|canceled|cancelled)\\s+date";
   return `${escapeRegExp(normalizedLabel)}\\s+date`;
 }
 
@@ -12099,7 +12477,9 @@ function cleanSentenceScopedEventDateAnswerText(value: string): string {
     : "";
 }
 
-function sentenceScopedCountMetricPatternForLabel(label: string): string | null {
+function sentenceScopedCountMetricPatternForLabel(
+  label: string,
+): string | null {
   const normalizedLabel = normalizeText(label);
   if (!normalizedLabel.endsWith(" count")) return null;
   const metric = normalizedLabel.replace(/\s+count$/, "");
@@ -12119,7 +12499,9 @@ function sentenceScopedPresenceMetricPatternForLabel(
   return tokens.map(escapeRegExp).join("\\s+");
 }
 
-function sentenceScopedMetricValuePatternForLabel(label: string): string | null {
+function sentenceScopedMetricValuePatternForLabel(
+  label: string,
+): string | null {
   const normalizedLabel = normalizeText(label);
   if (!normalizedLabel.endsWith(" value")) return null;
   const metric = normalizedLabel.replace(/\s+value$/, "");
@@ -12173,10 +12555,9 @@ function sentenceScopedTargetCountAnswerPattern(): string {
 function cleanSentenceScopedTargetCountAnswerText(value: string): string {
   const answer = cleanSentenceScopedAnswerText(value);
   if (!answer) return "";
-  return new RegExp(
-    `^${sentenceScopedTargetCountAnswerPattern()}$`,
-    "i",
-  ).test(answer)
+  return new RegExp(`^${sentenceScopedTargetCountAnswerPattern()}$`, "i").test(
+    answer,
+  )
     ? answer
     : "";
 }
@@ -12211,7 +12592,8 @@ function extractSentenceScopedTargetPresenceAnswer(
   for (const pattern of countPatterns) {
     const match = new RegExp(pattern, "i").exec(sentence);
     const count = cleanSentenceScopedTargetCountAnswerText(match?.[1] ?? "");
-    if (count) return sentenceScopedTargetCountAnswerIsZero(count) ? "no" : "yes";
+    if (count)
+      return sentenceScopedTargetCountAnswerIsZero(count) ? "no" : "yes";
   }
 
   return null;
@@ -12282,7 +12664,8 @@ function sentenceScopedTargetStatePatternForLabel(
   if (normalizedLabel === "disabled state") return "disabled";
   if (normalizedLabel === "approved state") return "approved";
   if (normalizedLabel === "rejected state") return "rejected";
-  if (normalizedLabel === "completed state") return "(?:complete|completed|done)";
+  if (normalizedLabel === "completed state")
+    return "(?:complete|completed|done)";
   if (normalizedLabel === "failed state") return "failed";
   if (normalizedLabel === "successful state") return "(?:successful|success)";
   if (normalizedLabel === "draft state") return "draft";
@@ -12335,8 +12718,7 @@ function extractCurrentRoleRelationNounAnswer(
   relationNounPattern: string,
 ): string | null {
   const currentRoleAdverbPattern = "(?:currently|presently|now|still|actively)";
-  const currentRolePhrasePattern =
-    `(?:(?:${currentRoleAdverbPattern}\\s+)?(?:serves?|acts|functions)\\s+as|(?:is|are)\\s+(?:${currentRoleAdverbPattern}\\s+)?(?:acting|listed|designated|identified|shown|named|recorded|displayed)\\s+as)`;
+  const currentRolePhrasePattern = `(?:(?:${currentRoleAdverbPattern}\\s+)?(?:serves?|acts|functions)\\s+as|(?:is|are)\\s+(?:${currentRoleAdverbPattern}\\s+)?(?:acting|listed|designated|identified|shown|named|recorded|displayed)\\s+as)`;
   const match = new RegExp(
     `([^.;\\n]{2,120}?)\\s+${currentRolePhrasePattern}\\s+(?:the\\s+)?${relationNounPattern}\\s+(?:for|of)\\s+(?:the\\s+)?${targetPattern}\\b`,
     "i",
@@ -12555,10 +12937,7 @@ function labelValuePatternsForExpectedLabel(
 function cleanLabelValueAnswerText(value: string): string {
   return cleanLabel(
     cleanLabel(value)
-      .replace(
-        /\s+(?:\|\s*)?[a-z][a-z0-9 /_-]{1,40}\s*(?::|=|\bis\b).*$/i,
-        "",
-      )
+      .replace(/\s+(?:\|\s*)?[a-z][a-z0-9 /_-]{1,40}\s*(?::|=|\bis\b).*$/i, "")
       .replace(/[),.;!?]+$/g, ""),
   );
 }
@@ -12608,9 +12987,7 @@ function extractPreciseConciseLabelValue(
     if (uncPathMatch) {
       return (
         cleanLabel(
-          (uncPathMatch[1] ?? "")
-            .replace(/[),;!?]+$/g, "")
-            .replace(/\.$/g, ""),
+          (uncPathMatch[1] ?? "").replace(/[),;!?]+$/g, "").replace(/\.$/g, ""),
         ) || null
       );
     }
@@ -12635,8 +13012,9 @@ function extractPreciseConciseLabelValue(
     ).exec(evidenceText);
     if (pathMatch) {
       return (
-        cleanLabel((pathMatch[1] ?? "").replace(/[),;!?]+$/g, "").replace(/\.$/g, "")) ||
-        null
+        cleanLabel(
+          (pathMatch[1] ?? "").replace(/[),;!?]+$/g, "").replace(/\.$/g, ""),
+        ) || null
       );
     }
   }
@@ -12999,9 +13377,7 @@ function labelCanHavePhysicalSpeedValue(expectedAnswerLabel: string): boolean {
 }
 
 function labelCanHaveTemperatureValue(expectedAnswerLabel: string): boolean {
-  return /\b(?:temperature|temp|thermal|ambient)\b/i.test(
-    expectedAnswerLabel,
-  );
+  return /\b(?:temperature|temp|thermal|ambient)\b/i.test(expectedAnswerLabel);
 }
 
 function labelCanHaveElectricalValue(expectedAnswerLabel: string): boolean {
@@ -13168,9 +13544,7 @@ function preciseCidrValueCoveredBySummary(
 }
 
 function isPathValue(value: string): boolean {
-  return /^(?:(?:~|\.{1,2})?\/|[a-z]:\\|\\\\)\S+$/i.test(
-    cleanLabel(value),
-  );
+  return /^(?:(?:~|\.{1,2})?\/|[a-z]:\\|\\\\)\S+$/i.test(cleanLabel(value));
 }
 
 function precisePathValueCoveredBySummary(
@@ -13246,10 +13620,7 @@ function isCssRgbColorValue(value: string): boolean {
   const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
   const legacy = `rgba?\\(\\s*${channel}\\s*,\\s*${channel}\\s*,\\s*${channel}(?:\\s*,\\s*${alpha})?\\s*\\)`;
   const modern = `rgba?\\(\\s*${channel}\\s+${channel}\\s+${channel}(?:\\s*\\/\\s*${alpha})?\\s*\\)`;
-  return new RegExp(
-    `^(?:${legacy}|${modern})$`,
-    "i",
-  ).test(cleanLabel(value));
+  return new RegExp(`^(?:${legacy}|${modern})$`, "i").test(cleanLabel(value));
 }
 
 function preciseCssRgbColorValueCoveredBySummary(
@@ -13270,10 +13641,7 @@ function isCssHslColorValue(value: string): boolean {
   const alpha = "(?:0(?:\\.\\d+)?|1(?:\\.0+)?|\\.\\d+|(?:[1-9]\\d?|100)%)";
   const legacy = `hsla?\\(\\s*${hue}\\s*,\\s*${percent}\\s*,\\s*${percent}(?:\\s*,\\s*${alpha})?\\s*\\)`;
   const modern = `hsla?\\(\\s*${hue}\\s+${percent}\\s+${percent}(?:\\s*\\/\\s*${alpha})?\\s*\\)`;
-  return new RegExp(
-    `^(?:${legacy}|${modern})$`,
-    "i",
-  ).test(cleanLabel(value));
+  return new RegExp(`^(?:${legacy}|${modern})$`, "i").test(cleanLabel(value));
 }
 
 function preciseCssHslColorValueCoveredBySummary(
@@ -13288,159 +13656,157 @@ function preciseCssHslColorValueCoveredBySummary(
   ).test(compactSummary);
 }
 
-const CSS_NAMED_COLOR_VALUES = new Set(
-  [
-    "aliceblue",
-    "antiquewhite",
-    "aqua",
-    "aquamarine",
-    "azure",
-    "beige",
-    "bisque",
-    "black",
-    "blanchedalmond",
-    "blue",
-    "blueviolet",
-    "brown",
-    "burlywood",
-    "cadetblue",
-    "chartreuse",
-    "chocolate",
-    "coral",
-    "cornflowerblue",
-    "cornsilk",
-    "crimson",
-    "cyan",
-    "darkblue",
-    "darkcyan",
-    "darkgoldenrod",
-    "darkgray",
-    "darkgreen",
-    "darkgrey",
-    "darkkhaki",
-    "darkmagenta",
-    "darkolivegreen",
-    "darkorange",
-    "darkorchid",
-    "darkred",
-    "darksalmon",
-    "darkseagreen",
-    "darkslateblue",
-    "darkslategray",
-    "darkslategrey",
-    "darkturquoise",
-    "darkviolet",
-    "deeppink",
-    "deepskyblue",
-    "dimgray",
-    "dimgrey",
-    "dodgerblue",
-    "firebrick",
-    "floralwhite",
-    "forestgreen",
-    "fuchsia",
-    "gainsboro",
-    "ghostwhite",
-    "gold",
-    "goldenrod",
-    "gray",
-    "green",
-    "greenyellow",
-    "grey",
-    "honeydew",
-    "hotpink",
-    "indianred",
-    "indigo",
-    "ivory",
-    "khaki",
-    "lavender",
-    "lavenderblush",
-    "lawngreen",
-    "lemonchiffon",
-    "lightblue",
-    "lightcoral",
-    "lightcyan",
-    "lightgoldenrodyellow",
-    "lightgray",
-    "lightgreen",
-    "lightgrey",
-    "lightpink",
-    "lightsalmon",
-    "lightseagreen",
-    "lightskyblue",
-    "lightslategray",
-    "lightslategrey",
-    "lightsteelblue",
-    "lightyellow",
-    "lime",
-    "limegreen",
-    "linen",
-    "magenta",
-    "maroon",
-    "mediumaquamarine",
-    "mediumblue",
-    "mediumorchid",
-    "mediumpurple",
-    "mediumseagreen",
-    "mediumslateblue",
-    "mediumspringgreen",
-    "mediumturquoise",
-    "mediumvioletred",
-    "midnightblue",
-    "mintcream",
-    "mistyrose",
-    "moccasin",
-    "navajowhite",
-    "navy",
-    "oldlace",
-    "olive",
-    "olivedrab",
-    "orange",
-    "orangered",
-    "orchid",
-    "palegoldenrod",
-    "palegreen",
-    "paleturquoise",
-    "palevioletred",
-    "papayawhip",
-    "peachpuff",
-    "peru",
-    "pink",
-    "plum",
-    "powderblue",
-    "purple",
-    "rebeccapurple",
-    "red",
-    "rosybrown",
-    "royalblue",
-    "saddlebrown",
-    "salmon",
-    "sandybrown",
-    "seagreen",
-    "seashell",
-    "sienna",
-    "silver",
-    "skyblue",
-    "slateblue",
-    "slategray",
-    "slategrey",
-    "snow",
-    "springgreen",
-    "steelblue",
-    "tan",
-    "teal",
-    "thistle",
-    "tomato",
-    "transparent",
-    "turquoise",
-    "violet",
-    "wheat",
-    "white",
-    "whitesmoke",
-    "yellow",
-    "yellowgreen",
-  ],
-);
+const CSS_NAMED_COLOR_VALUES = new Set([
+  "aliceblue",
+  "antiquewhite",
+  "aqua",
+  "aquamarine",
+  "azure",
+  "beige",
+  "bisque",
+  "black",
+  "blanchedalmond",
+  "blue",
+  "blueviolet",
+  "brown",
+  "burlywood",
+  "cadetblue",
+  "chartreuse",
+  "chocolate",
+  "coral",
+  "cornflowerblue",
+  "cornsilk",
+  "crimson",
+  "cyan",
+  "darkblue",
+  "darkcyan",
+  "darkgoldenrod",
+  "darkgray",
+  "darkgreen",
+  "darkgrey",
+  "darkkhaki",
+  "darkmagenta",
+  "darkolivegreen",
+  "darkorange",
+  "darkorchid",
+  "darkred",
+  "darksalmon",
+  "darkseagreen",
+  "darkslateblue",
+  "darkslategray",
+  "darkslategrey",
+  "darkturquoise",
+  "darkviolet",
+  "deeppink",
+  "deepskyblue",
+  "dimgray",
+  "dimgrey",
+  "dodgerblue",
+  "firebrick",
+  "floralwhite",
+  "forestgreen",
+  "fuchsia",
+  "gainsboro",
+  "ghostwhite",
+  "gold",
+  "goldenrod",
+  "gray",
+  "green",
+  "greenyellow",
+  "grey",
+  "honeydew",
+  "hotpink",
+  "indianred",
+  "indigo",
+  "ivory",
+  "khaki",
+  "lavender",
+  "lavenderblush",
+  "lawngreen",
+  "lemonchiffon",
+  "lightblue",
+  "lightcoral",
+  "lightcyan",
+  "lightgoldenrodyellow",
+  "lightgray",
+  "lightgreen",
+  "lightgrey",
+  "lightpink",
+  "lightsalmon",
+  "lightseagreen",
+  "lightskyblue",
+  "lightslategray",
+  "lightslategrey",
+  "lightsteelblue",
+  "lightyellow",
+  "lime",
+  "limegreen",
+  "linen",
+  "magenta",
+  "maroon",
+  "mediumaquamarine",
+  "mediumblue",
+  "mediumorchid",
+  "mediumpurple",
+  "mediumseagreen",
+  "mediumslateblue",
+  "mediumspringgreen",
+  "mediumturquoise",
+  "mediumvioletred",
+  "midnightblue",
+  "mintcream",
+  "mistyrose",
+  "moccasin",
+  "navajowhite",
+  "navy",
+  "oldlace",
+  "olive",
+  "olivedrab",
+  "orange",
+  "orangered",
+  "orchid",
+  "palegoldenrod",
+  "palegreen",
+  "paleturquoise",
+  "palevioletred",
+  "papayawhip",
+  "peachpuff",
+  "peru",
+  "pink",
+  "plum",
+  "powderblue",
+  "purple",
+  "rebeccapurple",
+  "red",
+  "rosybrown",
+  "royalblue",
+  "saddlebrown",
+  "salmon",
+  "sandybrown",
+  "seagreen",
+  "seashell",
+  "sienna",
+  "silver",
+  "skyblue",
+  "slateblue",
+  "slategray",
+  "slategrey",
+  "snow",
+  "springgreen",
+  "steelblue",
+  "tan",
+  "teal",
+  "thistle",
+  "tomato",
+  "transparent",
+  "turquoise",
+  "violet",
+  "wheat",
+  "white",
+  "whitesmoke",
+  "yellow",
+  "yellowgreen",
+]);
 
 function isCssNamedColorValue(value: string): boolean {
   return CSS_NAMED_COLOR_VALUES.has(normalizeText(cleanLabel(value)));
@@ -13535,10 +13901,9 @@ function preciseTemperatureValueCoveredBySummary(
 ): boolean {
   if (!normalizedValue) return false;
   const summary = normalizedSummary.replace(/\u00b0/g, "");
-  const valuePattern = escapeRegExp(normalizedValue.replace(/\u00b0/g, "")).replace(
-    /\s+/g,
-    "\\s*",
-  );
+  const valuePattern = escapeRegExp(
+    normalizedValue.replace(/\u00b0/g, ""),
+  ).replace(/\s+/g, "\\s*");
   return new RegExp(
     `(^|[^a-z0-9.])${valuePattern}(?=$|[\\s,;:!?)]|\\.(?:\\s|$))`,
   ).test(summary);
@@ -13942,9 +14307,7 @@ function valueTokenCoveredBySummary(
 
 function tokenizeCompletionText(value: string): string[] {
   return [
-    ...new Set(
-      normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? [],
-    ),
+    ...new Set(normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? []),
   ].filter((token) => !LABEL_STOPWORDS.has(token));
 }
 
@@ -14007,7 +14370,10 @@ function extractPromptSection(
 ): string | null {
   const match = new RegExp(`(?:^|\\n)\\s*${label}\\s*:\\s*`, "i").exec(value);
   if (!match) return null;
-  return takeUntilFirstMarker(value.slice(match.index + match[0].length), markers);
+  return takeUntilFirstMarker(
+    value.slice(match.index + match[0].length),
+    markers,
+  );
 }
 
 function extractLabeledRequest(
@@ -14034,5 +14400,3 @@ function takeUntilFirstMarker(value: string, markers: RegExp[]): string {
 function evidenceConfidenceRank(event: CompletionEvidence): number {
   return event.confidence === "high" ? 2 : 1;
 }
-
-

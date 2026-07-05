@@ -78,7 +78,7 @@ describe("PlanProgressPanel", () => {
           "RECENT WORKSPACE CONVERSATION:",
           "- Assistant: Senior Product Engineer @ Langfuse summary",
           "PROFILE DIGEST CONTEXT:",
-          "- Fact: Email = kshkodrani@gmail.com",
+          "- Fact: Email = jordan.rivera@example.com",
           "CURRENT REQUEST:",
           "Fill the profile",
           "Execution policy:",

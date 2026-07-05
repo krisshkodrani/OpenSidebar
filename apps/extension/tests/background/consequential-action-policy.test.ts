@@ -4,6 +4,7 @@ import {
   assessConsequentialFinalActionBlock,
   assessDraftOnlyCompletionViolation,
   classifyConsequentialActionConsentMode,
+  isDraftOnlyCommunicationTask,
 } from "../../src/background/agent/consequential-action-policy";
 import { ToolName } from "../../src/types";
 
@@ -52,6 +53,16 @@ describe("consequential action policy", () => {
         "Draft the reply in the editor but dont send it.",
       ),
     ).toBe("prepare_only");
+  });
+
+  test("classifies review-first message copy as prepare-only", () => {
+    const taskText =
+      "Create a message in german to say that I am sorry for not answering before and that I am currently looking for a job in my profession. Let me review the copy first.";
+
+    expect(isDraftOnlyCommunicationTask(taskText)).toBe(true);
+    expect(classifyConsequentialActionConsentMode(taskText)).toBe(
+      "prepare_only",
+    );
   });
 
   test("classifies explicit final-action requests", () => {

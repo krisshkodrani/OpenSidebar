@@ -7,134 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.2] - 2026-05-25
+## [0.3.0] - 2026-07-02
+
+Launch-hardening release: escalation rescue, a public benchmark harness, a
+unified observability engine, and an experimental OpenClaw "brain" integration
+— all additive and default-off where they touch the agent runtime.
 
 ### Added
 
-- Added a release preflight command to validate generated artifact version, commit, hash, and publication readiness before tagging.
-- Added an assisted native Chrome side-panel smoke command for the final manual launch gate.
-- Added a default extension action keyboard shortcut so the native side-panel launch path can be driven during demos and smoke checks.
-
-### Changed
-
-- Synchronized the extension manifest version with the workspace package version for the OSS BYOK preview candidate.
-- Updated the extension manifest description to describe multi-provider BYOK instead of OpenRouter-only setup.
-- Documented the current permission, browser-data, and local-development API security posture.
-- Added a public known-limitations page for the OSS BYOK preview.
-
-### Fixed
-
-- Hardened local backend/log-server origin handling so arbitrary browser origins are rejected.
-- Restricted the E2E overlay bridge with per-mount bridge tokens, storage limits, and credential-key filtering.
-- Reclassified cookies and browser history tools as high-risk actions.
-- Blocked `execute_js` from reading page cookies/storage or making page-context network requests.
-- Removed the unused vulnerable `uuid` dependency.
-
-## [0.9.1 Release Checkpoint] - 2026-05-07
-
-### Changed
-
-- Promoted the completed runtime-boundary conclusions into stable architecture docs.
-- Documented the shared side panel runtime port, overlay harness, and background environment port boundaries.
-- Updated the WorkArena roadmap so the next checkpoint starts from staged E2E and guarded ServiceNow validation.
-
-### Verified
-
-- Full staged OpenSidebar E2E checkpoint passed when run in smaller chunks after the staged wrapper exceeded the tool timeout.
-- WorkArena doctor reported ready, and the guarded ServiceNow `all-menu` seed `0` smoke passed with validation score `1`.
-- Extension manifest bumped to `0.3.1`; workspace package bumped to `0.9.1`.
-
-## [0.3.0 Demo Checkpoint] - 2026-05-05
-
-### Added
-
-- Local backend service for memory and scheduled task support
-- Shared prompt runtime package and shared type package to support the staged repo split
-- Release checklist documenting release verification, E2E smoke validation, and artifact checks
-
-### Changed
-
-- Reorganized the repository into `apps/extension`, `apps/backend`, and `packages/*`
-- Preserved root developer commands while localizing app-specific Vite, Vitest, and TypeScript config
-- CI now aligns with the current repo layout by running lint, extension tests, backend tests, and build
-
-### Fixed
-
-- Scheduled tasks now wait for real orchestrator completion before being marked finished
-- Site knowledge metadata now round-trips through backend memory storage
-- Trace viewer backend memory details no longer show stale content under the wrong expanded row
-
-## [0.5.0] - 2026-02-25
-
-### Changed
-
-- Migrated from Bun to npm + tsx + Vitest for the standard Node.js toolchain
-- `npm run dev` now runs the full dev stack (Vite HMR + log server + trace viewer)
+- Escalation rescue ("converge or escalate", RFC LP-2): stuck runs are detected
+  and escalated to the planner tier instead of burning turns to `max_turns`.
+- Public benchmark adapter (RFC LP-1): Online-Mind2Web task set vendored with a
+  runnable harness (`scripts/bench/`), WebJudge scoring, and a benchmark plan.
+- Unified observability engine (RFC LP-7): OTel-style span spine as the trace
+  source of truth, an agent-callable MCP trace-search server (`pnpm run mcp`),
+  and RL-format trajectory export.
+- Trace viewer: trajectory scorecard, daily success-rate/cost trend chart on
+  the Metrics tab, and a design-system polish pass.
+- Experimental OpenClaw integration (RFC LP-8, default-off): browser MCP host
+  exposing thick browser tools over loopback WebSocket + streamable-http,
+  knowledge sync with a last-writer-wins read-through cache, hybrid planner
+  routing through an OpenClaw gateway with graceful fallback, an in-repo
+  OpenClaw config scaffold, and a dockerized server stack (`docker compose up`:
+  gateway + browser MCP + trace viewer).
+- Optional Writer specialist role for free-text composition subtasks.
+- Generic cross-tab readiness signal for multi-tab tasks.
+- Contributor surface (RFC LP-3): seam map in CONTRIBUTING, issue templates,
+  labels, and good-first-issue guidance.
+- RFC decision governance: decision stamps validated in `verify`/`release:verify`.
+- Model catalog: Kimi K2.7 Code and GLM 5.2 added to the curated Fireworks list.
 
 ### Removed
 
-- Bun dependency and bun-types
+- The local backend service (task-run durability ledger + profile file
+  service) is removed entirely. The extension is now fully self-contained:
+  tasks recover from in-browser checkpoints across service-worker restarts,
+  and end when the browser closes. The `upload_file` tool takes a URL only
+  (the backend-served `profileFile: "cv"` alias is gone); Profile Notes in
+  extension storage are unaffected.
+- Dev/test surface no longer ships in the production build: the trace viewer,
+  e2e helper pages, and all localhost log/trace/backend calls are dev-only,
+  enforced by a dist check.
 
-## [0.4.0] - 2026-02-21
+### Security & Privacy
 
-### Added
+- Sensitive profile data is now gated behind explicit per-task consent and
+  encrypted at rest (AES-GCM) in extension storage.
+- PII redaction at the observability MCP boundary before traces reach agents.
+- Removed orphaned profile endpoints (`/profile/resolve`, `/profile/context`).
+- Privacy policy expanded to disclose profile-data handling and gating.
+- The entire `traces/` runtime data directory is now git-ignored.
 
-- Perception layer replacing raw DOM text and take_screenshot tool
-- Vision-based page understanding via Groq Llama 4 Scout → GPT-4o-mini fallback
-- Fingerprint-based caching for perception calls
-- Structured perception output for page location, changes, blockers, visual-only evidence, and affordances
+### Fixed
 
-### Removed
+- Completion handshake deadlock in the agent loop.
+- WebCrypto encryption on ArrayBuffer-backed typed arrays.
 
-- `vision.ts` module (replaced by `perception.ts`)
-- `take_screenshot` tool (perception layer handles visual understanding automatically)
+## [0.2.3] - 2026-06-05
 
-## [0.3.0] - 2026-02-16
-
-### Added
-
-- Orchestrator pipeline with planner → executor → verifier lanes
-- Skills system (teach mode, learned skill replay, pin/enable controls)
-- Demo recording and replay
-- Saved prompts and prompt management
-- React Toolkit (4 on-demand tools: inspect_react, react_set_input, inspect_react_tree, wait_for_react)
-- Voice input via Browser Speech API and Groq Whisper
-- Trace viewer UI (React-based, served at http://127.0.0.1:7589/viewer)
-- Planner evaluation pipeline
-- 5 new tools: dismiss_overlays, close_popups, batch_execute, recall_demo, and memory tools (update, delete, list_categories)
-- Prompt registry with versioned, parameterized prompts
-
-## [0.2.0] - 2026-02-12
+Initial public release — an open-source, bring-your-own-key Chrome (Manifest V3)
+browser agent that perceives, reasons, and acts on the web from a side panel.
 
 ### Added
 
-- Tri-provider failover: Cerebras → Groq → OpenRouter for both fast and smart tiers
-- Two-tier LLM architecture with independent provider pools
-- GLM-4.7 as the smart model with native reasoning (replacing Kimi Swarm)
-- Cerebras API key support for fastest inference (~3000 TPS)
-- Context distillation on escalation (summarizeTrajectory)
-- Session metrics with per-model cost attribution
-- Stable hash-based element IDs (FNV-1a)
-- Expanded tool count from 16 to 48+ tools
+- Autonomous agent loop: perceive → reason → act → verify, driven by natural-language tasks.
+- Two-tier model architecture (executor + planner) with automatic escalation and stuck-recovery.
+- Orchestration with planner, executor, and verifier lanes for multi-step tasks, plus optional plan confirmation.
+- Perception layer with unified vision and structured DOM modes, screenshot understanding, and cross-lingual support.
+- Generic browser tools: click, type, scroll, select, tab management, uploads, downloads, page reading, and overlay dismissal.
+- Bring-your-own-key provider support (Fireworks, OpenRouter, and direct provider modes); keys stay in local Chrome storage.
+- Configurable safety gates: per-tool approval, navigation controls, and high-risk action review.
+- Local personalization via Profile Notes + reviewable digest for form and application tasks.
+- Optional local backend for long-term memory and durable task scheduling.
+- Built-in trace viewer with full-fidelity traces, structured logs, and session metrics.
+- Reusable workflow skills and a thin, benchmark-agnostic harness for validation.
 
-### Changed
+### Security & Privacy
 
-- Replaced bimodal (fast/deep) with unified two-tier (fast/smart) architecture
+- No telemetry or hosted relay; provider traffic goes only to the configured provider.
+- `execute_js` and high-risk browser-data tools are guarded and classified for explicit review.
 
-## [0.1.0] - 2026-02-09
-
-### Added
-
-- Initial release of OpenSidebar
-- Browser automation via natural language
-- Visual DOM understanding with numeric tagging
-- Bimodal AI: Cerebras (fast) + Kimi Swarm (deep research)
-- Local memory system (SQLite + Voy + Transformers.js)
-- Workspace isolation with Chrome Tab Groups
-- Navigation persistence across page loads
-- Real-time streaming responses
-- Shadow DOM support for modern web apps
-- 16 automation tools (click, type, scroll, navigate, etc.)
-- Comprehensive test suite (93 tests)
-- Full TypeScript implementation
-- GitHub Actions CI/CD
+See [Known Limitations](./docs/known-limitations.md) before using on sensitive sites.

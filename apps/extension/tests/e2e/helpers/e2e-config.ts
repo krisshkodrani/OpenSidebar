@@ -142,8 +142,6 @@ const LEGACY_E2E_ENV_REPLACEMENTS: Record<string, string> = {
   E2E_TEMPERATURE: "apps/extension/tests/e2e/helpers/e2e-config.ts runtime defaults",
   E2E_USE_VL_EXECUTOR: "E2E_PERCEPTION_MODE=unified_vl",
   E2E_DIAGNOSTIC: "E2E_SUITE_FLAGS=diagnostic",
-  E2E_BACKEND_DURABLE: "E2E_SUITE_FLAGS=backend-durable",
-  E2E_BACKEND_PROFILE: "E2E_SUITE_FLAGS=backend-profile",
   E2E_MEMORY_LONG: "E2E_SUITE_FLAGS=memory-long",
 };
 
@@ -424,16 +422,6 @@ export function readE2EConfig(
   }
   if (config.suiteFlags.has("diagnostic")) config.diagnostic = true;
   if (config.suiteFlags.has("no-diagnostic")) config.diagnostic = false;
-
-  const legacyBackendDurable = parseBoolean(
-    warnDeprecated(warnings, env, "E2E_BACKEND_DURABLE"),
-  );
-  if (legacyBackendDurable) applySuiteFlag(config.suiteFlags, "backend-durable");
-
-  const legacyBackendProfile = parseBoolean(
-    warnDeprecated(warnings, env, "E2E_BACKEND_PROFILE"),
-  );
-  if (legacyBackendProfile) applySuiteFlag(config.suiteFlags, "backend-profile");
 
   const legacyMemoryLong = parseBoolean(
     warnDeprecated(warnings, env, "E2E_MEMORY_LONG"),

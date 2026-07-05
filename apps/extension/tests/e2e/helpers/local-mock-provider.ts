@@ -3,7 +3,12 @@ import type { CDPSession } from "puppeteer";
 export type LocalMockProviderScenarioName =
   | "login"
   | "navigation"
-  | "quiz-derailment";
+  | "quiz-derailment"
+  | "done-draft-read-element"
+  | "done-draft-premature-recovery"
+  | "done-form-submit-gating"
+  | "done-summary-incomplete-recovery"
+  | "partial-handoff-max-turns";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -23,6 +28,15 @@ interface LocalMockProviderState {
   navigationCodeSubmitReturned: boolean;
   quizCorrectSelectionsReturned: boolean;
   quizReadsAfterSelection: number;
+  draftPrematureDoneReturned: boolean;
+  draftTypedReturned: boolean;
+  draftReadReturned: boolean;
+  formFilledReturned: boolean;
+  formPrematureDoneReturned: boolean;
+  formSubmittedReturned: boolean;
+  summaryReadReturned: boolean;
+  summaryIncompleteDoneReturned: boolean;
+  partialHandoffReadReturned: boolean;
 }
 
 export const localMockProviderScenarios: Record<
@@ -49,6 +63,45 @@ export const localMockProviderScenarios: Record<
     label: "completion-done-quiz-derailment",
     prompt: "Select the correct option/s",
     maxTurns: 12,
+    timeoutMs: 180_000,
+  },
+  "done-draft-read-element": {
+    fixture: "messaging-thread",
+    label: "completion-done-draft-read-element",
+    prompt:
+      "Type a German apology message in the composer: draft explaining sorry for not answering sooner and currently looking for a job in your profession. Do NOT send, leave for user review.",
+    maxTurns: 10,
+    timeoutMs: 180_000,
+  },
+  "done-draft-premature-recovery": {
+    fixture: "messaging-thread",
+    label: "completion-done-draft-premature-recovery",
+    prompt:
+      "Draft a German apology message in the composer explaining sorry for not answering sooner and currently looking for a job in your profession. Do not send it; leave it for review.",
+    maxTurns: 12,
+    timeoutMs: 180_000,
+  },
+  "done-form-submit-gating": {
+    fixture: "partner-registration",
+    label: "completion-done-form-submit-gating",
+    prompt:
+      "Submit the partner registration for Sam Rivera at Northstar Analytics with email sam.rivera@example.com, phone +1 415 555 0134, role Partnerships Lead, team Alliances, invite code PN-4821, and accept the partner terms.",
+    maxTurns: 14,
+    timeoutMs: 180_000,
+  },
+  "done-summary-incomplete-recovery": {
+    fixture: "summarize",
+    label: "completion-done-summary-incomplete-recovery",
+    prompt: "Read this page and summarize the main points.",
+    maxTurns: 8,
+    timeoutMs: 180_000,
+  },
+  "partial-handoff-max-turns": {
+    fixture: "summarize",
+    label: "completion-partial-handoff-max-turns",
+    prompt:
+      "Read this page, gather the main facts, and prepare a final summary with any remaining open questions.",
+    maxTurns: 2,
     timeoutMs: 180_000,
   },
 };
@@ -131,7 +184,10 @@ function parseTaggedId(text: string, label: RegExp): number | null {
   return null;
 }
 
-function plannerJson(text: string): string {
+function plannerJson(
+  text: string,
+  scenarioName: LocalMockProviderScenarioName,
+): string {
   if (/Agent summary:/i.test(text)) {
     return JSON.stringify({
       approved: true,
@@ -144,7 +200,98 @@ function plannerJson(text: string): string {
       reason: "Local mock monitor sees progress aligned with the fixture task.",
     });
   }
-  if (/Quiz Derailment Fixture|Question 32|Select the correct option\/s/i.test(text)) {
+  if (
+    scenarioName === "done-draft-read-element" ||
+    scenarioName === "done-draft-premature-recovery"
+  ) {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [
+        {
+          objective:
+            "Draft the requested German apology message in the visible message composer and leave it unsent for review.",
+          successCriteria:
+            "Composer contains the German apology draft and the Send button has not been clicked.",
+          dependencies: [],
+          assumptions: [],
+          verifyAfter: {
+            trigger: "composer contains German apology draft",
+            action: "call_done",
+          },
+          toolProfile: "form_fill",
+        },
+      ],
+    });
+  }
+  if (scenarioName === "done-form-submit-gating") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "moderate",
+      steps: [
+        {
+          objective:
+            "Fill and submit the partner registration form for Sam Rivera at Northstar Analytics.",
+          successCriteria:
+            "Registration received page shows Sam Rivera, Northstar Analytics, sam.rivera@example.com, and PN-4821.",
+          dependencies: [],
+          assumptions: [],
+          verifyAfter: {
+            trigger: "Registration received",
+            action: "call_done",
+          },
+          toolProfile: "form_fill",
+        },
+      ],
+    });
+  }
+  if (scenarioName === "done-summary-incomplete-recovery") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [
+        {
+          objective:
+            "Read the page and summarize the main Transformer architecture points.",
+          successCriteria:
+            "Summary mentions attention mechanism, encoder-decoder structure, and positional encoding.",
+          dependencies: [],
+          assumptions: [],
+          verifyAfter: {
+            trigger: "summary includes all main points",
+            action: "call_done",
+          },
+          toolProfile: "read_only",
+        },
+      ],
+    });
+  }
+  if (scenarioName === "partial-handoff-max-turns") {
+    return JSON.stringify({
+      isMultiStep: false,
+      difficulty: "simple",
+      steps: [
+        {
+          objective:
+            "Read the page and gather the main Transformer architecture facts before summarizing.",
+          successCriteria:
+            "The summary mentions attention, encoder-decoder structure, and positional encoding, with remaining uncertainty if incomplete.",
+          dependencies: [],
+          assumptions: [],
+          verifyAfter: {
+            trigger: "facts have been gathered and summary is ready",
+            action: "call_done",
+          },
+          toolProfile: "read_only",
+        },
+      ],
+    });
+  }
+  if (
+    /Quiz Derailment Fixture|Question 32|Select the correct option\/s/i.test(
+      text,
+    )
+  ) {
     return JSON.stringify({
       isMultiStep: true,
       difficulty: "moderate",
@@ -189,11 +336,220 @@ function quizOptionSelected(text: string, option: string): boolean {
   ).test(text);
 }
 
+const GERMAN_DRAFT =
+  "Hallo Elisabeth,\n\nentschuldige bitte, dass ich nicht frueher geantwortet habe. Ich bin aktuell auf der Suche nach einer Stelle in meinem Berufsfeld und melde mich deshalb erst jetzt.\n\nViele Gruesse\nKris";
+
+const INCOMPLETE_LONG_SUMMARY =
+  "The page explains that Transformer architecture is built around attention, which lets models weigh relationships across the input and process information efficiently. It also describes the encoder-decoder structure, where the encoder builds contextual representations and the decoder uses those representations to produce outputs. Finally, it notes that positional encoding is needed because attention alone does not preserve sequence order, giving the model information about token positions in";
+
+const COMPLETE_SUMMARY =
+  "The page explains three main Transformer concepts: attention lets the model weigh relationships across input tokens, the encoder-decoder structure separates representation building from output generation, and positional encoding gives the model sequence-order information.";
+
+function isDoneDraftScenario(
+  scenarioName: LocalMockProviderScenarioName,
+): boolean {
+  return (
+    scenarioName === "done-draft-read-element" ||
+    scenarioName === "done-draft-premature-recovery"
+  );
+}
+
+function textIncludesDraftEvidence(text: string): boolean {
+  return (
+    /value="[\s\S]*aktuell auf der Suche nach einer Stelle/i.test(text) ||
+    /messagingResult[\s\S]*aktuell auf der Suche nach einer Stelle/i.test(text)
+  );
+}
+
+function draftComposerId(text: string): number {
+  return (
+    parseTaggedId(
+      text,
+      /reply-editor|Schreiben Sie eine Nachricht|Nachricht|message|textarea/i,
+    ) ?? 133
+  );
+}
+
+function partnerFieldId(text: string, label: RegExp, fallback: number): number {
+  return parseTaggedId(text, label) ?? fallback;
+}
+
+function formSubmitId(text: string): number {
+  return parseTaggedId(text, /Submit registration/i) ?? 240;
+}
+
 function executorToolCalls(
   text: string,
   scenarioName: LocalMockProviderScenarioName,
   state: LocalMockProviderState,
 ): ToolCallSpec[] {
+  if (scenarioName === "partial-handoff-max-turns") {
+    state.partialHandoffReadReturned = true;
+    return [{ name: "read_page", args: {} }];
+  }
+
+  if (scenarioName === "done-summary-incomplete-recovery") {
+    if (!state.summaryReadReturned) {
+      state.summaryReadReturned = true;
+      return [{ name: "read_page", args: {} }];
+    }
+    if (!state.summaryIncompleteDoneReturned) {
+      state.summaryIncompleteDoneReturned = true;
+      return [
+        {
+          name: "done",
+          args: { summary: INCOMPLETE_LONG_SUMMARY },
+        },
+      ];
+    }
+    return [
+      {
+        name: "done",
+        args: { summary: COMPLETE_SUMMARY },
+      },
+    ];
+  }
+
+  if (scenarioName === "done-form-submit-gating") {
+    if (
+      /Registration received|partnerRegistrationResult|submitted":true/i.test(
+        text,
+      )
+    ) {
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "Submitted the partner registration for Sam Rivera at Northstar Analytics and reached the registration received confirmation.",
+          },
+        },
+      ];
+    }
+    if (state.formPrematureDoneReturned && !state.formSubmittedReturned) {
+      state.formSubmittedReturned = true;
+      return [{ name: "click_element", args: { id: formSubmitId(text) } }];
+    }
+    if (state.formFilledReturned && !state.formPrematureDoneReturned) {
+      state.formPrematureDoneReturned = true;
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "Filled the partner registration form for Sam Rivera and the information is ready.",
+          },
+        },
+      ];
+    }
+    state.formFilledReturned = true;
+    return [
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Full name|partner-full-name/i, 201),
+          text: "Sam Rivera",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Email|partner-email/i, 202),
+          text: "sam.rivera@example.com",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Phone|partner-phone/i, 203),
+          text: "+1 415 555 0134",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Company|partner-company/i, 204),
+          text: "Northstar Analytics",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Role|partner-role/i, 205),
+          text: "Partnerships Lead",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Team|partner-team/i, 206),
+          text: "Alliances",
+        },
+      },
+      {
+        name: "type_text",
+        args: {
+          id: partnerFieldId(text, /Invite code|partner-invite-code/i, 207),
+          text: "PN-4821",
+        },
+      },
+      {
+        name: "set_checkbox",
+        args: {
+          id: partnerFieldId(text, /partner terms|partner-terms/i, 208),
+          checked: true,
+        },
+      },
+    ];
+  }
+
+  if (isDoneDraftScenario(scenarioName)) {
+    if (
+      scenarioName === "done-draft-premature-recovery" &&
+      !state.draftPrematureDoneReturned
+    ) {
+      state.draftPrematureDoneReturned = true;
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "The requested German apology draft is ready in the composer and has not been sent.",
+          },
+        },
+      ];
+    }
+    if (!state.draftTypedReturned) {
+      state.draftTypedReturned = true;
+      return [
+        {
+          name: "type_text",
+          args: { id: draftComposerId(text), text: GERMAN_DRAFT },
+        },
+      ];
+    }
+    if (!state.draftReadReturned) {
+      state.draftReadReturned = true;
+      return [
+        {
+          name: "read_element",
+          args: { id: draftComposerId(text), attribute: "value" },
+        },
+      ];
+    }
+    if (textIncludesDraftEvidence(text) || state.draftReadReturned) {
+      return [
+        {
+          name: "done",
+          args: {
+            summary:
+              "- Drafted the German apology message in the composer\n- Confirmed the composer contains the apology and job-search context\n- Left unsent in the composer for your review - the Send button was not clicked",
+          },
+        },
+      ];
+    }
+  }
+
   if (/Welcome,\s*Admin|authenticated dashboard|loginResult/i.test(text)) {
     return [
       {
@@ -214,7 +570,10 @@ function executorToolCalls(
     ];
   }
 
-  if (/Completion evidence indicates/i.test(text) && scenarioName === "quiz-derailment") {
+  if (
+    /Completion evidence indicates/i.test(text) &&
+    scenarioName === "quiz-derailment"
+  ) {
     return [
       {
         name: "done",
@@ -266,11 +625,13 @@ function executorToolCalls(
       /secret123/.test(text) &&
       /checked=true/.test(text);
     if (fieldsAlreadyFilled) {
-      const submitId = parseTaggedId(text, /button.*Log In|Log In.*button/i) ?? 5;
+      const submitId =
+        parseTaggedId(text, /button.*Log In|Log In.*button/i) ?? 5;
       state.loginSubmitReturned = true;
       return [{ name: "click_element", args: { id: submitId } }];
     }
-    const emailId = parseTaggedId(text, /login-email|label=Email|type=email/i) ?? 2;
+    const emailId =
+      parseTaggedId(text, /login-email|label=Email|type=email/i) ?? 2;
     const passwordId =
       parseTaggedId(text, /login-password|label=Password|type=password/i) ?? 3;
     const rememberId =
@@ -291,8 +652,10 @@ function executorToolCalls(
       state.quizReadsAfterSelection += 1;
       if (state.quizReadsAfterSelection >= 3) {
         const wrongId =
-          parseTaggedId(text, /Incremental Learning|quiz-incremental-learning/i) ??
-          160;
+          parseTaggedId(
+            text,
+            /Incremental Learning|quiz-incremental-learning/i,
+          ) ?? 160;
         return [{ name: "set_checkbox", args: { id: wrongId, checked: true } }];
       }
       return [{ name: "read_page", args: {} }];
@@ -339,7 +702,7 @@ function buildMockResponse(
 
   const content =
     payload.response_format?.type === "json_object"
-      ? plannerJson(text)
+      ? plannerJson(text, scenarioName)
       : [
           "LOCATION: Current fixture page",
           "CHANGES: Current page is stable",
@@ -364,6 +727,15 @@ export async function installLocalMockProviderInterceptor(
     navigationCodeSubmitReturned: false,
     quizCorrectSelectionsReturned: false,
     quizReadsAfterSelection: 0,
+    draftPrematureDoneReturned: false,
+    draftTypedReturned: false,
+    draftReadReturned: false,
+    formFilledReturned: false,
+    formPrematureDoneReturned: false,
+    formSubmittedReturned: false,
+    summaryReadReturned: false,
+    summaryIncompleteDoneReturned: false,
+    partialHandoffReadReturned: false,
   };
 
   await session.send("Fetch.enable", {

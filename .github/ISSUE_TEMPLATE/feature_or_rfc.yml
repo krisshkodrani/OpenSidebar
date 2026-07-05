@@ -1,0 +1,50 @@
+name: Feature request / RFC pointer
+description: Suggest a capability or a behavior change. Non-trivial agent-behavior changes go through the RFC decision process.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: changes to the agent's core behavior (anything touching
+        `loop.ts`, `completion-kernel.ts`, or `skills.ts`) are **owner-gated and
+        RFC-gated**. This issue is the right first step — describe the change
+        here; a maintainer will say whether it needs an RFC decision stamp
+        before code. See
+        [CONTRIBUTING.md → RFC discipline](../blob/main/CONTRIBUTING.md#rfc-decision-discipline)
+        and [the decision process](../blob/main/docs/engineering/rfc-decision-process.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what behaves wrong? Ground it in a real task or page.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed direction
+      description: What would you like to happen? Sketch the approach if you have one.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface does this touch? (best guess)
+      description: Helps triage whether an RFC is needed. See the CONTRIBUTING seam map.
+      options:
+        - "E2E fixture / test harness"
+        - "Policy module (background/agent/*-policy.ts)"
+        - "Tool (definition + args + actions.ts)"
+        - "Trace-viewer panel / analysis"
+        - "Provider adapter"
+        - "Core agent loop / completion kernel / skills (owner-gated)"
+        - "Not sure"
+    validations:
+      required: true

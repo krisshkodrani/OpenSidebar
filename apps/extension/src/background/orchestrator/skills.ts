@@ -2143,7 +2143,7 @@ const SKILL_BODIES: Record<
         "Use profile fields only as source evidence, then verify every value on the live page before treating it as done.",
         "Use type_text/select_option/set_checkbox for explicit values only.",
         "Paste long user-supplied application answers as exact literals; do not rewrap them into bullets or one sentence per line.",
-        'Use upload_file with profileFile="cv" when the user asks to use their saved CV or resume.',
+        'Use upload_file with a provided file URL when the user asks to attach a CV or resume.',
         "Avoid press_key and click_coordinates for final application submission.",
       ],
       completionChecks: [
@@ -2167,7 +2167,7 @@ const SKILL_BODIES: Record<
       "5. Fill all user-supplied fields in one application workflow when possible, especially field/value tables and follow-up requests for remaining fields.",
       "6. Preserve user-supplied long-form answers verbatim, including paragraph breaks, sentence grouping, punctuation, and spacing.",
       '7. Verify text inputs and textareas with read_element(attribute="value"); verify radio/select choices from live selected state or visible selected styling.',
-      '8. For resume/CV uploads, use upload_file with the provided file or profileFile="cv", then verify the displayed attachment filename.',
+      '8. For resume/CV uploads, use upload_file with the provided file, then verify the displayed attachment filename.',
       "9. Never click Submit Application unless the user explicitly approved that exact final submission. If the task says do not send/submit, stop at ready state.",
       "10. Report only the prepared/submitted state and missing fields; do not add fit analysis or best-match comparisons unless the user explicitly requested that report.",
     ].join("\n"),

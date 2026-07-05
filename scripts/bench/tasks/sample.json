@@ -1,0 +1,44 @@
+{
+  "source": "opensidebar/bench-sample",
+  "revision": "2026-06-10",
+  "license": "CC-BY-4.0 (task text authored for this repo)",
+  "note": "A small, read-only smoke sample on stable public sites — NOT the official Online-Mind2Web set (that dataset is access-gated on Hugging Face; use scripts/bench/fetch-tasks.ts after accepting its terms). Use this to verify the adapter runs end-to-end and produces a score before committing to a full sweep.",
+  "tasks": [
+    {
+      "task_id": "sample-wikipedia-eiffel",
+      "confirmed_task": "Find the year the Eiffel Tower was completed and report it.",
+      "website": "https://en.wikipedia.org/wiki/Eiffel_Tower",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-hn-top-story",
+      "confirmed_task": "Report the title of the current number one story on the Hacker News front page.",
+      "website": "https://news.ycombinator.com",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-mdn-css-gap",
+      "confirmed_task": "On MDN Web Docs, find what the CSS 'gap' property does and report a one-sentence summary.",
+      "website": "https://developer.mozilla.org/en-US/docs/Web/CSS/gap",
+      "level": "easy"
+    },
+    {
+      "task_id": "sample-python-enumerate",
+      "confirmed_task": "In the Python 3 documentation, find what the built-in function enumerate() returns and report it.",
+      "website": "https://docs.python.org/3/library/functions.html",
+      "level": "medium"
+    },
+    {
+      "task_id": "sample-arxiv-recent-csai",
+      "confirmed_task": "Report the title of the first paper listed in the arXiv cs.AI recent listing.",
+      "website": "https://arxiv.org/list/cs.AI/recent",
+      "level": "medium"
+    },
+    {
+      "task_id": "sample-github-vscode-language",
+      "confirmed_task": "On the GitHub page for the microsoft/vscode repository, report the primary programming language shown for the repo.",
+      "website": "https://github.com/microsoft/vscode",
+      "level": "medium"
+    }
+  ]
+}

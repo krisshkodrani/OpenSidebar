@@ -317,6 +317,57 @@ describe("LLMClient construction & tier switching", () => {
     expect(plannerInfo.model).toBe(MODEL_PLANNER);
   });
 
+  test("hasWriterModel reflects whether a writer model is configured", () => {
+    expect(makeClient().hasWriterModel()).toBe(false);
+    expect(makeClient({ writerModel: "custom/writer" }).hasWriterModel()).toBe(
+      true,
+    );
+  });
+
+  test("composeText routes to the writer model and restores executor tier", async () => {
+    const client = makeClient({ writerModel: "custom/writer" });
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse("Composed answer.");
+    });
+    const result = await client.composeText({
+      systemPrompt: "sys",
+      userPrompt: "write something",
+    });
+    expect(sentModel).toBe("custom/writer");
+    expect(result.text).toBe("Composed answer.");
+    expect(result.model).toBe("custom/writer");
+    // Tier must be restored so the next loop turn routes to the executor.
+    expect(client.isPlannerTier()).toBe(false);
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+  });
+
+  test("composeText falls back to the executor model when no writer is set", async () => {
+    const client = makeClient();
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse("Composed.");
+    });
+    const result = await client.composeText({
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
+    expect(sentModel).toBe(MODEL_EXECUTOR);
+    expect(result.text).toBe("Composed.");
+  });
+
+  test("composeText strips think tags from the writer output", async () => {
+    const client = makeClient({ writerModel: "custom/writer" });
+    mockFetch(() => jsonApiResponse("<think>plan</think>Final text."));
+    const result = await client.composeText({
+      systemPrompt: "s",
+      userPrompt: "u",
+    });
+    expect(result.text).toBe("Final text.");
+  });
+
   test("strips common paste artifacts from API keys before building headers", async () => {
     const client = new LLMClient(
       "\uFEFF\u201Ctest-api-key\u200B\u201D",

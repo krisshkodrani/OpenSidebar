@@ -38,6 +38,7 @@ import {
 } from "./loop-helpers";
 import {
   handleCloseTabToolCall,
+  handleComposeTextToolCall,
   handleCreateTabToolCall,
   handleEscalateToolCall,
   handleGenericSequentialToolCall,
@@ -50,6 +51,10 @@ import {
   type GenericSequentialToolCallParams,
 } from "./loop-tool-handlers";
 import { resolveProfileFields } from "../../utils/personal-profile";
+import {
+  isAuthoredProse,
+  isFreeTextField,
+} from "./writer-handoff";
 import {
   assessProfileLiteralTextRewrite,
   collectProfileRecordSetsFromValues,
@@ -78,7 +83,7 @@ import {
   shouldReportApprovalBypass,
 } from "./sequential-pre-tool-gate";
 import { mergeGenericSequentialToolState } from "./sequential-tool-state";
-import { formatStepLabel } from "./step-labels";
+import { formatStepLabel } from "../../utils/step-labels";
 import {
   assessAutocompleteTextRewrite,
   assessInlineEditNavigationGuard,
@@ -1171,6 +1176,52 @@ export async function executeSequentialToolCalls(
     if (toolName === ToolName.CLARIFY) {
       await this.handleClarifyToolCall(toolCall.id, args);
       continue;
+    }
+
+    // COMPOSE_TEXT tool — delegate prose to the Writer specialist
+    if (toolName === ToolName.COMPOSE_TEXT) {
+      prevElementCount = await handleComposeTextToolCall(
+        this as unknown as AgentLoopToolHandlerHost,
+        toolCall.id,
+        args,
+        tabId,
+        prevElementCount,
+      );
+      continue;
+    }
+
+    // Writer guard — when a Writer specialist is configured, reroute substantial
+    // free-text prose typed via type_text to the Writer so it's preferred even if
+    // the executor didn't call compose_text itself.
+    if (
+      toolName === ToolName.TYPE_TEXT &&
+      typeof this.llm.hasWriterModel === "function" &&
+      this.llm.hasWriterModel()
+    ) {
+      const fieldId = Number(args.id);
+      const el =
+        this.context
+          .getSnapshot()
+          ?.elements?.find((e: { tag: number }) => e.tag === fieldId) ?? null;
+      if (
+        Number.isFinite(fieldId) &&
+        isFreeTextField(el) &&
+        isAuthoredProse(args.text)
+      ) {
+        this.log.info("agent", "Rerouting type_text prose to Writer", {
+          turn: this.turnCount,
+          field: fieldId,
+          chars: String(args.text).length,
+        });
+        prevElementCount = await handleComposeTextToolCall(
+          this as unknown as AgentLoopToolHandlerHost,
+          toolCall.id,
+          { id: fieldId, executorDraft: String(args.text) },
+          tabId,
+          prevElementCount,
+        );
+        continue;
+      }
     }
 
     // UPDATE_NOTES tool - save a note to the current run scratchpad

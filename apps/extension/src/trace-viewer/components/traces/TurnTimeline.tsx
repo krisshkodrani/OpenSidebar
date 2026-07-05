@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import type { TraceEntry } from "../../../types/traces";
 import { formatDuration } from "../../utils";
 import { useStore } from "../../store";
@@ -58,8 +58,35 @@ function buildTitle(entry: TraceEntry, turnNum: number): string {
   return parts.join("\n");
 }
 
+/** Cheap per-segment metadata, plus the (more expensive) tooltip title. */
+interface TimelineSegment {
+  widthPct: number;
+  tier?: string;
+  turnNum: number;
+  title: string;
+}
+
 export default function TurnTimeline({ entries }: TurnTimelineProps) {
   const navigateToTurn = useStore((s) => s.navigateToTurn);
+
+  // Precompute segment metadata (incl. JSON-parsing buildTitle) once per
+  // entries change instead of on every render of the turns tab.
+  const segments = useMemo<TimelineSegment[]>(() => {
+    const maxDuration = Math.max(
+      ...entries.map((e) => e.llmResponse?.durationMs ?? 0),
+      1,
+    );
+    return entries.map((entry, i) => {
+      const dur = entry.llmResponse?.durationMs ?? 0;
+      const turnNum = entry.turnNumber ?? i + 1;
+      return {
+        widthPct: Math.max((dur / maxDuration) * 100, 2),
+        tier: entry.llmRequest?.modelTier,
+        turnNum,
+        title: buildTitle(entry, turnNum),
+      };
+    });
+  }, [entries]);
 
   if (entries.length < 2) {
     return (
@@ -69,8 +96,6 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
     );
   }
 
-  const durations = entries.map((e) => e.llmResponse?.durationMs ?? 0);
-  const maxDuration = Math.max(...durations, 1);
   const MIN_SEGMENT_WIDTH = 14; // Minimum clickable width per segment
   const totalMinWidth = entries.length * (MIN_SEGMENT_WIDTH + 1); // +1 for gap
   const needsScroll = totalMinWidth > 800;
@@ -83,16 +108,11 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
       <div
         className={`flex gap-px h-6 rounded overflow-x-auto bg-trace-accent/[0.12] ${needsScroll ? "overflow-x-auto" : "overflow-hidden"}`}
       >
-        {entries.map((entry, i) => {
-          const dur = entry.llmResponse?.durationMs ?? 0;
-          const widthPct = Math.max((dur / maxDuration) * 100, 2);
-          const tier = entry.llmRequest?.modelTier;
+        {segments.map((seg, i) => {
           const bgColor =
-            tier === "planner"
+            seg.tier === "planner"
               ? "bg-state-warning/70 hover:bg-state-warning"
               : "bg-brand-live/60 hover:bg-brand-live";
-
-          const turnNum = entry.turnNumber ?? i + 1;
 
           return (
             <button
@@ -100,12 +120,14 @@ export default function TurnTimeline({ entries }: TurnTimelineProps) {
               type="button"
               className={`${bgColor} border-0 p-0 transition-colors cursor-pointer shrink-0`}
               style={{
-                width: needsScroll ? `${MIN_SEGMENT_WIDTH}px` : `${widthPct}%`,
+                width: needsScroll
+                  ? `${MIN_SEGMENT_WIDTH}px`
+                  : `${seg.widthPct}%`,
                 minWidth: `${MIN_SEGMENT_WIDTH}px`,
               }}
-              title={buildTitle(entry, turnNum)}
-              aria-label={`Jump to turn ${turnNum}`}
-              onClick={() => navigateToTurn(turnNum)}
+              title={seg.title}
+              aria-label={`Jump to turn ${seg.turnNum}`}
+              onClick={() => navigateToTurn(seg.turnNum)}
             />
           );
         })}

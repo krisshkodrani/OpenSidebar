@@ -15,6 +15,7 @@ export default function TurnList() {
   const entries = useStore((s) => s.currentEntries);
   const sessionId = useStore((s) => s.currentSessionId) ?? "";
   const searchQuery = useStore((s) => s.searchQuery);
+  const setSearchQuery = useStore((s) => s.setSearchQuery);
   const focusTurnRequest = useStore((s) => s.focusTurnRequest);
   const clearFocusTurnRequest = useStore((s) => s.clearFocusTurnRequest);
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
@@ -63,7 +64,10 @@ export default function TurnList() {
     overscan: 3,
   });
 
-  // Scroll to focused turn when navigating from Perception tab
+  // Scroll to focused turn when navigating from another tab (Perception,
+  // Investigation, Evidence). If the target turn is hidden by an active search,
+  // clear the search and keep the request pending so the next render can scroll
+  // to it — otherwise the deep-link would silently no-op.
   useEffect(() => {
     if (!focusTurnRequest) return;
     const idx = filtered.findIndex(
@@ -72,9 +76,28 @@ export default function TurnList() {
     if (idx >= 0) {
       virtualizer.scrollToIndex(idx, { align: "start" });
       setFocusedIdx(idx);
+      clearFocusTurnRequest(focusTurnRequest.id);
+      return;
     }
+    const existsUnfiltered = entries.some(
+      (e) => e.turnNumber === focusTurnRequest.turnNumber,
+    );
+    if (existsUnfiltered && searchQuery.trim()) {
+      // Search is hiding the turn — drop the filter, leave the request pending.
+      setSearchQuery("");
+      return;
+    }
+    // Genuinely absent; clear so the request does not stay stuck pending.
     clearFocusTurnRequest(focusTurnRequest.id);
-  }, [clearFocusTurnRequest, focusTurnRequest, filtered, virtualizer]);
+  }, [
+    clearFocusTurnRequest,
+    focusTurnRequest,
+    filtered,
+    entries,
+    searchQuery,
+    setSearchQuery,
+    virtualizer,
+  ]);
 
   // j/k keyboard navigation
   const handleKeyNav = useCallback(

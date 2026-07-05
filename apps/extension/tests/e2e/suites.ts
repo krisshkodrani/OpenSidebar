@@ -9,7 +9,8 @@ export type E2EFocusSuiteName =
   | "local-mock-provider"
   | "showcase"
   | "memory-regression"
-  | "multi-turn-workflows";
+  | "multi-turn-workflows"
+  | "escalation-rescue";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
@@ -42,7 +43,6 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   "runtime-regression": [
     "approval-recovery.test.ts",
     "ashby-job-application.test.ts",
-    "backend-durable-resume.test.ts",
     "continuation-abandon-restart.test.ts",
     "continuation-act-check-act.test.ts",
     "continuation-cart-swap.test.ts",
@@ -52,12 +52,8 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "continuation.test.ts",
     "lane-topology.test.ts",
     "partner-registration-validation.test.ts",
-    "profile-checkout.test.ts",
-    "profile-experience-application.test.ts",
-    "profile-job-application.test.ts",
     "sequential-tasks.test.ts",
     "stop-drain-recovery.test.ts",
-    "structured-progress-resume.test.ts",
     "vendor-onboarding-wizard.test.ts",
   ],
   "nightly-legacy": [
@@ -81,6 +77,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "memory-recall-dashboard.test.ts",
   ],
   "multi-turn-workflows": ["multi-turn-workflows.test.ts"],
+  "escalation-rescue": ["escalation-rescue.test.ts"],
 };
 
 export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
@@ -97,6 +94,7 @@ export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "showcase",
   "memory-regression",
   "multi-turn-workflows",
+  "escalation-rescue",
 ];
 
 export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [
