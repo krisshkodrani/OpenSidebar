@@ -19,8 +19,8 @@ vi.mock("../../src/background/perception/screenshot-transform", async (importOri
       ok: true as const,
       dataUrl: "data:image/png;base64,CROP",
     })),
-    transformScreenshot: vi.fn(async (dataUrl: string) => ({
-      dataUrl,
+    transformScreenshot: vi.fn(async () => ({
+      dataUrl: "data:image/jpeg;base64,TRANSFORMED",
       scaleFactor: 1,
       width: 1280,
       height: 800,
@@ -29,6 +29,8 @@ vi.mock("../../src/background/perception/screenshot-transform", async (importOri
     })),
   };
 });
+
+import { cropScreenshotRegion } from "../../src/background/perception/screenshot-transform";
 
 let nextTabId = 9000;
 
@@ -232,6 +234,24 @@ describe("executeInspectRegion (LP-13)", () => {
       "inspect_region",
     );
     expect(events[0]).toMatchObject({ refusedReason: "budget" });
+  });
+
+  test("fresh capture crops from the RAW image, not the transformed cache copy", async () => {
+    const { host } = makeHost({
+      captureVisibleTab: async () => "data:image/jpeg;base64,RAWCAPTURE",
+    });
+    const coldTabId = nextTabId++; // no cache entry — forces a fresh capture
+
+    const result = await executeInspectRegion(
+      host,
+      emptyRegionZoomState(),
+      { x: 100, y: 100, width: 200, height: 100 },
+      coldTabId,
+    );
+
+    expect(result).toContain("attached to your next view");
+    const lastCall = vi.mocked(cropScreenshotRegion).mock.calls.at(-1);
+    expect(lastCall?.[0]).toBe("data:image/jpeg;base64,RAWCAPTURE");
   });
 
   test("capture failure with no cached screenshot refuses with capture_failed", async () => {

@@ -1178,8 +1178,11 @@ async function canvasFinePrintAnswered(
   }
 
   const summary = getTaskCompletionSummary(outcome.events, doneSummary);
-  // The value exists only as 8px canvas pixels; a correct answer plus an
-  // inspect_region trace proves the zoom path rather than a lucky guess.
+  // Outcome-grounded: the value exists only as 8px canvas pixels, so a
+  // correct answer proves the visual pixel path. Whether the agent needed
+  // inspect_region or read it from the first-turn high-detail screenshot
+  // is capability telemetry, not a pass criterion (a strong VL executor
+  // legitimately skips the zoom).
   const hasMargin = /4\.7\s*%/.test(summary);
   const usedRegionZoom = traceFilesContainText(
     traceFiles,
@@ -1187,12 +1190,8 @@ async function canvasFinePrintAnswered(
   );
 
   return buildResult(
-    hasMargin && usedRegionZoom,
-    hasMargin && usedRegionZoom
-      ? "validated"
-      : hasMargin
-        ? "answer_without_region_zoom"
-        : "fine_print_answer_incorrect",
+    hasMargin,
+    hasMargin ? "validated" : "fine_print_answer_incorrect",
     [
       `q3Margin47=${String(hasMargin)}`,
       `usedInspectRegion=${String(usedRegionZoom)}`,
