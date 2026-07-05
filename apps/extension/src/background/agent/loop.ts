@@ -122,11 +122,10 @@ import {
 } from "./completion/decision-recorder";
 import {
   TURN_CHECKPOINT_VERSION,
-  turnCheckpointKey,
   buildMutationKey,
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
-import { MutationLedger } from "./mutation-ledger";
+import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -654,8 +653,8 @@ export class AgentLoop {
   private moneyTableAggregate: MoneyTableAggregate | null = null;
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
-  /** Durable mutation replay guard and side-effect log. */
-  private mutationLedger = new MutationLedger();
+  /** Owns the mutation replay ledger + durable turn-checkpoint persistence. */
+  private checkpoints = new CheckpointCoordinator();
   /** Turn checkpoint to restore from (injected by orchestrator on restart). */
   private pendingTurnCheckpoint: TurnCheckpoint | null = null;
   /** Pending interaction response injected by orchestrator on resume. */
@@ -1133,7 +1132,7 @@ export class AgentLoop {
       result,
       taskId: this.taskId,
       planSubtasks: this.planSubtasks,
-      mutationLedger: this.mutationLedger,
+      mutationLedger: this.checkpoints.ledger,
       evidenceAccumulator: this.evidenceAccumulator,
       context: this.context,
       traceRecorder: this.traceRecorder,
@@ -1190,10 +1189,10 @@ export class AgentLoop {
         pageUrl: snapshot?.url ?? null,
 
         // Phase 2
-        stepMutationLedger: this.mutationLedger.entries,
+        stepMutationLedger: this.checkpoints.entries,
 
         // Phase 4
-        sideEffectsLog: this.mutationLedger.sideEffects,
+        sideEffectsLog: this.checkpoints.sideEffects,
         completedResult: this.completedResult
           ? {
               outcome: "completed",
@@ -1207,8 +1206,7 @@ export class AgentLoop {
             }
           : undefined,
       };
-      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
-      await chrome.storage.local.set({ [key]: cp });
+      await this.checkpoints.persist(this.workspaceId, this.nodeId, cp);
     } catch (e) {
       this.log.warn("agent", "Failed to save turn checkpoint", { error: e });
     }
@@ -1254,7 +1252,7 @@ export class AgentLoop {
         this.llm.switchToExecutor();
       }
 
-      this.mutationLedger.restore(cp.stepMutationLedger, cp.sideEffectsLog);
+      this.checkpoints.restoreLedger(cp.stepMutationLedger, cp.sideEffectsLog);
       this.completedResult = cp.completedResult
         ? {
             outcome: "completed",
@@ -1268,8 +1266,8 @@ export class AgentLoop {
       this.log.info("agent", "Restored from turn checkpoint", {
         turn: cp.turnCount,
         historyMessages: cp.history.originalCount,
-        ledgerEntries: this.mutationLedger.entries.length,
-        sideEffects: this.mutationLedger.sideEffects.length,
+        ledgerEntries: this.checkpoints.entries.length,
+        sideEffects: this.checkpoints.sideEffects.length,
         completed: Boolean(this.completedResult),
       });
       return true;
@@ -1285,8 +1283,7 @@ export class AgentLoop {
   private async clearTurnCheckpoint(): Promise<void> {
     if (!this.nodeId || !this.workspaceId) return;
     try {
-      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
-      await chrome.storage.local.remove(key);
+      await this.checkpoints.clear(this.workspaceId, this.nodeId);
     } catch {
       // Best-effort cleanup
     }
@@ -1297,7 +1294,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
   ): { result: string; source: "ledger" | "ephemeral" } | null {
     const currentSnapshot = this.context.getSnapshot?.() ?? null;
-    return this.mutationLedger.lookup(
+    return this.checkpoints.lookupReplay(
       toolName,
       args,
       currentSnapshot,
@@ -1381,7 +1378,7 @@ export class AgentLoop {
     result: string,
     actionSnapshot?: DomSnapshot | null,
   ): void {
-    this.mutationLedger.record({
+    this.checkpoints.recordMutation({
       toolName,
       args,
       result,
@@ -4734,7 +4731,7 @@ export class AgentLoop {
 
     // 2. Clear history and idempotency ledger (keeps DOM snapshot)
     this.context.clearHistory();
-    this.mutationLedger.clearReplayState();
+    this.checkpoints.clearReplayState();
 
     // 3. Re-inject original query
     this.context.addMessage({
@@ -8773,7 +8770,7 @@ export class AgentLoop {
       // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
       // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
       if (!this.guardAfterDoneRejection) {
-        this.mutationLedger.clearEphemeral();
+        this.checkpoints.clearEphemeral();
       }
       this.guardAfterDoneRejection = false;
 
