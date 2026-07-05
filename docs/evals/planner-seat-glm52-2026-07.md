@@ -54,14 +54,29 @@ variable changed.
 
 ## Results
 
-### Config A — planner kimi-k2p6-turbo (incumbent)
+**EVAL ABORTED 2026-07-05 (owner cost directive)** before any comparable
+cross-config data existed. What ran:
 
-- PENDING
-
-### Config B — planner glm-5p2
-
-- PENDING
+- Full-protocol config A: stopped ~30% in. Salvaged first-sweep results
+  (10 tasks, planner kimi-k2p6-turbo): 7 pass / 3 fail — all three
+  failures non-planner (overlay-submit harness flake; old job-board
+  gate; executor-side dashboard incompleteness).
+- Lean-protocol config A: stopped after 1 task (runner error from the
+  stop itself).
+- Config B (glm-5p2): never ran.
 
 ## Decision
 
-- PENDING
+**No flip — insufficient evidence, not a negative verdict.** The planner
+default remains `accounts/fireworks/routers/kimi-k2p6-turbo`; GLM-5.2
+stays selectable for the planner seat. The harness surface built for
+this eval (`E2E_PLANNER_MODEL`, report/JSON planner stamping, the lean
+hard-tier×1 protocol above) is permanent — re-running the comparison
+when budget allows is one command per config:
+
+```
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+E2E_PLANNER_MODEL=<planner> \
+  tsx scripts/run-e2e-arena.ts --tier hard --repeat 1 --report-label planner-<x>-hard --no-build
+```
+plus `tsx scripts/run-e2e-staged.ts escalation-rescue --no-build` per config.
