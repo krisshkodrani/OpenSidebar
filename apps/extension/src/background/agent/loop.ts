@@ -4851,9 +4851,11 @@ export class AgentLoop {
 
       try {
         const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
+        // q90: the LP-9 transform re-encodes at q85 — capturing at q70 first
+        // would pre-degrade small glyphs before the pipeline ever sees them.
         const captured = await this.captureVisibleTabWithRetry(
           refreshedTab.windowId,
-          { format: "jpeg", quality: 70 },
+          { format: "jpeg", quality: 90 },
         );
         // LP-9: own resolution/format/scale before anything downstream sees it.
         const transformed = await transformScreenshot(captured);
@@ -5196,9 +5198,10 @@ export class AgentLoop {
           /* tab may be closed */
         }
       }
+      // q90: the LP-9 transform re-encodes at q85 — see refreshPerception.
       const captured = await this.captureVisibleTabWithRetry(tab.windowId, {
         format: "jpeg",
-        quality: 70,
+        quality: 90,
       });
       // LP-9: own resolution/format/scale before anything downstream sees it.
       const transformed = await transformScreenshot(captured);

@@ -48,13 +48,13 @@ export default function VisualCanvasSmall() {
     ctx.lineTo(600, 260);
     ctx.stroke();
 
-    // Fine print: 6.5px low-contrast — genuinely illegible in a full-page
-    // screenshot even at high detail (measured: an 8px version was readable
-    // by a VL executor on the first-turn high-detail image). The target
-    // value hides among distractor metrics; reading it requires
-    // inspect_region magnification.
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "400 6.5px Arial";
+    // Fine print: 8px — marginal in the full-page screenshot (a strong VL
+    // executor sometimes reads it at first-turn high detail; low-detail
+    // turns cannot), reliably readable in an inspect_region crop taken
+    // from the raw capture. Measured 2026-07-05: 6.5px low-contrast was
+    // unrecoverable even magnified (capture fidelity is the floor).
+    ctx.fillStyle = "#334155";
+    ctx.font = "400 8px Arial";
     const finePrint = [
       "Figures unaudited. Q1 net margin: 2.1%; churn 4.4%; NRR 101.2%. Q2 net margin: 3.3%; churn 3.9%; NRR 103.8%.",
       "Q3 net margin: 4.7%; churn 3.1%; NRR 106.4%. Q4 net margin: 3.9%; churn 3.5%; NRR 104.9%.",

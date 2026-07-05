@@ -193,13 +193,25 @@ export async function executeInspectRegion(
     );
   }
 
-  // Screenshot: reuse the 3s-fresh cached capture, else capture now.
-  let screenshot = getCachedScreenshotEntry(tabId);
-  if (!screenshot) {
+  // Screenshot source. A fresh capture is cropped RAW (pre-transform) so
+  // the magnified region keeps every native pixel — magnifying the
+  // downscaled/re-encoded cache can only enlarge its artifacts. The cache
+  // is still refreshed with the transformed frame for other consumers, and
+  // a fresh cached frame is reused as-is to respect the capture quota.
+  let cropSource: { dataUrl: string; width: number; height: number } | null =
+    null;
+  const cached = getCachedScreenshotEntry(tabId);
+  if (cached) {
+    const dims =
+      cached.width && cached.height
+        ? { width: cached.width, height: cached.height }
+        : await measureImage(cached.dataUrl);
+    if (dims) cropSource = { dataUrl: cached.dataUrl, ...dims };
+  } else {
     try {
       const captured = await host.captureVisibleTab({
         format: "jpeg",
-        quality: 70,
+        quality: 90,
       });
       const transformed = await transformScreenshot(captured);
       setCachedScreenshot(tabId, transformed.dataUrl, {
@@ -207,29 +219,25 @@ export async function executeInspectRegion(
         width: transformed.width,
         height: transformed.height,
       });
-      screenshot = getCachedScreenshotEntry(tabId);
+      const rawDims =
+        transformed.capturedWidth && transformed.capturedHeight
+          ? {
+              width: transformed.capturedWidth,
+              height: transformed.capturedHeight,
+            }
+          : await measureImage(captured);
+      if (rawDims) cropSource = { dataUrl: captured, ...rawDims };
     } catch {
-      screenshot = undefined;
+      cropSource = null;
     }
   }
-  if (!screenshot) {
+  if (!cropSource) {
     return refuse(
       "capture_failed",
       "inspect_region: screenshot capture failed. Retry after the page settles, or read the value through DOM tools.",
     );
   }
-
-  // Image dimensions: transform metadata when known, else decode once.
-  const imageDims =
-    screenshot.width && screenshot.height
-      ? { width: screenshot.width, height: screenshot.height }
-      : await measureImage(screenshot.dataUrl);
-  if (!imageDims) {
-    return refuse(
-      "crop_failed",
-      "inspect_region: image processing is unavailable in this environment.",
-    );
-  }
+  const imageDims = { width: cropSource.width, height: cropSource.height };
 
   const geometry = computeRegionCropGeometry({
     cssRect,
@@ -245,7 +253,10 @@ export async function executeInspectRegion(
     });
   }
 
-  const crop = await cropScreenshotRegion(screenshot.dataUrl, geometry.geometry);
+  const crop = await cropScreenshotRegion(
+    cropSource.dataUrl,
+    geometry.geometry,
+  );
   if (!crop.ok) {
     return refuse("crop_failed", `inspect_region: ${crop.error}.`, {
       rect: cssRect,
