@@ -5,11 +5,17 @@ import type {
   BrowserTabQuery,
   BrowserTabUpdate,
   ContentBridgePort,
+  CookiesPort,
+  DownloadsPort,
+  HistoryPort,
   NavigationEventsPort,
   PersistencePort,
   PersistenceStorageArea,
+  RuntimeEnvironment,
   RuntimeMessagingPort,
   SchedulerPort,
+  SearchPort,
+  WindowsPort,
 } from "./types";
 import type { RuntimeMessage } from "../../types";
 
@@ -67,6 +73,20 @@ export const chromeContentBridgePort: ContentBridgePort = {
       target: { tabId },
       files,
     });
+  },
+
+  async executeFunction(tabId, fn, args = [], options = {}) {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: options.allFrames ?? false },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chrome world enum
+      world: (options.world ?? "ISOLATED") as any,
+      func: fn,
+      args,
+    });
+    return (results ?? []).map((r) => ({
+      result: r.result as ReturnType<typeof fn> | undefined,
+      frameId: r.frameId,
+    }));
   },
 
   getContentScriptFiles() {
@@ -232,4 +252,64 @@ export const chromeSchedulerPort: SchedulerPort = {
     chrome.alarms.onAlarm.addListener(chromeListener);
     return () => chrome.alarms.onAlarm.removeListener(chromeListener);
   },
+};
+
+export const chromeDownloadsPort: DownloadsPort = {
+  isAvailable() {
+    return (
+      typeof chrome !== "undefined" &&
+      typeof chrome.downloads?.download === "function"
+    );
+  },
+  download(options) {
+    return chrome.downloads.download(options);
+  },
+};
+
+export const chromeCookiesPort: CookiesPort = {
+  async getAll(details) {
+    return chrome.cookies.getAll(details);
+  },
+  async set(details) {
+    await chrome.cookies.set(details);
+  },
+  async remove(details) {
+    await chrome.cookies.remove(details);
+  },
+};
+
+export const chromeHistoryPort: HistoryPort = {
+  search(query) {
+    return chrome.history.search(query);
+  },
+};
+
+export const chromeSearchPort: SearchPort = {
+  async query(options) {
+    await chrome.search.query(
+      options as chrome.search.QueryInfo & { text: string },
+    );
+  },
+};
+
+export const chromeWindowsPort: WindowsPort = {
+  async create(options) {
+    const win = await chrome.windows.create(options);
+    return { id: win?.id };
+  },
+};
+
+/** The production environment: every port backed by chrome.* (RFC LP-15). */
+export const chromeRuntimeEnvironment: RuntimeEnvironment = {
+  persistence: chromePersistencePort,
+  messaging: chromeRuntimeMessagingPort,
+  navigationEvents: chromeNavigationEventsPort,
+  scheduler: chromeSchedulerPort,
+  page: chromeBrowserPagePort,
+  content: chromeContentBridgePort,
+  downloads: chromeDownloadsPort,
+  cookies: chromeCookiesPort,
+  history: chromeHistoryPort,
+  search: chromeSearchPort,
+  windows: chromeWindowsPort,
 };
