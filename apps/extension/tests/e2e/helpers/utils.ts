@@ -1562,6 +1562,11 @@ export async function waitForOutcome<T>(
   const start = Date.now();
   let lastResult: T | null = null;
   let successfulResult: T | null = null;
+  // Once the task has completed, the page state is final modulo a short
+  // settling lag — a few more polls, then report the mismatch instead of
+  // burning the whole timeout on an outcome that can no longer change.
+  const COMPLETED_GRACE_POLLS = 3;
+  let completedPollsRemaining: number | null = null;
 
   while (Date.now() - start < timeoutMs) {
     let result: T | null | undefined = null;
@@ -1646,6 +1651,19 @@ export async function waitForOutcome<T>(
         result: successfulResult ?? lastResult,
         events,
       };
+    }
+
+    if (lastTaskCompletion?.status === "completed" && !successfulResult) {
+      completedPollsRemaining ??= COMPLETED_GRACE_POLLS;
+      completedPollsRemaining -= 1;
+      if (completedPollsRemaining <= 0) {
+        return {
+          ok: false,
+          reason: "completed_without_expected_state",
+          result: lastResult,
+          events,
+        };
+      }
     }
 
     await new Promise((r) => setTimeout(r, 2000));
