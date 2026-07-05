@@ -7,6 +7,7 @@
  * configured this is a no-op, so the extension is unchanged by default.
  */
 
+import { chromePersistencePort } from "../environment/chrome";
 import { createDefaultBrowserAgentRunner } from "./orchestrator-driver";
 import { BrowserBridgeClient } from "./ws-client";
 
@@ -18,7 +19,7 @@ export async function startBrowserBridge(): Promise<boolean> {
   if (client) return true;
   let port: number | undefined;
   try {
-    const stored = await chrome.storage.local.get(BROWSER_MCP_WS_PORT_KEY);
+    const stored = await chromePersistencePort.local.get(BROWSER_MCP_WS_PORT_KEY);
     const value = stored[BROWSER_MCP_WS_PORT_KEY];
     if (typeof value === "number") port = value;
     else if (typeof value === "string" && value.trim()) port = Number(value.trim());

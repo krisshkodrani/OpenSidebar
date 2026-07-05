@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import { toolRegistry } from "./registry";
 import { ToolName, MessageSource, UserSettings } from "../../types";
 import { logger } from "../../utils";
@@ -255,7 +256,7 @@ function formatControllableTabLines(tabs: chrome.tabs.Tab[]): string[] {
 
 async function getAllowedNavigationOrigins(): Promise<string[]> {
   try {
-    const stored = await chrome.storage.sync.get("userSettings");
+    const stored = await chromePersistencePort.sync.get("userSettings");
     const settings = (stored.userSettings ?? {}) as UserSettings;
     return Array.isArray(settings.allowedNavigationOrigins)
       ? settings.allowedNavigationOrigins.filter(

@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import {
   ToolName,
   ToolCall,
@@ -78,7 +79,7 @@ export class ToolRegistry {
     try {
       try {
         const [stored, tab] = await Promise.all([
-          chrome.storage.sync.get("userSettings"),
+          chromePersistencePort.sync.get("userSettings"),
           chrome.tabs.get(tabId),
         ]);
         const settings = (stored.userSettings ?? {}) as UserSettings;

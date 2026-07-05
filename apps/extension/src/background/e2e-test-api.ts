@@ -1,3 +1,5 @@
+import { chromePersistencePort } from "./environment/chrome";
+
 export const E2E_TEST_API_ENABLED_STORAGE_KEY =
   "opensidebar:e2eTestApiEnabled";
 
@@ -24,6 +26,6 @@ export function isE2ESeedPendingInteractionMessage(
 }
 
 export async function isE2ETestApiEnabled(): Promise<boolean> {
-  const stored = await chrome.storage.local.get(E2E_TEST_API_ENABLED_STORAGE_KEY);
+  const stored = await chromePersistencePort.local.get(E2E_TEST_API_ENABLED_STORAGE_KEY);
   return stored?.[E2E_TEST_API_ENABLED_STORAGE_KEY] === true;
 }

@@ -115,6 +115,16 @@ function chromeStorageArea(
         await remove.call(area, keys);
       }
     },
+    onChanged(listener) {
+      const chromeListener = (
+        changes: Record<string, chrome.storage.StorageChange>,
+        changedArea: string,
+      ) => {
+        if (changedArea === areaName) listener(changes);
+      };
+      chrome.storage.onChanged.addListener(chromeListener);
+      return () => chrome.storage.onChanged.removeListener(chromeListener);
+    },
   };
 }
 
