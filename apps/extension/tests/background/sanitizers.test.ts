@@ -587,6 +587,56 @@ describe("sanitizeSessionMetrics", () => {
     ).toBeNull();
   });
 
+  test("round-trips perception turn-mode counters", () => {
+    const result = sanitizeSessionMetrics({
+      ...validSessionMetrics(),
+      structuredTurnCount: 4,
+      unifiedVlTurnCount: 7,
+    });
+    expect(result!.structuredTurnCount).toBe(4);
+    expect(result!.unifiedVlTurnCount).toBe(7);
+  });
+
+  test("defaults missing turn-mode counters for legacy metrics", () => {
+    const result = sanitizeSessionMetrics(validSessionMetrics());
+    expect(result!.structuredTurnCount).toBe(0);
+    expect(result!.unifiedVlTurnCount).toBe(0);
+  });
+
+  test("rejects negative turn-mode counters", () => {
+    expect(
+      sanitizeSessionMetrics({
+        ...validSessionMetrics(),
+        unifiedVlTurnCount: -1,
+      }),
+    ).toBeNull();
+  });
+
+  test("keeps a valid perceptionModeDecision.autoDefault and drops unknown values", () => {
+    const withValid = sanitizeSessionMetrics({
+      ...validSessionMetrics(),
+      perceptionModeDecision: {
+        mode: "unified_vl",
+        reason: "default_unified_vl",
+        signals: [],
+        autoDefault: "unified_vl",
+      },
+    });
+    expect(withValid!.perceptionModeDecision!.autoDefault).toBe("unified_vl");
+
+    const withUnknown = sanitizeSessionMetrics({
+      ...validSessionMetrics(),
+      perceptionModeDecision: {
+        mode: "structured",
+        reason: "dom_signals_sufficient",
+        signals: [],
+        autoDefault: "bogus",
+      },
+    });
+    expect(withUnknown).not.toBeNull();
+    expect(withUnknown!.perceptionModeDecision!.autoDefault).toBeUndefined();
+  });
+
   test("rejects invalid image prompt estimates", () => {
     expect(
       sanitizeSessionMetrics({

@@ -843,11 +843,17 @@ export interface SessionMetrics {
   totalImagePromptTokenEstimate?: number;
   /** Number of image parts in completed LLM/perception prompts; optional for legacy payloads */
   imagePromptCount?: number;
+  /** Turns whose perception ran in structured mode (LP-11 telemetry) */
+  structuredTurnCount?: number;
+  /** Turns whose perception ran in unified VL mode (LP-11 telemetry) */
+  unifiedVlTurnCount?: number;
   /** Selected perception path and why it was chosen for this run */
   perceptionModeDecision?: {
     mode: "structured" | "unified_vl";
     reason: string;
     signals: string[];
+    /** Which auto-mode default produced the decision (LP-11 A/B) */
+    autoDefault?: "structured" | "unified_vl";
   };
   /** Total prompt tokens served from cache (prefix caching) */
   totalCachedTokens: number;

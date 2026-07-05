@@ -44,6 +44,8 @@ export function emptySessionMetrics(): SessionMetrics {
     cachedVisionCallCount: 0,
     totalImagePromptTokenEstimate: 0,
     imagePromptCount: 0,
+    structuredTurnCount: 0,
+    unifiedVlTurnCount: 0,
     totalCachedTokens: 0,
     modelBreakdown: {},
   };
@@ -293,6 +295,18 @@ export function recordPerceptionModeDecision(
     reason: decision.reason,
     signals: [...decision.signals],
   };
+}
+
+/** Tally which perception path served a turn (LP-11 mode telemetry). */
+export function recordPerceptionTurnMode(
+  metrics: SessionMetrics,
+  mode: "structured" | "unified_vl",
+): void {
+  if (mode === "unified_vl") {
+    metrics.unifiedVlTurnCount = (metrics.unifiedVlTurnCount ?? 0) + 1;
+  } else {
+    metrics.structuredTurnCount = (metrics.structuredTurnCount ?? 0) + 1;
+  }
 }
 
 export function recordTelemetryCitation(args: {
