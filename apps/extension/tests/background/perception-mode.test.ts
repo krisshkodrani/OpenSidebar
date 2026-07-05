@@ -121,6 +121,102 @@ describe("perception mode resolution", () => {
     ).toBe("unified_vl");
   });
 
+  // --- LP-11 A/B: dual auto-mode default -------------------------------
+
+  test("arm A (structured default): no-signal page stays structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "structured",
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "dom_signals_sufficient" });
+  });
+
+  test("arm B (unified_vl default): no-signal page goes unified_vl", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
+  });
+
+  test("arm B: dense text-heavy DOM argues FOR structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 60,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "dense_text_dom",
+      signals: ["dense_text_dom"],
+    });
+  });
+
+  test("arm B: a visual signal beats dense text", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        hasCanvas: true,
+        elementCount: 60,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "canvas_present" });
+  });
+
+  test("arm B: exhausted image budget falls back to structured on the default path", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 20,
+        pageTextLength: 1000,
+        imagePromptTokensUsed: 24_500,
+        maxImagePromptTokens: 25_000,
+        nextImagePromptTokenEstimate: 765,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "image_budget_exhausted" });
+  });
+
+  test("arm B: non-VL executor still forces structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        executorVLCapable: false,
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "executor_not_vl_capable" });
+  });
+
+  test("arm B: below-dense thresholds stay unified_vl", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 39,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 60,
+        pageTextLength: 1999,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
+  });
+
   test("auto selects unified VL for sparse DOM", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
