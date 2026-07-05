@@ -19,12 +19,19 @@ variable changed.
 - Harness: `E2E_PLANNER_MODEL` → `settings.plannerModel` → planner pool
   verbatim (client.ts fireworks branch)
 
-## Protocol (pre-registered, before any measurement)
+## Protocol (pre-registered; scope reduced mid-flight by owner cost
+## directive, before any cross-config results existed)
 
-1. Per config: full arena set (18 tasks × 2 repeats = 36 attempts) via
-   `run-e2e-arena.ts --all --repeat 2 --report-label planner-<x>`, plus
-   the `escalation-rescue` focus suite (the planner-heavy path: rescue,
-   replanning, escalation).
+1. Per config: **hard tier only, single repeat** (10 tasks/config) via
+   `run-e2e-arena.ts --tier hard --repeat 1 --report-label planner-<x>-hard`,
+   plus the `escalation-rescue` focus suite (the planner-heavy path:
+   rescue, replanning, escalation). Rationale: the planner acts on
+   decomposition/escalation/verification — the hard tier is where those
+   paths fire; easy/medium tiers are executor-dominated and were cut for
+   cost. The original full-set config A run was stopped ~30% in; its
+   salvaged first-sweep results (7/10 pass; one overlay-submit harness
+   flake, one old-gate job-board fail) are recorded as supplementary
+   observations only.
 2. **Flip criterion — the planner default changes to GLM-5.2 only if ALL
    hold:**
    - arena overall success ≥ incumbent − 0pp (ties break FOR the
