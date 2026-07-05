@@ -3,6 +3,7 @@ export const PUBLIC_E2E_ENV_VARS = [
   "E2E_PROVIDER",
   "E2E_MODEL",
   "E2E_PERCEPTION_MODE",
+  "E2E_PERCEPTION_AUTO_DEFAULT",
   "E2E_SUITE_FLAGS",
   "E2E_ARTIFACTS",
 ] as const;
@@ -16,6 +17,8 @@ export interface E2EConfig {
   provider: string;
   model: string | undefined;
   perceptionMode: string | undefined;
+  /** TEMPORARY (LP-11 A/B): auto-mode default arm under test. */
+  perceptionAutoDefault: string | undefined;
   suiteFlags: Set<string>;
   diagnostic: boolean;
   browser: {
@@ -282,6 +285,7 @@ function buildConfigFromDefaults(profile: E2EProfileName): E2EConfig {
     provider: defaults.provider,
     model: undefined,
     perceptionMode: undefined,
+    perceptionAutoDefault: undefined,
     suiteFlags: new Set(),
     diagnostic: defaults.diagnostic,
     browser: {
@@ -320,6 +324,7 @@ export function readE2EConfig(
     envValue(env, "E2E_MODEL") ??
     warnDeprecated(warnings, env, "E2E_EXECUTOR_MODEL");
   config.perceptionMode = envValue(env, "E2E_PERCEPTION_MODE");
+  config.perceptionAutoDefault = envValue(env, "E2E_PERCEPTION_AUTO_DEFAULT");
 
   const suiteFlags = parseFlagSet(envValue(env, "E2E_SUITE_FLAGS"));
   for (const flag of suiteFlags) applySuiteFlag(config.suiteFlags, flag);
@@ -467,6 +472,9 @@ export function withE2EConfigEnv(
     ...(config.model ? { E2E_MODEL: config.model } : {}),
     ...(config.perceptionMode
       ? { E2E_PERCEPTION_MODE: config.perceptionMode }
+      : {}),
+    ...(config.perceptionAutoDefault
+      ? { E2E_PERCEPTION_AUTO_DEFAULT: config.perceptionAutoDefault }
       : {}),
     E2E_SUITE_FLAGS: serializeE2ESuiteFlags(config),
     E2E_ARTIFACTS: serializeE2EArtifacts(config),

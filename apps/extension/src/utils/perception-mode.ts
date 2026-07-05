@@ -31,6 +31,11 @@ export interface PerceptionRuntimeModeDecisionArgs
    * leaves the decision unchanged.
    */
   executorVLCapable?: boolean;
+  /**
+   * Which way auto mode leans when no signal decides (LP-11 A/B arm).
+   * Defaults to PERCEPTION_AUTO_DEFAULT_MODE.
+   */
+  autoDefaultMode?: "structured" | "unified_vl";
   taskText?: string;
   imagePromptTokensUsed?: number;
   maxImagePromptTokens?: number;
@@ -44,6 +49,18 @@ const SPARSE_TEXT_LENGTH_THRESHOLD = 500;
 const SPARSE_DOM_ELEMENT_THRESHOLD = 3;
 const SPARSE_SPA_ELEMENT_THRESHOLD = 5;
 const SPARSE_SPA_VISIBLE_TEXT_THRESHOLD = 300;
+// Dense text-heavy DOM: the one page shape where a textual observation
+// beats spending vision (LP-11 unified_vl-default arm).
+const DENSE_DOM_ELEMENT_THRESHOLD = 40;
+const DENSE_TEXT_LENGTH_THRESHOLD = 2000;
+
+/**
+ * What auto mode does when no signal decides (RFC LP-11). "structured" is
+ * the measured incumbent; the A/B (docs/evals) gates flipping this constant
+ * to "unified_vl".
+ */
+export const PERCEPTION_AUTO_DEFAULT_MODE: "structured" | "unified_vl" =
+  "structured";
 
 function isImageBudgetExhausted(
   args: PerceptionRuntimeModeDecisionArgs,
@@ -169,6 +186,33 @@ export function resolvePerceptionRuntimeModeDecision(
       mode: "unified_vl",
       reason: signals[0],
       signals,
+    };
+  }
+
+  const autoDefault = args.autoDefaultMode ?? PERCEPTION_AUTO_DEFAULT_MODE;
+  if (autoDefault === "unified_vl") {
+    // Inverted default (LP-11): vision unless something argues FOR text.
+    if (isImageBudgetExhausted(args)) {
+      return {
+        mode: "structured",
+        reason: "image_budget_exhausted",
+        signals: ["image_budget_exhausted"],
+      };
+    }
+    if (
+      elementCount >= DENSE_DOM_ELEMENT_THRESHOLD &&
+      pageTextLength >= DENSE_TEXT_LENGTH_THRESHOLD
+    ) {
+      return {
+        mode: "structured",
+        reason: "dense_text_dom",
+        signals: ["dense_text_dom"],
+      };
+    }
+    return {
+      mode: "unified_vl",
+      reason: "default_unified_vl",
+      signals: [],
     };
   }
 

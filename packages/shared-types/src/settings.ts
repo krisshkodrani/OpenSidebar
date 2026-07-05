@@ -95,6 +95,13 @@ export interface UserSettings {
    */
   perceptionMode?: PerceptionRuntimeMode;
   /**
+   * TEMPORARY (RFC LP-11 A/B): which way `auto` perception leans when no
+   * page/task signal decides. Not rendered in the UI — set only by the e2e
+   * harness to run the structured-default vs unified_vl-default comparison.
+   * Removed once the measured default is adopted.
+   */
+  perceptionAutoDefault?: "structured" | "unified_vl";
+  /**
    * Maximum estimated image prompt tokens per agent session.
    * Uses conservative high-detail screenshot estimates; auto perception falls
    * back to structured DOM mode when this budget is exhausted.

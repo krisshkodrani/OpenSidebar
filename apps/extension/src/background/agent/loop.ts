@@ -26,6 +26,7 @@ import {
 } from "./region-zoom";
 import {
   extractPerceptionPageSignals,
+  PERCEPTION_AUTO_DEFAULT_MODE,
   resolvePerceptionRuntimeMode,
   resolvePerceptionRuntimeModeDecision,
 } from "../../utils/perception-mode";
@@ -651,6 +652,8 @@ export class AgentLoop {
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
+  /** TEMPORARY (LP-11 A/B): auto-mode default arm; e2e harness only. */
+  private perceptionAutoDefaultOption?: "structured" | "unified_vl";
   private useVLExecutorOption?: boolean;
   private maxImagePromptTokenEstimate?: number;
   private providerModeOption?:
@@ -973,6 +976,8 @@ export class AgentLoop {
       xiaomiApiKey?: string;
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
+      /** TEMPORARY (LP-11 A/B): auto-mode default arm; e2e harness only. */
+      perceptionAutoDefault?: "structured" | "unified_vl";
       maxImagePromptTokenEstimate?: number;
       useVLExecutor?: boolean;
       completionDeterministicAcceptanceEnabled?: boolean;
@@ -984,6 +989,7 @@ export class AgentLoop {
   ) {
     this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.perceptionModeOption = options?.perceptionMode;
+    this.perceptionAutoDefaultOption = options?.perceptionAutoDefault;
     this.useVLExecutorOption = options?.useVLExecutor;
     this.maxImagePromptTokenEstimate = options?.maxImagePromptTokenEstimate;
     this.providerModeOption = options?.providerMode;
@@ -1003,6 +1009,7 @@ export class AgentLoop {
         useVLExecutor: this.useVLExecutorOption,
         providerMode: this.providerModeOption,
         executorVLCapable: this.executorVLCapable,
+        autoDefaultMode: this.perceptionAutoDefaultOption,
       }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
@@ -4109,6 +4116,7 @@ export class AgentLoop {
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
+      autoDefaultMode: this.perceptionAutoDefaultOption,
       taskText: initialUserText ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
@@ -4120,7 +4128,9 @@ export class AgentLoop {
       ...extractPerceptionPageSignals(snapshot),
     });
     this.useVLExecutor = perceptionDecision.mode === "unified_vl";
-    recordPerceptionModeDecision(this.metrics, perceptionDecision);
+    const autoDefault =
+      this.perceptionAutoDefaultOption ?? PERCEPTION_AUTO_DEFAULT_MODE;
+    recordPerceptionModeDecision(this.metrics, perceptionDecision, autoDefault);
     this.log.info("agent", "Resolved perception runtime mode", {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
@@ -4130,6 +4140,7 @@ export class AgentLoop {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
       signals: perceptionDecision.signals,
+      autoDefault,
     });
 
     if (snapshot) {
@@ -5094,6 +5105,7 @@ export class AgentLoop {
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
+      autoDefaultMode: this.perceptionAutoDefaultOption,
       taskText: this.originalQuery ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
@@ -5104,7 +5116,9 @@ export class AgentLoop {
     });
     const previousMode = this.useVLExecutor ? "unified_vl" : "structured";
     this.useVLExecutor = decision.mode === "unified_vl";
-    recordPerceptionModeDecision(this.metrics, decision);
+    const autoDefault =
+      this.perceptionAutoDefaultOption ?? PERCEPTION_AUTO_DEFAULT_MODE;
+    recordPerceptionModeDecision(this.metrics, decision, autoDefault);
 
     if (previousMode === decision.mode) return;
 
@@ -5120,6 +5134,7 @@ export class AgentLoop {
       reason: decision.reason,
       signals: decision.signals,
       dynamic: true,
+      autoDefault,
     });
   }
 

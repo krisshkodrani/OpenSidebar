@@ -291,11 +291,13 @@ export function recordCachedVisionTelemetryUse(metrics: SessionMetrics): void {
 export function recordPerceptionModeDecision(
   metrics: SessionMetrics,
   decision: PerceptionRuntimeModeDecision,
+  autoDefault?: "structured" | "unified_vl",
 ): void {
   metrics.perceptionModeDecision = {
     mode: decision.mode,
     reason: decision.reason,
     signals: [...decision.signals],
+    ...(autoDefault ? { autoDefault } : {}),
   };
 }
 
