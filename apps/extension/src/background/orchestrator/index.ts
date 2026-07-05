@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import { AgentLoop } from "../agent";
 import {
   AgentStatus,
@@ -1596,7 +1597,7 @@ export class Orchestrator {
       turnCheckpointKey(workspaceId, n.id),
     );
     if (turnKeys.length > 0) {
-      chrome.storage.local.remove(turnKeys).catch(() => {});
+      chromePersistencePort.local.remove(turnKeys).catch(() => {});
     }
 
     delete checkpoints[workspaceId];
@@ -2052,7 +2053,7 @@ export class Orchestrator {
         if (node.status === "running") {
           try {
             const cpKey = turnCheckpointKey(task.workspaceId, node.id);
-            const stored = await chrome.storage.local.get(cpKey);
+            const stored = await chromePersistencePort.local.get(cpKey);
             const turnCp = sanitizeTurnCheckpoint(stored[cpKey]);
             if (turnCp) {
               turnCheckpointsByNodeId.set(node.id, turnCp);
@@ -6033,7 +6034,7 @@ export class Orchestrator {
             messages.length > MAX_PERSISTED_MESSAGES
               ? messages.slice(-MAX_PERSISTED_MESSAGES)
               : messages;
-          return chrome.storage.local.set({ [storageKey]: trimmed });
+          return chromePersistencePort.local.set({ [storageKey]: trimmed });
         })
         .catch((e) => {
           logger.debug(

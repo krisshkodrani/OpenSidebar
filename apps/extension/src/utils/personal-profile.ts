@@ -10,6 +10,7 @@ import {
   type SyncMap,
 } from "./knowledge-sync";
 import { HttpKnowledgeStore } from "./openclaw-client";
+import { chromePersistencePort } from "../background/environment/chrome";
 
 const PROFILE_KNOWLEDGE_NAMESPACE = "profile";
 const PROFILE_DIGEST_SYNC_KEY = "digest";
@@ -168,7 +169,8 @@ const CONFIDENCE_PRIORITY: Record<DigestConfidence, number> = {
 };
 
 function defaultStorage(): PersonalProfileStorage {
-  return chrome.storage as unknown as PersonalProfileStorage;
+  // Route through the shared environment PersistencePort (RFC LP-15, Phase 3).
+  return chromePersistencePort;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -669,7 +671,9 @@ export async function deletePersonalProfile(
 async function resolveProfileKnowledgeStore(): Promise<KnowledgeStore | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+      const stored = await chromePersistencePort.local.get(
+        OPENCLAW_GATEWAY_URL_KEY,
+      );
       const url = stored[OPENCLAW_GATEWAY_URL_KEY];
       if (typeof url === "string" && url.trim()) {
         return new HttpKnowledgeStore({ baseUrl: url.trim() });

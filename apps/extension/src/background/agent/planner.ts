@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import { LLMClient, LLMClientOptions } from "../llm";
 import { TokenUsage } from "../llm/types";
 import type { CompletionResponse } from "../llm/types";
@@ -809,7 +810,7 @@ export class TaskPlanner {
     let url: string | undefined;
     try {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
-        const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+        const stored = await chromePersistencePort.local.get(OPENCLAW_GATEWAY_URL_KEY);
         const value = stored[OPENCLAW_GATEWAY_URL_KEY];
         if (typeof value === "string" && value.trim()) url = value.trim();
       }
