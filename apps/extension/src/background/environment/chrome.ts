@@ -5,8 +5,11 @@ import type {
   BrowserTabQuery,
   BrowserTabUpdate,
   ContentBridgePort,
+  NavigationEventsPort,
   PersistencePort,
   PersistenceStorageArea,
+  RuntimeMessagingPort,
+  SchedulerPort,
 } from "./types";
 import type { RuntimeMessage } from "../../types";
 
@@ -132,4 +135,101 @@ export const chromePersistencePort: PersistencePort = {
   local: chromeStorageArea("local"),
   sync: chromeStorageArea("sync"),
   session: chromeStorageArea("session"),
+};
+
+export const chromeRuntimeMessagingPort: RuntimeMessagingPort = {
+  broadcast(message) {
+    chrome.runtime.sendMessage(message).catch(() => {});
+  },
+  request(message) {
+    return chrome.runtime.sendMessage(message);
+  },
+  onMessage(listener) {
+    const chromeListener = (
+      message: unknown,
+      sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: unknown) => void,
+    ): boolean | undefined => {
+      const result = listener(message, { tabId: sender.tab?.id });
+      if (result && typeof (result as Promise<unknown>).then === "function") {
+        void (result as Promise<unknown>).then(sendResponse);
+        return true; // keep the message channel open for the async response
+      }
+      if (result !== undefined) {
+        sendResponse(result);
+      }
+      return undefined;
+    };
+    chrome.runtime.onMessage.addListener(chromeListener);
+    return () => chrome.runtime.onMessage.removeListener(chromeListener);
+  },
+};
+
+function navigationEvent(
+  event:
+    | chrome.webNavigation.WebNavigationEvent<chrome.webNavigation.WebNavigationFramedCallbackDetails>
+    | undefined,
+  listener: (details: {
+    tabId: number;
+    frameId: number;
+    url: string;
+  }) => void,
+): () => void {
+  if (!event) return () => {};
+  const chromeListener = (
+    details: chrome.webNavigation.WebNavigationFramedCallbackDetails,
+  ) => {
+    listener({
+      tabId: details.tabId,
+      frameId: details.frameId,
+      url: details.url,
+    });
+  };
+  event.addListener(chromeListener);
+  return () => event.removeListener(chromeListener);
+}
+
+export const chromeNavigationEventsPort: NavigationEventsPort = {
+  onCommitted(listener) {
+    return navigationEvent(chrome.webNavigation?.onCommitted, listener);
+  },
+  onCompleted(listener) {
+    return navigationEvent(chrome.webNavigation?.onCompleted, listener);
+  },
+  onHistoryStateUpdated(listener) {
+    return navigationEvent(
+      chrome.webNavigation?.onHistoryStateUpdated,
+      listener,
+    );
+  },
+  onErrorOccurred(listener) {
+    const event = chrome.webNavigation?.onErrorOccurred;
+    if (!event) return () => {};
+    const chromeListener = (
+      details: chrome.webNavigation.WebNavigationFramedErrorCallbackDetails,
+    ) => {
+      listener({
+        tabId: details.tabId,
+        frameId: details.frameId,
+        url: details.url,
+        error: details.error,
+      });
+    };
+    event.addListener(chromeListener);
+    return () => event.removeListener(chromeListener);
+  },
+};
+
+export const chromeSchedulerPort: SchedulerPort = {
+  async createAlarm(name, options) {
+    await chrome.alarms.create(name, options);
+  },
+  async clearAlarm(name) {
+    return chrome.alarms.clear(name);
+  },
+  onAlarm(listener) {
+    const chromeListener = (alarm: chrome.alarms.Alarm) => listener(alarm);
+    chrome.alarms.onAlarm.addListener(chromeListener);
+    return () => chrome.alarms.onAlarm.removeListener(chromeListener);
+  },
 };

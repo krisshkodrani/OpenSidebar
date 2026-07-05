@@ -10,6 +10,7 @@
 
 import { logger } from "../../utils";
 import { isContentScript } from "../../utils/context";
+import { chromeSchedulerPort } from "../environment/chrome";
 
 // --- Constants ---
 
@@ -39,7 +40,7 @@ export async function startKeepalive(): Promise<void> {
   }
 
   try {
-    await chrome.alarms.create(ALARM_NAME, {
+    await chromeSchedulerPort.createAlarm(ALARM_NAME, {
       periodInMinutes: ALARM_PERIOD_MINUTES,
     });
     isActive = true;
@@ -62,7 +63,7 @@ export async function stopKeepalive(): Promise<void> {
   // Always attempt to clear — after a SW restart isActive resets to false
   // but the alarm may still exist in Chrome's alarm registry.
   try {
-    await chrome.alarms.clear(ALARM_NAME);
+    await chromeSchedulerPort.clearAlarm(ALARM_NAME);
     if (isActive) {
       logger.info("keepalive", "Stopped keepalive alarm");
     }
@@ -76,7 +77,7 @@ export async function stopKeepalive(): Promise<void> {
  * Handler for chrome.alarms.onAlarm.
  * Simply logs activity to keep the SW alive.
  */
-function handleAlarm(alarm: chrome.alarms.Alarm): void {
+function handleAlarm(alarm: { name: string }): void {
   if (alarm.name === ALARM_NAME) {
     logger.debug("keepalive", "Keepalive ping", { ts: Date.now() });
     // The act of handling this alarm resets the SW termination timer
@@ -98,6 +99,6 @@ export function registerAlarmListener(): void {
     return;
   }
 
-  chrome.alarms.onAlarm.addListener(handleAlarm);
+  chromeSchedulerPort.onAlarm(handleAlarm);
   logger.info("keepalive", "Alarm listener registered");
 }
