@@ -36,6 +36,14 @@ variable changed.
 3. Known limitations: n=36/config is directional; the planner only
    influences a subset of turns (decomposition, escalation, verification),
    so deltas are expected to be smaller than the perception A/B's.
+4. **Mid-flight deviation (recorded before results):** the job-board
+   validator fix (quota 8→4, commit b19e254a) landed after config A's
+   arena started but before config B's — the two configs therefore run
+   different job-board gates. `job-board.recommend-best-matches` is
+   EXCLUDED from the cross-config comparison and will be re-measured
+   ×2 per config on identical code afterwards. The concurrent
+   waitForOutcome change alters failure latency/reason strings only,
+   not pass/fail semantics, and does not affect comparability.
 
 ## Results
 
