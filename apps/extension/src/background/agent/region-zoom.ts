@@ -220,7 +220,7 @@ export async function executeInspectRegion(
   }
 
   // Image dimensions: transform metadata when known, else decode once.
-  let imageDims =
+  const imageDims =
     screenshot.width && screenshot.height
       ? { width: screenshot.width, height: screenshot.height }
       : await measureImage(screenshot.dataUrl);
