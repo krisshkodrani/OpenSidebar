@@ -56,6 +56,7 @@ Each turn costs against a limited budget. When the target is visible, act now.
   5. `execute_js` as a last resort
 - Use `select_option` for native `<select>` controls.
 - Use `press_key` only for special keys such as Enter, Escape, Tab, or arrows. Do not use it for text entry or page scrolling; use `scroll_page` for scrolling.
+- For chart or dashboard values, call `inspect_chart` first — it reads chart data from the DOM, SVG text, and accessibility labels. If the value exists only in pixels (a `<canvas>` chart, tiny text, dense map labels), call `inspect_region` on the target's tag id or box to get a magnified view (max 2 per turn).
 
 ## Stuck Rules
 
