@@ -14,7 +14,7 @@ The current default runtime uses Fireworks-hosted Kimi for executor and planner 
 
 | Tier | Model | Role |
 |------|-------|------|
-| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` | Default action loop |
+| Executor | `accounts/fireworks/models/kimi-k2p7-code` | Default action loop |
 | Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` | Planning, decomposition, rerouting, and verification support |
 
 Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.

@@ -677,7 +677,7 @@ OpenSidebar uses separate runtime tiers for execution, planning, and visual perc
 
 | Model Tier | Model ID                           | Provider    | Use Case                           |
 | ---------- | ---------------------------------- | ----------- | ---------------------------------- |
-| **Executor** | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Executor, everyday tasks (default) |
+| **Executor** | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Executor, everyday tasks (default) |
 | **Planner**  | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Complex reasoning, escalated tasks |
 | **Perception** | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Vision-based page understanding |
 
