@@ -437,6 +437,32 @@ export interface TraceEventPayloadByType {
     success: boolean;
     error?: string;
   };
+  perception_mode_decision: {
+    mode: "structured" | "unified_vl";
+    reason: string;
+    signals: string[];
+    /** Present on per-snapshot re-resolutions that changed the mode */
+    previousMode?: "structured" | "unified_vl";
+    /** True when emitted from the per-snapshot re-resolution path */
+    dynamic?: boolean;
+    /** Which auto-mode default produced this decision (LP-11 A/B) */
+    autoDefault?: "structured" | "unified_vl";
+  };
+  screenshot_transform: {
+    /** capturedWidth / outputWidth (>= 1; 1 when the capture was untouched) */
+    scaleFactor: number;
+    width: number;
+    height: number;
+    path: "structured_perception" | "vl_executor";
+  };
+  image_prompt_budget_exhausted: {
+    source: string;
+    requestedImages: number;
+    requestedTokenEstimate: number;
+    usedTokenEstimate: number;
+    maxTokenEstimate: number;
+    remainingTokenEstimate: number;
+  };
 }
 
 type KnownTraceEvent = {
