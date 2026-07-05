@@ -668,8 +668,6 @@ export class AgentLoop {
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
   private perception = new PerceptionAgent();
-  /** LP-9: capturedWidth / sentWidth of the most recent screenshot (1 = untouched). */
-  private lastScreenshotScaleFactor = 1;
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
   /** inspect_region per-turn cap state (LP-13). */
@@ -4852,7 +4850,6 @@ export class AgentLoop {
         // LP-9: own resolution/format/scale before anything downstream sees it.
         const transformed = await transformScreenshot(captured);
         dataUrl = transformed.dataUrl;
-        this.lastScreenshotScaleFactor = transformed.scaleFactor;
         this.traceRecorder?.recordEvent("screenshot_transform", {
           scaleFactor: transformed.scaleFactor,
           width: transformed.width,
@@ -5196,7 +5193,6 @@ export class AgentLoop {
       // LP-9: own resolution/format/scale before anything downstream sees it.
       const transformed = await transformScreenshot(captured);
       const dataUrl = transformed.dataUrl;
-      this.lastScreenshotScaleFactor = transformed.scaleFactor;
       this.traceRecorder?.recordEvent("screenshot_transform", {
         scaleFactor: transformed.scaleFactor,
         width: transformed.width,

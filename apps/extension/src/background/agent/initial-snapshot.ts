@@ -60,17 +60,11 @@ export async function resolveInitialSnapshot({
           snapshot = entry.snapshot;
           if (entry.perception) warmupPerception = entry.perception;
           warmupScreenshot = entry.screenshotUrl;
-          log.info(
-            "agent",
-            "Using warmup snapshot" +
-              (entry.screenshotOnly ? " (screenshot-only)" : " + perception"),
-            {
-              tabId,
-              elementCount: snapshot.elements.length,
-              screenshotOnly: entry.screenshotOnly ?? false,
-              provider: entry.perception?.providerId,
-            },
-          );
+          log.info("agent", "Using warmup snapshot + perception", {
+            tabId,
+            elementCount: snapshot.elements.length,
+            provider: entry.perception?.providerId,
+          });
         }
       } else {
         const cached = warmupCache.get(tabId);
@@ -78,16 +72,11 @@ export async function resolveInitialSnapshot({
           snapshot = cached.snapshot;
           if (cached.perception) warmupPerception = cached.perception;
           warmupScreenshot = cached.screenshotUrl;
-          log.info(
-            "agent",
-            "Using cached warmup snapshot" +
-              (cached.screenshotOnly ? " (screenshot-only)" : " + perception"),
-            {
-              tabId,
-              elementCount: snapshot.elements.length,
-              ageMs: Date.now() - cached.timestamp,
-            },
-          );
+          log.info("agent", "Using cached warmup snapshot + perception", {
+            tabId,
+            elementCount: snapshot.elements.length,
+            ageMs: Date.now() - cached.timestamp,
+          });
         }
       }
 

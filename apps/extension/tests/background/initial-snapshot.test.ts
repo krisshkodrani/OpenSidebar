@@ -57,7 +57,6 @@ describe("resolveInitialSnapshot", () => {
           durationMs: 42,
         },
         screenshotUrl: "data:image/png;base64,warmup",
-        screenshotOnly: false,
         timestamp: Date.now(),
       }),
     );
