@@ -120,7 +120,10 @@ import {
   recordCompletionDecision,
 } from "./completion/decision-recorder";
 import type { CompletionGuardContext } from "./completion/guards/context";
-import type { PlannerValidationResult } from "./completion/pipeline";
+import {
+  runCompletionPipeline,
+  type PlannerValidationResult,
+} from "./completion/pipeline";
 import {
   TURN_CHECKPOINT_VERSION,
   buildMutationKey,
@@ -2750,7 +2753,61 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    await this.shadowCompareCompletionPipeline(input, verdict);
     return verdict;
+  }
+
+  /**
+   * Shadow gate (RFC LP-15, Phase 7a). Runs the pure completion pipeline
+   * alongside the legacy decision and emits `completion_pipeline_divergence`
+   * when the verdicts disagree. The legacy decision is authoritative; this never
+   * affects the returned verdict and never throws into the done path. `input`
+   * carries the pre-inner guard context + the captured planner result, so the
+   * pipeline runs without a second model call.
+   */
+  private async shadowCompareCompletionPipeline(
+    input: CompletionDecisionRecordInput,
+    legacyVerdict: boolean,
+  ): Promise<void> {
+    try {
+      const { decision: kernelDecision } = evaluateGeneratedCompletionCandidate({
+        userRequest: input.userRequest,
+        snapshot: input.snapshot,
+        activeObjective: input.activeObjective,
+        successCriteria: input.successCriteria,
+        evidence: input.evidence,
+        candidateSource: input.candidateSource,
+        summary: input.summary,
+      });
+      const pipelineDecision = await runCompletionPipeline(input.guardContext, {
+        kernelDecision,
+        deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
+        isDuplicateTerminal: input.isDuplicateTerminal,
+        validatePlan: async () => input.plannerResult,
+      });
+      const pipelineAccepted = pipelineDecision.verdict === "accept";
+      if (pipelineAccepted !== legacyVerdict) {
+        this.traceRecorder?.recordEvent("completion_pipeline_divergence", {
+          turn: this.turnCount,
+          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+          pipelineVerdict: pipelineDecision.verdict,
+          pipelineBasis: pipelineDecision.basis,
+          pipelineRejectedBy: pipelineDecision.rejectedBy,
+          pipelineReason: pipelineDecision.reason,
+        });
+        this.log.warn("agent", "completion pipeline shadow divergence", {
+          turn: this.turnCount,
+          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+          pipelineVerdict: pipelineDecision.verdict,
+          pipelineRejectedBy: pipelineDecision.rejectedBy,
+        });
+      }
+    } catch (err) {
+      this.log.warn("agent", "completion pipeline shadow comparison failed", {
+        turn: this.turnCount,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
