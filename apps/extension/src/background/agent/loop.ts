@@ -3577,6 +3577,23 @@ export class AgentLoop {
           ? undefined
           : classification.diff.diffHash,
     });
+
+    // Seal the dry-run (RFC LP-15 Phase 8: commit → seal): record the form +
+    // approved-diff digest so a replay recognizes this submit was dry-run
+    // verified and does not re-run it blindly.
+    if (capture && classification.kind !== "no_draft") {
+      this.checkpoints.recordMutation({
+        toolName,
+        args,
+        result: `form_dry_run:${classification.kind}`,
+        planIndex: this.lastPlanIndex,
+        turn: this.turnCount,
+        formSubmitSeal: {
+          formKey: capture.formKey,
+          diffHash: classification.diff.diffHash,
+        },
+      });
+    }
     return classification;
   }
 

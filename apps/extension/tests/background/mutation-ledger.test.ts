@@ -40,6 +40,53 @@ describe("MutationLedger", () => {
     expect(ledger.lookup(ToolName.READ_PAGE, {}, snap, true)).toBeNull();
   });
 
+  test("stamps the form + diff digest onto a sealed submit (LP-15 Phase 8)", () => {
+    const ledger = new MutationLedger(() => 5, () => "id-2");
+    const snap = snapshot();
+    ledger.record({
+      toolName: ToolName.CLICK_ELEMENT, // a submit CLICK — already sensitive
+      args: { id: 7 },
+      result: "form_dry_run:clean",
+      currentSnapshot: snap,
+      planIndex: 0,
+      turn: 1,
+      formSubmitSeal: { formKey: "/apply", diffHash: "abc123" },
+    });
+    expect(ledger.entries).toHaveLength(1);
+    expect(ledger.entries[0]).toMatchObject({
+      toolName: ToolName.CLICK_ELEMENT,
+      formKey: "/apply",
+      diffHash: "abc123",
+    });
+  });
+
+  test("a formSubmitSeal records even a non-sensitive tool (bypasses the gate)", () => {
+    const ledger = new MutationLedger(() => 5, () => "id-3");
+    const snap = snapshot();
+    // Without a seal, a read-only tool is ignored.
+    ledger.record({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result: "x",
+      currentSnapshot: snap,
+      planIndex: 0,
+      turn: 1,
+    });
+    expect(ledger.entries).toHaveLength(0);
+    // With a seal, it records.
+    ledger.record({
+      toolName: ToolName.READ_PAGE,
+      args: {},
+      result: "form_dry_run:unexpected",
+      currentSnapshot: snap,
+      planIndex: 0,
+      turn: 1,
+      formSubmitSeal: { formKey: "/f", diffHash: "h" },
+    });
+    expect(ledger.entries).toHaveLength(1);
+    expect(ledger.entries[0].diffHash).toBe("h");
+  });
+
   test("records mutation-sensitive actions and replays from ledger first", () => {
     const ledger = new MutationLedger(() => 10, () => "effect-1");
     const snap = snapshot();
