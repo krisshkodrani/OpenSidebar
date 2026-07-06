@@ -10,6 +10,7 @@ import {
   assessEarlyMultiStepGuard,
   assessMoneyTableGuard,
 } from "../../src/background/agent/completion/guards/domain-guards";
+import { assessMaxRejectionsGuard } from "../../src/background/agent/completion/guards/budget-guards";
 import type {
   CompletionEffect,
   GuardOutcome,
@@ -28,6 +29,9 @@ function ctx(over: Partial<CompletionGuardContext> = {}): CompletionGuardContext
     planSubtaskCount: 0,
     runningSubtaskIndex: -1,
     selectedSkillId: null,
+    hasReadPage: true,
+    hasExplicitPageRead: true,
+    hasTaskId: false,
     missingRequiredEvidence: [],
     listDetailReviewedCount: 0,
     listDetailOpenedCount: 0,
@@ -124,5 +128,25 @@ describe("early-multistep guard", () => {
       assessEarlyMultiStepGuard(ctx({ userRequest: "click the login button" }))
         .kind,
     ).toBe("pass");
+  });
+});
+
+describe("max-rejections guard", () => {
+  test("passes below the cap", () => {
+    expect(
+      assessMaxRejectionsGuard(ctx({ doneRejections: 2, maxDoneRejections: 3 }))
+        .kind,
+    ).toBe("pass");
+  });
+
+  test("hard-blocks at the cap without bumping the counter", () => {
+    const outcome = assessMaxRejectionsGuard(
+      ctx({ doneRejections: 3, maxDoneRejections: 3 }),
+    );
+    expect(outcome.kind).toBe("reject");
+    if (outcome.kind !== "reject") return;
+    expect(outcome.guardId).toBe("max_rejections");
+    // hard gate: only a message, no increment
+    expect(effectTypes(outcome)).toEqual(["post_context_message"]);
   });
 });
