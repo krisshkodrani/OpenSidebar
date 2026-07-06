@@ -721,6 +721,30 @@ describe("AgentLoop", () => {
     expect(turn4Done[0].status).toBe("done");
   });
 
+  // --- Escalation tier characterization (LP-15 Phase 6 regression net) ---
+  // The tier locals live inside loop() and aren't accessible, so we pin
+  // OBSERVABLE behavior: the context.setModelTier trajectory (only callers are
+  // escalateModel/deescalateModel). These must stay byte-green across the
+  // TurnState / EscalationTierController extraction.
+
+  test("plan-then-act: starts on planner tier, then hands off to executor", async () => {
+    const agent = new AgentLoop("test-key", {
+      onStatusUpdate: vi.fn(),
+      onMessage: vi.fn(),
+      onStep: vi.fn(),
+    });
+    const setModelTier = vi.spyOn((agent as any).context, "setModelTier");
+
+    await agent.start("Hello", 123);
+
+    const tiers = setModelTier.mock.calls.map((c: any[]) => c[0]);
+    // Orientation begins on planner (loop init), then the handoff de-escalates
+    // to executor once orientation ends.
+    expect(tiers[0]).toBe("planner");
+    expect(tiers).toContain("executor");
+    expect(tiers.indexOf("planner")).toBeLessThan(tiers.indexOf("executor"));
+  });
+
   test("uses DOM-aware profiling when no plan status exists", () => {
     const agent = new AgentLoop("test-key", {
       onStatusUpdate: vi.fn(),
