@@ -59,11 +59,9 @@ function makeHost(overrides: Partial<RegionZoomHost> = {}): {
   host: RegionZoomHost;
   events: unknown[];
   staged: unknown[];
-  described: unknown[];
 } {
   const events: unknown[] = [];
   const staged: unknown[] = [];
-  const described: unknown[] = [];
   const host: RegionZoomHost = {
     turnCount: 1,
     useVLExecutor: true,
@@ -74,13 +72,9 @@ function makeHost(overrides: Partial<RegionZoomHost> = {}): {
     resolveTagRect: async () => ({ x: 40, y: 60, width: 200, height: 120 }),
     recordInspectRegionEvent: (data) => events.push(data),
     setRegionZoomForExecutor: (zoom) => staged.push(zoom),
-    describeRegion: async (args) => {
-      described.push(args);
-      return "The region shows: Q3 margin 4.7%.";
-    },
     ...overrides,
   };
-  return { host, events, staged, described };
+  return { host, events, staged };
 }
 
 describe("executeInspectRegion (LP-13)", () => {
@@ -117,8 +111,8 @@ describe("executeInspectRegion (LP-13)", () => {
     expect(state.count).toBe(1);
   });
 
-  test("structured turn: routes the crop through describeRegion", async () => {
-    const { host, staged, described } = makeHost({ useVLExecutor: false });
+  test("text-only turn still stages the crop into the executor", async () => {
+    const { host, staged } = makeHost({ useVLExecutor: false });
 
     const result = await executeInspectRegion(
       host,
@@ -127,9 +121,10 @@ describe("executeInspectRegion (LP-13)", () => {
       tabId,
     );
 
-    expect(result).toContain("Q3 margin 4.7%");
-    expect(described).toHaveLength(1);
-    expect(staged).toHaveLength(0);
+    // inspect_region is a vision request — the crop always rides into the
+    // (VL-capable) executor's next view, regardless of the turn's mode.
+    expect(result).toContain("magnification");
+    expect(staged).toHaveLength(1);
   });
 
   test("id sugar resolves the live rect and records the requested id", async () => {

@@ -289,7 +289,7 @@ describe("AgentLoop", () => {
     );
   });
 
-  test("perception refresh can switch from unified VL back to structured DOM", async () => {
+  test("perception refresh switches from unified VL to a text-only DOM turn", async () => {
     const recordEvent = vi.fn();
     const agent = new AgentLoop(
       "test-key",
@@ -303,9 +303,15 @@ describe("AgentLoop", () => {
     (agent as any).traceRecorder = { recordEvent };
     (agent as any).originalQuery = "Fill out the account form.";
     (agent as any).useVLExecutor = true;
-    (agent as any).refreshPerception = vi.fn();
-    (agent as any).triagePopups = vi.fn();
     (agent as any).captureScreenshotForVLExecutor = vi.fn();
+    const setScreenshot = vi.spyOn(
+      (agent as any).context,
+      "setScreenshotForExecutor",
+    );
+    const setInterpretation = vi.spyOn(
+      (agent as any).context,
+      "setPageInterpretation",
+    );
     // Dense text-heavy DOM: post LP-11 flip, this is the signal-less page
     // shape that still argues FOR structured (>= 40 elements, >= 2000 chars).
     const text = "Account form ".repeat(200);
@@ -331,9 +337,11 @@ describe("AgentLoop", () => {
     await (agent as any).refreshPerceptionAndTriage(123);
 
     expect((agent as any).useVLExecutor).toBe(false);
-    expect((agent as any).refreshPerception).toHaveBeenCalledWith(123);
-    expect((agent as any).triagePopups).toHaveBeenCalledWith(123);
+    // Structured now means a text-only executor turn: no screenshot, no
+    // separate perception model interpretation.
     expect((agent as any).captureScreenshotForVLExecutor).not.toHaveBeenCalled();
+    expect(setScreenshot).toHaveBeenCalledWith(null);
+    expect(setInterpretation).toHaveBeenCalledWith(null);
     expect(recordEvent).toHaveBeenCalledWith(
       "perception_mode_decision",
       expect.objectContaining({

@@ -62,14 +62,8 @@ export interface RegionZoomHost {
     id: number,
   ): Promise<{ x: number; y: number; width: number; height: number } | null>;
   recordInspectRegionEvent(data: InspectRegionTraceData): void;
-  /** VL turns: stage the crop as the executor's next-view attachment. */
+  /** Stage the crop as the (VL) executor's next-view attachment. */
   setRegionZoomForExecutor(zoom: { dataUrl: string; label: string }): void;
-  /** Structured turns: describe the crop via the perception model. */
-  describeRegion(args: {
-    dataUrl: string;
-    label: string;
-    purpose?: string;
-  }): Promise<string>;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -280,15 +274,8 @@ export async function executeInspectRegion(
     upscale: geometry.geometry.upscale,
   });
 
-  if (host.useVLExecutor) {
-    host.setRegionZoomForExecutor({ dataUrl: crop.dataUrl, label });
-    return `Zoomed into ${label} at ${upscale}x magnification — the magnified image is attached to your next view. Read the fine text from it; do not derive click coordinates from the magnified image.`;
-  }
-
-  const description = await host.describeRegion({
-    dataUrl: crop.dataUrl,
-    label,
-    purpose: args.purpose,
-  });
-  return `Zoomed region ${label} at ${upscale}x magnification:\n${description}`;
+  // The magnified crop always rides into the (VL-capable) executor's next
+  // view — inspect_region is inherently a vision request.
+  host.setRegionZoomForExecutor({ dataUrl: crop.dataUrl, label });
+  return `Zoomed into ${label} at ${upscale}x magnification — the magnified image is attached to your next view. Read the fine text from it; do not derive click coordinates from the magnified image.`;
 }
