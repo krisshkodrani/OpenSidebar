@@ -1,4 +1,6 @@
 import { chromePersistencePort } from "../environment/chrome";
+import { getTrustedCorpusStore } from "../memory/corpus-runtime";
+import { extractedFactToCorpusEntry } from "../memory/trusted-corpus-migration";
 import { AgentLoop } from "../agent";
 import {
   AgentStatus,
@@ -1567,6 +1569,20 @@ export class Orchestrator {
         [node.id]: compactResultSummary,
       },
     });
+    // RFC LP-15 Phase 9: shadow-write the extracted fact to the trusted corpus
+    // WITH provenance (the checkpoint-blob map has none). Best-effort; the
+    // structuredProgress entry above stays the authoritative read path for one
+    // release. Never blocks node completion.
+    void getTrustedCorpusStore()
+      .upsert(
+        extractedFactToCorpusEntry({
+          taskId: task.id,
+          nodeId: node.id,
+          summary: compactResultSummary,
+          capturedAt: Date.now(),
+        }),
+      )
+      .catch(() => {});
   }
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {

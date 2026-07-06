@@ -3,6 +3,7 @@ import "../setup";
 import {
   corpusEntryToProfileDigestItem,
   corpusEntryToWebsiteSkill,
+  extractedFactToCorpusEntry,
   migrateLegacyStoresIntoCorpus,
   personalProfileFactToCorpusEntry,
   websiteSkillToCorpusEntry,
@@ -67,6 +68,24 @@ describe("trusted-corpus migration transforms", () => {
     expect((entry.value as DigestItem).value).toBe("enc:v1:aXY=.Y2lwaGVy");
     expect((entry.value as DigestItem).sourceQuote).toBe("enc:v1:cXE=.cXVvdGU=");
     expect(entry.provenance.sourceQuote).toBeUndefined();
+  });
+
+  test("extracted fact → task-scoped extracted_fact entry with provenance", () => {
+    const entry = extractedFactToCorpusEntry({
+      taskId: "task-7",
+      nodeId: "node-3",
+      summary: "The invoice total is $412.00",
+      capturedAt: 99,
+    });
+    expect(entry).toMatchObject({
+      kind: "extracted_fact",
+      claimKey: "task-7:node-3", // pinned to (task, node) so re-record re-syncs
+      scope: {},
+      value: "The invoice total is $412.00",
+      encrypted: false,
+      confidence: "medium",
+      provenance: { source: "observation", taskId: "task-7", nodeId: "node-3", capturedAt: 99 },
+    });
   });
 
   test("corpusEntryToWebsiteSkill recovers a skill / rejects a malformed value", () => {

@@ -106,6 +106,35 @@ export function websiteSkillToCorpusEntry(
 }
 
 /**
+ * A live-captured extracted fact → a task-scoped extracted_fact entry (RFC
+ * LP-15, Phase 9). Unlike the two migration transforms above this is a producer
+ * transform: the orchestrator writes it as a node completes, WITH the provenance
+ * the checkpoint-blob shadow lacks (taskId, nodeId, capturing skill, when). The
+ * claimKey pins it to (task, node) so re-recording a node re-syncs in place.
+ */
+export function extractedFactToCorpusEntry(input: {
+  taskId: string;
+  nodeId: string;
+  summary: string;
+  capturedAt: number;
+}): TrustedCorpusUpsert {
+  return {
+    kind: "extracted_fact",
+    claimKey: `${input.taskId}:${input.nodeId}`,
+    scope: {},
+    value: input.summary,
+    encrypted: false,
+    provenance: {
+      source: "observation",
+      taskId: input.taskId,
+      nodeId: input.nodeId,
+      capturedAt: input.capturedAt,
+    },
+    confidence: "medium",
+  };
+}
+
+/**
  * Populate the corpus from the legacy stores (RFC LP-15, Phase 9). Idempotent —
  * upsert dedups by identity, so this is the lazy/reversible re-sync run on first
  * query (the legacy keys stay for one release). Profile facts carry the raw
