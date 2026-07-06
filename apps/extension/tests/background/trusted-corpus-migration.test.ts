@@ -1,10 +1,13 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  corpusEntryToProfileDigestItem,
+  corpusEntryToWebsiteSkill,
   migrateLegacyStoresIntoCorpus,
   personalProfileFactToCorpusEntry,
   websiteSkillToCorpusEntry,
 } from "../../src/background/memory/trusted-corpus-migration";
+import type { TrustedCorpusEntry } from "../../src/background/memory/trusted-corpus";
 import { createTrustedCorpusStoreOnArea } from "../../src/background/memory/trusted-corpus";
 import { createFakeStorageArea } from "../fakes/persistence";
 import type { DigestItem } from "../../src/utils/personal-profile";
@@ -28,14 +31,23 @@ describe("trusted-corpus migration transforms", () => {
       kind: "personal_profile_fact",
       claimKey: "fact:full-name:abc",
       scope: {},
-      value: "Sam Rivera",
+      value: item, // whole digest item, lossless round-trip
       encrypted: false,
       confidence: "high",
       provenance: { source: "analyzer", provider: "fireworks", model: "glm-5p2" },
     });
+    // reverse transform recovers the item
+    const recovered = corpusEntryToProfileDigestItem({
+      ...entry,
+      id: "id-1",
+      version: 1,
+      createdAt: 0,
+      updatedAt: 0,
+    } as TrustedCorpusEntry);
+    expect(recovered).toEqual(item);
   });
 
-  test("sensitive fact keeps its ciphertext opaque with encrypted=true + sourceQuote", () => {
+  test("sensitive fact keeps its ciphertext opaque with encrypted=true", () => {
     const item: DigestItem = {
       id: "sensitive:ssn:xyz",
       label: "SSN",
@@ -50,8 +62,40 @@ describe("trusted-corpus migration transforms", () => {
       true,
     );
     expect(entry.encrypted).toBe(true);
-    expect(entry.value).toBe("enc:v1:aXY=.Y2lwaGVy"); // unchanged ciphertext
-    expect(entry.provenance.sourceQuote).toBe("enc:v1:cXE=.cXVvdGU=");
+    // ciphertext stays opaque inside the carried item; provenance never
+    // duplicates the sensitive sourceQuote.
+    expect((entry.value as DigestItem).value).toBe("enc:v1:aXY=.Y2lwaGVy");
+    expect((entry.value as DigestItem).sourceQuote).toBe("enc:v1:cXE=.cXVvdGU=");
+    expect(entry.provenance.sourceQuote).toBeUndefined();
+  });
+
+  test("corpusEntryToWebsiteSkill recovers a skill / rejects a malformed value", () => {
+    const skill = {
+      id: "skill-9",
+      name: "S",
+      origin: "https://x.test",
+      pathPattern: "/*",
+      triggerPhrase: "t",
+      workflowSteps: [],
+      guardrails: [],
+      requiredEvidence: [],
+      privacySummary: "",
+      capturedEventCount: 0,
+      capturedInputCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+      enabled: true,
+    } as UserWebsiteSkill;
+    const good = websiteSkillToCorpusEntry(skill);
+    expect(
+      corpusEntryToWebsiteSkill({ ...good, id: "id", version: 1, createdAt: 0, updatedAt: 0 } as TrustedCorpusEntry),
+    ).toEqual(skill);
+    expect(
+      corpusEntryToWebsiteSkill({
+        kind: "website_skill",
+        value: { nope: true },
+      } as unknown as TrustedCorpusEntry),
+    ).toBeNull();
   });
 
   test("website skill → site-scoped website_skill entry", () => {

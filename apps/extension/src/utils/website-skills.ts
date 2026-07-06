@@ -363,7 +363,7 @@ export function formatUserWebsiteSkillGuidance(
   ].join("\n");
 }
 
-function isUserWebsiteSkill(value: unknown): value is UserWebsiteSkill {
+export function isUserWebsiteSkill(value: unknown): value is UserWebsiteSkill {
   const skill = value as UserWebsiteSkill;
   return (
     typeof skill?.id === "string" &&

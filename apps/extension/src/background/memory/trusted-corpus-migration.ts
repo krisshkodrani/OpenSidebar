@@ -14,8 +14,10 @@
 
 import type { AnalyzerMetadata, DigestItem } from "../../utils/personal-profile";
 import { isEncryptedValue } from "../../utils/profile-crypto";
+import { isUserWebsiteSkill } from "../../utils/website-skills";
 import type { UserWebsiteSkill } from "../../types";
 import type {
+  TrustedCorpusEntry,
   TrustedCorpusProvenance,
   TrustedCorpusStore,
   TrustedCorpusUpsert,
@@ -24,7 +26,12 @@ import type {
 /**
  * A personal-profile digest item → a global personal_profile_fact entry. The
  * digest item id (`kind:slug(label):hash`) is already a stable dedup key, so it
- * becomes the claimKey. `encrypted` is the caller's `isEncryptedValue(value)`.
+ * becomes the claimKey. The whole `DigestItem` is the value (a lossless
+ * round-trip for consumers that need label/kind/confidence, mirroring how a
+ * website skill carries its whole object), so `encrypted` describes the item's
+ * `sensitive`-kind ciphertext fields — which stay opaque, CEK-wrapped. The
+ * ciphertext already lives inside `value`, so we do not duplicate `sourceQuote`
+ * into provenance.
  */
 export function personalProfileFactToCorpusEntry(
   item: DigestItem,
@@ -35,13 +42,45 @@ export function personalProfileFactToCorpusEntry(
     kind: "personal_profile_fact",
     claimKey: item.id,
     scope: {},
-    value: item.value,
+    value: item,
     encrypted,
-    provenance: item.sourceQuote
-      ? { ...provenance, sourceQuote: item.sourceQuote }
-      : provenance,
+    provenance,
     confidence: item.confidence,
   };
+}
+
+/**
+ * Reverse of {@link personalProfileFactToCorpusEntry}: recover the DigestItem a
+ * personal_profile_fact entry carries. Returns null for a malformed value.
+ * Sensitive-kind values stay ciphertext (decryption stays in the CEK code), so
+ * this is for structural reads, not for prompt injection of sensitive fields.
+ */
+export function corpusEntryToProfileDigestItem(
+  entry: TrustedCorpusEntry,
+): DigestItem | null {
+  const value = entry.value as Partial<DigestItem> | null | undefined;
+  if (
+    !value ||
+    typeof value.id !== "string" ||
+    typeof value.label !== "string" ||
+    typeof value.value !== "string" ||
+    typeof value.kind !== "string" ||
+    typeof value.confidence !== "string"
+  ) {
+    return null;
+  }
+  return value as DigestItem;
+}
+
+/**
+ * Reverse of {@link websiteSkillToCorpusEntry}: recover the UserWebsiteSkill a
+ * website_skill entry carries (validated through the shared type guard).
+ * Returns null for a malformed value.
+ */
+export function corpusEntryToWebsiteSkill(
+  entry: TrustedCorpusEntry,
+): UserWebsiteSkill | null {
+  return isUserWebsiteSkill(entry.value) ? entry.value : null;
 }
 
 /**
