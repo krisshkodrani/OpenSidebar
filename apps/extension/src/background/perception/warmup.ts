@@ -14,6 +14,7 @@ import { DomSnapshot, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { isTabReady, ensureContentScript } from "../infrastructure/tab-ready";
 import { perceive, LegacyPerceptionResult } from "./perception";
+import { transformScreenshot } from "./screenshot-transform";
 import { computeSnapshotFingerprint } from "../agent/stagnation";
 
 /** Maximum age (ms) before a warmup entry is considered stale. */
@@ -53,8 +54,6 @@ export interface WarmupEntry {
   screenshotUrl: string | null;
   fingerprint: string;
   timestamp: number;
-  /** True if only screenshot was captured (no VLM call) — used for VL executor mode */
-  screenshotOnly?: boolean;
 }
 
 class PerceptionWarmup {
@@ -109,89 +108,6 @@ class PerceptionWarmup {
   /** Get pending promise if warmup is in progress (allows awaiting). */
   getPending(tabId: number): Promise<WarmupEntry | null> | undefined {
     return this.pending.get(tabId);
-  }
-
-  /**
-   * Lightweight warmup: snapshot + screenshot only, skip VLM call.
-   * Used for VL executor mode where the screenshot goes directly to the executor.
-   */
-  async warmupScreenshotOnly(tabId: number): Promise<void> {
-    if (this.pending.has(tabId)) return;
-
-    const promise = this.runScreenshotOnlyWarmup(tabId);
-    this.pending.set(tabId, promise);
-
-    try {
-      await promise;
-    } finally {
-      if (this.pending.get(tabId) === promise) {
-        this.pending.delete(tabId);
-      }
-    }
-  }
-
-  private async runScreenshotOnlyWarmup(
-    tabId: number,
-  ): Promise<WarmupEntry | null> {
-    try {
-      logger.info("warmup", "Screenshot-only warmup started (VL mode)", {
-        tabId,
-      });
-
-      if (!isTabReady(tabId)) {
-        const ready = await ensureContentScript(tabId, 5000);
-        if (!ready) return null;
-      }
-
-      const snapResponse = await chrome.tabs.sendMessage(tabId, {
-        type: "DOM_SNAPSHOT_REQUEST",
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-        payload: { refresh: true },
-      });
-
-      const snapshot: DomSnapshot | undefined = snapResponse?.payload?.snapshot;
-      if (!snapshot || !snapshot.elements) return null;
-
-      const fingerprint = computeSnapshotFingerprint(snapshot);
-
-      let screenshotUrl: string | null = null;
-      try {
-        const tab = await chrome.tabs.get(tabId);
-        if (tab.active) {
-          screenshotUrl = await captureVisibleTabWithRetry(tab.windowId, {
-            format: "jpeg",
-            quality: 70,
-          });
-        }
-      } catch {
-        // Non-fatal
-      }
-
-      const entry: WarmupEntry = {
-        tabId,
-        snapshot,
-        perception: null,
-        screenshotUrl,
-        fingerprint,
-        timestamp: Date.now(),
-        screenshotOnly: true,
-      };
-
-      this.cache.set(tabId, entry);
-      logger.info("warmup", "Screenshot-only warmup cached", {
-        tabId,
-        url: snapshot.url,
-        hasScreenshot: !!screenshotUrl,
-      });
-      return entry;
-    } catch (e: any) {
-      logger.warn("warmup", "Screenshot-only warmup failed", {
-        tabId,
-        error: e?.message,
-      });
-      return null;
-    }
   }
 
   private async runWarmup(tabId: number): Promise<WarmupEntry | null> {
@@ -249,10 +165,14 @@ class PerceptionWarmup {
             await new Promise((r) => setTimeout(r, 150));
           }
 
-          screenshotUrl = await captureVisibleTabWithRetry(tab.windowId, {
+          // LP-9: same owned pipeline as refreshPerception — q90 capture,
+          // then transform (resolution/format/scale) before anything
+          // downstream (perceive or the loop's warmup fast path) sees it.
+          const captured = await captureVisibleTabWithRetry(tab.windowId, {
             format: "jpeg",
-            quality: 70,
+            quality: 90,
           });
+          screenshotUrl = (await transformScreenshot(captured)).dataUrl;
 
           // Restore original scroll position
           if (originalScrollY > 0) {

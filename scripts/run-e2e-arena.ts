@@ -45,6 +45,10 @@ type ArenaRunRecord = {
   validator: string;
   prompt: string;
   details: string[];
+  /** LP-11 vision economics, derived from workspace trace files. */
+  screenshotTransforms: number;
+  imageAttachments: number;
+  inspectRegionCalls: number;
 };
 
 function parseArgs(): {
@@ -55,12 +59,14 @@ function parseArgs(): {
   runAll: boolean;
   build: boolean;
   listOnly: boolean;
+  reportLabel: string | undefined;
 } {
   const args = process.argv.slice(2);
   const tiers: ArenaTier[] = [];
   const tags: string[] = [];
   const taskIds: string[] = [];
   let repeat = 1;
+  let reportLabel: string | undefined;
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -88,6 +94,14 @@ function parseArgs(): {
       }
       continue;
     }
+    if (arg === "--report-label") {
+      const value = args[index + 1];
+      if (value && !value.startsWith("--")) {
+        reportLabel = value.replace(/[^a-z0-9_-]/gi, "-");
+        index++;
+      }
+      continue;
+    }
     if (arg.startsWith("--")) continue;
     taskIds.push(arg);
   }
@@ -100,6 +114,7 @@ function parseArgs(): {
     runAll: args.includes("--all"),
     build: !args.includes("--no-build"),
     listOnly: args.includes("--list"),
+    reportLabel,
   };
 }
 
@@ -148,6 +163,20 @@ function printList(tasks: readonly ArenaTask[] = ARENA_TASKS): void {
       `[e2e:arena:run]   - ${task.id} (${task.tier}) -> ${task.validator}`,
     );
   }
+}
+
+function countTraceOccurrences(traceFiles: string[], needle: string): number {
+  let count = 0;
+  for (const filePath of traceFiles) {
+    if (!existsSync(filePath)) continue;
+    const content = readFileSync(filePath, "utf-8");
+    let index = content.indexOf(needle);
+    while (index !== -1) {
+      count++;
+      index = content.indexOf(needle, index + needle.length);
+    }
+  }
+  return count;
 }
 
 function countPerceptionTurns(traceFiles: string[]): number {
@@ -244,7 +273,11 @@ function summarizeByTask(records: readonly ArenaRunRecord[]): Array<{
   });
 }
 
-function buildReport(records: ArenaRunRecord[], now = new Date()): string {
+function buildReport(
+  records: ArenaRunRecord[],
+  runConfig?: { model?: string; plannerModel?: string },
+  now = new Date(),
+): string {
   const date = now.toISOString().split("T")[0];
   const passed = records.filter((record) => record.success).length;
   const taskCount = new Set(records.map((record) => record.task.id)).size;
@@ -258,6 +291,10 @@ function buildReport(records: ArenaRunRecord[], now = new Date()): string {
     `Scope: ${taskCount} arena task(s), ${records.length} total attempt(s)`,
   );
   lines.push(`Overall result: ${passed}/${records.length} attempts passed`);
+  if (runConfig?.model) lines.push(`Executor model: \`${runConfig.model}\``);
+  if (runConfig?.plannerModel) {
+    lines.push(`Planner model: \`${runConfig.plannerModel}\``);
+  }
   lines.push("");
   lines.push("## Pass-Rate Summary");
   lines.push("");
@@ -278,15 +315,15 @@ function buildReport(records: ArenaRunRecord[], now = new Date()): string {
   lines.push("## Attempts");
   lines.push("");
   lines.push(
-    "| Task | Attempt | Success | Tier | Turns | Perceptions | Traces | Duration | Validator | Reason | Prompt |",
+    "| Task | Attempt | Success | Tier | Turns | Perceptions | Images | Zooms | Traces | Duration | Validator | Reason | Prompt |",
   );
   lines.push(
-    "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    "| --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |",
   );
 
   for (const record of records) {
     lines.push(
-      `| \`${record.task.id}\` | ${record.attempt}/${record.totalAttempts} | ${record.success ? "Yes" : "No"} | ${record.task.tier} | ${record.turns} | ${record.perceptions} | ${record.traces} | ${formatDuration(record.durationMs)} | \`${record.validator}\` | ${record.reason} | ${compactPrompt(record.prompt)} |`,
+      `| \`${record.task.id}\` | ${record.attempt}/${record.totalAttempts} | ${record.success ? "Yes" : "No"} | ${record.task.tier} | ${record.turns} | ${record.perceptions} | ${record.imageAttachments} | ${record.inspectRegionCalls} | ${record.traces} | ${formatDuration(record.durationMs)} | \`${record.validator}\` | ${record.reason} | ${compactPrompt(record.prompt)} |`,
     );
   }
 
@@ -311,11 +348,54 @@ function buildReport(records: ArenaRunRecord[], now = new Date()): string {
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function writeReport(records: ArenaRunRecord[]): string {
+function writeReport(
+  records: ArenaRunRecord[],
+  options: {
+    reportLabel?: string;
+    model?: string;
+    plannerModel?: string;
+  } = {},
+): string {
   if (!existsSync(REPORTS_DIR)) mkdirSync(REPORTS_DIR, { recursive: true });
   const today = new Date().toISOString().split("T")[0];
-  const reportPath = resolve(REPORTS_DIR, `arena-score-${today}.md`);
-  writeFileSync(reportPath, buildReport(records), "utf-8");
+  const suffix = options.reportLabel ? `-${options.reportLabel}` : "";
+  const reportPath = resolve(REPORTS_DIR, `arena-score-${today}${suffix}.md`);
+  writeFileSync(
+    reportPath,
+    buildReport(records, {
+      model: options.model,
+      plannerModel: options.plannerModel,
+    }),
+    "utf-8",
+  );
+  // Machine-readable twin for cross-run comparison.
+  const jsonPath = resolve(REPORTS_DIR, `arena-score-${today}${suffix}.json`);
+  writeFileSync(
+    jsonPath,
+    JSON.stringify(
+      {
+        date: today,
+        model: options.model ?? null,
+        plannerModel: options.plannerModel ?? null,
+        records: records.map((record) => ({
+          taskId: record.task.id,
+          tier: record.task.tier,
+          attempt: record.attempt,
+          success: record.success,
+          reason: record.reason,
+          durationMs: record.durationMs,
+          turns: record.turns,
+          perceptions: record.perceptions,
+          imageAttachments: record.imageAttachments,
+          inspectRegionCalls: record.inspectRegionCalls,
+          screenshotTransforms: record.screenshotTransforms,
+        })),
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
   return reportPath;
 }
 
@@ -381,6 +461,18 @@ async function runTask(
       validator: task.validator,
       prompt: task.prompt,
       details: validatorResult.details,
+      screenshotTransforms: countTraceOccurrences(
+        validatorResult.traceFiles,
+        '"type":"screenshot_transform"',
+      ),
+      imageAttachments: countTraceOccurrences(
+        validatorResult.traceFiles,
+        "[image]",
+      ),
+      inspectRegionCalls: countTraceOccurrences(
+        validatorResult.traceFiles,
+        '"type":"inspect_region"',
+      ),
     };
   } catch (error) {
     const reason =
@@ -400,6 +492,21 @@ async function runTask(
       validator: task.validator,
       prompt: task.prompt,
       details: validatorResult?.details ?? [],
+      screenshotTransforms: validatorResult
+        ? countTraceOccurrences(
+            validatorResult.traceFiles,
+            '"type":"screenshot_transform"',
+          )
+        : 0,
+      imageAttachments: validatorResult
+        ? countTraceOccurrences(validatorResult.traceFiles, "[image]")
+        : 0,
+      inspectRegionCalls: validatorResult
+        ? countTraceOccurrences(
+            validatorResult.traceFiles,
+            '"type":"inspect_region"',
+          )
+        : 0,
     };
   } finally {
     if (beforeAllComplete) {
@@ -410,7 +517,8 @@ async function runTask(
 }
 
 async function main(): Promise<void> {
-  const { taskIds, tiers, tags, repeat, runAll, build, listOnly } = parseArgs();
+  const { taskIds, tiers, tags, repeat, runAll, build, listOnly, reportLabel } =
+    parseArgs();
   const tasks = resolveTasks(taskIds, tiers, tags, runAll);
 
   if (listOnly) {
@@ -427,8 +535,8 @@ async function main(): Promise<void> {
   }
 
   if (build) {
-    console.log("\n[e2e:arena:run] Building extension before arena run...");
-    execSync("corepack pnpm run build", {
+    console.log("\n[e2e:arena:run] Building e2e extension before arena run...");
+    execSync("corepack pnpm run build:e2e", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
@@ -440,6 +548,13 @@ async function main(): Promise<void> {
       windowsHide: true,
     });
   }
+
+  // Heartbeat guard: arena must drive the dev-surface build too.
+  execSync("node scripts/check-dist-dev.js", {
+    cwd: PROJECT_ROOT,
+    stdio: "inherit",
+    windowsHide: true,
+  });
 
   const records: ArenaRunRecord[] = [];
   for (let attempt = 1; attempt <= repeat; attempt++) {
@@ -455,7 +570,11 @@ async function main(): Promise<void> {
     }
   }
 
-  const reportPath = writeReport(records);
+  const reportPath = writeReport(records, {
+    reportLabel,
+    model: process.env.E2E_MODEL,
+    plannerModel: process.env.E2E_PLANNER_MODEL,
+  });
   const passed = records.filter((record) => record.success).length;
   console.log(
     `\n[e2e:arena:run] Complete: ${passed}/${records.length} passed. Report: ${reportPath}`,

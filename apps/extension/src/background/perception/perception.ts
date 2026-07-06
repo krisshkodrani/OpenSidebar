@@ -3,9 +3,8 @@
  *
  * @deprecated The stateless `perceive()` function and dual-mode prompt are superseded
  * by `PerceptionAgent` (perception-agent.ts) which accumulates observations across turns.
- * This file is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
- *
- * Provider: OpenRouter (Grok 4.1 Fast).
+ * Sole remaining production caller: the warmup hot path (warmup.ts). Migrating
+ * warmup onto PerceptionAgent retires this file.
  */
 
 import { TaggedElement, PageSkeletonNode, UserSettings } from "../../types";
@@ -71,13 +70,9 @@ export interface LegacyPerceptionResult {
   mode: "orientation" | "focused";
 }
 
-/** @deprecated Import PanoramicShot from ./types.ts for new code. */
-export type { PanoramicShot } from "./types";
 
 export interface PerceptionInput {
   screenshotDataUrl: string;
-  /** Additional viewport screenshots for first-turn panoramic perception */
-  panoramicScreenshots?: import("./types").PanoramicShot[];
   elements: TaggedElement[];
   url: string;
   title: string;
@@ -222,7 +217,8 @@ function formatElementForGrounding(
     }
   }
 
-  return `[${el.tag}] ${tag}${role}${type}${text}${position}${disabled}`;
+  // LP-10: `*` marks elements that appeared since the previous snapshot.
+  return `${el.isNew ? "*" : ""}[${el.tag}] ${tag}${role}${type}${text}${position}${disabled}`;
 }
 
 /**
@@ -330,23 +326,6 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
     ].join("\n");
   }
 
-  // Build panoramic note when additional viewport screenshots are present
-  let panoramicNote = "";
-  if (input.panoramicScreenshots?.length) {
-    const imageLabels = input.panoramicScreenshots
-      .map(
-        (s, i) => `Image ${i + 2}: ${s.label} view at scroll Y=${s.scrollY}.`,
-      )
-      .join("\n");
-    panoramicNote = [
-      "",
-      "NOTE: Multiple screenshots are provided showing different scroll positions.",
-      `Image 1: current viewport at scroll Y=${input.scroll.y}.`,
-      imageLabels,
-      'Report LAYOUT covering the full page structure visible across all images. Reference specific images when noting spatial positions (e.g., "logo visible in Image 2 (top)").',
-    ].join("\n");
-  }
-
   const promptText = renderPrompt("perception.interpret_page", {
     title: input.title || "Unknown",
     url: input.url || "Unknown",
@@ -354,7 +333,6 @@ export function buildPerceptionPrompt(input: PerceptionInput): {
     elementSummary: buildElementSummary(input.elements, input.skeleton),
     focusSection,
     orientationSection,
-    panoramicNote,
   });
 
   return { promptText, mode };
@@ -421,8 +399,8 @@ function buildProviders(settings: UserSettings): PerceptionProvider[] {
 }
 
 /**
- * @deprecated Use `PerceptionAgent.observe()` for new code. This stateless function
- * is kept for backward compatibility with warmup.ts, manual-mode.ts, and evals.
+ * @deprecated Use `PerceptionAgent.observe()` for new code. Sole remaining
+ * production caller is the warmup hot path (warmup.ts).
  *
  * Perceive the current page state by sending a screenshot + element metadata
  * to a vision model for structured interpretation.
@@ -487,7 +465,7 @@ export async function perceive(
             ])
           : AbortSignal.timeout(PERCEPTION_TIMEOUT_MS);
 
-        // Build content parts: text + primary screenshot + optional panoramic shots
+        // Build content parts: text + primary screenshot
         const contentParts: Array<
           | { type: "text"; text: string }
           | { type: "image_url"; image_url: { url: string } }
@@ -495,15 +473,6 @@ export async function perceive(
           { type: "text", text: promptText },
           { type: "image_url", image_url: { url: input.screenshotDataUrl } },
         ];
-        if (input.panoramicScreenshots?.length) {
-          for (const shot of input.panoramicScreenshots) {
-            contentParts.push({
-              type: "image_url",
-              image_url: { url: shot.dataUrl },
-            });
-          }
-        }
-
         const payload: Record<string, unknown> = {
           model: provider.model,
           messages: [
@@ -514,12 +483,10 @@ export async function perceive(
           ],
         };
         if (provider.providerId === "moonshot") {
-          payload.max_completion_tokens = input.panoramicScreenshots?.length
-            ? 800
-            : 600;
+          payload.max_completion_tokens = 600;
           payload.thinking = { type: "disabled" };
         } else {
-          payload.max_tokens = input.panoramicScreenshots?.length ? 800 : 600;
+          payload.max_tokens = 600;
           payload.temperature = 0.1;
         }
 

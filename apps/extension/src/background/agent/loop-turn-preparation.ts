@@ -34,7 +34,6 @@ export type LlmTurnPreparationDeps = {
     | "getLastTraceMeta"
     | "getLastTraceStats"
     | "getLastScreenshot"
-    | "getPanoramicShots"
   >;
   log: TurnPreparationLogger;
   traceRecorder: TraceRecorder | null;
@@ -144,7 +143,6 @@ export async function prepareLlmTurnRequest(
         },
         deps.perception.getLastScreenshot() || undefined,
         elSummary,
-        deps.perception.getPanoramicShots() || undefined,
       );
     }
   }

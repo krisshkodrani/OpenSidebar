@@ -6,8 +6,8 @@ OpenSidebar combines a fast executor with a planner, verifier, and visual percep
 
 | Role | Model | Provider | Purpose |
 | --- | --- | --- | --- |
-| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Default action loop |
-| Executor fallback | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Runtime fallback for empty-response issues |
+| Executor | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Default action loop |
+| Executor fallback | `accounts/fireworks/models/kimi-k2p7-code` | Fireworks | Runtime fallback for empty-response issues |
 | Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` | Fireworks | Planning, rerouting, verification |
 | Perception | `unified_vl` by default; structured fallback is provider-specific | Configured provider | Visual grounding |
 

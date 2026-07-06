@@ -6,18 +6,33 @@ import {
 } from "../../src/utils/perception-mode";
 
 describe("perception mode resolution", () => {
-  test("auto uses structured text mode when DOM signals are sufficient", () => {
+  test("auto defaults to unified VL when no signal decides (post LP-11 flip)", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
         providerMode: "fireworks",
         elementCount: 20,
-        pageTextLength: 2000,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "default_unified_vl",
+      signals: [],
+    });
+  });
+
+  test("auto keeps structured for dense text-heavy DOM (post LP-11 flip)", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        providerMode: "fireworks",
+        elementCount: 60,
+        pageTextLength: 5000,
       }),
     ).toMatchObject({
       mode: "structured",
-      reason: "dom_signals_sufficient",
-      signals: [],
+      reason: "dense_text_dom",
+      signals: ["dense_text_dom"],
     });
   });
 
@@ -65,6 +80,156 @@ describe("perception mode resolution", () => {
         nextImagePromptTokenEstimate: 765,
       }),
     ).toBe("unified_vl");
+  });
+
+  test("non-VL executor forces structured over the explicit unified VL override", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "unified_vl",
+        executorVLCapable: false,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "executor_not_vl_capable",
+      signals: [],
+    });
+  });
+
+  test("non-VL executor forces structured despite visual signals and legacy toggle", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        useVLExecutor: true,
+        executorVLCapable: false,
+        taskText: "Read the chart and tell me the highest value",
+        hasCanvas: true,
+        elementCount: 2,
+        pageTextLength: 100,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "executor_not_vl_capable",
+    });
+  });
+
+  test("VL-capable executor leaves auto decisions unchanged", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        executorVLCapable: true,
+        taskText: "Read the chart and tell me the highest value",
+        elementCount: 20,
+        pageTextLength: 2000,
+      }),
+    ).toMatchObject({
+      mode: "unified_vl",
+      reason: "visual_task_text",
+    });
+  });
+
+  test("unknown executor capability preserves current behavior", () => {
+    expect(
+      resolvePerceptionRuntimeMode({
+        perceptionMode: "unified_vl",
+        executorVLCapable: undefined,
+      }),
+    ).toBe("unified_vl");
+  });
+
+  // --- LP-11 A/B: dual auto-mode default -------------------------------
+
+  test("arm A (structured default): no-signal page stays structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "structured",
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "dom_signals_sufficient" });
+  });
+
+  test("arm B (unified_vl default): no-signal page goes unified_vl", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
+  });
+
+  test("arm B: dense text-heavy DOM argues FOR structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 60,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({
+      mode: "structured",
+      reason: "dense_text_dom",
+      signals: ["dense_text_dom"],
+    });
+  });
+
+  test("arm B: a visual signal beats dense text", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        hasCanvas: true,
+        elementCount: 60,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "canvas_present" });
+  });
+
+  test("arm B: exhausted image budget falls back to structured on the default path", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 20,
+        pageTextLength: 1000,
+        imagePromptTokensUsed: 24_500,
+        maxImagePromptTokens: 25_000,
+        nextImagePromptTokenEstimate: 765,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "image_budget_exhausted" });
+  });
+
+  test("arm B: non-VL executor still forces structured", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        executorVLCapable: false,
+        elementCount: 20,
+        pageTextLength: 1000,
+      }),
+    ).toMatchObject({ mode: "structured", reason: "executor_not_vl_capable" });
+  });
+
+  test("arm B: below-dense thresholds stay unified_vl", () => {
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 39,
+        pageTextLength: 5000,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
+    expect(
+      resolvePerceptionRuntimeModeDecision({
+        perceptionMode: "auto",
+        autoDefaultMode: "unified_vl",
+        elementCount: 60,
+        pageTextLength: 1999,
+      }),
+    ).toMatchObject({ mode: "unified_vl", reason: "default_unified_vl" });
   });
 
   test("auto selects unified VL for sparse DOM", () => {
@@ -160,8 +325,11 @@ describe("perception mode resolution", () => {
       resolvePerceptionRuntimeMode({
         useVLExecutor: false,
         providerMode: "fireworks",
-        elementCount: 20,
-        pageTextLength: 2000,
+        // Dense text-heavy page: the auto path it falls through to picks
+        // structured (post LP-11 flip, that is the only signal-less
+        // structured outcome).
+        elementCount: 60,
+        pageTextLength: 5000,
       }),
     ).toBe("structured");
   });

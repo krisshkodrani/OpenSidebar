@@ -287,13 +287,19 @@ export interface TraceEntry {
     freshnessReason?: TracePerceptionFreshnessReason;
     fallbackReason?: TracePerceptionFallbackReason;
     screenshotStatus?: TracePerceptionScreenshotStatus;
+    /** On stale_fingerprint re-interprets: whether the fresh interpretation differed from the cache */
+    staleReinterpretChanged?: boolean;
     screenshotPath?: string;
     /** Inline base64 data URL of the screenshot (self-contained, no server needed) */
     screenshotDataUrl?: string;
     cached: boolean;
     /** The element summary text that was sent to the vision model */
     elementSummary?: string;
-    /** Additional viewport screenshots from panoramic capture (first turn only) */
+    /**
+     * LEGACY, read-only: the panoramic capture pipeline was removed by
+     * RFC LP-9 (nothing writes this anymore). Kept so archived traces
+     * still decode — the log server exports these as screenshot artifacts.
+     */
     panoramicShots?: TracePanoramicShot[];
     /** Page-state capture this observation interprets */
     pageStateRef?: "preDecision" | "postTool";
@@ -436,6 +442,51 @@ export interface TraceEventPayloadByType {
     context: "tool_execution" | "snapshot";
     success: boolean;
     error?: string;
+  };
+  perception_mode_decision: {
+    mode: "structured" | "unified_vl";
+    reason: string;
+    signals: string[];
+    /** Present on per-snapshot re-resolutions that changed the mode */
+    previousMode?: "structured" | "unified_vl";
+    /** True when emitted from the per-snapshot re-resolution path */
+    dynamic?: boolean;
+    /** Which auto-mode default produced this decision (LP-11 A/B) */
+    autoDefault?: "structured" | "unified_vl";
+  };
+  screenshot_transform: {
+    /** capturedWidth / outputWidth (>= 1; 1 when the capture was untouched) */
+    scaleFactor: number;
+    width: number;
+    height: number;
+    path: "structured_perception" | "vl_executor";
+  };
+  image_prompt_budget_exhausted: {
+    source: string;
+    requestedImages: number;
+    requestedTokenEstimate: number;
+    usedTokenEstimate: number;
+    maxTokenEstimate: number;
+    remainingTokenEstimate: number;
+  };
+  inspect_region: {
+    turn: number;
+    /** Resolved viewport-CSS rect that was cropped (absent on refusals). */
+    rect?: { x: number; y: number; width: number; height: number };
+    /** Tag id the rect was resolved from, when id sugar was used. */
+    requestedId?: number;
+    purpose?: string;
+    /** Which delivery path served the zoom. */
+    mode: "unified_vl" | "structured";
+    outputWidth?: number;
+    outputHeight?: number;
+    upscale?: number;
+    refusedReason?:
+      | "turn_cap"
+      | "budget"
+      | "bad_args"
+      | "capture_failed"
+      | "crop_failed";
   };
 }
 

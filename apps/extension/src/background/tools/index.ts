@@ -51,6 +51,7 @@ import {
   SEARCH_HISTORY_DEF,
   INSPECT_HIDDEN_DEF,
   INSPECT_CHART_DEF,
+  INSPECT_REGION_DEF,
   INSPECT_TABLE_DEF,
   INSPECT_FILTER_STATE_DEF,
   APPLY_LIST_FILTER_DEF,
@@ -2950,6 +2951,16 @@ export function registerTools() {
         return `Error scanning hidden elements: ${e.message}`;
       }
     },
+  );
+
+  // LP-13: the real executor lives in the agent loop (region-zoom.ts) —
+  // it needs the loop's screenshot cache, zoom cap, budget, and delivery
+  // paths. This fallback only answers callers outside an agent turn.
+  toolRegistry.register(
+    ToolName.INSPECT_REGION,
+    INSPECT_REGION_DEF,
+    async () =>
+      "inspect_region requires an active agent turn (screenshot context unavailable).",
   );
 
   toolRegistry.register(

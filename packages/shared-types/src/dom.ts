@@ -68,6 +68,13 @@ export interface TaggedElement {
   isVisible: boolean;
   /** Whether the element is disabled */
   isDisabled: boolean;
+  /**
+   * True when the element appeared since the previous snapshot (stable-hash
+   * set difference). Rendered as a `*` prefix so the model can see what its
+   * last action changed. Omitted on first snapshots, navigations (>50% new),
+   * and capped snapshots where the diff is unreliable.
+   */
+  isNew?: boolean;
 }
 
 /** Bounding rectangle for a DOM element */

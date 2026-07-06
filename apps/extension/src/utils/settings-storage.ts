@@ -11,7 +11,7 @@ import {
   type UserSettings,
 } from "../types";
 import {
-  isExecutorModelAllowed,
+  isExecutorEligible,
   type ProviderMode,
 } from "./executor-model-policy";
 
@@ -119,13 +119,15 @@ export async function saveSettings(
   };
   if (
     normalized.executorModel &&
-    !isExecutorModelAllowed(
+    !isExecutorEligible(
       normalized.executorModel,
       normalized.providerMode as ProviderMode,
     )
   ) {
     delete normalized.executorModel;
   }
+  // Retired LP-11 A/B arm selector — strip if present.
+  delete normalized.perceptionAutoDefault;
   delete normalized.useVLExecutor;
   delete normalized.voiceMode;
   delete normalized.jobAgentMcpEnabled;
@@ -217,7 +219,7 @@ export async function loadSettings(
   }
 
   const raw: Record<string, unknown> = { ...(syncSettings ?? {}) };
-  const shouldCleanRemovedSettings =
+  let shouldCleanRemovedSettings =
     "voiceMode" in raw ||
     "jobAgentMcpEnabled" in raw ||
     "jobAgentMcpUrl" in raw ||
@@ -271,10 +273,14 @@ export async function loadSettings(
 
   if (
     typeof raw.executorModel === "string" &&
-    !isExecutorModelAllowed(raw.executorModel, raw.providerMode as ProviderMode)
+    !isExecutorEligible(raw.executorModel, raw.providerMode as ProviderMode)
   ) {
     delete raw.executorModel;
+    shouldCleanRemovedSettings = true;
   }
+
+  // Retired LP-11 A/B arm selector — strip if it ever synced.
+  delete raw.perceptionAutoDefault;
 
   // Strip API keys from sync data in case they leaked from an older version
   delete raw.openaiApiKey;

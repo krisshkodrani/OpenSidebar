@@ -82,6 +82,7 @@ export enum ToolName {
   CREATE_WINDOW = "create_window",
   UPDATE_PLAN = "update_plan",
   COMPOSE_TEXT = "compose_text",
+  INSPECT_REGION = "inspect_region",
 }
 
 /** Risk classification for a tool invocation */

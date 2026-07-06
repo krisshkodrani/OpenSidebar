@@ -1143,3 +1143,17 @@ describe("Last Action Outcome", () => {
     );
   });
 });
+
+describe("formatElementCompact new-element marking (LP-10)", () => {
+  test("prefixes * when isNew is set", () => {
+    const el = makeElement({ tag: 42, isNew: true });
+    const result = formatElementCompact(el, "Submit", null, 800);
+    expect(result.startsWith("*[42] ")).toBe(true);
+  });
+
+  test("no prefix when isNew is absent", () => {
+    const el = makeElement({ tag: 42 });
+    const result = formatElementCompact(el, "Submit", null, 800);
+    expect(result.startsWith("[42] ")).toBe(true);
+  });
+});

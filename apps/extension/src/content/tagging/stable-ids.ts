@@ -12,6 +12,20 @@ let nextId = 1;
 export const previousIds = new Set<number>();
 
 /**
+ * Stable hashes present in the previous tagging run. Used by LP-10
+ * new-element diff marking: elements whose hash was absent last run are
+ * marked isNew. Swapped atomically each run.
+ */
+let lastRunHashes = new Set<string>();
+
+/** Replace the last-run hash set and return the previous one. */
+export function swapLastRunHashes(current: Set<string>): Set<string> {
+  const previous = lastRunHashes;
+  lastRunHashes = current;
+  return previous;
+}
+
+/**
  * FNV-1a 32-bit hash → 8-char hex string.
  * Fast, deterministic, good distribution for short strings.
  */
@@ -88,6 +102,7 @@ export function getStableId(hash: string): number {
 /** Reset all stable ID maps (hash maps, previous IDs, counter) */
 export function resetStableIdMaps(): void {
   hashToId.clear();
+  lastRunHashes = new Set();
   idToHash.clear();
   previousIds.clear();
   nextId = 1;

@@ -57,7 +57,9 @@ export function formatElementCompact(
     }
   }
 
-  return `[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}${posHint}`;
+  // LP-10: `*` marks elements that appeared since the previous snapshot.
+  const newMark = el.isNew ? "*" : "";
+  return `${newMark}[${el.tag}] ${head}${attrs} "${text}"${role}${disabled}${invisible}${posHint}`;
 }
 
 /**

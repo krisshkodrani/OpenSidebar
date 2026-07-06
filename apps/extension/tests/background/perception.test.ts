@@ -4,7 +4,6 @@ import {
   perceive,
   parseCompletionSignal,
   type PerceptionInput,
-  type PanoramicShot,
 } from "../../src/background/perception";
 import {
   PerceptionAgent,
@@ -438,12 +437,7 @@ describe("computeElementSignatures()", () => {
 
 // ----- Panoramic Perception Tests (legacy perceive) -----
 
-const makePanoramicShots = (): PanoramicShot[] => [
-  { dataUrl: "data:image/jpeg;base64,TOP", scrollY: 0, label: "top" },
-  { dataUrl: "data:image/jpeg;base64,BOTTOM", scrollY: 2000, label: "bottom" },
-];
-
-describe("panoramic perception [legacy]", () => {
+describe("perception request shape [legacy]", () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
@@ -454,54 +448,7 @@ describe("panoramic perception [legacy]", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("perceive() with panoramic screenshots sends multi-image content", async () => {
-    const cleanup = setKeys({ openRouter: "or-key" });
-    let sentBody = "";
-    globalThis.fetch = mockFetch((_url, init) => {
-      sentBody = (init?.body as string) || "";
-      return jsonResponse("1. LAYOUT: Full page overview.");
-    });
-    try {
-      const result = await perceive(
-        makeInput({
-          panoramicScreenshots: makePanoramicShots(),
-        }),
-      );
-      expect(result.interpretation).toContain("LAYOUT:");
-      const parsed = JSON.parse(sentBody);
-      const content = parsed.messages[0].content;
-      // Should have: text + primary image + 2 panoramic images = 4 parts
-      expect(content.length).toBe(4);
-      expect(content[0].type).toBe("text");
-      expect(content[1].type).toBe("image_url");
-      expect(content[2].type).toBe("image_url");
-      expect(content[3].type).toBe("image_url");
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("panoramic max_tokens is 800", async () => {
-    const cleanup = setKeys({ openRouter: "or-key" });
-    let sentBody = "";
-    globalThis.fetch = mockFetch((_url, init) => {
-      sentBody = (init?.body as string) || "";
-      return jsonResponse("1. LAYOUT: Panoramic.");
-    });
-    try {
-      await perceive(
-        makeInput({
-          panoramicScreenshots: makePanoramicShots(),
-        }),
-      );
-      const parsed = JSON.parse(sentBody);
-      expect(parsed.max_tokens).toBe(800);
-    } finally {
-      cleanup();
-    }
-  });
-
-  test("non-panoramic max_tokens is 600", async () => {
+  test("max_tokens is 600", async () => {
     const cleanup = setKeys({ openRouter: "or-key" });
     let sentBody = "";
     globalThis.fetch = mockFetch((_url, init) => {
@@ -659,6 +606,50 @@ describe("PerceptionAgent", () => {
     }
   });
 
+  test("stale re-interpret marks staleReinterpretChanged=true when the page moved on", async () => {
+    const cleanup = setKeys({ openRouter: "or-key" });
+    let callCount = 0;
+    globalThis.fetch = mockFetch(() => {
+      callCount++;
+      return jsonResponse(
+        callCount === 1 ? SAMPLE_RESPONSE : SAMPLE_RESPONSE_2,
+      );
+    });
+    try {
+      await agent.observe(makeObserveInput(), "fp1");
+      const cached = await agent.observe(makeObserveInput(), "fp1");
+      expect(cached.staleReinterpretChanged).toBeUndefined();
+
+      const stale = await agent.observe(makeObserveInput(), "fp1");
+      expect(stale.freshnessReason).toBe("stale_fingerprint");
+      expect(stale.staleReinterpretChanged).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("stale re-interpret marks staleReinterpretChanged=false when only whitespace differs", async () => {
+    const cleanup = setKeys({ openRouter: "or-key" });
+    let callCount = 0;
+    globalThis.fetch = mockFetch(() => {
+      callCount++;
+      return jsonResponse(
+        callCount === 1
+          ? SAMPLE_RESPONSE
+          : `  ${SAMPLE_RESPONSE.replace(/\n/g, "\n\n")}  `,
+      );
+    });
+    try {
+      await agent.observe(makeObserveInput(), "fp1");
+      await agent.observe(makeObserveInput(), "fp1"); // cache hit
+      const stale = await agent.observe(makeObserveInput(), "fp1");
+      expect(stale.freshnessReason).toBe("stale_fingerprint");
+      expect(stale.staleReinterpretChanged).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
   test("invalidateCache() forces fresh call", async () => {
     const cleanup = setKeys({ openRouter: "or-key" });
     let callCount = 0;
@@ -722,7 +713,7 @@ describe("PerceptionAgent", () => {
       expect(agent.getObservationLog().length).toBe(0);
       expect(agent.getFingerprint()).toBe("");
       expect(agent.getLastScreenshot()).toBeNull();
-      expect(agent.panoramicDone).toBe(false);
+      expect(agent.firstPerceptionDone).toBe(false);
     } finally {
       cleanup();
     }

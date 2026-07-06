@@ -43,6 +43,7 @@ import PartnerRegistration from "./routes/partner-registration";
 import WorkspaceChoice from "./routes/workspace-choice";
 import SessionStateProbe from "./routes/session-state";
 import VisualCanvas from "./routes/visual-canvas";
+import VisualCanvasSmall from "./routes/visual-canvas-small";
 import MemoryLab from "./routes/memory-lab";
 import ParallelWork from "./routes/parallel-work";
 import QuizDerailment from "./routes/quiz-derailment";
@@ -91,6 +92,7 @@ const routes = [
   { path: "/workspace-choice", label: "Workspace", title: "Workspace Selector", component: WorkspaceChoice },
   { path: "/session-state", label: "Session", title: "Session State Probe", component: SessionStateProbe },
   { path: "/visual-canvas", label: "Canvas", title: "Visual Canvas Report", component: VisualCanvas },
+  { path: "/visual-canvas-small", label: "CanvasFine", title: "Annual Performance Overview", component: VisualCanvasSmall },
   { path: "/memory-lab", label: "Memory", title: "Memory Lab Dashboard", component: MemoryLab },
   { path: "/parallel-work", label: "Parallel", title: "Parallel Work Lab", component: ParallelWork },
   { path: "/quiz-derailment", label: "Quiz", title: "Quiz Derailment Fixture", component: QuizDerailment },

@@ -6,6 +6,7 @@ import {
   findAllNewTraceFiles,
   readRunCompletionForTraceFiles,
   readTrace,
+  traceFilesContainText,
   type TraceTurn,
 } from "../helpers/diagnostics";
 import {
@@ -1149,6 +1150,58 @@ async function dashboardMetricsAnswered(
   );
 }
 
+async function canvasFinePrintAnswered(
+  context: ArenaRunContext,
+): Promise<ArenaValidatorResult> {
+  const { harness, workspaceId } = context;
+
+  const outcome = await waitForTaskCompletion(
+    harness.ctx,
+    context.task.timeoutMs,
+    workspaceId,
+  );
+
+  const { traceFiles, traceTurns, doneSummary } = await collectTraceData(
+    harness,
+    workspaceId,
+  );
+
+  if (!outcome.ok) {
+    return buildResult(
+      false,
+      outcome.reason,
+      ["Canvas fine-print task did not complete successfully."],
+      traceFiles,
+      traceTurns,
+      doneSummary,
+    );
+  }
+
+  const summary = getTaskCompletionSummary(outcome.events, doneSummary);
+  // Outcome-grounded: the value exists only as 8px canvas pixels, so a
+  // correct answer proves the visual pixel path. Whether the agent needed
+  // inspect_region or read it from the first-turn high-detail screenshot
+  // is capability telemetry, not a pass criterion (a strong VL executor
+  // legitimately skips the zoom).
+  const hasMargin = /4\.7\s*%/.test(summary);
+  const usedRegionZoom = traceFilesContainText(
+    traceFiles,
+    '"type":"inspect_region"',
+  );
+
+  return buildResult(
+    hasMargin,
+    hasMargin ? "validated" : "fine_print_answer_incorrect",
+    [
+      `q3Margin47=${String(hasMargin)}`,
+      `usedInspectRegion=${String(usedRegionZoom)}`,
+    ],
+    traceFiles,
+    traceTurns,
+    summary,
+  );
+}
+
 async function firstTwoProcurementItemsComplete(
   context: ArenaRunContext,
 ): Promise<ArenaValidatorResult> {
@@ -1209,6 +1262,13 @@ async function jobRecommendationsGrounded(
 ): Promise<ArenaValidatorResult> {
   const { harness, workspaceId } = context;
 
+  // Grounding evidence: the four relevant listings must plausibly have
+  // been inspected (details opened), not all 11 — triaging from excerpts
+  // and skipping obviously-irrelevant roles is correct behavior, not a
+  // failure (measured 2026-07-05: an agent that opened exactly the 4
+  // relevant details + 1 produced a fully grounded answer and was failed
+  // by the old >= 8 quota).
+  const MIN_VIEWED_JOBS = 4;
   const outcome = await waitForOutcome(
     harness.page,
     harness.ctx.serviceWorker,
@@ -1217,7 +1277,10 @@ async function jobRecommendationsGrounded(
         () => (window as any).__jobBoardState ?? null,
       );
       if (!state) return null;
-      if (Array.isArray(state.viewedJobs) && state.viewedJobs.length >= 8) {
+      if (
+        Array.isArray(state.viewedJobs) &&
+        state.viewedJobs.length >= MIN_VIEWED_JOBS
+      ) {
         return state;
       }
       return null;
@@ -1255,7 +1318,7 @@ async function jobRecommendationsGrounded(
   );
   const ok =
     Array.isArray(state?.viewedJobs) &&
-    state.viewedJobs.length >= 8 &&
+    state.viewedJobs.length >= 4 &&
     matchedJobs.length >= 3;
 
   return buildResult(
@@ -1372,6 +1435,7 @@ export const ARENA_VALIDATORS: Record<string, ArenaValidator> = {
   articleFootnoteSourceAnswered,
   documentFootnoteBriefAnswered,
   dashboardMetricsAnswered,
+  canvasFinePrintAnswered,
   firstTwoProcurementItemsComplete,
   jobRecommendationsGrounded,
   singleOrderPlaced,

@@ -16,7 +16,17 @@ import {
 } from "../../types";
 import { logger, SessionScopedLogger } from "../../utils";
 import {
+  isVLCapable,
+  normalizeExecutorModel,
+} from "../../utils/executor-model-policy";
+import {
+  emptyRegionZoomState,
+  executeInspectRegion,
+  type RegionZoomHost,
+} from "./region-zoom";
+import {
   extractPerceptionPageSignals,
+  PERCEPTION_AUTO_DEFAULT_MODE,
   resolvePerceptionRuntimeMode,
   resolvePerceptionRuntimeModeDecision,
 } from "../../utils/perception-mode";
@@ -41,6 +51,7 @@ import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { createResultPageProgressState } from "./result-page-progress-policy";
 import { buildElementSummary } from "../perception";
 import { PerceptionAgent } from "../perception/perception-agent";
+import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
 import {
@@ -144,6 +155,8 @@ import {
   recordCompletionUsage,
   recordImagePromptUsage,
   recordPerceptionModeDecision,
+  recordPerceptionTurnMode,
+  recordStaleReinterpretOutcome,
   recordTelemetryCitation,
   recordVisionTelemetryUsage,
   resolveImagePromptTokenBudget,
@@ -655,6 +668,10 @@ export class AgentLoop {
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
   private perception = new PerceptionAgent();
+  /** Whether the resolved executor model accepts images (gates unified_vl). */
+  private executorVLCapable = true;
+  /** inspect_region per-turn cap state (LP-13). */
+  private regionZoomState = emptyRegionZoomState();
   /** Last DOM-modifying tool step (retroactively gets screenshot attached) */
   private lastDomStep: AgentStep | null = null;
   /** Promise-based gate for pause/resume */
@@ -969,6 +986,14 @@ export class AgentLoop {
     this.useVLExecutorOption = options?.useVLExecutor;
     this.maxImagePromptTokenEstimate = options?.maxImagePromptTokenEstimate;
     this.providerModeOption = options?.providerMode;
+    // Capability gate input: resolve the executor the same way LLMClient
+    // does, so the mode decision and the wire agree on what model acts.
+    this.executorVLCapable = isVLCapable(
+      normalizeExecutorModel({
+        providerMode: this.providerModeOption,
+        executorModel: options?.executorModel,
+      }),
+    );
     // Initial observation path. start() refines auto mode once task/page
     // signals are available from the initial snapshot.
     this.useVLExecutor =
@@ -976,6 +1001,7 @@ export class AgentLoop {
         perceptionMode: this.perceptionModeOption,
         useVLExecutor: this.useVLExecutorOption,
         providerMode: this.providerModeOption,
+        executorVLCapable: this.executorVLCapable,
       }) === "unified_vl";
     this.preferredModelTier = options?.preferredModelTier ?? "default";
     this.executionContract = options?.executionContract ?? null;
@@ -4081,6 +4107,7 @@ export class AgentLoop {
       perceptionMode: this.perceptionModeOption,
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
+      executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
@@ -4092,7 +4119,8 @@ export class AgentLoop {
       ...extractPerceptionPageSignals(snapshot),
     });
     this.useVLExecutor = perceptionDecision.mode === "unified_vl";
-    recordPerceptionModeDecision(this.metrics, perceptionDecision);
+    const autoDefault = PERCEPTION_AUTO_DEFAULT_MODE;
+    recordPerceptionModeDecision(this.metrics, perceptionDecision, autoDefault);
     this.log.info("agent", "Resolved perception runtime mode", {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
@@ -4102,6 +4130,7 @@ export class AgentLoop {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
       signals: perceptionDecision.signals,
+      autoDefault,
     });
 
     if (snapshot) {
@@ -4797,7 +4826,7 @@ export class AgentLoop {
         | "missing"
         | "capture_failed"
         | "not_requested" = "not_requested";
-      const isFirstPerception = !this.perception.panoramicDone;
+      const isFirstPerception = !this.perception.firstPerceptionDone;
 
       // Ensure the agent's tab is the visible one before capturing —
       // captureVisibleTab captures whatever tab is active in the window.
@@ -4812,11 +4841,26 @@ export class AgentLoop {
 
       try {
         const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
-        dataUrl = await this.captureVisibleTabWithRetry(refreshedTab.windowId, {
-          format: "jpeg",
-          quality: 70,
+        // q90: the LP-9 transform re-encodes at q85 — capturing at q70 first
+        // would pre-degrade small glyphs before the pipeline ever sees them.
+        const captured = await this.captureVisibleTabWithRetry(
+          refreshedTab.windowId,
+          { format: "jpeg", quality: 90 },
+        );
+        // LP-9: own resolution/format/scale before anything downstream sees it.
+        const transformed = await transformScreenshot(captured);
+        dataUrl = transformed.dataUrl;
+        this.traceRecorder?.recordEvent("screenshot_transform", {
+          scaleFactor: transformed.scaleFactor,
+          width: transformed.width,
+          height: transformed.height,
+          path: "structured_perception",
         });
-        setCachedScreenshot(tabId, dataUrl);
+        setCachedScreenshot(tabId, dataUrl, {
+          scaleFactor: transformed.scaleFactor,
+          width: transformed.width,
+          height: transformed.height,
+        });
         screenshotStatus = "captured";
       } catch {
         // Quota or other capture error — fall back to shared cache
@@ -4836,7 +4880,7 @@ export class AgentLoop {
       // instead of calling VLM with an invalid image URL.
       if (!dataUrl || !primaryImageBudgetAllowed) {
         if (isFirstPerception) {
-          this.perception.markPanoramicDone();
+          this.perception.markFirstPerceptionDone();
         }
         const result = await this.perception.observe(
           {
@@ -4885,7 +4929,7 @@ export class AgentLoop {
         );
       } else {
         if (isFirstPerception) {
-          this.perception.markPanoramicDone();
+          this.perception.markFirstPerceptionDone();
         }
 
         const result = await this.perception.observe(
@@ -4917,6 +4961,18 @@ export class AgentLoop {
           dataUrl,
           elSummary,
         );
+
+        // LP-11 cache efficacy: tally forced stale re-interprets and whether
+        // they revealed changes the perception cache had been hiding.
+        if (
+          result.freshnessReason === "stale_fingerprint" &&
+          typeof result.staleReinterpretChanged === "boolean"
+        ) {
+          recordStaleReinterpretOutcome(
+            this.metrics,
+            result.staleReinterpretChanged,
+          );
+        }
 
         // Track usage for non-cached calls
         if (result.usage && !result.cached) {
@@ -5039,6 +5095,7 @@ export class AgentLoop {
       perceptionMode: this.perceptionModeOption,
       useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
+      executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",
       imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
       maxImagePromptTokens: resolveImagePromptTokenBudget(
@@ -5049,7 +5106,8 @@ export class AgentLoop {
     });
     const previousMode = this.useVLExecutor ? "unified_vl" : "structured";
     this.useVLExecutor = decision.mode === "unified_vl";
-    recordPerceptionModeDecision(this.metrics, decision);
+    const autoDefault = PERCEPTION_AUTO_DEFAULT_MODE;
+    recordPerceptionModeDecision(this.metrics, decision, autoDefault);
 
     if (previousMode === decision.mode) return;
 
@@ -5065,11 +5123,18 @@ export class AgentLoop {
       reason: decision.reason,
       signals: decision.signals,
       dynamic: true,
+      autoDefault,
     });
   }
 
   private async refreshPerceptionAndTriage(tabId: number): Promise<void> {
+    // LP-13 guardrail: a staged zoom never crosses the turn boundary.
+    this.context.setRegionZoomForExecutor(null);
     this.updatePerceptionRuntimeModeFromSnapshot(this.context.getSnapshot());
+    recordPerceptionTurnMode(
+      this.metrics,
+      this.useVLExecutor ? "unified_vl" : "structured",
+    );
     if (this.useVLExecutor) {
       // Unified VL mode: capture screenshot for the executor, skip perception VLM call.
       // The executor LLM receives the screenshot directly as an image content block.
@@ -5120,11 +5185,25 @@ export class AgentLoop {
           /* tab may be closed */
         }
       }
-      const dataUrl = await this.captureVisibleTabWithRetry(tab.windowId, {
+      // q90: the LP-9 transform re-encodes at q85 — see refreshPerception.
+      const captured = await this.captureVisibleTabWithRetry(tab.windowId, {
         format: "jpeg",
-        quality: 70,
+        quality: 90,
       });
-      setCachedScreenshot(tabId, dataUrl);
+      // LP-9: own resolution/format/scale before anything downstream sees it.
+      const transformed = await transformScreenshot(captured);
+      const dataUrl = transformed.dataUrl;
+      this.traceRecorder?.recordEvent("screenshot_transform", {
+        scaleFactor: transformed.scaleFactor,
+        width: transformed.width,
+        height: transformed.height,
+        path: "vl_executor",
+      });
+      setCachedScreenshot(tabId, dataUrl, {
+        scaleFactor: transformed.scaleFactor,
+        width: transformed.width,
+        height: transformed.height,
+      });
       this.context.setScreenshotForExecutor(dataUrl);
       this.context.setPageInterpretation(null); // VL instructions generated by context
       this.perception.setScreenshotUrl(dataUrl); // keep for trace recording
@@ -5869,11 +5948,96 @@ export class AgentLoop {
     return true;
   }
 
+  /** Build the narrow host inspect_region runs against (LP-13). */
+  private buildRegionZoomHost(tabId: number): RegionZoomHost {
+    return {
+      turnCount: this.turnCount,
+      useVLExecutor: this.useVLExecutor,
+      getSnapshot: () => this.context.getSnapshot(),
+      imagePromptBudgetAllows: (imageCount) =>
+        this.imagePromptBudgetAllows(imageCount),
+      recordImagePromptBudgetExhausted: (imageCount, source) =>
+        this.recordImagePromptBudgetExhausted(imageCount, source),
+      captureVisibleTab: async (options) => {
+        const tab = await chrome.tabs.get(tabId);
+        return this.captureVisibleTabWithRetry(tab.windowId, options);
+      },
+      resolveTagRect: async (id) => {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: (tagId: number) => {
+              const el = document.querySelector(`[data-os-tag="${tagId}"]`);
+              if (!el) return null;
+              const r = el.getBoundingClientRect();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            },
+            args: [id],
+          });
+          const live = results?.[0]?.result;
+          if (live) return live;
+        } catch {
+          // Fall through to the snapshot rect (may be stale after scroll).
+        }
+        const el = this.context
+          .getSnapshot()
+          ?.elements.find((element) => element.tag === id);
+        return el
+          ? {
+              x: el.rect.x,
+              y: el.rect.y,
+              width: el.rect.width,
+              height: el.rect.height,
+            }
+          : null;
+      },
+      recordInspectRegionEvent: (data) =>
+        this.traceRecorder?.recordEvent("inspect_region", data),
+      setRegionZoomForExecutor: (zoom) =>
+        this.context.setRegionZoomForExecutor(zoom),
+      describeRegion: async ({ dataUrl, label, purpose }) => {
+        const result = await this.perception.describeRegion({
+          cropDataUrl: dataUrl,
+          regionLabel: label,
+          purpose,
+          signal: this.abortController?.signal,
+        });
+        if (result.usage) {
+          this.recordVisionUsage(
+            result.usage,
+            result.durationMs,
+            result.model,
+            result.providerId as ProviderConfig["providerId"] | undefined,
+            1,
+          );
+        }
+        return result.interpretation;
+      },
+    };
+  }
+
   /** Execute a tool call via the tool registry. */
   private async executeToolCall(
     toolCall: ToolCall,
     tabId: number,
   ): Promise<string> {
+    // LP-13: inspect_region needs loop-owned state (screenshot cache
+    // metadata, zoom cap, budget, delivery) — intercept before the registry
+    // so both the sequential and parallel dispatch paths are covered.
+    if (toolCall.function.name === ToolName.INSPECT_REGION) {
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(toolCall.function.arguments || "{}");
+      } catch {
+        // Empty args fail validation inside with a bad_args refusal.
+      }
+      return executeInspectRegion(
+        this.buildRegionZoomHost(tabId),
+        this.regionZoomState,
+        args,
+        tabId,
+      );
+    }
     const execution = await toolRegistry.executeDetailed(
       toolCall,
       tabId,

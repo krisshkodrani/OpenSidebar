@@ -32,6 +32,7 @@ const TOOL_CAPABILITIES: Partial<Record<ToolName, ToolCapability[]>> = {
   [ToolName.INSPECT_HIDDEN]: ["inspect_hidden_structure", "find_elements"],
   [ToolName.XRAY_PAGE]: ["inspect_hidden_structure", "find_elements"],
   [ToolName.INSPECT_CHART]: ["read_page_state"],
+  [ToolName.INSPECT_REGION]: ["read_page_state"],
   [ToolName.INSPECT_TABLE]: ["read_page_state", "list_and_table_workflows"],
   [ToolName.INSPECT_FILTER_STATE]: [
     "read_page_state",

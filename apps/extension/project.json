@@ -20,6 +20,15 @@
         "command": "tsx scripts/vite-clean.ts build"
       }
     },
+    "build-e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["prompts-package:build", "prompts-package:check"],
+      "outputs": ["{workspaceRoot}/dist-dev"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "tsx scripts/vite-clean.ts build --mode e2e"
+      }
+    },
     "dev": {
       "executor": "nx:run-commands",
       "cache": false,
@@ -53,7 +62,7 @@
     "test-e2e-staged": {
       "executor": "nx:run-commands",
       "cache": false,
-      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "dependsOn": ["build-e2e", "fixture-online-shop-pro:build"],
       "options": {
         "cwd": "{workspaceRoot}",
         "command": "tsx scripts/run-e2e-staged.ts"
@@ -62,7 +71,7 @@
     "test-e2e-easy": {
       "executor": "nx:run-commands",
       "cache": false,
-      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "dependsOn": ["build-e2e", "fixture-online-shop-pro:build"],
       "options": {
         "cwd": "{workspaceRoot}",
         "command": "tsx scripts/run-e2e-staged.ts smoke"
@@ -71,7 +80,7 @@
     "test-e2e-medium": {
       "executor": "nx:run-commands",
       "cache": false,
-      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "dependsOn": ["build-e2e", "fixture-online-shop-pro:build"],
       "options": {
         "cwd": "{workspaceRoot}",
         "command": "tsx scripts/run-e2e-staged.ts interaction-regression"
@@ -80,7 +89,7 @@
     "test-e2e-hard": {
       "executor": "nx:run-commands",
       "cache": false,
-      "dependsOn": ["build", "fixture-online-shop-pro:build"],
+      "dependsOn": ["build-e2e", "fixture-online-shop-pro:build"],
       "options": {
         "cwd": "{workspaceRoot}",
         "command": "tsx scripts/run-e2e-staged.ts runtime-regression"

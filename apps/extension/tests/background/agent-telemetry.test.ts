@@ -7,6 +7,8 @@ import {
   recordCachedVisionTelemetryUse,
   recordImagePromptUsage,
   recordPerceptionModeDecision,
+  recordPerceptionTurnMode,
+  recordStaleReinterpretOutcome,
   recordVisionTelemetryUsage,
 } from "../../src/background/agent/agent-telemetry";
 
@@ -93,6 +95,40 @@ describe("agent telemetry", () => {
       reason: "visual_task_text",
       signals: ["visual_task_text"],
     });
+  });
+
+  test("tallies which perception path served each turn", () => {
+    const metrics = emptySessionMetrics();
+
+    recordPerceptionTurnMode(metrics, "structured");
+    recordPerceptionTurnMode(metrics, "unified_vl");
+    recordPerceptionTurnMode(metrics, "unified_vl");
+
+    expect(metrics.structuredTurnCount).toBe(1);
+    expect(metrics.unifiedVlTurnCount).toBe(2);
+  });
+
+  test("turn-mode tally tolerates legacy metrics without the counters", () => {
+    const metrics = emptySessionMetrics();
+    delete metrics.structuredTurnCount;
+    delete metrics.unifiedVlTurnCount;
+
+    recordPerceptionTurnMode(metrics, "structured");
+    recordPerceptionTurnMode(metrics, "unified_vl");
+
+    expect(metrics.structuredTurnCount).toBe(1);
+    expect(metrics.unifiedVlTurnCount).toBe(1);
+  });
+
+  test("tallies stale re-interprets and how many revealed hidden changes", () => {
+    const metrics = emptySessionMetrics();
+
+    recordStaleReinterpretOutcome(metrics, true);
+    recordStaleReinterpretOutcome(metrics, false);
+    recordStaleReinterpretOutcome(metrics, true);
+
+    expect(metrics.staleReinterpretCount).toBe(3);
+    expect(metrics.staleReinterpretRevealedCount).toBe(2);
   });
 
   test("checks image prompt budget against estimated prompt tokens", () => {
