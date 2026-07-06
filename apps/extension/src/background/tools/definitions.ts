@@ -603,6 +603,26 @@ export const READ_ELEMENT_DEF: ToolDefinition = {
   },
 };
 
+export const EXTRACT_FORM_STATE_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.EXTRACT_FORM_STATE,
+    description:
+      "Capture the current field values and submit buttons of a form as structured data, to verify it before submitting. Read-only.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description:
+            "Tag ID of a field or submit button inside the form. Omit for the primary form on the page.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const EXECUTE_JS_DEF: ToolDefinition = {
   type: "function",
   function: {

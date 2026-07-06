@@ -52,6 +52,7 @@ export enum ToolName {
   HIDE_ELEMENT = "hide_element",
   ESCALATE = "escalate",
   READ_ELEMENT = "read_element",
+  EXTRACT_FORM_STATE = "extract_form_state",
   EXECUTE_JS = "execute_js",
   UPLOAD_FILE = "upload_file",
   GO_BACK = "go_back",
