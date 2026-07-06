@@ -22,7 +22,38 @@ import {
   stableStringify,
   type CompletionDecisionRecord,
 } from "../../src/background/agent/completion/decision-record";
+import { runCompletionPipeline } from "../../src/background/agent/completion/pipeline";
+import { evaluateGeneratedCompletionCandidate } from "../../src/background/agent/completion-evaluation-service";
 import { generateSeedCorpus } from "./completion-corpus/seed";
+
+/**
+ * The shadow gate (RFC LP-15, Phase 7a): re-run the pure completion pipeline from
+ * a record and return its verdict, mapped to the recorded verdict vocabulary.
+ * The frozen kernel is recomputed from the input; the planner stage is stubbed
+ * with the recorded legacy result (no model call).
+ */
+async function replayPipelineVerdict(
+  record: CompletionDecisionRecord,
+): Promise<"accepted" | "rejected"> {
+  const { input } = record;
+  const { decision } = evaluateGeneratedCompletionCandidate({
+    userRequest: input.userRequest,
+    snapshot: input.snapshot,
+    activeObjective: input.activeObjective,
+    successCriteria: input.successCriteria,
+    evidence: input.evidence,
+    candidateSource: input.candidateSource,
+    summary: input.summary,
+  });
+  const pipelineDecision = await runCompletionPipeline(input.guardContext, {
+    getKernelDecision: () => decision,
+    deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
+    isDuplicateTerminal: input.isDuplicateTerminal,
+    validatePlan: async () => input.plannerResult,
+    onKernelReject: () => {},
+  });
+  return pipelineDecision.verdict === "accept" ? "accepted" : "rejected";
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS_DIR = join(HERE, "..", "fixtures", "completion-corpus");
@@ -101,6 +132,16 @@ describe("completion golden replay", () => {
       expect(onDisk.get(name), `seed "${name}" is not committed`).toBe(
         stableStringify(record),
       );
+    }
+  });
+
+  test("shadow pipeline verdict matches the recorded legacy verdict (zero divergence)", async () => {
+    for (const { file, record } of loadCorpus()) {
+      const pipelineVerdict = await replayPipelineVerdict(record);
+      expect(
+        pipelineVerdict,
+        `${file}: shadow completion pipeline diverged from the recorded legacy verdict`,
+      ).toBe(record.outcome.verdict);
     }
   });
 
