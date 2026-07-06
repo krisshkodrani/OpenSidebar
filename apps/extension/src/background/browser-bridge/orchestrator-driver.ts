@@ -11,6 +11,7 @@
  */
 
 import type { UserSettings } from "../../types";
+import { chromeRuntimeMessagingPort } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
 import { orchestrator } from "../orchestrator";
 import type { AgentRunOutcome, AgentRunner, AgentTask } from "./handler";
@@ -90,7 +91,9 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       });
     },
     addCompletionListener(fn) {
-      const handler = (message: unknown): void => {
+      // OpenClaw correlates completions by workspaceId over the messaging port
+      // (RFC LP-15, Phase 4a).
+      return chromeRuntimeMessagingPort.onMessage((message) => {
         const m = message as {
           type?: string;
           workspaceId?: string;
@@ -99,9 +102,7 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
         if (m?.type === "TASK_COMPLETION" && typeof m.workspaceId === "string") {
           fn(m.workspaceId, m.payload ?? {});
         }
-      };
-      chrome.runtime.onMessage.addListener(handler);
-      return () => chrome.runtime.onMessage.removeListener(handler);
+      });
     },
   };
 }
