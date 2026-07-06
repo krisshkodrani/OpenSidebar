@@ -644,7 +644,6 @@ export class AgentLoop {
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
-  private useVLExecutorOption?: boolean;
   private providerModeOption?:
     | "openrouter"
     | "openrouter-groq"
@@ -890,7 +889,6 @@ export class AgentLoop {
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
-      useVLExecutor?: boolean;
       completionDeterministicAcceptanceEnabled?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
@@ -899,7 +897,6 @@ export class AgentLoop {
     },
   ) {
     this.perceptionModeOption = options?.perceptionMode;
-    this.useVLExecutorOption = options?.useVLExecutor;
     this.providerModeOption = options?.providerMode;
     this.telemetry = new AgentTelemetryController({
       getTurnCount: () => this.turnCount,
@@ -925,7 +922,6 @@ export class AgentLoop {
     this.useVLExecutor =
       resolvePerceptionRuntimeMode({
         perceptionMode: this.perceptionModeOption,
-        useVLExecutor: this.useVLExecutorOption,
         providerMode: this.providerModeOption,
         executorVLCapable: this.executorVLCapable,
       }) === "unified_vl";
@@ -4140,7 +4136,6 @@ export class AgentLoop {
 
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
@@ -5125,7 +5120,6 @@ export class AgentLoop {
 
     const decision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",

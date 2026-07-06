@@ -105,9 +105,6 @@ export interface UserSettings {
    * coverage is still expanding. Defaults to true.
    */
   completionDeterministicAcceptanceEnabled?: boolean;
-  /** @deprecated Use `perceptionMode` instead. */
-  /** Legacy unified executor toggle. Ignored during settings migration. */
-  useVLExecutor?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---
