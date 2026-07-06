@@ -10,6 +10,7 @@ import {
   assessCatalogOrderPostConfirmationClick,
 } from "./catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
+import type { DryRunClassification } from "./mutation-dry-run-policy";
 import {
   resolveToolApprovalRequest,
   TOOL_APPROVAL_DENIED_MESSAGE,
@@ -135,6 +136,11 @@ export interface SequentialToolDispatchHost extends AgentLoopToolHandlerHost {
     toolName: ToolName,
     args: Record<string, unknown>,
   ): boolean;
+  runFormSubmitDryRun(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    tabId: number,
+  ): Promise<DryRunClassification>;
   selectedSkillId: string | null;
   syncPlanStatus(
     currentIndex: number,
@@ -1107,6 +1113,36 @@ export async function executeSequentialToolCalls(
     }
     const forceConsequentialActionApproval =
       this.requiresConsequentialActionApproval(toolName, args);
+
+    // Dry-run gate (RFC LP-15 Phase 8): for a consequential form submit, capture
+    // the live form and diff it against the approved draft, then ENRICH the
+    // human approval with the result. It never bypasses approval — a clean
+    // values-diff does not answer "should this be submitted at all", which is
+    // exactly what the consequential-action approval exists to ask.
+    if (forceConsequentialActionApproval) {
+      const dryRun = await this.runFormSubmitDryRun(toolName, args, tabId);
+      if (dryRun.kind === "clean") {
+        this.stepHandler(
+          {
+            id: crypto.randomUUID(),
+            type: "info",
+            label: "Form dry-run: matches the intended values",
+            status: "done",
+            timestamp: Date.now(),
+          },
+          false,
+        );
+      } else if (dryRun.kind === "unexpected") {
+        this.context.addMessage({
+          role: "user",
+          content:
+            "FORM SUBMIT DRY-RUN — the form does not match the values you set out to submit:\n" +
+            dryRun.rendered +
+            "\nApprove only if these changes are intended; otherwise fix the form first.",
+        });
+      }
+    }
+
     const approvalRequest = resolveToolApprovalRequest(
       preDecision,
       forceConsequentialActionApproval,

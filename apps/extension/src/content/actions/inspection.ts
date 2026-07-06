@@ -2,7 +2,14 @@
  * Inspection actions - scroll, read page, find element, read element
  */
 
-import { ScrollPageArgs, ScrollDirection, ReadElementArgs } from "../../types";
+import {
+  ScrollPageArgs,
+  ScrollDirection,
+  ReadElementArgs,
+  ExtractFormStateArgs,
+  FormStateCapture,
+  FormStateField,
+} from "../../types";
 import {
   getVisibleText,
   addDynamicTag,
@@ -702,4 +709,82 @@ export function executeReadElement(args: ReadElementArgs): {
     result: `${desc}: ${truncateText(text, 2000)}`,
     navigated: false,
   };
+}
+
+/** A CSS selector that locates a control: id > [name] > bare tag. */
+function buildControlSelector(el: Element): string {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const name = el.getAttribute("name");
+  if (name) return `${el.tagName.toLowerCase()}[name="${CSS.escape(name)}"]`;
+  return el.tagName.toLowerCase();
+}
+
+function captureFormField(el: Element): FormStateField {
+  const name =
+    el.getAttribute("name") ||
+    el.id ||
+    el.getAttribute("aria-label") ||
+    "";
+  const kind =
+    isInputElement(el) ? el.type : el.tagName.toLowerCase();
+  const disabled =
+    isInputElement(el) || isSelectElement(el) || isTextAreaElement(el)
+      ? el.disabled
+      : false;
+  let value: string;
+  if (isInputElement(el) && (el.type === "checkbox" || el.type === "radio")) {
+    value = el.checked ? "checked" : "unchecked";
+  } else {
+    value = readFormControlValue(el) ?? "";
+  }
+  return { name, selector: buildControlSelector(el), kind, value, disabled };
+}
+
+/**
+ * extract_form_state (LP-15 Phase 8): capture the current field values +
+ * submit targets of a form as structured data, so the dry-run protocol can diff
+ * it against the approved draft before a submit. Read-only.
+ */
+export function executeExtractFormState(args: ExtractFormStateArgs): {
+  success: boolean;
+  result: string;
+  navigated: boolean;
+} {
+  let form: HTMLFormElement | null = null;
+  if (args.id != null) {
+    const anchor = getTaggedElement(args.id);
+    if (anchor && isHtmlElement(anchor)) {
+      form = anchor.closest("form");
+    }
+  }
+  if (!form) {
+    form = document.querySelector("form");
+  }
+  const scope: Document | Element = form ?? document;
+
+  const formKey =
+    (form?.getAttribute("action") ||
+      form?.id ||
+      form?.getAttribute("name") ||
+      location.pathname) ??
+    location.pathname;
+
+  const fields = querySelectorAllDeep(
+    scope,
+    "input:not([type='hidden']), textarea, select",
+  ).map((el) => captureFormField(el));
+
+  const submitTargets = querySelectorAllDeep(
+    scope,
+    "button[type='submit'], input[type='submit'], input[type='image'], button:not([type])",
+  ).map((el) => ({
+    label: truncateText(
+      (el.textContent || el.getAttribute("value") || "submit").trim(),
+      80,
+    ),
+    selector: buildControlSelector(el),
+  }));
+
+  const capture: FormStateCapture = { formKey, fields, submitTargets };
+  return { success: true, result: JSON.stringify(capture), navigated: false };
 }

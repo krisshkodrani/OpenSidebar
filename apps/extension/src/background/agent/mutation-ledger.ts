@@ -141,6 +141,8 @@ export class MutationLedger {
     currentSnapshot?: DomSnapshot | null;
     planIndex: number;
     turn: number;
+    /** LP-15 Phase 8: seal a form-submit dry-run (bypasses the sensitive gate). */
+    formSubmitSeal?: { formKey: string; diffHash: string; ticketId?: string };
   }): void {
     const {
       toolName,
@@ -150,8 +152,11 @@ export class MutationLedger {
       currentSnapshot,
       planIndex,
       turn,
+      formSubmitSeal,
     } = params;
-    if (!MUTATION_SENSITIVE_TOOLS.has(toolName)) return;
+    // Mutation-sensitive tools seal automatically; a form-submit dry-run seals
+    // explicitly via formSubmitSeal even though the submit tool isn't sensitive.
+    if (!MUTATION_SENSITIVE_TOOLS.has(toolName) && !formSubmitSeal) return;
 
     const mutationKey = buildMutationKey(toolName, args);
     const snapshotForReplay = actionSnapshot ?? currentSnapshot ?? null;
@@ -169,6 +174,15 @@ export class MutationLedger {
       recordedAt: this.now(),
       planIndex,
       snapshotFingerprint: replayFingerprint,
+      ...(formSubmitSeal
+        ? {
+            formKey: formSubmitSeal.formKey,
+            diffHash: formSubmitSeal.diffHash,
+            ...(formSubmitSeal.ticketId
+              ? { ticketId: formSubmitSeal.ticketId }
+              : {}),
+          }
+        : {}),
     };
     const existingEntryIndex = this.stepMutationLedger.findIndex(
       (entry) => entry.key === mutationKey,

@@ -143,6 +143,13 @@ const TOOL_METADATA: Record<ToolName, ToolMeta> = {
     sequential: false,
     cacheable: "dom",
   },
+  [ToolName.EXTRACT_FORM_STATE]: {
+    risk: RiskLevel.LOW,
+    domModifying: false,
+    sequential: false,
+    // Deliberately NOT cacheable: the dry-run needs live form values.
+    cacheable: false,
+  },
   [ToolName.EXECUTE_JS]: {
     risk: RiskLevel.HIGH,
     domModifying: true,
@@ -358,6 +365,7 @@ const TOOL_NODE_CONCURRENCY: Record<ToolName, ToolNodeConcurrencyMeta> = {
   [ToolName.SWITCH_TAB]: { scope: "separate_tab", access: "navigate" },
   [ToolName.ESCALATE]: { scope: "never", access: "approval" },
   [ToolName.READ_ELEMENT]: { scope: "same_page", access: "read" },
+  [ToolName.EXTRACT_FORM_STATE]: { scope: "same_page", access: "read" },
   [ToolName.EXECUTE_JS]: { scope: "never", access: "write" },
   [ToolName.UPLOAD_FILE]: { scope: "never", access: "write" },
   [ToolName.GO_BACK]: { scope: "separate_tab", access: "navigate" },
