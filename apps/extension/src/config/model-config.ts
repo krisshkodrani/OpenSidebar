@@ -35,18 +35,18 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
   executorEmptyResponseFallback:
     DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
-  planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
-  writer: "accounts/fireworks/routers/kimi-k2p6-turbo",
+  planner: "accounts/fireworks/models/glm-5p2",
+  writer: "accounts/fireworks/models/glm-5p2",
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
-    planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
+    planner: "accounts/fireworks/models/glm-5p2",
   },
   groq: {
     planner: "openai/gpt-oss-120b",
   },
   fireworks: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks,
-    planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
+    planner: "accounts/fireworks/models/glm-5p2",
   },
   moonshot: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.moonshot,
