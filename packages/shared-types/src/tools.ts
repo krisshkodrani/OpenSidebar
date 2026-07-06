@@ -251,6 +251,37 @@ export interface ReadElementArgs {
   attribute?: string;
 }
 
+/** Arguments for extract_form_state (LP-15 Phase 8) */
+export interface ExtractFormStateArgs {
+  /**
+   * Tag ID of a field or submit control inside the target form. Omit to capture
+   * the primary (first) form on the page.
+   */
+  id?: number;
+}
+
+/** A single captured form control. */
+export interface FormStateField {
+  /** name / id / aria-label of the control. */
+  name: string;
+  /** A CSS selector that locates the control (id > [name] > tag). */
+  selector: string;
+  /** Control kind: the input `type`, or the tag name for select/textarea. */
+  kind: string;
+  /** Current value; "checked"/"unchecked" for checkbox/radio. */
+  value: string;
+  /** Whether the control is disabled. */
+  disabled: boolean;
+}
+
+/** The structured form-state capture returned by extract_form_state. */
+export interface FormStateCapture {
+  /** Stable-ish form identity (action > id > name > page path). */
+  formKey: string;
+  fields: FormStateField[];
+  submitTargets: Array<{ label: string; selector: string }>;
+}
+
 /** Arguments for execute_js */
 export interface ExecuteJsArgs {
   /** JavaScript code to evaluate in the page's MAIN world */
@@ -534,6 +565,7 @@ export type ToolArgsMap = {
   [ToolName.HIDE_ELEMENT]: HideElementArgs;
   [ToolName.ESCALATE]: EscalateArgs;
   [ToolName.READ_ELEMENT]: ReadElementArgs;
+  [ToolName.EXTRACT_FORM_STATE]: ExtractFormStateArgs;
   [ToolName.EXECUTE_JS]: ExecuteJsArgs;
   [ToolName.UPLOAD_FILE]: UploadFileArgs;
   [ToolName.GO_BACK]: GoBackArgs;

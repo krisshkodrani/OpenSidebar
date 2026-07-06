@@ -46,6 +46,7 @@ import {
   ESCALATE_DEF,
   CLARIFY_DEF,
   READ_ELEMENT_DEF,
+  EXTRACT_FORM_STATE_DEF,
   EXECUTE_JS_DEF,
   UPLOAD_FILE_DEF,
   GO_BACK_DEF,
@@ -2358,6 +2359,13 @@ export function registerTools() {
     ToolName.READ_ELEMENT,
     READ_ELEMENT_DEF,
     (args, tabId) => executeContentTool(ToolName.READ_ELEMENT, args, tabId),
+  );
+
+  toolRegistry.register(
+    ToolName.EXTRACT_FORM_STATE,
+    EXTRACT_FORM_STATE_DEF,
+    (args, tabId) =>
+      executeContentTool(ToolName.EXTRACT_FORM_STATE, args, tabId),
   );
 
   toolRegistry.register(ToolName.RIGHT_CLICK, RIGHT_CLICK_DEF, (args, tabId) =>
