@@ -37,12 +37,30 @@ export interface BrowserPagePort {
   ): Promise<string>;
 }
 
+export interface ExecuteFunctionOptions {
+  allFrames?: boolean;
+  world?: "MAIN" | "ISOLATED";
+}
+
+export interface ExecuteFunctionResult<T> {
+  result: T | undefined;
+  frameId: number;
+}
+
 export interface ContentBridgePort {
   sendMessage<TResponse = unknown>(
     tabId: number,
     message: unknown,
   ): Promise<TResponse>;
   executeContentScripts(tabId: number, files: string[]): Promise<void>;
+  /** Inject and run a function in the page (scripting.executeScript{func}). */
+  executeFunction<T>(
+    tabId: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- injected page fn
+    fn: (...args: any[]) => T,
+    args?: unknown[],
+    options?: ExecuteFunctionOptions,
+  ): Promise<ExecuteFunctionResult<T>[]>;
   getContentScriptFiles(): string[];
   onContentScriptReady(listener: (tabId: number) => void): () => void;
   onTabRemoved(listener: (tabId: number) => void): () => void;
@@ -134,4 +152,83 @@ export interface SchedulerPort {
   createAlarm(name: string, options: SchedulerAlarmOptions): Promise<void>;
   clearAlarm(name: string): Promise<boolean>;
   onAlarm(listener: (alarm: { name: string }) => void): () => void;
+}
+
+// --- Tool API-family ports (RFC LP-15, Phase 4b) ---
+
+export interface DownloadsPort {
+  isAvailable(): boolean;
+  download(options: { url: string; filename?: string }): Promise<number>;
+}
+
+export interface CookieRecord {
+  name: string;
+  value: string;
+  domain?: string;
+  path?: string;
+}
+
+export interface CookiesPort {
+  getAll(details: {
+    url?: string;
+    name?: string;
+    domain?: string;
+  }): Promise<CookieRecord[]>;
+  set(details: {
+    url: string;
+    name: string;
+    value: string;
+    domain?: string;
+    path?: string;
+  }): Promise<void>;
+  remove(details: { url: string; name: string }): Promise<void>;
+}
+
+export interface HistoryItemRecord {
+  url?: string;
+  title?: string;
+  lastVisitTime?: number;
+  visitCount?: number;
+}
+
+export interface HistoryPort {
+  search(query: {
+    text: string;
+    maxResults?: number;
+    startTime?: number;
+  }): Promise<HistoryItemRecord[]>;
+}
+
+export interface SearchPort {
+  query(options: {
+    text: string;
+    disposition?: "CURRENT_TAB" | "NEW_TAB" | "NEW_WINDOW";
+  }): Promise<void>;
+}
+
+export interface WindowRecord {
+  id?: number;
+}
+
+export interface WindowsPort {
+  create(options: { url?: string }): Promise<WindowRecord>;
+}
+
+/**
+ * Aggregate bundle of every environment port, for injection only (RFC LP-15).
+ * Deliberately NOT a god port — consumers depend on the specific ports they
+ * need; this bundle exists so the Phase 5 composition root can pass one value.
+ */
+export interface RuntimeEnvironment {
+  persistence: PersistencePort;
+  messaging: RuntimeMessagingPort;
+  navigationEvents: NavigationEventsPort;
+  scheduler: SchedulerPort;
+  page: BrowserPagePort;
+  content: ContentBridgePort;
+  downloads: DownloadsPort;
+  cookies: CookiesPort;
+  history: HistoryPort;
+  search: SearchPort;
+  windows: WindowsPort;
 }

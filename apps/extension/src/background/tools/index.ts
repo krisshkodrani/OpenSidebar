@@ -1,4 +1,12 @@
-import { chromePersistencePort } from "../environment/chrome";
+import {
+  chromeContentBridgePort,
+  chromeCookiesPort,
+  chromeDownloadsPort,
+  chromeHistoryPort,
+  chromePersistencePort,
+  chromeSearchPort,
+  chromeWindowsPort,
+} from "../environment/chrome";
 import { toolRegistry } from "./registry";
 import { ToolName, MessageSource, UserSettings } from "../../types";
 import { logger } from "../../utils";
@@ -727,13 +735,13 @@ async function runReadOnlyPageInspector(
   emptyMessage: string,
 ): Promise<string> {
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world: "MAIN" as any,
+    const results = await chromeContentBridgePort.executeFunction(
+      tabId,
       func,
       args,
-    });
-    const frames = (results || [])
+      { allFrames: true, world: "MAIN" },
+    );
+    const frames = results
       .map((result, index) =>
         typeof result.result === "string" && result.result.trim()
           ? `Frame ${index + 1}:\n${result.result.trim()}`
@@ -753,13 +761,13 @@ async function runAsyncReadOnlyPageInspector(
   emptyMessage: string,
 ): Promise<string> {
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world: "MAIN" as any,
+    const results = await chromeContentBridgePort.executeFunction(
+      tabId,
       func,
       args,
-    });
-    const frames = (results || [])
+      { allFrames: true, world: "MAIN" },
+    );
+    const frames = results
       .map((result, index) =>
         typeof result.result === "string" && result.result.trim()
           ? `Frame ${index + 1}:\n${result.result.trim()}`
@@ -1041,7 +1049,7 @@ export function registerTools() {
         if (!urlResult.ok) return `Error: ${urlResult.error}`;
         await chrome.tabs.update(tabId, { url: urlResult.value });
       } else {
-        await chrome.search.query({ text: query!, disposition: "CURRENT_TAB" });
+        await chromeSearchPort.query({ text: query!, disposition: "CURRENT_TAB" });
       }
 
       await waitForNavigation(tabId);
@@ -2635,7 +2643,7 @@ export function registerTools() {
             .replace(/^[/\\]+/, "")
             .replace(/\0/g, "");
         }
-        const downloadId = await chrome.downloads.download(opts);
+        const downloadId = await chromeDownloadsPort.download(opts);
         const completed = await waitForDownloadCompletion(downloadId, signal);
         if (completed.status === "completed") {
           const completedFilename =
@@ -2677,7 +2685,7 @@ export function registerTools() {
       if (!url) return "Error: No URL available.";
       logger.info("tools", "get_cookies", { url });
       try {
-        const cookies = await chrome.cookies.getAll({ url });
+        const cookies = await chromeCookiesPort.getAll({ url });
         if (cookies.length === 0) return "No cookies found for this URL.";
         return cookies.map((c: any) => `${c.name}=${c.value}`).join("\n");
       } catch (e: any) {
@@ -2700,7 +2708,7 @@ export function registerTools() {
       const opts: any = { url, name, value };
       if (domain) opts.domain = domain;
       if (path) opts.path = path;
-      await chrome.cookies.set(opts);
+      await chromeCookiesPort.set(opts);
       return `Cookie "${name}" set on ${url}`;
     } catch (e: any) {
       return `Error setting cookie: ${e.message}`;
@@ -2718,7 +2726,7 @@ export function registerTools() {
       const name = args.name as string;
       logger.info("tools", "delete_cookie", { url, name });
       try {
-        await chrome.cookies.remove({ url, name });
+        await chromeCookiesPort.remove({ url, name });
         return `Cookie "${name}" deleted from ${url}`;
       } catch (e: any) {
         return `Error deleting cookie: ${e.message}`;
@@ -2734,7 +2742,7 @@ export function registerTools() {
       const maxResults = (args.maxResults as number) || 20;
       logger.info("tools", "search_history", { query, maxResults });
       try {
-        const items = await chrome.history.search({
+        const items = await chromeHistoryPort.search({
           text: query,
           maxResults,
         });
@@ -6872,7 +6880,7 @@ export function registerTools() {
       const url = args.url as string | undefined;
       logger.info("tools", "create_window", { url });
       try {
-        const win = await chrome.windows.create(url ? { url } : {});
+        const win = await chromeWindowsPort.create(url ? { url } : {});
         return `Created new window (ID: ${win.id})`;
       } catch (e: any) {
         return `Error creating window: ${e.message}`;
