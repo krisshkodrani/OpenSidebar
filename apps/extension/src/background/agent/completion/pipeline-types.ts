@@ -48,6 +48,7 @@ export type CompletionGuardId =
 export type CompletionPipelineBasis =
   | "duplicate_terminal"
   | "kernel"
+  | "kernel_reject"
   | "kernel_bypass_legacy"
   | "legacy_done_guards";
 

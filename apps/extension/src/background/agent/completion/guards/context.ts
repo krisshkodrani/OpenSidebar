@@ -33,6 +33,10 @@ export interface CompletionGuardContext {
   doneRejections: number;
   /** Hard rejection cap (`limits.maxDoneRejections`). */
   maxDoneRejections: number;
+  /** Same-kind bounce counter (kernel bypass gate). */
+  consecutiveSameKindRejections: number;
+  /** Kind of the last contract rejection (kernel bypass gate). */
+  lastContractRejectionKind: string | null;
 
   /** Number of plan subtasks (0 = no plan). */
   planSubtaskCount: number;
