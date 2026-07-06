@@ -8341,6 +8341,26 @@ export class AgentLoop {
       }
     };
 
+    // Escalation-entry primitive (RFC LP-15, Phase 6): the single invariant
+    // write point for the two-tier machine's executor→planner flip. Every
+    // escalation trigger routes its tier transition through here so the tier
+    // state has one owner; the per-trigger tails (strategy pivot, reflection
+    // message, step handler, working-memory resets) stay at the call site
+    // because they legitimately differ by trigger. `bumpStepCounter` is false
+    // for the two triggers (done-rejection, text-only) that do not count
+    // against the per-step escalation budget.
+    const beginPlannerEscalation = ({
+      bumpStepCounter,
+    }: {
+      bumpStepCounter: boolean;
+    }): void => {
+      this.escalateModel();
+      if (bumpStepCounter) this.escalationsOnCurrentStep++;
+      escalationTier = 1;
+      orientationPhase = false;
+      plannerModelStartTurn = this.turnCount;
+    };
+
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Pause gate — block here if user paused the loop
       if (this.pauseGate) await this.pauseGate.promise;
@@ -8576,11 +8596,7 @@ export class AgentLoop {
             const rescueAttemptSummary = extractAttemptSummary(
               this.context.getMessages(),
             );
-            this.escalateModel();
-            this.escalationsOnCurrentStep++;
-            escalationTier = 1;
-            orientationPhase = false;
-            plannerModelStartTurn = this.turnCount;
+            beginPlannerEscalation({ bumpStepCounter: true });
             await this.strategyPivot(tabId, rescueAttemptSummary);
             this.stagnation.resetEscalation();
             this.context.addMessage({
@@ -9132,10 +9148,7 @@ export class AgentLoop {
           if (this.pendingDoneRejectionEscalation) {
             this.pendingDoneRejectionEscalation = false;
             if (escalationTier === 0) {
-              this.escalateModel();
-              escalationTier = 1;
-              orientationPhase = false;
-              plannerModelStartTurn = this.turnCount;
+              beginPlannerEscalation({ bumpStepCounter: false });
               this.escalationRescue.noteEscalation(
                 this.turnCount,
                 "done_rejection",
@@ -9410,11 +9423,7 @@ export class AgentLoop {
                 const stepAttemptSummary = extractAttemptSummary(
                   this.context.getMessages(),
                 );
-                this.escalateModel();
-                this.escalationsOnCurrentStep++;
-                escalationTier = 1;
-                orientationPhase = false;
-                plannerModelStartTurn = this.turnCount;
+                beginPlannerEscalation({ bumpStepCounter: true });
                 turnsSinceStepEscalation = 0; // Start tracking post-escalation pivot
                 await this.strategyPivot(tabId, stepAttemptSummary);
                 this.stagnation.resetEscalation();
@@ -9504,11 +9513,7 @@ export class AgentLoop {
             const urlAttemptSummary = extractAttemptSummary(
               this.context.getMessages(),
             );
-            this.escalateModel();
-            this.escalationsOnCurrentStep++;
-            escalationTier = 1;
-            orientationPhase = false;
-            plannerModelStartTurn = this.turnCount;
+            beginPlannerEscalation({ bumpStepCounter: true });
             await this.strategyPivot(tabId, urlAttemptSummary);
             this.stagnation.resetEscalation();
             this.context.addMessage({
@@ -10199,11 +10204,7 @@ export class AgentLoop {
                     const attemptSummary = extractAttemptSummary(
                       this.context.getMessages(),
                     );
-                    this.escalateModel();
-                    this.escalationsOnCurrentStep++;
-                    escalationTier = 1;
-                    orientationPhase = false;
-                    plannerModelStartTurn = this.turnCount;
+                    beginPlannerEscalation({ bumpStepCounter: true });
                     await this.strategyPivot(tabId, attemptSummary);
                     this.stagnation.resetEscalation();
                     this.context.addMessage({
@@ -10388,11 +10389,7 @@ export class AgentLoop {
                     const attemptSummary = extractAttemptSummary(
                       this.context.getMessages(),
                     );
-                    this.escalateModel();
-                    this.escalationsOnCurrentStep++;
-                    escalationTier = 1;
-                    orientationPhase = false;
-                    plannerModelStartTurn = this.turnCount;
+                    beginPlannerEscalation({ bumpStepCounter: true });
                     await this.strategyPivot(tabId, attemptSummary);
                     this.stagnation.resetEscalation();
                     this.context.addMessage({
@@ -10726,10 +10723,7 @@ export class AgentLoop {
           const textOnlyAttemptSummary = extractAttemptSummary(
             this.context.getMessages(),
           );
-          this.escalateModel();
-          escalationTier = 1;
-          orientationPhase = false;
-          plannerModelStartTurn = this.turnCount;
+          beginPlannerEscalation({ bumpStepCounter: false });
           await this.strategyPivot(tabId, textOnlyAttemptSummary);
           this.stagnation.resetEscalation();
           this.context.addMessage({
