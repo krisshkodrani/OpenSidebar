@@ -644,7 +644,6 @@ export class AgentLoop {
   /** Unified VL executor mode: screenshot sent directly to executor, skip separate perception */
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
-  private useVLExecutorOption?: boolean;
   private providerModeOption?:
     | "openrouter"
     | "openrouter-groq"
@@ -890,7 +889,6 @@ export class AgentLoop {
       temperature?: number;
       perceptionMode?: PerceptionRuntimeMode;
       maxImagePromptTokenEstimate?: number;
-      useVLExecutor?: boolean;
       completionDeterministicAcceptanceEnabled?: boolean;
       /** Durable turn checkpoint from a prior SW lifetime — injected by orchestrator on restart. */
       turnCheckpoint?: TurnCheckpoint | null;
@@ -899,7 +897,6 @@ export class AgentLoop {
     },
   ) {
     this.perceptionModeOption = options?.perceptionMode;
-    this.useVLExecutorOption = options?.useVLExecutor;
     this.providerModeOption = options?.providerMode;
     this.telemetry = new AgentTelemetryController({
       getTurnCount: () => this.turnCount,
@@ -925,7 +922,6 @@ export class AgentLoop {
     this.useVLExecutor =
       resolvePerceptionRuntimeMode({
         perceptionMode: this.perceptionModeOption,
-        useVLExecutor: this.useVLExecutorOption,
         providerMode: this.providerModeOption,
         executorVLCapable: this.executorVLCapable,
       }) === "unified_vl";
@@ -4135,12 +4131,10 @@ export class AgentLoop {
       getSnapshot: () => this.context.getSnapshot(),
     });
     const snapshot = initialSnapshotResolution.snapshot;
-    const warmupPerception = initialSnapshotResolution.warmupPerception;
     const warmupScreenshot = initialSnapshotResolution.warmupScreenshot;
 
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
@@ -4230,36 +4224,14 @@ export class AgentLoop {
           "VL mode: using warmup screenshot (skipped VLM)",
           { tabId },
         );
-      } else if (this.useVLExecutor && warmupScreenshot && !warmupPerception) {
+      } else if (this.useVLExecutor && warmupScreenshot) {
+        // Warmup screenshot present but the image budget is exhausted.
         this.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
         this.context.setScreenshotForExecutor(null);
         this.context.setPageInterpretation(null);
         this.perception.setScreenshotUrl(null);
-      } else if (warmupPerception) {
-        // Use pre-computed perception — hydrate PerceptionAgent with warmup result
-        const warmupFingerprint = computeSnapshotFingerprint(snapshot);
-        this.perception.hydrateFromWarmup(
-          warmupPerception.interpretation,
-          warmupFingerprint,
-          warmupScreenshot,
-          snapshot.url,
-          {
-            model: warmupPerception.model,
-            providerId: warmupPerception.providerId,
-            durationMs: warmupPerception.durationMs,
-            cached: true,
-          },
-        );
-        this.context.setPageInterpretation(warmupPerception.interpretation);
-        this.recordCachedVisionUsage();
-        this.log.info("agent", "Perception from warmup (skipped vision API)", {
-          provider: warmupPerception.providerId,
-          durationMs: warmupPerception.durationMs,
-        });
-        // Still triage popups since it's fast and important
-        await this.triagePopups(tabId);
       } else {
-        // No warmup available — run perception normally
+        // No usable warmup — run the normal perception refresh.
         await this.refreshPerceptionAndTriage(tabId);
       }
     } else {
@@ -4839,282 +4811,6 @@ export class AgentLoop {
   }
 
   /**
-   * Refresh perception: take a screenshot and send to the PerceptionAgent
-   * for structured page interpretation. The agent handles fingerprint caching
-   * and observation history internally.
-   */
-  private async refreshPerception(tabId: number): Promise<void> {
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) return;
-
-    const fingerprint = computeSnapshotFingerprint(snapshot);
-    const taskContext = this.getActivePerceptionTaskContext();
-
-    try {
-      // Take screenshot (unless near-empty — agent handles fallback)
-      let dataUrl: string | undefined;
-      let screenshotStatus:
-        | "captured"
-        | "cached"
-        | "missing"
-        | "capture_failed"
-        | "not_requested" = "not_requested";
-      const isFirstPerception = !this.perception.firstPerceptionDone;
-
-      // Ensure the agent's tab is the visible one before capturing —
-      // captureVisibleTab captures whatever tab is active in the window.
-      const tab = await chrome.tabs.get(tabId);
-      if (!tab.active) {
-        try {
-          await chrome.tabs.update(tabId, { active: true });
-        } catch {
-          // Tab may have been closed — fall back to cache
-        }
-      }
-
-      try {
-        const refreshedTab = tab.active ? tab : await chrome.tabs.get(tabId);
-        // q90: the LP-9 transform re-encodes at q85 — capturing at q70 first
-        // would pre-degrade small glyphs before the pipeline ever sees them.
-        const captured = await this.captureVisibleTabWithRetry(
-          refreshedTab.windowId,
-          { format: "jpeg", quality: 90 },
-        );
-        // LP-9: own resolution/format/scale before anything downstream sees it.
-        const transformed = await transformScreenshot(captured);
-        dataUrl = transformed.dataUrl;
-        this.traceRecorder?.recordEvent("screenshot_transform", {
-          scaleFactor: transformed.scaleFactor,
-          width: transformed.width,
-          height: transformed.height,
-          path: "structured_perception",
-        });
-        setCachedScreenshot(tabId, dataUrl, {
-          scaleFactor: transformed.scaleFactor,
-          width: transformed.width,
-          height: transformed.height,
-        });
-        screenshotStatus = "captured";
-      } catch {
-        // Quota or other capture error — fall back to shared cache
-        dataUrl = getCachedScreenshot(tabId);
-        screenshotStatus = dataUrl ? "cached" : "capture_failed";
-      }
-      if (dataUrl) {
-        this.perception.setScreenshotUrl(dataUrl);
-      }
-      const primaryImageBudgetAllowed =
-        !dataUrl || this.imagePromptBudgetAllows(1);
-      if (dataUrl && !primaryImageBudgetAllowed) {
-        this.recordImagePromptBudgetExhausted(1, "structured_perception");
-      }
-
-      // No screenshot available — use element-only fallback
-      // instead of calling VLM with an invalid image URL.
-      if (!dataUrl || !primaryImageBudgetAllowed) {
-        if (isFirstPerception) {
-          this.perception.markFirstPerceptionDone();
-        }
-        const result = await this.perception.observe(
-          {
-            screenshotDataUrl: "",
-            elements: snapshot.elements,
-            url: snapshot.url,
-            title: snapshot.title,
-            scroll: snapshot.scroll,
-            skeleton: snapshot.skeleton,
-            lang: snapshot.lang,
-            taskContext,
-          },
-          fingerprint,
-          this.abortController?.signal,
-          this.lastToolNameForPerception,
-        );
-        this.context.setPageInterpretation(result.interpretation);
-        const elSummary = buildElementSummary(
-          snapshot.elements,
-          snapshot.skeleton,
-        );
-        await this.traceRecorder?.recordPerception(
-          {
-            ...result,
-            source: "fallback",
-            fallbackReason: !primaryImageBudgetAllowed
-              ? "image_budget_exhausted"
-              : screenshotStatus === "capture_failed"
-                ? "capture_failed"
-                : "screenshot_unavailable",
-            screenshotStatus: !primaryImageBudgetAllowed
-              ? "not_requested"
-              : screenshotStatus === "capture_failed"
-                ? "capture_failed"
-                : "missing",
-          },
-          undefined,
-          elSummary,
-        );
-        this.log.info(
-          "agent",
-          !primaryImageBudgetAllowed
-            ? "Perception: image prompt budget exhausted, using element-only mode"
-            : "Perception: screenshot unavailable, using element-only mode",
-          { tabId, url: snapshot.url },
-        );
-      } else {
-        if (isFirstPerception) {
-          this.perception.markFirstPerceptionDone();
-        }
-
-        const result = await this.perception.observe(
-          {
-            screenshotDataUrl: dataUrl,
-            elements: snapshot.elements,
-            url: snapshot.url,
-            title: snapshot.title,
-            scroll: snapshot.scroll,
-            skeleton: snapshot.skeleton,
-            lang: snapshot.lang,
-            taskContext,
-          },
-          fingerprint,
-          this.abortController?.signal,
-          this.lastToolNameForPerception,
-        );
-
-        this.context.setPageInterpretation(result.interpretation);
-        const elSummary = buildElementSummary(
-          snapshot.elements,
-          snapshot.skeleton,
-        );
-        await this.traceRecorder?.recordPerception(
-          {
-            ...result,
-            screenshotStatus,
-          },
-          dataUrl,
-          elSummary,
-        );
-
-        // LP-11 cache efficacy: tally forced stale re-interprets and whether
-        // they revealed changes the perception cache had been hiding.
-        if (
-          result.freshnessReason === "stale_fingerprint" &&
-          typeof result.staleReinterpretChanged === "boolean"
-        ) {
-          this.telemetry.recordStaleReinterpret(
-            result.staleReinterpretChanged,
-          );
-        }
-
-        // Track usage for non-cached calls
-        if (result.usage && !result.cached) {
-          this.recordVisionUsage(
-            result.usage,
-            result.durationMs,
-            result.model,
-            result.providerId as ProviderConfig["providerId"] | undefined,
-            1,
-          );
-        } else if (result.cached) {
-          this.recordCachedVisionUsage();
-        }
-      }
-    } catch (e: any) {
-      this.log.warn("agent", "Perception failed, using element-only mode", {
-        error: e?.message,
-      });
-      this.perception.setScreenshotUrl(null);
-      this.context.setPageInterpretation(null);
-    }
-  }
-
-  /**
-   * Perception-guided popup triage: parse BLOCKERS from perception output,
-   * auto-click dismiss buttons for nuisance popups (cookie/consent/promo/etc),
-   * and re-snapshot so the LLM sees a clean page.
-   */
-  private async triagePopups(tabId: number): Promise<number> {
-    const interpretation = this.perception.getInterpretation();
-    if (!interpretation) return 0;
-    if (this.abortController?.signal.aborted) return 0;
-
-    const snapshot = this.context.getSnapshot();
-    const { valid: blockers, rejected } = snapshot
-      ? validateNuisanceBlockers(interpretation, snapshot.elements)
-      : { valid: [], rejected: [] };
-    if (rejected.length > 0) {
-      this.traceRecorder?.recordEvent("perception_blocker_validation", {
-        turn: this.turnCount,
-        rejectedCount: rejected.length,
-        reasons: rejected.slice(0, 3).map((b) => b.reason),
-      });
-      this.log.warn(
-        "agent",
-        "Rejected nuisance blockers with invalid grounding",
-        {
-          rejected: rejected.slice(0, 3).map((b) => ({
-            overlayTagId: b.overlayTagId,
-            dismissTagId: b.dismissTagId,
-            reason: b.reason,
-          })),
-        },
-      );
-    }
-    if (blockers.length === 0) return 0;
-
-    // Cap at 3 dismiss attempts per cycle to prevent infinite loops
-    const targets = blockers.slice(0, 3);
-    let dismissed = 0;
-
-    for (const b of targets) {
-      if (this.abortController?.signal.aborted) break;
-
-      try {
-        const response = await chrome.tabs.sendMessage(tabId, {
-          type: "TOOL_EXECUTE",
-          requestId: crypto.randomUUID(),
-          source: MessageSource.BACKGROUND,
-          payload: {
-            toolName: ToolName.CLICK_ELEMENT,
-            args: { id: b.dismissTagId },
-            toolCallId: "popup-triage",
-          },
-        });
-        if (
-          response?.payload?.result &&
-          !response.payload.result.startsWith("Error")
-        ) {
-          dismissed++;
-        }
-      } catch {
-        // Non-critical — popup may already be gone
-      }
-
-      // Wait for DOM to settle after dismiss (event-driven, not arbitrary sleep)
-      if (dismissed > 0) {
-        await waitForDomReady(tabId, { timeoutMs: 200 });
-      }
-    }
-
-    if (dismissed > 0) {
-      // Re-snapshot to get clean DOM state
-      await this.refreshSnapshot(tabId);
-      // Invalidate perception fingerprint so next perception re-interprets
-      this.perception.invalidateCache();
-      // Record what was dismissed for LLM context
-      this.context.addTriagedPopups(
-        targets.slice(0, dismissed).map((b) => b.description),
-      );
-
-      this.log.info("agent", `Auto-dismissed ${dismissed} nuisance popup(s)`, {
-        blockers: targets.map((b) => `[${b.dismissTagId}] ${b.description}`),
-      });
-    }
-
-    return dismissed;
-  }
-
-  /**
    * Refresh perception then auto-dismiss nuisance popups identified in BLOCKERS.
    * Use this instead of bare `refreshPerception()` at all call sites.
    */
@@ -5125,7 +4821,6 @@ export class AgentLoop {
 
     const decision = resolvePerceptionRuntimeModeDecision({
       perceptionMode: this.perceptionModeOption,
-      useVLExecutor: this.useVLExecutorOption,
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",
@@ -5171,8 +4866,11 @@ export class AgentLoop {
       // Skip triagePopups — executor sees overlays in screenshot and calls dismiss_overlays.
       return;
     }
-    await this.refreshPerception(tabId);
-    await this.triagePopups(tabId);
+    // Text-only turn: no screenshot and no separate perception model. The
+    // executor works from the DOM element summary and dismisses overlays
+    // itself (via dismiss_overlays).
+    this.context.setScreenshotForExecutor(null);
+    this.context.setPageInterpretation(null);
   }
 
   /** Capture screenshot and store for VL executor injection (no perception VLM call). */
@@ -5262,8 +4960,7 @@ export class AgentLoop {
         },
       );
       this.context.setScreenshotForExecutor(null);
-      await this.refreshPerception(tabId);
-      await this.triagePopups(tabId);
+      this.context.setPageInterpretation(null);
     }
   }
 
@@ -6024,24 +5721,6 @@ export class AgentLoop {
         this.traceRecorder?.recordEvent("inspect_region", data),
       setRegionZoomForExecutor: (zoom) =>
         this.context.setRegionZoomForExecutor(zoom),
-      describeRegion: async ({ dataUrl, label, purpose }) => {
-        const result = await this.perception.describeRegion({
-          cropDataUrl: dataUrl,
-          regionLabel: label,
-          purpose,
-          signal: this.abortController?.signal,
-        });
-        if (result.usage) {
-          this.recordVisionUsage(
-            result.usage,
-            result.durationMs,
-            result.model,
-            result.providerId as ProviderConfig["providerId"] | undefined,
-            1,
-          );
-        }
-        return result.interpretation;
-      },
     };
   }
 

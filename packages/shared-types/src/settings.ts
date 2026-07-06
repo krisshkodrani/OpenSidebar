@@ -81,8 +81,6 @@ export interface UserSettings {
    * prefers it within that scope; when empty it falls back to the executor.
    */
   writerModel?: string;
-  /** Override perception model for the internal structured fallback path. */
-  perceptionModel?: string;
   /** Append :nitro variant suffix to all model IDs for faster inference (default: false) */
   useNitro?: boolean;
   /** Override default LLM temperature (default: 0.0 for deterministic agentic behavior) */
@@ -105,9 +103,6 @@ export interface UserSettings {
    * coverage is still expanding. Defaults to true.
    */
   completionDeterministicAcceptanceEnabled?: boolean;
-  /** @deprecated Use `perceptionMode` instead. */
-  /** Legacy unified executor toggle. Ignored during settings migration. */
-  useVLExecutor?: boolean;
 }
 
 // --- Workspace / Tab Group Types ---
