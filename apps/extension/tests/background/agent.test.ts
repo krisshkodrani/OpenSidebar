@@ -2755,12 +2755,14 @@ describe("AgentLoop", () => {
       scroll: { x: 0, y: 0, maxY: 0, viewportHeight: 720 },
     });
 
-    const rejected = (agent as any).rejectDoneForMissingRequiredEvidence(
-      "tool-call-1",
+    // The SN evidence inference (a live pre-step of the completion pipeline,
+    // RFC LP-15 Phase 7b) adds the typed evidence from the reached page, so the
+    // missing-evidence guard then passes.
+    const inferred = (agent as any).maybeInferServiceNowModuleNavigationEvidence(
       "Opened the HBase Instances module.",
     );
 
-    expect(rejected).toBe(false);
+    expect(inferred).toBe(true);
     expect((agent as any).getMissingRequiredEvidenceTypes()).toEqual([]);
     const evidence = (agent as any).evidenceAccumulator.toArray();
     expect(evidence).toEqual(
