@@ -214,8 +214,6 @@ import {
   TOOL_CACHE,
   ACTION_EFFECT,
   DEFAULT_RUNTIME_LIMITS,
-  INVESTIGATION_EXTENSION,
-  MAX_ORIENTATION_TURNS,
   EXPLORATION_BUDGET,
   EXPLORATION_ONLY_TOOLS,
 } from "./constants";
@@ -8228,6 +8226,34 @@ export class AgentLoop {
     const esc = new EscalationTierController({
       startOnPlanner: this.preferredModelTier !== "executor",
       orientationPhaseTurns: ORIENTATION.PHASE_TURNS,
+      host: {
+        limits: this.limits,
+        getTurn: () => this.turnCount,
+        deescalateModel: (tabId, prevElementCount) =>
+          this.deescalateModel(tabId, prevElementCount),
+        addHandoffMessage: () => {
+          const briefing = buildHandoffBriefing(
+            this.context.getMessages(),
+            this.context.getSnapshot(),
+          );
+          this.context.addMessage({
+            role: "user",
+            content: HANDOFF_REFLECTION(briefing),
+          });
+        },
+        emitInfoStep: (label) =>
+          this.stepHandler(
+            {
+              id: crypto.randomUUID(),
+              type: "info",
+              label,
+              status: "done",
+              timestamp: Date.now(),
+            },
+            false,
+          ),
+        logInfo: (message, data) => this.log.info("agent", message, data),
+      },
     });
     if (esc.orientationPhase) {
       this.escalateModel(); // Start with planner model (plan phase)
@@ -8392,63 +8418,9 @@ export class AgentLoop {
         break;
       }
 
-      // Decrement de-escalation cooldown
-      if (esc.cooldownRemaining > 0) esc.cooldownRemaining--;
-
-      // plan-then-act handoff: planner model has oriented, hand off to executor model
-      // Complexity-adaptive: extend orientation when investigation tools are used
-      if (
-        esc.orientationPhase &&
-        esc.tier === 1 &&
-        esc.orientationToolsUsed.size > 0 &&
-        esc.effectiveOrientationTurns === ORIENTATION.PHASE_TURNS
-      ) {
-        esc.effectiveOrientationTurns = Math.min(
-          ORIENTATION.PHASE_TURNS + INVESTIGATION_EXTENSION,
-          MAX_ORIENTATION_TURNS,
-        );
-        this.log.info(
-          "agent",
-          "Investigation detected, extending orientation",
-          {
-            turn: this.turnCount,
-            tools: [...esc.orientationToolsUsed],
-            effectiveOrientationTurns: esc.effectiveOrientationTurns,
-          },
-        );
-      }
-      if (
-        esc.orientationPhase &&
-        this.turnCount > esc.effectiveOrientationTurns &&
-        esc.tier === 1
-      ) {
-        esc.orientationPhase = false;
-        prevElementCount = await this.deescalateModel(tabId, prevElementCount);
-        esc.tier = 0;
-        esc.cooldownRemaining = this.limits.escalationCooldown;
-        const briefing = buildHandoffBriefing(
-          this.context.getMessages(),
-          this.context.getSnapshot(),
-        );
-        this.context.addMessage({
-          role: "user",
-          content: HANDOFF_REFLECTION(briefing),
-        });
-        this.stepHandler(
-          {
-            id: crypto.randomUUID(),
-            type: "info",
-            label: "Handing off to executor model",
-            status: "done",
-            timestamp: Date.now(),
-          },
-          false,
-        );
-        this.log.info("agent", "plan-then-act handoff", {
-          turn: this.turnCount,
-          orientationTurns: esc.effectiveOrientationTurns,
-        });
-      }
+      // Per-turn escalation bookkeeping: cooldown tick, one-shot investigation
+      // extension, and the plan-then-act orientation handoff (tier 1→0).
+      prevElementCount = await esc.onTurnStart({ tabId, prevElementCount });
 
       // Inject pending hint from user before LLM call
       if (this.pendingFeedback) {
