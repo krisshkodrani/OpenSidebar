@@ -73,7 +73,6 @@ import { completeTurnWithRetries } from "./turn-completion";
 import { prepareLlmTurnRequest } from "./loop-turn-preparation";
 import {
   buildObservationProgressKey,
-  ContextSpendTracker,
   detectObservationProgressSignals,
   detectSemanticProgressSignals,
   type ContextProgressSignal,
@@ -122,11 +121,11 @@ import {
 } from "./completion/decision-recorder";
 import {
   TURN_CHECKPOINT_VERSION,
-  turnCheckpointKey,
   buildMutationKey,
 } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
-import { MutationLedger } from "./mutation-ledger";
+import { CheckpointCoordinator } from "./checkpoint-coordinator";
+import { AgentTelemetryController } from "./agent-telemetry-controller";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -157,21 +156,7 @@ export {
 } from "./list-detail-policy";
 import { isPaginationNavigationClick } from "./action-exemption-policy";
 import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
-import {
-  canSpendImagePromptBudget,
-  emptySessionMetrics,
-  estimateImagePromptUsage,
-  imagePromptUsageForCount,
-  recordCachedVisionTelemetryUse,
-  recordCompletionUsage,
-  recordImagePromptUsage,
-  recordPerceptionModeDecision,
-  recordPerceptionTurnMode,
-  recordStaleReinterpretOutcome,
-  recordTelemetryCitation,
-  recordVisionTelemetryUsage,
-  resolveImagePromptTokenBudget,
-} from "./agent-telemetry";
+import { imagePromptUsageForCount } from "./agent-telemetry";
 import {
   approvalRequestMessage,
   BroadcastMessage,
@@ -179,9 +164,6 @@ import {
   forwardSuppressedStreamChunk,
   planTerminationMessage,
   runtimeBroadcastMessage,
-  sessionMetricsMessage,
-  sessionMetricsSnapshot,
-  shouldBroadcastSessionMetrics,
   successfulTaskCompletionMessage,
   taskProgressMessage,
 } from "./agent-broadcast";
@@ -610,7 +592,6 @@ export class AgentLoop {
   private limits: RuntimeLimits = { ...DEFAULT_RUNTIME_LIMITS };
   /** Planner-assessed task difficulty */
   private difficulty: Difficulty = "moderate";
-  private showSessionMetrics: boolean;
   private preferredModelTier: "executor" | "planner" | "default";
   private executionContract: {
     role: string;
@@ -654,8 +635,8 @@ export class AgentLoop {
   private moneyTableAggregate: MoneyTableAggregate | null = null;
   /** Progress tracker — promoted from local to instance for external access */
   private stagnation = new StagnationMonitor();
-  /** Durable mutation replay guard and side-effect log. */
-  private mutationLedger = new MutationLedger();
+  /** Owns the mutation replay ledger + durable turn-checkpoint persistence. */
+  private checkpoints = new CheckpointCoordinator();
   /** Turn checkpoint to restore from (injected by orchestrator on restart). */
   private pendingTurnCheckpoint: TurnCheckpoint | null = null;
   /** Pending interaction response injected by orchestrator on resume. */
@@ -664,7 +645,6 @@ export class AgentLoop {
   private useVLExecutor = false;
   private perceptionModeOption?: PerceptionRuntimeMode;
   private useVLExecutorOption?: boolean;
-  private maxImagePromptTokenEstimate?: number;
   private providerModeOption?:
     | "openrouter"
     | "openrouter-groq"
@@ -788,41 +768,13 @@ export class AgentLoop {
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
 
-  /** Collected source citations (deduplicated by URL) */
-  private citations: Citation[] = [];
-  private citationUrls = new Set<string>();
-
-  /** Accumulated session metrics */
-  private metrics: SessionMetrics = emptySessionMetrics();
-  private sessionStartTime = 0;
-  private contextSpend = new ContextSpendTracker();
+  /** Session telemetry: metrics, session clock, context spend, citations. */
+  private telemetry!: AgentTelemetryController;
   private previousSnapshotForDelta: DomSnapshot | null = null;
 
   /** Accumulate usage from an LLM response */
   private recordUsage(response: CompletionResponse, llmMs: number): void {
-    recordCompletionUsage({
-      metrics: this.metrics,
-      response,
-      llmMs,
-      currentProvider:
-        this.llm.getCurrentProvider() as ProviderConfig["providerId"],
-      currentModel: this.llm.getCurrentModel(),
-      onCacheHit: (cacheHit) => this.log.debug("agent", "Cache hit", cacheHit),
-    });
-    const spend = this.contextSpend.recordUsage(
-      this.turnCount,
-      response.usage,
-    );
-    this.traceRecorder?.recordEvent("context_spend_sample", {
-      ...spend,
-      model: response.actualModel ?? this.llm.getCurrentModel(),
-      provider:
-        response.actualProviderId ??
-        (this.llm.getCurrentProvider() as ProviderConfig["providerId"]),
-    });
-    if (spend.threshold !== "none") {
-      this.traceRecorder?.recordEvent("context_spend_threshold", { ...spend });
-    }
+    this.telemetry.recordUsage(response, llmMs);
   }
 
   /** Record usage from a vision API call */
@@ -833,93 +785,47 @@ export class AgentLoop {
     providerId: ProviderConfig["providerId"] = "openrouter",
     imageCount = 0,
   ): void {
-    recordVisionTelemetryUsage({
-      metrics: this.metrics,
-      usage,
-      llmMs,
-      model,
-      providerId,
-      imagePrompt: imagePromptUsageForCount(imageCount),
-    });
+    this.telemetry.recordVisionUsage(usage, llmMs, model, providerId, imageCount);
   }
 
   /** Record estimated image prompt tokens for direct screenshot-backed LLM calls. */
   private recordPromptImageUsage(messages: LLMMessage[]): void {
-    recordImagePromptUsage(this.metrics, estimateImagePromptUsage(messages));
+    this.telemetry.recordPromptImageUsage(messages);
   }
 
   private imagePromptBudgetAllows(imageCount: number): boolean {
-    return canSpendImagePromptBudget(
-      this.metrics,
-      imagePromptUsageForCount(imageCount),
-      this.maxImagePromptTokenEstimate,
-    );
+    return this.telemetry.imagePromptBudgetAllows(imageCount);
   }
 
   private recordImagePromptBudgetExhausted(
     imageCount: number,
     source: string,
   ): void {
-    const requested = imagePromptUsageForCount(imageCount);
-    const used = this.metrics.totalImagePromptTokenEstimate ?? 0;
-    const max = resolveImagePromptTokenBudget(this.maxImagePromptTokenEstimate);
-    const detail = {
-      source,
-      requestedImages: imageCount,
-      requestedTokenEstimate: requested.estimatedTokens,
-      usedTokenEstimate: used,
-      maxTokenEstimate: max,
-      remainingTokenEstimate: Math.max(0, max - used),
-    };
-    this.traceRecorder?.recordEvent("image_prompt_budget_exhausted", detail);
-    this.log.info("agent", "Image prompt budget exhausted", detail);
+    this.telemetry.recordImagePromptBudgetExhausted(imageCount, source);
   }
 
   /** Get the current accumulated metrics snapshot */
   public getMetrics(): SessionMetrics {
-    return sessionMetricsSnapshot({
-      metrics: this.metrics,
-      now: Date.now(),
-      sessionStartTime: this.sessionStartTime,
-    });
+    return this.telemetry.getMetrics();
   }
 
   /** Record a citation for a URL the agent visited or read */
   private recordCitation(url: string, title: string, tool: ToolName): void {
-    recordTelemetryCitation({
-      citations: this.citations,
-      citationUrls: this.citationUrls,
-      url,
-      title,
-      tool,
-      turn: this.turnCount,
-    });
+    this.telemetry.recordCitation(url, title, tool);
   }
 
   /** Get collected citations */
   public getCitations(): Citation[] {
-    return this.citations;
+    return this.telemetry.getCitations();
   }
 
   /** Broadcast metrics to side panel (throttled) */
   private broadcastMetrics(): void {
-    if (
-      !shouldBroadcastSessionMetrics({
-        showSessionMetrics: this.showSessionMetrics,
-        turnCount: this.turnCount,
-        interval: BROADCAST_INTERVALS.METRICS,
-      })
-    )
-      return;
-
-    this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
-    this.broadcast(sessionMetricsMessage(this.metrics));
+    this.telemetry.broadcastMetrics();
   }
 
   private broadcastFinalMetrics(): void {
-    if (!this.showSessionMetrics) return;
-    this.metrics.totalSessionTimeMs = Date.now() - this.sessionStartTime;
-    this.broadcast(sessionMetricsMessage(this.metrics));
+    this.telemetry.broadcastFinalMetrics();
   }
 
   constructor(
@@ -992,11 +898,20 @@ export class AgentLoop {
       resumeInteraction?: PendingUserInteraction | null;
     },
   ) {
-    this.showSessionMetrics = options?.showSessionMetrics ?? false;
     this.perceptionModeOption = options?.perceptionMode;
     this.useVLExecutorOption = options?.useVLExecutor;
-    this.maxImagePromptTokenEstimate = options?.maxImagePromptTokenEstimate;
     this.providerModeOption = options?.providerMode;
+    this.telemetry = new AgentTelemetryController({
+      getTurnCount: () => this.turnCount,
+      getTraceRecorder: () => this.traceRecorder,
+      getLog: () => this.log,
+      getProvider: () =>
+        this.llm.getCurrentProvider() as ProviderConfig["providerId"],
+      getModel: () => this.llm.getCurrentModel(),
+      broadcast: (msg) => this.broadcast(msg),
+      showSessionMetrics: options?.showSessionMetrics ?? false,
+      maxImagePromptTokenEstimate: options?.maxImagePromptTokenEstimate,
+    });
     // Capability gate input: resolve the executor the same way LLMClient
     // does, so the mode decision and the wire agree on what model acts.
     this.executorVLCapable = isVLCapable(
@@ -1133,7 +1048,7 @@ export class AgentLoop {
       result,
       taskId: this.taskId,
       planSubtasks: this.planSubtasks,
-      mutationLedger: this.mutationLedger,
+      mutationLedger: this.checkpoints.ledger,
       evidenceAccumulator: this.evidenceAccumulator,
       context: this.context,
       traceRecorder: this.traceRecorder,
@@ -1190,10 +1105,10 @@ export class AgentLoop {
         pageUrl: snapshot?.url ?? null,
 
         // Phase 2
-        stepMutationLedger: this.mutationLedger.entries,
+        stepMutationLedger: this.checkpoints.entries,
 
         // Phase 4
-        sideEffectsLog: this.mutationLedger.sideEffects,
+        sideEffectsLog: this.checkpoints.sideEffects,
         completedResult: this.completedResult
           ? {
               outcome: "completed",
@@ -1207,8 +1122,7 @@ export class AgentLoop {
             }
           : undefined,
       };
-      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
-      await chrome.storage.local.set({ [key]: cp });
+      await this.checkpoints.persist(this.workspaceId, this.nodeId, cp);
     } catch (e) {
       this.log.warn("agent", "Failed to save turn checkpoint", { error: e });
     }
@@ -1254,7 +1168,7 @@ export class AgentLoop {
         this.llm.switchToExecutor();
       }
 
-      this.mutationLedger.restore(cp.stepMutationLedger, cp.sideEffectsLog);
+      this.checkpoints.restoreLedger(cp.stepMutationLedger, cp.sideEffectsLog);
       this.completedResult = cp.completedResult
         ? {
             outcome: "completed",
@@ -1268,8 +1182,8 @@ export class AgentLoop {
       this.log.info("agent", "Restored from turn checkpoint", {
         turn: cp.turnCount,
         historyMessages: cp.history.originalCount,
-        ledgerEntries: this.mutationLedger.entries.length,
-        sideEffects: this.mutationLedger.sideEffects.length,
+        ledgerEntries: this.checkpoints.entries.length,
+        sideEffects: this.checkpoints.sideEffects.length,
         completed: Boolean(this.completedResult),
       });
       return true;
@@ -1285,8 +1199,7 @@ export class AgentLoop {
   private async clearTurnCheckpoint(): Promise<void> {
     if (!this.nodeId || !this.workspaceId) return;
     try {
-      const key = turnCheckpointKey(this.workspaceId, this.nodeId);
-      await chrome.storage.local.remove(key);
+      await this.checkpoints.clear(this.workspaceId, this.nodeId);
     } catch {
       // Best-effort cleanup
     }
@@ -1297,7 +1210,7 @@ export class AgentLoop {
     args: Record<string, unknown>,
   ): { result: string; source: "ledger" | "ephemeral" } | null {
     const currentSnapshot = this.context.getSnapshot?.() ?? null;
-    return this.mutationLedger.lookup(
+    return this.checkpoints.lookupReplay(
       toolName,
       args,
       currentSnapshot,
@@ -1381,7 +1294,7 @@ export class AgentLoop {
     result: string,
     actionSnapshot?: DomSnapshot | null,
   ): void {
-    this.mutationLedger.record({
+    this.checkpoints.recordMutation({
       toolName,
       args,
       result,
@@ -1561,7 +1474,7 @@ export class AgentLoop {
       .sendMessage(
         runtimeBroadcastMessage({
           msg,
-          citations: this.citations,
+          citations: this.telemetry.getCitations(),
           workspaceId: this.workspaceId,
           requestId: crypto.randomUUID(),
         }),
@@ -4068,7 +3981,7 @@ export class AgentLoop {
   }
 
   public recordCachedVisionUsage(): void {
-    recordCachedVisionTelemetryUse(this.metrics);
+    this.telemetry.recordCachedVisionUse();
   }
 
   private getJobApplicationApprovalTaskText(): string {
@@ -4127,10 +4040,8 @@ export class AgentLoop {
     this.completionEvidence.clear();
     this.completedResult = null;
     this.perception.reset();
-    this.metrics = emptySessionMetrics();
-    this.contextSpend.reset();
+    this.telemetry.reset();
     this.previousSnapshotForDelta = null;
-    this.sessionStartTime = Date.now();
     this.traceRecorder = new TraceRecorder(crypto.randomUUID());
     this.log = logger.withSessionId(this.traceRecorder.sessionId);
     this.traceRecorder.setSessionInfo(
@@ -4233,10 +4144,8 @@ export class AgentLoop {
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: initialUserText ?? "",
-      imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
-      maxImagePromptTokens: resolveImagePromptTokenBudget(
-        this.maxImagePromptTokenEstimate,
-      ),
+      imagePromptTokensUsed: this.telemetry.imagePromptTokensUsed,
+      maxImagePromptTokens: this.telemetry.imagePromptTokenBudget,
       // Conservative high-detail estimate; the final runtime gates enforce the
       // same cap before any screenshot-backed prompt is sent.
       nextImagePromptTokenEstimate: imagePromptUsageForCount(1).estimatedTokens,
@@ -4244,7 +4153,7 @@ export class AgentLoop {
     });
     this.useVLExecutor = perceptionDecision.mode === "unified_vl";
     const autoDefault = PERCEPTION_AUTO_DEFAULT_MODE;
-    recordPerceptionModeDecision(this.metrics, perceptionDecision, autoDefault);
+    this.telemetry.recordPerceptionMode(perceptionDecision, autoDefault);
     this.log.info("agent", "Resolved perception runtime mode", {
       mode: perceptionDecision.mode,
       reason: perceptionDecision.reason,
@@ -4734,7 +4643,7 @@ export class AgentLoop {
 
     // 2. Clear history and idempotency ledger (keeps DOM snapshot)
     this.context.clearHistory();
-    this.mutationLedger.clearReplayState();
+    this.checkpoints.clearReplayState();
 
     // 3. Re-inject original query
     this.context.addMessage({
@@ -5092,8 +5001,7 @@ export class AgentLoop {
           result.freshnessReason === "stale_fingerprint" &&
           typeof result.staleReinterpretChanged === "boolean"
         ) {
-          recordStaleReinterpretOutcome(
-            this.metrics,
+          this.telemetry.recordStaleReinterpret(
             result.staleReinterpretChanged,
           );
         }
@@ -5221,17 +5129,15 @@ export class AgentLoop {
       providerMode: this.providerModeOption,
       executorVLCapable: this.executorVLCapable,
       taskText: this.originalQuery ?? "",
-      imagePromptTokensUsed: this.metrics.totalImagePromptTokenEstimate ?? 0,
-      maxImagePromptTokens: resolveImagePromptTokenBudget(
-        this.maxImagePromptTokenEstimate,
-      ),
+      imagePromptTokensUsed: this.telemetry.imagePromptTokensUsed,
+      maxImagePromptTokens: this.telemetry.imagePromptTokenBudget,
       nextImagePromptTokenEstimate: imagePromptUsageForCount(1).estimatedTokens,
       ...extractPerceptionPageSignals(snapshot),
     });
     const previousMode = this.useVLExecutor ? "unified_vl" : "structured";
     this.useVLExecutor = decision.mode === "unified_vl";
     const autoDefault = PERCEPTION_AUTO_DEFAULT_MODE;
-    recordPerceptionModeDecision(this.metrics, decision, autoDefault);
+    this.telemetry.recordPerceptionMode(decision, autoDefault);
 
     if (previousMode === decision.mode) return;
 
@@ -5255,8 +5161,7 @@ export class AgentLoop {
     // LP-13 guardrail: a staged zoom never crosses the turn boundary.
     this.context.setRegionZoomForExecutor(null);
     this.updatePerceptionRuntimeModeFromSnapshot(this.context.getSnapshot());
-    recordPerceptionTurnMode(
-      this.metrics,
+    this.telemetry.recordPerceptionTurn(
       this.useVLExecutor ? "unified_vl" : "structured",
     );
     if (this.useVLExecutor) {
@@ -8773,7 +8678,7 @@ export class AgentLoop {
       // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
       // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
       if (!this.guardAfterDoneRejection) {
-        this.mutationLedger.clearEphemeral();
+        this.checkpoints.clearEphemeral();
       }
       this.guardAfterDoneRejection = false;
 
@@ -8781,7 +8686,7 @@ export class AgentLoop {
         this.middleware.shouldHaltTurn(
           this.turnCount,
           this.maxTurns,
-          this.sessionStartTime,
+          this.telemetry.sessionStartTime,
         )
       ) {
         const haltMessage =
@@ -8919,7 +8824,7 @@ export class AgentLoop {
       this.context.setTimeContext(
         this.turnCount,
         this.maxTurns,
-        this.sessionStartTime,
+        this.telemetry.sessionStartTime,
       );
       // Emit trace events on budget urgency level transitions
       {
@@ -9358,7 +9263,7 @@ export class AgentLoop {
               ),
             });
             if (
-              this.contextSpend.recordProgress(
+              this.telemetry.recordContextProgress(
                 this.turnCount,
                 observationProgressSignals,
               )
@@ -10311,7 +10216,7 @@ export class AgentLoop {
                   });
                 }
                 if (
-                  this.contextSpend.recordProgress(
+                  this.telemetry.recordContextProgress(
                     this.turnCount,
                     spendProgressSignals,
                   )
