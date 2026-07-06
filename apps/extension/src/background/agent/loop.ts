@@ -127,6 +127,7 @@ import type { TurnCheckpoint } from "./checkpoint-types";
 import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
 import { TurnState } from "./turn-state";
+import { EscalationTierController } from "./escalation-tier-controller";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -8221,30 +8222,16 @@ export class AgentLoop {
     let consecutiveTextOnly = 0;
     let totalTextOnly = 0;
     let doneSummary = "";
-    let wasStuck = false; // Track stuck state for "resolved" signal
-
-    // Two-tier escalation: 0=executor, 1=planner
-    // plan-then-act: start at tier 1 (planner) for orientation, then hand off to tier 0 (executor)
-    // Exception: when orchestrator sets preferredModelTier="executor", skip orientation entirely
-    let escalationTier: number;
-    let orientationPhase: boolean;
-    if (this.preferredModelTier === "executor") {
-      escalationTier = 0;
-      orientationPhase = false;
-    } else {
-      escalationTier = 1;
+    // Two-tier escalation state machine (0=executor, 1=planner). plan-then-act:
+    // start at tier 1 (planner) for orientation, then hand off to tier 0
+    // (executor). Exception: preferredModelTier="executor" skips orientation.
+    const esc = new EscalationTierController({
+      startOnPlanner: this.preferredModelTier !== "executor",
+      orientationPhaseTurns: ORIENTATION.PHASE_TURNS,
+    });
+    if (esc.orientationPhase) {
       this.escalateModel(); // Start with planner model (plan phase)
-      orientationPhase = true; // true during initial planner model orientation
     }
-    let escalationCycles = 0;
-    let cooldownRemaining = 0;
-    let plannerModelStartTurn = 0; // turn when auto-escalation fired
-    let consecutiveProgressSignals = 0; // progress gate for de-escalation
-    let freshStartCount = 0; // S3: fresh-start recovery counter
-
-    // Complexity-adaptive orientation: extend planner phase when investigation tools are used
-    let effectiveOrientationTurns: number = ORIENTATION.PHASE_TURNS;
-    const orientationToolsUsed = new Set<string>();
 
     // Budget urgency: track level transitions for trace events
     let previousBudgetUrgencyLevel: "normal" | "low" | "critical" = "normal";
@@ -8328,7 +8315,7 @@ export class AgentLoop {
       consecutiveTextOnly = 0;
       recentSuccesses.length = 0;
       if (options?.resetProgressSignals) {
-        consecutiveProgressSignals = 0;
+        esc.consecutiveProgressSignals = 0;
       }
       if (options?.resetStepEscalation) {
         turnsSinceStepEscalation = -1;
@@ -8337,7 +8324,7 @@ export class AgentLoop {
         this.consecutiveZeroEffectTurns = 0;
       }
       if (options?.clearStuckFlag) {
-        wasStuck = false;
+        esc.wasStuck = false;
       }
     };
 
@@ -8356,9 +8343,9 @@ export class AgentLoop {
     }): void => {
       this.escalateModel();
       if (bumpStepCounter) this.escalationsOnCurrentStep++;
-      escalationTier = 1;
-      orientationPhase = false;
-      plannerModelStartTurn = this.turnCount;
+      esc.tier = 1;
+      esc.orientationPhase = false;
+      esc.plannerModelStartTurn = this.turnCount;
     };
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
@@ -8406,17 +8393,17 @@ export class AgentLoop {
       }
 
       // Decrement de-escalation cooldown
-      if (cooldownRemaining > 0) cooldownRemaining--;
+      if (esc.cooldownRemaining > 0) esc.cooldownRemaining--;
 
       // plan-then-act handoff: planner model has oriented, hand off to executor model
       // Complexity-adaptive: extend orientation when investigation tools are used
       if (
-        orientationPhase &&
-        escalationTier === 1 &&
-        orientationToolsUsed.size > 0 &&
-        effectiveOrientationTurns === ORIENTATION.PHASE_TURNS
+        esc.orientationPhase &&
+        esc.tier === 1 &&
+        esc.orientationToolsUsed.size > 0 &&
+        esc.effectiveOrientationTurns === ORIENTATION.PHASE_TURNS
       ) {
-        effectiveOrientationTurns = Math.min(
+        esc.effectiveOrientationTurns = Math.min(
           ORIENTATION.PHASE_TURNS + INVESTIGATION_EXTENSION,
           MAX_ORIENTATION_TURNS,
         );
@@ -8425,20 +8412,20 @@ export class AgentLoop {
           "Investigation detected, extending orientation",
           {
             turn: this.turnCount,
-            tools: [...orientationToolsUsed],
-            effectiveOrientationTurns,
+            tools: [...esc.orientationToolsUsed],
+            effectiveOrientationTurns: esc.effectiveOrientationTurns,
           },
         );
       }
       if (
-        orientationPhase &&
-        this.turnCount > effectiveOrientationTurns &&
-        escalationTier === 1
+        esc.orientationPhase &&
+        this.turnCount > esc.effectiveOrientationTurns &&
+        esc.tier === 1
       ) {
-        orientationPhase = false;
+        esc.orientationPhase = false;
         prevElementCount = await this.deescalateModel(tabId, prevElementCount);
-        escalationTier = 0;
-        cooldownRemaining = this.limits.escalationCooldown;
+        esc.tier = 0;
+        esc.cooldownRemaining = this.limits.escalationCooldown;
         const briefing = buildHandoffBriefing(
           this.context.getMessages(),
           this.context.getSnapshot(),
@@ -8459,7 +8446,7 @@ export class AgentLoop {
         );
         this.log.info("agent", "plan-then-act handoff", {
           turn: this.turnCount,
-          orientationTurns: effectiveOrientationTurns,
+          orientationTurns: esc.effectiveOrientationTurns,
         });
       }
 
@@ -8560,8 +8547,8 @@ export class AgentLoop {
         const rescueAssessment = this.escalationRescue.assess({
           turn: this.turnCount,
           maxTurns: this.maxTurns,
-          escalationTier,
-          cooldownRemaining,
+          escalationTier: esc.tier,
+          cooldownRemaining: esc.cooldownRemaining,
           planSubtaskCount: this.planSubtasks.length,
           planCompletedCount: this.planSubtasks.filter(
             (subtask) => subtask.status === "completed",
@@ -8846,8 +8833,8 @@ export class AgentLoop {
                 blockedActions,
                 recentSuccesses,
                 discoveredTagIds,
-                orientationPhase,
-                orientationToolsUsed,
+                orientationPhase: esc.orientationPhase,
+                orientationToolsUsed: esc.orientationToolsUsed,
                 domModified,
                 visuallyModified,
                 lastDomAffectingToolName,
@@ -8876,9 +8863,9 @@ export class AgentLoop {
                 state: {
                   tabId,
                   prevElementCount,
-                  escalationTier,
-                  plannerModelStartTurn,
-                  orientationPhase,
+                  escalationTier: esc.tier,
+                  plannerModelStartTurn: esc.plannerModelStartTurn,
+                  orientationPhase: esc.orientationPhase,
                   recentToolCalls,
                   verifiedFinalClickBypassKeys,
                   lastReadElementId,
@@ -8886,7 +8873,7 @@ export class AgentLoop {
                   blockedActions,
                   recentSuccesses,
                   discoveredTagIds,
-                  orientationToolsUsed,
+                  orientationToolsUsed: esc.orientationToolsUsed,
                   domModified,
                   visuallyModified,
                   lastDomAffectingToolName,
@@ -8898,13 +8885,13 @@ export class AgentLoop {
             );
           tabId = sequentialDispatch.tabId;
           prevElementCount = sequentialDispatch.prevElementCount;
-          if (sequentialDispatch.escalationTier > escalationTier) {
+          if (sequentialDispatch.escalationTier > esc.tier) {
             // Voluntary escalate() tool call upgraded the tier this turn.
             this.escalationRescue.noteEscalation(this.turnCount, "voluntary");
           }
-          escalationTier = sequentialDispatch.escalationTier;
-          plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
-          orientationPhase = sequentialDispatch.orientationPhase;
+          esc.tier = sequentialDispatch.escalationTier;
+          esc.plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
+          esc.orientationPhase = sequentialDispatch.orientationPhase;
           lastReadElementId = sequentialDispatch.lastReadElementId;
           consecutiveReadElementSameId =
             sequentialDispatch.consecutiveReadElementSameId;
@@ -9147,7 +9134,7 @@ export class AgentLoop {
           //        rejection handler this turn, escalate to planner mode now.
           if (this.pendingDoneRejectionEscalation) {
             this.pendingDoneRejectionEscalation = false;
-            if (escalationTier === 0) {
+            if (esc.tier === 0) {
               beginPlannerEscalation({ bumpStepCounter: false });
               this.escalationRescue.noteEscalation(
                 this.turnCount,
@@ -9387,8 +9374,8 @@ export class AgentLoop {
               hasTaskId: Boolean(this.taskId),
               planSubtaskCount: this.planSubtasks.length,
               turnsOnCurrentStep: this.turnsOnCurrentStep,
-              escalationTier,
-              cooldownRemaining,
+              escalationTier: esc.tier,
+              cooldownRemaining: esc.cooldownRemaining,
               warnTurns: this.limits.stepWarnTurns,
               escalateTurns: this.limits.stepEscalateTurns,
               deferForStateChangingAction:
@@ -9399,7 +9386,7 @@ export class AgentLoop {
                 turn: this.turnCount,
                 turnsOnStep: this.turnsOnCurrentStep,
                 stepIndex: this.lastPlanIndex,
-                fromTier: escalationTier,
+                fromTier: esc.tier,
               });
               this.traceRecorder?.recordEvent("step_watchdog_escalate", {
                 turnsOnStep: this.turnsOnCurrentStep,
@@ -9483,8 +9470,8 @@ export class AgentLoop {
         const sameUrlEscalation = doneSignaled
           ? { kind: "none" as const }
           : assessSameUrlForcedEscalation({
-              escalationTier,
-              cooldownRemaining,
+              escalationTier: esc.tier,
+              cooldownRemaining: esc.cooldownRemaining,
               sameUrlTurns: this.stagnation.sameUrlTurns,
               sameUrlEscalate: this.limits.sameUrlEscalate,
             });
@@ -10174,8 +10161,8 @@ export class AgentLoop {
                   } else if (
                     zeroEffectDecision.kind === "escalate" &&
                     zeroEffectDecision.message &&
-                    escalationTier === 0 &&
-                    cooldownRemaining <= 0
+                    esc.tier === 0 &&
+                    esc.cooldownRemaining <= 0
                   ) {
                     this.context.addMessage({
                       role: "user",
@@ -10218,7 +10205,7 @@ export class AgentLoop {
                     });
                     consecutiveTextOnly = 0;
                     recentSuccesses.length = 0;
-                    consecutiveProgressSignals = 0;
+                    esc.consecutiveProgressSignals = 0;
                     this.consecutiveZeroEffectTurns = 0;
                     subgoalAttempts.length = 0;
                     this.stepHandler(
@@ -10275,15 +10262,15 @@ export class AgentLoop {
                     message: progressSignal.message,
                   },
                 });
-                wasStuck = true;
+                esc.wasStuck = true;
 
                 // S3: Fresh-start recovery — full context reset when escalation cycles exhaust
                 if (
-                  escalationCycles >= FRESH_START.TRIGGER_ESCALATION_CYCLE &&
-                  freshStartCount < this.limits.maxFreshStarts &&
+                  esc.escalationCycles >= FRESH_START.TRIGGER_ESCALATION_CYCLE &&
+                  esc.freshStartCount < this.limits.maxFreshStarts &&
                   this.turnCount >= FRESH_START.MIN_TURNS_BEFORE_RESET
                 ) {
-                  freshStartCount++;
+                  esc.freshStartCount++;
                   const causalSummary = summarizeCausalChain(
                     this.context.getMessages(),
                     ROLLING_DISTILL.MAX_SUMMARY_ENTRIES,
@@ -10294,7 +10281,7 @@ export class AgentLoop {
                       : "";
                   const currentUrl = this.context.getCurrentUrl();
                   const brief = [
-                    `FRESH START #${freshStartCount} — previous approach exhausted after ${this.turnCount} turns.`,
+                    `FRESH START #${esc.freshStartCount} — previous approach exhausted after ${this.turnCount} turns.`,
                     `Original task: "${this.originalQuery}"`,
                     planState,
                     causalSummary ? `What was tried:\n${causalSummary}` : "",
@@ -10306,15 +10293,15 @@ export class AgentLoop {
 
                   // Record trace events
                   this.traceRecorder?.recordEvent("fresh_start_recovery", {
-                    freshStartNumber: freshStartCount,
+                    freshStartNumber: esc.freshStartCount,
                     totalTurnsSoFar: this.turnCount,
-                    escalationCycles,
+                    escalationCycles: esc.escalationCycles,
                   });
                   this.traceRecorder?.recordEvent("multi_turn_pathology", {
                     pathology: "compound_degradation",
                     trigger: "fresh_start",
                     turn: this.turnCount,
-                    details: `escalationCycles=${escalationCycles} freshStart=${freshStartCount}`,
+                    details: `esc.escalationCycles=${esc.escalationCycles} freshStart=${esc.freshStartCount}`,
                   });
 
                   // Reset context with the brief
@@ -10329,18 +10316,18 @@ export class AgentLoop {
                   recentOutcomes.length = 0;
                   recentSuccesses.length = 0;
                   consecutiveAllFailTurns = 0;
-                  escalationCycles = 0;
-                  cooldownRemaining = 0;
+                  esc.escalationCycles = 0;
+                  esc.cooldownRemaining = 0;
                   this.escalationsOnCurrentStep = 0;
                   lastReadElementId = null;
                   consecutiveReadElementSameId = 0;
 
                   // Ensure planner tier
-                  if (escalationTier === 0) {
+                  if (esc.tier === 0) {
                     this.escalateModel();
-                    escalationTier = 1;
+                    esc.tier = 1;
                   }
-                  plannerModelStartTurn = this.turnCount;
+                  esc.plannerModelStartTurn = this.turnCount;
 
                   // Refresh snapshot
                   try {
@@ -10353,7 +10340,7 @@ export class AgentLoop {
                     {
                       id: crypto.randomUUID(),
                       type: "info",
-                      label: `Fresh start #${freshStartCount} — resetting context`,
+                      label: `Fresh start #${esc.freshStartCount} — resetting context`,
                       status: "done",
                       timestamp: Date.now(),
                     },
@@ -10361,16 +10348,16 @@ export class AgentLoop {
                   );
 
                   this.log.info("agent", "Fresh-start recovery", {
-                    freshStartCount,
+                    freshStartCount: esc.freshStartCount,
                     turn: this.turnCount,
-                    escalationCycles,
+                    escalationCycles: esc.escalationCycles,
                   });
-                  wasStuck = false;
+                  esc.wasStuck = false;
                   continue;
                 }
 
                 // Escalate: executor → planner (try replan first)
-                else if (escalationTier === 0 && cooldownRemaining <= 0) {
+                else if (esc.tier === 0 && esc.cooldownRemaining <= 0) {
                   // Try replan-on-escalation first
                   const stagnationReplanOk = await this.replanOnEscalation(
                     tabId,
@@ -10403,7 +10390,7 @@ export class AgentLoop {
                     });
                     consecutiveTextOnly = 0;
                     recentSuccesses.length = 0;
-                    consecutiveProgressSignals = 0;
+                    esc.consecutiveProgressSignals = 0;
                     this.stepHandler(
                       {
                         id: crypto.randomUUID(),
@@ -10416,19 +10403,19 @@ export class AgentLoop {
                     );
                   }
                 }
-              } else if (wasStuck) {
+              } else if (esc.wasStuck) {
                 // Only count as recovery if the page actually changed (stagnantTurns reset to 0).
                 // When stagnantTurns > 0, tracker returned null only because it's below threshold
                 // or escalation already fired — the agent is still stuck.
                 if (this.stagnation.isStillStuck()) {
-                  consecutiveProgressSignals = 0;
+                  esc.consecutiveProgressSignals = 0;
                 } else {
-                  consecutiveProgressSignals++;
+                  esc.consecutiveProgressSignals++;
                 }
 
                 // Require PROGRESS_GATE consecutive progress signals before de-escalating
                 if (
-                  consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE
+                  esc.consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE
                 ) {
                   this.broadcast({
                     type: "AGENT_STAGNATION",
@@ -10439,15 +10426,15 @@ export class AgentLoop {
                       message: "Agent is making progress again.",
                     },
                   });
-                  wasStuck = false;
-                  consecutiveProgressSignals = 0;
+                  esc.wasStuck = false;
+                  esc.consecutiveProgressSignals = 0;
 
                   // De-escalate if on planner model, under cycle limit,
                   // and the planner model has had enough turns to actually work
-                  const plannerTenure = this.turnCount - plannerModelStartTurn;
+                  const plannerTenure = this.turnCount - esc.plannerModelStartTurn;
                   if (
-                    escalationTier > 0 &&
-                    escalationCycles < this.limits.maxEscalationCycles &&
+                    esc.tier > 0 &&
+                    esc.escalationCycles < this.limits.maxEscalationCycles &&
                     plannerTenure >= ESCALATION_LIMITS.MIN_PLANNER_TENURE
                   ) {
                     prevElementCount = await this.deescalateModel(
@@ -10458,11 +10445,11 @@ export class AgentLoop {
                       role: "user",
                       content: DEESCALATION_REFLECTION,
                     });
-                    escalationTier = 0;
-                    cooldownRemaining =
+                    esc.tier = 0;
+                    esc.cooldownRemaining =
                       this.limits.escalationCooldown *
-                      Math.pow(2, escalationCycles);
-                    escalationCycles++;
+                      Math.pow(2, esc.escalationCycles);
+                    esc.escalationCycles++;
                     this.stagnation.resetEscalation();
 
                     this.stepHandler(
@@ -10480,7 +10467,7 @@ export class AgentLoop {
                 }
               } else {
                 // Not stuck — reset progress gate
-                consecutiveProgressSignals = 0;
+                esc.consecutiveProgressSignals = 0;
               }
             }
           } catch {
@@ -10684,7 +10671,7 @@ export class AgentLoop {
         this.log.warn("agent", "LLM emitted text instead of tools", {
           turn: this.turnCount,
           consecutiveTextOnly,
-          tier: escalationTier,
+          tier: esc.tier,
           filler,
           recentProgress: !!recentProgress,
           text: cleanContent?.slice(0, 80),
@@ -10703,8 +10690,8 @@ export class AgentLoop {
         // Escalate to next tier on 3rd consecutive text-only (with minimum turn gate)
         if (
           consecutiveTextOnly >= 3 &&
-          escalationTier < 1 &&
-          cooldownRemaining <= 0 &&
+          esc.tier < 1 &&
+          esc.cooldownRemaining <= 0 &&
           this.turnCount >= 4
         ) {
           // Try replan-on-escalation first
@@ -10755,7 +10742,7 @@ export class AgentLoop {
             turns: this.turnCount,
             consecutiveTextOnly,
             totalTextOnly,
-            tier: escalationTier,
+            tier: esc.tier,
           });
           const stuckMsg =
             cleanContent || "The agent appears stuck and cannot continue.";
@@ -10774,9 +10761,9 @@ export class AgentLoop {
 
         // Planner model turn-based give-up
         const plannerTurns =
-          escalationTier > 0 ? this.turnCount - plannerModelStartTurn : 0;
+          esc.tier > 0 ? this.turnCount - esc.plannerModelStartTurn : 0;
         if (
-          escalationTier > 0 &&
+          esc.tier > 0 &&
           plannerTurns >= this.limits.stuckGiveUpPlanner &&
           totalTextOnly >= 3
         ) {
@@ -10784,7 +10771,7 @@ export class AgentLoop {
             turns: this.turnCount,
             plannerTurns,
             totalTextOnly,
-            tier: escalationTier,
+            tier: esc.tier,
           });
           const stuckMsg =
             "The agent is struggling to make progress. Send a follow-up with more specific instructions.";
