@@ -47,7 +47,7 @@ function rejected(kind: string): CompletionEvaluation {
 
 function deps(over: Partial<CompletionPipelineDeps> = {}): CompletionPipelineDeps {
   return {
-    kernelDecision: accepted,
+    getKernelDecision: () => accepted,
     deterministicAcceptanceEnabled: false,
     isDuplicateTerminal: false,
     validatePlan: async () => null,
@@ -73,7 +73,7 @@ describe("runCompletionPipeline", () => {
   test("kernel acceptance returns basis kernel", async () => {
     const d = await runCompletionPipeline(
       ctx(),
-      deps({ deterministicAcceptanceEnabled: true, kernelDecision: accepted }),
+      deps({ deterministicAcceptanceEnabled: true, getKernelDecision: () => accepted }),
     );
     expect(d.verdict).toBe("accept");
     expect(d.basis).toBe("kernel");
@@ -84,7 +84,7 @@ describe("runCompletionPipeline", () => {
       ctx(),
       deps({
         deterministicAcceptanceEnabled: true,
-        kernelDecision: rejected("money_table"),
+        getKernelDecision: () => rejected("money_table"),
       }),
     );
     expect(d.verdict).toBe("reject");
@@ -97,7 +97,7 @@ describe("runCompletionPipeline", () => {
       ctx({ lastContractRejectionKind: "money_table", consecutiveSameKindRejections: 2 }),
       deps({
         deterministicAcceptanceEnabled: true,
-        kernelDecision: rejected("money_table"),
+        getKernelDecision: () => rejected("money_table"),
       }),
     );
     expect(d.verdict).toBe("accept");

@@ -46,8 +46,13 @@ export interface PlannerValidationResult {
 }
 
 export interface CompletionPipelineDeps {
-  /** Precomputed frozen-kernel evaluation for this done() attempt. */
-  kernelDecision: CompletionEvaluation;
+  /**
+   * Frozen-kernel evaluation for this done() attempt, computed lazily so the
+   * live authority path only evaluates the kernel once summary + grounding have
+   * passed (matching legacy order + side-effects). Shadow/replay return a
+   * precomputed pure decision.
+   */
+  getKernelDecision: () => CompletionEvaluation;
   /** `this.completionDeterministicAcceptanceEnabled`. */
   deterministicAcceptanceEnabled: boolean;
   /** `Boolean(this.completedResult)` — duplicate terminal short-circuit. */
@@ -157,8 +162,8 @@ export async function runCompletionPipeline(
   decided = runGuard(assessGroundingGuard(ctx));
   if (decided) return decided;
 
-  // 4. Kernel evaluation (frozen kernel decision precomputed by the caller).
-  const kernel = deps.kernelDecision;
+  // 4. Kernel evaluation (lazy: only now, after summary + grounding passed).
+  const kernel = deps.getKernelDecision();
   if (deps.deterministicAcceptanceEnabled) {
     if (kernel.status === "accepted") {
       return {
