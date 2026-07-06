@@ -41,6 +41,7 @@ export function assessPendingAutocompleteGuard(
     effects: countingRejectEffects({
       traceEvent: "done_rejected_autocomplete_suggestion_pending",
       traceData: {
+        rejections: ctx.doneRejections + 1,
         inputTag: decision.inputTag,
         suggestionTag: decision.suggestionTag,
         value: decision.value,
@@ -109,6 +110,7 @@ export function assessListDetailGuard(
     effects: countingRejectEffects({
       traceEvent: "done_rejected_list_detail_incomplete",
       traceData: {
+        rejections: ctx.doneRejections + 1,
         openedDetailCount: ctx.listDetailOpenedCount,
         reviewedDetailCount: ctx.listDetailReviewedCount,
         visibleDetailActionCount: ctx.listDetailVisibleActionCount,

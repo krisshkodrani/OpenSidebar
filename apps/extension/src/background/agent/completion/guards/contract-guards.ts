@@ -55,12 +55,13 @@ export function assessTaskContractGuard(
       source: "task_contract",
       traceEvent: "done_rejected_task_contract",
       traceData: {
+        rejections: ctx.doneRejections + 1,
         reason: guard.reason,
         missingEntities: guard.summaryCoverage.missingEntities,
         missingNumbers: guard.summaryCoverage.missingNumbers,
         missingReturnTarget: guard.missingReturnTarget,
       },
-      blockedTraceData: { reason: guard.reason },
+      blockedTraceData: { rejections: ctx.doneRejections + 1, reason: guard.reason },
       summary: ctx.summary,
       primaryReason: reason,
       normalFallbackInstruction:
@@ -91,7 +92,11 @@ export function assessWorkflowContractGuard(
     reason,
     effects: countingRejectEffects({
       traceEvent: "done_rejected_workflow_contract",
-      traceData: { selectedSkillId: ctx.selectedSkillId, reason: guard.reason },
+      traceData: {
+        rejections: ctx.doneRejections + 1,
+        selectedSkillId: ctx.selectedSkillId,
+        reason: guard.reason,
+      },
       summary: ctx.summary,
       primaryReason: reason,
       fallbackInstruction:
@@ -117,6 +122,7 @@ export function assessMissingEvidenceGuard(
     effects: countingRejectEffects({
       traceEvent: "done_rejected_missing_evidence",
       traceData: {
+        rejections: ctx.doneRejections + 1,
         selectedSkillId: ctx.selectedSkillId,
         missingRequiredEvidence: missing,
       },

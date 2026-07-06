@@ -63,41 +63,14 @@ export interface CompletionPipelineDeps {
    * `planSubtaskCount > 0` gates the stage).
    */
   validatePlan: () => Promise<PlannerValidationResult | null>;
-}
-
-/** Build the kernel-reject effect set (mirrors rejectDoneFromCompletionDecision:2667). */
-function kernelRejectEffects(
-  ctx: CompletionGuardContext,
-  decision: CompletionEvaluation,
-): CompletionEffect[] {
-  const kind =
-    decision.status === "accepted" ? "" : (decision.contract?.kind ?? "");
-  const reason = decision.status === "accepted" ? "" : decision.reason;
-  return [
-    { type: "record_contract_rejection", kind },
-    { type: "increment_done_rejections" },
-    { type: "check_done_rejection_escalation" },
-    { type: "set_last_completion_rejection", decision },
-    {
-      type: "emit_trace",
-      event: "completion_decision",
-      data: {
-        turn: ctx.turnCount,
-        status: decision.status,
-        source: "model_done",
-        reason,
-        contractKind: kind,
-      },
-    },
-    {
-      type: "post_rejection_diagnostic",
-      summary: ctx.summary,
-      primaryReason: reason,
-      // Exact fallback (getCompletionRejectionInstruction) is rendered at apply
-      // time by the host in 7b; carry the reason as the structured anchor.
-      fallbackInstruction: "",
-    },
-  ];
+  /**
+   * Apply the kernel-reject effects (the loop-coupled
+   * rejectDoneFromCompletionDecision: same-kind counter, diagnostic message via
+   * getCompletionRejectionInstruction, the conditional pending-autocomplete
+   * trace). Called only on a non-bypassed kernel rejection; a no-op in
+   * shadow/replay (only the verdict is compared there).
+   */
+  onKernelReject: (decision: CompletionEvaluation) => void;
 }
 
 export async function runCompletionPipeline(
@@ -176,31 +149,42 @@ export async function runCompletionPipeline(
         effects: [...effects],
       };
     }
-    // rejected / needs_verification → same-kind bounce bypass, else reject.
-    const kind = kernel.contract?.kind ?? null;
-    const bypass =
-      ctx.lastContractRejectionKind === kind &&
-      ctx.consecutiveSameKindRejections >= 2;
-    if (bypass) {
-      effects.push({
-        type: "emit_trace",
-        event: "completion_contract_bypassed",
-        data: {
-          kind: ctx.lastContractRejectionKind,
-          consecutiveRejections: ctx.consecutiveSameKindRejections,
-        },
-      });
-      // fall through to the legacy bundle
-    } else {
-      return {
-        verdict: "reject",
-        basis: "kernel_reject",
-        contractKind: kind ?? "unknown",
-        rejectedBy: "kernel",
-        reason: kernel.reason ?? "",
-        recoveryHint: null,
-        effects: [...effects, ...kernelRejectEffects(ctx, kernel)],
-      };
+    // Only "rejected" / "needs_verification" decide at the kernel; any other
+    // status (e.g. "inconclusive") falls through to the legacy bundle exactly
+    // as legacy does.
+    if (
+      kernel.status === "rejected" ||
+      kernel.status === "needs_verification"
+    ) {
+      const kind = kernel.contract?.kind ?? null;
+      const bypass =
+        ctx.lastContractRejectionKind === kind &&
+        ctx.consecutiveSameKindRejections >= 2;
+      if (bypass) {
+        effects.push({
+          type: "emit_trace",
+          event: "completion_contract_bypassed",
+          data: {
+            kind: ctx.lastContractRejectionKind,
+            consecutiveRejections: ctx.consecutiveSameKindRejections,
+          },
+        });
+        // fall through to the legacy bundle
+      } else {
+        // Loop-coupled kernel-reject mutations are applied by the injected
+        // callback (rejectDoneFromCompletionDecision), so the decision carries
+        // only the pass-time effects accumulated so far.
+        deps.onKernelReject(kernel);
+        return {
+          verdict: "reject",
+          basis: "kernel_reject",
+          contractKind: kind ?? "unknown",
+          rejectedBy: "kernel",
+          reason: kernel.reason ?? "",
+          recoveryHint: null,
+          effects: [...effects],
+        };
+      }
     }
   }
   // (flag off → legacy records a shadow trace; the pipeline just advances.)

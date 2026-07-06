@@ -124,7 +124,11 @@ import {
   runCompletionPipeline,
   type PlannerValidationResult,
 } from "./completion/pipeline";
-import type { CompletionEffectHost } from "./completion/apply-effects";
+import type { CompletionPipelineDecision } from "./completion/pipeline-types";
+import {
+  applyCompletionEffects,
+  type CompletionEffectHost,
+} from "./completion/apply-effects";
 import {
   TURN_CHECKPOINT_VERSION,
   buildMutationKey,
@@ -2846,6 +2850,7 @@ export class AgentLoop {
         deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
         isDuplicateTerminal: input.isDuplicateTerminal,
         validatePlan: async () => input.plannerResult,
+        onKernelReject: () => {},
       });
       const pipelineAccepted = pipelineDecision.verdict === "accept";
       if (pipelineAccepted !== legacyVerdict) {
@@ -3051,111 +3056,139 @@ export class AgentLoop {
       return true;
     }
 
-    if (this.rejectDoneForCompletionSummaryPreflight(toolCallId, summary)) {
-      return false;
-    }
-
-    if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
-      return false;
-    }
-
-    const deterministicDone = this.evaluateCompletionCandidate(
-      "model_done",
-      summary,
+    // Authority: the pure completion pipeline decides (RFC LP-15, Phase 7b).
+    // The frozen kernel is evaluated lazily inside the pipeline (after summary +
+    // grounding pass) so its side-effects (evidence refresh, candidate traces,
+    // lastCompletionRejection) fire at the legacy point. The planner stage keeps
+    // its bespoke rejection handling (retry_step / auto-advance) via the injected
+    // dep. Declarative reject-side effects are applied by the effect host; the
+    // accept side maps the decision basis to an envelope + acceptDoneToolCall.
+    const snapshot = this.context.getSnapshot() ?? null;
+    const completionContext = this.getActiveCompletionContext();
+    const runningSubtaskIndex = this.planSubtasks.findIndex(
+      (step) => step.status === "running",
     );
-    if (this.completionDeterministicAcceptanceEnabled) {
-      if (deterministicDone.status === "accepted") {
-        const completionEnvelope = this.createCompletionEnvelope({
-          source: "model_done",
-          contractKind: deterministicDone.contract.kind,
-          decisionReason: deterministicDone.reason,
-          evidence: deterministicDone.evidence,
-          summary,
-        });
-        this.traceRecorder?.recordEvent("completion_decision", {
-          turn: this.turnCount,
-          status: deterministicDone.status,
-          source: "model_done",
-          reason: deterministicDone.reason,
-          contractKind: deterministicDone.contract.kind,
-          resultId: completionEnvelope.resultId,
-          evidenceKeys: deterministicDone.evidence.map(
-            (event) => event.logicalKey,
-          ),
-          completionEnvelope,
-        });
-        this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
-        return true;
-      }
-      if (
-        deterministicDone.status === "rejected" ||
-        deterministicDone.status === "needs_verification"
-      ) {
-        if (
-          this.lastContractRejectionKind === deterministicDone.contract.kind &&
-          this.consecutiveSameKindRejections >= 2
-        ) {
-          this.traceRecorder?.recordEvent("completion_contract_bypassed", {
-            kind: this.lastContractRejectionKind,
-            consecutiveRejections: this.consecutiveSameKindRejections,
-          } as any);
-          // Fall through to legacy guards
-        } else {
-          this.rejectDoneFromCompletionDecision(
-            toolCallId,
-            summary,
-            deterministicDone,
-          );
-          return false;
+    const ctx = this.buildCompletionGuardContext(
+      summary,
+      snapshot,
+      completionContext,
+      runningSubtaskIndex,
+    );
+
+    let kernelDecision: CompletionEvaluation | null = null;
+    const decision = await runCompletionPipeline(ctx, {
+      getKernelDecision: () => {
+        kernelDecision = this.evaluateCompletionCandidate("model_done", summary);
+        if (!this.completionDeterministicAcceptanceEnabled) {
+          this.recordShadowCompletionDecision(kernelDecision, summary);
         }
-      }
-    } else {
-      this.recordShadowCompletionDecision(deterministicDone, summary);
-    }
-
-    if (await this.rejectDoneBeforePlanValidation(toolCallId, summary, tabId)) {
-      return false;
-    }
-
-    // Planner validation: only when a plan exists
-    if (this.taskId && this.planSubtasks.length > 0) {
-      const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
-      let shouldReject = donePlanPrecheck.shouldReject;
-      let rejectReason = donePlanPrecheck.rejectReason;
-      const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
-      const completedMoneyTableAggregate =
-        donePlanPrecheck.completedMoneyTableAggregate;
-
-      ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
-        summary,
-        effectiveCurrentIdx,
-        completedMoneyTableAggregate,
-        shouldReject,
-        rejectReason,
-      ));
-
-      this.lastDonePlanValidation = {
-        rejected: shouldReject,
-        reason: rejectReason ?? "",
-      };
-
-      if (shouldReject) {
-        this.handleDonePlanRejection(
+        return kernelDecision;
+      },
+      deterministicAcceptanceEnabled:
+        this.completionDeterministicAcceptanceEnabled,
+      isDuplicateTerminal: false, // handled inline above
+      validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
+      onKernelReject: (decision) =>
+        // Only invoked on a kernel rejection, so the evaluation is a rejection.
+        this.rejectDoneFromCompletionDecision(
           toolCallId,
           summary,
-          rejectReason,
-          effectiveCurrentIdx,
-        );
-        return false;
-      }
-    }
+          decision as CompletionRejectionDecision,
+        ),
+    });
 
-    if (this.rejectDoneForPendingAutocompletePreflight(toolCallId, summary)) {
-      return false;
-    }
+    await applyCompletionEffects(
+      decision.effects,
+      this.createCompletionEffectHost(toolCallId, tabId),
+    );
 
-    if (this.rejectDoneForMissingRequiredEvidence(toolCallId, summary)) {
-      return false;
+    if (decision.verdict === "reject") return false;
+    return this.acceptFromPipelineDecision(
+      decision,
+      summary,
+      toolCallId,
+      kernelDecision,
+    );
+  }
+
+  /**
+   * Run the plan-validation stage as the pipeline's injected dep (RFC LP-15,
+   * Phase 7b). Preserves the legacy precheck → model-validation → bespoke
+   * handleDonePlanRejection flow; the rejection effects are applied here (not as
+   * pipeline effects), so the pipeline's planner reject carries none. Returns
+   * null when no plan applies.
+   */
+  private async runDonePlanValidation(
+    toolCallId: string,
+    summary: string,
+  ): Promise<PlannerValidationResult | null> {
+    if (!(this.taskId && this.planSubtasks.length > 0)) {
+      this.lastDonePlanValidation = null;
+      return null;
+    }
+    const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
+    let shouldReject = donePlanPrecheck.shouldReject;
+    let rejectReason = donePlanPrecheck.rejectReason;
+    const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
+    const completedMoneyTableAggregate =
+      donePlanPrecheck.completedMoneyTableAggregate;
+
+    ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
+      summary,
+      effectiveCurrentIdx,
+      completedMoneyTableAggregate,
+      shouldReject,
+      rejectReason,
+    ));
+
+    this.lastDonePlanValidation = {
+      rejected: shouldReject,
+      reason: rejectReason ?? "",
+    };
+
+    if (shouldReject) {
+      this.handleDonePlanRejection(
+        toolCallId,
+        summary,
+        rejectReason,
+        effectiveCurrentIdx,
+      );
+      return { rejected: true, reason: rejectReason ?? "" };
+    }
+    return { rejected: false, reason: "" };
+  }
+
+  /**
+   * Map an accepting pipeline decision to the loop-side accept actions (RFC
+   * LP-15, Phase 7b): build the completion envelope for the deciding basis, emit
+   * the completion_decision trace, and finalize via acceptDoneToolCall.
+   */
+  private acceptFromPipelineDecision(
+    decision: CompletionPipelineDecision,
+    summary: string,
+    toolCallId: string,
+    kernelDecision: CompletionEvaluation | null,
+  ): boolean {
+    if (decision.basis === "kernel" && kernelDecision?.status === "accepted") {
+      const completionEnvelope = this.createCompletionEnvelope({
+        source: "model_done",
+        contractKind: kernelDecision.contract.kind,
+        decisionReason: kernelDecision.reason,
+        evidence: kernelDecision.evidence,
+        summary,
+      });
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: "accepted",
+        source: "model_done",
+        reason: kernelDecision.reason,
+        contractKind: kernelDecision.contract.kind,
+        resultId: completionEnvelope.resultId,
+        evidenceKeys: kernelDecision.evidence.map((event) => event.logicalKey),
+        completionEnvelope,
+      });
+      this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
+      return true;
     }
 
     const completionEnvelope = this.createCompletionEnvelope({
