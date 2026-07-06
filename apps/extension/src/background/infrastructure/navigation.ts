@@ -6,6 +6,7 @@
  * listens for webNavigation.onCompleted, and resumes the agent loop.
  */
 
+import { chromePersistencePort } from "../environment/chrome";
 import {
   AgentStatus,
   AgentLoopState,
@@ -57,7 +58,7 @@ export async function saveNavigationState(
   };
 
   const key = storageKey(state.workspaceId, state.workerId);
-  await chrome.storage.local.set({ [key]: navState });
+  await chromePersistencePort.local.set({ [key]: navState });
   logger.info("navigation", "Saved navigation state", {
     fromUrl,
     toUrl: expectedUrl,
@@ -71,7 +72,7 @@ export async function saveNavigationState(
  */
 export async function loadNavigationState(): Promise<NavigationState | null> {
   // Try all stored keys matching the prefix pattern
-  const stored = await chrome.storage.local.get(null);
+  const stored = await chromePersistencePort.local.get(null);
   for (const [key, value] of Object.entries(stored)) {
     if (
       key.startsWith(STORAGE_KEY_PREFIX) &&
@@ -90,7 +91,7 @@ export async function loadNavigationState(): Promise<NavigationState | null> {
 export async function loadNavigationStateForTab(
   tabId: number,
 ): Promise<NavigationState | null> {
-  const stored = await chrome.storage.local.get(null);
+  const stored = await chromePersistencePort.local.get(null);
   for (const [key, value] of Object.entries(stored)) {
     if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
       const navState = value as NavigationState;
@@ -110,7 +111,7 @@ export async function clearNavigationState(
   workerId?: string | null,
 ): Promise<void> {
   const key = storageKey(workspaceId, workerId);
-  await chrome.storage.local.remove(key);
+  await chromePersistencePort.local.remove(key);
   logger.debug("navigation", "Cleared navigation state", { storageKey: key });
 }
 
@@ -293,14 +294,14 @@ async function handleTabRemoved(tabId: number): Promise<void> {
  */
 export async function checkStaleNavigationState(): Promise<void> {
   // Check all stored navigation states and clean up stale ones
-  const stored = await chrome.storage.local.get(null);
+  const stored = await chromePersistencePort.local.get(null);
   for (const [key, value] of Object.entries(stored)) {
     if (key.startsWith(STORAGE_KEY_PREFIX) && value) {
       const navState = value as NavigationState;
       if (navState.navigationStartTs) {
         const elapsed = Date.now() - navState.navigationStartTs;
         if (elapsed > (navState.timeoutMs || NAVIGATION_TIMEOUT_MS)) {
-          await chrome.storage.local.remove(key);
+          await chromePersistencePort.local.remove(key);
           logger.info(
             "navigation",
             "Cleaned up stale navigation state on startup",

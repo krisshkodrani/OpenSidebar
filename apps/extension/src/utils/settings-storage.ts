@@ -14,6 +14,7 @@ import {
   isExecutorEligible,
   type ProviderMode,
 } from "./executor-model-policy";
+import { chromePersistencePort } from "../background/environment/chrome";
 
 const SYNC_KEY = "userSettings";
 const SESSION_KEY = "openRouterApiKey"; // legacy session key (migration)
@@ -34,6 +35,10 @@ export type SettingsStorageKeys =
   | null
   | undefined;
 
+// Narrow storage interface the settings functions consume. The UI supplies a
+// runtime-routed backend (sidepanel/runtime.ts) that satisfies this shape; the
+// background default is the shared environment PersistencePort, which is a
+// superset (adds onChanged/session) and so satisfies it structurally.
 export interface SettingsStorageArea {
   get(keys?: SettingsStorageKeys): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
@@ -46,33 +51,9 @@ export interface SettingsStorageBackend {
   session: SettingsStorageArea;
 }
 
-function chromeStorageArea(
-  areaName: "local" | "sync" | "session",
-): SettingsStorageArea {
-  return {
-    get(keys) {
-      return chrome.storage[areaName].get(keys as any) as unknown as Promise<
-        Record<string, unknown>
-      >;
-    },
-    async set(items) {
-      await chrome.storage[areaName].set(items);
-    },
-    async remove(keys) {
-      const area = chrome.storage[areaName] as any;
-      const remove = area.remove;
-      if (typeof remove === "function") {
-        await remove.call(area, keys);
-      }
-    },
-  };
-}
-
-export const chromeSettingsStorage: SettingsStorageBackend = {
-  local: chromeStorageArea("local"),
-  sync: chromeStorageArea("sync"),
-  session: chromeStorageArea("session"),
-};
+// RFC LP-15, Phase 3: the chrome default is the shared environment port.
+export const chromeSettingsStorage: SettingsStorageBackend =
+  chromePersistencePort;
 
 export function normalizeMaxImagePromptTokenEstimate(value: unknown): number {
   const numericValue =

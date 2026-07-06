@@ -56,10 +56,22 @@ export type PersistenceStorageKeys =
   | null
   | undefined;
 
+export interface PersistenceStorageChange {
+  oldValue?: unknown;
+  newValue?: unknown;
+}
+
 export interface PersistenceStorageArea {
   get(keys?: PersistenceStorageKeys): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
+  /**
+   * Subscribe to changes in this storage area. Returns an unsubscribe function.
+   * The listener receives only the changed keys for this area.
+   */
+  onChanged(
+    listener: (changes: Record<string, PersistenceStorageChange>) => void,
+  ): () => void;
 }
 
 export interface PersistencePort {

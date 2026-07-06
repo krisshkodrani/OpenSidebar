@@ -1,36 +1,16 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import { CheckpointCoordinator } from "../../src/background/agent/checkpoint-coordinator";
-import type {
-  PersistencePort,
-  PersistenceStorageArea,
-} from "../../src/background/environment/types";
 import { turnCheckpointKey } from "../../src/background/agent/checkpoint-types";
 import type { TurnCheckpoint } from "../../src/background/agent/checkpoint-types";
+import { createFakePersistencePort } from "../fakes/persistence";
 
-/** Map-backed fake PersistencePort — the seed of the Phase 5 fake-port kit. */
 function createFakePersistence(): {
-  port: PersistencePort;
+  port: ReturnType<typeof createFakePersistencePort>["port"];
   store: Map<string, unknown>;
 } {
-  const store = new Map<string, unknown>();
-  const area: PersistenceStorageArea = {
-    async get(keys) {
-      if (typeof keys === "string") {
-        return store.has(keys) ? { [keys]: store.get(keys) } : {};
-      }
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of store) out[k] = v;
-      return out;
-    },
-    async set(items) {
-      for (const [k, v] of Object.entries(items)) store.set(k, v);
-    },
-    async remove(keys) {
-      for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
-    },
-  };
-  return { port: { local: area, sync: area, session: area }, store };
+  const { port, local } = createFakePersistencePort();
+  return { port, store: local.store };
 }
 
 function sampleCheckpoint(overrides: Partial<TurnCheckpoint> = {}): TurnCheckpoint {
