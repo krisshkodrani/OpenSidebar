@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import "../setup";
 import {
   buildFormStateCapturedEvidence,
+  classifyFormSubmitDryRun,
   diffFormStateAgainstDraft,
   renderFormStateDiff,
 } from "../../src/background/agent/mutation-dry-run-policy";
@@ -125,6 +126,38 @@ describe("diffFormStateAgainstDraft", () => {
     if (ev.type === "form_state_captured") {
       expect(ev.detail.formKey).toBe("/apply");
       expect(ev.detail.fields).toEqual([{ name: "fullName", value: "Sam" }]);
+    }
+  });
+
+  test("classifyFormSubmitDryRun: no_draft when there is no capture or no draft", () => {
+    expect(classifyFormSubmitDryRun(null, [{ label: "X", value: "1" }]).kind).toBe(
+      "no_draft",
+    );
+    expect(classifyFormSubmitDryRun(capture([{ name: "x", value: "1" }]), []).kind).toBe(
+      "no_draft",
+    );
+    expect(
+      classifyFormSubmitDryRun(capture([{ name: "x", value: "1" }]), null).kind,
+    ).toBe("no_draft");
+  });
+
+  test("classifyFormSubmitDryRun: clean when captured matches the draft", () => {
+    const c = classifyFormSubmitDryRun(
+      capture([{ name: "fullName", value: "Sam" }]),
+      [{ label: "Full name", value: "Sam" }],
+    );
+    expect(c.kind).toBe("clean");
+  });
+
+  test("classifyFormSubmitDryRun: unexpected carries a rendered diff", () => {
+    const c = classifyFormSubmitDryRun(
+      capture([{ name: "amount", value: "999" }]),
+      [{ label: "Amount", value: "100" }],
+    );
+    expect(c.kind).toBe("unexpected");
+    if (c.kind === "unexpected") {
+      expect(c.rendered).toContain("Amount");
+      expect(c.rendered).toContain('"100"');
     }
   });
 
