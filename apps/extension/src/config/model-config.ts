@@ -9,11 +9,9 @@ export interface LLMModelDefaults {
   openai: {
     executor: string;
     planner: string;
-    perception: string;
   };
   groq: {
     planner: string;
-    perception: string;
   };
   fireworks: {
     executor: string;
@@ -22,12 +20,10 @@ export interface LLMModelDefaults {
   moonshot: {
     executor: string;
     planner: string;
-    perception: string;
   };
   xiaomi: {
     executor: string;
     planner: string;
-    perception: string;
   };
   deepseek: {
     planner: string;
@@ -44,11 +40,9 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
     planner: "accounts/fireworks/routers/kimi-k2p6-turbo",
-    perception: "accounts/fireworks/routers/kimi-k2p6-turbo",
   },
   groq: {
     planner: "openai/gpt-oss-120b",
-    perception: "meta-llama/llama-4-scout-17b-16e-instruct",
   },
   fireworks: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.fireworks,
@@ -57,12 +51,10 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
   moonshot: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.moonshot,
     planner: "kimi-k2.6",
-    perception: "kimi-k2.6",
   },
   xiaomi: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.xiaomi,
     planner: "mimo-v2-pro",
-    perception: "mimo-v2-omni",
   },
   deepseek: {
     planner: "deepseek-v4-flash",

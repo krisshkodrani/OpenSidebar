@@ -58,12 +58,10 @@ const OPENAI_BASE_URL =
 export const OPENAI_MODEL_EXECUTOR =
   LLM_MODEL_CONFIG.openai.executor;
 export const OPENAI_MODEL_PLANNER = LLM_MODEL_CONFIG.openai.planner;
-export const OPENAI_MODEL_PERCEPTION = LLM_MODEL_CONFIG.openai.perception;
 
 /** Groq direct API */
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 export const GROQ_MODEL_PLANNER = LLM_MODEL_CONFIG.groq.planner;
-export const GROQ_MODEL_PERCEPTION = LLM_MODEL_CONFIG.groq.perception;
 
 function normalizeHeaderCredential(value: string): string {
   return value
@@ -208,14 +206,12 @@ const MOONSHOT_BASE_URL = "https://api.moonshot.ai/v1/chat/completions";
 export const MOONSHOT_MODEL_EXECUTOR =
   LLM_MODEL_CONFIG.moonshot.executor;
 export const MOONSHOT_MODEL_PLANNER = LLM_MODEL_CONFIG.moonshot.planner;
-export const MOONSHOT_MODEL_PERCEPTION = LLM_MODEL_CONFIG.moonshot.perception;
 
 /** Xiaomi MiMo direct API */
 const XIAOMI_BASE_URL = "https://api.xiaomimimo.com/v1/chat/completions";
 export const XIAOMI_MODEL_EXECUTOR =
   LLM_MODEL_CONFIG.xiaomi.executor;
 export const XIAOMI_MODEL_PLANNER = LLM_MODEL_CONFIG.xiaomi.planner;
-export const XIAOMI_MODEL_PERCEPTION = LLM_MODEL_CONFIG.xiaomi.perception;
 
 /** DeepSeek direct API (planner/verifier only; executor remains Fireworks). */
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com/chat/completions";
