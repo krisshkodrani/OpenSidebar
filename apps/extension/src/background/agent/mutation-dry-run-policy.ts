@@ -120,6 +120,31 @@ export function buildFormStateCapturedEvidence(
   };
 }
 
+/**
+ * The dry-run decision for a pending form submit (RFC LP-15 Phase 8):
+ *  - `no_draft`  → no approved field map / no capture; fall through to the
+ *                  normal approval gate unchanged.
+ *  - `clean`     → captured state matches the pre-approved draft; auto-approve
+ *                  the submit and seal the commit.
+ *  - `unexpected`→ a mismatch/missing field; route to HUMAN approval carrying
+ *                  the rendered diff.
+ */
+export type DryRunClassification =
+  | { kind: "no_draft" }
+  | { kind: "clean"; diff: FormStateDiff }
+  | { kind: "unexpected"; diff: FormStateDiff; rendered: string };
+
+export function classifyFormSubmitDryRun(
+  capture: FormStateCapture | null,
+  draft: FormFillFieldExpectation[] | null | undefined,
+): DryRunClassification {
+  if (!capture || !draft || draft.length === 0) return { kind: "no_draft" };
+  const diff = diffFormStateAgainstDraft(capture, draft);
+  return diff.clean
+    ? { kind: "clean", diff }
+    : { kind: "unexpected", diff, rendered: renderFormStateDiff(diff) };
+}
+
 /** Human-readable diff for the approval prompt (only the non-matching rows). */
 export function renderFormStateDiff(diff: FormStateDiff): string {
   const problems = diff.entries.filter((e) => e.status !== "match");
