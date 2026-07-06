@@ -5165,8 +5165,11 @@ export class AgentLoop {
       // Skip triagePopups — executor sees overlays in screenshot and calls dismiss_overlays.
       return;
     }
-    await this.refreshPerception(tabId);
-    await this.triagePopups(tabId);
+    // Text-only turn: no screenshot and no separate perception model. The
+    // executor works from the DOM element summary and dismisses overlays
+    // itself (via dismiss_overlays).
+    this.context.setScreenshotForExecutor(null);
+    this.context.setPageInterpretation(null);
   }
 
   /** Capture screenshot and store for VL executor injection (no perception VLM call). */
@@ -5256,8 +5259,7 @@ export class AgentLoop {
         },
       );
       this.context.setScreenshotForExecutor(null);
-      await this.refreshPerception(tabId);
-      await this.triagePopups(tabId);
+      this.context.setPageInterpretation(null);
     }
   }
 
@@ -6018,24 +6020,6 @@ export class AgentLoop {
         this.traceRecorder?.recordEvent("inspect_region", data),
       setRegionZoomForExecutor: (zoom) =>
         this.context.setRegionZoomForExecutor(zoom),
-      describeRegion: async ({ dataUrl, label, purpose }) => {
-        const result = await this.perception.describeRegion({
-          cropDataUrl: dataUrl,
-          regionLabel: label,
-          purpose,
-          signal: this.abortController?.signal,
-        });
-        if (result.usage) {
-          this.recordVisionUsage(
-            result.usage,
-            result.durationMs,
-            result.model,
-            result.providerId as ProviderConfig["providerId"] | undefined,
-            1,
-          );
-        }
-        return result.interpretation;
-      },
     };
   }
 
