@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-06
+
+Perception overhaul: the agent owns its screenshot pipeline end to end, sees the
+page more like a human (magnified regions, closed shadow roots, new-since-last-
+turn markers), and defaults to vision-in-the-loop perception where it helps.
+
+### Added
+
+- `inspect_region` tool (RFC LP-13): magnified zoom of a small target region,
+  cropped from the raw capture, for reading tiny text and controls.
+- New-element marking (RFC LP-10): elements new since the last snapshot are
+  flagged so the agent focuses on what changed.
+- Closed shadow-root traversal (RFC LP-12 Phase A): perception reaches elements
+  inside closed shadow DOM.
+- Perception telemetry: per-turn perception-mode counters and structured-turn
+  cache-efficacy counters in `SessionMetrics` (RFC LP-11); perception trace
+  events promoted to the typed trace registry.
+- `E2E_PLANNER_MODEL` override + a perception-default A/B harness for
+  planner-seat and perception evals.
+
+### Changed
+
+- **`unified_vl` is now the auto-mode default (RFC LP-11).** The runtime chooses
+  vision-in-the-loop perception by default when page/task signals warrant it,
+  behind an auto decision. Breaking: default perception behavior changes.
+- Executor default is now `kimi-k2p7-code`, behind an executor-eligibility
+  policy and a VL-capability gate in the perception mode decision.
+- Perception owns screenshot resolution / format / scale (RFC LP-9); zoom crops
+  come from the raw capture through a q90 pipeline input.
+- Prompt guidance: `inspect_chart`-first, `inspect_region`-for-pixels.
+
 ## [0.3.0] - 2026-07-02
 
 Launch-hardening release: escalation rescue, a public benchmark harness, a
