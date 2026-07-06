@@ -126,6 +126,7 @@ import {
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
+import { TurnState } from "./turn-state";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -8252,19 +8253,19 @@ export class AgentLoop {
     let consecutiveAllFailTurns = 0;
     let consecutiveAllFailDeterministicTurns = 0;
 
-    // Circuit breaker: same-tool repeat failure
-    const toolFailCounts = new Map<string, number>();
-
-    // Redundant action detection: sliding window of recent successful tool calls
-    const recentSuccesses: RecentAction[] = [];
-
-    // Track all recent tool calls so exact looping can be blocked even when calls "succeed"
-    const recentToolCalls: Array<{ tool: ToolName; argsKey: string }> = [];
-    const resultPageProgress = createResultPageProgressState();
+    // Run-scoped turn accumulators (LP-15 Phase 6): same-tool failure counts,
+    // the recent-success / recent-tool-call windows, result-page progress, and
+    // find_element-discovered tag IDs. Owned by TurnState; consumed by the
+    // dispatchers + stagnation-adjacent policies by reference.
+    const turnState = new TurnState();
+    const {
+      toolFailCounts,
+      recentSuccesses,
+      recentToolCalls,
+      resultPageProgress,
+      discoveredTagIds,
+    } = turnState;
     const verifiedFinalClickBypassKeys = new Set<string>();
-
-    // Tag IDs discovered by find_element (not yet in snapshot but valid for next tool call)
-    const discoveredTagIds = new Set<number>();
 
     // Failed action memory: prevents exact repeats of failed tool calls
     const blockedActions: BlockedAction[] = [];
