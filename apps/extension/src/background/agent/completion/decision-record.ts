@@ -22,13 +22,15 @@ import {
   type CompletionEvidence,
 } from "../completion-kernel";
 import { evaluateGeneratedCompletionCandidate } from "../completion-evaluation-service";
+import type { CompletionGuardContext } from "./guards/context";
+import type { PlannerValidationResult } from "./pipeline";
 
 /**
  * Bump when the serialized shape changes in a way that invalidates existing
  * corpus fixtures. The replay test asserts every loaded record carries the
  * current version.
  */
-export const COMPLETION_DECISION_RECORD_VERSION = 1;
+export const COMPLETION_DECISION_RECORD_VERSION = 2;
 
 export type CompletionDecisionVerdict = "accepted" | "rejected";
 
@@ -70,6 +72,23 @@ export interface CompletionDecisionRecordInput {
     planSubtaskCount: number;
     runningSubtaskIndex: number;
   };
+  /**
+   * The full pure-guard input surface (RFC LP-15, Phase 7a). Captured pre-inner
+   * so the offline replay can run the shadow pipeline byte-faithfully. Overlaps
+   * the loose fields above (which the kernel replay still reads); the small
+   * duplication keeps the guard context self-contained.
+   */
+  guardContext: CompletionGuardContext;
+  /** `completionDeterministicAcceptanceEnabled` at decision time. */
+  deterministicAcceptanceEnabled: boolean;
+  /** `Boolean(completedResult)` — the duplicate-terminal short-circuit. */
+  isDuplicateTerminal: boolean;
+  /**
+   * The legacy planner-validation result observed during the decision (null when
+   * no plan applied). Lets the offline replay stub the pipeline's planner stage
+   * without a model call.
+   */
+  plannerResult: PlannerValidationResult | null;
 }
 
 export interface CompletionDecisionRecordOutcome {

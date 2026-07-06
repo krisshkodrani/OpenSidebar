@@ -188,6 +188,7 @@ export const SEED_SCENARIOS: SeedScenario[] = [
 
 function inputFor(scenario: SeedScenario): CompletionDecisionRecordInput {
   const snapshot = scenario.snapshot;
+  const hasPlan = Boolean(scenario.activeObjective);
   return {
     userRequest: scenario.userRequest,
     summary: scenario.summary,
@@ -204,10 +205,39 @@ function inputFor(scenario: SeedScenario): CompletionDecisionRecordInput {
       lastContractRejectionKind: null,
     },
     planValidation: {
-      hasPlan: Boolean(scenario.activeObjective),
-      planSubtaskCount: scenario.activeObjective ? 1 : 0,
-      runningSubtaskIndex: scenario.activeObjective ? 0 : -1,
+      hasPlan,
+      planSubtaskCount: hasPlan ? 1 : 0,
+      runningSubtaskIndex: hasPlan ? 0 : -1,
     },
+    guardContext: {
+      summary: scenario.summary,
+      userRequest: scenario.userRequest,
+      snapshot,
+      taskContext: scenario.userRequest,
+      turnCount: scenario.turn,
+      isOrchestratorNode: false,
+      doneRejections: 0,
+      maxDoneRejections: 3,
+      consecutiveSameKindRejections: 0,
+      lastContractRejectionKind: null,
+      planSubtaskCount: hasPlan ? 1 : 0,
+      runningSubtaskIndex: hasPlan ? 0 : -1,
+      selectedSkillId: null,
+      hasReadPage: true,
+      hasExplicitPageRead: true,
+      hasTaskId: hasPlan,
+      missingRequiredEvidence: [],
+      activeObjective: scenario.activeObjective,
+      successCriteria: scenario.successCriteria,
+      listDetailReviewedCount: 0,
+      listDetailOpenedCount: 0,
+      listDetailVisibleActionCount: 0,
+      moneyTableIncompleteScanReason: null,
+      moneyTableIncorrectAnswerReason: null,
+    },
+    deterministicAcceptanceEnabled: true,
+    isDuplicateTerminal: false,
+    plannerResult: null,
   };
 }
 
