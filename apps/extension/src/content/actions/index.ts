@@ -22,6 +22,7 @@ import {
   DragAndDropArgs,
   HideElementArgs,
   ReadElementArgs,
+  ExtractFormStateArgs,
   RightClickArgs,
   SetCheckboxArgs,
 } from "../../types";
@@ -41,6 +42,7 @@ import {
   executeRead,
   executeFindElement,
   executeReadElement,
+  executeExtractFormState,
 } from "./inspection";
 import { executeHideElement, executeUploadFile } from "./page-manipulation";
 
@@ -77,6 +79,8 @@ export async function executeAction(
       return executeHideElement(args as unknown as HideElementArgs);
     case ToolName.READ_ELEMENT:
       return executeReadElement(args as unknown as ReadElementArgs);
+    case ToolName.EXTRACT_FORM_STATE:
+      return executeExtractFormState(args as unknown as ExtractFormStateArgs);
     case ToolName.RIGHT_CLICK:
       return executeRightClick(args as unknown as RightClickArgs);
     case ToolName.SET_CHECKBOX:

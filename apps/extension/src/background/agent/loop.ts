@@ -36,10 +36,16 @@ import { resolveToolProfile } from "../tools/metadata";
 import type { ToolProfile } from "../tools/metadata";
 import { waitForDomReady } from "../tab-ready";
 import {
+  executeContentTool,
   isBridgeDisconnect,
   recoverContentScriptBridge,
   type BridgeRecoveryTraceHook,
 } from "../tools/bridge";
+import {
+  buildFormStateCapturedEvidence,
+  classifyFormSubmitDryRun,
+  type DryRunClassification,
+} from "./mutation-dry-run-policy";
 import { workspaceManager } from "../workspaces/manager";
 import { ContextManager, summarizeCausalChain } from "./context";
 import {
@@ -54,6 +60,7 @@ import { PerceptionScreenshotState } from "../perception/perception-screenshot-s
 import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
+import type { FormStateCapture } from "../../types";
 import {
   CompletionResponse,
   LLMMessage,
@@ -102,6 +109,7 @@ import {
   evaluateCompletionSummaryPreflight,
   evaluateCompletionTaskContractPreflight,
   evaluateCompletionWorkflowContractPreflight,
+  generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
   type CompletionEvaluation,
@@ -3509,6 +3517,84 @@ export class AgentLoop {
         });
       });
     throw new PendingInteractionYield(interaction);
+  }
+
+  /**
+   * Dry-run gate for a consequential form submit (RFC LP-15, Phase 8). Captures
+   * the live form state via extract_form_state and diffs it against the approved
+   * draft (the form_fill contract's required fields). A clean diff means the form
+   * holds exactly the intended values → the submit auto-approves; an unexpected
+   * diff routes to human approval carrying the rendered diff. `no_draft` (not a
+   * form-fill task, or capture failed) leaves the normal approval gate unchanged.
+   */
+  private async runFormSubmitDryRun(
+    toolName: ToolName,
+    args: Record<string, unknown>,
+    tabId: number,
+  ): Promise<DryRunClassification> {
+    const generated = generateCompletionContract({
+      userRequest: this.originalQuery,
+      snapshot: this.context.getSnapshot(),
+    });
+    const draft =
+      generated?.contract.kind === "form_fill"
+        ? generated.contract.requiredFields
+        : null;
+    if (!draft || draft.length === 0) return { kind: "no_draft" };
+
+    const submitId =
+      typeof (args as { id?: unknown }).id === "number"
+        ? (args as { id: number }).id
+        : undefined;
+    let capture: FormStateCapture | null = null;
+    try {
+      const result = await executeContentTool(
+        ToolName.EXTRACT_FORM_STATE,
+        submitId != null ? { id: submitId } : {},
+        tabId,
+      );
+      capture = JSON.parse(result) as FormStateCapture;
+    } catch (err) {
+      this.log.warn("agent", "form dry-run capture failed", {
+        turn: this.turnCount,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const classification = classifyFormSubmitDryRun(capture, draft);
+    if (capture) {
+      this.completionEvidence.add(
+        buildFormStateCapturedEvidence(capture, this.turnCount),
+      );
+    }
+    this.traceRecorder?.recordEvent("form_submit_dry_run", {
+      turn: this.turnCount,
+      tool: toolName,
+      kind: classification.kind,
+      formKey: capture?.formKey,
+      diffHash:
+        classification.kind === "no_draft"
+          ? undefined
+          : classification.diff.diffHash,
+    });
+
+    // Seal the dry-run (RFC LP-15 Phase 8: commit → seal): record the form +
+    // approved-diff digest so a replay recognizes this submit was dry-run
+    // verified and does not re-run it blindly.
+    if (capture && classification.kind !== "no_draft") {
+      this.checkpoints.recordMutation({
+        toolName,
+        args,
+        result: `form_dry_run:${classification.kind}`,
+        planIndex: this.lastPlanIndex,
+        turn: this.turnCount,
+        formSubmitSeal: {
+          formKey: capture.formKey,
+          diffHash: classification.diff.diffHash,
+        },
+      });
+    }
+    return classification;
   }
 
   private async ensureToolApproval(

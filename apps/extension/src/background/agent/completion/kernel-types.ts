@@ -125,6 +125,18 @@ export type CompletionEvidence =
         url: string;
         title?: string;
       };
+    }
+  | {
+      // LP-15 Phase 8: a form-state snapshot captured by extract_form_state,
+      // keyed `form:${formKey}` so repeated captures dedup (latest-turn wins).
+      type: "form_state_captured";
+      confidence: CompletionConfidence;
+      logicalKey: string;
+      observedAtTurn: number;
+      detail: {
+        formKey: string;
+        fields: Array<{ name: string; value: string }>;
+      };
     };
 
 export type QuizTarget =
