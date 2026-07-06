@@ -119,6 +119,8 @@ import {
   isCompletionDecisionRecordingEnabled,
   recordCompletionDecision,
 } from "./completion/decision-recorder";
+import type { CompletionGuardContext } from "./completion/guards/context";
+import type { PlannerValidationResult } from "./completion/pipeline";
 import {
   TURN_CHECKPOINT_VERSION,
   buildMutationKey,
@@ -765,6 +767,12 @@ export class AgentLoop {
   private completionEvidence = new CompletionEvidenceLedger();
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
+  /**
+   * The legacy planner-validation result for the current done() decision (null
+   * when no plan applied). Captured so the shadow pipeline / offline replay can
+   * stub the planner stage without a model call (RFC LP-15, Phase 7a).
+   */
+  private lastDonePlanValidation: PlannerValidationResult | null = null;
 
   /** Session telemetry: metrics, session clock, context spend, citations. */
   private telemetry!: AgentTelemetryController;
@@ -2755,6 +2763,9 @@ export class AgentLoop {
   ): CompletionDecisionRecordInput {
     const snapshot = this.context.getSnapshot() ?? null;
     const completionContext = this.getActiveCompletionContext();
+    const runningSubtaskIndex = this.planSubtasks.findIndex(
+      (step) => step.status === "running",
+    );
     return {
       userRequest: this.originalQuery,
       summary,
@@ -2777,10 +2788,68 @@ export class AgentLoop {
       planValidation: {
         hasPlan: Boolean(this.taskId) && this.planSubtasks.length > 0,
         planSubtaskCount: this.planSubtasks.length,
-        runningSubtaskIndex: this.planSubtasks.findIndex(
-          (step) => step.status === "running",
-        ),
+        runningSubtaskIndex,
       },
+      guardContext: this.buildCompletionGuardContext(
+        summary,
+        snapshot,
+        completionContext,
+        runningSubtaskIndex,
+      ),
+      deterministicAcceptanceEnabled:
+        this.completionDeterministicAcceptanceEnabled,
+      isDuplicateTerminal: Boolean(this.completedResult),
+      // Filled post-inner in recordCompletionDecisionOutcome.
+      plannerResult: null,
+    };
+  }
+
+  /**
+   * Assemble the pure-guard input surface from live loop state (RFC LP-15,
+   * Phase 7a). Captured pre-inner so counters/evidence are unmutated; because
+   * legacy stops at the first rejecting guard, no guard bumps `doneRejections`
+   * before the decider, so a single snapshot is faithful for the whole chain.
+   * (The ServiceNow evidence inference is a live-only pre-step; the corpus is
+   * generic so `missingRequiredEvidence` is inference-independent there.)
+   */
+  private buildCompletionGuardContext(
+    summary: string,
+    snapshot: DomSnapshot | null,
+    completionContext: { activeObjective?: string; successCriteria?: string },
+    runningSubtaskIndex: number,
+  ): CompletionGuardContext {
+    const incompleteMoneyTableScan =
+      this.getIncompleteMoneyTableAggregateDoneRejection();
+    return {
+      summary,
+      userRequest: this.originalQuery,
+      snapshot,
+      taskContext: this.getCompletionSummaryTaskContext(),
+      turnCount: this.turnCount,
+      isOrchestratorNode: Boolean(this.nodeId),
+      doneRejections: this.doneRejections,
+      maxDoneRejections: this.limits.maxDoneRejections,
+      consecutiveSameKindRejections: this.consecutiveSameKindRejections,
+      lastContractRejectionKind: this.lastContractRejectionKind ?? null,
+      planSubtaskCount: this.planSubtasks.length,
+      runningSubtaskIndex,
+      selectedSkillId: this.selectedSkillId,
+      hasReadPage: this.hasReadPage,
+      hasExplicitPageRead: this.hasExplicitPageRead,
+      hasTaskId: Boolean(this.taskId),
+      missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
+      activeObjective: completionContext.activeObjective,
+      successCriteria: completionContext.successCriteria,
+      listDetailReviewedCount: this.listDetailReviewedTargets.size,
+      listDetailOpenedCount: this.listDetailOpenedTargets.size,
+      listDetailVisibleActionCount: Math.max(
+        this.listDetailVisibleActionCount,
+        countVisibleListDetailActions(snapshot),
+      ),
+      moneyTableIncompleteScanReason: incompleteMoneyTableScan,
+      moneyTableIncorrectAnswerReason: incompleteMoneyTableScan
+        ? null
+        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
     };
   }
 
@@ -2789,6 +2858,8 @@ export class AgentLoop {
     input: CompletionDecisionRecordInput,
     verdict: boolean,
   ): void {
+    // The planner result is only known after the inner decision runs.
+    input.plannerResult = this.lastDonePlanValidation;
     let basis: CompletionDecisionBasis = "unknown";
     let contractKind = "unknown";
     let reason = "";
@@ -2835,6 +2906,7 @@ export class AgentLoop {
     summary: string,
     tabId: number,
   ): Promise<boolean> {
+    this.lastDonePlanValidation = null;
     if (this.completedResult) {
       const completedSummary = this.completedResult.summary;
       const completionEnvelope = this.completedResult.completionEnvelope;
@@ -2942,6 +3014,11 @@ export class AgentLoop {
         shouldReject,
         rejectReason,
       ));
+
+      this.lastDonePlanValidation = {
+        rejected: shouldReject,
+        reason: rejectReason ?? "",
+      };
 
       if (shouldReject) {
         this.handleDonePlanRejection(
