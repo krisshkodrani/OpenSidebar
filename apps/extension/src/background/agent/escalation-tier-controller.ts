@@ -21,6 +21,7 @@
  */
 
 import {
+  ESCALATION_LIMITS,
   INVESTIGATION_EXTENSION,
   MAX_ORIENTATION_TURNS,
   ORIENTATION,
@@ -41,6 +42,14 @@ export interface EscalationTierControllerHost {
   emitInfoStep(label: string): void;
   /** Structured info log under the "agent" channel. */
   logInfo(message: string, data: Record<string, unknown>): void;
+  /** Whether the stagnation tracker still considers the page stuck. */
+  isStillStuck(): boolean;
+  /** Broadcast the "progress resolved" stagnation signal for the given URL. */
+  broadcastProgressResolved(url: string): void;
+  /** Inject the de-escalation reflection message. */
+  addDeescalationMessage(): void;
+  /** Reset the stagnation monitor's escalation state. */
+  resetStagnationEscalation(): void;
 }
 
 export interface EscalationTierControllerOptions {
@@ -141,6 +150,68 @@ export class EscalationTierController {
         turn: host.getTurn(),
         orientationTurns: this.effectiveOrientationTurns,
       });
+    }
+
+    return prevElementCount;
+  }
+
+  /**
+   * Progress-gated de-escalation, run when the stagnation tracker reports no
+   * new stuck signal this turn. Accumulates progress signals while stuck, and
+   * once `PROGRESS_GATE` consecutive signals land, clears the stuck flag and —
+   * if on the planner tier, under the cycle cap, and past minimum planner
+   * tenure — de-escalates tier 1→0 with exponential cooldown backoff. When not
+   * stuck at all, just resets the progress gate. Returns the (possibly
+   * de-escalated) prevElementCount.
+   */
+  async recordProgressSignal(params: {
+    snapUrl: string;
+    tabId: number;
+    prevElementCount: number;
+  }): Promise<number> {
+    const host = this.host;
+    let prevElementCount = params.prevElementCount;
+
+    if (!this.wasStuck) {
+      // Not stuck — reset progress gate.
+      this.consecutiveProgressSignals = 0;
+      return prevElementCount;
+    }
+
+    // Only count as recovery if the page actually changed (tracker no longer
+    // reports stuck). When still stuck, reset the gate.
+    if (host.isStillStuck()) {
+      this.consecutiveProgressSignals = 0;
+    } else {
+      this.consecutiveProgressSignals++;
+    }
+
+    // Require PROGRESS_GATE consecutive progress signals before de-escalating.
+    if (this.consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE) {
+      host.broadcastProgressResolved(params.snapUrl);
+      this.wasStuck = false;
+      this.consecutiveProgressSignals = 0;
+
+      // De-escalate if on planner model, under cycle limit, and the planner
+      // model has had enough turns to actually work.
+      const plannerTenure = host.getTurn() - this.plannerModelStartTurn;
+      if (
+        this.tier > 0 &&
+        this.escalationCycles < host.limits.maxEscalationCycles &&
+        plannerTenure >= ESCALATION_LIMITS.MIN_PLANNER_TENURE
+      ) {
+        prevElementCount = await host.deescalateModel(
+          params.tabId,
+          prevElementCount,
+        );
+        host.addDeescalationMessage();
+        this.tier = 0;
+        this.cooldownRemaining =
+          host.limits.escalationCooldown * Math.pow(2, this.escalationCycles);
+        this.escalationCycles++;
+        host.resetStagnationEscalation();
+        host.emitInfoStep("Progress made — switching back to executor model");
+      }
     }
 
     return prevElementCount;

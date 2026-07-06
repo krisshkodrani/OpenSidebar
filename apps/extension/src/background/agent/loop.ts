@@ -204,7 +204,6 @@ import {
   BROADCAST_INTERVALS,
   LLM_CONFIG,
   STRING_LIMITS,
-  ESCALATION_LIMITS,
   ORIENTATION,
   REDUNDANT_ACTION,
   FAILED_ACTION_MEMORY,
@@ -8253,6 +8252,23 @@ export class AgentLoop {
             false,
           ),
         logInfo: (message, data) => this.log.info("agent", message, data),
+        isStillStuck: () => this.stagnation.isStillStuck(),
+        broadcastProgressResolved: (url) =>
+          this.broadcast({
+            type: "AGENT_STAGNATION",
+            payload: {
+              signal: "resolved",
+              stagnantTurns: 0,
+              url,
+              message: "Agent is making progress again.",
+            },
+          }),
+        addDeescalationMessage: () =>
+          this.context.addMessage({
+            role: "user",
+            content: DEESCALATION_REFLECTION,
+          }),
+        resetStagnationEscalation: () => this.stagnation.resetEscalation(),
       },
     });
     if (esc.orientationPhase) {
@@ -10375,71 +10391,14 @@ export class AgentLoop {
                     );
                   }
                 }
-              } else if (esc.wasStuck) {
-                // Only count as recovery if the page actually changed (stagnantTurns reset to 0).
-                // When stagnantTurns > 0, tracker returned null only because it's below threshold
-                // or escalation already fired — the agent is still stuck.
-                if (this.stagnation.isStillStuck()) {
-                  esc.consecutiveProgressSignals = 0;
-                } else {
-                  esc.consecutiveProgressSignals++;
-                }
-
-                // Require PROGRESS_GATE consecutive progress signals before de-escalating
-                if (
-                  esc.consecutiveProgressSignals >= ESCALATION_LIMITS.PROGRESS_GATE
-                ) {
-                  this.broadcast({
-                    type: "AGENT_STAGNATION",
-                    payload: {
-                      signal: "resolved",
-                      stagnantTurns: 0,
-                      url: snap.url,
-                      message: "Agent is making progress again.",
-                    },
-                  });
-                  esc.wasStuck = false;
-                  esc.consecutiveProgressSignals = 0;
-
-                  // De-escalate if on planner model, under cycle limit,
-                  // and the planner model has had enough turns to actually work
-                  const plannerTenure = this.turnCount - esc.plannerModelStartTurn;
-                  if (
-                    esc.tier > 0 &&
-                    esc.escalationCycles < this.limits.maxEscalationCycles &&
-                    plannerTenure >= ESCALATION_LIMITS.MIN_PLANNER_TENURE
-                  ) {
-                    prevElementCount = await this.deescalateModel(
-                      tabId,
-                      prevElementCount,
-                    );
-                    this.context.addMessage({
-                      role: "user",
-                      content: DEESCALATION_REFLECTION,
-                    });
-                    esc.tier = 0;
-                    esc.cooldownRemaining =
-                      this.limits.escalationCooldown *
-                      Math.pow(2, esc.escalationCycles);
-                    esc.escalationCycles++;
-                    this.stagnation.resetEscalation();
-
-                    this.stepHandler(
-                      {
-                        id: crypto.randomUUID(),
-                        type: "info",
-                        label:
-                          "Progress made — switching back to executor model",
-                        status: "done",
-                        timestamp: Date.now(),
-                      },
-                      false,
-                    );
-                  }
-                }
               } else {
-                // Not stuck — reset progress gate
-                esc.consecutiveProgressSignals = 0;
+                // Progress-gated de-escalation (handles both the wasStuck
+                // recovery path and the not-stuck gate reset).
+                prevElementCount = await esc.recordProgressSignal({
+                  snapUrl: snap.url,
+                  tabId,
+                  prevElementCount,
+                });
               }
             }
           } catch {
