@@ -22,7 +22,6 @@ export interface PerceptionRuntimeModeDecision {
 export interface PerceptionRuntimeModeDecisionArgs
   extends PerceptionModePageSignals {
   perceptionMode?: PerceptionRuntimeMode;
-  useVLExecutor?: boolean;
   providerMode?: ProviderMode;
   /**
    * Whether the resolved executor model can accept image input. `false`
@@ -135,14 +134,6 @@ export function resolvePerceptionRuntimeModeDecision(
       mode: "unified_vl",
       reason: "explicit_unified_vl_override",
       signals: [],
-    };
-  }
-
-  if (args.useVLExecutor === true) {
-    return {
-      mode: "unified_vl",
-      reason: "legacy_vl_executor_enabled",
-      signals: ["legacy_use_vl_executor"],
     };
   }
 

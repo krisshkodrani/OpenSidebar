@@ -95,11 +95,10 @@ describe("perception mode resolution", () => {
     });
   });
 
-  test("non-VL executor forces structured despite visual signals and legacy toggle", () => {
+  test("non-VL executor forces structured despite visual signals", () => {
     expect(
       resolvePerceptionRuntimeModeDecision({
         perceptionMode: "auto",
-        useVLExecutor: true,
         executorVLCapable: false,
         taskText: "Read the chart and tell me the highest value",
         hasCanvas: true,
@@ -314,20 +313,12 @@ describe("perception mode resolution", () => {
     ).toBe("unified_vl");
   });
 
-  test("keeps legacy useVLExecutor true as unified VL and lets false fall through to auto", () => {
+  test("dense text-heavy page falls through auto to structured (text-only)", () => {
     expect(
       resolvePerceptionRuntimeMode({
-        useVLExecutor: true,
-        providerMode: "openrouter",
-      }),
-    ).toBe("unified_vl");
-    expect(
-      resolvePerceptionRuntimeMode({
-        useVLExecutor: false,
         providerMode: "fireworks",
-        // Dense text-heavy page: the auto path it falls through to picks
-        // structured (post LP-11 flip, that is the only signal-less
-        // structured outcome).
+        // Dense text-heavy page: the auto path picks structured (post LP-11
+        // flip, that is the only signal-less structured outcome).
         elementCount: 60,
         pageTextLength: 5000,
       }),
