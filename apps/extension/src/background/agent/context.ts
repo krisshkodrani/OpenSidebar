@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import { LLMMessage } from "../llm/types";
 import { DomSnapshot, PageSkeletonNode, TaggedElement } from "../../types";
 import { logger } from "../../utils";
@@ -1542,13 +1543,14 @@ Do NOT call done() until every planned step is complete.
 
   public async loadState() {
     try {
-      const data = await chrome.storage.session.get(this.storageKey);
-      if (data[this.storageKey]) {
-        this.history = data[this.storageKey].history || [];
-        this.planStatus = data[this.storageKey].planStatus || null;
-        this.capturedOverlays = data[this.storageKey].capturedOverlays || [];
-        this.lastActionOutcome =
-          data[this.storageKey].lastActionOutcome || null;
+      const data = await chromePersistencePort.session.get(this.storageKey);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- opaque persisted blob
+      const saved = data[this.storageKey] as any;
+      if (saved) {
+        this.history = saved.history || [];
+        this.planStatus = saved.planStatus || null;
+        this.capturedOverlays = saved.capturedOverlays || [];
+        this.lastActionOutcome = saved.lastActionOutcome || null;
         logger.info("agent", "Context loaded from session storage", {
           historyLength: this.history.length,
           hasPlan: !!this.planStatus,
@@ -1562,7 +1564,7 @@ Do NOT call done() until every planned step is complete.
 
   public async saveState() {
     try {
-      await chrome.storage.session.set({
+      await chromePersistencePort.session.set({
         [this.storageKey]: {
           history: this.history,
           planStatus: this.planStatus,

@@ -10,6 +10,7 @@ import {
   type SyncMap,
 } from "./knowledge-sync";
 import { HttpKnowledgeStore } from "./openclaw-client";
+import { chromePersistencePort } from "../background/environment/chrome";
 
 export const WEBSITE_SKILLS_STORAGE_KEY = "opensidebar:userWebsiteSkills";
 const WEBSITE_SKILLS_NAMESPACE = "website-skills";
@@ -25,16 +26,8 @@ export interface WebsiteSkillsStorageArea {
 }
 
 function chromeWebsiteSkillsStorage(): WebsiteSkillsStorageArea {
-  return {
-    get(keys) {
-      return chrome.storage.local.get(keys as any) as unknown as Promise<
-        Record<string, unknown>
-      >;
-    },
-    async set(items) {
-      await chrome.storage.local.set(items);
-    },
-  };
+  // Route through the shared environment PersistencePort (RFC LP-15, Phase 3).
+  return chromePersistencePort.local;
 }
 
 export function classifyValueKind(
@@ -109,7 +102,9 @@ export async function loadUserWebsiteSkills(
 async function resolveKnowledgeStore(): Promise<KnowledgeStore | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chrome.storage.local.get(OPENCLAW_GATEWAY_URL_KEY);
+      const stored = await chromePersistencePort.local.get(
+        OPENCLAW_GATEWAY_URL_KEY,
+      );
       const url = stored[OPENCLAW_GATEWAY_URL_KEY];
       if (typeof url === "string" && url.trim()) {
         return new HttpKnowledgeStore({ baseUrl: url.trim() });

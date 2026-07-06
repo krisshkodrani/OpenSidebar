@@ -1,3 +1,4 @@
+import { chromePersistencePort } from "../environment/chrome";
 import { logger } from "../../utils";
 import type { OrchestratorCheckpoint } from "./types";
 import { CHECKPOINT_VERSION, isRecord, sanitizeCheckpoint } from "./sanitizers";
@@ -9,7 +10,7 @@ export async function loadOrchestratorCheckpoints(): Promise<
   Record<string, OrchestratorCheckpoint>
 > {
   try {
-    const stored = await chrome.storage.local.get(CHECKPOINTS_STORAGE_KEY);
+    const stored = await chromePersistencePort.local.get(CHECKPOINTS_STORAGE_KEY);
     const raw = stored[CHECKPOINTS_STORAGE_KEY];
     if (!isRecord(raw)) return {};
 
@@ -59,7 +60,7 @@ export async function saveOrchestratorCheckpoints(
   checkpoints: Record<string, OrchestratorCheckpoint>,
 ): Promise<void> {
   try {
-    await chrome.storage.local.set({
+    await chromePersistencePort.local.set({
       [CHECKPOINTS_STORAGE_KEY]: checkpoints,
     });
   } catch (error) {
