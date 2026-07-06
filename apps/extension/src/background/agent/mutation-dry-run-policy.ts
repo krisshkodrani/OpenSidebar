@@ -11,7 +11,10 @@
  */
 
 import type { FormStateCapture } from "../../types";
-import type { FormFillFieldExpectation } from "./completion/kernel-types";
+import type {
+  CompletionEvidence,
+  FormFillFieldExpectation,
+} from "./completion/kernel-types";
 
 export type FormStateDiffStatus = "match" | "mismatch" | "missing";
 
@@ -93,6 +96,28 @@ export function diffFormStateAgainstDraft(
       .join(";")}`,
   );
   return { entries, clean, diffHash };
+}
+
+/**
+ * Build the `form_state_captured` completion-evidence for a capture. Keyed
+ * `form:${formKey}` so repeated captures of the same form dedup in the ledger
+ * (latest-turn wins). Lives here (not in the frozen kernel) as a Phase 8
+ * feature; the verifier reads it as a structural form-state delta.
+ */
+export function buildFormStateCapturedEvidence(
+  captured: FormStateCapture,
+  observedAtTurn: number,
+): CompletionEvidence {
+  return {
+    type: "form_state_captured",
+    confidence: "high",
+    logicalKey: `form:${captured.formKey}`,
+    observedAtTurn,
+    detail: {
+      formKey: captured.formKey,
+      fields: captured.fields.map((f) => ({ name: f.name, value: f.value })),
+    },
+  };
 }
 
 /** Human-readable diff for the approval prompt (only the non-matching rows). */
