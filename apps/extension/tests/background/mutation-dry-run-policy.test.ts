@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  buildFormStateCapturedEvidence,
   diffFormStateAgainstDraft,
   renderFormStateDiff,
 } from "../../src/background/agent/mutation-dry-run-policy";
@@ -111,6 +112,20 @@ describe("diffFormStateAgainstDraft", () => {
     );
     expect(a.diffHash).toBe(b.diffHash);
     expect(a.diffHash).not.toBe(c.diffHash);
+  });
+
+  test("buildFormStateCapturedEvidence keys by form:${formKey} and carries fields", () => {
+    const ev = buildFormStateCapturedEvidence(
+      capture([{ name: "fullName", value: "Sam" }], "/apply"),
+      7,
+    );
+    expect(ev.type).toBe("form_state_captured");
+    expect(ev.logicalKey).toBe("form:/apply");
+    expect(ev.observedAtTurn).toBe(7);
+    if (ev.type === "form_state_captured") {
+      expect(ev.detail.formKey).toBe("/apply");
+      expect(ev.detail.fields).toEqual([{ name: "fullName", value: "Sam" }]);
+    }
   });
 
   test("renderFormStateDiff lists only the problem rows", () => {
