@@ -41,6 +41,10 @@ import {
   isE2ETestApiEnabled,
 } from "./e2e-test-api";
 import {
+  RECORD_COMPLETION_DECISIONS_STORAGE_KEY,
+  setCompletionDecisionRecordingEnabled,
+} from "./agent/completion/decision-recorder";
+import {
   RECORD_SKILL_INTRO_DISMISSED_KEY,
   WEBSITE_SKILLS_STORAGE_KEY,
   deleteUserWebsiteSkill,
@@ -58,7 +62,23 @@ let cachedSettings: UserSettings | null = null;
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "sync" && changes.userSettings) cachedSettings = null;
   if (area === "local") cachedSettings = null; // API keys stored in local
+  // RFC LP-15 Phase 0: dev flag toggles the completion decision golden recorder.
+  if (area === "local" && changes[RECORD_COMPLETION_DECISIONS_STORAGE_KEY]) {
+    setCompletionDecisionRecordingEnabled(
+      changes[RECORD_COMPLETION_DECISIONS_STORAGE_KEY].newValue === true,
+    );
+  }
 });
+
+// RFC LP-15 Phase 0: pick up the recorder flag at startup (dev/e2e only).
+void chrome.storage.local
+  .get(RECORD_COMPLETION_DECISIONS_STORAGE_KEY)
+  .then((stored) => {
+    setCompletionDecisionRecordingEnabled(
+      stored?.[RECORD_COMPLETION_DECISIONS_STORAGE_KEY] === true,
+    );
+  })
+  .catch(() => {});
 
 logger.info("system", "Service Worker Initialized");
 
