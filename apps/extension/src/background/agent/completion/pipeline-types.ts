@@ -69,8 +69,19 @@ export type CompletionEffect =
   | { type: "set_last_completion_rejection"; decision: CompletionEvaluation }
   /** Set `lastCompletionRecoveryHint`. */
   | { type: "set_recovery_hint"; hint: string | null }
-  /** Post a recovery/diagnostic message into context. */
+  /** Post a plain recovery message into context (verbatim content). */
   | { type: "post_context_message"; role: "tool" | "user"; content: string }
+  /**
+   * Post a done-rejection diagnostic message. Carries the structured inputs
+   * (`doneRejectionDiagnosticContent` is loop-coupled — it folds in the running
+   * rejection count) so 7b renders the exact content at apply time.
+   */
+  | {
+      type: "post_rejection_diagnostic";
+      summary: string;
+      primaryReason: string;
+      fallbackInstruction: string;
+    }
   /** Emit a trace event. */
   | { type: "emit_trace"; event: string; data: Record<string, unknown> }
   /** Set the `guardAfterDoneRejection` idempotency flag. */

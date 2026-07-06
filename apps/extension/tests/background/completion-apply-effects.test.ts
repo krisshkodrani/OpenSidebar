@@ -20,6 +20,9 @@ function makeHost(): CompletionEffectHost & { calls: string[] } {
     postContextMessage: vi.fn((role, content) =>
       calls.push(`msg:${role}:${content}`),
     ),
+    postRejectionDiagnostic: vi.fn((_summary, primaryReason) =>
+      calls.push(`diag:${primaryReason}`),
+    ),
     emitTrace: vi.fn((event) => calls.push(`trace:${event}`)),
     setGuardAfterDoneRejection: vi.fn(() => calls.push("guardFlag")),
     checkDoneRejectionEscalation: vi.fn(() => calls.push("escalation")),
@@ -39,6 +42,12 @@ describe("applyCompletionEffects", () => {
       { type: "set_last_completion_rejection", decision },
       { type: "set_recovery_hint", hint: "try X" },
       { type: "post_context_message", role: "tool", content: "nope" },
+      {
+        type: "post_rejection_diagnostic",
+        summary: "s",
+        primaryReason: "because",
+        fallbackInstruction: "do X",
+      },
       { type: "emit_trace", event: "done_rejected", data: { a: 1 } },
       { type: "set_guard_after_done_rejection" },
       { type: "check_done_rejection_escalation" },
@@ -52,6 +61,11 @@ describe("applyCompletionEffects", () => {
     expect(host.setLastCompletionRejection).toHaveBeenCalledWith(decision);
     expect(host.setRecoveryHint).toHaveBeenCalledWith("try X");
     expect(host.postContextMessage).toHaveBeenCalledWith("tool", "nope");
+    expect(host.postRejectionDiagnostic).toHaveBeenCalledWith(
+      "s",
+      "because",
+      "do X",
+    );
     expect(host.emitTrace).toHaveBeenCalledWith("done_rejected", { a: 1 });
     expect(host.setGuardAfterDoneRejection).toHaveBeenCalledOnce();
     expect(host.checkDoneRejectionEscalation).toHaveBeenCalledOnce();
