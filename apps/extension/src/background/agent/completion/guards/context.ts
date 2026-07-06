@@ -42,6 +42,12 @@ export interface CompletionGuardContext {
   /** The selected skill/workflow id, if any. */
   selectedSkillId: string | null;
 
+  /** Grounding guard: whether the agent has read substantive page content. */
+  hasReadPage: boolean;
+  hasExplicitPageRead: boolean;
+  /** Whether a durable task id is set (`Boolean(taskId)`). */
+  hasTaskId: boolean;
+
   /**
    * Required typed-evidence kinds still missing, precomputed AFTER the injected
    * ServiceNow inference pre-step has had a chance to add evidence.

@@ -100,7 +100,9 @@ export type CompletionEffectType = CompletionEffect["type"];
  * guard's effects (applied by the shim at 7b).
  */
 export type GuardOutcome =
-  | { kind: "pass" }
+  /** Advance to the next stage. `effects` carries any pass-time side-effects
+   *  (e.g. the grounding guard's `done_grounded_from_snapshot` trace). */
+  | { kind: "pass"; effects?: CompletionEffect[] }
   | {
       kind: "reject";
       guardId: CompletionGuardId;
