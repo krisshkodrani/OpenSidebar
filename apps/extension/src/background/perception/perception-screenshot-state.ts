@@ -29,7 +29,7 @@ export interface PerceptionTraceStats {
   cached: boolean;
 }
 
-export class PerceptionAgent {
+export class PerceptionScreenshotState {
   private lastScreenshotUrl: string | null = null;
 
   /** Always null — the executor does its own vision; there is no seat. */
