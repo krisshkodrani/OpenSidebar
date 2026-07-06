@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest";
 import "../setup";
 import {
+  migrateLegacyStoresIntoCorpus,
   personalProfileFactToCorpusEntry,
   websiteSkillToCorpusEntry,
 } from "../../src/background/memory/trusted-corpus-migration";
+import { createTrustedCorpusStoreOnArea } from "../../src/background/memory/trusted-corpus";
+import { createFakeStorageArea } from "../fakes/persistence";
 import type { DigestItem } from "../../src/utils/personal-profile";
 import type { UserWebsiteSkill } from "../../src/types";
 
@@ -78,5 +81,78 @@ describe("trusted-corpus migration transforms", () => {
       provenance: { source: "observation", capturedAt: 42 },
     });
     expect(entry.value).toBe(skill);
+  });
+});
+
+describe("migrateLegacyStoresIntoCorpus", () => {
+  function makeCorpus() {
+    const area = createFakeStorageArea();
+    let n = 0;
+    return createTrustedCorpusStoreOnArea(area, {
+      now: () => 1,
+      newId: () => `id-${++n}`,
+    });
+  }
+
+  const items: DigestItem[] = [
+    { id: "fact:name:1", label: "Name", value: "Sam", kind: "fact", confidence: "high" },
+    {
+      id: "sensitive:ssn:2",
+      label: "SSN",
+      value: "enc:v1:aXY=.Y2lwaGVy",
+      kind: "sensitive",
+      confidence: "high",
+    },
+  ];
+  const skills = [
+    {
+      id: "skill-1",
+      name: "S",
+      origin: "https://x.test",
+      pathPattern: "/*",
+      triggerPhrase: "t",
+      workflowSteps: [],
+      guardrails: [],
+      requiredEvidence: [],
+      privacySummary: "",
+      capturedEventCount: 0,
+      capturedInputCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+      enabled: true,
+    } as UserWebsiteSkill,
+  ];
+
+  test("populates the corpus, detecting encryption per profile item", async () => {
+    const corpus = makeCorpus();
+    const counts = await migrateLegacyStoresIntoCorpus(corpus, {
+      profileFacts: items,
+      analyzer: { provider: "fireworks", model: "glm-5p2", analyzerVersion: "1", analyzedAt: 9 },
+      skills,
+      now: () => 1,
+    });
+    expect(counts).toEqual({ profileFacts: 2, skills: 1 });
+
+    const all = await corpus.load();
+    expect(all).toHaveLength(3);
+    const ssn = all.find((e) => e.claimKey === "sensitive:ssn:2")!;
+    expect(ssn.encrypted).toBe(true); // ciphertext detected
+    expect(ssn.provenance).toMatchObject({ source: "analyzer", provider: "fireworks", model: "glm-5p2" });
+    const name = all.find((e) => e.claimKey === "fact:name:1")!;
+    expect(name.encrypted).toBe(false);
+    expect(all.find((e) => e.kind === "website_skill")!.scope.origin).toBe("https://x.test");
+  });
+
+  test("is idempotent — a second run re-syncs, not duplicates", async () => {
+    const corpus = makeCorpus();
+    const legacy = {
+      profileFacts: items,
+      analyzer: null,
+      skills,
+      now: () => 1,
+    };
+    await migrateLegacyStoresIntoCorpus(corpus, legacy);
+    await migrateLegacyStoresIntoCorpus(corpus, legacy);
+    expect(await corpus.load()).toHaveLength(3); // not 6
   });
 });
