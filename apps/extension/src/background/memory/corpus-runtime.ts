@@ -13,14 +13,22 @@
 import { chromePersistencePort } from "../environment/chrome";
 import {
   loadRawProfileDigestItems,
+  PERSONAL_PROFILE_STORAGE_KEY,
   type DigestItem,
 } from "../../utils/personal-profile";
-import { loadUserWebsiteSkills } from "../../utils/website-skills";
+import {
+  loadUserWebsiteSkills,
+  WEBSITE_SKILLS_STORAGE_KEY,
+} from "../../utils/website-skills";
+import type { UserWebsiteSkill } from "../../types";
 import {
   createTrustedCorpusStore,
   type TrustedCorpusStore,
 } from "./trusted-corpus";
-import { migrateLegacyStoresIntoCorpus } from "./trusted-corpus-migration";
+import {
+  corpusEntryToWebsiteSkill,
+  migrateLegacyStoresIntoCorpus,
+} from "./trusted-corpus-migration";
 
 let corpusStore: TrustedCorpusStore | null = null;
 
@@ -68,4 +76,40 @@ async function runLegacyMigration(): Promise<void> {
     analyzer,
     skills,
   });
+}
+
+/**
+ * Keep the corpus in sync with sidepanel edits to the legacy stores (RFC LP-15
+ * Phase 9). The profile/skills write paths are unchanged; when they mutate their
+ * legacy key we re-run the reconciling migration so the corpus mirror tracks
+ * adds, updates, and deletes. Returns an unsubscribe. Idempotent registration is
+ * the caller's responsibility (call once at startup).
+ */
+export function startCorpusLegacySync(): () => void {
+  return chromePersistencePort.local.onChanged((changes) => {
+    if (
+      PERSONAL_PROFILE_STORAGE_KEY in changes ||
+      WEBSITE_SKILLS_STORAGE_KEY in changes
+    ) {
+      void resyncLegacyStoresIntoCorpus().catch(() => {});
+    }
+  });
+}
+
+/**
+ * The website skills to match a task against, preferring the trusted corpus
+ * (RFC LP-15 Phase 9). Awaits the shadow migration so the corpus mirror is
+ * current, then reads it; an empty corpus (fresh install, or an over-pruned
+ * transient) falls back to the authoritative legacy read. Behaviour matches the
+ * legacy read because the reconciling migration keeps the corpus an exact,
+ * same-order mirror of the legacy skills.
+ */
+export async function loadWebsiteSkillsPreferringCorpus(): Promise<
+  UserWebsiteSkill[]
+> {
+  await ensureLegacyStoresMigrated();
+  const corpusSkills = (await getTrustedCorpusStore().listByKind("website_skill"))
+    .map(corpusEntryToWebsiteSkill)
+    .filter((skill): skill is UserWebsiteSkill => skill !== null);
+  return corpusSkills.length > 0 ? corpusSkills : loadUserWebsiteSkills();
 }

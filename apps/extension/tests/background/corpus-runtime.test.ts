@@ -4,7 +4,7 @@ import "../setup";
 // Spy on the legacy loaders so we can assert the once-guard without needing the
 // chrome-backed store to actually persist (the global mock is a noop store).
 const loadRawProfileDigestItems = vi.fn(async () => ({ items: [], analyzer: null }));
-const loadUserWebsiteSkills = vi.fn(async () => []);
+const loadUserWebsiteSkills = vi.fn(async (): Promise<unknown[]> => []);
 
 vi.mock("../../src/utils/personal-profile", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -47,5 +47,40 @@ describe("corpus-runtime lazy migration", () => {
   test("getTrustedCorpusStore returns a stable singleton", async () => {
     const rt = await freshRuntime();
     expect(rt.getTrustedCorpusStore()).toBe(rt.getTrustedCorpusStore());
+  });
+
+  test("loadWebsiteSkillsPreferringCorpus falls back to legacy when the corpus is empty", async () => {
+    const legacy = [{ id: "skill-legacy" }];
+    loadUserWebsiteSkills.mockResolvedValue(legacy as unknown[]);
+    const rt = await freshRuntime();
+    // corpus store is a noop mock (empty) → the authoritative legacy read wins.
+    expect(await rt.loadWebsiteSkillsPreferringCorpus()).toEqual(legacy);
+  });
+
+  test("startCorpusLegacySync re-syncs only on a legacy-store change", async () => {
+    // Inject a chrome.storage.onChanged the global mock lacks.
+    let captured: ((changes: Record<string, unknown>, area: string) => void) | null =
+      null;
+    (chrome.storage as unknown as { onChanged: unknown }).onChanged = {
+      addListener: (fn: typeof captured) => {
+        captured = fn;
+      },
+      removeListener: () => {},
+    };
+    const rt = await freshRuntime();
+    await rt.ensureLegacyStoresMigrated();
+    loadRawProfileDigestItems.mockClear();
+
+    rt.startCorpusLegacySync();
+    // an unrelated key change does not trigger a re-sync
+    captured?.({ "opensidebar:somethingElse": {} }, "local");
+    await Promise.resolve();
+    expect(loadRawProfileDigestItems).toHaveBeenCalledTimes(0);
+
+    // a profile-store change re-runs the reconciling migration
+    captured?.({ "opensidebar:personalProfile": {} }, "local");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loadRawProfileDigestItems).toHaveBeenCalledTimes(1);
   });
 });
