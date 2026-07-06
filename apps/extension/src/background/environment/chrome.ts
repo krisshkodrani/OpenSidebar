@@ -1,4 +1,5 @@
 import type {
+  AudioCapturePort,
   BrowserCaptureOptions,
   BrowserPagePort,
   BrowserPageTab,
@@ -9,6 +10,7 @@ import type {
   DownloadsPort,
   HistoryPort,
   NavigationEventsPort,
+  NotificationsPort,
   PersistencePort,
   PersistenceStorageArea,
   RuntimeEnvironment,
@@ -299,6 +301,108 @@ export const chromeWindowsPort: WindowsPort = {
   },
 };
 
+export const chromeNotificationsPort: NotificationsPort = {
+  isAvailable() {
+    return (
+      typeof chrome !== "undefined" &&
+      typeof chrome.notifications?.create === "function"
+    );
+  },
+  create(id, options) {
+    return new Promise((resolve) => {
+      chrome.notifications.create(
+        id,
+        options as chrome.notifications.NotificationOptions<true>,
+        (createdId) => resolve(createdId ?? id),
+      );
+    });
+  },
+  clear(id) {
+    return new Promise((resolve) => {
+      const clear = chrome.notifications?.clear;
+      if (typeof clear !== "function") {
+        resolve(false);
+        return;
+      }
+      clear.call(chrome.notifications, id, (wasCleared) =>
+        resolve(Boolean(wasCleared)),
+      );
+    });
+  },
+  getPermissionLevel() {
+    return new Promise((resolve) => {
+      const getLevel = chrome.notifications?.getPermissionLevel;
+      if (typeof getLevel !== "function") {
+        resolve("granted");
+        return;
+      }
+      getLevel.call(chrome.notifications, (level) =>
+        resolve(level === "denied" ? "denied" : "granted"),
+      );
+    });
+  },
+  onClicked(listener) {
+    chrome.notifications?.onClicked?.addListener(listener);
+    return () => chrome.notifications?.onClicked?.removeListener(listener);
+  },
+  onClosed(listener) {
+    const wrapped = (notificationId: string) => listener(notificationId);
+    chrome.notifications?.onClosed?.addListener(wrapped);
+    return () => chrome.notifications?.onClosed?.removeListener(wrapped);
+  },
+};
+
+export const chromeAudioCapturePort: AudioCapturePort = {
+  isAvailable() {
+    return (
+      typeof chrome !== "undefined" &&
+      typeof chrome.tabCapture?.getMediaStreamId === "function" &&
+      typeof chrome.offscreen?.createDocument === "function"
+    );
+  },
+  getMediaStreamId(tabId) {
+    return new Promise((resolve, reject) => {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (streamId) => {
+        const error = chrome.runtime.lastError?.message;
+        if (error || !streamId) {
+          reject(new Error(error ?? "Failed to get media stream id"));
+          return;
+        }
+        resolve(streamId);
+      });
+    });
+  },
+  async ensureOffscreenDocument(path, justification) {
+    const offscreenUrl = chrome.runtime.getURL(path);
+    const runtimeWithContexts = chrome.runtime as typeof chrome.runtime & {
+      getContexts?: (filter: {
+        contextTypes: string[];
+        documentUrls?: string[];
+      }) => Promise<Array<{ documentUrl?: string }>>;
+    };
+    if (runtimeWithContexts.getContexts) {
+      const contexts = await runtimeWithContexts.getContexts({
+        contextTypes: ["OFFSCREEN_DOCUMENT"],
+        documentUrls: [offscreenUrl],
+      });
+      if (contexts.length > 0) return;
+    }
+    await chrome.offscreen.createDocument({
+      url: path,
+      reasons: ["USER_MEDIA" as chrome.offscreen.Reason],
+      justification,
+    });
+  },
+  async closeOffscreenDocument() {
+    const offscreen = chrome.offscreen as
+      | { closeDocument?: () => Promise<void> }
+      | undefined;
+    if (typeof offscreen?.closeDocument === "function") {
+      await offscreen.closeDocument();
+    }
+  },
+};
+
 /** The production environment: every port backed by chrome.* (RFC LP-15). */
 export const chromeRuntimeEnvironment: RuntimeEnvironment = {
   persistence: chromePersistencePort,
@@ -312,4 +416,6 @@ export const chromeRuntimeEnvironment: RuntimeEnvironment = {
   history: chromeHistoryPort,
   search: chromeSearchPort,
   windows: chromeWindowsPort,
+  notifications: chromeNotificationsPort,
+  audioCapture: chromeAudioCapturePort,
 };
