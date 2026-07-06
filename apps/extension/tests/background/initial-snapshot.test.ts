@@ -45,17 +45,13 @@ describe("resolveInitialSnapshot", () => {
     expect(warmupCache.consume).toHaveBeenCalledWith(123);
   });
 
-  test("uses pending warmup snapshot with perception metadata", async () => {
+  test("uses pending warmup snapshot + screenshot", async () => {
     const snapshot = makeSnapshot();
     const warmupCache = makeWarmupCache();
     warmupCache.getPending.mockReturnValue(
       Promise.resolve({
         snapshot,
-        perception: {
-          interpretation: "Page summary",
-          providerId: "openrouter",
-          durationMs: 42,
-        },
+        perception: null,
         screenshotUrl: "data:image/png;base64,warmup",
         timestamp: Date.now(),
       }),
@@ -71,7 +67,6 @@ describe("resolveInitialSnapshot", () => {
     });
 
     expect(result.snapshot).toBe(snapshot);
-    expect(result.warmupPerception?.interpretation).toBe("Page summary");
     expect(result.warmupScreenshot).toBe("data:image/png;base64,warmup");
     expect(warmupCache.get).not.toHaveBeenCalled();
     expect(warmupCache.consume).toHaveBeenCalledWith(123);

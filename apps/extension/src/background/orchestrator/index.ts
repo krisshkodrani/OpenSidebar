@@ -2803,7 +2803,6 @@ export class Orchestrator {
           groqApiKey: input.settings.groqApiKey,
           temperature: input.settings.temperature,
           perceptionMode: input.settings.perceptionMode,
-          useVLExecutor: input.settings.useVLExecutor,
           fireworksApiKey: input.settings.fireworksApiKey,
           deepseekApiKey: input.settings.deepseekApiKey,
           kimiApiKey: input.settings.kimiApiKey,
@@ -3631,7 +3630,6 @@ export class Orchestrator {
           perceptionMode: input.settings.perceptionMode,
           maxImagePromptTokenEstimate:
             input.settings.maxImagePromptTokenEstimate,
-          useVLExecutor: input.settings.useVLExecutor,
           completionDeterministicAcceptanceEnabled:
             input.settings.completionDeterministicAcceptanceEnabled,
           // Durable turn checkpoint: injected by orchestrator on SW restart recovery
