@@ -84,20 +84,16 @@ import {
   withTimeout,
   getFrameIdsForMainWorldBridge,
 } from "./helpers";
-import { normalizeServiceNowReferenceKey } from "./servicenow/common";
+// ServiceNow is a quarantined adapter — the generic tools layer talks to it
+// only through these façade hooks + register entry points, never its internal
+// reference/table helpers. See ./servicenow/tool-hooks.ts.
 import {
-  parseServiceNowReferenceCandidate,
-  inferServiceNowListTableFromUrl,
-  commonServiceNowReferenceTableForField,
-  resolveServiceNowReferenceFromBackground,
-  resolveServiceNowReferenceFromPage,
-  commitServiceNowReferenceInMainWorld,
-  selectServiceNowReferenceAutocompleteInMainWorld,
-} from "./servicenow/references";
-import {
+  finalizeServiceNowReferenceOnType,
+  resolveServiceNowListReferenceOverrides,
+  resolveServiceNowListTable,
   registerOpenServiceNowModuleTool,
   registerConfigureServiceNowFormTool,
-} from "./servicenow/register";
+} from "./servicenow";
 
 // Re-export submodules for barrel compatibility
 export * from "./registry";
@@ -816,72 +812,12 @@ export function registerTools() {
       // visible DOM before later clicks submit the value.
       if (!String(result).startsWith("Error:")) {
         const bridgeStatus = await mirrorTextInputInMainWorld(tabId, args);
-        const serviceNowCandidate =
-          parseServiceNowReferenceCandidate(bridgeStatus);
-        if (serviceNowCandidate && typeof args.text === "string") {
-          let resolved = await resolveServiceNowReferenceFromBackground(
-            tabId,
-            serviceNowCandidate.referenceTable,
-            args.text,
-          );
-          let autocompleteReason: string | null = null;
-          let shouldTryAutocomplete =
-            !resolved.ok &&
-            (resolved.reason === "lookup_http_401" ||
-              resolved.reason === "lookup_failed" ||
-              resolved.reason === "lookup_timeout");
-          if (!resolved.ok && resolved.reason === "lookup_http_401") {
-            const pageResolved = await resolveServiceNowReferenceFromPage(
-              tabId,
-              args,
-              serviceNowCandidate,
-              args.text,
-            );
-            resolved = pageResolved;
-            shouldTryAutocomplete = !resolved.ok;
-          }
-          if (!resolved.ok && shouldTryAutocomplete) {
-            const selected =
-              await selectServiceNowReferenceAutocompleteInMainWorld(
-                tabId,
-                args,
-                serviceNowCandidate,
-                args.text,
-              );
-            if (selected.ok) {
-              return `${String(result)} (ServiceNow reference value committed)`;
-            }
-            autocompleteReason = selected.reason;
-          }
-          if (resolved.ok) {
-            const committed = await commitServiceNowReferenceInMainWorld(
-              tabId,
-              args,
-              serviceNowCandidate,
-              resolved.sysId,
-              args.text,
-            );
-            return committed
-              ? `${String(result)} (ServiceNow reference value committed)`
-              : `${String(result)} (ServiceNow reference commit failed: no_commit_target)`;
-          }
-          const suffix = autocompleteReason
-            ? `${resolved.reason}; autocomplete_${autocompleteReason}`
-            : resolved.reason;
-          return `${String(result)} (ServiceNow reference commit failed: ${suffix})`;
-        }
-        if (bridgeStatus === "servicenow_reference_committed") {
-          return `${String(result)} (ServiceNow reference value committed)`;
-        }
-        if (bridgeStatus === "servicenow_field_committed") {
-          return `${String(result)} (ServiceNow field value committed)`;
-        }
-        if (bridgeStatus === "servicenow_field_commit_attempted") {
-          return `${String(result)} (ServiceNow field value commit attempted)`;
-        }
-        if (bridgeStatus?.startsWith("servicenow_reference_failed:")) {
-          return `${String(result)} (ServiceNow reference commit failed: ${bridgeStatus.slice("servicenow_reference_failed:".length)})`;
-        }
+        return await finalizeServiceNowReferenceOnType({
+          tabId,
+          args,
+          result,
+          bridgeStatus,
+        });
       }
       return result;
     },
@@ -1058,6 +994,8 @@ export function registerTools() {
     },
   );
 
+  // Registration order is catalog order (registry pushes defs in call order);
+  // keep this call here — do not group it with the other ServiceNow tool below.
   registerOpenServiceNowModuleTool(toolRegistry);
 
   toolRegistry.register(
@@ -3486,59 +3424,12 @@ export function registerTools() {
       const shouldRun = args.run !== false;
 
       try {
-        let currentTabUrl = "";
-        try {
-          currentTabUrl = (await chrome.tabs.get(tabId)).url || "";
-        } catch {
-          currentTabUrl = "";
-        }
-        const currentHost = (() => {
-          try {
-            return new URL(currentTabUrl).hostname.toLowerCase();
-          } catch {
-            return "";
-          }
-        })();
-        const inferredTable = inferServiceNowListTableFromUrl(currentTabUrl);
-        const effectiveTable = table || inferredTable;
-        const referenceValueOverrides: Array<{
-          index: number;
-          field: string;
-          referenceTable: string;
-          displayValue: string;
-          sysId: string;
-        }> = [];
-        if (
-          currentHost.endsWith(".service-now.com") ||
-          currentHost === "service-now.com"
-        ) {
-          for (let index = 0; index < conditions.length; index += 1) {
-            const condition = conditions[index];
-            const displayValue = condition.value.trim();
-            const operator = condition.operator.trim().toLowerCase();
-            if (!displayValue || operator.includes("empty")) continue;
-            const referenceTable =
-              commonServiceNowReferenceTableForField(condition.field) ||
-              commonServiceNowReferenceTableForField(
-                normalizeServiceNowReferenceKey(condition.field),
-              );
-            if (!referenceTable) continue;
-            const resolved = await resolveServiceNowReferenceFromBackground(
-              tabId,
-              referenceTable,
-              displayValue,
-            );
-            if (resolved.ok) {
-              referenceValueOverrides.push({
-                index,
-                field: condition.field,
-                referenceTable,
-                displayValue,
-                sysId: resolved.sysId,
-              });
-            }
-          }
-        }
+        const { effectiveTable, overrides: referenceValueOverrides } =
+          await resolveServiceNowListReferenceOverrides({
+            tabId,
+            conditions,
+            table,
+          });
 
         const results = await withTimeout(
           chrome.scripting.executeScript({
@@ -4357,8 +4248,7 @@ export function registerTools() {
         } catch {
           currentTabUrl = "";
         }
-        const effectiveTable =
-          table || inferServiceNowListTableFromUrl(currentTabUrl);
+        const effectiveTable = resolveServiceNowListTable(table, currentTabUrl);
 
         const results = await withTimeout(
           chrome.scripting.executeScript({
@@ -4850,8 +4740,7 @@ export function registerTools() {
         } catch {
           currentTabUrl = "";
         }
-        const effectiveTable =
-          table || inferServiceNowListTableFromUrl(currentTabUrl);
+        const effectiveTable = resolveServiceNowListTable(table, currentTabUrl);
 
         const results = await withTimeout(
           chrome.scripting.executeScript({
@@ -6810,6 +6699,8 @@ export function registerTools() {
     },
   );
 
+  // Registration order is catalog order; keep this at its ordinal position —
+  // grouping it with open_servicenow_module above would shift the catalog.
   registerConfigureServiceNowFormTool(toolRegistry);
 
   // Page Assist Tools (xray_page)
