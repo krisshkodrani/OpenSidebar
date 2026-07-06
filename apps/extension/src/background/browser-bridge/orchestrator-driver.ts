@@ -11,9 +11,13 @@
  */
 
 import type { UserSettings } from "../../types";
-import { chromeRuntimeMessagingPort } from "../environment/chrome";
+import { chromeRuntimeEnvironment } from "../environment/chrome";
 import { loadApiKey, loadSettings } from "../../utils/settings-storage";
-import { orchestrator } from "../orchestrator";
+import { createAgentRuntime } from "../runtime";
+
+// OpenClaw drives the shared agent runtime — the same library API the sidepanel
+// uses — instead of importing the orchestrator directly (RFC LP-15, Phase 5).
+const browserRuntime = createAgentRuntime(chromeRuntimeEnvironment);
 import type { AgentRunOutcome, AgentRunner, AgentTask } from "./handler";
 
 export interface CompletionPayload {
@@ -82,7 +86,7 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
     async startTask({ query, tabId, workspaceId }) {
       const settings = (await loadSettings()) ?? ({} as UserSettings);
       const apiKey = await loadApiKey();
-      await orchestrator.startTask({
+      await browserRuntime.startTask({
         query,
         tabId,
         workspaceId,
@@ -91,18 +95,9 @@ export function createDefaultBrowserTaskDeps(): BrowserTaskDeps {
       });
     },
     addCompletionListener(fn) {
-      // OpenClaw correlates completions by workspaceId over the messaging port
-      // (RFC LP-15, Phase 4a).
-      return chromeRuntimeMessagingPort.onMessage((message) => {
-        const m = message as {
-          type?: string;
-          workspaceId?: string;
-          payload?: CompletionPayload;
-        };
-        if (m?.type === "TASK_COMPLETION" && typeof m.workspaceId === "string") {
-          fn(m.workspaceId, m.payload ?? {});
-        }
-      });
+      // Completions correlate by workspaceId over the runtime's messaging seam
+      // (RFC LP-15, Phase 5).
+      return browserRuntime.onTaskCompletion(fn);
     },
   };
 }

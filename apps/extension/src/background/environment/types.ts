@@ -214,6 +214,37 @@ export interface WindowsPort {
   create(options: { url?: string }): Promise<WindowRecord>;
 }
 
+// --- Peripheral ports (RFC LP-15, Phase 4c) ---
+
+export interface NotificationCreateOptions {
+  type: "basic";
+  iconUrl: string;
+  title: string;
+  message: string;
+  priority?: number;
+  buttons?: { title: string }[];
+}
+
+export interface NotificationsPort {
+  isAvailable(): boolean;
+  create(id: string, options: NotificationCreateOptions): Promise<string>;
+  clear(id: string): Promise<boolean>;
+  getPermissionLevel(): Promise<"granted" | "denied">;
+  onClicked(listener: (notificationId: string) => void): () => void;
+  onClosed(listener: (notificationId: string) => void): () => void;
+}
+
+/** Hides tabCapture + the offscreen document lifecycle behind one port. */
+export interface AudioCapturePort {
+  isAvailable(): boolean;
+  getMediaStreamId(tabId: number): Promise<string>;
+  ensureOffscreenDocument(
+    path: string,
+    justification: string,
+  ): Promise<void>;
+  closeOffscreenDocument(): Promise<void>;
+}
+
 /**
  * Aggregate bundle of every environment port, for injection only (RFC LP-15).
  * Deliberately NOT a god port — consumers depend on the specific ports they
@@ -231,4 +262,6 @@ export interface RuntimeEnvironment {
   history: HistoryPort;
   search: SearchPort;
   windows: WindowsPort;
+  notifications: NotificationsPort;
+  audioCapture: AudioCapturePort;
 }
