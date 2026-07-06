@@ -15,7 +15,7 @@ import { ToolName, EvidenceEvent } from "../../../types";
 import {
   OPEN_SERVICENOW_MODULE_DEF,
   CONFIGURE_SERVICENOW_FORM_DEF,
-} from "../definitions";
+} from "./definitions";
 import { waitForNavigation } from "../bridge";
 import { withTimeout } from "../helpers";
 import {

@@ -35,9 +35,21 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   most-churned files in the repo. `background/tools/index.ts` (~7K lines after
   the ServiceNow adapter extraction) and `background/orchestrator/index.ts`
   (~7.5K lines) are the next tier — same care applies.
-- ServiceNow-specific tool logic lives in `background/tools/servicenow/`
-  (records/references/navigation/register). Modules there must never import
-  `tools/index.ts` or the tools barrel — the dependency points one way.
+- ServiceNow is a **partially** quarantined adapter, not a fully detached one.
+  What IS contained in `background/tools/servicenow/` (definitions / records /
+  references / navigation / register / tool-hooks): the two SN tool schemas,
+  their registration, and the reference-resolution helpers. `tools/index.ts`
+  talks to it only through the `servicenow/tool-hooks.ts` façades — and adapter
+  modules must never import `tools/index.ts` or the tools barrel (one-way rule).
+  What is NOT yet extracted and still lives in generic files: injected
+  main-world SN/Glide page scripts + the knowledge-base fetch and list-action
+  handlers inside `tools/index.ts` (the injected scripts are serialized into the
+  page, so they can't import adapter code without a new injection mechanism);
+  and the larger SN behavior in `agent/loop.ts`, `orchestrator/skills.ts`,
+  `agent/verification.ts`, `agent/catalog-order-policy.ts`, and
+  `content/actions/interaction.ts`. Deleting the adapter dir would NOT remove
+  ServiceNow from the runtime — full detachment is deferred to the LP-15
+  runtime-as-library work.
 - Completion/"is the task done?" logic is **split** between those two files (a
   deterministic contract kernel + a legacy guard chain in the loop). Reason about
   both when you touch completion behavior.
