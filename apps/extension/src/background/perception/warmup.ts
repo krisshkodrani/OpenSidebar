@@ -13,7 +13,6 @@
 import { DomSnapshot, MessageSource } from "../../types";
 import { logger } from "../../utils";
 import { isTabReady, ensureContentScript } from "../infrastructure/tab-ready";
-import { perceive, LegacyPerceptionResult } from "./perception";
 import { transformScreenshot } from "./screenshot-transform";
 import { computeSnapshotFingerprint } from "../agent/stagnation";
 
@@ -50,7 +49,11 @@ async function captureVisibleTabWithRetry(
 export interface WarmupEntry {
   tabId: number;
   snapshot: DomSnapshot;
-  perception: LegacyPerceptionResult | null;
+  /**
+   * Always null — warmup no longer runs a separate perception model. Kept for
+   * the loop's warmup fast path shape; the executor does its own vision.
+   */
+  perception: null;
   screenshotUrl: string | null;
   fingerprint: string;
   timestamp: number;
@@ -194,40 +197,27 @@ class PerceptionWarmup {
         });
       }
 
-      // 4. Run perception (skip if near-empty page — not worth the API call for warmup)
+      // 4. Warmup pre-captures the screenshot only — the VL executor does its
+      //    own vision, so there is no separate perception model call here.
       if (!screenshotUrl) {
-        logger.info("warmup", "No screenshot — skipping perception", { tabId });
+        logger.info("warmup", "No screenshot — nothing to warm", { tabId });
         return null;
       }
-
-      // Tell perception the screenshot is from y=0 if we scrolled to top
-      const scrollOverride =
-        originalScrollY > 0 ? { ...snapshot.scroll, y: 0 } : snapshot.scroll;
-
-      const result = await perceive({
-        screenshotDataUrl: screenshotUrl,
-        elements: snapshot.elements,
-        url: snapshot.url,
-        title: snapshot.title,
-        scroll: scrollOverride,
-      });
 
       const entry: WarmupEntry = {
         tabId,
         snapshot,
-        perception: result,
+        perception: null,
         screenshotUrl,
         fingerprint,
         timestamp: Date.now(),
       };
 
       this.cache.set(tabId, entry);
-      logger.info("warmup", "Perception warmup cached", {
+      logger.info("warmup", "Screenshot warmup cached", {
         tabId,
         url: snapshot.url,
         elementCount: snapshot.elements.length,
-        durationMs: result.durationMs,
-        provider: result.providerId,
       });
 
       return entry;

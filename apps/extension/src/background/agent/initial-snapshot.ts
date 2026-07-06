@@ -6,8 +6,6 @@ import { ensureContentScript } from "../tab-ready";
 
 type InitialSnapshotLogger = Pick<typeof logger, "info" | "warn">;
 
-type WarmupPerception = NonNullable<WarmupEntry["perception"]>;
-
 type InitialSnapshotWarmupCache = {
   getPending(tabId: number): Promise<WarmupEntry | null> | null | undefined;
   get(tabId: number): WarmupEntry | null;
@@ -16,7 +14,6 @@ type InitialSnapshotWarmupCache = {
 
 export type InitialSnapshotResolution = {
   snapshot?: DomSnapshot;
-  warmupPerception: WarmupPerception | null;
   warmupScreenshot: string | null;
 };
 
@@ -43,7 +40,6 @@ export async function resolveInitialSnapshot({
   ensureContentScript: ensureScript = ensureContentScript,
 }: ResolveInitialSnapshotDeps): Promise<InitialSnapshotResolution> {
   let snapshot = initialSnapshot;
-  let warmupPerception: WarmupPerception | null = null;
   let warmupScreenshot: string | null = null;
 
   try {
@@ -58,21 +54,18 @@ export async function resolveInitialSnapshot({
         const entry = await pending;
         if (entry) {
           snapshot = entry.snapshot;
-          if (entry.perception) warmupPerception = entry.perception;
           warmupScreenshot = entry.screenshotUrl;
-          log.info("agent", "Using warmup snapshot + perception", {
+          log.info("agent", "Using warmup snapshot + screenshot", {
             tabId,
             elementCount: snapshot.elements.length,
-            provider: entry.perception?.providerId,
           });
         }
       } else {
         const cached = warmupCache.get(tabId);
         if (cached) {
           snapshot = cached.snapshot;
-          if (cached.perception) warmupPerception = cached.perception;
           warmupScreenshot = cached.screenshotUrl;
-          log.info("agent", "Using cached warmup snapshot + perception", {
+          log.info("agent", "Using cached warmup snapshot + screenshot", {
             tabId,
             elementCount: snapshot.elements.length,
             ageMs: Date.now() - cached.timestamp,
@@ -99,7 +92,6 @@ export async function resolveInitialSnapshot({
 
     return {
       snapshot,
-      warmupPerception,
       warmupScreenshot,
     };
   } finally {

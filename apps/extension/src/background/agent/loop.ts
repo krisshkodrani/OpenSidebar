@@ -4131,7 +4131,6 @@ export class AgentLoop {
       getSnapshot: () => this.context.getSnapshot(),
     });
     const snapshot = initialSnapshotResolution.snapshot;
-    const warmupPerception = initialSnapshotResolution.warmupPerception;
     const warmupScreenshot = initialSnapshotResolution.warmupScreenshot;
 
     const perceptionDecision = resolvePerceptionRuntimeModeDecision({
@@ -4225,36 +4224,14 @@ export class AgentLoop {
           "VL mode: using warmup screenshot (skipped VLM)",
           { tabId },
         );
-      } else if (this.useVLExecutor && warmupScreenshot && !warmupPerception) {
+      } else if (this.useVLExecutor && warmupScreenshot) {
+        // Warmup screenshot present but the image budget is exhausted.
         this.recordImagePromptBudgetExhausted(1, "vl_warmup_screenshot");
         this.context.setScreenshotForExecutor(null);
         this.context.setPageInterpretation(null);
         this.perception.setScreenshotUrl(null);
-      } else if (warmupPerception) {
-        // Use pre-computed perception — hydrate PerceptionAgent with warmup result
-        const warmupFingerprint = computeSnapshotFingerprint(snapshot);
-        this.perception.hydrateFromWarmup(
-          warmupPerception.interpretation,
-          warmupFingerprint,
-          warmupScreenshot,
-          snapshot.url,
-          {
-            model: warmupPerception.model,
-            providerId: warmupPerception.providerId,
-            durationMs: warmupPerception.durationMs,
-            cached: true,
-          },
-        );
-        this.context.setPageInterpretation(warmupPerception.interpretation);
-        this.recordCachedVisionUsage();
-        this.log.info("agent", "Perception from warmup (skipped vision API)", {
-          provider: warmupPerception.providerId,
-          durationMs: warmupPerception.durationMs,
-        });
-        // Still triage popups since it's fast and important
-        await this.triagePopups(tabId);
       } else {
-        // No warmup available — run perception normally
+        // No usable warmup — run the normal perception refresh.
         await this.refreshPerceptionAndTriage(tabId);
       }
     } else {
