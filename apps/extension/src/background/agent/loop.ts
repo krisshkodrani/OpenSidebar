@@ -124,6 +124,7 @@ import {
   runCompletionPipeline,
   type PlannerValidationResult,
 } from "./completion/pipeline";
+import type { CompletionEffectHost } from "./completion/apply-effects";
 import {
   TURN_CHECKPOINT_VERSION,
   buildMutationKey,
@@ -2729,6 +2730,67 @@ export class AgentLoop {
   }
 
   /**
+   * Concrete effect applier host (RFC LP-15, Phase 7b). Maps each declarative
+   * CompletionEffect to the loop-side mutation it represents. Constructed per
+   * done() call so the tool-message effects carry the current toolCallId and the
+   * grounding refresh targets the current tab.
+   */
+  private createCompletionEffectHost(
+    toolCallId: string,
+    tabId: number,
+  ): CompletionEffectHost {
+    return {
+      incrementDoneRejections: () => {
+        this.doneRejections++;
+      },
+      recordContractRejection: (kind: string) => {
+        if (this.lastContractRejectionKind === kind) {
+          this.consecutiveSameKindRejections++;
+        } else {
+          this.lastContractRejectionKind = kind;
+          this.consecutiveSameKindRejections = 1;
+        }
+      },
+      setLastCompletionRejection: (decision) => {
+        this.lastCompletionRejection = decision;
+      },
+      setRecoveryHint: (hint) => {
+        this.lastCompletionRecoveryHint = hint;
+      },
+      postContextMessage: (role, content) => {
+        this.context.addMessage(
+          role === "tool"
+            ? { role: "tool", tool_call_id: toolCallId, content }
+            : { role: "user", content },
+        );
+      },
+      postRejectionDiagnostic: (summary, primaryReason, fallbackInstruction) => {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCallId,
+          content: this.doneRejectionDiagnosticContent({
+            summary,
+            primaryReason,
+            fallbackInstruction,
+          }),
+        });
+      },
+      emitTrace: (event, data) => {
+        this.traceRecorder?.recordEvent(event, data);
+      },
+      setGuardAfterDoneRejection: () => {
+        this.guardAfterDoneRejection = true;
+      },
+      checkDoneRejectionEscalation: () => {
+        this.checkAndSetDoneRejectionEscalation();
+      },
+      forceGroundingRefresh: async () => {
+        await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
+      },
+    };
+  }
+
+  /**
    * Golden-harness tap (RFC LP-15, Phase 0). When decision recording is off
    * (production default) this is a straight pass-through. When on, it captures
    * the input surface BEFORE the decision runs (counters/evidence are mutated
@@ -2780,7 +2842,7 @@ export class AgentLoop {
         summary: input.summary,
       });
       const pipelineDecision = await runCompletionPipeline(input.guardContext, {
-        kernelDecision,
+        getKernelDecision: () => kernelDecision,
         deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
         isDuplicateTerminal: input.isDuplicateTerminal,
         validatePlan: async () => input.plannerResult,

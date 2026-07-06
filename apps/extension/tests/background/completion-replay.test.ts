@@ -46,7 +46,7 @@ async function replayPipelineVerdict(
     summary: input.summary,
   });
   const pipelineDecision = await runCompletionPipeline(input.guardContext, {
-    kernelDecision: decision,
+    getKernelDecision: () => decision,
     deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
     isDuplicateTerminal: input.isDuplicateTerminal,
     validatePlan: async () => input.plannerResult,
