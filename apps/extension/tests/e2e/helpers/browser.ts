@@ -39,7 +39,10 @@ export interface ExtensionContext {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST_PATH = path.resolve(__dirname, "../../../../../dist");
+// E2E loads the dev-surface build (dist-dev, `nx run extension:build-e2e`):
+// the production dist compiles out the trace drain and e2e helper surface,
+// so trace-based assertions are impossible against it.
+const DIST_PATH = path.resolve(__dirname, "../../../../../dist-dev");
 const DIST_MANIFEST_PATH = path.join(DIST_PATH, ".vite", "manifest.json");
 const HELPER_PATH = "/e2e-helper.html";
 const SIDE_PANEL_PATH = "/src/sidepanel/index.html";

@@ -151,8 +151,8 @@ async function main(): Promise<void> {
   }
 
   if (build) {
-    console.log("\n[e2e:staged] Building extension before staged run...");
-    execSync("corepack pnpm run build", {
+    console.log("\n[e2e:staged] Building e2e extension before staged run...");
+    execSync("corepack pnpm run build:e2e", {
       cwd: PROJECT_ROOT,
       stdio: "inherit",
       windowsHide: true,
@@ -164,6 +164,15 @@ async function main(): Promise<void> {
       windowsHide: true,
     });
   }
+
+  // Heartbeat guard: e2e must drive the dev-surface build (overlay entry
+  // + trace drain). A prod-shaped dist-dev silently voids every
+  // trace-based assertion — fail loudly here instead.
+  execSync(`node scripts/check-dist-dev.js`, {
+    cwd: PROJECT_ROOT,
+    stdio: "inherit",
+    windowsHide: true,
+  });
 
   for (const suite of suites) {
     const testFiles = E2E_SUITES[suite].map((file) =>

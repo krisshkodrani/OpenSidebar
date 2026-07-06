@@ -73,7 +73,6 @@ function makePerception(overrides = {}) {
       cached: false,
     })),
     getLastScreenshot: vi.fn(() => null),
-    getPanoramicShots: vi.fn(() => null),
     ...overrides,
   };
 }
@@ -132,13 +131,6 @@ describe("prepareLlmTurnRequest", () => {
     const perception = makePerception({
       getInterpretation: vi.fn(() => "The page is ready."),
       getLastScreenshot: vi.fn(() => "data:image/jpeg;base64,abc"),
-      getPanoramicShots: vi.fn(() => [
-        {
-          dataUrl: "data:image/jpeg;base64,pan",
-          scrollY: 100,
-          label: "bottom",
-        },
-      ]),
     });
 
     await prepareLlmTurnRequest({
@@ -190,13 +182,6 @@ describe("prepareLlmTurnRequest", () => {
       }),
       "data:image/jpeg;base64,abc",
       expect.stringContaining("1 buttons"),
-      [
-        {
-          dataUrl: "data:image/jpeg;base64,pan",
-          scrollY: 100,
-          label: "bottom",
-        },
-      ],
     );
   });
 });

@@ -88,6 +88,27 @@ export const CONTAINER_TAGS = new Set([
  * The normal document tree does not include shadow-root descendants, so every
  * consumer that needs page-level discovery must opt into this traversal.
  */
+/**
+ * Open a closed shadow root via the extension-only chrome.dom API.
+ * Returns null outside custom elements, when the API is unavailable
+ * (non-extension test environments), or when the element has no root.
+ */
+function getClosedShadowRoot(el: Element): ShadowRoot | null {
+  // Custom elements are the only realistic closed-root hosts; the tag-name
+  // check keeps this off the hot path for plain elements.
+  if (!el.tagName.includes("-")) return null;
+  try {
+    const dom = (
+      globalThis as unknown as {
+        chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } };
+      }
+    ).chrome?.dom;
+    return dom?.openOrClosedShadowRoot?.(el) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function getDeepQueryRoots(
   root: Document | ShadowRoot | Element,
   depth: number = 0,
@@ -104,12 +125,17 @@ export function getDeepQueryRoots(
     for (const el of allElements) {
       if (isOwnElement(el)) continue;
 
-      // Shadow DOM traversal (single check — avoids duplicate traversal)
-      if (el.shadowRoot) {
+      // Shadow DOM traversal (single check — avoids duplicate traversal).
+      // LP-12 Phase A: closed roots are reachable from content scripts via
+      // chrome.dom.openOrClosedShadowRoot (Chrome 88+) — an extension-native
+      // capability CDP-based agents lack. Read-only traversal; actions still
+      // dispatch real events on the real elements.
+      const shadowRoot = el.shadowRoot ?? getClosedShadowRoot(el);
+      if (shadowRoot) {
         try {
           roots.push(
             ...getDeepQueryRoots(
-              el.shadowRoot,
+              shadowRoot,
               depth + 1,
             ),
           );

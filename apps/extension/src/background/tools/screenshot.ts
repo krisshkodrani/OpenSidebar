@@ -27,8 +27,8 @@ export async function isTabActive(
 }
 
 /**
- * Capture a screenshot of the visible tab.
- * Used for human debugging display in the sidebar (not sent to LLM).
+ * Capture a screenshot of the visible tab for human-facing display
+ * (sidebar debugging and the passive monitor) — never sent to an LLM.
  */
 export async function takeScreenshotWithTags(
   tabId: number,

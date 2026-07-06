@@ -14,7 +14,7 @@ The current default runtime uses Fireworks-hosted Kimi for executor and planner 
 
 | Tier | Model | Role |
 |------|-------|------|
-| Executor | `accounts/fireworks/routers/kimi-k2p6-turbo` | Default action loop |
+| Executor | `accounts/fireworks/models/kimi-k2p7-code` | Default action loop |
 | Planner | `accounts/fireworks/routers/kimi-k2p6-turbo` | Planning, decomposition, rerouting, and verification support |
 
 Both share the same `LLMClient` class. Escalation triggers `switchToPlanner()` — once the planner model is active, it stays active for the remainder of the session.
@@ -99,9 +99,9 @@ Some models emit `<think>...</think>` reasoning blocks inline. These are handled
 
 ---
 
-## 4. The 38-Tool Ecosystem
+## 4. The 51-Tool Ecosystem
 
-The agent has 38 tools organized into categories:
+The agent has 51 tools organized into categories:
 
 ### DOM Interaction (7 tools)
 | Tool | Description | Sequential | DOM-Modifying |

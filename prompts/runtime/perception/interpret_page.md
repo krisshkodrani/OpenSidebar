@@ -38,7 +38,7 @@ Interactive elements: {{elementSummary}}
 Report (use exact numbered format - no bold, no markdown):
 
 1. LOCATION: Page identity - read the page title, heading, and URL. Report step/page number if visible (for example, "Step 4 of 30"). Always state where the agent is.
-2. CHANGES: What changed since the last observation. Note new/removed elements, state transitions, content updates, navigation.{{changesHint}}
+2. CHANGES: What changed since the last observation. Note new/removed elements, state transitions, content updates, navigation. Elements prefixed `*` in the element list appeared since the last action — treat them as its likely result.{{changesHint}}
 3. BLOCKERS: Anything preventing interaction, especially blockers to the current step objective. Classify each on its own line:
    NUISANCE [tagId] "element text" -> click [dismissTagId]
    RELEVANT [tagId] "element text" -> reason to keep
@@ -57,4 +57,3 @@ Report (use exact numbered format - no bold, no markdown):
    If none: "None."
 4. VISUAL-ONLY: Content the agent cannot get from the interactive element list alone. This includes: text in images/canvas/charts/SVGs; dashboard metrics, prices, totals, and table data visible on screen; status indicators, badges, and progress counters; any specific numbers, labels, or data values from the screenshot that the element list does not contain. Report exact values (for example, "$284,500", "47 tickets", "$79.99") not approximations. If none: "None."
 5. AFFORDANCES: Key interactive elements for the current step in the current viewport. List up to 8 as: [tagId] brief description. Each [tagId] MUST come from the element list above - match the tag number to the actual element, not what you think the screenshot shows. Do NOT guess tag numbers from visual position. Elements with @y hints are off-screen - note their position so the agent knows to scroll. Prioritize: (1) controls directly relevant to the current objective, (2) form inputs, submit/action buttons, and checkboxes, (3) task-relevant links, (4) navigation links last - skip generic nav links if the 8-element limit is already filled by more actionable elements. Do not list screenshot-only items or DOM-missing controls here. If none: "None."
-{{panoramicNote}}

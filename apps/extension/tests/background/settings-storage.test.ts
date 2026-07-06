@@ -139,6 +139,56 @@ describe("settings storage", () => {
     expect(settings?.perceptionMode).toBe("auto");
   });
 
+  test("dropping an ineligible executor rewrites sync storage once", async () => {
+    const syncSet = vi.fn(async () => {});
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "fireworks",
+        executorModel: "openai/gpt-oss-120b",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+      },
+    })) as any;
+    chrome.storage.sync.set = syncSet as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      fireworksApiKey_local: "fw-test",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    await loadSettings();
+
+    const payload = syncSet.mock.calls[0]?.[0]?.userSettings;
+    expect(payload).toBeDefined();
+    expect(payload.executorModel).toBeUndefined();
+  });
+
+  test("keeps an eligible non-default executor override on load", async () => {
+    chrome.storage.sync.get = vi.fn(async () => ({
+      userSettings: {
+        providerMode: "fireworks",
+        executorModel: "accounts/fireworks/routers/kimi-k2p6-turbo",
+        maxTurns: 30,
+        theme: "system",
+        showSessionMetrics: true,
+        requireApprovals: true,
+        allowNavigation: true,
+      },
+    })) as any;
+    chrome.storage.local.get = vi.fn(async () => ({
+      fireworksApiKey_local: "fw-test",
+    })) as any;
+    chrome.storage.session.get = vi.fn(async () => ({})) as any;
+
+    const settings = await loadSettings();
+
+    expect(settings?.executorModel).toBe(
+      "accounts/fireworks/routers/kimi-k2p6-turbo",
+    );
+  });
+
   test("persists providerMode when saving settings without an explicit mode", async () => {
     const syncSet = vi.fn(async () => {});
     chrome.storage.sync.set = syncSet as any;

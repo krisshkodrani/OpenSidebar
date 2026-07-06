@@ -24,6 +24,18 @@ export interface PerceptionRuntimeModeDecisionArgs
   perceptionMode?: PerceptionRuntimeMode;
   useVLExecutor?: boolean;
   providerMode?: ProviderMode;
+  /**
+   * Whether the resolved executor model can accept image input. `false`
+   * forces structured mode over every other signal and override — images
+   * must never be sent to a non-VL executor. `undefined` means unknown and
+   * leaves the decision unchanged.
+   */
+  executorVLCapable?: boolean;
+  /**
+   * Which way auto mode leans when no signal decides (LP-11 A/B arm).
+   * Defaults to PERCEPTION_AUTO_DEFAULT_MODE.
+   */
+  autoDefaultMode?: "structured" | "unified_vl";
   taskText?: string;
   imagePromptTokensUsed?: number;
   maxImagePromptTokens?: number;
@@ -37,6 +49,21 @@ const SPARSE_TEXT_LENGTH_THRESHOLD = 500;
 const SPARSE_DOM_ELEMENT_THRESHOLD = 3;
 const SPARSE_SPA_ELEMENT_THRESHOLD = 5;
 const SPARSE_SPA_VISIBLE_TEXT_THRESHOLD = 300;
+// Dense text-heavy DOM: the one page shape where a textual observation
+// beats spending vision (LP-11 unified_vl-default arm).
+const DENSE_DOM_ELEMENT_THRESHOLD = 40;
+const DENSE_TEXT_LENGTH_THRESHOLD = 2000;
+
+/**
+ * What auto mode does when no signal decides (RFC LP-11). Flipped to
+ * "unified_vl" on the measured A/B verdict
+ * (docs/evals/lp-0011-perception-default-ab-2026-07.md): +5.6pp task
+ * success, −31% wall clock, and the separate perception call eliminated.
+ * Structured remains the dense-text/budget/capability fallback and the
+ * explicit override.
+ */
+export const PERCEPTION_AUTO_DEFAULT_MODE: "structured" | "unified_vl" =
+  "unified_vl";
 
 function isImageBudgetExhausted(
   args: PerceptionRuntimeModeDecisionArgs,
@@ -89,6 +116,16 @@ export function resolvePerceptionRuntimeModeDecision(
     return {
       mode: "structured",
       reason: "explicit_structured_override",
+      signals: [],
+    };
+  }
+
+  // Capability gate: a non-VL executor can never receive screenshots, so it
+  // outranks the explicit unified_vl override and the legacy toggle.
+  if (args.executorVLCapable === false) {
+    return {
+      mode: "structured",
+      reason: "executor_not_vl_capable",
       signals: [],
     };
   }
@@ -152,6 +189,33 @@ export function resolvePerceptionRuntimeModeDecision(
       mode: "unified_vl",
       reason: signals[0],
       signals,
+    };
+  }
+
+  const autoDefault = args.autoDefaultMode ?? PERCEPTION_AUTO_DEFAULT_MODE;
+  if (autoDefault === "unified_vl") {
+    // Inverted default (LP-11): vision unless something argues FOR text.
+    if (isImageBudgetExhausted(args)) {
+      return {
+        mode: "structured",
+        reason: "image_budget_exhausted",
+        signals: ["image_budget_exhausted"],
+      };
+    }
+    if (
+      elementCount >= DENSE_DOM_ELEMENT_THRESHOLD &&
+      pageTextLength >= DENSE_TEXT_LENGTH_THRESHOLD
+    ) {
+      return {
+        mode: "structured",
+        reason: "dense_text_dom",
+        signals: ["dense_text_dom"],
+      };
+    }
+    return {
+      mode: "unified_vl",
+      reason: "default_unified_vl",
+      signals: [],
     };
   }
 

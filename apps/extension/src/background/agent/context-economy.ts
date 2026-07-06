@@ -709,6 +709,7 @@ const OBSERVATION_PROGRESS_TOOLS = new Set([
   "inspect_catalog_item",
   "inspect_chart",
   "inspect_filter_state",
+  "inspect_region",
   "inspect_table",
   "read_element",
   "read_page",

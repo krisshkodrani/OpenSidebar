@@ -913,6 +913,46 @@ export const INSPECT_CHART_DEF: ToolDefinition = {
   },
 };
 
+export const INSPECT_REGION_DEF: ToolDefinition = {
+  type: "function",
+  function: {
+    name: ToolName.INSPECT_REGION,
+    description:
+      "Zoom into a screen region and get a magnified view. Use when text or controls are too small to read in the screenshot — canvas charts, dense tables, map labels, tiny icons. Pass either id (tag number; zooms onto its box) or a viewport rect x,y,width,height in the same coordinates as @box hints. Try inspect_chart first for chart data; use this when the value exists only in pixels. Max 2 per turn.",
+    parameters: {
+      type: "object",
+      properties: {
+        id: {
+          type: "integer",
+          description:
+            "Tag ID of the element to zoom onto (20px padding added). Use this OR the rect.",
+        },
+        x: {
+          type: "number",
+          description: "Region left edge in viewport pixels.",
+        },
+        y: {
+          type: "number",
+          description: "Region top edge in viewport pixels.",
+        },
+        width: {
+          type: "number",
+          description: "Region width in viewport pixels.",
+        },
+        height: {
+          type: "number",
+          description: "Region height in viewport pixels.",
+        },
+        purpose: {
+          type: "string",
+          description: "What you are trying to read in this region.",
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const INSPECT_TABLE_DEF: ToolDefinition = {
   type: "function",
   function: {

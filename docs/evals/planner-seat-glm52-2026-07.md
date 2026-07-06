@@ -1,0 +1,82 @@
+# Planner-seat eval — kimi-k2p6-turbo vs GLM-5.2 (2026-07)
+
+Owner hypothesis (2026-07-05): GLM-5.2 "looks stronger in reasoning" and
+could hold the planner/orchestrator ("brains") seat, with reactive
+VL models keeping the executor seat. This eval tests that with one
+variable changed.
+
+## Environment
+
+- Branch: `feat/lp-0011-auto-default-ab` (post LP-11 flip: unified_vl
+  auto-default; executor default kimi-k2p7-code)
+- Executor (both configs, pinned): `accounts/fireworks/models/kimi-k2p7-code`
+- Perception: `auto` (unified_vl default)
+- Config A (incumbent): planner `accounts/fireworks/routers/kimi-k2p6-turbo`
+- Config B (challenger): planner `accounts/fireworks/models/glm-5p2`
+  (text-only — legitimate for the planner seat; pricing entry is a
+  placeholder estimate per pricing-data.ts, so cost columns are
+  indicative only)
+- Harness: `E2E_PLANNER_MODEL` → `settings.plannerModel` → planner pool
+  verbatim (client.ts fireworks branch)
+
+## Protocol (pre-registered; scope reduced mid-flight by owner cost
+## directive, before any cross-config results existed)
+
+1. Per config: **hard tier only, single repeat** (10 tasks/config) via
+   `run-e2e-arena.ts --tier hard --repeat 1 --report-label planner-<x>-hard`,
+   plus the `escalation-rescue` focus suite (the planner-heavy path:
+   rescue, replanning, escalation). Rationale: the planner acts on
+   decomposition/escalation/verification — the hard tier is where those
+   paths fire; easy/medium tiers are executor-dominated and were cut for
+   cost. The original full-set config A run was stopped ~30% in; its
+   salvaged first-sweep results (7/10 pass; one overlay-submit harness
+   flake, one old-gate job-board fail) are recorded as supplementary
+   observations only.
+2. **Flip criterion — the planner default changes to GLM-5.2 only if ALL
+   hold:**
+   - arena overall success ≥ incumbent − 0pp (ties break FOR the
+     incumbent: a flip needs positive evidence, not parity), AND
+   - no tier worse by > 10pp, AND
+   - escalation-rescue suite green under GLM-5.2, AND
+   - hard-tier success or avg turns strictly better (the "stronger
+     reasoning" hypothesis must show up where reasoning matters).
+3. Known limitations: n=36/config is directional; the planner only
+   influences a subset of turns (decomposition, escalation, verification),
+   so deltas are expected to be smaller than the perception A/B's.
+4. **Mid-flight deviation (recorded before results):** the job-board
+   validator fix (quota 8→4, commit b19e254a) landed after config A's
+   arena started but before config B's — the two configs therefore run
+   different job-board gates. `job-board.recommend-best-matches` is
+   EXCLUDED from the cross-config comparison and will be re-measured
+   ×2 per config on identical code afterwards. The concurrent
+   waitForOutcome change alters failure latency/reason strings only,
+   not pass/fail semantics, and does not affect comparability.
+
+## Results
+
+**EVAL ABORTED 2026-07-05 (owner cost directive)** before any comparable
+cross-config data existed. What ran:
+
+- Full-protocol config A: stopped ~30% in. Salvaged first-sweep results
+  (10 tasks, planner kimi-k2p6-turbo): 7 pass / 3 fail — all three
+  failures non-planner (overlay-submit harness flake; old job-board
+  gate; executor-side dashboard incompleteness).
+- Lean-protocol config A: stopped after 1 task (runner error from the
+  stop itself).
+- Config B (glm-5p2): never ran.
+
+## Decision
+
+**No flip — insufficient evidence, not a negative verdict.** The planner
+default remains `accounts/fireworks/routers/kimi-k2p6-turbo`; GLM-5.2
+stays selectable for the planner seat. The harness surface built for
+this eval (`E2E_PLANNER_MODEL`, report/JSON planner stamping, the lean
+hard-tier×1 protocol above) is permanent — re-running the comparison
+when budget allows is one command per config:
+
+```
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+E2E_PLANNER_MODEL=<planner> \
+  tsx scripts/run-e2e-arena.ts --tier hard --repeat 1 --report-label planner-<x>-hard --no-build
+```
+plus `tsx scripts/run-e2e-staged.ts escalation-rescue --no-build` per config.

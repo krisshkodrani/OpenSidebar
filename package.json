@@ -1,6 +1,6 @@
 {
   "name": "opensidebar",
-  "version": "0.3.0",
+  "version": "0.3.5",
   "type": "module",
   "packageManager": "pnpm@11.1.0",
   "description": "AI-powered browser agent that can see, click, and navigate the web",
@@ -36,8 +36,9 @@
     "dev": "nx run tools:dev-stack",
     "dist": "nx run extension:build",
     "build": "nx run extension:build",
+    "build:e2e": "nx run extension:build-e2e",
     "test": "nx run-many -t test --projects=extension",
-    "verify": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js",
+    "verify": "tsx scripts/validate-rfc-decisions.ts && tsx scripts/run-e2e-staged.ts --list && nx run-many -t lint && nx run-many -t typecheck && nx run-many -t test --projects=extension && nx run extension:build && node scripts/check-dist.js",
     "doctor": "tsx scripts/doctor.ts",
     "lint": "tsx scripts/validate-rfc-decisions.ts && nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",

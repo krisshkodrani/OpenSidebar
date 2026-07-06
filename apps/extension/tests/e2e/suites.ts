@@ -10,7 +10,8 @@ export type E2EFocusSuiteName =
   | "showcase"
   | "memory-regression"
   | "multi-turn-workflows"
-  | "escalation-rescue";
+  | "escalation-rescue"
+  | "arena";
 export type E2ESuiteName = E2EDefaultSuiteName | E2EFocusSuiteName;
 
 export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
@@ -38,6 +39,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
     "navigation-challenge.test.ts",
     "online-shop.test.ts",
     "perception-auto-vision.test.ts",
+    "perception-region-zoom.test.ts",
     "web-components.test.ts",
   ],
   "runtime-regression": [
@@ -78,6 +80,7 @@ export const E2E_SUITES: Record<E2ESuiteName, readonly string[]> = {
   ],
   "multi-turn-workflows": ["multi-turn-workflows.test.ts"],
   "escalation-rescue": ["escalation-rescue.test.ts"],
+  arena: ["arena-suite.test.ts"],
 };
 
 export const E2E_SUITE_ORDER: readonly E2EDefaultSuiteName[] = [
@@ -95,6 +98,7 @@ export const E2E_FOCUS_SUITE_ORDER: readonly E2EFocusSuiteName[] = [
   "memory-regression",
   "multi-turn-workflows",
   "escalation-rescue",
+  "arena",
 ];
 
 export const E2E_CANONICAL_SUITE_ORDER: readonly E2ESuiteName[] = [

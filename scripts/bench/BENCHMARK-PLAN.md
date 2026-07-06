@@ -82,7 +82,7 @@ Any change to these = a new campaign, not a comparable config.
 
 | Slot | `E2E_PROVIDER` | `E2E_MODEL` | `--config-label` | Key needed | Status |
 | --- | --- | --- | --- | --- | --- |
-| **A — flagship** | `fireworks` | `kimi-k2p6-turbo` | `fireworks / kimi-k2p6-turbo` | replaced Fireworks key | gated on §2-A |
+| **A — flagship** | `fireworks` | `accounts/fireworks/models/kimi-k2p7-code` | `fireworks / kimi-k2p7-code` | replaced Fireworks key | gated on §2-A |
 | **B — second** | `deepseek` | `deepseek-v3.2` | `deepseek / v3.2` | Fireworks **and** DeepSeek keys (hybrid) | gated on §2-A |
 | **C — optional third** | `openrouter` | `openai/gpt-5.4-mini` | `openrouter / gpt-5.4-mini` | `OPENROUTER_API_KEY` | gated on §2-B |
 
@@ -104,9 +104,9 @@ exact commands for *this* campaign are below. Run from repo root.
 
 ### Phase 1 — Pipeline smoke, ~pennies — **GO/NO-GO on the key**
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
   pnpm run bench -- --tasks scripts/bench/tasks/sample.json \
-  --config-label "fireworks / kimi-k2p6-turbo (smoke)"
+  --config-label "fireworks / kimi-k2p7-code (smoke)"
 ```
 GO if: artifacts written (`report.md`, `summary.json`, `results.json`,
 `receipts/<task>/*.jsonl`), **every** task got a judge verdict (no "evidence
@@ -115,9 +115,9 @@ NO-GO ⇒ the key is dead/misrouted; fix before spending on browser time.
 
 ### Phase 2 — Calibration, ~30–60 min, small spend
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
   pnpm run bench -- --size 20 --levels easy,medium --seed 0 \
-  --config-label "fireworks / kimi-k2p6-turbo (calib)"
+  --config-label "fireworks / kimi-k2p7-code (calib)"
 ```
 - Record per-task wall-clock + token cost → extrapolate the n=100 budget (§6).
 - Hand-check ~5 judge verdicts vs traces. If the judge looks miscalibrated, fix
@@ -127,8 +127,8 @@ E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
 ### Phase 3 — Headline sweep per config, hours each
 ```bash
 # Config A
-E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
-  pnpm run bench -- --size 100 --seed 0 --config-label "fireworks / kimi-k2p6-turbo"
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+  pnpm run bench -- --size 100 --seed 0 --config-label "fireworks / kimi-k2p7-code"
 # Config B (after A; same subset because seed/size are frozen)
 E2E_PROVIDER=deepseek E2E_MODEL=deepseek-v3.2 \
   pnpm run bench -- --size 100 --seed 0 --no-build --config-label "deepseek / v3.2"
@@ -142,8 +142,8 @@ E2E_PROVIDER=deepseek E2E_MODEL=deepseek-v3.2 \
 Run a bare 300-task sweep **only** on the single config you headline, once n=100
 is stable:
 ```bash
-E2E_PROVIDER=fireworks E2E_MODEL=kimi-k2p6-turbo \
-  pnpm run bench -- --seed 0 --no-build --config-label "fireworks / kimi-k2p6-turbo (full 300)"
+E2E_PROVIDER=fireworks E2E_MODEL=accounts/fireworks/models/kimi-k2p7-code \
+  pnpm run bench -- --seed 0 --no-build --config-label "fireworks / kimi-k2p7-code (full 300)"
 ```
 
 ### Phase 5 — Verify & publish (honesty gates, see README §"Honesty discipline")
@@ -196,6 +196,6 @@ Browser time is the expensive axis; judging is decoupled and cheap. When unsure,
 
 | Config | Run dir | Scored n | Skipped | Pass rate | Judge disagreement (20%) | Date |
 | --- | --- | --- | --- | --- | --- | --- |
-| fireworks / kimi-k2p6-turbo | | | | | | |
+| fireworks / kimi-k2p7-code | | | | | | |
 | deepseek / v3.2 | | | | | | |
 | openrouter / gpt-5.4-mini | | | | | | |

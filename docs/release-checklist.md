@@ -16,7 +16,7 @@ Goal: prepare OpenSidebar for a broad GitHub-first OSS BYOK release candidate.
 | --- | --- | --- |
 | Working tree checkpoint | Pass | Completion-kernel, loop, loop-helper, and skill-ranking hardening fixes are committed. Verify `git status --short` is clean immediately before tagging the final RC. |
 | BYOK setup docs | Pass | README, Getting Started, Privacy Policy, Security Policy, and OSS BYOK Launch Roadmap document local keys, provider traffic, and supported provider modes. |
-| Runtime default docs | Pass | Fireworks is the default provider mode; default executor/planner model is `accounts/fireworks/routers/kimi-k2p6-turbo`. |
+| Runtime default docs | Pass | Fireworks is the default provider mode; default executor is `accounts/fireworks/models/kimi-k2p7-code`, default planner is `accounts/fireworks/routers/kimi-k2p6-turbo`. |
 | Manifest/version alignment | Pass | `package.json` and `apps/extension/manifest.json` declare `0.3.0`; confirm `dist/manifest.json` matches after the release build. |
 | Permission/privacy alignment | Pass | Broad host access plus tabs, cookies, history, downloads, and tab capture are documented in `PRIVACY_POLICY.md`, `SECURITY.md`, `docs/features/security.md`, and `docs/known-limitations.md`. |
 | Focused unit regression | Pass | `corepack pnpm exec vitest run --config vitest.config.ts --reporter=basic --silent=true tests/background/agent.test.ts` passed: 168 tests. |

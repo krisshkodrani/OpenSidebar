@@ -137,7 +137,6 @@ describe("TraceRecorder skill tool metrics", () => {
       },
       "data:image/jpeg;base64,abc",
       "[2] h1 \"Next page\"",
-      [{ dataUrl: "data:image/jpeg;base64,pan", scrollY: 300, label: "bottom" }],
     );
     await recorder.endTurn();
 
@@ -166,11 +165,6 @@ describe("TraceRecorder skill tool metrics", () => {
           kind: "viewport",
           dataUrl: "data:image/jpeg;base64,abc",
           status: "captured",
-        }),
-        expect.objectContaining({
-          kind: "panorama",
-          dataUrl: "data:image/jpeg;base64,pan",
-          label: "bottom",
         }),
       ]),
     );

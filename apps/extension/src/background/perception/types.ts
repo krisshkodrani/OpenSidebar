@@ -46,8 +46,6 @@ export interface ObserveInput {
   screenshotDataUrl: string;
   /** Optional visual-state hash used to invalidate cache on screenshot-only changes. */
   renderHash?: string;
-  /** Additional viewport screenshots for panoramic perception */
-  panoramicScreenshots?: PanoramicShot[];
   elements: TaggedElement[];
   url: string;
   title: string;
@@ -61,12 +59,6 @@ export interface ObserveInput {
 }
 
 /** Additional viewport screenshot captured at a different scroll position */
-export interface PanoramicShot {
-  dataUrl: string;
-  scrollY: number;
-  label: string; // "top", "middle", "bottom"
-}
-
 /** Serializable state for cross-navigation persistence. */
 export interface PerceptionState {
   observationLog: ObservationEntry[];
@@ -88,6 +80,12 @@ export interface PerceptionResult {
   freshnessReason: TracePerceptionFreshnessReason;
   fallbackReason?: TracePerceptionFallbackReason;
   screenshotStatus: TracePerceptionScreenshotStatus;
+  /**
+   * Only on stale_fingerprint re-interprets: true when the fresh
+   * interpretation differs from what the cache had been serving (LP-11
+   * cache-efficacy telemetry; whitespace-insensitive comparison).
+   */
+  staleReinterpretChanged?: boolean;
   /** The parsed observation from this call (undefined on cache hit or fallback) */
   observation?: ObservationEntry;
 }
