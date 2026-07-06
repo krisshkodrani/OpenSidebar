@@ -188,6 +188,7 @@ export const SEED_SCENARIOS: SeedScenario[] = [
 
 function inputFor(scenario: SeedScenario): CompletionDecisionRecordInput {
   const snapshot = scenario.snapshot;
+  const hasPlan = Boolean(scenario.activeObjective);
   return {
     userRequest: scenario.userRequest,
     summary: scenario.summary,
@@ -204,10 +205,39 @@ function inputFor(scenario: SeedScenario): CompletionDecisionRecordInput {
       lastContractRejectionKind: null,
     },
     planValidation: {
-      hasPlan: Boolean(scenario.activeObjective),
-      planSubtaskCount: scenario.activeObjective ? 1 : 0,
-      runningSubtaskIndex: scenario.activeObjective ? 0 : -1,
+      hasPlan,
+      planSubtaskCount: hasPlan ? 1 : 0,
+      runningSubtaskIndex: hasPlan ? 0 : -1,
     },
+    guardContext: {
+      summary: scenario.summary,
+      userRequest: scenario.userRequest,
+      snapshot,
+      taskContext: scenario.userRequest,
+      turnCount: scenario.turn,
+      isOrchestratorNode: false,
+      doneRejections: 0,
+      maxDoneRejections: 3,
+      consecutiveSameKindRejections: 0,
+      lastContractRejectionKind: null,
+      planSubtaskCount: hasPlan ? 1 : 0,
+      runningSubtaskIndex: hasPlan ? 0 : -1,
+      selectedSkillId: null,
+      hasReadPage: true,
+      hasExplicitPageRead: true,
+      hasTaskId: hasPlan,
+      missingRequiredEvidence: [],
+      activeObjective: scenario.activeObjective,
+      successCriteria: scenario.successCriteria,
+      listDetailReviewedCount: 0,
+      listDetailOpenedCount: 0,
+      listDetailVisibleActionCount: 0,
+      moneyTableIncompleteScanReason: null,
+      moneyTableIncorrectAnswerReason: null,
+    },
+    deterministicAcceptanceEnabled: true,
+    isDuplicateTerminal: false,
+    plannerResult: null,
   };
 }
 
@@ -230,14 +260,24 @@ export function generateSeedCorpus(): { name: string; record: CompletionDecision
       reason: "",
       recoveryHint: null,
     });
-    const accepted = probe.outcome.kernelStatus === "accepted";
+    // Clean seeds trigger no legacy guard: only an explicit kernel
+    // rejection/verification rejects. An inconclusive kernel (no contract)
+    // falls through to the legacy_done_guards accept — matching the pipeline.
+    const kernelRejects =
+      probe.outcome.kernelStatus === "rejected" ||
+      probe.outcome.kernelStatus === "needs_verification";
+    const kernelAccepts = probe.outcome.kernelStatus === "accepted";
     const record = buildCompletionDecisionRecord({
       recordedAtTurn: scenario.turn,
       input,
-      verdict: accepted ? "accepted" : "rejected",
-      basis: accepted ? "kernel" : "kernel_reject",
+      verdict: kernelRejects ? "rejected" : "accepted",
+      basis: kernelRejects
+        ? "kernel_reject"
+        : kernelAccepts
+          ? "kernel"
+          : "legacy_done_guards",
       contractKind: probe.outcome.kernelContractKind,
-      guardId: accepted ? null : probe.outcome.kernelContractKind,
+      guardId: kernelRejects ? probe.outcome.kernelContractKind : null,
       reason: probe.outcome.kernelReason,
       recoveryHint: null,
     });

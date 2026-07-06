@@ -119,6 +119,16 @@ import {
   isCompletionDecisionRecordingEnabled,
   recordCompletionDecision,
 } from "./completion/decision-recorder";
+import type { CompletionGuardContext } from "./completion/guards/context";
+import {
+  runCompletionPipeline,
+  type PlannerValidationResult,
+} from "./completion/pipeline";
+import type { CompletionPipelineDecision } from "./completion/pipeline-types";
+import {
+  applyCompletionEffects,
+  type CompletionEffectHost,
+} from "./completion/apply-effects";
 import {
   TURN_CHECKPOINT_VERSION,
   buildMutationKey,
@@ -765,6 +775,12 @@ export class AgentLoop {
   private completionEvidence = new CompletionEvidenceLedger();
   private lastCompletionRejection: CompletionEvaluation | null = null;
   private lastCompletionRecoveryHint: string | null = null;
+  /**
+   * The legacy planner-validation result for the current done() decision (null
+   * when no plan applied). Captured so the shadow pipeline / offline replay can
+   * stub the planner stage without a model call (RFC LP-15, Phase 7a).
+   */
+  private lastDonePlanValidation: PlannerValidationResult | null = null;
 
   /** Session telemetry: metrics, session clock, context spend, citations. */
   private telemetry!: AgentTelemetryController;
@@ -1769,135 +1785,6 @@ export class AgentLoop {
     this.broadcastFinalMetrics();
   }
 
-  private rejectDoneAfterMaxRejections(toolCallId: string): void {
-    this.log.warn("agent", "DONE hard-gated (max rejections exceeded)", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      max: this.limits.maxDoneRejections,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content:
-        "done() BLOCKED: You have already exceeded the maximum rejection limit. " +
-        "You MUST take a different action - click a button, type into a field, " +
-        "scroll the page, or call escalate(). Do NOT call done() again.",
-    });
-  }
-
-  private async rejectDoneBeforeGroundingRead(
-    toolCallId: string,
-    summary: string,
-    tabId: number,
-  ): Promise<boolean> {
-    // Done() Content Verification Guard
-    // Reject done() if the agent never had access to page content and the page
-    // has substantive content - prevents hallucinated summaries from filename/URL alone.
-    // NOTE: hasReadPage is pre-set to true in start() when the initial snapshot
-    // includes substantive content (system prompt provides it via {{pageContent}}).
-    const snap = this.context.getSnapshot();
-    const groundingPreflight = evaluateCompletionGroundingReadPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      snapshot: snap,
-      hasReadPage: this.hasReadPage,
-      hasExplicitPageRead: this.hasExplicitPageRead,
-      hasTaskId: Boolean(this.taskId),
-    });
-    if (groundingPreflight.status === "valid") {
-      return false;
-    }
-
-    if (groundingPreflight.status === "grounded_from_snapshot") {
-      this.traceRecorder?.recordEvent("done_grounded_from_snapshot", {
-        turn: this.turnCount,
-        elementCount: groundingPreflight.elementCount,
-        visibleLen: groundingPreflight.visibleLen,
-      });
-      return false;
-    }
-
-    this.log.warn(
-      "agent",
-      "DONE rejected: read_page never called on substantive page",
-      {
-        turn: this.turnCount,
-        taskId: this.taskId,
-        hasExplicitPageRead: this.hasExplicitPageRead,
-        requiresGroundingReadBeforeDone:
-          groundingPreflight.needsGroundingRead,
-        elementCount: groundingPreflight.elementCount,
-        visibleLen: groundingPreflight.visibleLen,
-        summary: summary.slice(0, 150),
-      },
-    );
-    this.traceRecorder?.recordEvent("done_rejected_no_read", {
-      turn: this.turnCount,
-      elementCount: groundingPreflight.elementCount,
-      visibleLen: groundingPreflight.visibleLen,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason:
-          "Call read_page first to verify actual page content before reporting.",
-        fallbackInstruction:
-          "Do NOT summarize from the page title or URL alone.",
-      }),
-    });
-    if (groundingPreflight.needsGroundingRead) {
-      await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
-      this.context.addMessage({
-        role: "user",
-        content:
-          'The page has been refreshed for grounding. Use the current page content to answer, then call done({"summary": "..."}).',
-      });
-    }
-    return true;
-  }
-
-  private async rejectDoneBeforePlanValidation(
-    toolCallId: string,
-    summary: string,
-    tabId: number,
-  ): Promise<boolean> {
-    // Hard gate: immediately reject done() when max rejections exceeded.
-    // Prevents the LLM from burning turns + LLM calls on repeated
-    // done() attempts after it's already been told to stop.
-    if (this.doneRejections >= this.limits.maxDoneRejections) {
-      this.rejectDoneAfterMaxRejections(toolCallId);
-      return true;
-    }
-
-    if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
-      return true;
-    }
-
-    if (this.rejectDoneForMoneyTableAggregate(toolCallId, summary)) {
-      return true;
-    }
-
-    if (this.rejectDoneForEarlyMultiStepTask(toolCallId, summary)) {
-      return true;
-    }
-
-    if (this.rejectDoneForIncompleteTaskContract(toolCallId, summary)) {
-      return true;
-    }
-
-    if (this.rejectDoneForWorkflowContract(toolCallId, summary)) {
-      return true;
-    }
-
-    if (this.rejectDoneForIncompleteListDetailReview(toolCallId, summary)) {
-      return true;
-    }
-
-    return false;
-  }
-
   private collectDoneDiagnosticIssues(summary: string): string[] {
     const issues = new Set<string>();
     const addIssue = (label: string, reason: string | null | undefined) => {
@@ -2718,6 +2605,67 @@ export class AgentLoop {
   }
 
   /**
+   * Concrete effect applier host (RFC LP-15, Phase 7b). Maps each declarative
+   * CompletionEffect to the loop-side mutation it represents. Constructed per
+   * done() call so the tool-message effects carry the current toolCallId and the
+   * grounding refresh targets the current tab.
+   */
+  private createCompletionEffectHost(
+    toolCallId: string,
+    tabId: number,
+  ): CompletionEffectHost {
+    return {
+      incrementDoneRejections: () => {
+        this.doneRejections++;
+      },
+      recordContractRejection: (kind: string) => {
+        if (this.lastContractRejectionKind === kind) {
+          this.consecutiveSameKindRejections++;
+        } else {
+          this.lastContractRejectionKind = kind;
+          this.consecutiveSameKindRejections = 1;
+        }
+      },
+      setLastCompletionRejection: (decision) => {
+        this.lastCompletionRejection = decision;
+      },
+      setRecoveryHint: (hint) => {
+        this.lastCompletionRecoveryHint = hint;
+      },
+      postContextMessage: (role, content) => {
+        this.context.addMessage(
+          role === "tool"
+            ? { role: "tool", tool_call_id: toolCallId, content }
+            : { role: "user", content },
+        );
+      },
+      postRejectionDiagnostic: (summary, primaryReason, fallbackInstruction) => {
+        this.context.addMessage({
+          role: "tool",
+          tool_call_id: toolCallId,
+          content: this.doneRejectionDiagnosticContent({
+            summary,
+            primaryReason,
+            fallbackInstruction,
+          }),
+        });
+      },
+      emitTrace: (event, data) => {
+        this.traceRecorder?.recordEvent(event, data);
+      },
+      setGuardAfterDoneRejection: () => {
+        this.guardAfterDoneRejection = true;
+      },
+      checkDoneRejectionEscalation: () => {
+        this.checkAndSetDoneRejectionEscalation();
+      },
+      forceGroundingRefresh: async () => {
+        await this.forceGroundingRefresh(tabId, "done_before_grounding_read");
+      },
+    };
+  }
+
+  /**
    * Golden-harness tap (RFC LP-15, Phase 0). When decision recording is off
    * (production default) this is a straight pass-through. When on, it captures
    * the input surface BEFORE the decision runs (counters/evidence are mutated
@@ -2742,7 +2690,62 @@ export class AgentLoop {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    await this.shadowCompareCompletionPipeline(input, verdict);
     return verdict;
+  }
+
+  /**
+   * Shadow gate (RFC LP-15, Phase 7a). Runs the pure completion pipeline
+   * alongside the legacy decision and emits `completion_pipeline_divergence`
+   * when the verdicts disagree. The legacy decision is authoritative; this never
+   * affects the returned verdict and never throws into the done path. `input`
+   * carries the pre-inner guard context + the captured planner result, so the
+   * pipeline runs without a second model call.
+   */
+  private async shadowCompareCompletionPipeline(
+    input: CompletionDecisionRecordInput,
+    legacyVerdict: boolean,
+  ): Promise<void> {
+    try {
+      const { decision: kernelDecision } = evaluateGeneratedCompletionCandidate({
+        userRequest: input.userRequest,
+        snapshot: input.snapshot,
+        activeObjective: input.activeObjective,
+        successCriteria: input.successCriteria,
+        evidence: input.evidence,
+        candidateSource: input.candidateSource,
+        summary: input.summary,
+      });
+      const pipelineDecision = await runCompletionPipeline(input.guardContext, {
+        getKernelDecision: () => kernelDecision,
+        deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
+        isDuplicateTerminal: input.isDuplicateTerminal,
+        validatePlan: async () => input.plannerResult,
+        onKernelReject: () => {},
+      });
+      const pipelineAccepted = pipelineDecision.verdict === "accept";
+      if (pipelineAccepted !== legacyVerdict) {
+        this.traceRecorder?.recordEvent("completion_pipeline_divergence", {
+          turn: this.turnCount,
+          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+          pipelineVerdict: pipelineDecision.verdict,
+          pipelineBasis: pipelineDecision.basis,
+          pipelineRejectedBy: pipelineDecision.rejectedBy,
+          pipelineReason: pipelineDecision.reason,
+        });
+        this.log.warn("agent", "completion pipeline shadow divergence", {
+          turn: this.turnCount,
+          legacyVerdict: legacyVerdict ? "accepted" : "rejected",
+          pipelineVerdict: pipelineDecision.verdict,
+          pipelineRejectedBy: pipelineDecision.rejectedBy,
+        });
+      }
+    } catch (err) {
+      this.log.warn("agent", "completion pipeline shadow comparison failed", {
+        turn: this.turnCount,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -2755,6 +2758,9 @@ export class AgentLoop {
   ): CompletionDecisionRecordInput {
     const snapshot = this.context.getSnapshot() ?? null;
     const completionContext = this.getActiveCompletionContext();
+    const runningSubtaskIndex = this.planSubtasks.findIndex(
+      (step) => step.status === "running",
+    );
     return {
       userRequest: this.originalQuery,
       summary,
@@ -2777,10 +2783,68 @@ export class AgentLoop {
       planValidation: {
         hasPlan: Boolean(this.taskId) && this.planSubtasks.length > 0,
         planSubtaskCount: this.planSubtasks.length,
-        runningSubtaskIndex: this.planSubtasks.findIndex(
-          (step) => step.status === "running",
-        ),
+        runningSubtaskIndex,
       },
+      guardContext: this.buildCompletionGuardContext(
+        summary,
+        snapshot,
+        completionContext,
+        runningSubtaskIndex,
+      ),
+      deterministicAcceptanceEnabled:
+        this.completionDeterministicAcceptanceEnabled,
+      isDuplicateTerminal: Boolean(this.completedResult),
+      // Filled post-inner in recordCompletionDecisionOutcome.
+      plannerResult: null,
+    };
+  }
+
+  /**
+   * Assemble the pure-guard input surface from live loop state (RFC LP-15,
+   * Phase 7a). Captured pre-inner so counters/evidence are unmutated; because
+   * legacy stops at the first rejecting guard, no guard bumps `doneRejections`
+   * before the decider, so a single snapshot is faithful for the whole chain.
+   * (The ServiceNow evidence inference is a live-only pre-step; the corpus is
+   * generic so `missingRequiredEvidence` is inference-independent there.)
+   */
+  private buildCompletionGuardContext(
+    summary: string,
+    snapshot: DomSnapshot | null,
+    completionContext: { activeObjective?: string; successCriteria?: string },
+    runningSubtaskIndex: number,
+  ): CompletionGuardContext {
+    const incompleteMoneyTableScan =
+      this.getIncompleteMoneyTableAggregateDoneRejection();
+    return {
+      summary,
+      userRequest: this.originalQuery,
+      snapshot,
+      taskContext: this.getCompletionSummaryTaskContext(),
+      turnCount: this.turnCount,
+      isOrchestratorNode: Boolean(this.nodeId),
+      doneRejections: this.doneRejections,
+      maxDoneRejections: this.limits.maxDoneRejections,
+      consecutiveSameKindRejections: this.consecutiveSameKindRejections,
+      lastContractRejectionKind: this.lastContractRejectionKind ?? null,
+      planSubtaskCount: this.planSubtasks.length,
+      runningSubtaskIndex,
+      selectedSkillId: this.selectedSkillId,
+      hasReadPage: this.hasReadPage,
+      hasExplicitPageRead: this.hasExplicitPageRead,
+      hasTaskId: Boolean(this.taskId),
+      missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
+      activeObjective: completionContext.activeObjective,
+      successCriteria: completionContext.successCriteria,
+      listDetailReviewedCount: this.listDetailReviewedTargets.size,
+      listDetailOpenedCount: this.listDetailOpenedTargets.size,
+      listDetailVisibleActionCount: Math.max(
+        this.listDetailVisibleActionCount,
+        countVisibleListDetailActions(snapshot),
+      ),
+      moneyTableIncompleteScanReason: incompleteMoneyTableScan,
+      moneyTableIncorrectAnswerReason: incompleteMoneyTableScan
+        ? null
+        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
     };
   }
 
@@ -2789,6 +2853,8 @@ export class AgentLoop {
     input: CompletionDecisionRecordInput,
     verdict: boolean,
   ): void {
+    // The planner result is only known after the inner decision runs.
+    input.plannerResult = this.lastDonePlanValidation;
     let basis: CompletionDecisionBasis = "unknown";
     let contractKind = "unknown";
     let reason = "";
@@ -2835,6 +2901,7 @@ export class AgentLoop {
     summary: string,
     tabId: number,
   ): Promise<boolean> {
+    this.lastDonePlanValidation = null;
     if (this.completedResult) {
       const completedSummary = this.completedResult.summary;
       const completionEnvelope = this.completedResult.completionEnvelope;
@@ -2860,106 +2927,147 @@ export class AgentLoop {
       return true;
     }
 
-    if (this.rejectDoneForCompletionSummaryPreflight(toolCallId, summary)) {
-      return false;
+    // Authority: the pure completion pipeline decides (RFC LP-15, Phase 7b).
+    // The frozen kernel is evaluated lazily inside the pipeline (after summary +
+    // grounding pass) so its side-effects (evidence refresh, candidate traces,
+    // lastCompletionRejection) fire at the legacy point. The planner stage keeps
+    // its bespoke rejection handling (retry_step / auto-advance) via the injected
+    // dep. Declarative reject-side effects are applied by the effect host; the
+    // accept side maps the decision basis to an envelope + acceptDoneToolCall.
+    // ServiceNow module-navigation evidence inference (live pre-step, RFC LP-15
+    // Phase 7b): legacy ran this inside rejectDoneForMissingRequiredEvidence
+    // before evaluating; run it before the guard context is built so the
+    // missing-evidence guard sees the post-inference evidence.
+    if (this.getMissingRequiredEvidenceTypes().length > 0) {
+      this.maybeInferServiceNowModuleNavigationEvidence(summary);
     }
 
-    if (await this.rejectDoneBeforeGroundingRead(toolCallId, summary, tabId)) {
-      return false;
-    }
-
-    const deterministicDone = this.evaluateCompletionCandidate(
-      "model_done",
-      summary,
+    const snapshot = this.context.getSnapshot() ?? null;
+    const completionContext = this.getActiveCompletionContext();
+    const runningSubtaskIndex = this.planSubtasks.findIndex(
+      (step) => step.status === "running",
     );
-    if (this.completionDeterministicAcceptanceEnabled) {
-      if (deterministicDone.status === "accepted") {
-        const completionEnvelope = this.createCompletionEnvelope({
-          source: "model_done",
-          contractKind: deterministicDone.contract.kind,
-          decisionReason: deterministicDone.reason,
-          evidence: deterministicDone.evidence,
-          summary,
-        });
-        this.traceRecorder?.recordEvent("completion_decision", {
-          turn: this.turnCount,
-          status: deterministicDone.status,
-          source: "model_done",
-          reason: deterministicDone.reason,
-          contractKind: deterministicDone.contract.kind,
-          resultId: completionEnvelope.resultId,
-          evidenceKeys: deterministicDone.evidence.map(
-            (event) => event.logicalKey,
-          ),
-          completionEnvelope,
-        });
-        this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
-        return true;
-      }
-      if (
-        deterministicDone.status === "rejected" ||
-        deterministicDone.status === "needs_verification"
-      ) {
-        if (
-          this.lastContractRejectionKind === deterministicDone.contract.kind &&
-          this.consecutiveSameKindRejections >= 2
-        ) {
-          this.traceRecorder?.recordEvent("completion_contract_bypassed", {
-            kind: this.lastContractRejectionKind,
-            consecutiveRejections: this.consecutiveSameKindRejections,
-          } as any);
-          // Fall through to legacy guards
-        } else {
-          this.rejectDoneFromCompletionDecision(
-            toolCallId,
-            summary,
-            deterministicDone,
-          );
-          return false;
+    const ctx = this.buildCompletionGuardContext(
+      summary,
+      snapshot,
+      completionContext,
+      runningSubtaskIndex,
+    );
+
+    let kernelDecision: CompletionEvaluation | null = null;
+    const decision = await runCompletionPipeline(ctx, {
+      getKernelDecision: () => {
+        kernelDecision = this.evaluateCompletionCandidate("model_done", summary);
+        if (!this.completionDeterministicAcceptanceEnabled) {
+          this.recordShadowCompletionDecision(kernelDecision, summary);
         }
-      }
-    } else {
-      this.recordShadowCompletionDecision(deterministicDone, summary);
-    }
-
-    if (await this.rejectDoneBeforePlanValidation(toolCallId, summary, tabId)) {
-      return false;
-    }
-
-    // Planner validation: only when a plan exists
-    if (this.taskId && this.planSubtasks.length > 0) {
-      const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
-      let shouldReject = donePlanPrecheck.shouldReject;
-      let rejectReason = donePlanPrecheck.rejectReason;
-      const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
-      const completedMoneyTableAggregate =
-        donePlanPrecheck.completedMoneyTableAggregate;
-
-      ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
-        summary,
-        effectiveCurrentIdx,
-        completedMoneyTableAggregate,
-        shouldReject,
-        rejectReason,
-      ));
-
-      if (shouldReject) {
-        this.handleDonePlanRejection(
+        return kernelDecision;
+      },
+      deterministicAcceptanceEnabled:
+        this.completionDeterministicAcceptanceEnabled,
+      isDuplicateTerminal: false, // handled inline above
+      validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
+      onKernelReject: (decision) =>
+        // Only invoked on a kernel rejection, so the evaluation is a rejection.
+        this.rejectDoneFromCompletionDecision(
           toolCallId,
           summary,
-          rejectReason,
-          effectiveCurrentIdx,
-        );
-        return false;
-      }
-    }
+          decision as CompletionRejectionDecision,
+        ),
+    });
 
-    if (this.rejectDoneForPendingAutocompletePreflight(toolCallId, summary)) {
-      return false;
-    }
+    await applyCompletionEffects(
+      decision.effects,
+      this.createCompletionEffectHost(toolCallId, tabId),
+    );
 
-    if (this.rejectDoneForMissingRequiredEvidence(toolCallId, summary)) {
-      return false;
+    if (decision.verdict === "reject") return false;
+    return this.acceptFromPipelineDecision(
+      decision,
+      summary,
+      toolCallId,
+      kernelDecision,
+    );
+  }
+
+  /**
+   * Run the plan-validation stage as the pipeline's injected dep (RFC LP-15,
+   * Phase 7b). Preserves the legacy precheck → model-validation → bespoke
+   * handleDonePlanRejection flow; the rejection effects are applied here (not as
+   * pipeline effects), so the pipeline's planner reject carries none. Returns
+   * null when no plan applies.
+   */
+  private async runDonePlanValidation(
+    toolCallId: string,
+    summary: string,
+  ): Promise<PlannerValidationResult | null> {
+    if (!(this.taskId && this.planSubtasks.length > 0)) {
+      this.lastDonePlanValidation = null;
+      return null;
+    }
+    const donePlanPrecheck = this.evaluateDonePlanPrecheck(summary);
+    let shouldReject = donePlanPrecheck.shouldReject;
+    let rejectReason = donePlanPrecheck.rejectReason;
+    const effectiveCurrentIdx = donePlanPrecheck.effectiveCurrentIdx;
+    const completedMoneyTableAggregate =
+      donePlanPrecheck.completedMoneyTableAggregate;
+
+    ({ shouldReject, rejectReason } = await this.evaluateDonePlanValidation(
+      summary,
+      effectiveCurrentIdx,
+      completedMoneyTableAggregate,
+      shouldReject,
+      rejectReason,
+    ));
+
+    this.lastDonePlanValidation = {
+      rejected: shouldReject,
+      reason: rejectReason ?? "",
+    };
+
+    if (shouldReject) {
+      this.handleDonePlanRejection(
+        toolCallId,
+        summary,
+        rejectReason,
+        effectiveCurrentIdx,
+      );
+      return { rejected: true, reason: rejectReason ?? "" };
+    }
+    return { rejected: false, reason: "" };
+  }
+
+  /**
+   * Map an accepting pipeline decision to the loop-side accept actions (RFC
+   * LP-15, Phase 7b): build the completion envelope for the deciding basis, emit
+   * the completion_decision trace, and finalize via acceptDoneToolCall.
+   */
+  private acceptFromPipelineDecision(
+    decision: CompletionPipelineDecision,
+    summary: string,
+    toolCallId: string,
+    kernelDecision: CompletionEvaluation | null,
+  ): boolean {
+    if (decision.basis === "kernel" && kernelDecision?.status === "accepted") {
+      const completionEnvelope = this.createCompletionEnvelope({
+        source: "model_done",
+        contractKind: kernelDecision.contract.kind,
+        decisionReason: kernelDecision.reason,
+        evidence: kernelDecision.evidence,
+        summary,
+      });
+      this.traceRecorder?.recordEvent("completion_decision", {
+        turn: this.turnCount,
+        status: "accepted",
+        source: "model_done",
+        reason: kernelDecision.reason,
+        contractKind: kernelDecision.contract.kind,
+        resultId: completionEnvelope.resultId,
+        evidenceKeys: kernelDecision.evidence.map((event) => event.logicalKey),
+        completionEnvelope,
+      });
+      this.acceptDoneToolCall(summary, toolCallId, completionEnvelope);
+      return true;
     }
 
     const completionEnvelope = this.createCompletionEnvelope({
@@ -2998,150 +3106,6 @@ export class AgentLoop {
       .join("\n");
   }
 
-  private rejectDoneForCompletionSummaryPreflight(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const decision = evaluateCompletionSummaryPreflight({
-      summary,
-      taskContext: this.getCompletionSummaryTaskContext(),
-      turnCount: this.turnCount,
-      rootUserRequest: this.originalQuery,
-      isOrchestratorNode: Boolean(this.nodeId),
-    });
-    if (decision.status === "valid") return false;
-
-    if (decision.status === "needs_clarification") {
-      this.log.warn(
-        "agent",
-        "DONE rejected: summary is a question on T1, redirecting to clarify",
-        {
-          turn: this.turnCount,
-          summary: summary.slice(0, 150),
-        },
-      );
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content:
-          "done() REJECTED: Your summary is a question, not a completion report. " +
-          "Use the clarify() tool to ask the user a question. " +
-          "Do NOT call done() to ask questions.",
-      });
-      return true;
-    }
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    if (decision.kind === "missing_multi_return_coverage") {
-      this.log.warn("agent", "DONE rejected: incomplete multi-return summary", {
-        turn: this.turnCount,
-        rejections: this.doneRejections,
-        reason: decision.reason,
-      });
-      this.traceRecorder?.recordEvent("done_rejected_incomplete_multi_return", {
-        rejections: this.doneRejections,
-        reason: decision.reason,
-      });
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: this.doneRejectionDiagnosticContent({
-          summary,
-          primaryReason: decision.reason,
-          fallbackInstruction:
-            "Return all requested results before calling done().",
-        }),
-      });
-      return true;
-    }
-
-    this.log.warn("agent", "DONE rejected: incomplete summary", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      reason: decision.reason,
-      summaryTail: summary.slice(-120),
-    });
-    this.traceRecorder?.recordEvent("done_rejected_incomplete_summary", {
-      rejections: this.doneRejections,
-      reason: decision.reason,
-      summaryTail: summary.slice(-120),
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: `The summary appears cut off (${decision.reason}).`,
-        fallbackInstruction:
-          "YOUR NEXT ACTION: call done() again with a complete, concise summary using complete sentences. Do not continue browsing unless page evidence is missing.",
-      }),
-    });
-    return true;
-  }
-
-  private rejectDoneForPendingAutocompletePreflight(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const activePlanIdx =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const effectivePlanIdx =
-      activePlanIdx >= 0
-        ? activePlanIdx
-        : Math.min(
-            this.planSubtasks.filter((s) => s.status === "completed").length,
-            this.planSubtasks.length - 1,
-          );
-    const activeObjective =
-      effectivePlanIdx >= 0
-        ? this.planSubtasks[effectivePlanIdx]?.description
-        : undefined;
-    const successCriteria =
-      effectivePlanIdx >= 0
-        ? this.planSteps[effectivePlanIdx]?.successCriteria
-        : undefined;
-    const decision = evaluateCompletionPendingAutocompletePreflight({
-      snapshot: this.context.getSnapshot(),
-      userRequest: this.originalQuery,
-      activeObjective,
-      successCriteria,
-      summary,
-    });
-    if (decision.status === "valid") return false;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: autocomplete suggestion pending", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      inputTag: decision.inputTag,
-      suggestionTag: decision.suggestionTag,
-      value: decision.value,
-    });
-    this.traceRecorder?.recordEvent(
-      "done_rejected_autocomplete_suggestion_pending",
-      {
-        rejections: this.doneRejections,
-        inputTag: decision.inputTag,
-        suggestionTag: decision.suggestionTag,
-        value: decision.value,
-      },
-    );
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: decision.reason,
-        fallbackInstruction: `YOUR NEXT ACTION: click_element({"id": ${decision.suggestionTag}}), then verify the selected value is visible.`,
-      }),
-    });
-    return true;
-  }
-
   private async handleClarifyToolCall(
     toolCallId: string,
     args: Record<string, unknown>,
@@ -3159,51 +3123,6 @@ export class AgentLoop {
       question: question.slice(0, 100),
       answer: answer.slice(0, 200),
     });
-  }
-
-  private rejectDoneForMissingRequiredEvidence(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    let missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
-    if (
-      missingRequiredEvidence.length > 0 &&
-      this.maybeInferServiceNowModuleNavigationEvidence(summary)
-    ) {
-      missingRequiredEvidence = this.getMissingRequiredEvidenceTypes();
-    }
-    const requiredEvidencePreflight =
-      evaluateCompletionRequiredEvidencePreflight({
-        missingRequiredEvidence,
-      });
-    if (requiredEvidencePreflight.status === "valid") return false;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: missing typed evidence", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      selectedSkillId: this.selectedSkillId,
-      missingRequiredEvidence:
-        requiredEvidencePreflight.missingRequiredEvidence,
-    });
-    this.traceRecorder?.recordEvent("done_rejected_missing_evidence", {
-      rejections: this.doneRejections,
-      selectedSkillId: this.selectedSkillId,
-      missingRequiredEvidence:
-        requiredEvidencePreflight.missingRequiredEvidence,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: `Missing required typed evidence: ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}.`,
-        fallbackInstruction:
-          "Use the selected workflow tool to complete and verify the action before calling done().",
-      }),
-    });
-    return true;
   }
 
   private maybeInferServiceNowModuleNavigationEvidence(
@@ -3278,311 +3197,6 @@ export class AgentLoop {
         url: snapshot.url,
       },
     );
-    return true;
-  }
-
-  private rejectDoneForIncompleteTaskContract(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const activePlanIdxForTaskContract =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const isIntermediateRootPlanStep =
-      !this.nodeId &&
-      this.planSubtasks.length > 1 &&
-      activePlanIdxForTaskContract >= 0 &&
-      activePlanIdxForTaskContract < this.planSubtasks.length - 1;
-
-    // Skip the full task contract guard for orchestrator sub-nodes
-    // and for intermediate root plan steps. In both cases, the
-    // current executor objective is intentionally narrower than the
-    // original user request; plan validation handles step completion
-    // and the full guard still runs on the final root step.
-    const taskContractGuard =
-      this.nodeId || isIntermediateRootPlanStep
-        ? {
-            blocked: false,
-            reason: null,
-            summaryCoverage: {
-              missingEntities: [],
-              missingNumbers: [],
-              missingReturnTarget: false,
-              satisfied: true,
-            },
-            missingReturnTarget: false,
-          }
-        : evaluateCompletionTaskContractPreflight({
-            userRequest: this.originalQuery,
-            summary,
-            snapshot: this.context.getSnapshot(),
-          });
-    if (!taskContractGuard.blocked) return false;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: task contract incomplete", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      reason: taskContractGuard.reason,
-      missingEntities: taskContractGuard.summaryCoverage.missingEntities,
-      missingNumbers: taskContractGuard.summaryCoverage.missingNumbers,
-      missingReturnTarget: taskContractGuard.missingReturnTarget,
-    });
-    this.traceRecorder?.recordEvent("done_rejected_task_contract", {
-      rejections: this.doneRejections,
-      reason: taskContractGuard.reason,
-      missingEntities: taskContractGuard.summaryCoverage.missingEntities,
-      missingNumbers: taskContractGuard.summaryCoverage.missingNumbers,
-      missingReturnTarget: taskContractGuard.missingReturnTarget,
-    });
-
-    if (this.doneRejections >= this.limits.maxDoneRejections) {
-      this.log.warn(
-        "agent",
-        "DONE blocked after max rejections due to incomplete task contract",
-        {
-          turn: this.turnCount,
-          rejections: this.doneRejections,
-        },
-      );
-      this.traceRecorder?.recordEvent("done_blocked_max_rejections", {
-        rejections: this.doneRejections,
-        reason: taskContractGuard.reason,
-        source: "task_contract",
-      });
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: this.doneRejectionDiagnosticContent({
-          summary,
-          primaryReason:
-            taskContractGuard.reason ?? "Task contract remains incomplete.",
-          fallbackInstruction:
-            "You have repeated done() too many times while the task is still incomplete. " +
-            "Do not call done() again from this state. Take a different action or call escalate().",
-        }),
-      });
-      return true;
-    }
-
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason:
-          taskContractGuard.reason ?? "Task contract remains incomplete.",
-        fallbackInstruction:
-          "Complete the missing task obligations, verify them on the page, then call done() again.",
-      }),
-    });
-    return true;
-  }
-
-  private rejectDoneForWorkflowContract(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const workflowSnapshot = this.context.getSnapshot();
-    const workflowDoneGuard = evaluateCompletionWorkflowContractPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      selectedSkillId: this.selectedSkillId,
-      pageUrl: workflowSnapshot?.url,
-      pageTitle: workflowSnapshot?.title,
-    });
-    if (!workflowDoneGuard.blocked) return false;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: workflow completion guard", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      selectedSkillId: this.selectedSkillId,
-      reason: workflowDoneGuard.reason,
-    });
-    this.traceRecorder?.recordEvent("done_rejected_workflow_contract", {
-      rejections: this.doneRejections,
-      selectedSkillId: this.selectedSkillId,
-      reason: workflowDoneGuard.reason,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason:
-          workflowDoneGuard.reason ?? "Workflow contract remains incomplete.",
-        fallbackInstruction:
-          "Continue the workflow, verify the requested final state, then call done() again.",
-      }),
-    });
-    return true;
-  }
-
-  private rejectDoneForIncompleteListDetailReview(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const latestListDetailActionCount = countVisibleListDetailActions(
-      this.context.getSnapshot(),
-    );
-    const visibleDetailActionCount = Math.max(
-      this.listDetailVisibleActionCount,
-      latestListDetailActionCount,
-    );
-    const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
-      selectedSkillId: this.selectedSkillId,
-      userRequest: this.originalQuery,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount,
-    });
-    if (listDetailPreflight.status === "valid") return false;
-    const listDetailDoneRejection = listDetailPreflight.reason;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: list-detail review incomplete", {
-      turn: this.turnCount,
-      rejections: this.doneRejections,
-      openedDetailCount: this.listDetailOpenedTargets.size,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount,
-    });
-    this.traceRecorder?.recordEvent("done_rejected_list_detail_incomplete", {
-      rejections: this.doneRejections,
-      openedDetailCount: this.listDetailOpenedTargets.size,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason:
-          listDetailDoneRejection ?? "List-detail review remains incomplete.",
-        fallbackInstruction:
-          "Do NOT synthesize the recommendation from list-card snippets alone.",
-      }),
-    });
-    return true;
-  }
-
-  private rejectDoneForMoneyTableAggregate(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const incompleteMoneyTableScan =
-      this.getIncompleteMoneyTableAggregateDoneRejection();
-    const incorrectMoneyTableAnswer = incompleteMoneyTableScan
-      ? null
-      : this.getIncorrectMoneyTableAggregateDoneRejection(summary);
-    const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
-      incompleteScanReason: incompleteMoneyTableScan,
-      incorrectAnswerReason: incorrectMoneyTableAnswer,
-    });
-    if (moneyTablePreflight.status === "valid") return false;
-
-    if (moneyTablePreflight.kind === "incomplete_money_table_scan") {
-      this.doneRejections++;
-      this.checkAndSetDoneRejectionEscalation();
-      this.log.warn(
-        "agent",
-        "DONE rejected: paginated money table scan incomplete",
-        {
-          turn: this.turnCount,
-          rejections: this.doneRejections,
-          reason: moneyTablePreflight.reason.slice(0, 200),
-        },
-      );
-      this.traceRecorder?.recordEvent(
-        "done_rejected_incomplete_money_table_scan",
-        {
-          turn: this.turnCount,
-          reason: moneyTablePreflight.reason,
-        },
-      );
-      this.context.addMessage({
-        role: "tool",
-        tool_call_id: toolCallId,
-        content: this.doneRejectionDiagnosticContent({
-          summary,
-          primaryReason: moneyTablePreflight.reason,
-          fallbackInstruction:
-            "Do not call done() until the scan is exhaustive.",
-        }),
-      });
-      return true;
-    }
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn(
-      "agent",
-      "DONE rejected: paginated money table answer conflicts with aggregate",
-      {
-        turn: this.turnCount,
-        rejections: this.doneRejections,
-        reason: moneyTablePreflight.reason.slice(0, 200),
-      },
-    );
-    this.traceRecorder?.recordEvent(
-      "done_rejected_incorrect_money_table_answer",
-      {
-        turn: this.turnCount,
-        reason: moneyTablePreflight.reason,
-      },
-    );
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: moneyTablePreflight.reason,
-        fallbackInstruction:
-          "Use the tracked aggregate candidate in the final answer.",
-      }),
-    });
-    return true;
-  }
-
-  private rejectDoneForEarlyMultiStepTask(
-    toolCallId: string,
-    summary: string,
-  ): boolean {
-    const earlyMultiStepPreflight = evaluateCompletionEarlyMultiStepPreflight({
-      userRequest: this.originalQuery,
-      doneRejections: this.doneRejections,
-      turnCount: this.turnCount,
-      hasNodeId: Boolean(this.nodeId),
-    });
-    if (earlyMultiStepPreflight.status === "valid") return false;
-
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.log.warn("agent", "DONE rejected: multi-step query, too few turns", {
-      turn: this.turnCount,
-      stepCount: earlyMultiStepPreflight.stepCount,
-      doneRejections: this.doneRejections,
-      summary: summary.slice(0, 150),
-    });
-    this.traceRecorder?.recordEvent("done_rejected_early_multistep", {
-      turn: this.turnCount,
-      stepCount: earlyMultiStepPreflight.stepCount,
-    });
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: `The task has ${earlyMultiStepPreflight.stepCount} steps but you have only completed the first action.`,
-        fallbackInstruction:
-          "Continue working through the remaining steps before calling done().",
-      }),
-    });
     return true;
   }
 
