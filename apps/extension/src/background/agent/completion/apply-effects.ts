@@ -26,6 +26,12 @@ export interface CompletionEffectHost {
   setLastCompletionRejection(decision: CompletionEvaluation): void;
   setRecoveryHint(hint: string | null): void;
   postContextMessage(role: "tool" | "user", content: string): void;
+  /** Render (via the loop-coupled diagnostic builder) + post a rejection message. */
+  postRejectionDiagnostic(
+    summary: string,
+    primaryReason: string,
+    fallbackInstruction: string,
+  ): void;
   emitTrace(event: string, data: Record<string, unknown>): void;
   setGuardAfterDoneRejection(): void;
   checkDoneRejectionEscalation(): void;
@@ -56,6 +62,13 @@ export async function applyCompletionEffects(
         break;
       case "post_context_message":
         host.postContextMessage(effect.role, effect.content);
+        break;
+      case "post_rejection_diagnostic":
+        host.postRejectionDiagnostic(
+          effect.summary,
+          effect.primaryReason,
+          effect.fallbackInstruction,
+        );
         break;
       case "emit_trace":
         host.emitTrace(effect.event, effect.data);
