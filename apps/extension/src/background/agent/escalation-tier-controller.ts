@@ -1,22 +1,47 @@
 /**
  * EscalationTierController (RFC LP-15, Phase 6).
  *
- * Owns the state of the two-tier (0=executor / 1=planner) escalation machine
- * that previously lived as ~10 interdependent locals threaded through
- * `AgentLoop.loop()`. Phase 6 migrates the STATE here first (this file); the
- * cohesive transition policies (cooldown tick, orientation handoff, progress-
- * gated de-escalation with exponential backoff, fresh-start) move in as methods
- * in a follow-up step, each behavior-preserving and guarded by the escalation
- * characterization net.
+ * Owns the state AND the cohesive transition policies of the two-tier
+ * (0=executor / 1=planner) escalation machine that previously lived as ~10
+ * interdependent locals threaded through `AgentLoop.loop()`.
  *
- * The fields are public and mutable because the loop still drives most
- * transitions inline during the migration; the controller is the single home
- * for the state, not (yet) the single owner of every mutation. The escalation
- * ENTRY is already single-sourced by `beginPlannerEscalation()` in the loop.
+ * Phase 6 migrated the state here first, then moves the self-contained policies
+ * in as methods. `onTurnStart()` (the per-turn cooldown tick, one-shot
+ * investigation extension, and plan-then-act orientation handoff) is the first —
+ * it touches only controller state plus a few clean host callbacks. The escalation
+ * ENTRY is single-sourced by `beginPlannerEscalation()` in the loop. The
+ * progress-gated de-escalation and fresh-start blocks stay inline for now because
+ * they also coordinate loop-owned working memory (broadcasts, stagnation, the
+ * distillation/working-memory resets) that is not controller state.
  *
- * NOT absorbed: `EscalationRescueTracker` (escalation-rescue-policy.ts) is a
- * separate, already-clean system the loop calls into directly.
+ * Host callbacks are injected getter-closures (the AgentTelemetryController /
+ * CheckpointCoordinator pattern) so the controller stays free of chrome.* and
+ * LLM deps. NOT absorbed: `EscalationRescueTracker` (escalation-rescue-policy.ts)
+ * is a separate, already-clean system the loop calls into directly.
  */
+
+import {
+  INVESTIGATION_EXTENSION,
+  MAX_ORIENTATION_TURNS,
+  ORIENTATION,
+} from "./constants";
+import type { RuntimeLimits } from "./constants";
+
+/** Host surface the controller calls back into (no chrome or LLM types leak in). */
+export interface EscalationTierControllerHost {
+  /** Live runtime limits (escalationCooldown, etc.); read at call time. */
+  readonly limits: RuntimeLimits;
+  /** Current turn index (`AgentLoop.turnCount`). */
+  getTurn(): number;
+  /** De-escalate the model tier; returns the updated prevElementCount. */
+  deescalateModel(tabId: number, prevElementCount: number): Promise<number>;
+  /** Compose + inject the plan-then-act handoff reflection message. */
+  addHandoffMessage(): void;
+  /** Emit a "done" info step with the given label. */
+  emitInfoStep(label: string): void;
+  /** Structured info log under the "agent" channel. */
+  logInfo(message: string, data: Record<string, unknown>): void;
+}
 
 export interface EscalationTierControllerOptions {
   /**
@@ -27,6 +52,8 @@ export interface EscalationTierControllerOptions {
   startOnPlanner: boolean;
   /** Baseline orientation length (`ORIENTATION.PHASE_TURNS`). */
   orientationPhaseTurns: number;
+  /** Injected host callbacks. */
+  host: EscalationTierControllerHost;
 }
 
 export class EscalationTierController {
@@ -51,9 +78,71 @@ export class EscalationTierController {
   /** Tools used during orientation — drives the one-shot investigation extension. */
   readonly orientationToolsUsed = new Set<string>();
 
+  private readonly host: EscalationTierControllerHost;
+
   constructor(options: EscalationTierControllerOptions) {
     this.tier = options.startOnPlanner ? 1 : 0;
     this.orientationPhase = options.startOnPlanner;
     this.effectiveOrientationTurns = options.orientationPhaseTurns;
+    this.host = options.host;
+  }
+
+  /**
+   * Per-turn escalation bookkeeping, run at the top of each loop turn:
+   *   1. decrement the de-escalation cooldown;
+   *   2. one-shot: extend orientation when the planner used investigation tools;
+   *   3. plan-then-act handoff: once orientation is done, hand tier 1→0.
+   * Returns the (possibly updated by de-escalation) prevElementCount.
+   */
+  async onTurnStart(params: {
+    tabId: number;
+    prevElementCount: number;
+  }): Promise<number> {
+    const host = this.host;
+    let prevElementCount = params.prevElementCount;
+
+    // 1. Decrement de-escalation cooldown.
+    if (this.cooldownRemaining > 0) this.cooldownRemaining--;
+
+    // 2. Complexity-adaptive: extend orientation when investigation tools are used.
+    if (
+      this.orientationPhase &&
+      this.tier === 1 &&
+      this.orientationToolsUsed.size > 0 &&
+      this.effectiveOrientationTurns === ORIENTATION.PHASE_TURNS
+    ) {
+      this.effectiveOrientationTurns = Math.min(
+        ORIENTATION.PHASE_TURNS + INVESTIGATION_EXTENSION,
+        MAX_ORIENTATION_TURNS,
+      );
+      host.logInfo("Investigation detected, extending orientation", {
+        turn: host.getTurn(),
+        tools: [...this.orientationToolsUsed],
+        effectiveOrientationTurns: this.effectiveOrientationTurns,
+      });
+    }
+
+    // 3. plan-then-act handoff: planner model has oriented, hand off to executor.
+    if (
+      this.orientationPhase &&
+      host.getTurn() > this.effectiveOrientationTurns &&
+      this.tier === 1
+    ) {
+      this.orientationPhase = false;
+      prevElementCount = await host.deescalateModel(
+        params.tabId,
+        prevElementCount,
+      );
+      this.tier = 0;
+      this.cooldownRemaining = host.limits.escalationCooldown;
+      host.addHandoffMessage();
+      host.emitInfoStep("Handing off to executor model");
+      host.logInfo("plan-then-act handoff", {
+        turn: host.getTurn(),
+        orientationTurns: this.effectiveOrientationTurns,
+      });
+    }
+
+    return prevElementCount;
   }
 }
