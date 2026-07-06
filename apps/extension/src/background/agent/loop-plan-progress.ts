@@ -11,7 +11,7 @@ export interface AgentLoopPlanProgressHost {
   };
   escalationsOnCurrentStep: number;
   lastPlanIndex: number;
-  mutationLedger: {
+  checkpoints: {
     clearReplayState(): void;
     clearStepLedger(): void;
   };
@@ -45,7 +45,7 @@ export function advanceCompletedSubtasks(
     loop.turnsOnCurrentStep = 0;
     loop.escalationsOnCurrentStep = 0;
     loop.stepRetryCount = 0;
-    loop.mutationLedger.clearStepLedger();
+    loop.checkpoints.clearStepLedger();
     loop.recordVerifiedPlanAdvance();
   }
   return result.currentIndex;
@@ -73,7 +73,7 @@ export function completeSingleSubtask(
     loop.perception.invalidateCache();
     loop.turnsOnCurrentStep = 0;
     loop.escalationsOnCurrentStep = 0;
-    loop.mutationLedger.clearReplayState();
+    loop.checkpoints.clearReplayState();
     loop.recordVerifiedPlanAdvance();
   }
 
@@ -98,7 +98,7 @@ export function completeRemainingSubtasks(
     loop.perception.invalidateCache();
     loop.turnsOnCurrentStep = 0;
     loop.escalationsOnCurrentStep = 0;
-    loop.mutationLedger.clearReplayState();
+    loop.checkpoints.clearReplayState();
     loop.recordVerifiedPlanAdvance();
   }
 
