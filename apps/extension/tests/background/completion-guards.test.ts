@@ -6,6 +6,10 @@ import {
   assessMissingEvidenceGuard,
   assessTaskContractGuard,
 } from "../../src/background/agent/completion/guards/contract-guards";
+import {
+  assessEarlyMultiStepGuard,
+  assessMoneyTableGuard,
+} from "../../src/background/agent/completion/guards/domain-guards";
 import type {
   CompletionEffect,
   GuardOutcome,
@@ -25,6 +29,11 @@ function ctx(over: Partial<CompletionGuardContext> = {}): CompletionGuardContext
     runningSubtaskIndex: -1,
     selectedSkillId: null,
     missingRequiredEvidence: [],
+    listDetailReviewedCount: 0,
+    listDetailOpenedCount: 0,
+    listDetailVisibleActionCount: 0,
+    moneyTableIncompleteScanReason: null,
+    moneyTableIncorrectAnswerReason: null,
     ...over,
   };
 }
@@ -87,5 +96,33 @@ describe("missing-evidence guard", () => {
       "emit_trace",
       "post_rejection_diagnostic",
     ]);
+  });
+});
+
+describe("money-table guard", () => {
+  test("passes when neither aggregate reason is set", () => {
+    expect(assessMoneyTableGuard(ctx()).kind).toBe("pass");
+  });
+
+  test("rejects an incomplete scan with the scan trace event", () => {
+    const outcome = assessMoneyTableGuard(
+      ctx({ moneyTableIncompleteScanReason: "3 of 5 pages scanned" }),
+    );
+    expect(outcome.kind).toBe("reject");
+    if (outcome.kind !== "reject") return;
+    expect(outcome.guardId).toBe("money_table");
+    const trace = outcome.effects.find((e) => e.type === "emit_trace");
+    expect(trace && trace.type === "emit_trace" && trace.event).toBe(
+      "done_rejected_incomplete_money_table_scan",
+    );
+  });
+});
+
+describe("early-multistep guard", () => {
+  test("passes a single-step request", () => {
+    expect(
+      assessEarlyMultiStepGuard(ctx({ userRequest: "click the login button" }))
+        .kind,
+    ).toBe("pass");
   });
 });

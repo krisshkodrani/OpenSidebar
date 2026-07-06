@@ -52,4 +52,18 @@ export interface CompletionGuardContext {
   activeObjective?: string;
   /** Success criteria for the current plan step (autocomplete guard). */
   successCriteria?: string;
+
+  /** List-detail review counts (list-detail guard), precomputed from the loop. */
+  listDetailReviewedCount: number;
+  listDetailOpenedCount: number;
+  /** max(tracked, countVisibleListDetailActions(snapshot)). */
+  listDetailVisibleActionCount: number;
+
+  /**
+   * Money-table aggregate reject reasons, precomputed from the loop's tracked
+   * aggregate. `incorrectAnswerReason` is already null when the scan is
+   * incomplete (the legacy short-circuit).
+   */
+  moneyTableIncompleteScanReason: string | null;
+  moneyTableIncorrectAnswerReason: string | null;
 }
