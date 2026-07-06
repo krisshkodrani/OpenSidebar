@@ -135,12 +135,19 @@ export function extractedFactToCorpusEntry(input: {
 }
 
 /**
- * Populate the corpus from the legacy stores (RFC LP-15, Phase 9). Idempotent —
- * upsert dedups by identity, so this is the lazy/reversible re-sync run on first
- * query (the legacy keys stay for one release). Profile facts carry the raw
- * (possibly ciphertext) values: `encrypted` is detected per item via
- * `isEncryptedValue`, so sensitive values stay CEK-wrapped in the corpus.
- * Returns how many entries of each kind were written.
+ * Reconcile the corpus with the legacy stores (RFC LP-15, Phase 9). Idempotent
+ * and reversible: upsert dedups by identity, then orphaned entries of the two
+ * legacy-mirrored kinds (personal_profile_fact, website_skill) — ones the legacy
+ * store no longer holds — are removed, so the corpus is an exact mirror and a
+ * corpus-preferred read never resurrects a deleted fact/skill. Live-produced
+ * `extracted_fact` entries are NOT touched (they have no legacy source to
+ * mirror). Profile facts carry the raw (possibly ciphertext) values: `encrypted`
+ * is detected per item via `isEncryptedValue`, so sensitive values stay
+ * CEK-wrapped. Returns how many entries of each kind were written.
+ *
+ * Safety: an under-population (a transient empty legacy read pruning too much)
+ * degrades gracefully — consumers guard on a non-empty corpus and fall back to
+ * the authoritative legacy read, and the next reconcile restores from legacy.
  */
 export async function migrateLegacyStoresIntoCorpus(
   corpus: TrustedCorpusStore,
@@ -159,6 +166,7 @@ export async function migrateLegacyStoresIntoCorpus(
     capturedAt: legacy.analyzer?.analyzedAt ?? at,
   };
 
+  const liveProfileKeys = new Set<string>();
   let profileFacts = 0;
   for (const item of legacy.profileFacts) {
     await corpus.upsert(
@@ -168,13 +176,30 @@ export async function migrateLegacyStoresIntoCorpus(
         isEncryptedValue(item.value),
       ),
     );
+    liveProfileKeys.add(item.id);
     profileFacts++;
   }
 
+  const liveSkillKeys = new Set<string>();
   let skills = 0;
   for (const skill of legacy.skills) {
     await corpus.upsert(websiteSkillToCorpusEntry(skill));
+    liveSkillKeys.add(skill.id);
     skills++;
+  }
+
+  // Prune orphans of the mirrored kinds (deletes that happened in the legacy
+  // store). extracted_fact is skipped — it has no legacy store to mirror.
+  const liveKeysByKind = {
+    personal_profile_fact: liveProfileKeys,
+    website_skill: liveSkillKeys,
+  } as const;
+  for (const entry of await corpus.load()) {
+    const liveKeys =
+      liveKeysByKind[entry.kind as keyof typeof liveKeysByKind];
+    if (liveKeys && !liveKeys.has(entry.claimKey)) {
+      await corpus.remove(entry.id);
+    }
   }
 
   return { profileFacts, skills };

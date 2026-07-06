@@ -218,4 +218,46 @@ describe("migrateLegacyStoresIntoCorpus", () => {
     await migrateLegacyStoresIntoCorpus(corpus, legacy);
     expect(await corpus.load()).toHaveLength(3); // not 6
   });
+
+  test("reconciles deletes — an orphaned mirrored entry is pruned", async () => {
+    const corpus = makeCorpus();
+    await migrateLegacyStoresIntoCorpus(corpus, {
+      profileFacts: items,
+      analyzer: null,
+      skills,
+      now: () => 1,
+    });
+    expect(await corpus.load()).toHaveLength(3);
+    // second run: the SSN fact was deleted from the legacy profile store
+    await migrateLegacyStoresIntoCorpus(corpus, {
+      profileFacts: [items[0]],
+      analyzer: null,
+      skills,
+      now: () => 1,
+    });
+    const after = await corpus.load();
+    expect(after).toHaveLength(2);
+    expect(after.some((e) => e.claimKey === "sensitive:ssn:2")).toBe(false);
+  });
+
+  test("does not prune live-produced extracted_fact entries", async () => {
+    const corpus = makeCorpus();
+    await corpus.upsert(
+      extractedFactToCorpusEntry({
+        taskId: "t1",
+        nodeId: "n1",
+        summary: "live fact",
+        capturedAt: 1,
+      }),
+    );
+    await migrateLegacyStoresIntoCorpus(corpus, {
+      profileFacts: [],
+      analyzer: null,
+      skills: [],
+      now: () => 1,
+    });
+    const after = await corpus.load();
+    expect(after).toHaveLength(1);
+    expect(after[0].kind).toBe("extracted_fact");
+  });
 });
