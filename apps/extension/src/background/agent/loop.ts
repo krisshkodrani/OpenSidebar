@@ -50,7 +50,7 @@ import {
 import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
 import { createResultPageProgressState } from "./result-page-progress-policy";
 import { buildElementSummary } from "../perception";
-import { PerceptionAgent } from "../perception/perception-agent";
+import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
 import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
 import { DomSnapshot } from "../../types";
@@ -657,7 +657,7 @@ export class AgentLoop {
   /** Pending hint from the user, picked up on the next turn */
   private pendingFeedback: string | null = null;
   /** Stateful perception agent — accumulates observations across turns */
-  private perception = new PerceptionAgent();
+  private perception = new PerceptionScreenshotState();
   /** Whether the resolved executor model accepts images (gates unified_vl). */
   private executorVLCapable = true;
   /** inspect_region per-turn cap state (LP-13). */
