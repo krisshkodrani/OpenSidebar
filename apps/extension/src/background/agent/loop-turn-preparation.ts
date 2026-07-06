@@ -4,7 +4,7 @@ import type { logger } from "../../utils";
 import type { LLMClient } from "../llm";
 import type { LLMMessage } from "../llm/types";
 import { buildElementSummary } from "../perception";
-import type { PerceptionAgent } from "../perception/perception-agent";
+import type { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
 import type { ContextManager } from "./context";
 import type { ContextMetrics } from "./context-types";
 import {
@@ -29,7 +29,7 @@ export type LlmTurnPreparationDeps = {
   selectTools: (tools: ToolDefinition[]) => ToolDefinition[];
   llm: Pick<LLMClient, "getCurrentModel" | "isPlannerTier">;
   perception: Pick<
-    PerceptionAgent,
+    PerceptionScreenshotState,
     | "getInterpretation"
     | "getLastTraceMeta"
     | "getLastTraceStats"
