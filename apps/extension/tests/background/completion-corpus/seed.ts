@@ -260,14 +260,24 @@ export function generateSeedCorpus(): { name: string; record: CompletionDecision
       reason: "",
       recoveryHint: null,
     });
-    const accepted = probe.outcome.kernelStatus === "accepted";
+    // Clean seeds trigger no legacy guard: only an explicit kernel
+    // rejection/verification rejects. An inconclusive kernel (no contract)
+    // falls through to the legacy_done_guards accept — matching the pipeline.
+    const kernelRejects =
+      probe.outcome.kernelStatus === "rejected" ||
+      probe.outcome.kernelStatus === "needs_verification";
+    const kernelAccepts = probe.outcome.kernelStatus === "accepted";
     const record = buildCompletionDecisionRecord({
       recordedAtTurn: scenario.turn,
       input,
-      verdict: accepted ? "accepted" : "rejected",
-      basis: accepted ? "kernel" : "kernel_reject",
+      verdict: kernelRejects ? "rejected" : "accepted",
+      basis: kernelRejects
+        ? "kernel_reject"
+        : kernelAccepts
+          ? "kernel"
+          : "legacy_done_guards",
       contractKind: probe.outcome.kernelContractKind,
-      guardId: accepted ? null : probe.outcome.kernelContractKind,
+      guardId: kernelRejects ? probe.outcome.kernelContractKind : null,
       reason: probe.outcome.kernelReason,
       recoveryHint: null,
     });

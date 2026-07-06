@@ -53,7 +53,7 @@ export function assessSummaryGuard(ctx: CompletionGuardContext): GuardOutcome {
       reason: decision.reason,
       effects: countingRejectEffects({
         traceEvent: "done_rejected_incomplete_multi_return",
-        traceData: { reason: decision.reason },
+        traceData: { rejections: ctx.doneRejections + 1, reason: decision.reason },
         summary: ctx.summary,
         primaryReason: decision.reason,
         fallbackInstruction:
@@ -70,6 +70,7 @@ export function assessSummaryGuard(ctx: CompletionGuardContext): GuardOutcome {
     effects: countingRejectEffects({
       traceEvent: "done_rejected_incomplete_summary",
       traceData: {
+        rejections: ctx.doneRejections + 1,
         reason: decision.reason,
         summaryTail: ctx.summary.slice(-120),
       },
