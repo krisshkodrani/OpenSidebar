@@ -82,11 +82,13 @@ vi.mock("../../src/background/llm", () => ({
 }));
 
 import {
-  AgentLoop,
   buildServiceNowMissingFieldInfeasibleSummary,
-  countVisibleListDetailActions,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
+} from "../../src/background/agent/servicenow/trusted-workflow-adapter";
+import {
+  AgentLoop,
+  countVisibleListDetailActions,
   getListDetailDoneRejection,
   getListDetailWorkflowBlock,
   getNextUnreviewedListDetailAction,

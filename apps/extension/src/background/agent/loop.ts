@@ -87,6 +87,19 @@ import {
   type PrepareModelTurnHost,
 } from "./turn-phases/prepare-model-turn";
 import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
+import {
+  buildServiceNowMissingFieldInfeasibleSummary,
+  cleanServiceNowModuleLabel,
+  extractServiceNowFormMissingFieldLabels,
+  extractServiceNowModuleRequest,
+  inferServiceNowCreateRecordUrlFromListUrl,
+  normalizeServiceNowModuleEvidenceText,
+  serviceNowFieldSearchTokens,
+  serviceNowModuleLabelTokens,
+  type ParsedServiceNowModuleRequest,
+  type ServiceNowMissingFieldSearchEvidence,
+  type TrustedCatalogOrderSubmission,
+} from "./servicenow/trusted-workflow-adapter";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -390,138 +403,12 @@ function shouldDeferStepWatchdogForOutcome(
   }
 }
 
-type TrustedCatalogOrderSubmission = {
-  itemName: string | null;
-  quantity: string | null;
-  configuredResult: string;
-  submittedAtTurn: number;
-};
-
-type ParsedServiceNowModuleRequest = {
-  application: string;
-  path: string[];
-};
-
-type ServiceNowMissingFieldSearchEvidence = {
-  findMisses: number;
-  hiddenFullLabelMiss: boolean;
-  hiddenMissTokens: Set<string>;
-  configureFieldMissing: boolean;
-};
-
-function cleanServiceNowModuleLabel(value: string): string {
-  return value
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/^["'\s]+|["'.\s]+$/g, "")
-    .replace(/^the\s+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeServiceNowModuleEvidenceText(value: unknown): string {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function serviceNowModuleLabelTokens(value: string): string[] {
-  return normalizeServiceNowModuleEvidenceText(value)
-    .split(" ")
-    .filter((token) => token.length >= 3);
-}
-
-export function extractServiceNowModuleRequest(
-  text: string,
-): ParsedServiceNowModuleRequest | null {
-  const normalized = text.replace(/\s+/g, " ");
-  const patterns = [
-    /\b(?:navigate to|open)\s+(?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\s+module\s+(?:of|in)\s+(?:the\s+)?["\u201c]([^"\u201d]+)["\u201d]\s+application\b/i,
-    /\b(?:navigate to|open)\s+(?:the\s+)?(.+?)\s+module\s+(?:of|in)\s+(?:the\s+)?(.+?)\s+application\b/i,
-  ];
-  for (const pattern of patterns) {
-    const match = pattern.exec(normalized);
-    if (!match) continue;
-    const rawPath = cleanServiceNowModuleLabel(match[1] ?? "");
-    const application = cleanServiceNowModuleLabel(match[2] ?? "");
-    const path = rawPath
-      .split(/\s*>\s*|\s*\/\s*/)
-      .map(cleanServiceNowModuleLabel)
-      .filter(Boolean);
-    if (application && path.length > 0) {
-      return { application, path };
-    }
-  }
-  return null;
-}
-
-export function extractServiceNowFormMissingFieldLabels(
-  toolResult: string,
-): string[] {
-  const labels = new Set<string>();
-  for (const match of toolResult.matchAll(
-    /^\s*-\s*(.+?): field not found\b/gim,
-  )) {
-    const label = match[1]?.replace(/\s+/g, " ").trim();
-    if (label) labels.add(label);
-  }
-  return [...labels];
-}
-
-export function buildServiceNowMissingFieldInfeasibleSummary(
-  labels: string[],
-): string {
-  const cleanLabels = labels
-    .map((label) => label.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-  if (cleanLabels.length === 1) {
-    return `I cannot complete this because the requested field "${cleanLabels[0]}" is not available on this ServiceNow form.`;
-  }
-  return `I cannot complete this because the requested fields ${cleanLabels
-    .map((label) => `"${label}"`)
-    .join(", ")} are not available on this ServiceNow form.`;
-}
-
-function serviceNowFieldSearchTokens(label: string): string[] {
-  return label
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 3);
-}
-
 function isNegativeFindElementResult(result: string): boolean {
   return /\bText ".+?" not found on this page\./i.test(result);
 }
 
 function isNegativeInspectHiddenResult(result: string): boolean {
   return /\bNo hidden elements found matching\b/i.test(result);
-}
-
-function inferServiceNowCreateRecordUrlFromListUrl(
-  rawUrl: string,
-): string | null {
-  if (!rawUrl.trim()) return null;
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return null;
-  }
-
-  const targetMatch = url.pathname.match(/\/target\/([^/]+)/i);
-  const decodedTarget = targetMatch
-    ? decodeURIComponent(targetMatch[1] ?? "")
-    : `${url.pathname.replace(/^\//, "")}${url.search}`;
-  const listMatch = decodedTarget.match(
-    /(?:^|\/)([a-z][a-z0-9_]*?)_list\.do\b/i,
-  );
-  const table = listMatch?.[1];
-  if (!table) return null;
-  return `${url.origin}/${table}.do?sys_id=-1`;
 }
 
 // Re-export submodules for barrel compatibility
