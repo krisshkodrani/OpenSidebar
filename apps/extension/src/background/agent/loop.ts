@@ -86,6 +86,7 @@ import {
   runPrepareModelTurnPhase,
   type PrepareModelTurnHost,
 } from "./turn-phases/prepare-model-turn";
+import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -8092,48 +8093,12 @@ export class AgentLoop {
     };
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
-      // Pause gate — block here if user paused the loop
-      if (this.pauseGate) await this.pauseGate.promise;
-      this.throwIfGracefulStopRequested();
-      if (!this.isRunning) {
-        // Finalize the stream so the side panel exits isStreaming state
-        this.finishStream();
-        break;
-      }
-
-      this.turnCount++;
-      this.turnsOnCurrentStep++;
-      resetStepScopedActionMemory();
-
-      // Clear idempotency cache unless a done() was just rejected (prevents re-execution of
-      // actions that already succeeded). Normal turns clear it so legitimate repeated clicks work.
-      if (!this.guardAfterDoneRejection) {
-        this.checkpoints.clearEphemeral();
-      }
-      this.guardAfterDoneRejection = false;
-
-      if (
-        this.middleware.shouldHaltTurn(
-          this.turnCount,
-          this.maxTurns,
-          this.telemetry.sessionStartTime,
-        )
-      ) {
-        const haltMessage =
-          "Stopped by policy middleware due to session budget limits.";
-        this.log.warn("policy", "Halting loop turn", {
-          turn: this.turnCount,
-          workspaceId: this.workspaceId,
-          workerId: this.workerId,
-        });
-        this.broadcast({
-          type: "STREAM_CHUNK",
-          payload: { delta: haltMessage, done: false },
-        });
-        this.finishStream();
-        this.statusHandler(AgentStatus.IDLE, "Stopped by middleware policy");
-        break;
-      }
+      // Top-of-turn control gate (RFC LP-15 Phase 11): pause / graceful-stop /
+      // middleware halt + counter advance + idempotency-cache clear.
+      const gate = await runGatesPhase(this as unknown as GatesPhaseHost, {
+        resetStepScopedActionMemory,
+      });
+      if (gate.kind === "end_turn") break;
 
       // Per-turn escalation bookkeeping: cooldown tick, one-shot investigation
       // extension, and the plan-then-act orientation handoff (tier 1→0).
