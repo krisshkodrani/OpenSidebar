@@ -8,7 +8,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "./catalog-order-policy";
+} from "./servicenow/catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import type { DryRunClassification } from "./mutation-dry-run-policy";
 import {

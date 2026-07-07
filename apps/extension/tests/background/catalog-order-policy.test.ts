@@ -4,7 +4,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "../../src/background/agent/catalog-order-policy";
+} from "../../src/background/agent/servicenow/catalog-order-policy";
 
 function link(id: number, text: string, href = "#") {
   return {

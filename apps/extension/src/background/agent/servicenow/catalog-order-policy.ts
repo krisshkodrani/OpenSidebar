@@ -1,5 +1,5 @@
-import { ToolName } from "../../types";
-import type { DomSnapshot, TaggedElement } from "../../types";
+import { ToolName } from "../../../types";
+import type { DomSnapshot, TaggedElement } from "../../../types";
 
 export interface CatalogOrderPostConfirmationClickInput {
   selectedSkillId?: string | null;

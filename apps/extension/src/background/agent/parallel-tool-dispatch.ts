@@ -10,7 +10,7 @@ import {
   assessCatalogOrderConfigurationClick,
   assessCatalogOrderItemSelectionClick,
   assessCatalogOrderPostConfirmationClick,
-} from "./catalog-order-policy";
+} from "./servicenow/catalog-order-policy";
 import { assessConsequentialFinalActionBlock } from "./consequential-action-policy";
 import { INVESTIGATION_TOOLS, TOOL_CACHE } from "./constants";
 import {
