@@ -739,4 +739,38 @@ describe("Orchestrator handoff briefing", () => {
     expect(rerouted.description).toContain("alternate payment route");
     expect(rerouted.handoffArtifacts[0].phase).toBe("verifier_reroute");
   });
+
+  test("reroute preserves the ServiceNow record-form skill when page context is threaded", () => {
+    const source = makeNode([]);
+    // A merged ServiceNow record-form request (field/value pairs, "incident"),
+    // but WorkArena-style: it never says the literal word "ServiceNow".
+    source.description =
+      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller".';
+    source.successCriteria =
+      "The incident record is submitted with the requested field values.";
+
+    // With the live ServiceNow page context, re-selection keeps the SN skill.
+    const withCtx = createRerouteNode(
+      source,
+      "Submit the incident form",
+      "Form has not been submitted yet",
+      {
+        pageTitle: "Create INC0010443 | Incident | ServiceNow",
+        pageUrl:
+          "https://example.service-now.com/now/nav/ui/classic/params/target/incident.do",
+        enabledSkillPackIds: ["servicenow-platform"],
+      },
+    );
+    expect(withCtx.selectedSkillId).toBe("servicenow-record-form");
+
+    // The pre-fix behavior: without page context the ServiceNow pack de-activates
+    // (the goal never says "ServiceNow"), so a non-SN skill is chosen. This is the
+    // regression the fix prevents.
+    const withoutCtx = createRerouteNode(
+      source,
+      "Submit the incident form",
+      "Form has not been submitted yet",
+    );
+    expect(withoutCtx.selectedSkillId).not.toBe("servicenow-record-form");
+  });
 });

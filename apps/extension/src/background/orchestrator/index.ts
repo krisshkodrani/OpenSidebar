@@ -4334,6 +4334,11 @@ export class Orchestrator {
                 node,
                 verification.rerouteObjective,
                 verification.reason,
+                {
+                  pageTitle: currentTitle,
+                  pageUrl: currentUrl,
+                  enabledSkillPackIds: task.enabledSkillPackIds,
+                },
               );
               node.status = "completed";
               node.result = `Handed off to ${reroutedNode.id}: ${verification.reason}`;
