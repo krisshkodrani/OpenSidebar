@@ -624,7 +624,20 @@ function collapseSkillOwnedWorkflowNodes(
       assumptions: dedupeStrings(
         nodes.flatMap((node) => node.assumptions || []),
       ),
-      handoffArtifacts: nodes.flatMap((node) => node.handoffArtifacts),
+      // For a field-value form, the source nodes' handoff notes echo the
+      // discarded "Fill the form... Do not submit the form yet" split; carrying
+      // them would leak that contradictory instruction into the executor.
+      // Replace them with a single coherent note for the merged objective.
+      handoffArtifacts: isFieldValueForm
+        ? [
+            {
+              role: "planner" as const,
+              phase: "planned" as const,
+              note: `Planner assigned objective: ${description}`,
+              timestamp: firstNode.handoffArtifacts[0]?.timestamp ?? 0,
+            },
+          ]
+        : nodes.flatMap((node) => node.handoffArtifacts),
       verificationGate: nodes
         .slice()
         .reverse()
