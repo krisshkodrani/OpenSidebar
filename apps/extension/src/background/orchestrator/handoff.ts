@@ -872,11 +872,23 @@ export function createRerouteNode(
   sourceNode: TaskNode,
   rerouteObjective: string,
   rerouteReason: string,
+  skillContext?: {
+    pageTitle?: string;
+    pageUrl?: string;
+    enabledSkillPackIds?: readonly string[];
+  },
 ): TaskNode {
+  // Thread the current page context into skill re-selection. Without it, a
+  // reroute drops signals like the ServiceNow URL/title, so a domain skill
+  // (e.g. servicenow-record-form) de-activates mid-task and the matcher falls
+  // back to a generic skill — the reroute must stay on the same workflow.
   const selection = selectPrimarySkill({
     query: sourceNode.description,
     objective: rerouteObjective,
     successCriteria: sourceNode.successCriteria,
+    pageTitle: skillContext?.pageTitle,
+    pageUrl: skillContext?.pageUrl,
+    enabledSkillPackIds: skillContext?.enabledSkillPackIds,
   });
   return {
     ...(selection
