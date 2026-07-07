@@ -75,10 +75,15 @@ import {
 } from "./tab-coordination";
 import { buildTabCoordinationTraceData as buildTaskTabCoordinationTraceData } from "./tab-coordination-trace";
 import {
+  classifyVerificationRisk,
   NodeVerificationResult,
   OrchestratorVerifier,
   programmaticVerify,
 } from "./verifier";
+import {
+  corpusEntryToFactRef,
+  type JudgeGateOutcome,
+} from "../agent/completion/judge-gate";
 import { getLoadedSkillContract } from "./skills";
 import {
   buildAssumptionDriftSignal,
@@ -117,7 +122,7 @@ import {
   RuntimeLane,
   WorkspaceLanePools,
 } from "./lane-types";
-import type { OrchestratorDeps } from "./lane-types";
+import type { OrchestratorDeps, VerifierLike } from "./lane-types";
 import {
   beginLaneOperation,
   buildLaneTelemetrySnapshot as buildLaneTelemetrySnapshotData,
@@ -1583,6 +1588,49 @@ export class Orchestrator {
         }),
       )
       .catch(() => {});
+  }
+
+  /**
+   * Run the high-risk judge gate for a node whose verification accepted (RFC
+   * LP-15 Phase 10). Loads the relevant trusted-corpus facts, renders the
+   * executor evidence, and adjudicates via the verifier's judge seat. Returns
+   * null on any error so a gate failure can never block a legitimate accept —
+   * the gate only ever tightens completion, never loosens it.
+   */
+  private async runHighRiskJudgeGate(
+    task: OrchestratorTask,
+    node: TaskNode,
+    verifier: VerifierLike,
+    evidence: StructuredEvidence[],
+    summary: string,
+  ): Promise<JudgeGateOutcome | null> {
+    if (!verifier.judgeGate) return null;
+    try {
+      const entries = await getTrustedCorpusStore().load();
+      const corpusFacts = entries
+        .filter(
+          (entry) =>
+            entry.kind === "personal_profile_fact" ||
+            entry.kind === "extracted_fact",
+        )
+        .map(corpusEntryToFactRef);
+      const evidenceLines = evidence
+        .map((item) => item.claim ?? item.event?.detail ?? item.event?.type ?? "")
+        .filter((line): line is string => Boolean(line));
+      return await verifier.judgeGate({
+        claim: node.description,
+        successCriteria: node.successCriteria,
+        evidence: evidenceLines.length > 0 ? evidenceLines : [summary],
+        corpusFacts,
+      });
+    } catch (error) {
+      logger.warn(
+        "orchestrator",
+        "High-risk judge gate failed; keeping the verifier accept",
+        { taskId: task.id, nodeId: node.id, error },
+      );
+      return null;
+    }
   }
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
@@ -4208,6 +4256,48 @@ export class Orchestrator {
                 verification.reason = `Operator reroute decision: ${verification.rerouteObjective}`;
               }
               await this.clearPendingEscalation(task);
+            }
+
+            // RFC LP-15 Phase 10: high-risk judge gate. Only for a high-risk
+            // node whose verification accepted — it can only make completion
+            // stricter (accept -> reroute on a failed / contradicted /
+            // unavailable judge). LOW/MEDIUM add zero latency; the risky action
+            // itself stays human-gated by the consequential-action approval.
+            if (
+              verification.decision === "accept" &&
+              classifyVerificationRisk({
+                taskQuery: task.query,
+                objective: node.description,
+                successCriteria: node.successCriteria,
+              }) === "high"
+            ) {
+              const gate = await this.runHighRiskJudgeGate(
+                task,
+                node,
+                verifier,
+                executorEvidence,
+                result.summary,
+              );
+              if (gate && gate.decision === "reroute") {
+                verification.decision = "reroute";
+                verification.reason = gate.reason;
+                verification.failureType =
+                  verification.failureType ?? "state_mismatch";
+                verification.rerouteObjective =
+                  verification.rerouteObjective ||
+                  `Re-verify and complete: ${node.description}`;
+                this.emitTraceEvent(
+                  task,
+                  "judge_gate_reroute",
+                  {
+                    nodeId: node.id,
+                    judged: gate.judged,
+                    verdictSource: gate.verdict?.source,
+                    reason: gate.reason.slice(0, 300),
+                  },
+                  "verifier",
+                );
+              }
             }
 
             if (verification.decision === "accept") {

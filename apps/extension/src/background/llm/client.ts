@@ -51,6 +51,8 @@ export const MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK =
 export const MODEL_PLANNER = LLM_MODEL_CONFIG.planner;
 /** Writer specialist model — used for one-shot prose composition (compose_text) */
 export const MODEL_WRITER = LLM_MODEL_CONFIG.writer;
+/** Verification judge model — used for the rubric judge (RFC LP-15 Phase 10) */
+export const MODEL_JUDGE = LLM_MODEL_CONFIG.judge;
 
 /** OpenAI direct API — redirected to Fireworks */
 const OPENAI_BASE_URL =
@@ -292,6 +294,11 @@ export interface LLMClientOptions {
    * the writer pool transparently reuses the executor pool.
    */
   writerModel?: string;
+  /**
+   * Optional verification judge model (RFC LP-15 Phase 10). When unset, the
+   * judge pool transparently reuses the planner pool.
+   */
+  judgeModel?: string;
   /** Append :nitro routing suffix to all model IDs (OpenRouter only) */
   useNitro?: boolean;
   /** Provider mode: how executor and planner providers are combined */
@@ -677,8 +684,14 @@ export class LLMClient {
    * executor pool when no writer model is configured (transparent fallback).
    */
   private writerPool: ProviderPool;
+  /**
+   * Configured provider pool for the verification judge (RFC LP-15 Phase 10).
+   * Defaults to the planner pool when no judge model is configured — the judge
+   * has historically run on the planner seat (OrchestratorVerifier).
+   */
+  private judgePool: ProviderPool;
   /** Which model role is currently active for completion routing */
-  private _activeTier: "executor" | "planner" | "writer" = "executor";
+  private _activeTier: "executor" | "planner" | "writer" | "judge" = "executor";
   private executorModelOverride: string | null = null;
   private defaultTemperature: number = 0.0;
   private executorFallbackModel: string | null = null;
@@ -856,6 +869,21 @@ export class LLMClient {
       this.writerPool = singleProviderPool(execSlot.provider, writerModel);
     }
 
+    // --- Build judge pool ---
+    // The verification judge runs on the planner's provider with its own model
+    // (the verifier historically ran on the planner seat). When unconfigured it
+    // transparently reuses the planner pool.
+    if (!options?.judgeModel) {
+      this.judgePool = this.plannerPool;
+    } else {
+      const plannerSlot = this.plannerPool.getActive();
+      const judgeModel =
+        plannerSlot.provider.providerId === "openrouter"
+          ? applyNitro(options.judgeModel, nitro)
+          : options.judgeModel;
+      this.judgePool = singleProviderPool(plannerSlot.provider, judgeModel);
+    }
+
     // Initialize from executor pool's top priority
     const initialSlot = this.executorPool.getActive();
     this.model = initialSlot.model;
@@ -869,6 +897,8 @@ export class LLMClient {
         return this.plannerPool;
       case "writer":
         return this.writerPool;
+      case "judge":
+        return this.judgePool;
       default:
         return this.executorPool;
     }
@@ -1006,6 +1036,44 @@ export class LLMClient {
         ],
         max_tokens: args.maxTokens ?? 1024,
         temperature: args.temperature ?? 0.5,
+        signal: args.signal,
+      });
+      return {
+        text: stripThinkTags(resp.content ?? "").trim(),
+        model: resp.actualModel ?? model,
+        providerId: resp.actualProviderId ?? providerId,
+      };
+    } finally {
+      this._activeTier = prevTier;
+    }
+  }
+
+  /**
+   * One-shot verification judging against the Judge pool (RFC LP-15 Phase 10).
+   * Temporarily routes completion through the judge model (falling back to the
+   * planner model when none is configured), then restores the prior tier.
+   * Mirrors `composeText`: it does not mutate the active model/provider, so it
+   * is safe to call mid-loop without disturbing escalation state. Temperature
+   * defaults to 0 (deterministic adjudication); the caller parses the raw text.
+   */
+  public async runJudge(args: {
+    systemPrompt: string;
+    userPrompt: string;
+    maxTokens?: number;
+    temperature?: number;
+    signal?: AbortSignal;
+  }): Promise<{ text: string; model: string; providerId: string }> {
+    const prevTier = this._activeTier;
+    this._activeTier = "judge";
+    try {
+      const { providerId, model } = this.getActiveProviderInfo();
+      const resp = await this.complete({
+        messages: [
+          { role: "system", content: args.systemPrompt },
+          { role: "user", content: args.userPrompt },
+        ],
+        max_tokens: args.maxTokens ?? 2048,
+        temperature: args.temperature ?? 0,
         signal: args.signal,
       });
       return {

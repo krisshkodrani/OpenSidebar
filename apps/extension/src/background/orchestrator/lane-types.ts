@@ -109,7 +109,7 @@ export type PlannerLike = Pick<
 > &
   Partial<Pick<OrchestratorPlanner, "setUsageCallback" | "planNextHorizon">>;
 export type VerifierLike = Pick<OrchestratorVerifier, "verifyNode"> &
-  Partial<Pick<OrchestratorVerifier, "advise">>;
+  Partial<Pick<OrchestratorVerifier, "advise" | "judgeGate">>;
 
 export type CreateAgentLoopInput = {
   openRouterApiKey: string;
