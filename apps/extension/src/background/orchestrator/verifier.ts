@@ -4,6 +4,15 @@ import { renderPrompt } from "../../prompts";
 import { StructuredEvidence } from "./types";
 import { tokenizeStepText } from "../agent/loop-helpers";
 import {
+  runJudgeGate,
+  type JudgeGateInput,
+  type JudgeGateOutcome,
+} from "../agent/completion/judge-gate";
+import {
+  createJudgeVerdictCache,
+  type JudgeVerdictCache,
+} from "../agent/completion/judge";
+import {
   EvidenceEvent,
   EvidenceEventType,
   isTrustedEvidence,
@@ -799,10 +808,29 @@ export function deriveVerifierFallbackDecision(
 
 export class OrchestratorVerifier {
   private llm: LLMClient;
+  /** Persistent verdict cache — same claim+evidence never re-adjudicates. */
+  private judgeCache: JudgeVerdictCache = createJudgeVerdictCache();
 
   constructor(openRouterApiKey: string, modelOverrides?: LLMClientOptions) {
     this.llm = new LLMClient(openRouterApiKey, modelOverrides);
     this.llm.switchToPlanner();
+  }
+
+  /**
+   * Run the high-risk judge gate (RFC LP-15 Phase 10) using this verifier's LLM
+   * as the judge seat. `runJudge` routes through the judge tier (falling back to
+   * the planner model) and restores the prior tier, so this does not disturb the
+   * verifier's planner routing. Never throws — the gate fails open internally.
+   */
+  async judgeGate(
+    input: JudgeGateInput,
+    signal?: AbortSignal,
+  ): Promise<JudgeGateOutcome> {
+    return runJudgeGate(input, {
+      seat: this.llm,
+      cache: this.judgeCache,
+      signal,
+    });
   }
 
   async advise(
