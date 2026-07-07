@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-07
+
+Verification subsystem + loop decomposition (RFC LP-15, "three consolidations"):
+a single completion authority backed by a contract kernel and a model judge,
+safer consequential form submits, a provenance-bearing memory store, and the
+start of decomposing the agent loop into named phases behind a size ratchet.
+
+### Added
+
+- **Rubric judge + entailment gate (RFC LP-15 Phase 10).** High-risk task
+  completions are re-checked by a model judge against known facts before they are
+  accepted; a pure, zero-model entailment pre-filter resolves claims the trusted
+  corpus already entails so the (paid) judge is skipped on the common path. The
+  judge only ever makes completion *stricter* (accept → reroute on a failed or
+  contradicted verdict) and fails open to human approval on timeout/error. New
+  `judge` model seat (defaults to GLM-5.2).
+- **Form-submit dry-run (RFC LP-15 Phase 8).** Before a consequential form
+  submit, the agent captures the live field state (`extract_form_state` tool),
+  diffs it against the approved draft, and surfaces any unexpected diff at the
+  human approval gate — it never bypasses approval.
+- **Trusted-corpus store (RFC LP-15 Phase 9).** One provenance-bearing memory
+  store unifying personal-profile facts, website skills, and extracted facts,
+  each carrying where/when/by-which-model it came from. Shadow-populated from the
+  legacy stores this release (website-skill reads flip to it; profile/extracted
+  reads follow next release).
+- **Loop decomposition ratchet (RFC LP-15 Phase 11).** A checked-in budget
+  (`scripts/loop-ratchet.mjs`, wired into lint) that prevents `loop.ts` from
+  growing — the agent loop is being decomposed into named turn phases
+  (`turn-machine.ts`) incrementally, protected against regression.
+
+### Changed
+
+- **Completion has one authority now (RFC LP-15 Phase 7a/7b).** A deterministic
+  contract kernel plus pure, effects-as-data guards replace the legacy inline
+  guard chain that decided "is the task done?"; the flip landed behind a
+  zero-divergence golden-replay gate.
+- ServiceNow trusted-workflow logic moves into an agent-side quarantine adapter
+  (`agent/servicenow/`, RFC LP-15 Phase 12), preserving the one-way import rule.
+- Escalation state machine and per-turn accumulators extracted from the loop into
+  `EscalationTierController` and `TurnState` (RFC LP-15 Phase 6); the
+  `prepare_model_turn` and `gates` turn phases moved out of `loop()`.
+
 ## [0.3.5] - 2026-07-06
 
 Perception overhaul: the agent owns its screenshot pipeline end to end, sees the
