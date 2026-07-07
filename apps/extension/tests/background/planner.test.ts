@@ -2801,6 +2801,26 @@ describe("selectPrimarySkill", () => {
                 runtimeContext: ["platform: ServiceNow"],
             })?.id,
         ).toBe("servicenow-record-form");
+
+        // Custom-hosted / self-managed ServiceNow (no .service-now.com host) is
+        // recognized by its URL-path fingerprints (/now/nav/, *_list.do,
+        // nav_to.do, sys_id/sysparm), so the record-form skill still activates for
+        // enterprises on vanity domains.
+        expect(
+            selectPrimarySkill({
+                ...genericIncidentTask,
+                pageTitle: "Incident",
+                pageUrl:
+                    "https://itsm.acme-corp.com/now/nav/ui/classic/params/target/incident.do",
+            })?.id,
+        ).toBe("servicenow-record-form");
+        // A generic legacy `.do` app WITHOUT ServiceNow fingerprints must not.
+        expect(
+            selectPrimarySkill({
+                ...genericIncidentTask,
+                pageUrl: "https://legacy.bank.com/account.do?action=view",
+            })?.id,
+        ).not.toBe("servicenow-record-form");
     });
 
     test("ignores WorkArena task ids as ServiceNow activation signals", () => {
