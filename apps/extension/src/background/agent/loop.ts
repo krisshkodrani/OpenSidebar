@@ -89,14 +89,12 @@ import {
 import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
 import {
   buildServiceNowMissingFieldInfeasibleSummary,
-  cleanServiceNowModuleLabel,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
   inferServiceNowCreateRecordUrlFromListUrl,
-  normalizeServiceNowModuleEvidenceText,
+  maybeInferServiceNowModuleNavigationEvidence,
   serviceNowFieldSearchTokens,
-  serviceNowModuleLabelTokens,
-  type ParsedServiceNowModuleRequest,
+  type ModuleNavEvidenceHost,
   type ServiceNowMissingFieldSearchEvidence,
   type TrustedCatalogOrderSubmission,
 } from "./servicenow/trusted-workflow-adapter";
@@ -2836,7 +2834,10 @@ export class AgentLoop {
     // before evaluating; run it before the guard context is built so the
     // missing-evidence guard sees the post-inference evidence.
     if (this.getMissingRequiredEvidenceTypes().length > 0) {
-      this.maybeInferServiceNowModuleNavigationEvidence(summary);
+      maybeInferServiceNowModuleNavigationEvidence(
+        this as unknown as ModuleNavEvidenceHost,
+        summary,
+      );
     }
 
     const snapshot = this.context.getSnapshot() ?? null;
@@ -3020,81 +3021,6 @@ export class AgentLoop {
       question: question.slice(0, 100),
       answer: answer.slice(0, 200),
     });
-  }
-
-  private maybeInferServiceNowModuleNavigationEvidence(
-    summary: string,
-  ): boolean {
-    if (this.selectedSkillId !== "servicenow-module-navigation") return false;
-    const request = extractServiceNowModuleRequest(this.originalQuery);
-    if (!request) return false;
-    const snapshot = this.context.getSnapshot();
-    if (!snapshot) return false;
-
-    const pageText = normalizeServiceNowModuleEvidenceText(
-      [
-        snapshot.title,
-        snapshot.url,
-        snapshot.visibleContent,
-        snapshot.pageContent,
-        summary,
-      ].join("\n"),
-    );
-    const serviceNowPage =
-      /servicenow/i.test(snapshot.title) ||
-      /service-now|servicenow|nowplatform/i.test(snapshot.url) ||
-      /\.do(?:\?|$)|_list\.do\b/i.test(snapshot.url);
-    if (!serviceNowPage) return false;
-
-    const leaf = request.path.at(-1);
-    if (!leaf) return false;
-    const leafTokens = serviceNowModuleLabelTokens(leaf);
-    if (
-      leafTokens.length === 0 ||
-      !leafTokens.every((token) => pageText.includes(token))
-    ) {
-      return false;
-    }
-
-    const now = new Date().toISOString();
-    const detail = {
-      application: request.application,
-      path: request.path,
-      inferredFrom: "current_page_on_done",
-      title: snapshot.title,
-      url: snapshot.url,
-    };
-    const added = this.evidenceAccumulator.addMany([
-      {
-        type: "navigation_reached",
-        source: ToolName.DONE,
-        confidence: "medium",
-        observedAt: now,
-        supportsTaskGoal: true,
-        detail,
-      },
-      {
-        type: "goal_state_verified",
-        source: ToolName.DONE,
-        confidence: "medium",
-        observedAt: now,
-        supportsTaskGoal: true,
-        detail,
-      },
-    ]);
-    if (added === 0) return false;
-
-    this.traceRecorder?.recordEvent(
-      "module_navigation_evidence_inferred_from_done",
-      {
-        selectedSkillId: this.selectedSkillId,
-        application: request.application,
-        path: request.path,
-        title: snapshot.title,
-        url: snapshot.url,
-      },
-    );
-    return true;
   }
 
   private getActiveSubtaskDescription(): string | undefined {
