@@ -6,6 +6,8 @@ export interface LLMModelDefaults {
   planner: string;
   /** Optional specialist writer model default (falls back to planner default). */
   writer: string;
+  /** Verification judge seat default (RFC LP-15 Phase 10; falls back to planner). */
+  judge: string;
   openai: {
     executor: string;
     planner: string;
@@ -37,6 +39,7 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
     DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
   planner: "accounts/fireworks/models/glm-5p2",
   writer: "accounts/fireworks/models/glm-5p2",
+  judge: "accounts/fireworks/models/glm-5p2",
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
     planner: "accounts/fireworks/models/glm-5p2",
@@ -114,6 +117,7 @@ export function resolveLLMModelConfig(
     ),
     planner: readString(record, "planner", DEFAULT_LLM_MODEL_CONFIG.planner),
     writer: readString(record, "writer", DEFAULT_LLM_MODEL_CONFIG.writer),
+    judge: readString(record, "judge", DEFAULT_LLM_MODEL_CONFIG.judge),
     openai: readGroup(record, "openai", DEFAULT_LLM_MODEL_CONFIG.openai),
     groq: readGroup(record, "groq", DEFAULT_LLM_MODEL_CONFIG.groq),
     fireworks: readGroup(
