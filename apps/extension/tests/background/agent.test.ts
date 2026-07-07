@@ -85,6 +85,8 @@ import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
+  maybeInferServiceNowModuleNavigationEvidence,
+  type ModuleNavEvidenceHost,
 } from "../../src/background/agent/servicenow/trusted-workflow-adapter";
 import {
   AgentLoop,
@@ -2760,7 +2762,8 @@ describe("AgentLoop", () => {
     // The SN evidence inference (a live pre-step of the completion pipeline,
     // RFC LP-15 Phase 7b) adds the typed evidence from the reached page, so the
     // missing-evidence guard then passes.
-    const inferred = (agent as any).maybeInferServiceNowModuleNavigationEvidence(
+    const inferred = maybeInferServiceNowModuleNavigationEvidence(
+      agent as unknown as ModuleNavEvidenceHost,
       "Opened the HBase Instances module.",
     );
 

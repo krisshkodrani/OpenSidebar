@@ -10,9 +10,14 @@
  * agent runtime without touching generic completion/turn logic.
  *
  * This first pass relocates the pure module-level helpers (request parsing,
- * missing-field summaries, URL inference); the stateful record-form / catalog
- * controllers follow in later passes behind a host interface.
+ * missing-field summaries, URL inference) and the module-navigation evidence
+ * inference (behind a narrow host); the stateful record-form / catalog
+ * controllers follow in later passes.
  */
+
+import { ToolName } from "../../../types";
+import type { DomSnapshot } from "../../../types";
+import type { EvidenceAccumulator } from "../evidence";
 
 /** A trusted catalog-order submission the agent has already committed this run. */
 export type TrustedCatalogOrderSubmission = {
@@ -118,6 +123,100 @@ export function serviceNowFieldSearchTokens(label: string): string[] {
     .split(/[^a-z0-9]+/)
     .map((token) => token.trim())
     .filter((token) => token.length >= 3);
+}
+
+/** Narrow host for the module-navigation evidence inference — all real AgentLoop fields. */
+export interface ModuleNavEvidenceHost {
+  readonly selectedSkillId: string | null;
+  readonly originalQuery: string;
+  readonly context: { getSnapshot(): DomSnapshot | null };
+  readonly evidenceAccumulator: Pick<EvidenceAccumulator, "addMany">;
+  readonly traceRecorder: {
+    recordEvent(name: string, data: Record<string, unknown>): void;
+  } | null;
+}
+
+/**
+ * At done() time, when the servicenow-module-navigation skill drove the run,
+ * infer navigation_reached / goal_state_verified evidence if the current page is
+ * a ServiceNow page whose content matches the requested module leaf. Returns
+ * whether any evidence was added. Behaviour-identical to the former
+ * AgentLoop.maybeInferServiceNowModuleNavigationEvidence.
+ */
+export function maybeInferServiceNowModuleNavigationEvidence(
+  host: ModuleNavEvidenceHost,
+  summary: string,
+): boolean {
+  if (host.selectedSkillId !== "servicenow-module-navigation") return false;
+  const request = extractServiceNowModuleRequest(host.originalQuery);
+  if (!request) return false;
+  const snapshot = host.context.getSnapshot();
+  if (!snapshot) return false;
+
+  const pageText = normalizeServiceNowModuleEvidenceText(
+    [
+      snapshot.title,
+      snapshot.url,
+      snapshot.visibleContent,
+      snapshot.pageContent,
+      summary,
+    ].join("\n"),
+  );
+  const serviceNowPage =
+    /servicenow/i.test(snapshot.title) ||
+    /service-now|servicenow|nowplatform/i.test(snapshot.url) ||
+    /\.do(?:\?|$)|_list\.do\b/i.test(snapshot.url);
+  if (!serviceNowPage) return false;
+
+  const leaf = request.path.at(-1);
+  if (!leaf) return false;
+  const leafTokens = serviceNowModuleLabelTokens(leaf);
+  if (
+    leafTokens.length === 0 ||
+    !leafTokens.every((token) => pageText.includes(token))
+  ) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const detail = {
+    application: request.application,
+    path: request.path,
+    inferredFrom: "current_page_on_done",
+    title: snapshot.title,
+    url: snapshot.url,
+  };
+  const added = host.evidenceAccumulator.addMany([
+    {
+      type: "navigation_reached",
+      source: ToolName.DONE,
+      confidence: "medium",
+      observedAt: now,
+      supportsTaskGoal: true,
+      detail,
+    },
+    {
+      type: "goal_state_verified",
+      source: ToolName.DONE,
+      confidence: "medium",
+      observedAt: now,
+      supportsTaskGoal: true,
+      detail,
+    },
+  ]);
+  if (added === 0) return false;
+
+  host.traceRecorder?.recordEvent(
+    "module_navigation_evidence_inferred_from_done",
+    {
+      selectedSkillId: host.selectedSkillId,
+      application: request.application,
+      path: request.path,
+      title: snapshot.title,
+      url: snapshot.url,
+    },
+  );
+  return true;
 }
 
 export function inferServiceNowCreateRecordUrlFromListUrl(
