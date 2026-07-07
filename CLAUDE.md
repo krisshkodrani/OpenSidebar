@@ -30,7 +30,8 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
 
 ### Landmines (read before editing)
 
-- `background/agent/loop.ts` (~11K lines; `AgentLoop` ≈ 290 methods) and
+- `background/agent/loop.ts` (~10.3K lines; `AgentLoop` ≈ 190 methods; under the
+  decomposition ratchet — see below) and
   `background/agent/completion-kernel.ts` (~14K lines) are the giants and the
   most-churned files in the repo. `background/tools/index.ts` (~7K lines after
   the ServiceNow adapter extraction) and `background/orchestrator/index.ts`
