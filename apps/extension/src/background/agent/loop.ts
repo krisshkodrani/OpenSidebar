@@ -76,15 +76,16 @@ import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
 import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
-import { completeTurnWithRetries } from "./turn-completion";
-import { prepareLlmTurnRequest } from "./loop-turn-preparation";
 import {
   buildObservationProgressKey,
   detectObservationProgressSignals,
   detectSemanticProgressSignals,
   type ContextProgressSignal,
 } from "./context-economy";
-import { processLlmTurnResponse } from "./loop-response-processing";
+import {
+  runPrepareModelTurnPhase,
+  type PrepareModelTurnHost,
+} from "./turn-phases/prepare-model-turn";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -8299,99 +8300,23 @@ export class AgentLoop {
         this.flushEscalationRescueEvents();
       }
 
-      // 1. LLM Inference (streamed)
-      // `let` because retry loop may append diagnostic hints (cleaned up after)
-      const allTools = toolRegistry.getDefinitions(this.disabledTools);
-      const turnPreparation = await prepareLlmTurnRequest({
-        turnCount: this.turnCount,
-        previousElementCount: prevElementCount,
-        context: this.context,
-        allTools,
-        // Apply plan/DOM filtering first, then skill-based ranking within the surviving set.
-        selectTools: (definitions) => {
-          const selected = this.applySkillToolRanking(
-            this.applySkillToolSuppression(this.applyToolProfile(definitions)),
-          );
-          this.activeToolNamesForTurn = selected.map(
-            (definition) => definition.function.name,
-          );
-          return selected;
-        },
-        llm: this.llm,
-        perception: this.perception,
-        log: this.log,
-        traceRecorder: this.traceRecorder,
-        previousSnapshotForDelta: this.previousSnapshotForDelta,
-      });
-      this.previousSnapshotForDelta = this.context.getSnapshot();
-      let messages = turnPreparation.messages;
-      const tools = turnPreparation.tools;
-      prevElementCount = turnPreparation.previousElementCount;
-
-      const thinkingStepId = crypto.randomUUID();
-      const thinkingStep: AgentStep = {
-        id: thinkingStepId,
-        type: "thinking",
-        label: this.turnCount === 1 ? "Understanding request" : "Thinking...",
-        status: "running",
-        timestamp: Date.now(),
-      };
-      this.stepHandler(thinkingStep, false);
-
-      const turnCompletion = await completeTurnWithRetries({
-        llm: this.llm,
-        messages,
-        tools,
-        maxTokens: LLM_CONFIG.MAX_TOKENS,
-        turnCount: this.turnCount,
-        mainAbortSignal: this.abortController!.signal,
-        log: this.log,
-        traceRecorder: this.traceRecorder,
-        broadcast: (message) => this.broadcast(message),
-        stepHandler: (step, replace) => this.stepHandler(step, replace),
-        finishStream: () => this.finishStream(),
-        statusHandler: (status, message) => this.statusHandler(status, message),
-        getMetrics: () => this.getMetrics(),
-        invalidatePerceptionCache: () => this.perception.invalidateCache(),
-        recordPromptImageUsage: (promptMessages) =>
-          this.recordPromptImageUsage(promptMessages),
-        sessionAffinityId:
-          this.taskId ?? this.runId ?? this.traceRecorder?.sessionId ?? undefined,
-        multiTurnSessionId: this.traceRecorder?.sessionId ?? undefined,
-      });
-      if (turnCompletion.kind === "early_result") {
-        return turnCompletion.result;
+      // 1. LLM Inference: prepare request → model call (w/ retries) → process
+      // response. Extracted to the prepare_model_turn phase (RFC LP-15 Phase 11).
+      const preparedTurn = await runPrepareModelTurnPhase(
+        this as unknown as PrepareModelTurnHost,
+        prevElementCount,
+      );
+      if (preparedTurn.kind === "end_task") {
+        return preparedTurn.result;
       }
-      const response = turnCompletion.response;
-      messages = turnCompletion.messages;
-      const llmMs = turnCompletion.llmMs;
-      const hallucinationDetected = turnCompletion.synthesizedFromHallucination;
-
-      const processedResponse = await processLlmTurnResponse({
-        response,
-        llmMs,
-        turnCount: this.turnCount,
-        thinkingStep,
-        context: this.context,
-        traceRecorder: this.traceRecorder,
-        log: this.log,
-        recordUsage: (completion, durationMs) =>
-          this.recordUsage(completion, durationMs),
-        broadcastMetrics: () => this.broadcastMetrics(),
-        broadcast: (message) => this.broadcast(message),
-        finishStream: () => this.finishStream(),
-        statusHandler: (status, message) => this.statusHandler(status, message),
-        stepHandler: (step, replace) => this.stepHandler(step, replace),
-        getMetrics: () => this.getMetrics(),
-      });
-      if (processedResponse.kind === "early_result") {
-        return processedResponse.result;
-      }
-      const normalizedContent = processedResponse.normalizedContent;
-      const rawContent = processedResponse.rawContent;
-      const cleanContent = processedResponse.cleanContent;
-      const toolsRecoveredFromText = processedResponse.toolsRecoveredFromText;
-      const llmIntention = processedResponse.llmIntention;
+      prevElementCount = preparedTurn.prepared.previousElementCount;
+      const response = preparedTurn.prepared.response;
+      const hallucinationDetected = preparedTurn.prepared.hallucinationDetected;
+      const normalizedContent = preparedTurn.prepared.normalizedContent;
+      const rawContent = preparedTurn.prepared.rawContent;
+      const cleanContent = preparedTurn.prepared.cleanContent;
+      const toolsRecoveredFromText = preparedTurn.prepared.toolsRecoveredFromText;
+      const llmIntention = preparedTurn.prepared.llmIntention;
 
       // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
