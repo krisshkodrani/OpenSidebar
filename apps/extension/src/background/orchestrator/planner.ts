@@ -495,6 +495,33 @@ function shouldPreserveSeparateFormUpdateNodes(
   );
 }
 
+function isFieldValueFormFillNode(node: TaskNode): boolean {
+  return (
+    node.toolProfile === "form_fill" &&
+    /^Fill the form with the requested field values:/i.test(node.description)
+  );
+}
+
+function isFieldValueSubmitNode(node: TaskNode): boolean {
+  return (
+    node.toolProfile === "submit_form" &&
+    /^Submit the form and verify/i.test(node.description)
+  );
+}
+
+/**
+ * The synthesized field-value form plan is two nodes: a `form_fill` node whose
+ * objective explicitly says "Do not submit the form yet" and a dependent
+ * `submit_form` node. It is one atomic create-record workflow.
+ */
+function isFieldValueFormPlan(nodes: TaskNode[]): boolean {
+  return (
+    nodes.length === 2 &&
+    isFieldValueFormFillNode(nodes[0]) &&
+    isFieldValueSubmitNode(nodes[1])
+  );
+}
+
 function collapseSkillOwnedWorkflowNodes(
   nodes: TaskNode[],
   query: string,
@@ -520,38 +547,78 @@ function collapseSkillOwnedWorkflowNodes(
     selection.id,
     skillCatalogOptions,
   );
-  if (
-    !selectedDescriptor?.atomic &&
-    !SKILL_OWNED_WORKFLOW_IDS.has(selection.id)
-  ) {
+  const skillOwns = Boolean(
+    selectedDescriptor?.atomic || SKILL_OWNED_WORKFLOW_IDS.has(selection.id),
+  );
+  // A create-record form (field-value fill + submit) is one atomic workflow, so
+  // merge it even when skill selection lands on a *generic* skill (e.g. a page
+  // whose URL isn't recognized as ServiceNow). Without this, the two nodes
+  // survive, and the executor completes the fill node on its "the final submit
+  // action has not been clicked yet" criterion without ever submitting — the
+  // create-incident stranding bug.
+  const isFieldValueForm = isFieldValueFormPlan(nodes);
+  if (!skillOwns && !isFieldValueForm) {
     return nodes;
   }
 
   const firstNode = nodes[0];
   const navigationOnly = isNavigationOnlyTask(taskLabelQuery);
+
+  let description: string;
+  let successCriteria: string;
+  if (navigationOnly) {
+    description = compactText(
+      `Navigate according to the original request: ${taskLabelQuery}`,
+    );
+    successCriteria = navigationOnlySuccessCriteria();
+  } else if (isFieldValueForm) {
+    // Coherent single-workflow framing that drops the fill node's "do not
+    // submit yet" split so the merged node can't strand after filling. Keep the
+    // field readback but require the submit node's confirmation.
+    description = compactText(
+      `Complete the workflow for the original request: ${taskLabelQuery} Fill in each requested field, then submit the form and verify the created record or confirmation is visible.`,
+    );
+    const fieldReadback = firstNode.successCriteria
+      .replace(/;?\s*the final submit action has not been clicked yet\.?/i, "")
+      .trim();
+    successCriteria = compactText(
+      [
+        "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
+        fieldReadback,
+        nodes[1].successCriteria,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  } else {
+    description = compactText(
+      [
+        `Complete the workflow for the original request: ${taskLabelQuery}`,
+        ...nodes.map((node) => node.description),
+      ].join(" "),
+    );
+    successCriteria = compactText(
+      [
+        "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
+        ...nodes.map((node) => node.successCriteria),
+      ].join(" "),
+    );
+  }
+
   return [
     {
       ...firstNode,
-      selectedSkillId: selection.id,
-      selectedSkillReason: selection.reason,
-      description: navigationOnly
-        ? compactText(
-            `Navigate according to the original request: ${taskLabelQuery}`,
-          )
-        : compactText(
-            [
-              `Complete the workflow for the original request: ${taskLabelQuery}`,
-              ...nodes.map((node) => node.description),
-            ].join(" "),
-          ),
-      successCriteria: navigationOnly
-        ? navigationOnlySuccessCriteria()
-        : compactText(
-            [
-              "The original request is fully completed and verified, not merely an intermediate page, control, result, or form state.",
-              ...nodes.map((node) => node.successCriteria),
-            ].join(" "),
-          ),
+      // Skill-owned selection wins; for a generic-skill field-value form keep
+      // the fill node's planner-assigned skill (record-form on a recognized
+      // ServiceNow page, generic otherwise).
+      ...(skillOwns
+        ? {
+            selectedSkillId: selection.id,
+            selectedSkillReason: selection.reason,
+          }
+        : {}),
+      description,
+      successCriteria,
       allowedTools: unionTools(nodes),
       dependencies: [...firstNode.dependencies],
       assumptions: dedupeStrings(

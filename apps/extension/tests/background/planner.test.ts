@@ -2020,6 +2020,71 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("collapses field-value fill/submit steps into one submit-requiring node when no form skill owns the workflow", async () => {
+        // Regression: the create-incident stranding bug. The synthesized plan
+        // splits into a `form_fill` node ("Do not submit the form yet") + a
+        // `submit_form` node. On a page whose URL is NOT recognized as
+        // ServiceNow, skill selection lands on a generic skill, the skill-owned
+        // collapse is skipped, both nodes survive, and the executor completes
+        // the fill node on its "not submitted yet" criterion without ever
+        // submitting. The field-value collapse must merge them into one node
+        // whose success requires the submission.
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                steps: [
+                    {
+                        objective:
+                            'Fill the form with the requested field values: Short description="Printer offline"; Caller="Joe Employee"; Channel="Phone". Do not submit the form yet.',
+                        successCriteria:
+                            "Each requested field has the specified value; the final submit action has not been clicked yet.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective:
+                            "Submit the form and verify the created record or confirmation is visible.",
+                        successCriteria:
+                            "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            'Create a new incident with a value of "Printer offline" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".',
+            "Acme Helpdesk",
+            "https://helpdesk.example.com/incidents/new",
+        );
+
+        // The generic page must NOT activate the ServiceNow form skill.
+        expect(result.nodes[0].selectedSkillId).not.toBe(
+            "servicenow-record-form",
+        );
+        // Merged into a single node so the run cannot stop after filling.
+        expect(result.nodes).toHaveLength(1);
+        // The stranding clause is gone; submission is required.
+        expect(result.nodes[0].description).not.toContain(
+            "Do not submit the form yet",
+        );
+        expect(result.nodes[0].successCriteria).not.toContain(
+            "the final submit action has not been clicked yet",
+        );
+        expect(result.nodes[0].successCriteria.toLowerCase()).toContain(
+            "submission",
+        );
+        // Both fill and submit tools remain available on the merged node.
+        expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
+    });
+
     test("collapses progressive repeatable form plans into one skill-owned workflow node", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
