@@ -1,6 +1,6 @@
 {
   "reason": "RFC LP-15 Phase 11: agent-loop decomposition ratchet. These budgets are the current size of loop.ts and its loop() method; they may ONLY be lowered as code is extracted, never raised. End-state targets: fileLines 3500, methodCount 80, loopMethodLines 200.",
-  "fileLines": 10506,
-  "methodCount": 195,
+  "fileLines": 10319,
+  "methodCount": 189,
   "loopMethodLines": 2467
 }
