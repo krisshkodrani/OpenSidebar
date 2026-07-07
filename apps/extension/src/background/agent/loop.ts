@@ -53,9 +53,7 @@ import {
   checkSummaryStepCoherence,
   detectAdmission,
 } from "./verification";
-import { StagnationMonitor, computeSnapshotFingerprint } from "./stagnation";
-import { createResultPageProgressState } from "./result-page-progress-policy";
-import { buildElementSummary } from "../perception";
+import { StagnationMonitor } from "./stagnation";
 import { PerceptionScreenshotState } from "../perception/perception-screenshot-state";
 import { transformScreenshot } from "../perception/screenshot-transform";
 import type { PerceptionTaskContext } from "../perception/types";
@@ -74,7 +72,6 @@ import {
 } from "../../utils/step-labels";
 import { TaskPlanner, PlanStep, PlanMonitorResult } from "./planner";
 import { TraceRecorder } from "./trace";
-import { validateNuisanceBlockers } from "./popup-triage";
 import { ToolResultCache } from "./tool-cache";
 import {
   buildObservationProgressKey,
@@ -188,7 +185,7 @@ export {
   requiresBroadListDetailReview,
 } from "./list-detail-policy";
 import { isPaginationNavigationClick } from "./action-exemption-policy";
-import { getCachedScreenshot, setCachedScreenshot } from "./screenshot-cache";
+import { setCachedScreenshot } from "./screenshot-cache";
 import { imagePromptUsageForCount } from "./agent-telemetry";
 import {
   approvalRequestMessage,
@@ -233,7 +230,6 @@ export {
 import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
-  LLM_CONFIG,
   STRING_LIMITS,
   ORIENTATION,
   REDUNDANT_ACTION,
@@ -288,7 +284,6 @@ import {
   recordRecentOutcome,
   recordRecentSuccessfulAction,
   type RecentOutcome,
-  RecentAction,
   requiresGroundingReadBeforeDone,
   shouldTrackFormSubmissionReset,
   SubgoalAttempt,
