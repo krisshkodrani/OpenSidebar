@@ -514,6 +514,28 @@ export async function loadPersonalizationState(
   return normalizeState(decrypted);
 }
 
+/**
+ * Read the profile digest items + analyzer WITHOUT decrypting or truncating
+ * (RFC LP-15, Phase 9). Sensitive item values stay as ciphertext so the
+ * trusted-corpus migration can carry them opaquely (encryption stays CEK-wrapped
+ * here). Best-effort: returns empty items for an absent/legacy-shaped blob (the
+ * migration is dual-read backed, so those facts remain reachable via
+ * loadPersonalizationState). NOT for display or prompt injection.
+ */
+export async function loadRawProfileDigestItems(
+  storage: PersonalProfileStorage = defaultStorage(),
+): Promise<{ items: DigestItem[]; analyzer: AnalyzerMetadata | null }> {
+  const stored = await storage.local.get(PERSONAL_PROFILE_STORAGE_KEY);
+  const raw = stored[PERSONAL_PROFILE_STORAGE_KEY] as
+    | Partial<PersonalizationState>
+    | undefined;
+  const items = Array.isArray(raw?.digest?.items)
+    ? (raw.digest.items as DigestItem[])
+    : [];
+  const analyzer = (raw?.analyzer as AnalyzerMetadata | null) ?? null;
+  return { items, analyzer };
+}
+
 export async function savePersonalizationState(
   state: Partial<
     Pick<

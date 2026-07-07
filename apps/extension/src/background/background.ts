@@ -45,6 +45,11 @@ import {
   setCompletionDecisionRecordingEnabled,
 } from "./agent/completion/decision-recorder";
 import {
+  ensureLegacyStoresMigrated,
+  loadWebsiteSkillsPreferringCorpus,
+  startCorpusLegacySync,
+} from "./memory/corpus-runtime";
+import {
   RECORD_SKILL_INTRO_DISMISSED_KEY,
   WEBSITE_SKILLS_STORAGE_KEY,
   deleteUserWebsiteSkill,
@@ -317,6 +322,10 @@ void (async () => {
   }
   // RFC LP-8 M2: connect to the browser MCP host when configured (default-off).
   await startBrowserBridge();
+  // RFC LP-15 Phase 9: shadow-populate the trusted corpus from the legacy
+  // stores (best-effort, non-blocking) and keep it in sync with sidepanel edits.
+  void ensureLegacyStoresMigrated();
+  startCorpusLegacySync();
 })();
 
 // 7. Listeners
@@ -1328,7 +1337,7 @@ async function handleUserChat(
       }
 
       const savedSkill = findMatchingUserWebsiteSkill(
-        await loadUserWebsiteSkills(),
+        await loadWebsiteSkillsPreferringCorpus(),
         {
           url: currentTabUrl,
           task: text,
