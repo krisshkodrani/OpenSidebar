@@ -1667,6 +1667,41 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("buildFallbackNodes collapses the field-value form plan so the planner-failure fallback cannot strand", () => {
+        // Regression: when planner.buildNodes throws, the orchestrator falls
+        // back to buildFallbackNodes. That path must run the same collapse as
+        // buildNodes, otherwise the synthesized "fill (do not submit yet)" +
+        // "submit" plan survives uncollapsed and the run terminates after
+        // filling — the live create-incident failure.
+        const query =
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".';
+
+        // With ServiceNow page context (as the fixed catch block now threads).
+        const snNodes = buildFallbackNodes(
+            query,
+            "planned",
+            "Incident | ServiceNow",
+            "https://workarenapublic20.service-now.com/incident.do",
+        );
+        expect(snNodes).toHaveLength(1);
+        expect(snNodes[0].selectedSkillId).toBe("servicenow-record-form");
+        expect(snNodes[0].description).not.toContain("Do not submit the form yet");
+        expect(snNodes[0].successCriteria).not.toContain(
+            "the final submit action has not been clicked yet",
+        );
+
+        // Even context-blind (the old failure shape), it must still collapse to
+        // one submit-requiring node rather than stranding on the fill node.
+        const blindNodes = buildFallbackNodes(query);
+        expect(blindNodes).toHaveLength(1);
+        expect(blindNodes[0].description).not.toContain(
+            "Do not submit the form yet",
+        );
+        expect(blindNodes[0].successCriteria.toLowerCase()).toContain(
+            "submission",
+        );
+    });
+
     test("all nodes get full default tools (profile filtering at loop level)", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",

@@ -967,23 +967,68 @@ function stepsToNodes(
   }));
 }
 
+/**
+ * Run the skill-owned / workflow-shape collapses that `buildNodes` applies
+ * after `stepsToNodes`. Shared so the orchestrator's planner-failure fallback
+ * (`buildFallbackNodes`) collapses identically — otherwise a synthesized
+ * field-value form plan reaching the runtime through the fallback path keeps its
+ * uncollapsed "fill (do not submit yet)" + "submit" split and strands the run.
+ */
+function applyWorkflowNodeCollapse(
+  nodes: TaskNode[],
+  query: string,
+  pageTitle?: string,
+  pageUrl?: string,
+  skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
+): TaskNode[] {
+  let result = collapseMultiTabChecklistNodes(nodes, query, displayQuery);
+  result = collapsePaginatedTableScanNodes(result, query, displayQuery);
+  result = collapseSkillOwnedWorkflowNodes(
+    result,
+    query,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+    displayQuery,
+  );
+  result = preserveOriginalScopeForSingleSkillOwnedNode(
+    result,
+    query,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+    displayQuery,
+  );
+  return result;
+}
+
 export function buildFallbackNodes(
   query: string,
   phase: "planned" | "planner_replan" = "planned",
   pageTitle?: string,
   pageUrl?: string,
   skillCatalogOptions?: SkillCatalogOptions,
+  displayQuery?: string,
 ): TaskNode[] {
   const fallbackSteps = synthesizeBatchedExhaustivePlan(query) ||
     synthesizePlanFromTaskContract(query) || [buildSingleFallbackStep(query)];
+  const nodes = stepsToNodes(
+    query,
+    fallbackSteps,
+    phase,
+    pageTitle,
+    pageUrl,
+    skillCatalogOptions,
+  );
   return annotateParallelContracts(
-    stepsToNodes(
+    applyWorkflowNodeCollapse(
+      nodes,
       query,
-      fallbackSteps,
-      phase,
       pageTitle,
       pageUrl,
       skillCatalogOptions,
+      displayQuery,
     ),
   );
 }
