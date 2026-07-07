@@ -55,7 +55,11 @@ export interface EntailmentGateOptions {
   minClaimTokens?: number;
 }
 
-const DEFAULT_MIN_COVERAGE = 0.6;
+// Deliberately high: a false "entailed" silently skips the judge, so partial
+// overlaps (a matching KEY but a contradicting VALUE, e.g. "…country is France"
+// vs a corpus "…country is Germany") must fall through to the judge, which does
+// the actual value adjudication.
+const DEFAULT_MIN_COVERAGE = 0.8;
 const DEFAULT_MIN_CLAIM_TOKENS = 2;
 
 // Small, deterministic stopword set — enough to stop function words from
