@@ -45,9 +45,8 @@ import {
   buildFallbackNodes,
   OrchestratorPlanner,
 } from "./planner";
-import { inferToolProfileForStep } from "../agent/planner";
+
 import type { TokenUsage } from "../llm/types";
-import type { ToolProfile } from "../tools/metadata";
 import {
   assessTaskContractCoverage,
   buildTaskContract,
@@ -58,9 +57,9 @@ import {
   OrchestratorTask,
   StructuredEvidence,
   TaskNode,
-  type VerificationGate,
   WorkerInstance,
 } from "./types";
+import { buildProgrammaticSummary } from "./task-summary";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -197,15 +196,11 @@ import {
 } from "../agent/checkpoint-types";
 import type { TaskRunProgressInput } from "@shared-types/progress";
 import type {
-  SideEffectEntry,
   TurnCheckpoint,
 } from "../agent/checkpoint-types";
 import type { PendingUserInteraction } from "../agent/loop-types";
 import type { CompletionEnvelope } from "../agent/completion-kernel";
 import { hasUsefulPartialProgressHandoff } from "../agent/partial-progress-handoff";
-
-
-
 
 export * from "./lane-types";
 export * from "./sanitizers";
@@ -2087,7 +2082,6 @@ export class Orchestrator {
       return;
     }
 
-
     if (task.status === "running" || task.status === "planning") {
       // Task is in-flight — re-send current status + progress
       this.sendStatus(
@@ -2144,7 +2138,7 @@ export class Orchestrator {
           summary:
             task.status === "stopped"
               ? task.terminationReason || "Stopped by user"
-              : this.buildProgrammaticSummary(task),
+              : buildProgrammaticSummary(task),
           subtaskResults,
           urlHistory: [],
           metrics: task.sessionMetrics,
@@ -4954,7 +4948,7 @@ export class Orchestrator {
     // Build summary for the structured completion card. The final visible
     // result is emitted only as TASK_COMPLETION so the UI does not briefly show
     // a plain assistant bubble before converting it to a completion card.
-    const summary = this.buildProgrammaticSummary(task);
+    const summary = buildProgrammaticSummary(task);
     this.sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
@@ -5482,64 +5476,6 @@ export class Orchestrator {
       );
       return undefined;
     }
-  }
-
-  private buildProgrammaticSummary(task: OrchestratorTask): string {
-    const completedNodes = task.nodes.filter((n) => n.status === "completed");
-    const failed = task.nodes.filter((n) => n.status === "failed").length;
-    const lastCompleted = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "completed");
-    const lastFailed = [...task.nodes]
-      .reverse()
-      .find((n) => n.status === "failed" && (n.error || "").trim().length > 0);
-
-    // Single-node completed: show executor's actual output directly
-    if (
-      task.planClassification?.isSingleNode &&
-      failed === 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    // Multi-node completed: aggregate results from all completed nodes.
-    // Each node may have collected data that the final summary needs
-    // (e.g. "read inventory on page A, go back, read inventory on page B,
-    // report both"). Only the combined results satisfy the full task.
-    if (completedNodes.length > 1 && lastCompleted?.result) {
-      const nodeResults = completedNodes
-        .map((n) => n.userFacingResult || n.result || "")
-        .filter((result) => result.trim())
-        .map((result) => result.trim());
-
-      // If the last node's result already covers all prior results
-      // (e.g. it explicitly mentions all key data), use it alone.
-      // Otherwise combine all unique node results.
-      const lastResult = lastCompleted.result;
-      const priorResults = nodeResults.slice(0, -1);
-      const missingPrior = priorResults.filter(
-        (r) => !lastResult.includes(r.slice(0, 40)),
-      );
-
-      if (missingPrior.length > 0) {
-        return nodeResults.join("\n\n");
-      }
-      return lastResult;
-    }
-
-    if (
-      completedNodes.length > 0 &&
-      (lastCompleted?.userFacingResult || lastCompleted?.result)
-    ) {
-      return lastCompleted.userFacingResult || lastCompleted.result || "";
-    }
-
-    if (failed > 0 && lastFailed?.error) {
-      return lastFailed.error;
-    }
-
-    return "";
   }
 
   private async tryHorizonExpansion(
@@ -6243,7 +6179,4 @@ export class Orchestrator {
 }
 
 export const orchestrator = new Orchestrator();
-
-
-
 
