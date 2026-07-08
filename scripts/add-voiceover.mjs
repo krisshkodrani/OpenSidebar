@@ -94,7 +94,8 @@ const dur = (f) =>
 // ---- TTS with cache ---------------------------------------------------------
 async function tts(key, text) {
   fs.mkdirSync(VO_CACHE, { recursive: true });
-  const hash = crypto.createHash("sha1").update(`${VOICE}|${text}`).digest("hex").slice(0, 16);
+  // v2: leading-break generation + onset normalization (bump on pipeline change)
+  const hash = crypto.createHash("sha1").update(`v2|${VOICE}|${text}`).digest("hex").slice(0, 16);
   const cached = path.join(VO_CACHE, `${hash}.mp3`);
   if (fs.existsSync(cached) && fs.statSync(cached).size > 0) return { file: cached, cached: true };
 
@@ -104,7 +105,11 @@ async function tts(key, text) {
       method: "POST",
       headers: { "xi-api-key": key, "Content-Type": "application/json" },
       body: JSON.stringify({
-        text,
+        // Leading break: ElevenLabs cold-starts clip the first phoneme's attack
+        // when speech begins at sample zero; the break makes it render fully.
+        // The added silence is trimmed back off deterministically after (below),
+        // so line timing math is unaffected.
+        text: `<break time="0.3s" /> ${text}`,
         model_id: "eleven_multilingual_v2",
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
@@ -114,7 +119,18 @@ async function tts(key, text) {
     const detail = await res.text().catch(() => "");
     throw new Error(`ElevenLabs ${res.status}: ${detail.slice(0, 300)}`);
   }
-  fs.writeFileSync(cached, Buffer.from(await res.arrayBuffer()));
+  const rawFile = cached.replace(/\.mp3$/, "-raw.mp3");
+  fs.writeFileSync(rawFile, Buffer.from(await res.arrayBuffer()));
+  // Normalize the onset: strip the lead-in down to nothing, then re-pad a fixed
+  // 60ms and add a 30ms fade-in — full phoneme preserved, no click, and every
+  // line starts a predictable 60ms after its `at` offset.
+  sh("ffmpeg", [
+    "-y", "-i", rawFile,
+    "-af",
+    "silenceremove=start_periods=1:start_threshold=-45dB,adelay=60|60,afade=t=in:d=0.03",
+    cached,
+  ]);
+  fs.unlinkSync(rawFile);
   return { file: cached, cached: false };
 }
 
