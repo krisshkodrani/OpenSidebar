@@ -154,3 +154,13 @@ overrun their window get squeezed up to 1.1× `atempo`, otherwise the script ask
 to shorten the copy. A `--music` bed is ducked under the voice via sidechain
 compression. Video frames are stream-copied, so voiced variants are pixel-identical.
 Keep narration factual — the same "never overstate" rule as captions.
+
+## Store-accurate assets (the dev-only rule)
+
+Anything published on the Chrome Web Store listing (promo video, screenshots) must show
+only what ships in the store package. The trace viewer / observability workspace is
+dev-only — production builds strip it from `dist/` — so it must never appear in store
+assets; pitch it there as "the open-source repo adds a full observability workspace for
+developers" instead. The `store` montage show is the pitch minus the observability
+scenes with an install-flavored outro; `--video store` voices it from the same cached
+lines. The GitHub-facing tour keeps those scenes — right audience, right claim.

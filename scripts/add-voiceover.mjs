@@ -72,6 +72,30 @@ const SPECS = {
   },
 };
 
+// Store-accurate tour (--show store): the pitch minus the two observability
+// scenes (the trace viewer is dev-only and does not ship in the store package).
+// Same line texts as the pitch (cache hits) at recomputed offsets.
+// Structure: intro 3 · sec 2.6 · 5×(3+15) · sec 2.6 · 2×(3+15) · sec 2.6 ·
+// (3+18) · (3+15) · outro 3 = 178.8s. Scene starts: 8.6/26.6/44.6/62.6/80.6 ·
+// 101.2/119.2 · 139.8(18s)/160.8.
+SPECS.store = {
+  in: "opensidebar-store-tour.mp4",
+  out: "opensidebar-store-tour-voiced.mp4",
+  lines: [
+    { ...SPECS.pitch.lines[0] },                                // intro @0.5
+    { ...SPECS.pitch.lines[1] },                                // shop @8.9
+    { ...SPECS.pitch.lines[2] },                                // compose @26.9
+    { ...SPECS.pitch.lines[3] },                                // wizard @44.9
+    { ...SPECS.pitch.lines[4] },                                // ashby @62.9
+    { ...SPECS.pitch.lines[5] },                                // extract @80.9
+    { ...SPECS.pitch.lines[6] },                                // part two + settings @95.9
+    { ...SPECS.pitch.lines[7] },                                // watch @119.5
+    { ...SPECS.pitch.lines[10], at: 134.8 },                    // part three + SN order
+    { ...SPECS.pitch.lines[11], at: 161.1 },                    // SN KB / adapter pattern
+    { at: 175.9, maxSec: 3.5, text: "OpenSidebar. Free — bring your own key." },
+  ],
+};
+
 const spec = SPECS[WHICH];
 if (!spec) {
   console.error(`Unknown --video "${WHICH}" (use: ${Object.keys(SPECS).join("|")})`);

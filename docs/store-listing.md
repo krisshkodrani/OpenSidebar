@@ -44,7 +44,7 @@ YOU STAY IN CONTROL
 - Four approval modes, from ask-before-every-action to fully autonomous
 - Consequential actions pause for your approval; form submits are dry-run first so you approve the exact field values before anything is sent
 - Pause, guide, or stop the agent at any time
-- Every session produces a full trace you can replay in the built-in trace viewer
+- See each step, decision, and token usage as the agent works; for developers, the open-source repo adds a full observability workspace
 
 PRIVATE BY DESIGN
 

@@ -160,7 +160,19 @@ const PITCH = {
   outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source (MIT) · Fork it on GitHub" },
 };
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH }[argVal("--show", "servicenow")] || SERVICENOW;
+// Store-accurate tour: the PITCH minus the observability scenes. The trace
+// viewer is dev-only (stripped from the production dist), so store assets must
+// never show it — a Chrome Web Store installer does not get that surface.
+const STORE = {
+  out: "opensidebar-store-tour.mp4",
+  intro: PITCH.intro,
+  scenes: PITCH.scenes.filter((s) => !s.task.startsWith("traceviewer-")).map((s) => ({ ...s })),
+  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Install free · Bring your own key · Source on GitHub (MIT)" },
+};
+// (Section markers survive the filter: they live on online-shop, settings-provider,
+// and order-developer-laptop — all kept.)
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH, store: STORE }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
