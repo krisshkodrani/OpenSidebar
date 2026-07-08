@@ -46,7 +46,6 @@ import {
   buildTaskContract,
 } from "../agent/task-contract";
 import {
-  NodeHandoffArtifact,
   OrchestratorStartInput,
   OrchestratorTask,
   StructuredEvidence,
@@ -71,6 +70,11 @@ import {
 import {
   runHighRiskJudgeGate,
 } from "./high-risk-judge-gate";
+import {
+  appendHandoffArtifact,
+  notifyTaskCompletion,
+  sendMessage,
+} from "./task-messaging";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -706,7 +710,7 @@ export class Orchestrator {
     const activeFromLanes = Object.values(telemetry.lanes).some(
       (lane) => lane.activeCalls > 0 || lane.queueDepth > 0,
     );
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_ACTIVITY",
       workspaceId,
       payload: {
@@ -725,7 +729,7 @@ export class Orchestrator {
     state: LaneRuntimeState,
     detail: string,
   ): void {
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId,
       payload: {
@@ -1008,23 +1012,6 @@ export class Orchestrator {
     return stopped;
   }
 
-  private appendHandoffArtifact(
-    node: TaskNode,
-    artifact: Omit<NodeHandoffArtifact, "timestamp">,
-  ): void {
-    const entry: NodeHandoffArtifact = {
-      ...artifact,
-      timestamp: Date.now(),
-    };
-    node.handoffArtifacts.push(entry);
-    logger.debug("orchestrator", "Handoff artifact appended", {
-      nodeId: node.id,
-      role: entry.role,
-      phase: entry.phase,
-      note: entry.note.slice(0, 180),
-    });
-  }
-
   private setStructuredProgressEntry(
     task: OrchestratorTask,
     entry: TaskRunProgressInput,
@@ -1217,7 +1204,7 @@ export class Orchestrator {
     }
 
     if (interaction.kind === "approval") {
-      this.sendMessage({
+      sendMessage({
         type: "APPROVAL_REQUEST",
         workspaceId: task.workspaceId,
         payload: {
@@ -1240,7 +1227,7 @@ export class Orchestrator {
       return;
     }
 
-    this.sendMessage({
+    sendMessage({
       type: "CLARIFICATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: {
@@ -1300,7 +1287,7 @@ export class Orchestrator {
     }
 
     task.currentIndex = currentIndex(task.nodes);
-    this.sendMessage({
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
@@ -1320,12 +1307,12 @@ export class Orchestrator {
 
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
     await this.persistTaskCheckpoint(task);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
+    notifyTaskCompletion(task, completionPayload);
     this.sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
@@ -1611,7 +1598,7 @@ export class Orchestrator {
     const pendingSubtasks = task.nodes.filter(
       (n) => n.status === "pending",
     ).length;
-    this.sendMessage({
+    sendMessage({
       type: "TASK_RECOVERY",
       workspaceId: task.workspaceId,
       payload: {
@@ -1918,7 +1905,7 @@ export class Orchestrator {
       // Check for a recent completion that the panel may have missed
       const cached = this.recentCompletion.get(workspaceId);
       if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
-        this.sendMessage({
+        sendMessage({
           type: "TASK_COMPLETION",
           workspaceId,
           payload: cached.payload,
@@ -1945,7 +1932,7 @@ export class Orchestrator {
       );
       this.sendProgress(task);
       if (task.sessionMetrics) {
-        this.sendMessage({
+        sendMessage({
           type: "SESSION_METRICS",
           workspaceId,
           payload: { ...task.sessionMetrics },
@@ -1962,7 +1949,7 @@ export class Orchestrator {
         (r) => r.status === "completed",
       ).length;
 
-      this.sendMessage({
+      sendMessage({
         type: "TASK_COMPLETION",
         workspaceId,
         payload: {
@@ -1995,7 +1982,7 @@ export class Orchestrator {
         },
       });
       if (task.sessionMetrics) {
-        this.sendMessage({
+        sendMessage({
           type: "SESSION_METRICS",
           workspaceId,
           payload: { ...task.sessionMetrics },
@@ -2050,7 +2037,7 @@ export class Orchestrator {
       },
     );
 
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -2210,7 +2197,7 @@ export class Orchestrator {
         },
         "planner",
       );
-      this.sendMessage({
+      sendMessage({
         type: "AGENT_STEP",
         workspaceId: input.workspaceId,
         payload: {
@@ -2308,7 +2295,7 @@ export class Orchestrator {
           },
           "planner",
         );
-        this.sendMessage({
+        sendMessage({
           type: "AGENT_STEP",
           workspaceId: input.workspaceId,
           payload: {
@@ -2372,7 +2359,7 @@ export class Orchestrator {
           },
           "planner",
         );
-        this.sendMessage({
+        sendMessage({
           type: "AGENT_STEP",
           workspaceId: input.workspaceId,
           payload: {
@@ -2702,7 +2689,7 @@ export class Orchestrator {
         totalCost: task.sessionMetrics.totalCost,
         elapsedMs: Date.now() - (task.startedAt || task.createdAt),
       });
-      this.sendMessage({
+      sendMessage({
         type: "AGENT_STEP",
         workspaceId: task.workspaceId,
         payload: {
@@ -2741,7 +2728,7 @@ export class Orchestrator {
         },
         "executor",
       );
-      this.appendHandoffArtifact(node, {
+      appendHandoffArtifact(node, {
         role: "executor",
         phase: "executor_started",
         note: `Executor started objective: ${node.description}`,
@@ -2979,7 +2966,7 @@ export class Orchestrator {
             const resolvedLabel = isSingleNode
               ? step.label
               : `Executor: ${step.label}`;
-            this.sendMessage({
+            sendMessage({
               type: "AGENT_STEP",
               workspaceId: task.workspaceId,
               payload: {
@@ -3034,7 +3021,7 @@ export class Orchestrator {
                 const shouldForwardReplaceContent =
                   replaceContent !== undefined && !done;
                 if (shouldForwardReplaceContent || done || thinking) {
-                  this.sendMessage({
+                  sendMessage({
                     type: "STREAM_CHUNK",
                     workspaceId: task.workspaceId,
                     payload: {
@@ -3190,7 +3177,7 @@ export class Orchestrator {
             );
             if (advisory) {
               executorInstruction += `\n\nPre-execution advisory:\n${advisory}`;
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_advisory",
                 note: advisory.slice(0, 200),
@@ -3388,7 +3375,7 @@ export class Orchestrator {
               ]
             : []),
         ];
-        this.appendHandoffArtifact(node, {
+        appendHandoffArtifact(node, {
           role: "executor",
           phase: "executor_finished",
           note: compactResultSummary || "Executor finished without summary.",
@@ -3699,7 +3686,7 @@ export class Orchestrator {
             }
 
             if (verification.decision === "accept") {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_accept",
                 note: verification.reason,
@@ -3723,7 +3710,7 @@ export class Orchestrator {
               task.status === "running" &&
               node.handoffDepth < MAX_HANDOFF_DEPTH
             ) {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase: "verifier_reroute",
                 note: `${verification.reason} Reroute: ${verification.rerouteObjective}`,
@@ -3761,7 +3748,7 @@ export class Orchestrator {
               ) {
                 if (task.replansUsed >= task.maxReplans) {
                   const reason = `Replan budget exhausted (${task.replansUsed}/${task.maxReplans}). ${verification.reason}`;
-                  this.appendHandoffArtifact(node, {
+                  appendHandoffArtifact(node, {
                     role: "planner",
                     phase: "planner_replan",
                     note: reason,
@@ -3792,7 +3779,7 @@ export class Orchestrator {
                       verifierReason: verification.reason,
                     },
                   );
-                  this.sendMessage({
+                  sendMessage({
                     type: "AGENT_STEP",
                     workspaceId: task.workspaceId,
                     payload: {
@@ -3829,7 +3816,7 @@ export class Orchestrator {
                         ),
                     );
                     if (expandedNodes && expandedNodes.length > 0) {
-                      this.appendHandoffArtifact(node, {
+                      appendHandoffArtifact(node, {
                         role: "planner",
                         phase: "planner_replan",
                         note:
@@ -3873,7 +3860,7 @@ export class Orchestrator {
                           error,
                         },
                       );
-                      this.sendMessage({
+                      sendMessage({
                         type: "AGENT_STEP",
                         workspaceId: task.workspaceId,
                         payload: {
@@ -3918,7 +3905,7 @@ export class Orchestrator {
                   node.retries,
                 );
 
-                this.appendHandoffArtifact(node, {
+                appendHandoffArtifact(node, {
                   role: "verifier",
                   phase:
                     verification.decision === "reroute"
@@ -4013,7 +4000,7 @@ export class Orchestrator {
                 }
               }
             } else {
-              this.appendHandoffArtifact(node, {
+              appendHandoffArtifact(node, {
                 role: "verifier",
                 phase:
                   verification.decision === "reroute"
@@ -4795,7 +4782,7 @@ export class Orchestrator {
     // result is emitted only as TASK_COMPLETION so the UI does not briefly show
     // a plain assistant bubble before converting it to a completion card.
     const summary = buildProgrammaticSummary(task);
-    this.sendMessage({
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
@@ -4902,12 +4889,12 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
+    notifyTaskCompletion(task, completionPayload);
     const totalDurationMs =
       task.finishedAt - (task.startedAt || task.createdAt);
     if (completionStatus === "completed") {
@@ -5085,7 +5072,7 @@ export class Orchestrator {
 
     targetNode.status = "skipped";
     targetNode.error = "Skipped by user from Plan Board.";
-    this.appendHandoffArtifact(targetNode, {
+    appendHandoffArtifact(targetNode, {
       role: "planner",
       phase: "planner_replan",
       note: "Skipped by user from Plan Board.",
@@ -5093,7 +5080,7 @@ export class Orchestrator {
 
     task.currentIndex = currentIndex(task.nodes);
     this.sendProgress(task);
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -5421,7 +5408,7 @@ export class Orchestrator {
       currentIndex: task.currentIndex,
       totalTurnsUsed: 0,
     };
-    this.sendMessage({
+    sendMessage({
       type: "TASK_PROGRESS",
       workspaceId: task.workspaceId,
       payload,
@@ -5495,25 +5482,13 @@ export class Orchestrator {
     }
   }
 
-  private notifyTaskCompletion(
-    task: OrchestratorTask,
-    payload: TaskCompletionMessage["payload"],
-  ): void {
-    if (task.status === "stopped") return;
-    void agentNotifications.notifyTaskCompletion({
-      workspaceId: task.workspaceId,
-      tabId: task.rootTabId,
-      payload,
-    });
-  }
-
   private async sendTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
   ): Promise<void> {
     // Finalize the stream first so the side panel exits isStreaming state.
     // Without this, the UI stays stuck showing "Thinking..." after a stop.
-    this.sendMessage({
+    sendMessage({
       type: "STREAM_CHUNK",
       workspaceId: task.workspaceId,
       payload: { delta: "", done: true },
@@ -5543,12 +5518,12 @@ export class Orchestrator {
       ...(task.partialHandoff ? { partialHandoff: task.partialHandoff } : {}),
     };
     this.cacheAndPersistCompletion(task.workspaceId, completionPayload);
-    this.sendMessage({
+    sendMessage({
       type: "TASK_COMPLETION",
       workspaceId: task.workspaceId,
       payload: completionPayload,
     });
-    this.notifyTaskCompletion(task, completionPayload);
+    notifyTaskCompletion(task, completionPayload);
   }
 
   private emitVerifierStep(
@@ -5564,7 +5539,7 @@ export class Orchestrator {
       status: "done",
       timestamp: Date.now(),
     };
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId,
       payload: { step, update: false },
@@ -5687,7 +5662,7 @@ export class Orchestrator {
       },
       "system",
     );
-    this.sendMessage({
+    sendMessage({
       type: "ESCALATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: packet,
@@ -5700,7 +5675,7 @@ export class Orchestrator {
       reason: "Escalation required",
       detail: packet.reason,
     });
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STEP",
       workspaceId: task.workspaceId,
       payload: {
@@ -5878,7 +5853,7 @@ export class Orchestrator {
       AgentStatus.PAUSED,
       "Awaiting plan confirmation...",
     );
-    this.sendMessage({
+    sendMessage({
       type: "PLAN_CONFIRMATION_REQUEST",
       workspaceId: task.workspaceId,
       payload: {
@@ -5940,7 +5915,7 @@ export class Orchestrator {
     detail: string,
     completionStatus?: "completed" | "partial" | "failed" | "stopped",
   ): void {
-    this.sendMessage({
+    sendMessage({
       type: "AGENT_STATUS",
       workspaceId,
       payload: { status, detail, completionStatus },
@@ -5948,23 +5923,6 @@ export class Orchestrator {
     updateTabGroupAppearance(workspaceId, { status, completionStatus });
   }
 
-  private sendMessage(message: {
-    type: string;
-    payload: any;
-    workspaceId?: string | null;
-  }): void {
-    chrome.runtime
-      .sendMessage({
-        ...message,
-        requestId: crypto.randomUUID(),
-        source: MessageSource.BACKGROUND,
-      } as any)
-      .catch((error) => {
-        logger.debug("orchestrator", "Failed to send runtime message", {
-          error,
-        });
-      });
-  }
 }
 
 export const orchestrator = new Orchestrator();
