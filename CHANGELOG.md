@@ -49,6 +49,31 @@ start of decomposing the agent loop into named phases behind a size ratchet.
   `EscalationTierController` and `TurnState` (RFC LP-15 Phase 6); the
   `prepare_model_turn` and `gates` turn phases moved out of `loop()`.
 
+### Fixed
+
+- **Planner-fallback form plans no longer strand mid-form.** When the planner
+  lane times out, the fallback node builder now collapses synthesized
+  fill-then-submit plans into one coherent node (and receives real page
+  context), fixing runs that filled a form but never submitted it. ServiceNow
+  hard submit rejections ("Invalid update") now trigger diagnose-don't-resubmit
+  instead of an identical-retry loop.
+- ServiceNow instances on custom/vanity domains are recognized by
+  domain-independent URL fingerprints, so platform skills activate without a
+  `.service-now.com` hostname.
+- The built-in trace viewer is served from the dev-surface build again
+  (`dist-dev/`); `/viewer` had 404'd since production builds began stripping the
+  dev-only viewer from `dist/`.
+
+### Docs
+
+- README restructured around the product story, with two recorded demo collages
+  (open web + ServiceNow) embedded, refreshed screenshots, and demo/montage
+  tooling committed (`scripts/build-demo-montage.mjs`,
+  `scripts/record-trace-viewer-demo.mjs`, `docs/guides/demo-video-style.md`).
+- Chrome Web Store submission kit: refreshed listing copy, privacy-tab answers
+  (permission justifications + data disclosures), and a store-graphics builder
+  (`scripts/build-store-assets.mjs`).
+
 ## [0.3.5] - 2026-07-06
 
 Perception overhaul: the agent owns its screenshot pipeline end to end, sees the
