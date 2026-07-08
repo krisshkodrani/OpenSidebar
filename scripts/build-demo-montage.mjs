@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 /**
- * Build a ServiceNow demo collage: for each scene, a fade-in/out title card
- * followed by the recorded run clip re-timed to a uniform compact fast-motion
- * length. Segments are normalized to identical geometry/fps/codec and each fades
- * to/from black, so they join with the concat demuxer (fade-through-black
- * transitions) — no xfade offset math.
+ * Build a demo collage: for each scene, a fade-in/out title card followed by the
+ * recorded run clip re-timed to a uniform compact fast-motion length, with a
+ * caption + persistent model bar overlaid. Segments are normalized to identical
+ * geometry/fps/codec and each fades to/from black, so they join with the concat
+ * demuxer (fade-through-black transitions) — no xfade offset math.
  *
+ * Two "shows" are defined below (see SERVICENOW / FIXTURES): pick with --show.
  * ffmpeg-only. Encoder settings mirror the E2E harness
  * (apps/extension/tests/e2e/helpers/harness.ts:485-511) for artifact parity.
+ * See docs/guides/demo-video-style.md for the house style.
  *
  * Usage:
- *   node scripts/build-demo-montage.mjs [--out <path>] [--scene-sec 12]
- * Clips are located automatically by task id under .artifacts/e2e/videos/.
+ *   node scripts/build-demo-montage.mjs --show servicenow|fixtures [--scene-sec 17]
+ *   node scripts/build-demo-montage.mjs --show <name> --stills   # PNG mockups
+ * Clips are located by each scene's label under .artifacts/e2e/videos/, or pinned
+ * via .artifacts/demo-clips.json ({ "<label>": "<clip path>" }).
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -47,49 +51,49 @@ const MODEL_BAR =
 const MODEL_LINE =
   "Executor: Kimi K2.7 Code (vision)   ·   Planner: GLM 5.2   ·   served on Fireworks AI";
 
-// ---- the demo, in order ---------------------------------------------------
-const INTRO = {
-  title: "OpenSidebar",
-  subtitle: "An AI agent that operates ServiceNow — live, no integration",
-  note: MODEL_LINE,
+// ---- the shows ------------------------------------------------------------
+// Two collages from one script: pick with `--show servicenow|fixtures`.
+// Each scene's `task` is the recorded clip's label (the WorkArena task id for
+// the servicenow show, or the fixture testLabel for the fixtures show).
+
+const SERVICENOW = {
+  out: "opensidebar-servicenow-demo-collage.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "An AI agent that operates ServiceNow — live, no integration",
+    note: MODEL_LINE,
+  },
+  scenes: [
+    { task: "order-developer-laptop", title: "Order from the service catalog", subtitle: "Browses the catalog, configures the item, and places the order", caption: 'Ordering 8× "Developer Laptop (Mac)" with a custom software config' },
+    { task: "single-chart-value-retrieval", title: "Read a dashboard chart", subtitle: "Sees the chart and answers a quantitative question", caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%' },
+    { task: "filter-incident-list", title: "Filter a list with a structured query", subtitle: "Builds native ServiceNow filter conditions, not keyword guesses", caption: "Filtering incidents: Caller = System Administrator  OR  Priority = 4 – Low" },
+    { task: "knowledge-base-search", title: "Search the knowledge base", subtitle: "Finds the right article and extracts the answer", caption: "Searching the knowledge base: how many floors is the main office?" },
+    { task: "sort-incident-list", title: "Sort a list the way you need it", subtitle: "Applies a structured, native sort — not a manual click-through", caption: "Sorting the incident list by Priority (ascending)" },
+  ],
+  outro: { title: "One agent. Every ServiceNow workflow.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI" },
 };
-const SCENES = [
-  {
-    task: "order-developer-laptop",
-    title: "Order from the service catalog",
-    subtitle: "Browses the catalog, configures the item, and places the order",
-    caption: 'Ordering 8× "Developer Laptop (Mac)" with a custom software config',
+
+const FIXTURES = {
+  out: "opensidebar-openweb-demo-collage.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "One AI agent for the open web — no integration, no scripts",
+    note: MODEL_LINE,
   },
-  {
-    task: "single-chart-value-retrieval",
-    title: "Read a dashboard chart",
-    subtitle: "Sees the chart and answers a quantitative question",
-    caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%',
-  },
-  {
-    task: "filter-incident-list",
-    title: "Filter a list with a structured query",
-    subtitle: "Builds native ServiceNow filter conditions, not keyword guesses",
-    caption: "Filtering incidents: Caller = System Administrator  OR  Priority = 4 – Low",
-  },
-  {
-    task: "knowledge-base-search",
-    title: "Search the knowledge base",
-    subtitle: "Finds the right article and extracts the answer",
-    caption: "Searching the knowledge base: how many floors is the main office?",
-  },
-  {
-    task: "sort-incident-list",
-    title: "Sort a list the way you need it",
-    subtitle: "Applies a structured, native sort — not a manual click-through",
-    caption: "Sorting the incident list by Priority (ascending)",
-  },
-];
-const OUTRO = {
-  title: "One agent. Every ServiceNow workflow.",
-  subtitle: "OpenSidebar",
-  note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI",
+  scenes: [
+    { task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
+    { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application, field by field", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
+    { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
+    { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
+    { task: "information-extraction", title: "Find and extract", subtitle: "Pages through a directory and pulls the requested fields", caption: "Finding Diana Chen in the directory and reporting her department and salary" },
+  ],
+  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI" },
 };
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES }[argVal("--show", "servicenow")] || SERVICENOW;
+const INTRO = SHOW.intro;
+const SCENES = SHOW.scenes;
+const OUTRO = SHOW.outro;
 
 // ---- helpers --------------------------------------------------------------
 function sh(bin, a) {
@@ -124,7 +128,7 @@ function newestClipForTask(task) {
     const dir = path.join(VIDEOS_DIR, day);
     if (!fs.statSync(dir).isDirectory()) continue;
     for (const f of fs.readdirSync(dir)) {
-      if (f.endsWith(`${task}-view.mp4`) && f.includes("workarena-handoff")) {
+      if (f.endsWith(`${task}-view.mp4`)) {
         const p = path.join(dir, f);
         matches.push({ p, m: fs.statSync(p).mtimeMs });
       }
@@ -265,7 +269,7 @@ fs.writeFileSync(
 const day = new Date().toISOString().slice(0, 10);
 const outDir = path.join(VIDEOS_DIR, day);
 fs.mkdirSync(outDir, { recursive: true });
-const outFile = path.join(outDir, "opensidebar-servicenow-demo-collage.mp4");
+const outFile = path.join(outDir, SHOW.out);
 sh("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, ...X264, outFile]);
 
 const finalDur = ffprobeDuration(outFile);
