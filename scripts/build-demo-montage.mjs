@@ -376,8 +376,9 @@ fs.writeFileSync(
   segments.map((s) => `file '${s.replace(/\\/g, "/")}'`).join("\n"),
   "utf8",
 );
-const day = new Date().toISOString().slice(0, 10);
-const outDir = path.join(VIDEOS_DIR, day);
+// Finished collages land in .artifacts/publish/ — the single folder holding
+// every publish-ready video (raw recordings stay under e2e/videos/<date>/).
+const outDir = path.join(ROOT, ".artifacts", "publish");
 fs.mkdirSync(outDir, { recursive: true });
 const outFile = path.join(outDir, SHOW.out);
 sh("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, ...X264, outFile]);
