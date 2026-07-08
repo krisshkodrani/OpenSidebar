@@ -1,5 +1,4 @@
 import {
-  chromeContentBridgePort,
   chromeCookiesPort,
   chromeDownloadsPort,
   chromeHistoryPort,
@@ -9,6 +8,10 @@ import {
 import { toolRegistry } from "./registry";
 import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
+import {
+  runReadOnlyPageInspector,
+  runAsyncReadOnlyPageInspector,
+} from "./page-inspector";
 import {
   formatControllableTabLines,
   getAllowedNavigationOrigins,
@@ -116,60 +119,6 @@ export * from "./definitions";
 export * from "./bridge";
 
 const APPLY_LIST_FILTER_SCRIPT_TIMEOUT_MS = 25_000;
-
-async function runReadOnlyPageInspector(
-  tabId: number,
-  func: (...args: any[]) => string,
-  args: unknown[],
-  emptyMessage: string,
-): Promise<string> {
-  try {
-    const results = await chromeContentBridgePort.executeFunction(
-      tabId,
-      func,
-      args,
-      { allFrames: true, world: "MAIN" },
-    );
-    const frames = results
-      .map((result, index) =>
-        typeof result.result === "string" && result.result.trim()
-          ? `Frame ${index + 1}:\n${result.result.trim()}`
-          : "",
-      )
-      .filter(Boolean);
-    return frames.length > 0 ? frames.join("\n\n") : emptyMessage;
-  } catch (e: any) {
-    return `Error inspecting page: ${e.message}`;
-  }
-}
-
-async function runAsyncReadOnlyPageInspector(
-  tabId: number,
-  func: (...args: any[]) => Promise<string> | string,
-  args: unknown[],
-  emptyMessage: string,
-): Promise<string> {
-  try {
-    const results = await chromeContentBridgePort.executeFunction(
-      tabId,
-      func,
-      args,
-      { allFrames: true, world: "MAIN" },
-    );
-    const frames = results
-      .map((result, index) =>
-        typeof result.result === "string" && result.result.trim()
-          ? `Frame ${index + 1}:\n${result.result.trim()}`
-          : "",
-      )
-      .filter(Boolean);
-    return frames.length > 0 ? frames.join("\n\n") : emptyMessage;
-  } catch (e: any) {
-    return `Error inspecting page: ${e.message}`;
-  }
-}
-
-// --- Registration ---
 
 export function registerTools() {
   toolRegistry.register(
