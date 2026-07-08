@@ -81,6 +81,7 @@ const FIXTURES = {
     note: MODEL_LINE,
   },
   scenes: [
+    { task: "settings-provider", title: "Bring your own provider", subtitle: "Pick your provider stack and models — your key, your choice", caption: "Choosing the provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi" },
     { task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
     { task: "showcase-ashby-application", title: "Apply for a job", subtitle: "Fills a real recruiting application, field by field", caption: "Filling an Ashby job application from the candidate's details (stops before submit)" },
     { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
@@ -108,7 +109,20 @@ const TRACEVIEWER = {
   outro: { title: "Trust, but verify — locally.", subtitle: "OpenSidebar", note: "Traces never leave your machine · no telemetry" },
 };
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER }[argVal("--show", "servicenow")] || SERVICENOW;
+const SETTINGS = {
+  out: "opensidebar-settings-demo-collage.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "Bring your own provider — your key, your models",
+    note: "Fireworks · OpenRouter · Moonshot · Xiaomi — BYOK, no subscription",
+  },
+  scenes: [
+    { task: "settings-provider", title: "Choose your provider stack", subtitle: "Swap providers and per-seat models in Settings — nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
+  ],
+  outro: { title: "Your key. Your models. Your browser.", subtitle: "OpenSidebar", note: "No subscription · No telemetry · Open source" },
+};
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
