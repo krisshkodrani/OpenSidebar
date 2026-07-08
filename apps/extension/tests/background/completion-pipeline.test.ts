@@ -51,7 +51,7 @@ function deps(over: Partial<CompletionPipelineDeps> = {}): CompletionPipelineDep
     deterministicAcceptanceEnabled: false,
     isDuplicateTerminal: false,
     validatePlan: async () => null,
-    onKernelReject: () => {},
+    buildKernelRejectionEffects: () => [],
     ...over,
   };
 }
