@@ -25,6 +25,7 @@ import {
   normalizeText,
   tokenizeCompletionText,
   LABEL_STOPWORDS,
+  importantLabelTokens,
 } from "./completion/text-utils";
 import {
   labelCanHaveMacAddressValue,
@@ -127,8 +128,18 @@ import {
   inferExpectedFormFields,
   inferExpectedScopedFormFields,
   parseBooleanLike,
-  readChecked,
 } from "./completion/form-field-analysis";
+import type { ChoiceObservation } from "./completion/kernel-types";
+import {
+  extractChoiceObservations,
+  findChoiceObservationByElementId,
+  inferSelectionCardinality,
+  matchesQuizTarget,
+  expectedSelectionsMatch,
+  selectedLabelsCoveredBySummary,
+  extractVisibleQuestionNumber,
+  extractExplicitQuestionNumber,
+} from "./completion/quiz-choice-analysis";
 import {
   TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS,
   WORKFLOW_CONFIRMATION_ACTIONS,
@@ -207,26 +218,6 @@ export type {
 type WorkflowConfirmationTextMode = "summary" | "visible";
 const TARGET_AWARE_VISIBLE_WORKFLOW_ACTION_SET: ReadonlySet<WorkflowConfirmationAction> =
   new Set(TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS);
-
-type ChoiceKind = "checkbox" | "radio";
-
-interface ChoiceObservation {
-  elementId: number;
-  stableKey: string;
-  label: string;
-  checked: boolean;
-  kind: ChoiceKind;
-  questionNumber?: number;
-}
-
-const NUMBER_WORDS = new Map<string, number>([
-  ["one", 1],
-  ["two", 2],
-  ["three", 3],
-  ["four", 4],
-  ["five", 5],
-  ["six", 6],
-]);
 
 export function generateCompletionContract(params: {
   userRequest: string;
@@ -2335,67 +2326,6 @@ function selectedStateEvidence(
         : {}),
     },
   };
-}
-
-function extractChoiceObservations(snapshot: DomSnapshot): ChoiceObservation[] {
-  const questionNumber = extractVisibleQuestionNumber(snapshot);
-  const labelByControl = new Map<string, string>();
-  for (const element of snapshot.elements) {
-    const control = element.attributes.control;
-    if (!control) continue;
-    const text = cleanLabel(element.text || element.attributes.label || "");
-    if (!text) continue;
-    const existing = labelByControl.get(control);
-    if (!existing || text.length > existing.length) {
-      labelByControl.set(control, text);
-    }
-  }
-
-  const choices = new Map<string, ChoiceObservation>();
-  for (const element of snapshot.elements) {
-    const kind = getChoiceKind(element);
-    if (!kind || element.isDisabled) continue;
-
-    const stableKey = choiceStableKey(element);
-    const associated = element.attributes.control
-      ? labelByControl.get(element.attributes.control)
-      : undefined;
-    const label = bestChoiceLabel(element, associated);
-    if (!label || label.length < 3) continue;
-    if (/^mark lecture\b/i.test(label)) continue;
-
-    const checked = readChecked(element);
-    if (checked == null) continue;
-    const observation: ChoiceObservation = {
-      elementId: element.tag,
-      stableKey,
-      label,
-      checked,
-      kind,
-      ...(questionNumber != null ? { questionNumber } : {}),
-    };
-    const existing = choices.get(stableKey);
-    if (!existing || observation.label.length > existing.label.length) {
-      choices.set(stableKey, observation);
-    }
-  }
-  return [...choices.values()];
-}
-
-function findChoiceObservationByElementId(
-  snapshot: DomSnapshot | null | undefined,
-  id: number,
-): ChoiceObservation | null {
-  if (!snapshot) return null;
-  const direct = snapshot.elements.find((element) => element.tag === id);
-  if (!direct) return null;
-  const directStableKey = choiceStableKey(direct);
-  return (
-    extractChoiceObservations(snapshot).find(
-      (choice) =>
-        choice.elementId === id || choice.stableKey === directStableKey,
-    ) ?? null
-  );
 }
 
 function extractDraftEvidence(
@@ -9301,23 +9231,6 @@ function extractNavigationEvidence(
   return navigationStateEvidence(snapshot, turn);
 }
 
-function getChoiceKind(element: TaggedElement): ChoiceKind | null {
-  const type = normalizeText(element.attributes.type || "");
-  const role = normalizeText(element.role || "");
-  if (type === "checkbox" || role === "checkbox") return "checkbox";
-  if (type === "radio" || role === "radio") return "radio";
-  return null;
-}
-
-function choiceStableKey(element: TaggedElement): string {
-  return (
-    element.attributes.control ||
-    element.attributes.id ||
-    element.attributes.name ||
-    `tag:${element.tag}`
-  );
-}
-
 function readControlState(
   element: TaggedElement,
   action?: ControlStateWorkflowAction,
@@ -9335,72 +9248,12 @@ function readControlState(
   return readControlStateValue(state, action);
 }
 
-function bestChoiceLabel(element: TaggedElement, associated?: string): string {
-  const candidates = [
-    associated,
-    element.attributes.label,
-    element.text,
-    element.attributes["aria-label"],
-    element.attributes.name,
-    element.attributes.value,
-  ];
-  return (
-    candidates
-      .map((value) => cleanLabel(value ?? ""))
-      .filter(Boolean)
-      .sort((a, b) => b.length - a.length)[0] ?? ""
-  );
-}
-
-function inferSelectionCardinality(
-  snapshot: DomSnapshot,
-): number | "one_or_more" | undefined {
-  const text = snapshotText(snapshot);
-  if (/\bselect\s+all\s+that\s+apply\b/i.test(text)) return "one_or_more";
-  const numeric = text.match(/\bselect\s+(?:the\s+)?(\d)\b/i)?.[1];
-  if (numeric) return Number(numeric);
-  const word = text.match(
-    /\bselect\s+(?:the\s+)?(one|two|three|four|five|six)\b/i,
-  )?.[1];
-  return word ? NUMBER_WORDS.get(word.toLowerCase()) : undefined;
-}
-
-function extractVisibleQuestionNumber(
-  snapshot: DomSnapshot | null | undefined,
-): number | undefined {
-  if (!snapshot) return undefined;
-  return extractExplicitQuestionNumber(snapshotText(snapshot));
-}
-
-function extractExplicitQuestionNumber(text: string): number | undefined {
-  const question = /\bquestion\s*#?\s*(\d{1,4})\b/i.exec(text)?.[1];
-  if (question) return Number(question);
-  const fraction = /\b(\d{1,4})\s*\/\s*\d{1,4}\b/.exec(text)?.[1];
-  return fraction ? Number(fraction) : undefined;
-}
-
 function hasQuizSelectionIntent(text: string): boolean {
   return (
     /\b(?:select|choose|pick|answer|option|what should i choose)\b/i.test(
       text,
     ) && /\b(?:correct|answer|option|quiz|question|choice)\b/i.test(text)
   );
-}
-
-function matchesQuizTarget(
-  event: Extract<CompletionEvidence, { type: "selected_state" }>,
-  contract: QuizSelectionContract,
-  visibleQuestionNumber: number | undefined,
-): boolean {
-  const eventQuestion = event.detail.questionNumber ?? visibleQuestionNumber;
-  if (contract.target.kind === "current_visible_question") {
-    return (
-      contract.target.questionNumber == null ||
-      eventQuestion == null ||
-      eventQuestion === contract.target.questionNumber
-    );
-  }
-  return eventQuestion === contract.target.questionNumber;
 }
 
 function matchesFeedbackTarget(
@@ -9417,32 +9270,6 @@ function matchesFeedbackTarget(
     );
   }
   return eventQuestion === contract.target.questionNumber;
-}
-
-function expectedSelectionsMatch(
-  expectedSelections: string[],
-  selected: Array<Extract<CompletionEvidence, { type: "selected_state" }>>,
-): boolean {
-  const selectedText = normalizeText(
-    selected.map((event) => event.detail.label).join("\n"),
-  );
-  return expectedSelections.every((expected) =>
-    importantLabelTokens(expected).some((token) =>
-      selectedText.includes(token),
-    ),
-  );
-}
-
-function selectedLabelsCoveredBySummary(
-  selected: Array<Extract<CompletionEvidence, { type: "selected_state" }>>,
-  summary: string,
-): boolean {
-  const summaryText = normalizeText(summary);
-  return selected.every((event) =>
-    importantLabelTokens(event.detail.label).some((token) =>
-      summaryText.includes(token),
-    ),
-  );
 }
 
 function matchesExpectedField(
@@ -9505,38 +9332,6 @@ function latestObservedTurn(evidence: CompletionEvidence[]): number {
     (latest, event) => Math.max(latest, event.observedAtTurn),
     0,
   );
-}
-
-function importantLabelTokens(label: string): string[] {
-  return [
-    ...new Set(
-      normalizeText(label)
-        .match(/[a-z0-9][a-z0-9-]{3,}/g)
-        ?.filter((token) => !LABEL_STOPWORDS.has(token))
-        .slice(0, 12) ?? [],
-    ),
-  ];
-}
-
-function snapshotText(snapshot: DomSnapshot): string {
-  return [
-    snapshot.title,
-    snapshot.url,
-    snapshot.visibleContent,
-    snapshot.pageContent,
-    ...snapshot.elements.map((element) =>
-      [
-        element.text,
-        element.attributes.label,
-        element.attributes["aria-label"],
-        element.attributes.name,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    ),
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 function extractNavigationTarget(value: string): URL | null {
@@ -12983,4 +12778,5 @@ function takeUntilFirstMarker(value: string, markers: RegExp[]): string {
 function evidenceConfidenceRank(event: CompletionEvidence): number {
   return event.confidence === "high" ? 2 : 1;
 }
+
 
