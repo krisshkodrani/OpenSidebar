@@ -36,16 +36,21 @@ Run `easy` before `medium` before `hard` unless scoped to one failing test.
   most-churned files in the repo. `background/tools/index.ts` (~7K lines after
   the ServiceNow adapter extraction) and `background/orchestrator/index.ts`
   (~7.5K lines) are the next tier — same care applies.
-- **`loop.ts` is under a decomposition ratchet** (LP-15 Phase 11):
-  `scripts/loop-ratchet.mjs` runs in the lint step and fails if `loop.ts` grows
-  past the budgets in `scripts/loop-ratchet-budget.json` (total lines, method
-  count, `loop()` length). Budgets may only go DOWN. If you must add code to the
-  loop, extract at least as much out (into a `turn-machine.ts` phase or a
+- **All five landmine files are under a decomposition ratchet** (LP-15 Phase 11,
+  generalized in LP-16 Phase 0): `scripts/loop-ratchet.mjs` runs in the lint step
+  and fails if any guarded file grows past its budget in
+  `scripts/loop-ratchet-budget.json`. `loop.ts` tracks three metrics (total
+  lines, method count, `loop()` length); `completion-kernel.ts`,
+  `tools/index.ts`, `orchestrator/index.ts`, and `orchestrator/skills.ts` track
+  total lines. Budgets may only go DOWN. If you must add code to a guarded file,
+  extract at least as much out (into a `turn-machine.ts` phase, an
+  `agent/completion/` contract module, a `register-*.ts` tool module, or a
   `*-policy.ts` module); run `node scripts/loop-ratchet.mjs --report` to see the
-  numbers and tighten the budget after extracting. The turn is being
+  numbers and tighten the budget after extracting. The `loop.ts` turn is being
   decomposed into ordered phases (`agent/turn-machine.ts`): gates, escalation,
   feedback, prepare_model_turn, dispatch_tools, post_tool_guards, plan_monitor,
-  completion, account_and_refresh.
+  completion, account_and_refresh. The full decomposition plan is RFC LP-16
+  (`docs/engineering/rfcs/lp-0016-landmine-decomposition.md`).
 - ServiceNow is a **partially** quarantined adapter, not a fully detached one.
   What IS contained in `background/tools/servicenow/` (definitions / records /
   references / navigation / register / tool-hooks): the two SN tool schemas,
