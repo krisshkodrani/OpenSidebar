@@ -69,6 +69,9 @@ import {
   isPendingInteractionResolved,
 } from "./pending-interaction";
 import {
+  runHighRiskJudgeGate,
+} from "./high-risk-judge-gate";
+import {
   getNodeToolProfile,
   buildParallelRunState,
   isTabOccupiedByRunningNode,
@@ -98,10 +101,6 @@ import {
   OrchestratorVerifier,
   programmaticVerify,
 } from "./verifier";
-import {
-  corpusEntryToFactRef,
-  type JudgeGateOutcome,
-} from "../agent/completion/judge-gate";
 import { getLoadedSkillContract } from "./skills";
 import {
   buildAssumptionDriftSignal,
@@ -150,7 +149,7 @@ import {
   RuntimeLane,
   WorkspaceLanePools,
 } from "./lane-types";
-import type { OrchestratorDeps, VerifierLike } from "./lane-types";
+import type { OrchestratorDeps } from "./lane-types";
 import {
   beginLaneOperation,
   buildLaneTelemetrySnapshot as buildLaneTelemetrySnapshotData,
@@ -1123,41 +1122,6 @@ export class Orchestrator {
    * null on any error so a gate failure can never block a legitimate accept —
    * the gate only ever tightens completion, never loosens it.
    */
-  private async runHighRiskJudgeGate(
-    task: OrchestratorTask,
-    node: TaskNode,
-    verifier: VerifierLike,
-    evidence: StructuredEvidence[],
-    summary: string,
-  ): Promise<JudgeGateOutcome | null> {
-    if (!verifier.judgeGate) return null;
-    try {
-      const entries = await getTrustedCorpusStore().load();
-      const corpusFacts = entries
-        .filter(
-          (entry) =>
-            entry.kind === "personal_profile_fact" ||
-            entry.kind === "extracted_fact",
-        )
-        .map(corpusEntryToFactRef);
-      const evidenceLines = evidence
-        .map((item) => item.claim ?? item.event?.detail ?? item.event?.type ?? "")
-        .filter((line): line is string => Boolean(line));
-      return await verifier.judgeGate({
-        claim: node.description,
-        successCriteria: node.successCriteria,
-        evidence: evidenceLines.length > 0 ? evidenceLines : [summary],
-        corpusFacts,
-      });
-    } catch (error) {
-      logger.warn(
-        "orchestrator",
-        "High-risk judge gate failed; keeping the verifier accept",
-        { taskId: task.id, nodeId: node.id, error },
-      );
-      return null;
-    }
-  }
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await loadOrchestratorCheckpoints();
@@ -3705,7 +3669,7 @@ export class Orchestrator {
                 successCriteria: node.successCriteria,
               }) === "high"
             ) {
-              const gate = await this.runHighRiskJudgeGate(
+              const gate = await runHighRiskJudgeGate(
                 task,
                 node,
                 verifier,
