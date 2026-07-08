@@ -150,11 +150,10 @@ const PITCH = {
     { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
     { section: "You stay in control", task: "settings-provider", title: "Bring your own provider", subtitle: "Swap providers and per-seat models — your key, nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
     { task: "watch-restock", title: "Watch Mode", subtitle: "Leave it watching; it speaks up the moment the page changes", caption: 'Watching a product page — flagged "back in stock" the instant it flipped' },
-    { task: "traceviewer-session", title: "Replay any session", subtitle: "Every turn, cost, and screenshot in the built-in trace viewer", caption: 'Replaying "Find Diana Chen": 6 turns, 5/5 trajectory score, $0.062 total' },
-    { section: "Extendable — ServiceNow", task: "order-developer-laptop", title: "Order from the service catalog", subtitle: "Browses the catalog, configures the item, and places the order", caption: 'Ordering 8× "Developer Laptop (Mac)" with a custom software config' },
-    { task: "single-chart-value-retrieval", title: "Read a dashboard chart", subtitle: "Sees the chart and answers a quantitative question", caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%' },
+    { task: "traceviewer-session", title: "Built-in observability", subtitle: "An observability workspace records every run — decisions, screenshots, exact cost", caption: 'Inspecting a run in the observability workspace: 6 turns, 5/5 score, $0.062 total' },
+    { section: "Extendable — ServiceNow", task: "order-developer-laptop", title: "Built to be extended", subtitle: "ServiceNow support is an adapter — the same pattern fits your own enterprise apps", caption: 'Ordering 8× "Developer Laptop (Mac)" from the service catalog, end to end', sceneSec: 18 },
   ],
-  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source · MIT" },
+  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source (MIT) · Fork it on GitHub" },
 };
 
 const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH }[argVal("--show", "servicenow")] || SERVICENOW;
@@ -276,9 +275,10 @@ function overlayBand(caption) {
 }
 
 // Scene body (speed + normalize + band, no fades) — shared by video and stills.
-function sceneBase(clip, caption) {
+// sceneSec: per-scene length override (scene.sceneSec), else the global SCENE_SEC.
+function sceneBase(clip, caption, sceneSec = SCENE_SEC) {
   const dur = ffprobeDuration(clip);
-  const speed = Math.max(dur / SCENE_SEC, 0.01); // fast-motion factor
+  const speed = Math.max(dur / sceneSec, 0.01); // fast-motion factor
   const base = [
     `setpts=PTS/${speed.toFixed(4)}`,
     `scale=${W}:${H}:force_original_aspect_ratio=decrease`,
@@ -299,13 +299,13 @@ function makeCard(card, name) {
   segments.push(out);
   console.log(`  card: ${card.title}`);
 }
-function makeScene(clip, name, caption) {
-  const { base, speed, dur } = sceneBase(clip, caption);
+function makeScene(clip, name, caption, sceneSec = SCENE_SEC) {
+  const { base, speed, dur } = sceneBase(clip, caption, sceneSec);
   const out = path.join(tmp, `${name}.mp4`);
-  const vf = [...base, ...fades(SCENE_SEC)].join(",");
-  sh("ffmpeg", ["-y", "-i", clip, "-vf", vf, "-t", String(SCENE_SEC), ...X264, out]);
+  const vf = [...base, ...fades(sceneSec)].join(",");
+  sh("ffmpeg", ["-y", "-i", clip, "-vf", vf, "-t", String(sceneSec), ...X264, out]);
   segments.push(out);
-  console.log(`  scene: ${clip}  (${dur.toFixed(0)}s -> ${SCENE_SEC}s, ${speed.toFixed(1)}x)`);
+  console.log(`  scene: ${clip}  (${dur.toFixed(0)}s -> ${sceneSec}s, ${speed.toFixed(1)}x)`);
 }
 
 // ---- stills mode (design sign-off before the full build) ------------------
@@ -360,7 +360,7 @@ SCENES.forEach((s, i) => {
     makeSectionCard(s.section, partIndex, `section${i}`);
   }
   makeCard(s, `card${i}`);
-  makeScene(clip, `scene${i}`, s.caption);
+  makeScene(clip, `scene${i}`, s.caption, s.sceneSec ?? SCENE_SEC);
 });
 makeCard(OUTRO, "outro");
 
