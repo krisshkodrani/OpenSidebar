@@ -1667,6 +1667,41 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         );
     });
 
+    test("buildFallbackNodes collapses the field-value form plan so the planner-failure fallback cannot strand", () => {
+        // Regression: when planner.buildNodes throws, the orchestrator falls
+        // back to buildFallbackNodes. That path must run the same collapse as
+        // buildNodes, otherwise the synthesized "fill (do not submit yet)" +
+        // "submit" plan survives uncollapsed and the run terminates after
+        // filling — the live create-incident failure.
+        const query =
+            'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".';
+
+        // With ServiceNow page context (as the fixed catch block now threads).
+        const snNodes = buildFallbackNodes(
+            query,
+            "planned",
+            "Incident | ServiceNow",
+            "https://workarenapublic20.service-now.com/incident.do",
+        );
+        expect(snNodes).toHaveLength(1);
+        expect(snNodes[0].selectedSkillId).toBe("servicenow-record-form");
+        expect(snNodes[0].description).not.toContain("Do not submit the form yet");
+        expect(snNodes[0].successCriteria).not.toContain(
+            "the final submit action has not been clicked yet",
+        );
+
+        // Even context-blind (the old failure shape), it must still collapse to
+        // one submit-requiring node rather than stranding on the fill node.
+        const blindNodes = buildFallbackNodes(query);
+        expect(blindNodes).toHaveLength(1);
+        expect(blindNodes[0].description).not.toContain(
+            "Do not submit the form yet",
+        );
+        expect(blindNodes[0].successCriteria.toLowerCase()).toContain(
+            "submission",
+        );
+    });
+
     test("all nodes get full default tools (profile filtering at loop level)", async () => {
         completeImpl = () => Promise.resolve({
             role: "assistant",
@@ -2018,6 +2053,71 @@ describe("OrchestratorPlanner.buildNodes returns BuildNodesResult", () => {
         expect(result.nodes[0].allowedTools).toContain(
             ToolName.CONFIGURE_SERVICENOW_FORM,
         );
+    });
+
+    test("collapses field-value fill/submit steps into one submit-requiring node when no form skill owns the workflow", async () => {
+        // Regression: the create-incident stranding bug. The synthesized plan
+        // splits into a `form_fill` node ("Do not submit the form yet") + a
+        // `submit_form` node. On a page whose URL is NOT recognized as
+        // ServiceNow, skill selection lands on a generic skill, the skill-owned
+        // collapse is skipped, both nodes survive, and the executor completes
+        // the fill node on its "not submitted yet" criterion without ever
+        // submitting. The field-value collapse must merge them into one node
+        // whose success requires the submission.
+        completeImpl = () => Promise.resolve({
+            role: "assistant",
+            content: JSON.stringify({
+                isMultiStep: true,
+                difficulty: "complex",
+                steps: [
+                    {
+                        objective:
+                            'Fill the form with the requested field values: Short description="Printer offline"; Caller="Joe Employee"; Channel="Phone". Do not submit the form yet.',
+                        successCriteria:
+                            "Each requested field has the specified value; the final submit action has not been clicked yet.",
+                        dependencies: [],
+                        assumptions: [],
+                    },
+                    {
+                        objective:
+                            "Submit the form and verify the created record or confirmation is visible.",
+                        successCriteria:
+                            "The form submission completes and a created record, confirmation, or resulting item page is visible.",
+                        dependencies: [0],
+                        assumptions: [],
+                    },
+                ],
+            }),
+            tool_calls: undefined,
+            finish_reason: "stop",
+        });
+
+        const planner = new OrchestratorPlanner("test-key");
+        const result = await planner.buildNodes(
+            'Create a new incident with a value of "Printer offline" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".',
+            "Acme Helpdesk",
+            "https://helpdesk.example.com/incidents/new",
+        );
+
+        // The generic page must NOT activate the ServiceNow form skill.
+        expect(result.nodes[0].selectedSkillId).not.toBe(
+            "servicenow-record-form",
+        );
+        // Merged into a single node so the run cannot stop after filling.
+        expect(result.nodes).toHaveLength(1);
+        // The stranding clause is gone; submission is required.
+        expect(result.nodes[0].description).not.toContain(
+            "Do not submit the form yet",
+        );
+        expect(result.nodes[0].successCriteria).not.toContain(
+            "the final submit action has not been clicked yet",
+        );
+        expect(result.nodes[0].successCriteria.toLowerCase()).toContain(
+            "submission",
+        );
+        // Both fill and submit tools remain available on the merged node.
+        expect(result.nodes[0].allowedTools).toContain(ToolName.TYPE_TEXT);
+        expect(result.nodes[0].allowedTools).toContain(ToolName.CLICK_ELEMENT);
     });
 
     test("collapses progressive repeatable form plans into one skill-owned workflow node", async () => {

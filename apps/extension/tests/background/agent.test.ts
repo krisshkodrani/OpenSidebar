@@ -2398,6 +2398,42 @@ describe("AgentLoop", () => {
     expect(executeToolCall).toHaveBeenCalledTimes(2);
   });
 
+  test("ServiceNow record controller hands off a diagnostic (not a resubmit prompt) on a hard validation rejection", async () => {
+    const agent = new AgentLoop(
+      "test-key",
+      { onStatusUpdate: vi.fn(), onMessage: vi.fn(), onStep: vi.fn() },
+      { selectedSkillId: "servicenow-record-form" },
+    );
+    (agent as any).originalQuery =
+      'Create a new incident with a value of "System Administrator" for field "Resolved by". Submit the form and verify the created record.';
+    const addMessage = vi.spyOn((agent as any).context, "addMessage");
+
+    vi.spyOn(agent as any, "executeToolCall")
+      .mockResolvedValueOnce(
+        "Configured ServiceNow form.\nConfigured:\n- Resolved by (resolved_by) = System Administrator",
+      )
+      .mockResolvedValueOnce(
+        "ServiceNow form configuration incomplete.\n" +
+          "Submit diagnostics:\n" +
+          "- Error Message Invalid update\n" +
+          "Clicked submit control: Submit",
+      );
+
+    const result = await (agent as any).maybeRunServiceNowRecordFormController(
+      123,
+    );
+
+    expect(result).toBeNull();
+    const handoff = addMessage.mock.calls
+      .map((call) => String(call[0]?.content ?? ""))
+      .find((content) => /ServiceNow rejected the submission/i.test(content));
+    expect(handoff).toBeDefined();
+    // Must NOT invite a blind resubmit, and must surface the error + guidance.
+    expect(handoff).not.toContain("submit the form with configure_servicenow_form({ submit: true })");
+    expect(handoff).toContain("Resubmitting the same values will fail again");
+    expect(handoff).toContain("Invalid update");
+  });
+
   test("ServiceNow record controller reports infeasible when requested field is absent", async () => {
     const onMessage = vi.fn();
     const agent = new AgentLoop(
