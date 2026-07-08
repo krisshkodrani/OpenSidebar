@@ -2476,14 +2476,8 @@ export class AgentLoop {
       reason: decision.reason,
       contractKind: decision.contract.kind,
     });
-    this.traceRecorder?.recordEvent("completion_decision", {
-      turn: this.turnCount,
-      status: decision.status,
-      source: "model_done",
-      reason: decision.reason,
-      contractKind: decision.contract.kind,
-      evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-    });
+    // The "completion_decision" trace for this kernel rejection is emitted as a
+    // pipeline effect now (RFC LP-16 Phase 2 — single completion authority).
     const pendingAutocomplete =
       this.getPendingAutocompleteCompletionEvidence(decision);
     if (pendingAutocomplete) {
