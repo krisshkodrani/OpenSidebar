@@ -65,12 +65,17 @@ export interface CompletionPipelineDeps {
   validatePlan: () => Promise<PlannerValidationResult | null>;
   /**
    * Apply the kernel-reject effects (the loop-coupled
-   * rejectDoneFromCompletionDecision: same-kind counter, diagnostic message via
-   * getCompletionRejectionInstruction, the conditional pending-autocomplete
-   * trace). Called only on a non-bypassed kernel rejection; a no-op in
-   * shadow/replay (only the verdict is compared there).
+   * Single-authority (RFC LP-16 Phase 2): rather than mutating loop state
+   * directly, the loop RETURNS the kernel-rejection effects (rejection counters,
+   * last-rejection record, escalation check, the completion_decision +
+   * conditional pending-autocomplete traces, and the diagnostic message) and the
+   * pipeline appends them to the decision so applyCompletionEffects performs the
+   * mutations in order. Called only on a non-bypassed kernel rejection; returns
+   * [] in shadow/replay (only the verdict is compared there).
    */
-  onKernelReject: (decision: CompletionEvaluation) => void;
+  buildKernelRejectionEffects: (
+    decision: CompletionEvaluation,
+  ) => CompletionEffect[];
 }
 
 export async function runCompletionPipeline(
@@ -171,24 +176,11 @@ export async function runCompletionPipeline(
         });
         // fall through to the legacy bundle
       } else {
-        // Single-authority (RFC LP-16 Phase 2): the kernel-decision trace is now
-        // emitted as a pipeline effect rather than inside the injected callback,
-        // moving observability of the reject onto the pipeline's effect stream.
-        // The remaining loop-coupled mutations (rejection counters, diagnostic
-        // context message) are still applied by rejectDoneFromCompletionDecision.
-        effects.push({
-          type: "emit_trace",
-          event: "completion_decision",
-          data: {
-            turn: ctx.turnCount,
-            status: kernel.status,
-            source: "model_done",
-            reason: kernel.reason,
-            contractKind: kernel.contract?.kind,
-            evidenceKeys: kernel.evidence.map((event) => event.logicalKey),
-          },
-        });
-        deps.onKernelReject(kernel);
+        // Single-authority (RFC LP-16 Phase 2): the loop-coupled kernel-reject
+        // mutations + observability are now returned as effects and appended
+        // here, so applyCompletionEffects performs them in order (rather than a
+        // side-effecting callback). The decision carries the pass-time effects
+        // plus this rejection's effects.
         return {
           verdict: "reject",
           basis: "kernel_reject",
@@ -196,7 +188,10 @@ export async function runCompletionPipeline(
           rejectedBy: "kernel",
           reason: kernel.reason ?? "",
           recoveryHint: null,
-          effects: [...effects],
+          // Reject effects first, then the pass-time effects: this preserves the
+          // pre-refactor applied order, where the (then side-effecting) callback
+          // ran before applyCompletionEffects consumed the pass-time effects.
+          effects: [...deps.buildKernelRejectionEffects(kernel), ...effects],
         };
       }
     }

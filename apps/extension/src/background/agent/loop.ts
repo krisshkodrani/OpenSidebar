@@ -96,7 +96,7 @@ import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
-  inferServiceNowCreateRecordUrlFromListUrl,
+  resolveServiceNowCreateRecordUrlFromCurrentList,
   maybeInferServiceNowModuleNavigationEvidence,
   serviceNowFieldSearchTokens,
   type ModuleNavEvidenceHost,
@@ -156,7 +156,10 @@ import {
   runCompletionPipeline,
   type PlannerValidationResult,
 } from "./completion/pipeline";
-import type { CompletionPipelineDecision } from "./completion/pipeline-types";
+import type {
+  CompletionEffect,
+  CompletionPipelineDecision,
+} from "./completion/pipeline-types";
 import {
   applyCompletionEffects,
   type CompletionEffectHost,
@@ -2455,51 +2458,63 @@ export class AgentLoop {
     }
   }
 
-  private rejectDoneFromCompletionDecision(
-    toolCallId: string,
+  /**
+   * Build the deterministic-kernel-rejection effects (RFC LP-16 Phase 2 — single
+   * completion authority): the mutations flow through the pipeline effect stream
+   * instead of a side-effecting callback. post_rejection_diagnostic renders at
+   * apply-time (after increment); the log + autocomplete `rejections` use the
+   * post-increment value (`doneRejections + 1`), matching the prior ordering.
+   */
+  private buildKernelRejectionEffects(
     summary: string,
     decision: CompletionRejectionDecision,
-  ): void {
-    if (this.lastContractRejectionKind === decision.contract.kind) {
-      this.consecutiveSameKindRejections++;
-    } else {
-      this.lastContractRejectionKind = decision.contract.kind;
-      this.consecutiveSameKindRejections = 1;
-    }
-    this.doneRejections++;
-    this.checkAndSetDoneRejectionEscalation();
-    this.lastCompletionRejection = decision;
+  ): CompletionEffect[] {
     this.log.warn("agent", "DONE rejected by deterministic completion kernel", {
       turn: this.turnCount,
-      rejections: this.doneRejections,
+      rejections: this.doneRejections + 1,
       status: decision.status,
       reason: decision.reason,
       contractKind: decision.contract.kind,
     });
-    // The "completion_decision" trace for this kernel rejection is emitted as a
-    // pipeline effect now (RFC LP-16 Phase 2 — single completion authority).
+    const effects: CompletionEffect[] = [
+      { type: "record_contract_rejection", kind: decision.contract.kind },
+      { type: "increment_done_rejections" },
+      { type: "check_done_rejection_escalation" },
+      { type: "set_last_completion_rejection", decision },
+      {
+        type: "emit_trace",
+        event: "completion_decision",
+        data: {
+          turn: this.turnCount,
+          status: decision.status,
+          source: "model_done",
+          reason: decision.reason,
+          contractKind: decision.contract.kind,
+          evidenceKeys: decision.evidence.map((event) => event.logicalKey),
+        },
+      },
+    ];
     const pendingAutocomplete =
       this.getPendingAutocompleteCompletionEvidence(decision);
     if (pendingAutocomplete) {
-      this.traceRecorder?.recordEvent(
-        "done_rejected_autocomplete_suggestion_pending",
-        {
-          rejections: this.doneRejections,
+      effects.push({
+        type: "emit_trace",
+        event: "done_rejected_autocomplete_suggestion_pending",
+        data: {
+          rejections: this.doneRejections + 1,
           inputTag: pendingAutocomplete.detail.inputElementId,
           suggestionTag: pendingAutocomplete.detail.suggestionElementId,
           value: String(pendingAutocomplete.detail.value ?? "").toLowerCase(),
         },
-      );
+      });
     }
-    this.context.addMessage({
-      role: "tool",
-      tool_call_id: toolCallId,
-      content: this.doneRejectionDiagnosticContent({
-        summary,
-        primaryReason: decision.reason,
-        fallbackInstruction: this.getCompletionRejectionInstruction(decision),
-      }),
+    effects.push({
+      type: "post_rejection_diagnostic",
+      summary,
+      primaryReason: decision.reason,
+      fallbackInstruction: this.getCompletionRejectionInstruction(decision),
     });
+    return effects;
   }
 
   /**
@@ -2619,7 +2634,7 @@ export class AgentLoop {
         deterministicAcceptanceEnabled: input.deterministicAcceptanceEnabled,
         isDuplicateTerminal: input.isDuplicateTerminal,
         validatePlan: async () => input.plannerResult,
-        onKernelReject: () => {},
+        buildKernelRejectionEffects: () => [],
       });
       const pipelineAccepted = pipelineDecision.verdict === "accept";
       if (pipelineAccepted !== legacyVerdict) {
@@ -2868,10 +2883,9 @@ export class AgentLoop {
         this.completionDeterministicAcceptanceEnabled,
       isDuplicateTerminal: false, // handled inline above
       validatePlan: () => this.runDonePlanValidation(toolCallId, summary),
-      onKernelReject: (decision) =>
+      buildKernelRejectionEffects: (decision) =>
         // Only invoked on a kernel rejection, so the evaluation is a rejection.
-        this.rejectDoneFromCompletionDecision(
-          toolCallId,
+        this.buildKernelRejectionEffects(
           summary,
           decision as CompletionRejectionDecision,
         ),
@@ -6369,7 +6383,7 @@ export class AgentLoop {
             this.isServiceNowRecordFormLoadMiss(fill.result)
           ) {
             const createRecordUrl =
-              await this.resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
+              await resolveServiceNowCreateRecordUrlFromCurrentList(tabId);
             if (createRecordUrl) {
               const navigateArgs = { url: createRecordUrl };
               const navigateToolCall: ToolCall = {
@@ -6639,37 +6653,6 @@ export class AgentLoop {
     }
   }
 
-  private async resolveServiceNowCreateRecordUrlFromCurrentList(
-    tabId: number,
-  ): Promise<string | null> {
-    const candidates: string[] = [];
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab.url) candidates.push(tab.url);
-    } catch {
-      // Fall through to frame URL probing below.
-    }
-
-    try {
-      const frameResults = await chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        func: () => window.location.href,
-      });
-      for (const frameResult of frameResults as Array<{ result?: unknown }>) {
-        if (typeof frameResult.result === "string") {
-          candidates.push(frameResult.result);
-        }
-      }
-    } catch {
-      // Frame URL probing is best-effort; the tab URL may still be enough.
-    }
-
-    for (const candidate of candidates) {
-      const createUrl = inferServiceNowCreateRecordUrlFromListUrl(candidate);
-      if (createUrl) return createUrl;
-    }
-    return null;
-  }
 
   private shouldAutoSubmitTrustedServiceNowForm(params: {
     toolName: string;
