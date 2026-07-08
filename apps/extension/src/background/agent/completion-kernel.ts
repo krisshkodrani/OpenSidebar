@@ -148,6 +148,13 @@ import {
   samePageUrl,
 } from "./completion/navigation-analysis";
 import {
+  extractDraftEvidence,
+  isLikelyDraftEditorField,
+  isLikelyDraftEditorIdentity,
+  extractReadElementValueEvidenceText,
+  draftStateEvidence,
+} from "./completion/draft-analysis";
+import {
   TARGET_AWARE_VISIBLE_WORKFLOW_ACTIONS,
   WORKFLOW_CONFIRMATION_ACTIONS,
   workflowConfirmationActionCompletionLabel,
@@ -2017,29 +2024,6 @@ function formAutocompletePendingEvidence(params: {
   };
 }
 
-function draftStateEvidence(
-  params: FormFieldObservation & {
-    confidence: CompletionConfidence;
-    observedAtTurn: number;
-  },
-): Extract<CompletionEvidence, { type: "draft_state" }> {
-  const target = params.label || params.stableKey || `tag-${params.elementId}`;
-  const targetKey = compactKey(target) || `tag-${params.elementId}`;
-  const identityKey =
-    compactKey(params.stableKey) || compactKey(params.label) || targetKey;
-  return {
-    type: "draft_state",
-    confidence: params.confidence,
-    logicalKey: `draft:${targetKey}:${identityKey}`,
-    observedAtTurn: params.observedAtTurn,
-    detail: {
-      target,
-      text: params.value,
-      submitted: false,
-    },
-  };
-}
-
 function readAnswerSnapshotEvidence(params: {
   snapshot: DomSnapshot;
   observedAtTurn: number;
@@ -2312,50 +2296,6 @@ function selectedStateEvidence(
         : {}),
     },
   };
-}
-
-function extractDraftEvidence(
-  snapshot: DomSnapshot,
-  turn: number,
-): CompletionEvidence[] {
-  return extractFormFieldObservations(snapshot)
-    .filter(isLikelyDraftEditorField)
-    .filter((field) => cleanLabel(field.value).length > 0)
-    .map((field) =>
-      draftStateEvidence({
-        ...field,
-        confidence: "medium",
-        observedAtTurn: turn,
-      }),
-    );
-}
-
-function isLikelyDraftEditorField(field: FormFieldObservation): boolean {
-  if (field.kind !== "text") return false;
-  return isLikelyDraftEditorIdentity(field.label, field.stableKey);
-}
-
-function isLikelyDraftEditorIdentity(
-  label: string | undefined,
-  stableKey: string | undefined,
-): boolean {
-  const labelText = normalizeText([label, stableKey].join(" "));
-  return /\b(?:reply|response|message|comment|body|compose|draft|editor|post)\b/i.test(
-    labelText,
-  );
-}
-
-function extractReadElementValueEvidenceText(params: {
-  args: Record<string, unknown>;
-  result: string;
-}): string | null {
-  const attribute = params.args.attribute;
-  if (typeof attribute === "string" && attribute.toLowerCase() !== "value") {
-    return null;
-  }
-  const valueMatch = params.result.match(/\bvalue="([\s\S]*)"\s*$/);
-  if (valueMatch) return valueMatch[1];
-  return null;
 }
 
 function inferWorkflowConfirmationAction(
