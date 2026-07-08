@@ -13,7 +13,6 @@ import {
   SubtaskResult,
   TaskCompletionMessage,
   ToolName,
-  UserSettings,
 } from "../../types";
 import {
   createHttpRunTraceWriter,
@@ -21,10 +20,7 @@ import {
   RunManifest,
   RunTraceWriter,
 } from "../../utils";
-import { loadSettings } from "../../utils/settings-storage";
 import {
-  formatMissingProviderKeys,
-  getProviderKeyStatus,
 } from "../../utils/provider-keys";
 import { listPromptDescriptors } from "../../prompts";
 import {
@@ -60,6 +56,7 @@ import {
   WorkerInstance,
 } from "./types";
 import { buildProgrammaticSummary } from "./task-summary";
+import { buildResumeInput } from "./resume-input";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -1248,80 +1245,6 @@ export class Orchestrator {
     return selectResumeOwnedTab(taskLike, liveTabs, preferredTabId);
   }
 
-  private async buildResumeInput(
-    task: OrchestratorTask,
-    resumeTabId: number,
-  ): Promise<OrchestratorStartInput | null> {
-    const settings = (await loadSettings()) ?? ({} as UserSettings);
-    type ProviderMode = NonNullable<UserSettings["providerMode"]>;
-    const pickFallbackProvider = (): {
-      mode: ProviderMode;
-      activeKey: string;
-    } | null => {
-      const candidateModes: ProviderMode[] = [
-        "openrouter",
-        "fireworks-deepseek",
-        "fireworks",
-        "moonshot",
-        "xiaomi",
-        "openai-groq",
-      ];
-      for (const mode of candidateModes) {
-        const status = getProviderKeyStatus({
-          ...settings,
-          providerMode: mode,
-        });
-        if (status.hasRequiredKeys && status.activeKey) {
-          return { mode, activeKey: status.activeKey };
-        }
-      }
-      return null;
-    };
-    const configuredMode: ProviderMode =
-      settings.providerMode ??
-      (settings.openRouterApiKey
-        ? "openrouter"
-        : settings.fireworksApiKey && settings.deepseekApiKey
-          ? "fireworks-deepseek"
-          : settings.kimiApiKey
-            ? "moonshot"
-            : settings.xiaomiApiKey
-              ? "xiaomi"
-              : "fireworks");
-    const configuredStatus = getProviderKeyStatus({
-      ...settings,
-      providerMode: configuredMode,
-    });
-    const provider =
-      configuredStatus.hasRequiredKeys && configuredStatus.activeKey
-        ? { mode: configuredMode, activeKey: configuredStatus.activeKey }
-        : pickFallbackProvider();
-    if (!provider) {
-      logger.warn(
-        "orchestrator",
-        "Cannot resume task without API key for active provider",
-        {
-          workspaceId: task.workspaceId,
-          providerMode: configuredMode,
-          missingKeys: formatMissingProviderKeys(configuredStatus),
-        },
-      );
-      return null;
-    }
-    const resumeSettings: UserSettings = {
-      ...settings,
-      providerMode: provider.mode,
-    };
-
-    return {
-      query: task.query,
-      tabId: resumeTabId,
-      workspaceId: task.workspaceId,
-      settings: resumeSettings,
-      openRouterApiKey: provider.activeKey,
-    };
-  }
-
   private getPendingInteractionRemainingMs(
     interaction: PendingUserInteraction,
   ): number {
@@ -1521,7 +1444,7 @@ export class Orchestrator {
     }
     const resumeTabId = resumeSelection.tabId;
 
-    const resumeInput = await this.buildResumeInput(task, resumeTabId);
+    const resumeInput = await buildResumeInput(task, resumeTabId);
     if (!resumeInput) {
       task.status = "failed";
       task.finishedAt = Date.now();
@@ -1890,7 +1813,7 @@ export class Orchestrator {
       }
       const resumeTabId = resumeSelection.tabId;
 
-      const resumeInput = await this.buildResumeInput(task, resumeTabId);
+      const resumeInput = await buildResumeInput(task, resumeTabId);
       if (!resumeInput) {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
@@ -6179,4 +6102,5 @@ export class Orchestrator {
 }
 
 export const orchestrator = new Orchestrator();
+
 
