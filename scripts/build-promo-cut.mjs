@@ -171,11 +171,17 @@ function makeBeat(beat, idx) {
 }
 
 // ---- animated cards (push-in + staggered text fades) -----------------------
+// Rendered at 2x and zoomed from the supersampled frame: zoompan crops on
+// integer pixels of its INPUT, so a slow zoom at 1080p steps visibly ("shaky"
+// text); at 2x those steps are half-pixels at output size — smooth.
+const SS = 2;
 function makeCard(lines, sec, name) {
-  const texts = lines.map((l) =>
-    dt(l.text, l.color, l.size, "(w-text_w)/2", l.y,
-      `:alpha='min(1,max(0,(t-${l.at})/0.5))'`),
-  );
+  const texts = lines.map((l) => {
+    // Scale the vertical offset in expressions like "(h/2)-120" to the 2x frame.
+    const y = l.y.replace(/\(h\/2\)([+-])(\d+)/, (_, sign, off) => `(h/2)${sign}${Number(off) * SS}`);
+    return dt(l.text, l.color, l.size * SS, "(w-text_w)/2", y,
+      `:alpha='min(1,max(0,(t-${l.at})/0.5))'`);
+  });
   const vf = [
     ...texts,
     `zoompan=z='min(1.045,1+0.00025*on)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=${FPS}`,
@@ -183,7 +189,7 @@ function makeCard(lines, sec, name) {
   ].join(",");
   const out = path.join(tmp, `${name}.mp4`);
   sh("ffmpeg", [
-    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=${sec}:r=${FPS}`,
+    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W * SS}x${H * SS}:d=${sec}:r=${FPS}`,
     "-vf", vf, ...X264, out,
   ]);
   segments.push(out);
