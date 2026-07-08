@@ -171,9 +171,23 @@ export async function runCompletionPipeline(
         });
         // fall through to the legacy bundle
       } else {
-        // Loop-coupled kernel-reject mutations are applied by the injected
-        // callback (rejectDoneFromCompletionDecision), so the decision carries
-        // only the pass-time effects accumulated so far.
+        // Single-authority (RFC LP-16 Phase 2): the kernel-decision trace is now
+        // emitted as a pipeline effect rather than inside the injected callback,
+        // moving observability of the reject onto the pipeline's effect stream.
+        // The remaining loop-coupled mutations (rejection counters, diagnostic
+        // context message) are still applied by rejectDoneFromCompletionDecision.
+        effects.push({
+          type: "emit_trace",
+          event: "completion_decision",
+          data: {
+            turn: ctx.turnCount,
+            status: kernel.status,
+            source: "model_done",
+            reason: kernel.reason,
+            contractKind: kernel.contract?.kind,
+            evidenceKeys: kernel.evidence.map((event) => event.logicalKey),
+          },
+        });
         deps.onKernelReject(kernel);
         return {
           verdict: "reject",
