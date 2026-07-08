@@ -28,6 +28,24 @@ OpenSidebar runs an autonomous agent loop inside a Chrome side panel. You descri
 
 For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on. The full run flow is diagrammed in [docs/run-flow.svg](docs/run-flow.svg).
 
+## Demos
+
+See OpenSidebar drive real tasks end-to-end — no integrations, no scripts. Powered by **Kimi K2.7 Code** (executor, vision) and **GLM 5.2** (planner) on **Fireworks AI**.
+
+### On the open web
+
+Shopping checkout, a job application, a multi-step onboarding wizard, reading data on one page to draft an email on another, and pulling a record from a directory.
+
+https://github.com/user-attachments/assets/84ade244-84cc-4343-a01b-9caf76aeda0c
+
+### Extendables — ServiceNow
+
+The same agent driving a specific enterprise app: order from the service catalog, read a dashboard chart, filter and sort lists, and search the knowledge base.
+
+https://github.com/user-attachments/assets/1ebc2dfc-e1ee-4d6c-9e26-2a4f2e783a0b
+
+<sub>Recorded live. Source clips: <a href="https://github.com/krisshkodrani/OpenSidebar/issues/72">#72</a>.</sub>
+
 ## Capabilities
 
 **Automation** - Generic browser tools for clicking, typing, scrolling, selecting, tab management, uploads, downloads, and page reading.
