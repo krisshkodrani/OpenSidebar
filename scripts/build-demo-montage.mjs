@@ -122,7 +122,20 @@ const SETTINGS = {
   outro: { title: "Your key. Your models. Your browser.", subtitle: "OpenSidebar", note: "No subscription · No telemetry · Open source" },
 };
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS }[argVal("--show", "servicenow")] || SERVICENOW;
+const WATCH = {
+  out: "opensidebar-watch-demo-collage.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "Watch Mode — it keeps an eye on the page for you",
+    note: "Leave it watching · it speaks up the moment something changes",
+  },
+  scenes: [
+    { task: "watch-restock", title: "Watch a page, get told when it changes", subtitle: "Set a standing instruction; the agent watches passively and flags the moment it happens", caption: 'Watching a product page — flagged "back in stock" the instant it flipped' },
+  ],
+  outro: { title: "Set it and forget it.", subtitle: "OpenSidebar Watch Mode", note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI" },
+};
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;

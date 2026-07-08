@@ -919,6 +919,119 @@ export async function stopAgent(
   }, workspaceId ?? null);
 }
 
+export interface StartPassiveMonitorOptions {
+  instructions: string;
+  inputSources?: string[];
+  minIntervalMs?: number;
+  maxSuggestionsPerMinute?: number;
+}
+
+/**
+ * Start Watch Mode (the passive monitor) on a tab, the same way the sidepanel's
+ * WatchModeControl does — by sending PASSIVE_MONITOR_START. Opens the E2E panel
+ * first so the workspace exists and suggestions render into it.
+ */
+export async function startPassiveMonitor(
+  ctx: ExtensionContext,
+  tabId: number,
+  workspaceId: string,
+  options: StartPassiveMonitorOptions,
+): Promise<void> {
+  await ensureE2EPanel(ctx, tabId, workspaceId);
+  const helperPage = await openHelperPage(ctx);
+  const result = (await helperPage.evaluate(
+    async (tid: number, wsId: string, opts: StartPassiveMonitorOptions) => {
+      return await chrome.runtime.sendMessage({
+        type: "PASSIVE_MONITOR_START",
+        requestId: crypto.randomUUID(),
+        source: "sidepanel",
+        workspaceId: wsId,
+        payload: {
+          tabId: tid,
+          workspaceId: wsId,
+          instructions: opts.instructions,
+          inputSources: opts.inputSources ?? ["page"],
+          minIntervalMs: opts.minIntervalMs ?? 1500,
+          maxSuggestionsPerMinute: opts.maxSuggestionsPerMinute ?? 6,
+        },
+      });
+    },
+    tabId,
+    workspaceId,
+    options,
+  )) as { ok?: boolean; detail?: string } | undefined;
+  if (result && result.ok === false) {
+    throw new Error(`PASSIVE_MONITOR_START failed: ${result.detail}`);
+  }
+}
+
+/**
+ * Register a collector on the helper page for PASSIVE_MONITOR_SUGGESTION
+ * broadcasts. Call BEFORE the monitored page changes so no suggestion is missed.
+ */
+export async function armPassiveSuggestionCollector(
+  ctx: ExtensionContext,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  await helperPage.evaluate(() => {
+    const w = window as any;
+    if (w.__passiveSuggestions) return;
+    w.__passiveSuggestions = [];
+    w.__passiveStatuses = [];
+    chrome.runtime.onMessage.addListener((message: any) => {
+      if (message && message.type === "PASSIVE_MONITOR_SUGGESTION") {
+        w.__passiveSuggestions.push(message.payload);
+      }
+      if (message && message.type === "PASSIVE_MONITOR_STATUS") {
+        w.__passiveStatuses.push(message.payload);
+      }
+    });
+  });
+}
+
+export async function stopPassiveMonitor(
+  ctx: ExtensionContext,
+  workspaceId: string,
+): Promise<void> {
+  const helperPage = await openHelperPage(ctx);
+  await helperPage.evaluate(async (wsId: string) => {
+    await chrome.runtime.sendMessage({
+      type: "PASSIVE_MONITOR_STOP",
+      requestId: crypto.randomUUID(),
+      source: "sidepanel",
+      workspaceId: wsId,
+      payload: { workspaceId: wsId },
+    });
+  }, workspaceId);
+}
+
+export interface PassiveSuggestion {
+  answer: string;
+  confidence?: string;
+  evidence?: string[];
+  suggestionId?: string;
+}
+
+/** Poll the collector until a passive suggestion arrives (or time out). */
+export async function waitForPassiveSuggestion(
+  ctx: ExtensionContext,
+  timeoutMs = 30_000,
+): Promise<PassiveSuggestion> {
+  const helperPage = await openHelperPage(ctx);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const found = (await helperPage.evaluate(() => {
+      const list = (window as any).__passiveSuggestions;
+      return Array.isArray(list) && list.length ? list[0] : null;
+    })) as PassiveSuggestion | null;
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(
+    "No PASSIVE_MONITOR_SUGGESTION broadcast within the timeout window",
+  );
+}
+
 export async function sendApprovalResponse(
   ctx: ExtensionContext,
   approvalId: string,
