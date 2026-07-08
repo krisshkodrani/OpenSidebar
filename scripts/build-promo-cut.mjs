@@ -21,7 +21,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
-const VIDEOS_DIR = path.join(ROOT, ".artifacts", "e2e", "videos");
 const SYS_FONT = "C:/Windows/Fonts/segoeuib.ttf";
 const W = 1920, H = 1080, FPS = 30;
 const BG = "0x0B1F33";
@@ -212,8 +211,8 @@ fs.writeFileSync(
   segments.map((s) => `file '${s.replace(/\\/g, "/")}'`).join("\n"),
   "utf8",
 );
-const day = new Date().toISOString().slice(0, 10);
-const outDir = path.join(VIDEOS_DIR, day);
+// Finished cuts land in .artifacts/publish/ alongside the montage collages.
+const outDir = path.join(ROOT, ".artifacts", "publish");
 fs.mkdirSync(outDir, { recursive: true });
 const silent = path.join(tmp, "promo-silent.mp4");
 sh("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listFile, ...X264, silent]);
