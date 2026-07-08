@@ -95,6 +95,12 @@ import {
   type ServiceNowMissingFieldSearchEvidence,
   type TrustedCatalogOrderSubmission,
 } from "./servicenow/trusted-workflow-adapter";
+import {
+  buildServiceNowSubmitDeferralMessage,
+  isServiceNowSubmitHardRejected,
+  isServiceNowSubmitRejected,
+  isServiceNowSubmitStayedOnCreateForm,
+} from "./servicenow/submit-diagnostics-policy";
 import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
@@ -6517,9 +6523,14 @@ export class AgentLoop {
         mode: "sequential",
       });
 
-      const submitRejected = this.isServiceNowSubmitRejected(submit.result);
+      const submitRejected = isServiceNowSubmitRejected(submit.result);
       const submitStayedOnCreateForm =
-        this.isServiceNowSubmitStayedOnCreateForm(submit.result);
+        isServiceNowSubmitStayedOnCreateForm(submit.result);
+      // A hard validation rejection won't resolve by resubmitting identical
+      // values; the controller still tries its single refill+retry, but on a
+      // persistent rejection it surfaces a diagnostic instead of inviting the
+      // agent to resubmit on a loop (see buildServiceNowSubmitDeferralMessage).
+      const submitHardRejected = isServiceNowSubmitHardRejected(submit.result);
       if (
         submit.ok &&
         !completion &&
@@ -6579,27 +6590,24 @@ export class AgentLoop {
           );
         }
       } else if (submit.ok && !completion && submitRejected) {
+        const reason = submitHardRejected ? "submit_hard_validation_rejection" : "submit_rejected_by_servicenow"; // prettier-ignore
         this.traceRecorder?.recordEvent(
           "servicenow_record_controller_submit_retry_abandoned",
-          {
-            turn: this.turnCount,
-            reason: "submit_rejected_by_servicenow",
-          },
+          { turn: this.turnCount, reason },
         );
       }
       if (!submit.ok || !completion) {
+        const reason = !submit.ok ? "tool_error" : submitHardRejected ? "submit_hard_validation_rejection" : "untrusted_submit_result"; // prettier-ignore
         this.traceRecorder?.recordEvent(
           "servicenow_record_controller_deferred",
-          {
-            turn: this.turnCount,
-            phase: "submit",
-            reason: submit.ok ? "untrusted_submit_result" : "tool_error",
-          },
+          { turn: this.turnCount, phase: "submit", reason },
         );
         this.context.addMessage({
           role: "user",
-          content:
-            "The ServiceNow record form controller filled the requested fields but did not get trusted submit evidence. Verify validation errors or submit the form with configure_servicenow_form({ submit: true }).",
+          content: buildServiceNowSubmitDeferralMessage(
+            submit.result,
+            submitHardRejected,
+          ),
         });
         return null;
       }
@@ -6627,19 +6635,6 @@ export class AgentLoop {
     } finally {
       await this.traceRecorder?.endTurn();
     }
-  }
-
-  private isServiceNowSubmitRejected(toolResult: string): boolean {
-    return (
-      /\bSubmit diagnostics:\b/i.test(toolResult) ||
-      /\b(?:Invalid update|mandatory|required|cannot be blank|not submitted)\b/i.test(
-        toolResult,
-      )
-    );
-  }
-
-  private isServiceNowSubmitStayedOnCreateForm(toolResult: string): boolean {
-    return /\bsubmit did not leave the create form\b/i.test(toolResult);
   }
 
   private async resolveServiceNowCreateRecordUrlFromCurrentList(

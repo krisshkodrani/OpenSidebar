@@ -2950,7 +2950,22 @@ export class Orchestrator {
             error: error?.message,
           },
         );
-        nodes = buildFallbackNodes(input.query);
+        // Thread the current page context and enabled packs so the fallback
+        // selects the same skills buildNodes would (e.g. servicenow-record-form
+        // on a ServiceNow page, not a context-blind generic skill) and so its
+        // collapse pass merges synthesized fill/submit form plans. Without this
+        // the fallback strands create-record forms on the "do not submit yet"
+        // fill node.
+        const fallbackTab = await chrome.tabs
+          .get(input.tabId)
+          .catch(() => null);
+        nodes = buildFallbackNodes(
+          input.query,
+          "planned",
+          fallbackTab?.title || "Untitled",
+          fallbackTab?.url || "",
+          { enabledSkillPackIds: task.enabledSkillPackIds },
+        );
         task.planClassification = {
           isSingleNode: nodes.length === 1,
           difficulty: "moderate",

@@ -11,6 +11,7 @@ import { Orchestrator, OrchestratorDeps } from "../../src/background/orchestrato
 
 type MockLoopConfig = {
   nodeId?: string;
+  selectedSkillId?: string | null;
   turnCheckpoint?: {
     turnCount?: number;
     pageUrl?: string | null;
@@ -2355,6 +2356,47 @@ describe("Orchestrator integration join tests", () => {
     expect(capturedInstructions[0].instruction).toContain(`Objective: ${query}`);
     expect(capturedInstructions[0].instruction).toContain(
       "Success criteria: Page or tool output shows Warehouse Beta",
+    );
+  });
+
+  test("planner-lane failure fallback collapses a ServiceNow field-value form into one submit-requiring node", async () => {
+    // End-to-end deterministic proof of the create-incident fix: when the
+    // planner lane times out (buildNodes throws), the orchestrator falls back to
+    // buildFallbackNodes. That fallback must (a) receive the current page
+    // context so it selects servicenow-record-form on a ServiceNow page, and
+    // (b) collapse the synthesized "fill (do not submit yet)" + "submit" plan
+    // into a single submit-requiring node. Without the fix the executor gets a
+    // "do not submit the form yet" objective and strands without submitting.
+    plannerBuildNodesImpl = async () => {
+      throw new Error("planner lane timeout (20000ms)");
+    };
+    (chrome.tabs as any).get = vi.fn(async (tabId: number) => ({
+      id: tabId,
+      title: "Create INC0000031 | Incident | ServiceNow",
+      url: "https://workarenapublic20.service-now.com/now/nav/ui/classic/params/target/incident.do",
+    }));
+
+    const orchestrator = new Orchestrator(orchestratorDeps);
+    activeOrchestrator = orchestrator;
+    const query =
+      'Create a new incident with a value of "EMAIL Server Down Again" for field "Short description", a value of "Joe Employee" for field "Caller", and a value of "Phone" for field "Channel".';
+
+    await orchestrator.startTask(makeInput(query));
+
+    // Single collapsed node reached the executor — not a stranded fill node.
+    expect(capturedInstructions).toHaveLength(1);
+    const instruction = capturedInstructions[0].instruction;
+    // The stranding clause is gone and submission is required.
+    expect(instruction).not.toContain("Do not submit the form yet");
+    expect(instruction).not.toContain(
+      "the final submit action has not been clicked yet",
+    );
+    expect(instruction).toContain(
+      "Complete the workflow for the original request",
+    );
+    // Page context threaded → ServiceNow record-form skill selected.
+    expect(createdLoopConfigs[0]?.selectedSkillId).toBe(
+      "servicenow-record-form",
     );
   });
 

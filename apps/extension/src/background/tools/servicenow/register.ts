@@ -643,6 +643,11 @@ export function registerConfigureServiceNowFormTool(registry: ToolRegistry): voi
                 model: "cmdb_model",
                 vendor: "core_company",
                 depreciation: "cmdb_depreciation",
+                // Cost center's visible control is a plain input (no
+                // sys_display.* name, no _id suffix), so isReferenceLikeControl
+                // misses it and "IT" would be written as unresolved plain text.
+                // cmn_cost_center is the stable ServiceNow cost-center table.
+                cost_center: "cmn_cost_center",
               };
               return refs[fieldName] || "";
             };
@@ -1134,7 +1139,7 @@ export function registerConfigureServiceNowFormTool(registry: ToolRegistry): voi
                   sysparm_query: query,
                   sysparm_fields:
                     "sys_id,name,display_name,number,user_name,email,first_name,last_name",
-                  sysparm_limit: "5",
+                  sysparm_limit: "20",
                   sysparm_display_value: "all",
                 });
                 const headers: Record<string, string> = {
@@ -1190,16 +1195,36 @@ export function registerConfigureServiceNowFormTool(registry: ToolRegistry): voi
                     .join("^OR"),
                 );
               }
-              const selected =
-                records.find((record: Record<string, unknown>) => {
-                  const exact = queryFields.some(
-                    (field) =>
-                      normalize(unwrap(record[field])) === normalize(clean),
-                  );
-                  const fullName =
-                    `${unwrap(record.first_name)} ${unwrap(record.last_name)}`.trim();
-                  return exact || normalize(fullName) === normalize(clean);
-                }) ?? records[0];
+              // Rank candidates: exact display match beats prefix beats
+              // contains. Only fall back to the first row ServiceNow returned
+              // when nothing matched at all — a blind records[0] on an
+              // ambiguous set (e.g. "IT" vs "IT Services") silently commits the
+              // wrong reference.
+              const target = normalize(clean);
+              const candidateValues = (record: Record<string, unknown>) => {
+                const fullName =
+                  `${unwrap(record.first_name)} ${unwrap(record.last_name)}`.trim();
+                return [...queryFields.map((field) => record[field]), fullName]
+                  .map((value) => normalize(unwrap(value)))
+                  .filter(Boolean);
+              };
+              const matchRank = (record: Record<string, unknown>) => {
+                const values = candidateValues(record);
+                if (values.includes(target)) return 3;
+                if (values.some((value) => value.startsWith(target))) return 2;
+                if (values.some((value) => value.includes(target))) return 1;
+                return 0;
+              };
+              let selected: Record<string, unknown> | undefined;
+              let selectedRank = 0;
+              for (const record of records) {
+                const rank = matchRank(record);
+                if (rank > selectedRank) {
+                  selectedRank = rank;
+                  selected = record;
+                }
+              }
+              if (!selected) selected = records[0];
               const sysId = unwrap(selected?.sys_id);
               const selectedDisplay =
                 unwrap(selected?.name) ||
