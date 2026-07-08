@@ -48,7 +48,9 @@ const SPECS = {
   pitch: {
     in: "opensidebar-pitch-demo-collage.mp4",
     out: "opensidebar-pitch-demo-collage-voiced.mp4",
-    // Structure: intro 3.0 · section 2.6 · [card 3.0 + scene 13.0] · … · outro 3.0
+    // Structure: intro 3.0 · section 2.6 · [card 3.0 + scene 13.0]×3 · section 2.6 ·
+    // [card 3.0 + scene 13.0]×3 · section 2.6 · [card 3.0 + scene 18.0] · outro 3.0
+    // = 130.8s total (chart scene removed; extended extensibility finale).
     lines: [
       { at: 0.5, maxSec: 7.8, text: "This is OpenSidebar — an open-source AI agent that drives your browser. Part one: the open web." },
       { at: 8.9, maxSec: 12.4, text: "Give it a shopping task and it works the whole flow: add to cart, apply the coupon, choose shipping, and place the order." },
@@ -56,10 +58,9 @@ const SPECS = {
       { at: 40.9, maxSec: 12.4, text: "Multi-step wizards are no problem: it fills each step, then reviews before submitting." },
       { at: 56.4, maxSec: 15.4, text: "Part two: you stay in control. It runs on your own key — pick your provider and models in settings." },
       { at: 75.5, maxSec: 12.4, text: "Watch Mode keeps an eye on a page for you, and speaks up the moment something changes." },
-      { at: 91.5, maxSec: 12.4, text: "And every session is replayable in the built-in trace viewer — every turn, every screenshot, and the exact cost." },
-      { at: 107.0, maxSec: 15.4, text: "Part three: the same agent extends to enterprise apps like ServiceNow — ordering from the service catalog…" },
-      { at: 126.1, maxSec: 12.4, text: "…and reading live dashboards to answer questions with real numbers." },
-      { at: 138.6, maxSec: 3.1, text: "OpenSidebar. Free and open source." },
+      { at: 91.5, maxSec: 12.4, text: "And everything is observable — a built-in observability workspace records every run: every decision, every screenshot, and the exact cost." },
+      { at: 107.0, maxSec: 20.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — here, ordering from the service catalog end to end. The same pattern can teach the agent your own enterprise apps." },
+      { at: 127.6, maxSec: 3.1, text: "OpenSidebar. Free and open source — make it yours." },
     ],
   },
 };
@@ -94,8 +95,8 @@ const dur = (f) =>
 // ---- TTS with cache ---------------------------------------------------------
 async function tts(key, text) {
   fs.mkdirSync(VO_CACHE, { recursive: true });
-  // v3: 0.5s break + time-based artifact trim (bump on pipeline change)
-  const hash = crypto.createHash("sha1").update(`v3|${VOICE}|${text}`).digest("hex").slice(0, 16);
+  // v4: livelier voice settings (stability .4, style .35) (bump on pipeline change)
+  const hash = crypto.createHash("sha1").update(`v4|${VOICE}|${text}`).digest("hex").slice(0, 16);
   const cached = path.join(VO_CACHE, `${hash}.mp3`);
   if (fs.existsSync(cached) && fs.statSync(cached).size > 0) return { file: cached, cached: true };
 
@@ -111,7 +112,13 @@ async function tts(key, text) {
         // break region is hard-trimmed by TIME below (not silence detection).
         text: `<break time="0.5s" /> ${text}`,
         model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        // Livelier delivery than the flat defaults: lower stability + some style.
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.75,
+          style: 0.35,
+          use_speaker_boost: true,
+        },
       }),
     },
   );
@@ -144,6 +151,39 @@ const key = loadKey();
 if (!key) {
   console.error("No ELEVENLABS_API_KEY / ELEVENLAB_API_KEY in the environment or .env");
   process.exit(1);
+}
+
+// --bakeoff: render the promo's first line in candidate voices so the owner can
+// pick by ear (samples in .artifacts/publish/voice-samples/, then re-run with
+// --voice <winner id>).
+if (process.argv.includes("--bakeoff")) {
+  const candidates = [
+    { name: "rachel-retuned", id: "21m00Tcm4TlvDq8ikWAM" },
+    { name: "matilda", id: "XrExE9yKIg1WjnnlVkGX" },
+    { name: "jessica", id: "cgSgspJ2msm6clMCkdW9" },
+  ];
+  const sampleDir = path.join(PUBLISH, "voice-samples");
+  fs.mkdirSync(sampleDir, { recursive: true });
+  const sampleText = SPECS.promo.lines[0].text;
+  for (const c of candidates) {
+    const res = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${c.id}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: { "xi-api-key": key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `<break time="0.5s" /> ${sampleText}`,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: { stability: 0.4, similarity_boost: 0.75, style: 0.35, use_speaker_boost: true },
+        }),
+      },
+    );
+    if (!res.ok) throw new Error(`ElevenLabs ${res.status} for ${c.name}`);
+    fs.writeFileSync(path.join(sampleDir, `${c.name}.mp3`), Buffer.from(await res.arrayBuffer()));
+    console.log(`  sample: voice-samples/${c.name}.mp3 (${c.id})`);
+  }
+  console.log(`\nListen in ${sampleDir}, then re-run with --voice <id> for the winner.`);
+  process.exit(0);
 }
 const inFile = path.join(PUBLISH, spec.in);
 if (!fs.existsSync(inFile)) {
@@ -190,7 +230,13 @@ prepared.forEach((l, i) => {
     `[${i + 1}:a]adelay=${Math.round(l.at * 1000)}|${Math.round(l.at * 1000)},apad[v${i}]`,
   );
 });
-const voMix = `${parts.join(";")};${prepared.map((_, i) => `[v${i}]`).join("")}amix=inputs=${prepared.length}:normalize=0,atrim=0:${videoDur.toFixed(2)}[vo]`;
+// Mix all lines, then master the VO bus: gentle compression for presence, then
+// loudness normalization to the -16 LUFS streaming standard. This is what makes
+// raw TTS sit like produced narration instead of a thin voice memo.
+const MASTER =
+  "acompressor=threshold=-21dB:ratio=3:attack=10:release=180:makeup=3dB," +
+  "loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000";
+const voMix = `${parts.join(";")};${prepared.map((_, i) => `[v${i}]`).join("")}amix=inputs=${prepared.length}:normalize=0,atrim=0:${videoDur.toFixed(2)},${MASTER}[vo]`;
 
 let filter, mapAudio;
 const hasSourceAudio =
