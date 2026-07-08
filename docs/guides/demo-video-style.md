@@ -29,13 +29,19 @@ copy conventions so future cuts stay consistent.
 The tooling is ffmpeg-only (no moviepy), reusing the harness's encoder settings
 (`libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -movflags +faststart`).
 
-**Two shows** are defined in the script and share the same style:
+**Three shows** are defined in the script and share the same style:
 - **`servicenow`** — WorkArena/ServiceNow tasks (recorded via `workarena-handoff.ts`);
   the "extendable / deep integration" story.
 - **`fixtures`** — general-web fixture tasks (recorded via `run-e2e-video-review.ts`);
   the "core, works on any website" story. Its clips are named by each test's
   `testLabel`, so `scenes[].task` is that label. Fixtures never touch the record
   controller, so they are all visually clean.
+- **`traceviewer`** — a scripted tour of the built-in trace viewer (recorded via
+  `scripts/record-trace-viewer-demo.mjs`, which needs `pnpm run logs` + a
+  dev-surface build and captures one clip per scene: fleet, session, perception).
+  Record it in **light mode** — dark mode still has badge-contrast gaps — and use
+  the show's viewer-specific bottom bar instead of the model bar, since the
+  subject is the tool, not the model seats.
 
 To lock specific takes (e.g. after verifying which recordings passed), write
 `.artifacts/demo-clips.json` — `{ "<label>": "<clip path>" }` — which the script
@@ -58,7 +64,9 @@ fade-through-black transition (no crossfade math). Target length is roughly
   / the model bar, muted grey `#B8C4D0` for secondary credit lines.
 - **Type:** Segoe UI Bold. (ffmpeg's filtergraph cannot take a Windows `C:/…` font
   path, so the script copies the font into a temp dir and references it by a
-  cwd-relative, colon-free path — do the same for any added text.)
+  cwd-relative, colon-free path — do the same for any added text. Also keep
+  `expansion=none` on every `drawtext`: without it a literal `%` in a caption,
+  e.g. "82% success", is parsed as an expansion token and truncates the line.)
 
 **Title card:** a centered headline (~68px, white) over a benefit line (~34px,
 accent); the intro and outro also carry a small third line (~26px, grey) for model

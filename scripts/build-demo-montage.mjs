@@ -90,7 +90,25 @@ const FIXTURES = {
   outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Kimi K2.7 Code + GLM 5.2   ·   Fireworks AI" },
 };
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES }[argVal("--show", "servicenow")] || SERVICENOW;
+const TRACEVIEWER = {
+  out: "opensidebar-traceviewer-demo-collage.mp4",
+  // The subject is the viewer itself, so the band credits the tool, not the
+  // model seats (the featured runs still show their model inline).
+  bar: "OpenSidebar   ·   Built-in trace viewer   ·   every session, replayable locally",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "See every decision — the built-in trace viewer",
+    note: "Every agent session, fully inspectable: replays, costs, screenshots",
+  },
+  scenes: [
+    { task: "traceviewer-fleet", title: "Your fleet at a glance", subtitle: "Every run with outcome, turns, cost, and failure clusters", caption: "Reviewing 260 runs · 82% success · per-run cost and failure clusters" },
+    { task: "traceviewer-session", title: "Replay any session, turn by turn", subtitle: "Scorecards, tool calls, and evidence for every decision", caption: 'Replaying "Find Diana Chen": 6 turns, 5/5 trajectory score, $0.062 total' },
+    { task: "traceviewer-perception", title: "See what the agent saw", subtitle: "Each turn's screenshot and page affordances, then the cost roll-up", caption: "The agent's own screenshot + page affordances, then token & cost metrics" },
+  ],
+  outro: { title: "Trust, but verify — locally.", subtitle: "OpenSidebar", note: "Traces never leave your machine · no telemetry" },
+};
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
@@ -153,8 +171,10 @@ function textfile(str) {
 }
 
 const segments = [];
+// expansion=none renders the text literally — otherwise drawtext treats "%"
+// (e.g. "82% success") as an expansion token and drops the rest of the line.
 const dt = (file, color, size, x, y) =>
-  `drawtext=fontfile=${FONT}:textfile=${file}:fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}`;
+  `drawtext=fontfile=${FONT}:textfile=${file}:fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}:expansion=none`;
 const fades = (len) => [
   `fade=t=in:st=0:d=${FADE}`,
   `fade=t=out:st=${(len - FADE).toFixed(2)}:d=${FADE}`,
@@ -176,7 +196,7 @@ function overlayBand(caption) {
   return [
     `drawbox=x=0:y=${H}-${bandH}:w=${W}:h=${bandH}:color=black@0.55:t=fill`,
     dt(textfile(caption), "white", 40, "60", `${H}-118`),
-    dt(textfile(MODEL_BAR), ACCENT, 26, "60", `${H}-56`),
+    dt(textfile(SHOW.bar || MODEL_BAR), ACCENT, 26, "60", `${H}-56`),
   ];
 }
 
