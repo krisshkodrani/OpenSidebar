@@ -94,8 +94,8 @@ const dur = (f) =>
 // ---- TTS with cache ---------------------------------------------------------
 async function tts(key, text) {
   fs.mkdirSync(VO_CACHE, { recursive: true });
-  // v2: leading-break generation + onset normalization (bump on pipeline change)
-  const hash = crypto.createHash("sha1").update(`v2|${VOICE}|${text}`).digest("hex").slice(0, 16);
+  // v3: 0.5s break + time-based artifact trim (bump on pipeline change)
+  const hash = crypto.createHash("sha1").update(`v3|${VOICE}|${text}`).digest("hex").slice(0, 16);
   const cached = path.join(VO_CACHE, `${hash}.mp3`);
   if (fs.existsSync(cached) && fs.statSync(cached).size > 0) return { file: cached, cached: true };
 
@@ -107,9 +107,9 @@ async function tts(key, text) {
       body: JSON.stringify({
         // Leading break: ElevenLabs cold-starts clip the first phoneme's attack
         // when speech begins at sample zero; the break makes it render fully.
-        // The added silence is trimmed back off deterministically after (below),
-        // so line timing math is unaffected.
-        text: `<break time="0.3s" /> ${text}`,
+        // Breaks also often render a small breath/murmur artifact, so the whole
+        // break region is hard-trimmed by TIME below (not silence detection).
+        text: `<break time="0.5s" /> ${text}`,
         model_id: "eleven_multilingual_v2",
         voice_settings: { stability: 0.5, similarity_boost: 0.75 },
       }),
@@ -121,13 +121,18 @@ async function tts(key, text) {
   }
   const rawFile = cached.replace(/\.mp3$/, "-raw.mp3");
   fs.writeFileSync(rawFile, Buffer.from(await res.arrayBuffer()));
-  // Normalize the onset: strip the lead-in down to nothing, then re-pad a fixed
-  // 60ms and add a 30ms fade-in — full phoneme preserved, no click, and every
-  // line starts a predictable 60ms after its `at` offset.
+  // Onset normalization, artifact-proof:
+  //   1. hard-trim 0.35s by TIME — removes the break region including any breath
+  //      artifact it rendered (which sits above silence-detect thresholds);
+  //   2. silence-strip whatever quiet lead remains (~0.15s margin to speech);
+  //   3. re-pad a fixed 60ms and fade in over 50ms.
+  // Result: full first phoneme, no breath blip, predictable 60ms lead.
   sh("ffmpeg", [
     "-y", "-i", rawFile,
     "-af",
-    "silenceremove=start_periods=1:start_threshold=-45dB,adelay=60|60,afade=t=in:d=0.03",
+    "atrim=start=0.35,asetpts=PTS-STARTPTS," +
+      "silenceremove=start_periods=1:start_threshold=-45dB," +
+      "adelay=60|60,afade=t=in:d=0.05",
     cached,
   ]);
   fs.unlinkSync(rawFile);
