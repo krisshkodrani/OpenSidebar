@@ -8,7 +8,6 @@ import {
   EscalationOption,
   EscalationOptionId,
   EscalationPacket,
-  EscalationRisk,
   MessageSource,
   SubtaskResult,
   TaskCompletionMessage,
@@ -61,6 +60,10 @@ import {
   buildSyntheticPendingInteractionSummary,
   buildSubtaskResults,
 } from "./builders";
+import {
+  classifyEscalationRisk,
+  shouldEscalateForDecision,
+} from "./escalation-decisions";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -3647,7 +3650,7 @@ export class Orchestrator {
 
             if (
               task.status === "running" &&
-              this.shouldEscalateForDecision(task, node, verification)
+              shouldEscalateForDecision(task, node, verification)
             ) {
               const escalationPacket =
                 task.pendingEscalation?.packet.nodeId === node.id
@@ -5618,42 +5621,6 @@ export class Orchestrator {
     });
   }
 
-  private classifyEscalationRisk(
-    verification: NodeVerificationResult,
-    node: TaskNode,
-  ): EscalationRisk {
-    if (verification.failureType === "blocked") return "critical";
-    if (verification.decision === "reroute") return "high";
-    if (node.retries >= 2) return "high";
-    return "medium";
-  }
-
-  private shouldEscalateForDecision(
-    task: OrchestratorTask,
-    node: TaskNode,
-    verification: NodeVerificationResult,
-  ): boolean {
-    const confidence = clampConfidence(verification.confidence);
-    const tokenRatio =
-      task.budget.maxTotalTokens > 0
-        ? task.sessionMetrics.totalTokens / task.budget.maxTotalTokens
-        : 0;
-    const costRatio =
-      task.budget.maxTotalCostUsd > 0
-        ? task.sessionMetrics.totalCost / task.budget.maxTotalCostUsd
-        : 0;
-    if (verification.failureType === "blocked") return true;
-    if (verification.decision !== "accept" && confidence < 0.45) return true;
-    if (verification.decision !== "accept" && node.retries >= 2) return true;
-    if (
-      verification.decision !== "accept" &&
-      (tokenRatio >= 0.85 || costRatio >= 0.85)
-    ) {
-      return true;
-    }
-    return false;
-  }
-
   private buildEscalationPacket(input: {
     task: OrchestratorTask;
     node: TaskNode;
@@ -5661,7 +5628,7 @@ export class Orchestrator {
     snapshot?: { title?: string; url?: string };
   }): EscalationPacket {
     const { task, node, verification, snapshot } = input;
-    const risk = this.classifyEscalationRisk(verification, node);
+    const risk = classifyEscalationRisk(verification, node);
     const reason = verification.reason.slice(0, ESCALATION_MAX_REASON_CHARS);
     const options: EscalationOption[] = [
       {
