@@ -85,6 +85,10 @@ import {
 } from "./turn-phases/prepare-model-turn";
 import { runGatesPhase, type GatesPhaseHost } from "./turn-phases/gates";
 import {
+  runFeedbackPhase,
+  type FeedbackPhaseHost,
+} from "./turn-phases/feedback";
+import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
@@ -7907,47 +7911,9 @@ export class AgentLoop {
       // extension, and the plan-then-act orientation handoff (tier 1→0).
       prevElementCount = await esc.onTurnStart({ tabId, prevElementCount });
 
-      // Inject pending hint from user before LLM call
-      if (this.pendingFeedback) {
-        this.traceRecorder?.recordEvent("feedback", {
-          text: this.pendingFeedback,
-        });
-        this.context.addMessage({
-          role: "user",
-          content: `[User feedback]: ${this.pendingFeedback}`,
-        });
-        this.pendingFeedback = null;
-        // User redirection restarts the rescue-policy progress clocks.
-        this.escalationRescue.noteUserIntervention(this.turnCount);
-      }
-
-      const historicalToolCalls = this.context
-        .getMessages()
-        .reduce(
-          (count, msg) =>
-            count +
-            (msg.role === "assistant" && Array.isArray(msg.tool_calls)
-              ? msg.tool_calls.length
-              : 0),
-          0,
-        );
-      const shouldInjectTurnBudgetReminder =
-        (this.turnCount > 0 && this.turnCount % 15 === 0) ||
-        (this.turnCount === 1 && historicalToolCalls >= 15);
-      if (shouldInjectTurnBudgetReminder) {
-        const attemptsSoFar = this.turnCount + historicalToolCalls;
-        this.traceRecorder?.recordEvent("turn_budget_reminder", {
-          turn: this.turnCount,
-          historicalToolCalls,
-        });
-        this.context.addMessage({
-          role: "user",
-          content:
-            `TURN BUDGET: You have already used about ${attemptsSoFar} action turns on this objective. ` +
-            `If the goal is already satisfied, call done(). Otherwise, if you are not making clear progress, ` +
-            `call escalate({"reason": "Stuck after ${attemptsSoFar} turns without completing the goal"}) now. Do not keep cycling.`,
-        });
-      }
+      // Feedback phase: fold pending user feedback + the turn-budget reminder
+      // into context before inference. Extracted (RFC LP-16 Phase 3).
+      runFeedbackPhase(this as unknown as FeedbackPhaseHost);
 
       // Broadcast turn progress to side panel (throttled)
       if (
