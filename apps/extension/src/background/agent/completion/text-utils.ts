@@ -21,3 +21,25 @@ export function hashStableString(value: string): string {
 export function normalizeText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
+
+export const LABEL_STOPWORDS = new Set([
+  "answer",
+  "checked",
+  "choice",
+  "company",
+  "option",
+  "should",
+  "that",
+  "the",
+  "this",
+  "true",
+  "use",
+  "which",
+  "with",
+]);
+
+export function tokenizeCompletionText(value: string): string[] {
+  return [
+    ...new Set(normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? []),
+  ].filter((token) => !LABEL_STOPWORDS.has(token));
+}
