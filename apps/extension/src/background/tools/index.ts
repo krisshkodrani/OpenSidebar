@@ -3,13 +3,20 @@ import {
   chromeCookiesPort,
   chromeDownloadsPort,
   chromeHistoryPort,
-  chromePersistencePort,
   chromeSearchPort,
   chromeWindowsPort,
 } from "../environment/chrome";
 import { toolRegistry } from "./registry";
-import { ToolName, MessageSource, UserSettings } from "../../types";
+import { ToolName, MessageSource } from "../../types";
 import { logger } from "../../utils";
+import {
+  formatControllableTabLines,
+  getAllowedNavigationOrigins,
+  normalizeOrigin,
+  navigationBoundaryError,
+  waitForTabUrlChange,
+  tryInPageHistoryBack,
+} from "./tab-navigation-helpers";
 import {
   waitForDownloadCompletion,
   basenameFromDownloadPath,
@@ -108,102 +115,7 @@ export * from "./registry";
 export * from "./definitions";
 export * from "./bridge";
 
-function formatControllableTabLines(tabs: chrome.tabs.Tab[]): string[] {
-  const controllableTabs = tabs.filter((tab) => isUsableTabUrl(getTabUrl(tab)));
-  const omittedCount = tabs.length - controllableTabs.length;
-
-  if (controllableTabs.length === 0) {
-    return omittedCount > 0
-      ? [
-          "No controllable web tabs are open. Internal browser or extension tabs were omitted because page tools cannot run there.",
-        ]
-      : ["No open tabs."];
-  }
-
-  const lines = controllableTabs.map(
-    (tab) =>
-      `Tab ${tab.id}: "${tab.title || "(untitled)"}" - ${getTabUrl(tab) || "about:blank"}${tab.active ? " [active]" : ""}`,
-  );
-  if (omittedCount > 0) {
-    lines.push(
-      `Note: ${omittedCount} internal browser/extension tab${omittedCount === 1 ? "" : "s"} omitted because page tools cannot run there.`,
-    );
-  }
-  return lines;
-}
-
-async function getAllowedNavigationOrigins(): Promise<string[]> {
-  try {
-    const stored = await chromePersistencePort.sync.get("userSettings");
-    const settings = (stored.userSettings ?? {}) as UserSettings;
-    return Array.isArray(settings.allowedNavigationOrigins)
-      ? settings.allowedNavigationOrigins.filter(
-          (origin): origin is string => typeof origin === "string",
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-function normalizeOrigin(value: string): string | null {
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-}
-
-function navigationBoundaryError(
-  target: string,
-  allowedOrigins: string[],
-): string {
-  return (
-    `Error: External navigation blocked for this task. Target ${target} is outside ` +
-    `the allowed origin${allowedOrigins.length === 1 ? "" : "s"}: ${allowedOrigins.join(", ")}. ` +
-    "Stay in the current application and use in-page navigation, application search, or a direct URL on the allowed origin."
-  );
-}
-
-async function waitForTabUrlChange(
-  tabId: number,
-  previousUrl: string | undefined,
-  timeoutMs = 2500,
-): Promise<string | null> {
-  const isTransientUrl = (url: string): boolean =>
-    !url || url === "about:blank" || url.startsWith("chrome://newtab");
-
-  const startedAt = Date.now();
-  let fallbackUrl: string | null = null;
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      const currentUrl = tab.url || "";
-      if (currentUrl && currentUrl !== (previousUrl || "")) {
-        if (!isTransientUrl(currentUrl)) {
-          return currentUrl;
-        }
-        fallbackUrl = currentUrl;
-      }
-    } catch {
-      return null;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return fallbackUrl;
-}
-
 const APPLY_LIST_FILTER_SCRIPT_TIMEOUT_MS = 25_000;
-
-async function tryInPageHistoryBack(tabId: number): Promise<void> {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN" as any,
-    func: () => {
-      window.history.back();
-    },
-  });
-}
 
 async function runReadOnlyPageInspector(
   tabId: number,
