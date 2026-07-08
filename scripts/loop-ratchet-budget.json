@@ -2,9 +2,9 @@
   "reason": "RFC LP-15 Phase 11 + RFC LP-16 Phase 0: decomposition ratchet. Each entry is the current size of a landmine file; budgets may ONLY be lowered as code is extracted, never raised. Tighten after every extraction (run `node scripts/loop-ratchet.mjs --report`). loop.ts end-state targets: fileLines 3500, methodCount 80, loopMethodLines 200. The other files' end-state targets are their per-phase exit criteria in RFC LP-16 (kernel facade ~1.5K, tools/index.ts ~1K, orchestrator/index.ts ~3K).",
   "budgets": {
     "apps/extension/src/background/agent/loop.ts": {
-      "fileLines": 10275,
+      "fileLines": 10224,
       "methodCount": 187,
-      "loopMethodLines": 2429
+      "loopMethodLines": 2374
     },
     "apps/extension/src/background/agent/completion-kernel.ts": {
       "fileLines": 5892
