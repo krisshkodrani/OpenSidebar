@@ -135,7 +135,29 @@ const WATCH = {
   outro: { title: "Set it and forget it.", subtitle: "OpenSidebar Watch Mode", note: "Kimi K2.7 Code + GLM 5.2 · Fireworks AI" },
 };
 
-const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH }[argVal("--show", "servicenow")] || SERVICENOW;
+// The full pitch: one presentation across every capability, in three acts,
+// closing with ServiceNow as the "extendable / enterprise" finale.
+const PITCH = {
+  out: "opensidebar-pitch-demo-collage.mp4",
+  intro: {
+    title: "OpenSidebar",
+    subtitle: "An AI agent that drives your browser",
+    note: MODEL_LINE,
+  },
+  scenes: [
+    { section: "On the open web", task: "online-shop", title: "Shop and check out", subtitle: "Adds to cart, applies a coupon, and completes the order", caption: "Add Air Zoom Pegasus 41 to cart · apply coupon SAVE10 · express shipping · checkout" },
+    { task: "cross-page-compose", title: "Read here, act there", subtitle: "Carries data across pages to finish the job", caption: "Reading the dashboard's Total Users, then drafting an email that reports it" },
+    { task: "vendor-onboarding-wizard", title: "Complete a multi-step wizard", subtitle: "Works a conditional form across steps, then reviews before submit", caption: "Completing a multi-step vendor-onboarding wizard, then submitting after review" },
+    { section: "You stay in control", task: "settings-provider", title: "Bring your own provider", subtitle: "Swap providers and per-seat models — your key, nothing hardcoded", caption: "Provider stack: Fireworks · Moonshot · OpenRouter · Xiaomi, with per-seat model overrides" },
+    { task: "watch-restock", title: "Watch Mode", subtitle: "Leave it watching; it speaks up the moment the page changes", caption: 'Watching a product page — flagged "back in stock" the instant it flipped' },
+    { task: "traceviewer-session", title: "Replay any session", subtitle: "Every turn, cost, and screenshot in the built-in trace viewer", caption: 'Replaying "Find Diana Chen": 6 turns, 5/5 trajectory score, $0.062 total' },
+    { section: "Extendable — ServiceNow", task: "order-developer-laptop", title: "Order from the service catalog", subtitle: "Browses the catalog, configures the item, and places the order", caption: 'Ordering 8× "Developer Laptop (Mac)" with a custom software config' },
+    { task: "single-chart-value-retrieval", title: "Read a dashboard chart", subtitle: "Sees the chart and answers a quantitative question", caption: 'Reading a pie chart -> "Unsuccessful" = 1.06%' },
+  ],
+  outro: { title: "Any website today. Your enterprise apps next.", subtitle: "OpenSidebar", note: "Bring your own key · No telemetry · Open source · MIT" },
+};
+
+const SHOW = { servicenow: SERVICENOW, fixtures: FIXTURES, traceviewer: TRACEVIEWER, settings: SETTINGS, watch: WATCH, pitch: PITCH }[argVal("--show", "servicenow")] || SERVICENOW;
 const INTRO = SHOW.intro;
 const SCENES = SHOW.scenes;
 const OUTRO = SHOW.outro;
@@ -217,6 +239,32 @@ function cardParts(card) {
   return parts;
 }
 
+// Section-divider card: a small grey kicker ("PART ONE") over a large accent
+// title. Used by multi-act shows (e.g. the pitch) to frame each act.
+const PART_WORDS = ["ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX"];
+function sectionCardParts(title, partIndex) {
+  const kicker = `PART ${PART_WORDS[partIndex] ?? String(partIndex + 1)}`;
+  return [
+    dt(textfile(kicker), GREY, 30, "(w-text_w)/2", "(h/2)-70"),
+    dt(textfile(title), ACCENT, 60, "(w-text_w)/2", "(h/2)+2"),
+  ];
+}
+const SECTION_CARD_SEC = 2.6;
+function makeSectionCard(title, partIndex, name) {
+  const out = path.join(tmp, `${name}.mp4`);
+  const vf = [
+    ...sectionCardParts(title, partIndex),
+    `fade=t=in:st=0:d=${FADE}`,
+    `fade=t=out:st=${(SECTION_CARD_SEC - FADE).toFixed(2)}:d=${FADE}`,
+  ].join(",");
+  sh("ffmpeg", [
+    "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=${SECTION_CARD_SEC}:r=${FPS}`,
+    "-vf", vf, ...X264, out,
+  ]);
+  segments.push(out);
+  console.log(`  section: ${title}`);
+}
+
 // The bottom band (caption + persistent model bar) applied to every scene.
 function overlayBand(caption) {
   const bandH = 150;
@@ -272,6 +320,14 @@ if (args.includes("--stills")) {
   cardStill(INTRO, "01-intro-card.png");
   cardStill(SCENES[0], "02-title-card.png");
   cardStill(OUTRO, "04-outro-card.png");
+  const firstSection = SCENES.find((x) => x.section)?.section;
+  if (firstSection) {
+    sh("ffmpeg", [
+      "-y", "-f", "lavfi", "-i", `color=c=${BG}:s=${W}x${H}:d=1:r=1`,
+      "-vf", sectionCardParts(firstSection, 0).join(","),
+      "-frames:v", "1", path.join(outDir, "05-section-card.png"),
+    ]);
+  }
   const s = SCENES.find((x) => newestClipForTask(x.task)) || SCENES[0];
   const clip = newestClipForTask(s.task);
   if (clip) {
@@ -289,12 +345,19 @@ if (args.includes("--stills")) {
 console.log("Building demo collage…");
 makeCard(INTRO, "intro");
 let missing = [];
+let currentSection = null;
+let partIndex = -1;
 SCENES.forEach((s, i) => {
   const clip = newestClipForTask(s.task);
   if (!clip) {
     missing.push(s.task);
     console.log(`  !! no clip found for ${s.task} — skipping`);
     return;
+  }
+  if (s.section && s.section !== currentSection) {
+    currentSection = s.section;
+    partIndex += 1;
+    makeSectionCard(s.section, partIndex, `section${i}`);
   }
   makeCard(s, `card${i}`);
   makeScene(clip, `scene${i}`, s.caption);
