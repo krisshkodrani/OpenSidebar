@@ -28,7 +28,7 @@ const argVal = (n, d) => {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d;
 };
 const WHICH = argVal("--video", "promo");
-const VOICE = argVal("--voice", "21m00Tcm4TlvDq8ikWAM"); // "Rachel" — warm professional female
+const VOICE = argVal("--voice", "XrExE9yKIg1WjnnlVkGX"); // "Matilda" — warm narrative female (bake-off winner)
 const MUSIC = argVal("--music", "");
 
 // ---- narration specs --------------------------------------------------------
@@ -60,7 +60,8 @@ const SPECS = {
       { at: 75.5, maxSec: 12.4, text: "Watch Mode keeps an eye on a page for you, and speaks up the moment something changes." },
       { at: 91.5, maxSec: 12.4, text: "And everything is observable — a built-in observability workspace records every run: every decision, every screenshot, and the exact cost." },
       { at: 107.0, maxSec: 20.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — here, ordering from the service catalog end to end. The same pattern can teach the agent your own enterprise apps." },
-      { at: 127.6, maxSec: 3.1, text: "OpenSidebar. Free and open source — make it yours." },
+      // Starts on the finale's fade-out so the sign-off lands on the outro card.
+      { at: 127.0, maxSec: 3.7, text: "OpenSidebar. Open source — make it yours." },
     ],
   },
 };
