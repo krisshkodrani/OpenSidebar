@@ -11,6 +11,7 @@ import { registerAgentControlTools } from "./register-agent-control";
 import { registerCookieTools } from "./register-cookies";
 import { registerHistoryTools } from "./register-history";
 import { registerInspectionTools } from "./register-inspection";
+import { registerTabTools } from "./register-tabs";
 import {
   runReadOnlyPageInspector,
   runAsyncReadOnlyPageInspector,
@@ -34,8 +35,8 @@ import {
   formatProfileFieldsForToolResult,
   resolveProfileFields,
 } from "../../utils/personal-profile";
-import { isUsableTabUrl } from "../infrastructure/tab-resolution";
-import { workspaceManager } from "../workspaces/manager";
+import {  } from "../infrastructure/tab-resolution";
+import {  } from "../workspaces/manager";
 import {
   clearTabReady,
   ensureContentScript,
@@ -45,9 +46,6 @@ import {
 import {
   NAVIGATE_DEF,
   SEARCH_KNOWLEDGE_BASE_DEF,
-  CREATE_TAB_DEF,
-  CLOSE_TAB_DEF,
-  SWITCH_TAB_DEF,
   WAIT_DEF,
   DONE_DEF,
   READ_ELEMENT_DEF,
@@ -77,7 +75,6 @@ import {
   waitForNavigation,
 } from "./bridge";
 import {
-  getTabUrl,
   withTimeout,
 } from "./helpers";
 // ServiceNow is a quarantined adapter — the generic tools layer talks to it
@@ -1417,87 +1414,7 @@ export function registerTools() {
     },
   );
 
-  toolRegistry.register(ToolName.CREATE_TAB, CREATE_TAB_DEF, async (args) => {
-    const allowedOrigins = await getAllowedNavigationOrigins();
-    if (allowedOrigins.length > 0) {
-      const targetOrigin = normalizeOrigin(args.url as string);
-      const normalizedAllowed = allowedOrigins
-        .map(normalizeOrigin)
-        .filter((origin): origin is string => Boolean(origin));
-      if (!targetOrigin || !normalizedAllowed.includes(targetOrigin)) {
-        return navigationBoundaryError(
-          args.url as string,
-          normalizedAllowed.length > 0 ? normalizedAllowed : allowedOrigins,
-        );
-      }
-    }
-    const urlResult = sanitizeUrl(args.url as string);
-    if (!urlResult.ok) return `Error: ${urlResult.error}`;
-    logger.info("tools", "create_tab", { url: urlResult.value });
-    const tab = await chrome.tabs.create({ url: urlResult.value });
-    logger.info("tools", "create_tab created", {
-      tabId: tab.id,
-      url: urlResult.value,
-    });
-
-    // Auto-add to active workspace if exists
-    const activeWorkspace = await workspaceManager.getActiveWorkspace();
-    if (activeWorkspace && tab.id) {
-      try {
-        await workspaceManager.addTabToWorkspace(tab.id, activeWorkspace.id);
-        logger.info("tools", "create_tab grouped", {
-          tabId: tab.id,
-          workspace: activeWorkspace.name,
-        });
-        return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value} (added to ${activeWorkspace.name})`;
-      } catch (e) {
-        logger.warn("tools", "Failed to auto-group tab to workspace", {
-          tabId: tab.id,
-          error: e,
-        });
-      }
-    }
-
-    return `Created new tab (ID: ${tab.id}) with URL: ${urlResult.value}`;
-  });
-
-  toolRegistry.register(
-    ToolName.CLOSE_TAB,
-    CLOSE_TAB_DEF,
-    async (args, tabId) => {
-      const targetTabId = (args.tabId as number) || tabId;
-      logger.info("tools", "close_tab", {
-        targetTabId,
-        requestedTabId: args.tabId,
-        currentTabId: tabId,
-      });
-      try {
-        await chrome.tabs.remove(targetTabId);
-        return `Closed tab ${targetTabId}`;
-      } catch (e: any) {
-        return `Error closing tab ${targetTabId}: ${e.message}`;
-      }
-    },
-  );
-
-  toolRegistry.register(ToolName.SWITCH_TAB, SWITCH_TAB_DEF, async (args) => {
-    const targetTabId = args.tabId as number;
-    logger.info("tools", "switch_tab", { targetTabId });
-    try {
-      const targetTab = await chrome.tabs.get(targetTabId);
-      const targetUrl = getTabUrl(targetTab);
-      if (!isUsableTabUrl(targetUrl)) {
-        return (
-          `Error: Cannot switch to tab ${targetTabId} (${targetUrl || "about:blank"}) for this web task. ` +
-          "Browser, extension, blank, and internal pages cannot run page tools. Use a controllable web tab from list_tabs or navigate the current page instead."
-        );
-      }
-      await chrome.tabs.update(targetTabId, { active: true });
-      return `Switched to tab ${targetTabId}. Fresh page snapshot is available.`;
-    } catch (e: any) {
-      return `Error switching to tab ${targetTabId}: ${e.message}`;
-    }
-  });
+  registerTabTools(toolRegistry);
 
   toolRegistry.register(ToolName.WAIT, WAIT_DEF, async (args) => {
     // Fallback — normally intercepted in loop.ts for re-orientation
@@ -5188,6 +5105,7 @@ export function registerTools() {
     `${toolRegistry.getDefinitions().length} tools registered`,
   );
 }
+
 
 
 
