@@ -22,7 +22,6 @@ import {
 } from "../../utils";
 import {
 } from "../../utils/provider-keys";
-import { listPromptDescriptors } from "../../prompts";
 import {
   buildPersonalProfilePlannerContext,
   EMPTY_PERSONALIZATION_STATE,
@@ -57,6 +56,11 @@ import {
 } from "./types";
 import { buildProgrammaticSummary } from "./task-summary";
 import { buildResumeInput } from "./resume-input";
+import {
+  buildTaskManifest,
+  buildSyntheticPendingInteractionSummary,
+  buildSubtaskResults,
+} from "./builders";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -541,26 +545,6 @@ export class Orchestrator {
       this.buildTabCoordinationTraceData(task, { action, ...detail }),
       "system",
     );
-  }
-
-  private buildTaskManifest(
-    task: OrchestratorTask,
-    _input: OrchestratorStartInput,
-  ): RunManifest {
-    const promptSet = listPromptDescriptors([
-      "orchestrator.verifier.system",
-      "orchestrator.advisory.system",
-    ]);
-    return {
-      runId: task.runId || task.id,
-      correlationId: task.runId || task.id,
-      environment: "production",
-      startedAt: new Date().toISOString(),
-      source: "background.orchestrator",
-      promptSet,
-      taskId: task.id,
-      workspaceId: task.workspaceId,
-    };
   }
 
   private createWorkspaceLanePools(): WorkspaceLanePools {
@@ -1327,20 +1311,6 @@ export class Orchestrator {
     return task.query.startsWith(E2E_SYNTHETIC_QUERY_PREFIX);
   }
 
-  private buildSyntheticPendingInteractionSummary(
-    interaction: PendingUserInteraction,
-  ): string {
-    if (interaction.kind === "approval") {
-      return interaction.approved
-        ? `E2E synthetic approval recovered and approved for ${interaction.toolName}.`
-        : `E2E synthetic approval recovered and denied for ${interaction.toolName}.`;
-    }
-    const answer = String(interaction.answer || "").trim();
-    return answer
-      ? `E2E synthetic clarification recovered and answered: ${answer}`
-      : "E2E synthetic clarification recovered without an answer.";
-  }
-
   private async finalizeSyntheticPendingInteractionTask(
     task: OrchestratorTask,
   ): Promise<void> {
@@ -1349,7 +1319,7 @@ export class Orchestrator {
       return;
     }
 
-    const summary = this.buildSyntheticPendingInteractionSummary(interaction);
+    const summary = buildSyntheticPendingInteractionSummary(interaction);
     const terminalStatus =
       interaction.kind === "approval" && interaction.approved === false
         ? "failed"
@@ -1389,7 +1359,7 @@ export class Orchestrator {
       totalTurnsUsed: 0,
       totalTimeMs: task.finishedAt - (task.startedAt || task.createdAt),
       summary,
-      subtaskResults: this.buildSubtaskResults(task),
+      subtaskResults: buildSubtaskResults(task),
       urlHistory: [],
       metrics: task.sessionMetrics,
       terminationReason: terminalStatus === "failed" ? summary : undefined,
@@ -1636,7 +1606,7 @@ export class Orchestrator {
     this.initializeWorkspaceRuntime(task.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
     await this.emitTraceManifest({
-      ...this.buildTaskManifest(task, resumeInput),
+      ...buildTaskManifest(task, resumeInput),
       source:
         source === "backend"
           ? "background.orchestrator.backend-recovery"
@@ -2034,7 +2004,7 @@ export class Orchestrator {
       }
     } else {
       // Task finished (completed / failed / stopped) — re-send completion
-      const subtaskResults: SubtaskResult[] = this.buildSubtaskResults(task);
+      const subtaskResults: SubtaskResult[] = buildSubtaskResults(task);
       const completed = subtaskResults.filter(
         (r) => r.status === "completed",
       ).length;
@@ -2224,7 +2194,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers, task);
     await this.persistTaskCheckpoint(task);
-    await this.emitTraceManifest(this.buildTaskManifest(task, input));
+    await this.emitTraceManifest(buildTaskManifest(task, input));
     this.emitTraceEvent(
       task,
       "task_started",
@@ -4878,7 +4848,7 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = this.buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task);
     const penalizedSkipped = task.nodes.filter(
       (node) =>
         node.status === "skipped" && !isUnpenalizedGoalShortcutSkip(node),
@@ -5584,27 +5554,6 @@ export class Orchestrator {
     });
   }
 
-  private buildSubtaskResults(task: OrchestratorTask): SubtaskResult[] {
-    const taskStopped = task.status === "stopped" || task.status === "stopping";
-    return task.nodes.map((node) => ({
-      description: node.description,
-      status:
-        node.status === "completed"
-          ? "completed"
-          : isUserSkippedNode(node)
-            ? "skipped"
-            : taskStopped &&
-                (node.status !== "failed" ||
-                  /(?:stopped|cancelled) by user/i.test(
-                    `${node.result || ""}\n${node.error || ""}`,
-                  ))
-              ? "stopped"
-              : "failed",
-      turnsUsed: 0,
-      result: node.result || node.error || "",
-    }));
-  }
-
   private async sendTerminationCompletion(
     task: OrchestratorTask,
     terminationReason: string,
@@ -5617,7 +5566,7 @@ export class Orchestrator {
       payload: { delta: "", done: true },
     });
 
-    const subtaskResults = this.buildSubtaskResults(task);
+    const subtaskResults = buildSubtaskResults(task);
     const completed = subtaskResults.filter(
       (r) => r.status === "completed",
     ).length;
