@@ -43,3 +43,14 @@ export function tokenizeCompletionText(value: string): string[] {
     ...new Set(normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? []),
   ].filter((token) => !LABEL_STOPWORDS.has(token));
 }
+
+export function importantLabelTokens(label: string): string[] {
+  return [
+    ...new Set(
+      normalizeText(label)
+        .match(/[a-z0-9][a-z0-9-]{3,}/g)
+        ?.filter((token) => !LABEL_STOPWORDS.has(token))
+        .slice(0, 12) ?? [],
+    ),
+  ];
+}

@@ -9,6 +9,17 @@ import type { WorkflowConfirmationAction } from "./workflow-confirmation-types";
 export type CompletionCandidateSource = "model_done" | "trusted_tool";
 export type CompletionConfidence = "medium" | "high";
 
+export type ChoiceKind = "checkbox" | "radio";
+
+export interface ChoiceObservation {
+  elementId: number;
+  stableKey: string;
+  label: string;
+  checked: boolean;
+  kind: ChoiceKind;
+  questionNumber?: number;
+}
+
 export type FormFieldKind = "text" | "select" | "checkbox" | "radio";
 
 export interface FormFieldObservation {
