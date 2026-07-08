@@ -45,6 +45,10 @@ const SCREENSHOTS = [
     src: ".artifacts/e2e/videos/2026-07-08/stills/smoke-perception.png",
     caption: "The agent works from the same screenshot you see",
   },
+  {
+    src: ".artifacts/e2e/videos/2026-07-08/stills/settings-provider.png",
+    caption: "Your provider, your models — bring your own key",
+  },
 ];
 
 const TAGLINE = "Your browser, driven by AI";
