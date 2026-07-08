@@ -122,3 +122,23 @@ too flaky to record reliably; pick a clean single-capability fallback instead.
 
 Sign-off flow: render the `--stills` mockups first and get approval on the look
 before spending credits recording and encoding the full video.
+
+## The promo cut (`scripts/build-promo-cut.mjs`)
+
+The montage shows are presentation-style (card → scene → card). The **promo cut**
+is the ~60s cinematic edit for hero slots (Chrome Web Store promo video, YouTube):
+
+- **Cold open on product** — no leading logo card; the hook line rides a
+  lower-third over the first scene. Branding moves to the CTA end card.
+- **Lower thirds, not title cards** — a slim band with the beat's headline plus a
+  small persistent brand/model chip bottom-right.
+- **Speed ramping** — each beat is `[{from,to,speed}]` segments: fast traversal,
+  then the payoff moment at ~1× (order confirmed, draft visible, suggestion pops,
+  request submitted). Windows are calibrated to the pinned takes in
+  `.artifacts/demo-clips.json` — re-probe if you re-pin. Trim segments at the
+  INPUT (`-ss/-t` before `-i`) so `setpts` retimes exactly the window.
+- **Animated cards** — the divider + CTA get a slow `zoompan` push-in and
+  staggered per-line `drawtext` alpha fades.
+- **Music** — `--music <file>` mixes a user-supplied bed with fade in/out; the cut
+  must still read fully muted (sound-off autoplay is the default context).
+- Keep the pitch/montages for long-form; the promo is the first-touch asset.
