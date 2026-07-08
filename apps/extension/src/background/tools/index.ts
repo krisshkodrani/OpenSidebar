@@ -1,6 +1,5 @@
 import {
   chromeDownloadsPort,
-  chromeHistoryPort,
   chromeSearchPort,
   chromeWindowsPort,
 } from "../environment/chrome";
@@ -10,6 +9,7 @@ import { logger } from "../../utils";
 import { registerInteractionTools } from "./register-interaction";
 import { registerAgentControlTools } from "./register-agent-control";
 import { registerCookieTools } from "./register-cookies";
+import { registerHistoryTools } from "./register-history";
 import {
   runReadOnlyPageInspector,
   runAsyncReadOnlyPageInspector,
@@ -59,7 +59,6 @@ import {
   SET_CHECKBOX_DEF,
   CLICK_COORDINATES_DEF,
   DOWNLOAD_FILE_DEF,
-  SEARCH_HISTORY_DEF,
   INSPECT_HIDDEN_DEF,
   INSPECT_CHART_DEF,
   INSPECT_REGION_DEF,
@@ -1780,32 +1779,7 @@ export function registerTools() {
 
   registerCookieTools(toolRegistry);
 
-  toolRegistry.register(
-    ToolName.SEARCH_HISTORY,
-    SEARCH_HISTORY_DEF,
-    async (args) => {
-      const query = args.query as string;
-      const maxResults = (args.maxResults as number) || 20;
-      logger.info("tools", "search_history", { query, maxResults });
-      try {
-        const items = await chromeHistoryPort.search({
-          text: query,
-          maxResults,
-        });
-        if (items.length === 0) return "No history entries found.";
-        return items
-          .map((item: any) => {
-            const lastVisit = item.lastVisitTime
-              ? new Date(item.lastVisitTime).toISOString().slice(0, 16)
-              : "unknown";
-            return `${item.title || "(untitled)"} — ${item.url} (visited ${item.visitCount || 1} time(s), last: ${lastVisit})`;
-          })
-          .join("\n");
-      } catch (e: any) {
-        return `Error searching history: ${e.message}`;
-      }
-    },
-  );
+  registerHistoryTools(toolRegistry);
 
   toolRegistry.register(
     ToolName.INSPECT_HIDDEN,
@@ -5898,6 +5872,7 @@ export function registerTools() {
     `${toolRegistry.getDefinitions().length} tools registered`,
   );
 }
+
 
 
 
