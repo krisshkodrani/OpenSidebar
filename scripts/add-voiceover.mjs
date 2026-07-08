@@ -48,20 +48,26 @@ const SPECS = {
   pitch: {
     in: "opensidebar-pitch-demo-collage.mp4",
     out: "opensidebar-pitch-demo-collage-voiced.mp4",
-    // Structure: intro 3.0 · section 2.6 · [card 3.0 + scene 13.0]×3 · section 2.6 ·
-    // [card 3.0 + scene 13.0]×3 · section 2.6 · [card 3.0 + scene 18.0] · outro 3.0
-    // = 130.8s total (chart scene removed; extended extensibility finale).
+    // Structure (extended tour, --scene-sec 15): intro 3.0 · section 2.6 ·
+    // [card 3.0 + scene 15.0]×5 · section 2.6 · [card 3.0 + scene 15.0]×4 ·
+    // section 2.6 · [card 3.0 + scene 18.0] · [card 3.0 + scene 15.0] · outro 3.0
+    // = 214.8s. Scene starts: 8.6/26.6/44.6/62.6/80.6 · 101.2/119.2/137.2/155.2 ·
+    // 175.8(18s)/196.8.
     lines: [
-      { at: 0.5, maxSec: 7.8, text: "This is OpenSidebar — an open-source AI agent that drives your browser. Part one: the open web." },
-      { at: 8.9, maxSec: 12.4, text: "Give it a shopping task and it works the whole flow: add to cart, apply the coupon, choose shipping, and place the order." },
-      { at: 24.9, maxSec: 12.4, text: "It carries data across pages — reading this dashboard, then drafting an email that reports the numbers." },
-      { at: 40.9, maxSec: 12.4, text: "Multi-step wizards are no problem: it fills each step, then reviews before submitting." },
-      { at: 56.4, maxSec: 15.4, text: "Part two: you stay in control. It runs on your own key — pick your provider and models in settings." },
-      { at: 75.5, maxSec: 12.4, text: "Watch Mode keeps an eye on a page for you, and speaks up the moment something changes." },
-      { at: 91.5, maxSec: 12.4, text: "And everything is observable — a built-in observability workspace records every run: every decision, every screenshot, and the exact cost." },
-      { at: 107.0, maxSec: 20.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — here, ordering from the service catalog end to end. The same pattern can teach the agent your own enterprise apps." },
+      { at: 0.5, maxSec: 7.9, text: "This is OpenSidebar — an open-source AI agent doing real work in your browser. Part one: the open web." },
+      { at: 8.9, maxSec: 17.4, text: "Give it a task in plain English. A planner breaks it into steps, an executor drives the page, and a verifier checks the result. Watch it find the product, apply the coupon, pick express shipping, and place the order." },
+      { at: 26.9, maxSec: 17.4, text: "It carries context across pages — no copy-paste, no tab juggling. Here it reads the key numbers from a dashboard, then opens the mail client and drafts a reply that reports them." },
+      { at: 44.9, maxSec: 17.4, text: "Long, conditional forms are where automation usually breaks. OpenSidebar works the wizard step by step, keeps track of what it has already filled, and reviews everything before submitting." },
+      { at: 62.9, maxSec: 17.4, text: "It can complete a real job application — filling the candidate's details field by field. And for consequential actions like the final submit, it pauses and leaves the last word to you." },
+      { at: 80.9, maxSec: 17.4, text: "Need something buried in a paginated directory? It searches, pages through the results, and reports back exactly the fields you asked for." },
+      { at: 95.9, maxSec: 20.0, text: "Part two: you stay in control. There's no subscription and no middleman — you bring your own API key and pick your provider and models: Fireworks, Moonshot, OpenRouter, or Xiaomi, with a separate choice for every seat." },
+      { at: 119.5, maxSec: 17.4, text: "Watch Mode turns the agent into a quiet observer: give it a standing instruction and leave the tab open. The moment the page changes, it speaks up — here, the instant this product is back in stock." },
+      { at: 137.5, maxSec: 17.4, text: "Everything is observable. The built-in observability workspace records every run — each decision the model made, what it saw on screen, and the exact cost. This entire task ran for about six cents." },
+      { at: 155.5, maxSec: 17.4, text: "Zoom out, and the same workspace shows the whole fleet: success rates, failure clusters, and spend across hundreds of runs — stored locally; nothing leaves your machine." },
+      { at: 170.5, maxSec: 22.0, text: "Part three: it's built to be extended. ServiceNow support ships as an adapter in the open-source repo — watch it navigate the service catalog, configure a laptop with the requested software, and submit the order end to end." },
+      { at: 197.1, maxSec: 17.4, text: "The same adapter searches the knowledge base, filters lists, and sorts natively. And the pattern is yours to copy — a custom adapter and skills can teach the agent your own enterprise apps." },
       // Starts on the finale's fade-out so the sign-off lands on the outro card.
-      { at: 127.0, maxSec: 3.7, text: "OpenSidebar. Open source — make it yours." },
+      { at: 211.9, maxSec: 3.5, text: "OpenSidebar. Open source — make it yours." },
     ],
   },
 };
