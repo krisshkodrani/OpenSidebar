@@ -4,7 +4,6 @@ import { extractedFactToCorpusEntry } from "../memory/trusted-corpus-migration";
 import { AgentLoop } from "../agent";
 import {
   AgentStatus,
-  AgentStep,
   EscalationOption,
   EscalationOptionId,
   EscalationPacket,
@@ -75,6 +74,11 @@ import {
   notifyTaskCompletion,
   sendMessage,
 } from "./task-messaging";
+import {
+  emitLaneIsolationStep,
+  emitVerifierStep,
+  sendStatus,
+} from "./status-emitters";
 import {
   getNodeToolProfile,
   buildParallelRunState,
@@ -724,28 +728,6 @@ export class Orchestrator {
     return isLaneIsolated(state);
   }
 
-  private emitLaneIsolationStep(
-    workspaceId: string,
-    state: LaneRuntimeState,
-    detail: string,
-  ): void {
-    sendMessage({
-      type: "AGENT_STEP",
-      workspaceId,
-      payload: {
-        step: {
-          id: crypto.randomUUID(),
-          type: "warning",
-          label: `${state.lane} lane isolated`,
-          detail,
-          status: "done",
-          timestamp: Date.now(),
-        },
-        update: false,
-      },
-    });
-  }
-
   private async executeLaneOperation<T>(
     task: Pick<OrchestratorTask, "id" | "workspaceId">,
     lane: RuntimeLane,
@@ -844,7 +826,7 @@ export class Orchestrator {
           },
           lane,
         );
-        this.emitLaneIsolationStep(task.workspaceId, state, failure.detail);
+        emitLaneIsolationStep(task.workspaceId, state, failure.detail);
         throw new LaneIsolationError(
           lane,
           state.policy.isolationCooldownMs,
@@ -1313,7 +1295,7 @@ export class Orchestrator {
       payload: completionPayload,
     });
     notifyTaskCompletion(task, completionPayload);
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
       terminalStatus === "completed" ? "Task complete" : "Task failed",
@@ -1367,7 +1349,7 @@ export class Orchestrator {
       return;
     }
 
-    this.sendStatus(task.workspaceId, AgentStatus.ACTING, "Resuming...");
+    sendStatus(task.workspaceId, AgentStatus.ACTING, "Resuming...");
     this.sendProgress(task);
     this.runTask(task, resumeInput).catch(async (error) => {
       logger.error("orchestrator", "Resumed interaction task failed", {
@@ -1384,7 +1366,7 @@ export class Orchestrator {
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
-      this.sendStatus(
+      sendStatus(
         task.workspaceId,
         AgentStatus.ERROR,
         "Task failed after resuming from user interaction",
@@ -1608,7 +1590,7 @@ export class Orchestrator {
         pendingSubtasks,
       },
     });
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       hasPendingInteraction && !pendingInteractionResolved
         ? AgentStatus.PAUSED
@@ -1655,7 +1637,7 @@ export class Orchestrator {
       await this.clearTaskCheckpoint(task.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
-      this.sendStatus(
+      sendStatus(
         task.workspaceId,
         AgentStatus.ERROR,
         "Recovered task failed",
@@ -1843,7 +1825,7 @@ export class Orchestrator {
     this.tasksByWorkspace.set(input.workspaceId, task);
     this.initializeWorkspaceRuntime(input.workspaceId, task.maxWorkers);
     await this.persistTaskCheckpoint(task);
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.PAUSED,
       "Awaiting user input...",
@@ -1911,13 +1893,13 @@ export class Orchestrator {
           payload: cached.payload,
         });
       }
-      this.sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
+      sendStatus(workspaceId, AgentStatus.IDLE, "No active task");
       return;
     }
 
     if (task.status === "running" || task.status === "planning") {
       // Task is in-flight — re-send current status + progress
-      this.sendStatus(
+      sendStatus(
         workspaceId,
         task.status === "planning"
           ? AgentStatus.THINKING
@@ -1988,7 +1970,7 @@ export class Orchestrator {
           payload: { ...task.sessionMetrics },
         });
       }
-      this.sendStatus(workspaceId, AgentStatus.IDLE, "Task finished");
+      sendStatus(workspaceId, AgentStatus.IDLE, "Task finished");
     }
   }
 
@@ -2148,7 +2130,7 @@ export class Orchestrator {
     );
     this.emitTabCoordinationState(task, "initialized");
 
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.THINKING,
       "Planning task...",
@@ -2391,7 +2373,7 @@ export class Orchestrator {
         { taskId: task.id, phase: "planning" },
         "system",
       );
-      this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+      sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
       resetTabGroupAppearance(task.workspaceId);
       return;
     }
@@ -2458,7 +2440,7 @@ export class Orchestrator {
           { taskId: task.id },
           "system",
         );
-        this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
+        sendStatus(task.workspaceId, AgentStatus.IDLE, "Plan cancelled");
         resetTabGroupAppearance(task.workspaceId);
         return;
       }
@@ -2524,7 +2506,7 @@ export class Orchestrator {
     await this.persistTaskCheckpoint(task);
 
     this.sendProgress(task);
-    this.sendStatus(
+    sendStatus(
       input.workspaceId,
       AgentStatus.ACTING,
       "Executing subtasks...",
@@ -2545,7 +2527,7 @@ export class Orchestrator {
         task,
         `Task failed: ${error instanceof Error ? error.message : "unexpected error"}`,
       );
-      this.sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
+      sendStatus(input.workspaceId, AgentStatus.ERROR, "Task failed");
       resetTabGroupAppearance(input.workspaceId);
       this.tasksByWorkspace.delete(task.workspaceId);
       this.cleanupWorkspaceRuntime(task.workspaceId);
@@ -3319,7 +3301,7 @@ export class Orchestrator {
             );
           }
           this.armPendingInteractionTimeout(task);
-          this.sendStatus(
+          sendStatus(
             task.workspaceId,
             AgentStatus.PAUSED,
             result.outcome === "awaiting_approval"
@@ -3566,7 +3548,7 @@ export class Orchestrator {
               rerouteObjective: verification.rerouteObjective,
               handoffContextChars: verifierHandoffContext.length,
             });
-            this.emitVerifierStep(
+            emitVerifierStep(
               task.workspaceId,
               node.id,
               verification.reason,
@@ -4279,7 +4261,7 @@ export class Orchestrator {
         task.pendingInteraction &&
         !isPendingInteractionResolved(task.pendingInteraction)
       ) {
-        this.sendStatus(
+        sendStatus(
           task.workspaceId,
           AgentStatus.PAUSED,
           "Awaiting user input...",
@@ -4921,7 +4903,7 @@ export class Orchestrator {
       "system",
     );
 
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       AgentStatus.IDLE,
       "Task complete",
@@ -5126,7 +5108,7 @@ export class Orchestrator {
       { taskId: task.id, phase },
       "system",
     );
-    this.sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
+    sendStatus(task.workspaceId, AgentStatus.IDLE, "Stopped");
     void agentNotifications.notifyStopped({
       workspaceId: task.workspaceId,
       taskId: task.id,
@@ -5190,7 +5172,7 @@ export class Orchestrator {
       }
       pools?.planner.clear();
       pools?.verifier.clear();
-      this.sendStatus(
+      sendStatus(
         workspaceId,
         AgentStatus.ACTING,
         "Stopping at next safe point...",
@@ -5229,7 +5211,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.pause();
     }
-    this.sendStatus(workspaceId, AgentStatus.PAUSED, "Paused by user");
+    sendStatus(workspaceId, AgentStatus.PAUSED, "Paused by user");
   }
 
   private resumeWorkspace(workspaceId: string): void {
@@ -5237,7 +5219,7 @@ export class Orchestrator {
     for (const worker of workers?.values() || []) {
       worker.loop.resume();
     }
-    this.sendStatus(workspaceId, AgentStatus.ACTING, "Resumed");
+    sendStatus(workspaceId, AgentStatus.ACTING, "Resumed");
   }
 
   private async createWorkerTab(
@@ -5524,26 +5506,6 @@ export class Orchestrator {
       payload: completionPayload,
     });
     notifyTaskCompletion(task, completionPayload);
-  }
-
-  private emitVerifierStep(
-    workspaceId: string,
-    nodeId: string,
-    reason: string,
-  ): void {
-    const step: AgentStep = {
-      id: crypto.randomUUID(),
-      type: "info",
-      label: `Verifier: checked node ${nodeId.slice(0, 6)}`,
-      detail: reason,
-      status: "done",
-      timestamp: Date.now(),
-    };
-    sendMessage({
-      type: "AGENT_STEP",
-      workspaceId,
-      payload: { step, update: false },
-    });
   }
 
   private buildEscalationPacket(input: {
@@ -5848,7 +5810,7 @@ export class Orchestrator {
   ): Promise<{ decision: "approve" | "cancel"; feedback?: string }> {
     const confirmationId = crypto.randomUUID();
 
-    this.sendStatus(
+    sendStatus(
       task.workspaceId,
       AgentStatus.PAUSED,
       "Awaiting plan confirmation...",
@@ -5907,20 +5869,6 @@ export class Orchestrator {
         });
       },
     );
-  }
-
-  private sendStatus(
-    workspaceId: string,
-    status: AgentStatus,
-    detail: string,
-    completionStatus?: "completed" | "partial" | "failed" | "stopped",
-  ): void {
-    sendMessage({
-      type: "AGENT_STATUS",
-      workspaceId,
-      payload: { status, detail, completionStatus },
-    });
-    updateTabGroupAppearance(workspaceId, { status, completionStatus });
   }
 
 }
