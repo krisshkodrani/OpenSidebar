@@ -11,36 +11,49 @@
 </p>
 
 <p align="center">
-  Open-source Chrome extension that turns your browser into an AI-powered agent.<br />
-  Give it a task in plain English and it navigates, clicks, types, and completes multi-step workflows with configurable safety gates.<br />
-  Bring your own provider key. No subscription, no telemetry, no backend — the extension is fully self-contained.
+  Your browser, driven by AI. OpenSidebar is an open-source Chrome extension that puts an autonomous agent in your side panel —<br />
+  describe a task in plain English and it sees the page, clicks, types, and carries multi-step work across tabs to done.<br /><br />
+  Bring your own API key. No subscription, no telemetry, no backend — everything runs in your browser.
 </p>
 
 ---
 
+## Demos
+
+See OpenSidebar drive real tasks end-to-end — no integrations, no scripts. Powered by **Kimi K2.7 Code** (executor, vision) and **GLM 5.2** (planner) on **Fireworks AI**.
+
+### On the open web
+
+Shopping checkout, a job application, a multi-step onboarding wizard, reading data on one page to draft an email on another, and pulling a record from a directory.
+
+https://github.com/user-attachments/assets/84ade244-84cc-4343-a01b-9caf76aeda0c
+
+### Extendables — ServiceNow
+
+The same agent driving a specific enterprise app: order from the service catalog, read a dashboard chart, filter and sort lists, and search the knowledge base.
+
+https://github.com/user-attachments/assets/1ebc2dfc-e1ee-4d6c-9e26-2a4f2e783a0b
+
+<sub>Recorded live. Source clips: <a href="https://github.com/krisshkodrani/OpenSidebar/issues/72">#72</a>.</sub>
+
 ## What It Does
 
-OpenSidebar runs an autonomous agent loop inside a Chrome side panel. You describe what you want done, and the agent perceives the page through vision and DOM snapshots, reasons about the next action, executes browser tools, and verifies progress until the task is complete.
+OpenSidebar runs an autonomous agent loop inside a Chrome side panel: it perceives the page through a live screenshot and a DOM snapshot, reasons about the next action, executes browser tools, and verifies progress until the task is done. For harder tasks, a planner decomposes the goal into subtasks, an executor drives each step, and a verifier confirms completion before moving on — the full run flow is diagrammed in [docs/run-flow.svg](docs/run-flow.svg).
 
 <p align="center">
   <img src="docs/assets/opensidebar-1.png" alt="OpenSidebar side panel running a task" width="800" />
 </p>
 
-For harder tasks, a planner decomposes the goal into subtasks, an executor handles each step, and a verifier confirms completion before moving on. The full run flow is diagrammed in [docs/run-flow.svg](docs/run-flow.svg).
+## Highlights
 
-## Capabilities
-
-**Automation** - Generic browser tools for clicking, typing, scrolling, selecting, tab management, uploads, downloads, and page reading.
-
-**Intelligence** - Two-tier model architecture with automatic escalation, page perception, and recovery when the executor gets stuck.
-
-**Orchestration** - Planner, executor, and verifier lanes for multi-step tasks, with configurable plan confirmation and approval gates.
-
-**Observability** - Full-fidelity traces, structured logs, and a built-in trace viewer.
-
-**Privacy** - API keys stay in Chrome storage. No analytics, no hosted relay, no backend.
-
-**Experimental** - Optional OpenClaw "brain" integration (default-off): expose the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
+- **Sees the page like you do.** The executor is a vision model that works from the live screenshot plus a DOM snapshot — it reads charts, zooms into fine print with `inspect_region`, and handles pages that defeat pure-DOM bots (canvas widgets, closed shadow DOM).
+- **51 browser tools.** Clicking, typing, and scrolling — but also file upload and download, tab and window management, structured table/chart/filter extraction, and prose composition delegated to a dedicated writer model. See the [Tools Reference](./docs/features/tools.md).
+- **Safe by default.** Four approval modes span ask-before-every-action to fully autonomous. Consequential actions pause for your approval, form submits are dry-run first so you approve the exact field values, and high-risk completions are re-checked by a judge model before the agent calls a task done.
+- **Plans, executes, verifies.** A planner decomposes hard tasks, an executor drives each step, and a verifier confirms completion — with automatic escalation to a stronger model when a run gets stuck instead of burning turns.
+- **Remembers what matters.** A local personal profile you review yourself (sensitive fields are consent-gated and encrypted at rest), per-site skills learned from successful runs, and checkpoints that let tasks survive service-worker restarts. See [Personal Profile](./docs/personal-profile.md).
+- **Yours to inspect.** Every session produces a full-fidelity trace you can replay in the built-in [trace viewer](#trace-viewer). API keys live in Chrome storage; traffic goes browser → provider, nothing else.
+- **Speak or type.** Voice input transcribes straight into the composer.
+- **Extendable.** Optional OpenClaw "brain" integration (default-off) exposes the browser as thick MCP tools to an external agent. See the [CHANGELOG](CHANGELOG.md) and `docs/engineering/` RFCs.
 
 ## Quick Start
 
@@ -74,31 +87,21 @@ corepack pnpm run dist
 
 Recommended BYOK modes include Fireworks, OpenRouter, Moonshot/Kimi, and Xiaomi MiMo. See [Providers](./docs/providers.md) for the full provider matrix, key requirements, and failure expectations.
 
-### Main Commands
+Developing or contributing? See [For Developers](#for-developers) below.
 
-Use package scripts through Corepack-managed pnpm for day-to-day work. Nx is the internal task runner behind those scripts. The examples below assume `corepack enable` has activated the pinned pnpm version from `package.json`.
+## Safety & Privacy
 
-```bash
-pnpm run dev      # Local services + trace viewer + loadable dev extension in dist-dev/
-pnpm run dist     # Standalone production/manual extension build into dist/
-pnpm test         # Extension unit/integration tests
-pnpm run verify   # Local confidence gate before commit or push
-pnpm run release:verify # Release confidence gate with production audit
-pnpm run release:package # Build dist/ and write release artifacts
-pnpm run release:preflight # Validate release artifacts before tagging
-pnpm run release:smoke:native-panel # Assisted native Chrome side-panel smoke
-pnpm run doctor   # Diagnose local setup and show next commands
-```
+- Interaction settings range from ask-before-every-action to fully autonomous; high-risk tools can always require explicit approval.
+- API keys are stored locally in Chrome storage and only sent to the providers you configure. No telemetry, no analytics, no hosted relay.
+- Sensitive personal-profile data is consent-gated and encrypted at rest.
+- This is an OSS BYOK preview; review [Known Limitations](./docs/known-limitations.md) before using it on sensitive sites.
+- See [SECURITY.md](./SECURITY.md) and [PRIVACY_POLICY.md](./PRIVACY_POLICY.md).
 
-Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running.
+## For Developers
 
-Use `pnpm run dist` when you want a standalone extension build. It writes the loadable Chrome extension to `dist/`; load or reload that folder in Chrome.
+Use package scripts through Corepack-managed pnpm for day-to-day work; Nx is the internal task runner behind those scripts. The examples below assume `corepack enable` has activated the pinned pnpm version from `package.json`.
 
-`pnpm run dev` includes the local log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process.
-
-## Development
-
-Main commands:
+### Main commands
 
 ```bash
 pnpm run dev                  # Local services + trace viewer + loadable dev extension in dist-dev/
@@ -111,6 +114,8 @@ pnpm run release:preflight    # Validate release artifacts before tagging
 pnpm run release:smoke:native-panel # Assisted native Chrome side-panel smoke
 pnpm run doctor               # Local setup diagnosis
 ```
+
+Use `pnpm run dev` while working. When it prints the CRXJS instruction, load `dist-dev/` as the unpacked extension and keep the dev shell running. It includes the local log server and trace viewer at `http://127.0.0.1:7589/viewer`, plus the Vite/CRXJS dev process. Use `pnpm run dist` when you want a standalone extension build in `dist/`.
 
 Advanced commands:
 
@@ -133,7 +138,7 @@ pnpm exec nx run-many -t lint
 pnpm exec nx run-many -t typecheck
 ```
 
-## Testing
+### Testing
 
 - Use staged E2E runs by default:
   - `pnpm run test:e2e:smoke` for cheap confidence on core browser-agent behavior
@@ -143,7 +148,7 @@ pnpm exec nx run-many -t typecheck
 - Use the WorkArena scripts directly for real benchmark preparation and handoff runs, for example `pnpm exec tsx scripts/workarena-doctor.ts` and `pnpm exec tsx scripts/workarena-handoff.ts --task workarena.servicenow.all-menu --seed 0 --allow-servicenow-reset`.
 - Generated E2E reports are written locally under `.artifacts/e2e/`.
 
-## Measured Performance
+### Measured performance
 
 We benchmark on a neutral public set — [Online-Mind2Web](https://huggingface.co/datasets/osunlp/Online-Mind2Web)
 (verified live-web tasks, WebJudge auto-eval) — rather than only internal
@@ -165,7 +170,7 @@ judge-vs-manual disagreement check alongside the headline rate.
 > (per-task judge outputs), not cherry-picked. Write-mutating tasks are skipped
 > on the live web and counted as skipped, not failed.
 
-## Harness And Skill Philosophy
+### Harness and skill philosophy
 
 OpenSidebar uses benchmarks and fixtures to expose missing general browser-agent capabilities, not as targets for one-off shortcuts. The harness should stay thin: it can reset state, transfer sessions, collect traces, and validate outcomes, but product behavior belongs in the runtime, tools, controllers, prompts, or reusable skills.
 
@@ -173,7 +178,7 @@ For WorkArena and ServiceNow work, the goal is not to hardcode a 100% benchmark 
 
 When a workflow is stable enough to teach, prefer a generic skill with sequencing, evidence expectations, and tool discipline. Site-specific or organization-specific procedures should eventually be user-authored custom skills, not hidden benchmark logic in the harness.
 
-## Repo Layout
+### Repo layout
 
 - [`apps/extension/`](apps/extension/README.md) - browser extension app, side panel UI, service worker, content script, trace viewer, and tests
 - `packages/shared-types/` - shared runtime and domain types
@@ -234,14 +239,6 @@ pnpm run traces:compact              # index, then delete old raw files
 - [Roadmap](./docs/roadmap.md)
 - [Engineering RFCs](./docs/engineering/rfcs/README.md) — active design docs (LP series)
 - [Providers](./docs/providers.md)
-
-## Security & Privacy
-
-- API keys are stored locally and only sent to configured providers.
-- No telemetry or analytics.
-- High-risk tools can require explicit approval depending on your interaction settings.
-- This is an OSS BYOK preview; review [Known Limitations](./docs/known-limitations.md) before using it on sensitive sites.
-- See [SECURITY.md](./SECURITY.md) and [PRIVACY_POLICY.md](./PRIVACY_POLICY.md).
 
 ## License
 

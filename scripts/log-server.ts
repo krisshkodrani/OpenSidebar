@@ -115,7 +115,21 @@ const TRACE_SQLITE_INDEX = join(
 );
 const GOLDEN_DIR = join(PROJECT_ROOT, "evals", "golden");
 const SCREENSHOT_DIR = join(TRACE_DIR, "screenshots");
-const VIEWER_DIR = join(PROJECT_ROOT, "dist", "src", "trace-viewer");
+// The trace viewer is a dev-only page: production builds strip it from dist/
+// (vite.config.ts), so non-production builds emit it into dist-dev/. Prefer
+// dist-dev and keep dist/ as a legacy fallback for older checkouts.
+const VIEWER_BUILD_ROOTS = [
+  join(PROJECT_ROOT, "dist-dev"),
+  join(PROJECT_ROOT, "dist"),
+];
+function resolveViewerBuildRoot(): string | null {
+  for (const root of VIEWER_BUILD_ROOTS) {
+    if (existsSync(join(root, "src", "trace-viewer", "index.html"))) {
+      return root;
+    }
+  }
+  return null;
+}
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 const MAX_ROTATED = 5;
 
@@ -1250,24 +1264,25 @@ const server = createServer(
       return;
     }
 
-    // GET /assets/* — serve built viewer assets from dist/assets/
+    // GET /assets/* — serve built viewer assets from the viewer build root
     if (url.pathname.startsWith("/assets/") && req.method === "GET") {
-      const distDir = join(PROJECT_ROOT, "dist");
-      const filePath = resolve(
-        distDir,
-        ...url.pathname.split("/").filter(Boolean),
-      );
-      if (!filePath.startsWith(distDir)) {
-        sendText(res, "Forbidden", 403);
-        return;
-      }
-      if (existsSync(filePath) && statSync(filePath).isFile()) {
-        const ext = extname(filePath);
-        const contentType = MIME_TYPES[ext] || "application/octet-stream";
-        sendFile(res, filePath, contentType, {
-          "Cache-Control": "public, max-age=31536000, immutable",
-        });
-        return;
+      for (const distDir of VIEWER_BUILD_ROOTS) {
+        const filePath = resolve(
+          distDir,
+          ...url.pathname.split("/").filter(Boolean),
+        );
+        if (!filePath.startsWith(distDir)) {
+          sendText(res, "Forbidden", 403);
+          return;
+        }
+        if (existsSync(filePath) && statSync(filePath).isFile()) {
+          const ext = extname(filePath);
+          const contentType = MIME_TYPES[ext] || "application/octet-stream";
+          sendFile(res, filePath, contentType, {
+            "Cache-Control": "public, max-age=31536000, immutable",
+          });
+          return;
+        }
       }
       sendText(res, "Asset not found", 404);
       return;
@@ -1276,15 +1291,29 @@ const server = createServer(
     // GET /viewer* — serve the built React trace viewer
     if (url.pathname.startsWith("/viewer") && req.method === "GET") {
       try {
+        const buildRoot = resolveViewerBuildRoot();
+        if (!buildRoot) {
+          sendText(
+            res,
+            "Trace viewer not found. It is a dev-only page stripped from the production dist/, " +
+              "so build the dev-surface bundle first: 'pnpm exec nx run extension:build-e2e' " +
+              "(or keep 'pnpm run dev' running). Expected at: " +
+              join(VIEWER_BUILD_ROOTS[0], "src", "trace-viewer"),
+            404,
+          );
+          return;
+        }
+        const viewerDir = join(buildRoot, "src", "trace-viewer");
+
         // Strip /viewer prefix to get the sub-path
         let subPath = url.pathname.slice("/viewer".length);
         if (subPath === "" || subPath === "/") subPath = "/index.html";
 
         const filePath = resolve(
-          VIEWER_DIR,
+          viewerDir,
           ...subPath.split("/").filter(Boolean),
         );
-        if (!filePath.startsWith(VIEWER_DIR)) {
+        if (!filePath.startsWith(viewerDir)) {
           sendText(res, "Forbidden", 403);
           return;
         }
@@ -1296,26 +1325,10 @@ const server = createServer(
         }
 
         // SPA fallback — serve index.html for unknown sub-paths
-        const indexPath = join(VIEWER_DIR, "index.html");
-        if (existsSync(indexPath)) {
-          const html = await readFile(indexPath, "utf-8");
-          setCorsHeaders(res);
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(html);
-          return;
-        }
-
-        // Check if dev mode artifacts exist instead
-        const devArtifact = join(PROJECT_ROOT, "dist", "src", "sidepanel");
-        const hasDevArtifacts = existsSync(devArtifact);
-
-        const message = hasDevArtifacts
-          ? "Trace viewer not found. The dist/ folder contains dev-mode artifacts (from 'pnpm run dev'). Please run 'pnpm run build' first to generate the production trace viewer. Expected at: " +
-            VIEWER_DIR
-          : "Trace viewer not found. Run 'pnpm run build' first. Expected at: " +
-            VIEWER_DIR;
-
-        sendText(res, message, 404);
+        const html = await readFile(join(viewerDir, "index.html"), "utf-8");
+        setCorsHeaders(res);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html);
       } catch (err) {
         sendText(res, `Error serving viewer: ${err}`, 500);
       }
