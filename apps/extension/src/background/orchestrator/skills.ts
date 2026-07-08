@@ -2852,19 +2852,39 @@ function stripBenchmarkTaskIds(text: string): string {
   return text.replace(/\bworkarena\.[a-z0-9_.-]+\b/gi, " ");
 }
 
+/**
+ * Domain-INDEPENDENT ServiceNow URL-path fingerprints (Next Experience nav shell,
+ * Glide list/form `.do` endpoints, sys_id / sysparm query params). These identify
+ * a ServiceNow instance even when it is hosted on a custom/vanity domain (many
+ * enterprises reverse-proxy or self-host, so the `.service-now.com` hostname is
+ * absent). They are ServiceNow-specific enough to avoid matching generic ITSM
+ * sites — e.g. `helpdesk.example.com/incidents/new` has none of them.
+ */
+const SERVICENOW_URL_PATH_FINGERPRINT =
+  /\/now\/(?:nav|workspace|sow|cwf|wb|agent)\/|\bnav_to\.do\b|\b[a-z0-9_]+_list\.do\b|\.do\?[^#]*\bsys_id=|\bsysparm_[a-z_]+=/i;
+
 function hasServiceNowUrlSignal(pageUrl?: string): boolean {
   if (!pageUrl) return false;
   try {
     const url = new URL(pageUrl);
     const host = url.hostname.toLowerCase();
-    return (
+    if (
       host.endsWith(".service-now.com") ||
       host.endsWith(".servicenow.com") ||
       host === "service-now.com" ||
       host === "servicenow.com"
+    ) {
+      return true;
+    }
+    // Custom-hosted ServiceNow: recognize the platform by its URL fingerprints.
+    return SERVICENOW_URL_PATH_FINGERPRINT.test(
+      `${url.pathname}${url.search}`,
     );
   } catch {
-    return /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl);
+    return (
+      /\b(?:service-now|servicenow)\.com\b/i.test(pageUrl) ||
+      SERVICENOW_URL_PATH_FINGERPRINT.test(pageUrl)
+    );
   }
 }
 
