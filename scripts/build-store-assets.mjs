@@ -49,6 +49,10 @@ const SCREENSHOTS = [
     src: ".artifacts/e2e/videos/2026-07-08/stills/settings-provider.png",
     caption: "Your provider, your models — bring your own key",
   },
+  {
+    src: ".artifacts/e2e/videos/2026-07-08/stills/watch-restock.png",
+    caption: "Watch Mode: leave it watching, it tells you when the page changes",
+  },
 ];
 
 const TAGLINE = "Your browser, driven by AI";

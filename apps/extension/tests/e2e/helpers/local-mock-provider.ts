@@ -8,7 +8,8 @@ export type LocalMockProviderScenarioName =
   | "done-draft-premature-recovery"
   | "done-form-submit-gating"
   | "done-summary-incomplete-recovery"
-  | "partial-handoff-max-turns";
+  | "partial-handoff-max-turns"
+  | "watch-restock";
 
 export interface LocalMockProviderScenario {
   fixture: string;
@@ -104,6 +105,17 @@ export const localMockProviderScenarios: Record<
     maxTurns: 2,
     timeoutMs: 180_000,
   },
+  // Watch Mode (passive monitor) — the monitor evaluates the page, not the agent
+  // loop, so this scenario's prompt/maxTurns are unused; the watch-mode e2e drives
+  // the passive monitor directly. Kept here so the interceptor has a valid name
+  // and the recorded clip gets a stable label.
+  "watch-restock": {
+    fixture: "watch/restock.html",
+    label: "watch-restock",
+    prompt: "Tell me when the Nimbus Running Shoe is back in stock.",
+    maxTurns: 1,
+    timeoutMs: 60_000,
+  },
 };
 
 function flattenMessageContent(value: unknown): string {
@@ -172,6 +184,33 @@ function jsonContent(content: string): string {
       },
     ],
     usage: makeUsage(),
+  });
+}
+
+// Deterministic passive Watch Mode verdict. Posts a suggestion only once the
+// fixture has flipped to in-stock; the initial out-of-stock observation returns
+// shouldPost:false, matching the "report only meaningful change" contract.
+function passiveWatchJson(text: string): string {
+  const inStock = /\bin stock\b|back in stock/i.test(text) && !/out of stock/i.test(text);
+  if (!inStock) {
+    return JSON.stringify({
+      shouldPost: false,
+      reason: "no_change",
+      answer: "",
+      confidence: "low",
+      evidence: [],
+    });
+  }
+  return JSON.stringify({
+    shouldPost: true,
+    reason: "changed_availability",
+    answer:
+      "The Nimbus Running Shoe is back in stock — you can add it to your cart now.",
+    confidence: "high",
+    evidence: [
+      'Availability changed from "Out of stock" to "In stock"',
+      '"Add to cart" is now enabled',
+    ],
   });
 }
 
@@ -700,9 +739,20 @@ function buildMockResponse(
     };
   }
 
+  // Passive Watch Mode evaluations are JSON-object completions with a distinct
+  // system prompt. Answer only once the page has actually flipped to in-stock so
+  // the initial out-of-stock tick does not produce a premature suggestion. Note
+  // this falls through to the shared stream/JSON tail below — the passive
+  // evaluate streams, so the body must honor payload.stream.
+  const isPassiveWatch =
+    payload.response_format?.type === "json_object" &&
+    /OpenSidebar passive Watch Mode/i.test(text);
+
   const content =
     payload.response_format?.type === "json_object"
-      ? plannerJson(text, scenarioName)
+      ? isPassiveWatch
+        ? passiveWatchJson(text)
+        : plannerJson(text, scenarioName)
       : [
           "LOCATION: Current fixture page",
           "CHANGES: Current page is stable",

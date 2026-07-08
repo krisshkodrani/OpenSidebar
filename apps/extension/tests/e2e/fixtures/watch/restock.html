@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nimbus Running Shoe — Peak Outfitters</title>
+    <style>
+      :root {
+        --ink: #0b1f33;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --accent: #2563eb;
+        --good: #15803d;
+        --good-bg: #dcfce7;
+        --bad: #b91c1c;
+        --bad-bg: #fee2e2;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+        background: #f8fafc;
+      }
+      header {
+        padding: 16px 32px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 40px auto;
+        padding: 0 24px;
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        gap: 48px;
+      }
+      .photo {
+        height: 380px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #dbeafe, #bfdbfe 60%, #93c5fd);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 84px;
+      }
+      h1 { font-size: 30px; margin: 0 0 6px; }
+      .brand { color: var(--muted); margin: 0 0 20px; }
+      .price { font-size: 26px; font-weight: 700; margin: 0 0 20px; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 15px;
+      }
+      .badge .dot { width: 10px; height: 10px; border-radius: 50%; }
+      .badge.out { background: var(--bad-bg); color: var(--bad); }
+      .badge.out .dot { background: var(--bad); }
+      .badge.in { background: var(--good-bg); color: var(--good); }
+      .badge.in .dot { background: var(--good); }
+      .banner {
+        margin: 22px 0 0;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--good-bg);
+        color: var(--good);
+        font-weight: 600;
+      }
+      .cta {
+        margin-top: 22px;
+        display: flex;
+        gap: 12px;
+      }
+      button {
+        font: inherit;
+        font-weight: 600;
+        padding: 12px 22px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .desc { margin-top: 28px; color: var(--muted); line-height: 1.6; max-width: 46ch; }
+    </style>
+  </head>
+  <body>
+    <header>Peak Outfitters</header>
+    <div class="wrap">
+      <div class="photo" aria-hidden="true">👟</div>
+      <div>
+        <h1>Nimbus Running Shoe</h1>
+        <p class="brand">Peak Outfitters · Men's · Slate Blue</p>
+        <p class="price">$139.00</p>
+
+        <div id="availability">
+          <span class="badge out" id="stock-badge">
+            <span class="dot"></span><span id="stock-text">Out of stock</span>
+          </span>
+          <div class="cta">
+            <button id="notify" type="button">Notify me when available</button>
+            <button id="add" class="primary" type="button" disabled>Add to cart</button>
+          </div>
+        </div>
+
+        <p class="desc">
+          A lightweight daily trainer with a responsive foam midsole. This
+          size and colorway sell out quickly.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // Watch-Mode fixture: the availability flips from out-of-stock to in-stock
+      // on a timer (no user action), which changes the DOM fingerprint and gives
+      // the passive monitor a real change to observe and report.
+      window.__restockState = "out";
+      const RESTOCK_DELAY_MS = Number(
+        new URLSearchParams(location.search).get("delayMs") || 4000,
+      );
+      setTimeout(() => {
+        const badge = document.getElementById("stock-badge");
+        const text = document.getElementById("stock-text");
+        const add = document.getElementById("add");
+        const notify = document.getElementById("notify");
+        badge.classList.remove("out");
+        badge.classList.add("in");
+        text.textContent = "In stock";
+        add.disabled = false;
+        notify.remove();
+
+        const banner = document.createElement("div");
+        banner.className = "banner";
+        banner.id = "restock-banner";
+        banner.textContent = "Back in stock — ready to ship today.";
+        document.getElementById("availability").prepend(banner);
+
+        window.__restockState = "in";
+      }, RESTOCK_DELAY_MS);
+    </script>
+  </body>
+</html>
