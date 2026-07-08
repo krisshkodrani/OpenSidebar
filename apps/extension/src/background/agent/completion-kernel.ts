@@ -23,6 +23,8 @@ import {
   escapeRegExp,
   hashStableString,
   normalizeText,
+  tokenizeCompletionText,
+  LABEL_STOPWORDS,
 } from "./completion/text-utils";
 import {
   labelCanHaveMacAddressValue,
@@ -226,21 +228,6 @@ const NUMBER_WORDS = new Map<string, number>([
   ["six", 6],
 ]);
 
-const LABEL_STOPWORDS = new Set([
-  "answer",
-  "checked",
-  "choice",
-  "company",
-  "option",
-  "should",
-  "that",
-  "the",
-  "this",
-  "true",
-  "use",
-  "which",
-  "with",
-]);
 
 export function generateCompletionContract(params: {
   userRequest: string;
@@ -13397,11 +13384,6 @@ function extractPreciseConciseLabelValue(
   return cleanLabel(match?.[1] ?? "") || null;
 }
 
-function tokenizeCompletionText(value: string): string[] {
-  return [
-    ...new Set(normalizeText(value).match(/[a-z0-9$@._-]{3,}/g) ?? []),
-  ].filter((token) => !LABEL_STOPWORDS.has(token));
-}
 
 const USER_CONTEXT_MARKERS: RegExp[] = [
   /\bStay focused on this goal\b/i,
@@ -13492,4 +13474,5 @@ function takeUntilFirstMarker(value: string, markers: RegExp[]): string {
 function evidenceConfidenceRank(event: CompletionEvidence): number {
   return event.confidence === "high" ? 2 : 1;
 }
+
 
