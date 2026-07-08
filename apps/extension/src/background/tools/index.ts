@@ -9,6 +9,7 @@ import { toolRegistry } from "./registry";
 import { ToolName } from "../../types";
 import { logger } from "../../utils";
 import { registerInteractionTools } from "./register-interaction";
+import { registerAgentControlTools } from "./register-agent-control";
 import {
   runReadOnlyPageInspector,
   runAsyncReadOnlyPageInspector,
@@ -41,7 +42,6 @@ import {
   waitForDomReady,
 } from "../tab-ready";
 import {
-  COMPOSE_TEXT_DEF,
   NAVIGATE_DEF,
   SEARCH_KNOWLEDGE_BASE_DEF,
   CREATE_TAB_DEF,
@@ -49,8 +49,6 @@ import {
   SWITCH_TAB_DEF,
   WAIT_DEF,
   DONE_DEF,
-  ESCALATE_DEF,
-  CLARIFY_DEF,
   READ_ELEMENT_DEF,
   EXTRACT_FORM_STATE_DEF,
   EXECUTE_JS_DEF,
@@ -111,20 +109,7 @@ export function registerTools() {
   registerInteractionTools(toolRegistry);
 
   // Escalation tool (intercepted by agent loop before executor runs)
-  toolRegistry.register(ToolName.ESCALATE, ESCALATE_DEF, async (args) => {
-    // This executor is a fallback — the loop intercepts escalate before reaching here
-    return `Escalation requested: ${(args.reason as string) || "no reason given"}`;
-  });
-
-  toolRegistry.register(ToolName.CLARIFY, CLARIFY_DEF, async (args) => {
-    // This executor is a fallback — the loop intercepts clarify before reaching here
-    return `Clarification requested: ${(args.question as string) || "no question given"}`;
-  });
-
-  toolRegistry.register(ToolName.COMPOSE_TEXT, COMPOSE_TEXT_DEF, async (args) => {
-    // This executor is a fallback — the loop intercepts compose_text (writer handoff) before reaching here
-    return `Compose requested for field ${(args.id as number) ?? "?"}.`;
-  });
+  registerAgentControlTools(toolRegistry);
 
   // Service Worker Tools (chrome.* APIs)
   toolRegistry.register(
@@ -5979,6 +5964,7 @@ export function registerTools() {
     `${toolRegistry.getDefinitions().length} tools registered`,
   );
 }
+
 
 
 
