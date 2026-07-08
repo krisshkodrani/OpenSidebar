@@ -142,3 +142,15 @@ is the ~60s cinematic edit for hero slots (Chrome Web Store promo video, YouTube
 - **Music** — `--music <file>` mixes a user-supplied bed with fade in/out; the cut
   must still read fully muted (sound-off autoplay is the default context).
 - Keep the pitch/montages for long-form; the promo is the first-touch asset.
+
+## Voiceover (`scripts/add-voiceover.mjs`)
+
+Narration is mixed onto finished publish videos, never baked into the renders:
+`node scripts/add-voiceover.mjs --video promo|pitch [--voice <id>] [--music <file>]`.
+Lines are timed specs (`{at, maxSec, text}`) matching each cut's segment structure;
+audio comes from ElevenLabs (key `ELEVENLABS_API_KEY`/`ELEVENLAB_API_KEY` in `.env`,
+default voice "Rachel", cached by content hash in `.artifacts/vo/`). Lines that
+overrun their window get squeezed up to 1.1× `atempo`, otherwise the script asks you
+to shorten the copy. A `--music` bed is ducked under the voice via sidechain
+compression. Video frames are stream-copied, so voiced variants are pixel-identical.
+Keep narration factual — the same "never overstate" rule as captions.
