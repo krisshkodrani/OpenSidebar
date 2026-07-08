@@ -65,6 +65,10 @@ import {
   shouldEscalateForDecision,
 } from "./escalation-decisions";
 import {
+  getPendingInteractionRemainingMs,
+  isPendingInteractionResolved,
+} from "./pending-interaction";
+import {
   getNodeToolProfile,
   buildParallelRunState,
   isTabOccupiedByRunningNode,
@@ -1232,24 +1236,6 @@ export class Orchestrator {
     return selectResumeOwnedTab(taskLike, liveTabs, preferredTabId);
   }
 
-  private getPendingInteractionRemainingMs(
-    interaction: PendingUserInteraction,
-  ): number {
-    return Math.max(
-      0,
-      interaction.timeoutMs - (Date.now() - interaction.requestedAt),
-    );
-  }
-
-  private isPendingInteractionResolved(
-    interaction: PendingUserInteraction | undefined,
-  ): boolean {
-    if (!interaction) return false;
-    return interaction.kind === "approval"
-      ? typeof interaction.approved === "boolean"
-      : typeof interaction.answer === "string";
-  }
-
   private clearPendingInteractionTimer(workspaceId: string): void {
     const timer = this.pendingInteractionTimers.get(workspaceId);
     if (timer) clearTimeout(timer);
@@ -1258,8 +1244,8 @@ export class Orchestrator {
 
   private emitPendingInteraction(task: OrchestratorTask): void {
     const interaction = task.pendingInteraction;
-    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
-    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    if (!interaction || isPendingInteractionResolved(interaction)) return;
+    const remainingMs = getPendingInteractionRemainingMs(interaction);
     if (remainingMs <= 0) return;
 
     if (interaction.kind === "clarification") {
@@ -1318,7 +1304,7 @@ export class Orchestrator {
     task: OrchestratorTask,
   ): Promise<void> {
     const interaction = task.pendingInteraction;
-    if (!interaction || !this.isPendingInteractionResolved(interaction)) {
+    if (!interaction || !isPendingInteractionResolved(interaction)) {
       return;
     }
 
@@ -1458,9 +1444,9 @@ export class Orchestrator {
   private armPendingInteractionTimeout(task: OrchestratorTask): void {
     this.clearPendingInteractionTimer(task.workspaceId);
     const interaction = task.pendingInteraction;
-    if (!interaction || this.isPendingInteractionResolved(interaction)) return;
+    if (!interaction || isPendingInteractionResolved(interaction)) return;
 
-    const remainingMs = this.getPendingInteractionRemainingMs(interaction);
+    const remainingMs = getPendingInteractionRemainingMs(interaction);
     if (remainingMs <= 0) {
       void this.handlePendingInteractionTimeout(task.workspaceId);
       return;
@@ -1480,7 +1466,7 @@ export class Orchestrator {
     if (
       !task ||
       !interaction ||
-      this.isPendingInteractionResolved(interaction)
+      isPendingInteractionResolved(interaction)
     ) {
       return;
     }
@@ -1571,7 +1557,7 @@ export class Orchestrator {
     (task as any)._turnCheckpoints = turnCheckpointsByNodeId;
 
     const hasPendingInteraction = Boolean(task.pendingInteraction);
-    const pendingInteractionResolved = this.isPendingInteractionResolved(
+    const pendingInteractionResolved = isPendingInteractionResolved(
       task.pendingInteraction,
     );
 
@@ -1693,7 +1679,7 @@ export class Orchestrator {
           taskId: task.id,
           nodeId: interaction.nodeId,
           kind: interaction.kind,
-          remainingMs: this.getPendingInteractionRemainingMs(interaction),
+          remainingMs: getPendingInteractionRemainingMs(interaction),
           interactionId:
             interaction.kind === "approval"
               ? interaction.approvalId
@@ -4340,7 +4326,7 @@ export class Orchestrator {
       }
       if (
         task.pendingInteraction &&
-        !this.isPendingInteractionResolved(task.pendingInteraction)
+        !isPendingInteractionResolved(task.pendingInteraction)
       ) {
         this.sendStatus(
           task.workspaceId,
