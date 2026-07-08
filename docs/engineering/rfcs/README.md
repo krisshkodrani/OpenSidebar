@@ -74,3 +74,15 @@ Phase A anytime, Phase B behind a flag until CWS clears; LP-14 parked.
 | LP-12 | [Extension-native reach](lp-0012-extension-native-reach.md) | Closed shadow roots + cross-origin iframes invisible; extension APIs unused | None |
 | LP-13 | [Region zoom tool](lp-0013-region-zoom-tool.md) | Small text/canvas targets unreadable; no zoom action | LP-9 (scale factor) |
 | LP-14 | [In-browser PDF handling](lp-0014-pdf-handling.md) | PDF tabs are opaque; no text extraction | None (recommend parked) |
+
+## Post-launch consolidation series
+
+LP-15 was decision-stamped and executed 2026-07-05→07 (all twelve phases'
+first passes merged); LP-16 picks up its deferred decomposition follow-ups
+and extends them to every oversized file. LP-16 is **not stamped** — same
+status rules as above.
+
+| # | RFC | Problem | Depends on |
+| --- | --- | --- | --- |
+| LP-15 | [Three consolidations: runtime library, verification subsystem, loop decomposition](lp-0015-three-consolidations.md) | Split completion authority; no headless runtime; AgentLoop god object | None — **Decision stamped 2026-07-05; first passes of all phases merged 2026-07-07** |
+| LP-16 | [Landmine decomposition](lp-0016-landmine-decomposition.md) | Four files (kernel 14.4K, loop 10.3K, tools 6.8K, orchestrator 6.7K) are the largest *and* most-churned surfaces; only loop.ts is ratchet-guarded | LP-15 (turn-machine, pipeline authority, golden gate — all landed) |
