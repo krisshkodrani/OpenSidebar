@@ -154,6 +154,7 @@ import {
 import { decideRetryPolicy } from "./retry-policy";
 import { BudgetEstimator } from "./budget-estimator";
 import { BudgetEstimatorRegistry } from "./budget-estimator-registry";
+import { PendingResolverRegistry } from "./pending-resolver-registry";
 import {
   CreateAgentLoopInput,
   EscalationDecisionPayload,
@@ -271,14 +272,12 @@ export class Orchestrator {
     string,
     Record<RuntimeLane, LaneRuntimeState>
   >();
-  private pendingEscalationResolvers = new Map<
-    string,
-    (decision: EscalationDecisionPayload) => void
-  >();
-  private pendingPlanConfirmationResolvers = new Map<
-    string,
-    (result: { decision: "approve" | "cancel"; feedback?: string }) => void
-  >();
+  private pendingEscalationResolvers =
+    new PendingResolverRegistry<EscalationDecisionPayload>();
+  private pendingPlanConfirmationResolvers = new PendingResolverRegistry<{
+    decision: "approve" | "cancel";
+    feedback?: string;
+  }>();
   private pendingInteractionTimers = new PendingInteractionTimers();
   private laneSupervisorsByWorkspace = new Map<
     string,
@@ -5078,10 +5077,7 @@ export class Orchestrator {
       task.pendingEscalation = undefined;
     }
     // Cancel any pending plan confirmation
-    for (const [id, resolver] of this.pendingPlanConfirmationResolvers) {
-      resolver({ decision: "cancel" });
-      this.pendingPlanConfirmationResolvers.delete(id);
-    }
+    this.pendingPlanConfirmationResolvers.resolveAll({ decision: "cancel" });
     if (shouldDrainActiveWorkers) {
       task.status = "stopping";
       void this.persistTaskCheckpoint(task);
@@ -5600,7 +5596,9 @@ export class Orchestrator {
         resolve(fallback);
       }, packet.timeoutMs);
 
-      this.pendingEscalationResolvers.set(packet.escalationId, (decision) => {
+      this.pendingEscalationResolvers.register(
+        packet.escalationId,
+        (decision) => {
         clearTimeout(timeout);
         this.pendingEscalationResolvers.delete(packet.escalationId);
         this.emitTraceEvent(
@@ -5766,7 +5764,9 @@ export class Orchestrator {
 
     return new Promise<{ decision: "approve" | "cancel"; feedback?: string }>(
       (resolve) => {
-        this.pendingPlanConfirmationResolvers.set(confirmationId, (result) => {
+        this.pendingPlanConfirmationResolvers.register(
+          confirmationId,
+          (result) => {
           this.pendingPlanConfirmationResolvers.delete(confirmationId);
           logger.info("orchestrator", "Plan confirmation received", {
             taskId: task.id,
