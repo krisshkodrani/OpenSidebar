@@ -52,6 +52,10 @@ import {
   WorkerInstance,
 } from "./types";
 import { buildProgrammaticSummary } from "./task-summary";
+import {
+  RecentCompletionTracker,
+  MAX_RECENT_COMPLETION_CONTEXT_CHARS,
+} from "./recent-completion-tracker";
 import { buildResumeInput } from "./resume-input";
 import {
   buildTaskManifest,
@@ -225,10 +229,6 @@ const DEFAULT_MAX_WORKERS = 3;
 const MAX_HORIZON_EXPANSIONS = 30;
 const ESCALATION_RESPONSE_TIMEOUT_MS = 60_000;
 const ESCALATION_MAX_REASON_CHARS = 220;
-const RECENT_COMPLETION_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_RECENT_COMPLETION_HISTORY = 6;
-const MAX_RECENT_COMPLETION_CONTEXT_CHARS = 1400;
-const MAX_RECENT_COMPLETION_LINE_CHARS = 260;
 const MAX_PERSISTED_MESSAGES = 200;
 const E2E_SYNTHETIC_QUERY_PREFIX = "__e2e_pending_interaction__:";
 const E2E_PENDING_INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
@@ -258,20 +258,7 @@ function isLargeExhaustiveReviewGraph(nodes: TaskNode[]): boolean {
 
 export class Orchestrator {
   private tasksByWorkspace = new Map<string, OrchestratorTask>();
-  private recentCompletion = new Map<
-    string,
-    {
-      payload: TaskCompletionMessage["payload"];
-      timestamp: number;
-    }
-  >();
-  private recentCompletionHistory = new Map<
-    string,
-    Array<{
-      payload: TaskCompletionMessage["payload"];
-      timestamp: number;
-    }>
-  >();
+  private recentCompletionTracker = new RecentCompletionTracker();
   private completionWaiters = new Map<
     string,
     Set<(payload: TaskCompletionMessage["payload"]) => void>
@@ -612,7 +599,7 @@ export class Orchestrator {
     this.workersByWorkspace.delete(workspaceId);
     this.budgetEstimatorsByWorkspace.delete(workspaceId);
     this.laneRuntimeByWorkspace.delete(workspaceId);
-    this.recentCompletion.delete(workspaceId);
+    this.recentCompletionTracker.clear(workspaceId);
     this.pendingFeedbackQueue.delete(workspaceId);
   }
 
@@ -1853,29 +1840,6 @@ export class Orchestrator {
     return this.tasksByWorkspace.has(workspaceId);
   }
 
-  private getRecentCompletionContext(workspaceId: string): string {
-    const now = Date.now();
-    const freshEntries = (this.recentCompletionHistory.get(workspaceId) ?? [])
-      .filter((entry) => now - entry.timestamp < RECENT_COMPLETION_TTL_MS)
-      .slice(-MAX_RECENT_COMPLETION_HISTORY);
-    if (freshEntries.length === 0) {
-      this.recentCompletionHistory.delete(workspaceId);
-      return "";
-    }
-    this.recentCompletionHistory.set(workspaceId, freshEntries);
-    return freshEntries
-      .map((entry, index) => {
-        const summary = (entry.payload.summary || "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, MAX_RECENT_COMPLETION_LINE_CHARS);
-        return summary ? `- Assistant result ${index + 1}: ${summary}` : "";
-      })
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, MAX_RECENT_COMPLETION_CONTEXT_CHARS);
-  }
-
   /**
    * Re-broadcast the current state for a workspace so the side panel can
    * recover transient UI state after a workspace switch.
@@ -1885,8 +1849,8 @@ export class Orchestrator {
 
     if (!task) {
       // Check for a recent completion that the panel may have missed
-      const cached = this.recentCompletion.get(workspaceId);
-      if (cached && Date.now() - cached.timestamp < RECENT_COMPLETION_TTL_MS) {
+      const cached = this.recentCompletionTracker.getCachedFresh(workspaceId);
+      if (cached) {
         sendMessage({
           type: "TASK_COMPLETION",
           workspaceId,
@@ -2046,7 +2010,7 @@ export class Orchestrator {
       input.query,
       await loadPersonalizationState().catch(() => EMPTY_PERSONALIZATION_STATE),
     );
-    const recentCompletionContext = this.getRecentCompletionContext(
+    const recentCompletionContext = this.recentCompletionTracker.getContext(
       input.workspaceId,
     );
     const conversationContextBrief = [
@@ -4923,7 +4887,7 @@ export class Orchestrator {
     if (task?.status === "stopped" || task?.status === "stopping") {
       return "stopped";
     }
-    const recent = this.recentCompletion.get(workspaceId);
+    const recent = this.recentCompletionTracker.getCached(workspaceId);
     if (!recent) return null;
     if (recent.payload.status === "stopped") return "stopped";
     // "partial" maps to "completed" — partial success is still success at the overlay level
@@ -4936,7 +4900,7 @@ export class Orchestrator {
   ): Promise<TaskCompletionMessage["payload"] | null> {
     const hasActiveTask = this.tasksByWorkspace.has(workspaceId);
     if (!hasActiveTask) {
-      const cached = this.recentCompletion.get(workspaceId);
+      const cached = this.recentCompletionTracker.getCached(workspaceId);
       return Promise.resolve(cached?.payload ?? null);
     }
 
@@ -5413,19 +5377,8 @@ export class Orchestrator {
     workspaceId: string,
     payload: TaskCompletionMessage["payload"],
   ): void {
-    // Cache for resync on panel reopen
-    this.recentCompletion.set(workspaceId, {
-      payload,
-      timestamp: Date.now(),
-    });
-    if (payload.summary) {
-      const history = this.recentCompletionHistory.get(workspaceId) ?? [];
-      history.push({ payload, timestamp: Date.now() });
-      this.recentCompletionHistory.set(
-        workspaceId,
-        history.slice(-MAX_RECENT_COMPLETION_HISTORY),
-      );
-    }
+    // Cache for resync on panel reopen (+ append to the recent-completion history)
+    this.recentCompletionTracker.record(workspaceId, payload);
     const waiters = this.completionWaiters.get(workspaceId);
     if (waiters) {
       for (const resolve of waiters) resolve(payload);
