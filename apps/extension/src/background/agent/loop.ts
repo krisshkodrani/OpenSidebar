@@ -97,6 +97,10 @@ import {
   type PlanMonitorPhaseHost,
 } from "./turn-phases/plan-monitor";
 import {
+  runDonePlanRejection,
+  type DonePlanRejectionHost,
+} from "./done-plan-rejection";
+import {
   buildServiceNowMissingFieldInfeasibleSummary,
   extractServiceNowFormMissingFieldLabels,
   extractServiceNowModuleRequest,
@@ -2128,141 +2132,8 @@ export class AgentLoop {
     rejectReason: string,
     effectiveCurrentIdx: number,
   ): void {
-    // retry_step: when the current step uses retry semantics
-    // (infinite scroll, pagination), reject done() without
-    // counting toward doneRejections — the executor should
-    // keep trying the same step.
-    const currentStep = this.planSteps[effectiveCurrentIdx];
-    if (currentStep?.verifyAfter?.action === "retry_step") {
-      const maxRetries = currentStep.verifyAfter.maxRetries ?? 8;
-      if (this.stepRetryCount < maxRetries) {
-        this.stepRetryCount++;
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content:
-            `Step not yet complete (attempt ${this.stepRetryCount}/${maxRetries}). ` +
-            `${currentStep.verifyAfter.trigger} not detected yet. ` +
-            `Keep trying: scroll down further, wait for content to load, then check again.`,
-        });
-        this.log.info("agent", "retry_step: attempt", {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          attempt: this.stepRetryCount,
-          maxRetries,
-        });
-        return;
-      }
-      // Exhausted retries — fall through to normal rejection
-    }
-
-    const planIncompleteOnly = rejectReason.startsWith("Plan incomplete.");
-    const canAdvanceStep =
-      planIncompleteOnly &&
-      effectiveCurrentIdx >= 0 &&
-      effectiveCurrentIdx < this.planSubtasks.length - 1;
-
-    if (canAdvanceStep) {
-      // Three-layer verification gate before auto-advance
-      const sentiment = assessDoneSummary(summary);
-      const criteriaCheck = matchSuccessCriteria({
-        successCriteria: this.planSteps[effectiveCurrentIdx]?.successCriteria,
-        snapshot: this.context.getSnapshot(),
-      });
-      const autoAdvanceCap = Math.max(
-        2,
-        Math.ceil(this.planSubtasks.length / 2),
-      );
-      const rateLimited = this.consecutiveAutoAdvances >= autoAdvanceCap;
-
-      const coherence = checkSummaryStepCoherence({
-        summary,
-        currentStepIndex: effectiveCurrentIdx,
-        stepDescriptions: this.planSubtasks.map((s) => s.description),
-      });
-
-      let gateBlockReason: string | null = null;
-      if (!sentiment.confident) {
-        gateBlockReason = `Summary admits failure: ${sentiment.reason}`;
-      } else if (!coherence.coherent) {
-        gateBlockReason = `Summary doesn't match current step: ${coherence.reason}`;
-      } else if (!criteriaCheck.satisfied) {
-        const evidenceParts = [
-          `${criteriaCheck.matchedTokens.length}/${criteriaCheck.totalTokens} tokens matched`,
-        ];
-        if (criteriaCheck.requiredQuotedPhrases.length > 0) {
-          evidenceParts.push(
-            `${criteriaCheck.matchedQuotedPhrases.length}/${criteriaCheck.requiredQuotedPhrases.length} quoted phrases matched`,
-          );
-        }
-        if (criteriaCheck.requiredNumbers.length > 0) {
-          evidenceParts.push(
-            `${criteriaCheck.matchedNumbers.length}/${criteriaCheck.requiredNumbers.length} numeric values matched`,
-          );
-        }
-        gateBlockReason = `Success criteria not met (${evidenceParts.join(", ")})`;
-      } else if (rateLimited) {
-        gateBlockReason = `Rate limited: ${this.consecutiveAutoAdvances} consecutive auto-advances without DOM action`;
-      }
-
-      if (gateBlockReason) {
-        // Gate blocked — fall through to rejection path below
-        this.log.warn("agent", "Auto-advance blocked by verification gate", {
-          turn: this.turnCount,
-          step: effectiveCurrentIdx,
-          reason: gateBlockReason,
-          sentiment: sentiment.confident,
-          criteriaMatched: criteriaCheck.matchedTokens,
-          criteriaTotal: criteriaCheck.totalTokens,
-          quotedMatched: criteriaCheck.matchedQuotedPhrases,
-          quotedTotal: criteriaCheck.requiredQuotedPhrases,
-          numbersMatched: criteriaCheck.matchedNumbers,
-          numbersTotal: criteriaCheck.requiredNumbers,
-          consecutiveAutoAdvances: this.consecutiveAutoAdvances,
-        });
-        this.traceRecorder?.recordEvent("auto_advance_blocked", {
-          step: effectiveCurrentIdx,
-          reason: gateBlockReason,
-          summary: summary.slice(0, 200),
-        });
-        // Fall through to doneRejections++ below
-      } else {
-        // Gate passed — proceed with auto-advance
-        this.consecutiveAutoAdvances++;
-        const previousIdx = effectiveCurrentIdx;
-        const newIdx = advanceCompletedSubtasks(
-          this as unknown as AgentLoopPlanProgressHost,
-        );
-        const completedStep =
-          this.planSubtasks[previousIdx]?.description ||
-          `Step ${previousIdx + 1}`;
-        const nextStep =
-          this.planSubtasks[newIdx]?.description || "Finish the remaining plan";
-
-        this.syncPlanStatus(newIdx, "step_advanced_by_done_rejection", {
-          rejections: this.doneRejections,
-          advancedTo: newIdx,
-          convertedFromDone: true,
-        });
-        this.broadcastTaskProgress(newIdx);
-        this.log.info("agent", "DONE converted into step completion", {
-          turn: this.turnCount,
-          completedStep: completedStep.slice(0, 200),
-          nextStep: nextStep.slice(0, 200),
-        });
-        this.context.addMessage({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content:
-            `Step ${previousIdx + 1} verified complete.\n\n` +
-            `Now active: Step ${newIdx + 1} — ${nextStep}.\n` +
-            "Observe the page with read_page first, then act. Do NOT call done() until this step is completed and verified.",
-        });
-        return;
-      }
-    }
-
-    this.rejectDoneAfterPlanValidation(
+    runDonePlanRejection(
+      this as unknown as DonePlanRejectionHost,
       toolCallId,
       summary,
       rejectReason,
