@@ -193,7 +193,6 @@ import {
   applyCompletionEffects,
   type CompletionEffectHost,
 } from "./completion/apply-effects";
-import { buildMutationKey } from "./checkpoint-types";
 import type { TurnCheckpoint } from "./checkpoint-types";
 import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
@@ -203,6 +202,14 @@ import {
   createTurnController,
   type TurnControllerHost,
 } from "./turn-controller";
+import {
+  getActiveSubtaskDescription,
+  getMatchingApprovalInteraction,
+  getMatchingClarificationInteraction,
+  isPureListFilterWorkflowRequest,
+  shouldEscalateOnDoneRejection,
+  type LoopQueriesHost,
+} from "./loop-queries";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -284,8 +291,6 @@ import type { Difficulty, RuntimeLimits } from "./constants";
 import { APPROVAL_TIMEOUT_MS, MAX_SESSION_MS } from "./loop-metrics";
 import type { LoopResult } from "./loop-types";
 import type {
-  PendingApprovalInteraction,
-  PendingClarificationInteraction,
   PendingUserInteraction,
 } from "./loop-types";
 import { getLoadedSkillContract } from "../orchestrator/skills";
@@ -2206,24 +2211,11 @@ export class AgentLoop {
     });
   }
 
-  private getActiveSubtaskDescription(): string | undefined {
-    const running = this.planSubtasks.find(
-      (subtask) => subtask.status === "running",
-    );
-    if (running?.description) return running.description;
-    const plan = this.context.getPlanStatusRaw?.();
-    const currentIndex =
-      typeof plan?.currentIndex === "number"
-        ? plan.currentIndex
-        : this.lastPlanIndex;
-    return this.planSubtasks[currentIndex]?.description;
-  }
-
   private updatePartialProgressState(lastAction?: string): void {
     updateProgressLedgerState(
       this.progressLedger,
       this.context.getSnapshot?.() ?? null,
-      this.getActiveSubtaskDescription(),
+      getActiveSubtaskDescription(this as unknown as LoopQueriesHost),
       lastAction,
     );
   }
@@ -2277,44 +2269,13 @@ export class AgentLoop {
     if (message) this.broadcast(message);
   }
 
-  private getMatchingApprovalInteraction(
-    toolName: ToolName,
-    args: Record<string, unknown>,
-    context: string,
-  ): PendingApprovalInteraction | null {
-    if (this.resumeInteraction?.kind !== "approval") return null;
-    const interaction = this.resumeInteraction;
-    const currentKey = buildMutationKey(toolName, args);
-    const pendingKey = buildMutationKey(interaction.toolName, interaction.args);
-    if (pendingKey !== currentKey || interaction.context !== context) {
-      return null;
-    }
-    return interaction;
-  }
-
-  private getMatchingClarificationInteraction(
-    question: string,
-    suggestions?: string[],
-  ): PendingClarificationInteraction | null {
-    if (this.resumeInteraction?.kind !== "clarification") return null;
-    const interaction = this.resumeInteraction;
-    const currentSuggestions = JSON.stringify(suggestions ?? []);
-    const pendingSuggestions = JSON.stringify(interaction.suggestions ?? []);
-    if (
-      interaction.question !== question ||
-      currentSuggestions !== pendingSuggestions
-    ) {
-      return null;
-    }
-    return interaction;
-  }
-
   private async requestApproval(
     toolName: ToolName,
     args: Record<string, unknown>,
     context: string,
   ): Promise<boolean> {
-    const interaction = this.getMatchingApprovalInteraction(
+    const interaction = getMatchingApprovalInteraction(
+      this as unknown as LoopQueriesHost,
       toolName,
       args,
       context,
@@ -2431,7 +2392,8 @@ export class AgentLoop {
     question: string,
     suggestions?: string[],
   ): Promise<string> {
-    const interaction = this.getMatchingClarificationInteraction(
+    const interaction = getMatchingClarificationInteraction(
+      this as unknown as LoopQueriesHost,
       question,
       suggestions,
     ) ?? {
@@ -3167,11 +3129,6 @@ export class AgentLoop {
    * Only fires when we have not already escalated (executor tier only) and the
    * task has a meaningful rejection budget (≥ 2 allowed rejections).
    */
-  private shouldEscalateOnDoneRejection(): boolean {
-    if (this.limits.maxDoneRejections < 2) return false;
-    const midPoint = Math.ceil(this.limits.maxDoneRejections / 2);
-    return this.doneRejections === midPoint && !this.llm.isPlannerTier();
-  }
 
   /**
    * Called after every doneRejections++ to schedule a planner escalation when
@@ -3179,7 +3136,8 @@ export class AgentLoop {
    * main loop so that escalationTier (a loop-local variable) is updated there.
    */
   private checkAndSetDoneRejectionEscalation(): void {
-    if (!this.shouldEscalateOnDoneRejection()) return;
+    if (!shouldEscalateOnDoneRejection(this as unknown as LoopQueriesHost))
+      return;
     this.pendingDoneRejectionEscalation = true;
     this.traceRecorder?.recordEvent("done_rejection_escalation", {
       doneRejections: this.doneRejections,
@@ -4780,7 +4738,8 @@ export class AgentLoop {
       plan.currentIndex < 0 ||
       plan.currentIndex >= plan.subtasks.length
     ) {
-      if (!this.isPureListFilterWorkflowRequest()) return null;
+      if (!isPureListFilterWorkflowRequest(this as unknown as LoopQueriesHost))
+        return null;
       this.log.info(
         "agent",
         "trusted list filter completed planless workflow",
@@ -4833,16 +4792,6 @@ export class AgentLoop {
       completedAllSteps: newIndex >= this.planSubtasks.length,
     });
     return { finalSummary, newIndex, completionCandidate };
-  }
-
-  private isPureListFilterWorkflowRequest(): boolean {
-    const taskText = `${this.originalQuery}\n${this.planSteps
-      .map((step) => `${step.objective}\n${step.successCriteria ?? ""}`)
-      .join("\n")}`;
-    if (!taskText.trim()) return true;
-    return !/\b(?:delete|remove|mark|update|close|assign|order|submit|select|approve|reject|duplicate|duplicated|total|sum|return|investment|manage)\b/i.test(
-      taskText,
-    );
   }
 
   private hasTrustedServiceNowSubmitIntent(text?: string): boolean {
