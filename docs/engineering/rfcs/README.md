@@ -85,4 +85,4 @@ status rules as above.
 | # | RFC | Problem | Depends on |
 | --- | --- | --- | --- |
 | LP-15 | [Three consolidations: runtime library, verification subsystem, loop decomposition](lp-0015-three-consolidations.md) | Split completion authority; no headless runtime; AgentLoop god object | None — **Decision stamped 2026-07-05; first passes of all phases merged 2026-07-07** |
-| LP-16 | [Landmine decomposition](lp-0016-landmine-decomposition.md) | Four files (kernel 14.4K, loop 10.3K, tools 6.8K, orchestrator 6.7K) are the largest *and* most-churned surfaces; only loop.ts is ratchet-guarded | LP-15 (turn-machine, pipeline authority, golden gate — all landed) |
+| LP-16 | [Landmine decomposition](lp-0016-landmine-decomposition.md) · [remainder plan](lp-0016-remainder-plan.md) | Four files (kernel 14.4K, loop 10.3K, tools 6.8K, orchestrator 6.7K) are the largest *and* most-churned surfaces; only loop.ts is ratchet-guarded. Phases 0/1/2/4/5 landed (PR #76); Phase 3 partial — remainder plan tracks the e2e-gated driver-flip | LP-15 (turn-machine, pipeline authority, golden gate — all landed) |
