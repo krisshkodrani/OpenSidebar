@@ -15,7 +15,9 @@ import type { ContextManager } from "./context";
 import type { TraceRecorder } from "./trace";
 import type { logger, SessionScopedLogger } from "../../utils";
 import type { PlanStep } from "./planner";
-import type { SubtaskSummary } from "../../types";
+import type { SubtaskSummary, AgentStep } from "../../types";
+import type { RuntimeLimits } from "./constants";
+import { STRING_LIMITS } from "./constants";
 import { assessDoneSummary, checkSummaryStepCoherence } from "./verification";
 import { matchSuccessCriteria } from "./loop-helpers";
 import {
@@ -27,8 +29,10 @@ export interface DonePlanRejectionHost {
   readonly planSteps: PlanStep[];
   stepRetryCount: number;
   consecutiveAutoAdvances: number;
-  readonly doneRejections: number;
+  doneRejections: number;
+  guardAfterDoneRejection: boolean;
   readonly turnCount: number;
+  readonly limits: RuntimeLimits;
   readonly planSubtasks: SubtaskSummary[];
   readonly context: ContextManager;
   readonly traceRecorder: TraceRecorder | null;
@@ -39,12 +43,14 @@ export interface DonePlanRejectionHost {
     traceData?: Record<string, unknown>,
   ): void;
   broadcastTaskProgress(currentIndex: number): void;
-  rejectDoneAfterPlanValidation(
-    toolCallId: string,
-    summary: string,
-    rejectReason: string,
-    effectiveCurrentIdx: number,
-  ): void;
+  checkAndSetDoneRejectionEscalation(): void;
+  doneRejectionDiagnosticContent(params: {
+    summary: string;
+    primaryReason: string;
+    fallbackInstruction: string;
+    nextStepHint?: string;
+  }): string;
+  stepHandler(step: AgentStep, update: boolean): void;
 }
 
 export function runDonePlanRejection(
@@ -188,10 +194,95 @@ export function runDonePlanRejection(
       }
     }
 
-    host.rejectDoneAfterPlanValidation(
+    rejectDoneAfterPlanValidation(
+      host,
       toolCallId,
       summary,
       rejectReason,
       effectiveCurrentIdx,
+    );
+}
+
+export function rejectDoneAfterPlanValidation(
+  host: DonePlanRejectionHost,
+  toolCallId: string,
+  summary: string,
+  rejectReason: string,
+  effectiveCurrentIdx: number,
+): void {
+    host.doneRejections++;
+    host.checkAndSetDoneRejectionEscalation();
+    // Activate idempotency guard: prevent re-execution of actions
+    // that already succeeded but whose done() was rejected by verifier
+    host.guardAfterDoneRejection = true;
+
+    host.log.warn("agent", "DONE rejected", {
+      turn: host.turnCount,
+      rejections: host.doneRejections,
+      advancedTo: effectiveCurrentIdx,
+      reason: rejectReason.slice(0, STRING_LIMITS.REJECTION_REASON),
+    });
+    host.traceRecorder?.recordEvent("done_rejected", {
+      rejections: host.doneRejections,
+      reason: rejectReason,
+      advancedTo: effectiveCurrentIdx,
+    });
+
+    // Build next-step hint for actionable rejection
+    const nextStepIdx = effectiveCurrentIdx + 1;
+    const nextStepDesc =
+      nextStepIdx < host.planSubtasks.length
+        ? host.planSubtasks[nextStepIdx].description
+        : null;
+    const nextStepHint = nextStepDesc
+      ? `\nYOUR NEXT ACTION: ${nextStepDesc}\nDo NOT call done(). Execute this step now.`
+      : "";
+
+    if (host.doneRejections >= host.limits.maxDoneRejections) {
+      host.log.warn("agent", "DONE blocked after max rejections", {
+        turn: host.turnCount,
+        rejections: host.doneRejections,
+      });
+      host.traceRecorder?.recordEvent("done_blocked_max_rejections", {
+        rejections: host.doneRejections,
+        reason: rejectReason,
+        source: "plan_validation",
+      });
+      host.context.addMessage({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content: host.doneRejectionDiagnosticContent({
+          summary,
+          primaryReason: rejectReason,
+          fallbackInstruction:
+            "You have repeated done() too many times while the task is still incomplete. " +
+            "Do not call done() again from this state. Take a different action or call escalate().",
+          nextStepHint,
+        }),
+      });
+      return;
+    }
+
+    host.context.addMessage({
+      role: "tool",
+      tool_call_id: toolCallId,
+      content: host.doneRejectionDiagnosticContent({
+        summary,
+        primaryReason: rejectReason,
+        fallbackInstruction:
+          "Take concrete actions to complete this step - click, type, scroll, or navigate. " +
+          "Do NOT call done() again until you have performed the missing actions.",
+        nextStepHint,
+      }),
+    });
+    host.stepHandler(
+      {
+        id: crypto.randomUUID(),
+        type: "info",
+        label: `Not done yet (${host.doneRejections}/${host.limits.maxDoneRejections})`,
+        status: "done",
+        timestamp: Date.now(),
+      },
+      false,
     );
 }
