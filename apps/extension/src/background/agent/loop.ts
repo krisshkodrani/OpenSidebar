@@ -199,7 +199,10 @@ import { CheckpointCoordinator } from "./checkpoint-coordinator";
 import { AgentTelemetryController } from "./agent-telemetry-controller";
 import { TurnState } from "./turn-state";
 import { LoopSession, TurnScope } from "./loop-scope";
-import { EscalationTierController } from "./escalation-tier-controller";
+import {
+  createTurnController,
+  type TurnControllerHost,
+} from "./turn-controller";
 import type { MoneyTableAggregate } from "./money-table-aggregate";
 import {
   isTextLikeInputElement,
@@ -273,7 +276,6 @@ import {
   AGENT_LIMITS,
   BROADCAST_INTERVALS,
   STRING_LIMITS,
-  ORIENTATION,
   TOOL_CACHE,
   DEFAULT_RUNTIME_LIMITS,
 } from "./constants";
@@ -290,9 +292,7 @@ import { getLoadedSkillContract } from "../orchestrator/skills";
 import { evaluateWorkflowTabRedirect } from "./workflow-tab-controller";
 import {
   BlockedAction,
-  buildHandoffBriefing,
   buildStructuredFailureContext,
-  clearStepScopedActionMemory,
   detectInstructionContradiction,
   detectFormSubmissionResetSuccess,
   detectTrustedFormFillStepCompletion,
@@ -305,11 +305,7 @@ import {
   userExplicitlyRequestedTabManagement,
 } from "./loop-helpers";
 import { extractFieldValuePairs } from "./task-contract";
-import {
-  DEESCALATION_REFLECTION,
-  HANDOFF_REFLECTION,
-  PIVOT_MESSAGE,
-} from "./loop-prompts";
+import { PIVOT_MESSAGE } from "./loop-prompts";
 import {
   advanceCompletedSubtasks,
   completeRemainingSubtasks,
@@ -6570,59 +6566,6 @@ export class AgentLoop {
     // Two-tier escalation state machine (0=executor, 1=planner). plan-then-act:
     // start at tier 1 (planner) for orientation, then hand off to tier 0
     // (executor). Exception: preferredModelTier="executor" skips orientation.
-    const esc = new EscalationTierController({
-      startOnPlanner: this.preferredModelTier !== "executor",
-      orientationPhaseTurns: ORIENTATION.PHASE_TURNS,
-      host: {
-        limits: this.limits,
-        getTurn: () => this.turnCount,
-        deescalateModel: (tabId, prevElementCount) =>
-          this.deescalateModel(tabId, prevElementCount),
-        addHandoffMessage: () => {
-          const briefing = buildHandoffBriefing(
-            this.context.getMessages(),
-            this.context.getSnapshot(),
-          );
-          this.context.addMessage({
-            role: "user",
-            content: HANDOFF_REFLECTION(briefing),
-          });
-        },
-        emitInfoStep: (label) =>
-          this.stepHandler(
-            {
-              id: crypto.randomUUID(),
-              type: "info",
-              label,
-              status: "done",
-              timestamp: Date.now(),
-            },
-            false,
-          ),
-        logInfo: (message, data) => this.log.info("agent", message, data),
-        isStillStuck: () => this.stagnation.isStillStuck(),
-        broadcastProgressResolved: (url) =>
-          this.broadcast({
-            type: "AGENT_STAGNATION",
-            payload: {
-              signal: "resolved",
-              stagnantTurns: 0,
-              url,
-              message: "Agent is making progress again.",
-            },
-          }),
-        addDeescalationMessage: () =>
-          this.context.addMessage({
-            role: "user",
-            content: DEESCALATION_REFLECTION,
-          }),
-        resetStagnationEscalation: () => this.stagnation.resetEscalation(),
-      },
-    });
-    if (esc.orientationPhase) {
-      this.escalateModel(); // Start with planner model (plan phase)
-    }
-
     // Run-scoped turn accumulators (LP-15 Phase 6): same-tool failure counts,
     // the recent-success / recent-tool-call windows, result-page progress, and
     // find_element-discovered tag IDs. Owned by TurnState; consumed by the
@@ -6630,88 +6573,34 @@ export class AgentLoop {
     const turnState = new TurnState();
     const { toolFailCounts, recentSuccesses, recentToolCalls } = turnState;
     const verifiedFinalClickBypassKeys = new Set<string>();
-
-    // Failed action memory: prevents exact repeats of failed tool calls
     const blockedActions: BlockedAction[] = [];
-
-    // Outcome-based dead-end detection: sliding window of normalized tool result fingerprints
-    // Each entry pairs the outcome fingerprint with the page snapshot fingerprint
     const recentOutcomes: RecentOutcome[] = [];
     const recentObservationProgressKeys: string[] = [];
-
-    // Cumulative failure brief: tracks tool attempts for failure synthesis
     const subgoalAttempts: SubgoalAttempt[] = [];
     const serviceNowMissingFieldSearchEvidence = new Map<
       string,
       ServiceNowMissingFieldSearchEvidence
     >();
 
-    const resetStepScopedActionMemory = (): void => {
-      if (this.lastPlanIndex === session.lastActionMemoryPlanIndex) return;
-      const fromPlanIndex = session.lastActionMemoryPlanIndex;
-      const toPlanIndex = this.lastPlanIndex;
-      const reset = clearStepScopedActionMemory({
-        recentToolCalls,
-        recentSuccesses,
-        blockedActions,
-        verifiedFinalClickBypassKeys,
-      });
-      session.lastReadElementId = null;
-      session.consecutiveReadElementSameId = 0;
-      session.lastActionMemoryPlanIndex = toPlanIndex;
-      this.traceRecorder?.recordEvent("step_action_memory_reset", {
-        turn: this.turnCount,
-        fromPlanIndex,
-        toPlanIndex,
-        ...reset,
-      });
-    };
-
-    const resetEscalationWorkingMemory = (options?: {
-      resetProgressSignals?: boolean;
-      resetStepEscalation?: boolean;
-      resetZeroEffectTurns?: boolean;
-      clearStuckFlag?: boolean;
-    }): void => {
-      this.stagnation.resetEscalation();
-      subgoalAttempts.length = 0;
-      recentOutcomes.length = 0;
-      serviceNowMissingFieldSearchEvidence.clear();
-      session.consecutiveTextOnly = 0;
-      recentSuccesses.length = 0;
-      if (options?.resetProgressSignals) {
-        esc.consecutiveProgressSignals = 0;
-      }
-      if (options?.resetStepEscalation) {
-        session.turnsSinceStepEscalation = -1;
-      }
-      if (options?.resetZeroEffectTurns) {
-        this.consecutiveZeroEffectTurns = 0;
-      }
-      if (options?.clearStuckFlag) {
-        esc.wasStuck = false;
-      }
-    };
-
-    // Escalation-entry primitive (RFC LP-15, Phase 6): the single invariant
-    // write point for the two-tier machine's executor→planner flip. Every
-    // escalation trigger routes its tier transition through here so the tier
-    // state has one owner; the per-trigger tails (strategy pivot, reflection
-    // message, step handler, working-memory resets) stay at the call site
-    // because they legitimately differ by trigger. `bumpStepCounter` is false
-    // for the two triggers (done-rejection, text-only) that do not count
-    // against the per-step escalation budget.
-    const beginPlannerEscalation = ({
-      bumpStepCounter,
-    }: {
-      bumpStepCounter: boolean;
-    }): void => {
-      this.escalateModel();
-      if (bumpStepCounter) this.escalationsOnCurrentStep++;
-      esc.tier = 1;
-      esc.orientationPhase = false;
-      esc.plannerModelStartTurn = this.turnCount;
-    };
+    // Two-tier escalation controller + working-memory closures (RFC LP-16
+    // Phase 3b). See turn-controller.ts.
+    const {
+      esc,
+      resetStepScopedActionMemory,
+      resetEscalationWorkingMemory,
+      beginPlannerEscalation,
+    } = createTurnController(this as unknown as TurnControllerHost, session, {
+      recentToolCalls,
+      recentSuccesses,
+      blockedActions,
+      verifiedFinalClickBypassKeys,
+      subgoalAttempts,
+      recentOutcomes,
+      serviceNowMissingFieldSearchEvidence,
+    });
+    if (esc.orientationPhase) {
+      this.escalateModel(); // Start with planner model (plan phase)
+    }
 
     while (this.isRunning && this.turnCount < this.maxTurns) {
       // Turn-scoped state, reset each iteration (RFC LP-16 Phase 3). See loop-scope.ts.
