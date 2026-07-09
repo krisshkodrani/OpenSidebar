@@ -117,6 +117,10 @@ import {
   type TurnCheckpointHost,
 } from "./turn-checkpoint";
 import {
+  recordShadowCompletionDecision,
+  type ShadowCompletionHost,
+} from "./shadow-completion";
+import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -1500,53 +1504,6 @@ export class AgentLoop {
     });
   }
 
-  private recordShadowCompletionDecision(
-    decision: CompletionEvaluation,
-    summary: string,
-  ): void {
-    const metadata = {
-      authoritative: false,
-      gatedBy: "completionDeterministicAcceptanceEnabled",
-      fallback: "legacy_done_guards",
-    };
-    if (decision.status === "accepted") {
-      const completionEnvelope = this.createCompletionEnvelope({
-        source: "model_done",
-        contractKind: decision.contract.kind,
-        decisionReason: decision.reason,
-        evidence: decision.evidence,
-        summary,
-      });
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: decision.status,
-        source: "model_done",
-        reason: decision.reason,
-        contractKind: decision.contract.kind,
-        resultId: completionEnvelope.resultId,
-        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-        completionEnvelope,
-        ...metadata,
-      });
-      this.recordCompletionEnvelope(completionEnvelope, metadata);
-      return;
-    }
-    if (
-      decision.status === "rejected" ||
-      decision.status === "needs_verification"
-    ) {
-      this.traceRecorder?.recordEvent("completion_decision", {
-        turn: this.turnCount,
-        status: decision.status,
-        source: "model_done",
-        reason: decision.reason,
-        contractKind: decision.contract.kind,
-        evidenceKeys: decision.evidence.map((event) => event.logicalKey),
-        ...metadata,
-      });
-    }
-  }
-
   private acceptDoneToolCall(
     summary: string,
     toolCallId: string,
@@ -2147,7 +2104,11 @@ export class AgentLoop {
       getKernelDecision: () => {
         kernelDecision = this.evaluateCompletionCandidate("model_done", summary);
         if (!this.completionDeterministicAcceptanceEnabled) {
-          this.recordShadowCompletionDecision(kernelDecision, summary);
+          recordShadowCompletionDecision(
+            this as unknown as ShadowCompletionHost,
+            kernelDecision,
+            summary,
+          );
         }
         return kernelDecision;
       },
