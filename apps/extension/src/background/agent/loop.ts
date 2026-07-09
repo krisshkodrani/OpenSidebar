@@ -109,6 +109,10 @@ import {
   type DonePlanValidationHost,
 } from "./done-plan-validation";
 import {
+  collectDoneDiagnosticIssues,
+  type DoneDiagnosticsHost,
+} from "./done-diagnostics";
+import {
   getActiveCompletionContext,
   recordCompletionEvidence,
   refreshCompletionEvidenceFromSnapshot,
@@ -148,15 +152,6 @@ import {
   buildTrustedCompletionCandidate,
   CompletionEvidenceLedger,
   deriveCompletionEvidenceFromSnapshot,
-  evaluateCompletionEarlyMultiStepPreflight,
-  evaluateCompletionGroundingReadPreflight,
-  evaluateCompletionListDetailReviewPreflight,
-  evaluateCompletionMoneyTableAggregatePreflight,
-  evaluateCompletionPendingAutocompletePreflight,
-  evaluateCompletionRequiredEvidencePreflight,
-  evaluateCompletionSummaryPreflight,
-  evaluateCompletionTaskContractPreflight,
-  evaluateCompletionWorkflowContractPreflight,
   generateCompletionContract,
   type CompletionCandidateSource,
   type CompletionEnvelope,
@@ -1714,138 +1709,6 @@ export class AgentLoop {
     this.broadcastFinalMetrics();
   }
 
-  private collectDoneDiagnosticIssues(summary: string): string[] {
-    const issues = new Set<string>();
-    const addIssue = (label: string, reason: string | null | undefined) => {
-      const clean = reason?.trim();
-      if (clean) issues.add(`${label}: ${clean}`);
-    };
-
-    const summaryPreflight = evaluateCompletionSummaryPreflight({
-      summary,
-      taskContext: this.getCompletionSummaryTaskContext(),
-      turnCount: this.turnCount,
-      rootUserRequest: this.originalQuery,
-      isOrchestratorNode: Boolean(this.nodeId),
-    });
-    if (summaryPreflight.status !== "valid") {
-      addIssue("summary", summaryPreflight.reason);
-    }
-
-    const groundingPreflight = evaluateCompletionGroundingReadPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      snapshot: this.context.getSnapshot(),
-      hasReadPage: this.hasReadPage,
-      hasExplicitPageRead: this.hasExplicitPageRead,
-      hasTaskId: Boolean(this.taskId),
-    });
-    if (groundingPreflight.status === "rejected") {
-      issues.add("grounding: call read_page first to verify actual page content");
-    }
-
-    const incompleteMoneyTableScan =
-      this.getIncompleteMoneyTableAggregateDoneRejection();
-    const moneyTablePreflight = evaluateCompletionMoneyTableAggregatePreflight({
-      incompleteScanReason: incompleteMoneyTableScan,
-      incorrectAnswerReason: incompleteMoneyTableScan
-        ? null
-        : this.getIncorrectMoneyTableAggregateDoneRejection(summary),
-    });
-    if (moneyTablePreflight.status !== "valid") {
-      addIssue("money table", moneyTablePreflight.reason);
-    }
-
-    const earlyMultiStepPreflight = evaluateCompletionEarlyMultiStepPreflight({
-      userRequest: this.originalQuery,
-      doneRejections: this.doneRejections,
-      turnCount: this.turnCount,
-      hasNodeId: Boolean(this.nodeId),
-    });
-    if (earlyMultiStepPreflight.status !== "valid") {
-      issues.add(
-        `plan progress: task has ${earlyMultiStepPreflight.stepCount} steps and is not ready to finish`,
-      );
-    }
-
-    const taskContractGuard = this.isSkillOwnedListDetailReview()
-      ? null
-      : evaluateCompletionTaskContractPreflight({
-          userRequest: this.originalQuery,
-          summary,
-          snapshot: this.context.getSnapshot(),
-        });
-    if (taskContractGuard?.blocked) {
-      addIssue("task contract", taskContractGuard.reason);
-    }
-
-    const workflowSnapshot = this.context.getSnapshot();
-    const workflowDoneGuard = evaluateCompletionWorkflowContractPreflight({
-      userRequest: this.originalQuery,
-      summary,
-      selectedSkillId: this.selectedSkillId,
-      pageUrl: workflowSnapshot?.url,
-      pageTitle: workflowSnapshot?.title,
-    });
-    if (workflowDoneGuard.blocked) {
-      addIssue("workflow contract", workflowDoneGuard.reason);
-    }
-
-    const visibleDetailActionCount = Math.max(
-      this.listDetailVisibleActionCount,
-      countVisibleListDetailActions(this.context.getSnapshot()),
-    );
-    const listDetailPreflight = evaluateCompletionListDetailReviewPreflight({
-      selectedSkillId: this.selectedSkillId,
-      userRequest: this.originalQuery,
-      reviewedDetailCount: this.listDetailReviewedTargets.size,
-      visibleDetailActionCount,
-    });
-    if (listDetailPreflight.status !== "valid") {
-      addIssue("list-detail review", listDetailPreflight.reason);
-    }
-
-    const activePlanIdx =
-      this.planSubtasks.length > 0
-        ? this.planSubtasks.findIndex((s) => s.status === "running")
-        : -1;
-    const effectivePlanIdx =
-      activePlanIdx >= 0
-        ? activePlanIdx
-        : Math.min(
-            this.planSubtasks.filter((s) => s.status === "completed").length,
-            this.planSubtasks.length - 1,
-          );
-    const autocompletePreflight = evaluateCompletionPendingAutocompletePreflight({
-      snapshot: this.context.getSnapshot(),
-      userRequest: this.originalQuery,
-      activeObjective:
-        effectivePlanIdx >= 0
-          ? this.planSubtasks[effectivePlanIdx]?.description
-          : undefined,
-      successCriteria:
-        effectivePlanIdx >= 0
-          ? this.planSteps[effectivePlanIdx]?.successCriteria
-          : undefined,
-      summary,
-    });
-    if (autocompletePreflight.status !== "valid") {
-      addIssue("autocomplete", autocompletePreflight.reason);
-    }
-
-    const requiredEvidencePreflight =
-      evaluateCompletionRequiredEvidencePreflight({
-        missingRequiredEvidence: this.getMissingRequiredEvidenceTypes(),
-      });
-    if (requiredEvidencePreflight.status !== "valid") {
-      issues.add(
-        `typed evidence: missing ${requiredEvidencePreflight.missingRequiredEvidence.join(", ")}`,
-      );
-    }
-
-    return Array.from(issues);
-  }
-
   private doneRejectionDiagnosticContent(params: {
     summary: string;
     primaryReason: string;
@@ -1861,7 +1724,10 @@ export class AgentLoop {
       );
     }
 
-    const issues = this.collectDoneDiagnosticIssues(params.summary);
+    const issues = collectDoneDiagnosticIssues(
+      this as unknown as DoneDiagnosticsHost,
+      params.summary,
+    );
     if (!issues.some((issue) => issue.includes(params.primaryReason))) {
       issues.unshift(params.primaryReason);
     }
