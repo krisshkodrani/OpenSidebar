@@ -96,6 +96,10 @@ import {
   type AccountAndRefreshHost,
 } from "./turn-phases/account-and-refresh";
 import {
+  runDispatchToolsPhase,
+  type DispatchToolsHost,
+} from "./turn-phases/dispatch-tools";
+import {
   detectExplicitSuccessSignalInSnapshot,
   type ExplicitSuccessSignalHost,
 } from "./explicit-success-signal";
@@ -158,7 +162,6 @@ import { resolveInitialSnapshot } from "./initial-snapshot";
 import { bootstrapRuntimePlan } from "./start-planner-bootstrap";
 import { PendingInteractionYield, runStartExecution } from "./start-result";
 import { finalizeStartResult } from "./start-finalization";
-import { prepareToolCallBranch } from "./tool-call-branch-setup";
 import { AgentMiddleware } from "./middleware";
 import { EvidenceAccumulator } from "./evidence";
 import { EscalationRescueTracker } from "./escalation-rescue-policy";
@@ -384,15 +387,6 @@ import {
   type ParallelToolExecutionResult,
 } from "./parallel-tool-execution";
 import {
-  executeParallelToolCalls,
-  type ParallelToolDispatchHost,
-} from "./parallel-tool-dispatch";
-import {
-  executeSequentialToolCalls,
-  type SequentialToolDispatchOutput,
-  type SequentialToolDispatchHost,
-} from "./sequential-tool-dispatch";
-import {
   collectTurnToolOutcomeRecords,
   type TurnToolOutcomeRecord,
 } from "./turn-tool-outcomes";
@@ -411,7 +405,6 @@ type CompletionValidationErrorEvidence = Extract<
   { type: "validation_error" }
 >;
 
-const REPEAT_ACTION_WINDOW = 20;
 const CAPTURE_VISIBLE_TAB_RETRY_DELAY_MS = 300;
 
 function shouldDeferStepWatchdogForOutcome(
@@ -6707,13 +6700,7 @@ export class AgentLoop {
     // find_element-discovered tag IDs. Owned by TurnState; consumed by the
     // dispatchers + stagnation-adjacent policies by reference.
     const turnState = new TurnState();
-    const {
-      toolFailCounts,
-      recentSuccesses,
-      recentToolCalls,
-      resultPageProgress,
-      discoveredTagIds,
-    } = turnState;
+    const { toolFailCounts, recentSuccesses, recentToolCalls } = turnState;
     const verifiedFinalClickBypassKeys = new Set<string>();
 
     // Failed action memory: prevents exact repeats of failed tool calls
@@ -6905,15 +6892,10 @@ export class AgentLoop {
 
       // 3. Handle Response
       if (response.tool_calls && response.tool_calls.length > 0) {
-        // ACTION REQUIRED
-        session.consecutiveTextOnly = 0;
-        this.throwIfGracefulStopRequested();
-
-        // Keep the streaming message open across tool-calling turns.
-        // The stream is finalized when done() is called (with replaceContent)
-        // or when the loop exits (by the orchestrator or exit-path handlers).
-
-        // Execute Tools
+        // ACTION REQUIRED. The streaming message stays open across tool-calling
+        // turns (finalized when done() is called or the loop exits).
+        // signalCompletedResult is shared with the completion phase, so it is
+        // created here and threaded into both.
         const signalCompletedResult = (
           summary: string,
           options?: {
@@ -6925,187 +6907,25 @@ export class AgentLoop {
           turn.doneSignaled = true;
           this.completeTaskResult(summary, options);
         };
-        const missingFieldAdmissionSummary =
-          this.getServiceNowMissingFieldAdmissionSummary(cleanContent);
-        if (missingFieldAdmissionSummary) {
-          signalCompletedResult(missingFieldAdmissionSummary);
-          this.traceRecorder?.recordEvent(
-            "servicenow_record_missing_field_admission_completed",
-            {
-              turn: this.turnCount,
-              summary: missingFieldAdmissionSummary,
-            },
-          );
-          await this.traceRecorder?.endTurn();
-          return {
-            outcome: "completed",
-            turnCount: this.turnCount,
-            summary: missingFieldAdmissionSummary,
-            failure: { category: "none", code: "none" },
-            metrics: this.getMetrics(),
-            evidence: this.evidenceAccumulator.toArray(),
-            completionEnvelope: this.completedResult?.completionEnvelope,
-          };
-        }
-        this.lastDomStep = null;
-        this.context.setLastActionOutcome(null);
-        const toolCallSetup = prepareToolCallBranch({
-          response,
-          turnCount: this.turnCount,
-          cleanContent,
-          toolsRecoveredFromText,
-          hadThinking: normalizedContent.hadThinking,
-          consecutiveBlindToolTurns: session.consecutiveBlindToolTurns,
-          context: this.context,
-          traceRecorder: this.traceRecorder,
-          log: this.log,
-          statusHandler: (status, message) =>
-            this.statusHandler(status, message),
-          rewriteListDetailWorkflowToolCall: (toolCall, mode) =>
-            this.rewriteListDetailWorkflowToolCall(toolCall, mode),
-        });
-        session.consecutiveBlindToolTurns =
-          toolCallSetup.consecutiveBlindToolTurns;
-
-        if (toolCallSetup.allCallsBlocked) {
-          continue; // All tool calls blocked - retry
-        }
-
-        // Exploration hard block: after HARD_BLOCK consecutive exploration-only turns,
-        // inject synthetic error results for blocked exploration calls and skip their dispatch.
-        // Non-exploration calls in the same response proceed normally.
-        let effectiveToolCalls = response.tool_calls;
-        if (
-          session.consecutiveExplorationTurns >= EXPLORATION_BUDGET.HARD_BLOCK
-        ) {
-          const hardBlockedCalls = response.tool_calls.filter((tc) =>
-            EXPLORATION_ONLY_TOOLS.has(tc.function.name),
-          );
-          if (hardBlockedCalls.length > 0) {
-            for (const tc of hardBlockedCalls) {
-              this.context.addMessage({
-                role: "tool" as const,
-                tool_call_id: tc.id,
-                content:
-                  `Exploration blocked: ${session.consecutiveExplorationTurns} consecutive read-only turns. ` +
-                  `Take a concrete action (click, type, navigate, scroll) or call escalate() if stuck.`,
-              });
-            }
-            this.log.warn(
-              "agent",
-              "Exploration hard block: blocked read-only calls",
-              {
-                turn: this.turnCount,
-                consecutiveExplorationTurns:
-                  session.consecutiveExplorationTurns,
-                blockedCount: hardBlockedCalls.length,
-              },
-            );
-            this.traceRecorder?.recordEvent("exploration_hard_block", {
-              consecutiveTurns: session.consecutiveExplorationTurns,
-              blockedCount: hardBlockedCalls.length,
-            } as Record<string, unknown>);
-            effectiveToolCalls = response.tool_calls.filter(
-              (tc) => !EXPLORATION_ONLY_TOOLS.has(tc.function.name),
-            );
-            if (effectiveToolCalls.length === 0) {
-              // All calls were exploration — skip dispatch for this turn
-              continue;
-            }
-          }
-        }
-
-        const canParallelize = toolCallSetup.canParallelize;
-
-        if (canParallelize) {
-          this.throwIfGracefulStopRequested();
-          // PARALLEL EXECUTION
-          const parallelDispatch = await executeParallelToolCalls(
-            this as unknown as ParallelToolDispatchHost,
-            {
-              toolCalls: effectiveToolCalls,
-              tabId: session.tabId,
-              repeatActionWindow: REPEAT_ACTION_WINDOW,
-              llmIntention,
-              state: {
-                recentToolCalls,
-                verifiedFinalClickBypassKeys,
-                lastReadElementId: session.lastReadElementId,
-                consecutiveReadElementSameId:
-                  session.consecutiveReadElementSameId,
-                blockedActions,
-                recentSuccesses,
-                discoveredTagIds,
-                orientationPhase: esc.orientationPhase,
-                orientationToolsUsed: esc.orientationToolsUsed,
-                domModified: turn.domModified,
-                visuallyModified: turn.visuallyModified,
-                lastDomAffectingToolName: turn.lastDomAffectingToolName,
-              },
-            },
-          );
-          session.lastReadElementId = parallelDispatch.state.lastReadElementId;
-          session.consecutiveReadElementSameId =
-            parallelDispatch.state.consecutiveReadElementSameId;
-          turn.domModified = parallelDispatch.state.domModified;
-          turn.visuallyModified = parallelDispatch.state.visuallyModified;
-          turn.lastDomAffectingToolName =
-            parallelDispatch.state.lastDomAffectingToolName;
-
-          this.finalizeParallelToolResults(parallelDispatch.results);
-        } else {
-          // SEQUENTIAL EXECUTION (has sequential tools or single tool)
-          const sequentialDispatch: SequentialToolDispatchOutput =
-            await executeSequentialToolCalls.call(
-              this as unknown as SequentialToolDispatchHost,
-              {
-                toolCalls: effectiveToolCalls,
-                repeatActionWindow: REPEAT_ACTION_WINDOW,
-                llmIntention,
-                signalCompletedResult,
-                state: {
-                  tabId: session.tabId,
-                  prevElementCount: session.prevElementCount,
-                  escalationTier: esc.tier,
-                  plannerModelStartTurn: esc.plannerModelStartTurn,
-                  orientationPhase: esc.orientationPhase,
-                  recentToolCalls,
-                  verifiedFinalClickBypassKeys,
-                  lastReadElementId: session.lastReadElementId,
-                  consecutiveReadElementSameId:
-                    session.consecutiveReadElementSameId,
-                  blockedActions,
-                  recentSuccesses,
-                  discoveredTagIds,
-                  orientationToolsUsed: esc.orientationToolsUsed,
-                  domModified: turn.domModified,
-                  visuallyModified: turn.visuallyModified,
-                  lastDomAffectingToolName: turn.lastDomAffectingToolName,
-                  doneSignaled: turn.doneSignaled,
-                  doneSummary: session.doneSummary,
-                  resultPageProgress,
-                },
-              },
-            );
-          session.tabId = sequentialDispatch.tabId;
-          session.prevElementCount = sequentialDispatch.prevElementCount;
-          if (sequentialDispatch.escalationTier > esc.tier) {
-            // Voluntary escalate() tool call upgraded the tier this turn.
-            this.escalationRescue.noteEscalation(this.turnCount, "voluntary");
-          }
-          esc.tier = sequentialDispatch.escalationTier;
-          esc.plannerModelStartTurn = sequentialDispatch.plannerModelStartTurn;
-          esc.orientationPhase = sequentialDispatch.orientationPhase;
-          session.lastReadElementId = sequentialDispatch.lastReadElementId;
-          session.consecutiveReadElementSameId =
-            sequentialDispatch.consecutiveReadElementSameId;
-          turn.domModified = sequentialDispatch.domModified;
-          turn.visuallyModified = sequentialDispatch.visuallyModified;
-          turn.lastDomAffectingToolName =
-            sequentialDispatch.lastDomAffectingToolName;
-          turn.doneSignaled = sequentialDispatch.doneSignaled;
-          session.doneSummary = sequentialDispatch.doneSummary;
-        }
+        const dispatch = await runDispatchToolsPhase(
+          this as unknown as DispatchToolsHost,
+          {
+            session,
+            turn,
+            esc,
+            turnState,
+            verifiedFinalClickBypassKeys,
+            blockedActions,
+            signalCompletedResult,
+            response,
+            cleanContent,
+            toolsRecoveredFromText,
+            llmIntention,
+            hadThinking: normalizedContent.hadThinking,
+          },
+        );
+        if (dispatch.kind === "end_task") return dispatch.result;
+        if (dispatch.kind === "next_turn") continue;
 
         // --- Circuit Breaker: track tool failures ---
         if (!turn.doneSignaled) {
