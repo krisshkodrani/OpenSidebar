@@ -143,7 +143,11 @@ export const DEFAULT_LANE_POLICIES: Record<RuntimeLane, LaneBudgetPolicy> = {
     maxConcurrent: 1,
     maxFailuresBeforeIsolation: 2,
     isolationCooldownMs: 20_000,
-    maxCallMs: 20_000,
+    // GLM-5.2 planner calls average ~6.6s but the tail collides with a 20s
+    // budget, and blowing it silently swaps in the context-blind fallback node
+    // builder — the create-incident "filled but never submitted" root cause.
+    // 45s costs nothing on the fast path and prevents that downgrade.
+    maxCallMs: 45_000,
   },
   executor: {
     maxConcurrent: 8,

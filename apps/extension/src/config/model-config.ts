@@ -42,7 +42,13 @@ export const DEFAULT_LLM_MODEL_CONFIG: LLMModelDefaults = {
     DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER.openrouter,
   planner: "accounts/fireworks/models/glm-5p2",
   writer: "accounts/fireworks/models/glm-5p2",
-  judge: "accounts/fireworks/models/glm-5p2",
+  // Judge seat (RFC LP-15 Phase 10): a text-only strict-JSON rubric task that
+  // must answer fast — sharing the GLM planner seat made ~75% of judge calls
+  // time out behind planner traffic (2026-07-09 telemetry), so the judge
+  // mostly failed open instead of ruling. GPT-OSS-120B (Fireworks-served) is
+  // fast and ~4x cheaper; judge quality needs JSON discipline, not GLM's
+  // planning strength.
+  judge: "openai/gpt-oss-120b",
   openai: {
     executor: DEFAULT_MULTIMODAL_EXECUTOR_BY_PROVIDER["openai-groq"],
     planner: "accounts/fireworks/models/glm-5p2",
