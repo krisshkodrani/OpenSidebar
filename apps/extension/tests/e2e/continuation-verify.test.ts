@@ -138,10 +138,10 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Verify After Action", () => {
     // The verification answer should confirm what happened
     const t2Lower = turn2Answer.toLowerCase();
 
-    // Must confirm the status
+    // Must confirm the status (tolerate "In Progress" / "in-progress" phrasing)
     expect(
-      t2Lower.includes("in progress"),
-      "Turn 2 should confirm the 'In Progress' status",
+      /in[ -]?progress/.test(t2Lower),
+      `Turn 2 should confirm the 'In Progress' status. Got: ${turn2Answer.slice(0, 250)}`,
     ).toBe(true);
 
     // Must reference the comment content or confirm it posted

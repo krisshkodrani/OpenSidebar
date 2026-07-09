@@ -70,7 +70,7 @@ describe.skipIf(!h.apiKey)("E2E: Mutation Dedupe Recovery", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt =
-      "Open the TechDirect store link in a new tab and stop once the store page is open.";
+      "Open the TechDirect store in a new tab for me. Just get it open — I'll take it from there.";
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
     await waitForTabCount(h.ctx.serviceWorker, 2, 120_000, workspaceId);

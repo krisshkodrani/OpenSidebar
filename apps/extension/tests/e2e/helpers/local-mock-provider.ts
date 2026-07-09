@@ -55,14 +55,14 @@ export const localMockProviderScenarios: Record<
   navigation: {
     fixture: "navigation",
     label: "local-mock-navigation-ux-rfc-post",
-    prompt: "Please complete the navigation challenge on this page.",
+    prompt: "Can you complete this challenge for me?",
     maxTurns: 12,
     timeoutMs: 180_000,
   },
   "quiz-derailment": {
     fixture: "quiz-derailment",
     label: "completion-done-quiz-derailment",
-    prompt: "Select the correct option/s",
+    prompt: "Answer the quiz question on this page — pick whatever's correct.",
     maxTurns: 12,
     timeoutMs: 180_000,
   },
@@ -327,7 +327,7 @@ function plannerJson(
     });
   }
   if (
-    /Quiz Derailment Fixture|Question 32|Select the correct option\/s/i.test(
+    /Quiz Derailment Fixture|Question 32|Answer the quiz question/i.test(
       text,
     )
   ) {

@@ -67,7 +67,7 @@ describe.skipIf(!h.apiKey)("E2E: Safe Stop Drain", () => {
     expect(tabId).toBeGreaterThan(0);
 
     const prompt =
-      "Buy the first two items from the procurement list. Open each store in a new tab, purchase the item, then come back and check it off.";
+      "Buy the first two items from the procurement list and mark them complete.";
 
     const workspaceId = await sendUserChat(h.ctx, prompt, tabId);
 
