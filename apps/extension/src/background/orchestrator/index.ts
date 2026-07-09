@@ -284,10 +284,6 @@ export class Orchestrator {
     string,
     Record<RuntimeLane, LaneSupervisorState>
   >();
-  private durableControlWatermarks = new Map<
-    string,
-    { resumeRequestedAt?: number; stopRequestedAt?: number }
-  >();
   private traceWriter: RunTraceWriter = createHttpRunTraceWriter();
   private traceFallbackWriter = new RunTraceWriter(async (record) => {
     if (record.kind === "manifest") {
