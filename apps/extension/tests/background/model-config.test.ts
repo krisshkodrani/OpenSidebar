@@ -14,10 +14,13 @@ describe("LLM model config", () => {
     expect(LLM_MODEL_CONFIG.deepseek.planner).toBe("deepseek-v4-flash");
   });
 
-  test("judge seat defaults to the planner model (GLM-5.2)", () => {
-    // RFC LP-15 Phase 10: the judge seat exists and mirrors the planner model.
-    expect(LLM_MODEL_CONFIG.judge).toBe("accounts/fireworks/models/glm-5p2");
-    expect(LLM_MODEL_CONFIG.judge).toBe(LLM_MODEL_CONFIG.planner);
+  test("judge seat defaults to a dedicated fast model, decoupled from the planner", () => {
+    // RFC LP-15 Phase 10 seat, retuned 2026-07-09: sharing the GLM planner
+    // seat made ~75% of judge calls time out behind planner traffic and fail
+    // open. The judge is a text-only strict-JSON rubric task — GPT-OSS-120B
+    // (Fireworks-served) answers fast enough to actually rule.
+    expect(LLM_MODEL_CONFIG.judge).toBe("openai/gpt-oss-120b");
+    expect(LLM_MODEL_CONFIG.judge).not.toBe(LLM_MODEL_CONFIG.planner);
   });
 
   test("accepts a judge model override, else keeps the default", () => {

@@ -6,8 +6,10 @@ import {
   extractThinkContent,
   MODEL_EXECUTOR,
   MODEL_EXECUTOR_EMPTY_RESPONSE_FALLBACK,
+  MODEL_JUDGE,
   MODEL_PLANNER,
   MOONSHOT_MODEL_EXECUTOR,
+  MOONSHOT_MODEL_PLANNER,
   DEEPSEEK_MODEL_PLANNER,
   DEEPSEEK_MODEL_PLANNER_PRO,
   XIAOMI_MODEL_EXECUTOR,
@@ -356,6 +358,55 @@ describe("LLMClient construction & tier switching", () => {
     });
     expect(sentModel).toBe(MODEL_EXECUTOR);
     expect(result.text).toBe("Composed.");
+  });
+
+  test("judge seat defaults to MODEL_JUDGE on a Fireworks planner (not planner reuse)", async () => {
+    // The judge must not queue behind GLM planner traffic — sharing the seat
+    // made ~75% of judge calls time out and fail open.
+    const client = new LLMClient("test-api-key", {
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-key",
+    });
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse('{"pass": true}');
+    });
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    expect(sentModel).toBe(MODEL_JUDGE);
+    expect(MODEL_JUDGE).toBe("openai/gpt-oss-120b");
+    // Tier restored so the next turn routes normally.
+    expect(client.getCurrentModel()).toBe(MODEL_EXECUTOR);
+  });
+
+  test("judge seat keeps planner-pool reuse on non-Fireworks planner providers", async () => {
+    // MODEL_JUDGE is a Fireworks catalog id; a Moonshot planner cannot serve it.
+    const client = new LLMClient("test-api-key", {
+      providerMode: "moonshot",
+      kimiApiKey: "kimi-key",
+    });
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse('{"pass": true}');
+    });
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    expect(sentModel).toBe(MOONSHOT_MODEL_PLANNER);
+  });
+
+  test("an explicit judgeModel override wins over the default", async () => {
+    const client = new LLMClient("test-api-key", {
+      providerMode: "fireworks",
+      fireworksApiKey: "fw-key",
+      judgeModel: "custom/judge",
+    });
+    let sentModel = "";
+    mockFetch((_url, init) => {
+      sentModel = JSON.parse(init!.body as string).model;
+      return jsonApiResponse('{"pass": true}');
+    });
+    await client.runJudge({ systemPrompt: "s", userPrompt: "u" });
+    expect(sentModel).toBe("custom/judge");
   });
 
   test("composeText strips think tags from the writer output", async () => {

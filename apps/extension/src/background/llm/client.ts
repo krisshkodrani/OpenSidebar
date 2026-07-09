@@ -907,17 +907,29 @@ export class LLMClient {
 
     // --- Build judge pool ---
     // The verification judge runs on the planner's provider with its own model
-    // (the verifier historically ran on the planner seat). When unconfigured it
-    // transparently reuses the planner pool.
-    if (!options?.judgeModel) {
+    // (the verifier historically ran on the planner seat). When unconfigured,
+    // Fireworks-served planner modes default to MODEL_JUDGE — the judge is a
+    // text-only rubric task that must not queue behind GLM planner traffic
+    // (sharing the seat made ~75% of judge calls hit the hard timeout and fail
+    // open). Non-Fireworks planner providers keep the transparent planner-pool
+    // reuse: MODEL_JUDGE is a Fireworks catalog id and may not exist there.
+    const plannerSlotForJudge = this.plannerPool.getActive();
+    const judgeModelOption =
+      options?.judgeModel ??
+      (plannerSlotForJudge.provider.providerId === "fireworks"
+        ? MODEL_JUDGE
+        : undefined);
+    if (!judgeModelOption) {
       this.judgePool = this.plannerPool;
     } else {
-      const plannerSlot = this.plannerPool.getActive();
       const judgeModel =
-        plannerSlot.provider.providerId === "openrouter"
-          ? applyNitro(options.judgeModel, nitro)
-          : options.judgeModel;
-      this.judgePool = singleProviderPool(plannerSlot.provider, judgeModel);
+        plannerSlotForJudge.provider.providerId === "openrouter"
+          ? applyNitro(judgeModelOption, nitro)
+          : judgeModelOption;
+      this.judgePool = singleProviderPool(
+        plannerSlotForJudge.provider,
+        judgeModel,
+      );
     }
 
     // Initialize from executor pool's top priority
