@@ -18,6 +18,10 @@ import {
   extractKnowledgeBaseAnswerFromText,
 } from "./knowledge-search-routing";
 import { assessMissingToolEscalation } from "./tool-capabilities";
+import {
+  checkNavigateGuard,
+  type NavigateGuardHost,
+} from "./navigate-guard";
 import { runWriterHandoff } from "./writer-handoff";
 import {
   buildTrustedReadAnswerCompletionCandidate,
@@ -613,7 +617,10 @@ export function handleNavigateGuardToolCall(
 ): boolean {
   if (!args.url) return false;
 
-  const blockMessage = loop.checkNavigateGuard(args.url as string);
+  const blockMessage = checkNavigateGuard(
+    loop as unknown as NavigateGuardHost,
+    args.url as string,
+  );
   if (!blockMessage) return false;
 
   loop.log.warn("agent", "Navigate blocked by guard", {

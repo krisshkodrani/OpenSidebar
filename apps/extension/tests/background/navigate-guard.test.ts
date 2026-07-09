@@ -2,6 +2,10 @@ import { describe, test, expect, vi } from "vitest";
 import "../setup";
 import { AgentLoop } from "../../src/background/agent/loop";
 import { SubtaskSummary } from "../../src/types";
+import {
+  checkNavigateGuard,
+  type NavigateGuardHost,
+} from "../../src/background/agent/navigate-guard";
 
 // Mock LLM Client
 vi.mock("../../src/background/llm", () => ({
@@ -45,9 +49,9 @@ function createAgent(): AgentLoop {
     });
 }
 
-/** Access private checkNavigateGuard via type escape */
+/** Invoke the relocated navigate guard against the agent as its host. */
 function checkGuard(agent: AgentLoop, url: string): string | null {
-    return (agent as any).checkNavigateGuard(url);
+    return checkNavigateGuard(agent as unknown as NavigateGuardHost, url);
 }
 
 /** Set private planSubtasks directly */
