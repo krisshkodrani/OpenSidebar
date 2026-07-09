@@ -16,7 +16,8 @@ export interface ProviderConfig {
     | "fireworks"
     | "moonshot"
     | "deepseek"
-    | "xiaomi";
+    | "xiaomi"
+    | "cerebras";
 }
 
 export type ContentPart =

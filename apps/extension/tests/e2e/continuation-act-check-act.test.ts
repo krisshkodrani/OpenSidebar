@@ -124,15 +124,19 @@ describe.skipIf(!h.apiKey)("E2E: Continuation — Act-Check-Act", () => {
     );
     console.log(`[aca] Turn 2 answer: ${turn2Answer.slice(0, 200)}`);
 
-    // Agent should describe the page — mention email field or account settings
+    // The user asked specifically about the email field, so the answer must
+    // address it AND ground itself in at least one other page concept.
     const t2Lower = turn2Answer.toLowerCase();
     expect(
-      t2Lower.includes("email") ||
-        t2Lower.includes("account") ||
-        t2Lower.includes("form") ||
+      t2Lower.includes("email"),
+      `Turn 2 should answer the email-field question. Got: ${turn2Answer.slice(0, 200)}`,
+    ).toBe(true);
+    expect(
+      t2Lower.includes("account") ||
         t2Lower.includes("settings") ||
-        t2Lower.includes("field"),
-      "Turn 2 should describe the visible form/fields",
+        t2Lower.includes("notification") ||
+        t2Lower.includes("delete"),
+      `Turn 2 should describe the page it observed. Got: ${turn2Answer.slice(0, 200)}`,
     ).toBe(true);
 
     // =================================================================

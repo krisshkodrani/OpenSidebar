@@ -139,14 +139,14 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "email turn 1",
-      "Read David's email and tell me the two proposed meeting times plus the main topics. Do not edit the reply box.",
+      "What does David's email say? Give me the two proposed meeting times and the main topics.",
       ["thursday", "friday", "budget", "hiring", "roadmap"],
     );
 
     const acceptedDraft = await actUntil<any>(
       ctx,
       "email turn 2",
-      "Draft a short reply accepting Thursday at 2 PM. Mention the Q3 strategy meeting and do not click Send.",
+      "Draft a short reply accepting Thursday at 2 PM, and mention the Q3 strategy meeting. Don't send it yet.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).emailResult ?? null,
@@ -164,7 +164,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "email turn 3",
-      "Look at the current draft and tell me whether it accepts Thursday. Do not edit the draft.",
+      "Does the current draft accept Thursday?",
       ["thursday", "accept", "yes"],
     );
     expect(
@@ -174,7 +174,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     const declinedDraft = await actUntil<any>(
       ctx,
       "email turn 4",
-      "Change the draft to decline both proposed times because of conflicts. Suggest Monday at 11 AM instead. Keep it to 2-3 sentences and do not send.",
+      "Actually, change it — decline both times, I have conflicts. Suggest Monday at 11 AM instead. Keep it to 2-3 sentences, and still don't send.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).emailResult ?? null,
@@ -195,7 +195,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     const finalDraft = await actUntil<any>(
       ctx,
       "email turn 5",
-      "Add one line saying I will send the Q3 budget numbers before the meeting. Keep the Monday 11 AM suggestion and do not send.",
+      "Also add a line to the draft that I'll send over the Q3 budget numbers before the meeting. Keep the Monday 11 AM part, and still don't send it.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).emailResult ?? null,
@@ -215,7 +215,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "email turn 6",
-      "Confirm whether the reply is still only a draft and has not been sent. Do not click Send.",
+      "Just checking — that reply is still a draft, right? It hasn't gone out?",
       ["draft", "not sent", "unsent", "has not been sent"],
     );
     expect(await h.page.evaluate(() => (window as any).emailResult?.sent)).toBe(
@@ -232,14 +232,14 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "ticket turn 1",
-      "Summarize the ticket problem, deadline pressure, and reported browser or OS. Do not change any fields.",
+      "Give me a quick rundown of this ticket — what's the problem, how urgent is it, and what browser or OS did they report?",
       ["csv", "timeout", "friday", "chrome", "windows"],
     );
 
     await actUntil<any>(
       ctx,
       "ticket turn 2",
-      "Set the ticket status to In Progress and priority to Urgent. Do not add a comment yet.",
+      "Set the status to In Progress and bump the priority to Urgent. No comment yet — I'll give you one in a second.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).ticketResult ?? null,
@@ -254,7 +254,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "ticket turn 3",
-      "What are the ticket's current status and priority now? Do not edit anything.",
+      "What are the status and priority showing now?",
       ["in progress", "urgent"],
     );
     expect(
@@ -289,14 +289,14 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "ticket turn 5",
-      "What organization ID and account plan are mentioned in the ticket description? Do not edit anything.",
+      "What organization ID and account plan does the ticket description mention?",
       ["clt-9402", "enterprise"],
     );
 
     await actUntil<any>(
       ctx,
       "ticket turn 6",
-      "Change the ticket status to Waiting on Customer, keep priority Urgent, and leave the internal note intact.",
+      "Now set it to Waiting on Customer. Priority stays Urgent, and don't touch the note.",
       async () => {
         const result = await h.page.evaluate(
           () => (window as any).ticketResult ?? null,
@@ -319,14 +319,14 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "chat turn 1",
-      "Summarize the release status, remaining blockers, and who is waiting on whom. Do not send a chat message.",
+      "Catch me up on this channel — where's the release at, what's still blocking, and who's waiting on whom?",
       ["release", "changelog", "alice", "grace", "qa"],
     );
 
     await askQuestion(
       ctx,
       "chat turn 2",
-      "Who should write the changelog and who will polish it for docs? Do not send anything.",
+      "Who's supposed to write the changelog, and who polishes it for the docs?",
       ["release owner", "grace", "alice", "changelog"],
     );
 
@@ -354,7 +354,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "chat turn 4",
-      "What did you just send? Answer only and do not send a second chat message.",
+      "What did you end up sending?",
       ["alice", "grace", "changelog"],
     );
     expect(
@@ -392,7 +392,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "dashboard turn 1",
-      "Read the Overview tab and tell me Total Users, Revenue, and Bounce Rate. Do not change settings.",
+      "From the Overview tab, what are Total Users, Revenue, and Bounce Rate?",
       ["12,847", "48,392", "42.3", "bounce", "revenue"],
     );
 
@@ -414,7 +414,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "dashboard turn 3",
-      "What notification email and timezone are currently saved? Do not change anything.",
+      "What notification email and timezone are saved right now?",
       ["ops@example.com", "pst", "pacific"],
     );
 
@@ -436,7 +436,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "dashboard turn 5",
-      "Open the Reports tab and tell me the available report names. Do not download anything.",
+      "What reports are available on the Reports tab? Just the names — no need to download anything.",
       [
         "monthly performance",
         "user engagement",
@@ -455,14 +455,14 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "shop turn 1",
-      "What coupon code is advertised, and what is the price of Air Zoom Pegasus 41? Do not add anything to the cart.",
+      "What coupon code is being advertised, and how much are the Air Zoom Pegasus 41?",
       ["save10", "149", "pegasus"],
     );
 
     await actUntil<any>(
       ctx,
       "shop turn 2",
-      "Add Air Zoom Pegasus 41 to the cart with the default size and color. Do not check out yet.",
+      "Add the Air Zoom Pegasus 41 to the cart — default size and color are fine. Don't check out yet.",
       async () => {
         const state = await h.page.evaluate(
           () => (window as any).__shopState ?? null,
@@ -479,7 +479,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "shop turn 3",
-      "What is currently in the cart and what is the subtotal before discounts? Do not change the cart.",
+      "What's in the cart right now, and what's the subtotal before discounts?",
       ["pegasus", "149"],
     );
     expect(
@@ -489,7 +489,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await actUntil<any>(
       ctx,
       "shop turn 4",
-      "Apply coupon SAVE10 and choose Express shipping. Do not place the order yet.",
+      "Apply the SAVE10 coupon and pick express shipping, but hold off on placing the order.",
       async () => {
         const state = await h.page.evaluate(
           () => (window as any).__shopState ?? null,
@@ -519,7 +519,7 @@ describe.skipIf(!h.apiKey)("E2E: Multi-turn user workflows", () => {
     await askQuestion(
       ctx,
       "shop turn 6",
-      "What is the order ID and final total? Do not place another order.",
+      "What's the order ID and the final total?",
       ["ns-", "total", "casey.rivera@example.com"],
     );
     expect(
