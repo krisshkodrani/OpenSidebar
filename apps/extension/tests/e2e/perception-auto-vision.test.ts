@@ -48,7 +48,7 @@ describe.skipIf(!h.apiKey)("E2E: perception auto vision", () => {
 
     const workspaceId = await sendUserChat(
       h.ctx,
-      "Look at the visual canvas chart and tell me the highlighted Q4 score.",
+      "Look at the chart on this page and tell me the highlighted Q4 score.",
       tabId,
     );
 

@@ -95,7 +95,7 @@ describe.skipIf(!h.apiKey || !enableLongMemoryE2E)(
 
       await sendUserChat(
         h.ctx,
-        "Draft a concise launch memo in the reply box using the dossier details you collected. Include the activation code, launch owner, primary risk, Northstar segment, retention rate, and support queue size. Do not send it.",
+        "Now draft a concise launch memo in the reply box from what you found — make sure it covers the activation code, launch owner, primary risk, Northstar segment, retention rate, and support queue size. Don't send it yet, I want to review it first.",
         tabId,
         workspaceId,
       );
@@ -117,7 +117,7 @@ describe.skipIf(!h.apiKey || !enableLongMemoryE2E)(
       const previousDraft = String(turn4.result?.message ?? "");
       await sendUserChat(
         h.ctx,
-        "Refine the draft into three short paragraphs while preserving every factual detail. Keep it unsent.",
+        "Tighten it up into three short paragraphs, but keep all the facts in. Still don't send it.",
         tabId,
         workspaceId,
       );
