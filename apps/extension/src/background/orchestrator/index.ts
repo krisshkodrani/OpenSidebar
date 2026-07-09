@@ -56,6 +56,7 @@ import {
   RecentCompletionTracker,
   MAX_RECENT_COMPLETION_CONTEXT_CHARS,
 } from "./recent-completion-tracker";
+import { PendingFeedbackQueue } from "./pending-feedback-queue";
 import { buildResumeInput } from "./resume-input";
 import {
   buildTaskManifest,
@@ -264,7 +265,7 @@ export class Orchestrator {
     Set<(payload: TaskCompletionMessage["payload"]) => void>
   >();
   private workersByWorkspace = new Map<string, WorkspaceLanePools>();
-  private pendingFeedbackQueue = new Map<string, string[]>();
+  private pendingFeedback = new PendingFeedbackQueue();
   private budgetEstimatorsByWorkspace = new Map<string, BudgetEstimator>();
   private laneRuntimeByWorkspace = new Map<
     string,
@@ -600,16 +601,14 @@ export class Orchestrator {
     this.budgetEstimatorsByWorkspace.delete(workspaceId);
     this.laneRuntimeByWorkspace.delete(workspaceId);
     this.recentCompletionTracker.clear(workspaceId);
-    this.pendingFeedbackQueue.delete(workspaceId);
+    this.pendingFeedback.clear(workspaceId);
   }
 
   private queueFeedback(workspaceId: string, text: string): void {
-    const queue = this.pendingFeedbackQueue.get(workspaceId) ?? [];
-    queue.push(text);
-    this.pendingFeedbackQueue.set(workspaceId, queue);
+    const queueLength = this.pendingFeedback.enqueue(workspaceId, text);
     logger.warn("orchestrator", "Feedback queued without active executor", {
       workspaceId,
-      queueLength: queue.length,
+      queueLength,
     });
 
     const task = this.tasksByWorkspace.get(workspaceId);
@@ -622,13 +621,13 @@ export class Orchestrator {
     workerId: string,
     nodeId: string,
   ): void {
-    const pending = this.pendingFeedbackQueue.get(workspaceId);
+    const pending = this.pendingFeedback.peek(workspaceId);
     if (!pending?.length) return;
 
     for (const text of pending) {
       loop.injectFeedback(text);
     }
-    this.pendingFeedbackQueue.delete(workspaceId);
+    this.pendingFeedback.clear(workspaceId);
     logger.info("orchestrator", "Queued feedback delivered to executor", {
       workspaceId,
       workerId,
@@ -1081,7 +1080,7 @@ export class Orchestrator {
 
   private async persistTaskCheckpoint(task: OrchestratorTask): Promise<void> {
     const checkpoints = await loadOrchestratorCheckpoints();
-    const pendingFeedback = this.pendingFeedbackQueue.get(task.workspaceId);
+    const pendingFeedback = this.pendingFeedback.peek(task.workspaceId);
     checkpoints[task.workspaceId] = {
       version: CHECKPOINT_VERSION,
       savedAt: Date.now(),
@@ -1655,13 +1654,7 @@ export class Orchestrator {
         await this.clearTaskCheckpoint(task.workspaceId);
         continue;
       }
-      if (cp.pendingFeedback?.length) {
-        this.pendingFeedbackQueue.set(task.workspaceId, [
-          ...cp.pendingFeedback,
-        ]);
-      } else {
-        this.pendingFeedbackQueue.delete(task.workspaceId);
-      }
+      this.pendingFeedback.restore(task.workspaceId, cp.pendingFeedback);
 
       const resumeSelection = await this.resolveResumeTabId(
         task,
